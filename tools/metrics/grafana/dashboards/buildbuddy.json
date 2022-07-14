@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1657314992181,
+  "iteration": 1657742474703,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -2204,19 +2204,13 @@
             "uid": "prom"
           },
           "description": "Total number of bytes downloaded by consumers of the cache, per second. This does _not_ represent the average download speed across cache requests.",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 6
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 17,
@@ -2236,7 +2230,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2296,19 +2290,13 @@
             "uid": "prom"
           },
           "description": "Total number of bytes uploaded by consumers of the cache, per second. This does _not_ represent the average upload speed across cache requests.",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 6
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 19,
@@ -2328,7 +2316,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2390,19 +2378,13 @@
             "uid": "prom"
           },
           "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 14
+            "y": 15
           },
           "hiddenSeries": false,
           "id": 4,
@@ -2423,7 +2405,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2501,19 +2483,13 @@
             "uid": "prom"
           },
           "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 14
+            "y": 15
           },
           "hiddenSeries": false,
           "id": 9,
@@ -2534,7 +2510,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2595,19 +2571,13 @@
             "uid": "prom"
           },
           "description": "Avg age of last item evicted by the disk cache",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 23
+            "y": 24
           },
           "hiddenSeries": false,
           "id": 646,
@@ -2627,7 +2597,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "8.3.2",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -2676,6 +2646,199 @@
           "yaxis": {
             "align": false
           }
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 24
+          },
+          "id": 1254,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "hidden",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(rate(buildbuddy_remote_cache_disk_cache_duplicate_writes{}[${window}]))",
+              "interval": "",
+              "legendFormat": "",
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Cache Duplicate Writes per Second",
+          "type": "timeseries"
+        },
+        {
+          "cards": {},
+          "color": {
+            "cardColor": "#3274D9",
+            "colorScale": "sqrt",
+            "colorScheme": "interpolateOranges",
+            "exponent": 0.5,
+            "mode": "opacity"
+          },
+          "dataFormat": "tsbuckets",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 32
+          },
+          "heatmap": {},
+          "hideZeroBuckets": false,
+          "highlightCards": true,
+          "id": 1247,
+          "legend": {
+            "show": false
+          },
+          "maxDataPoints": 25,
+          "reverseYBuckets": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_added_file_size_bytes_bucket[$__interval])) by (le)",
+              "format": "heatmap",
+              "interval": "",
+              "legendFormat": "{{le}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Files Added to Disk Cache by Size",
+          "tooltip": {
+            "show": true,
+            "showHistogram": true
+          },
+          "type": "heatmap",
+          "xAxis": {
+            "show": true
+          },
+          "yAxis": {
+            "decimals": 0,
+            "format": "bytes",
+            "logBase": 1,
+            "show": true
+          },
+          "yBucketBound": "auto"
+        },
+        {
+          "cards": {},
+          "color": {
+            "cardColor": "#FADE2A",
+            "colorScale": "sqrt",
+            "colorScheme": "interpolateOranges",
+            "exponent": 0.5,
+            "mode": "opacity"
+          },
+          "dataFormat": "tsbuckets",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 32
+          },
+          "heatmap": {},
+          "hideZeroBuckets": false,
+          "highlightCards": true,
+          "id": 1246,
+          "legend": {
+            "show": false
+          },
+          "maxDataPoints": 25,
+          "reverseYBuckets": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_seconds_since_last_access_bucket[$__interval])) by (le)",
+              "format": "heatmap",
+              "interval": "",
+              "legendFormat": "{{le}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Cache by Seconds Since Last Access",
+          "tooltip": {
+            "show": true,
+            "showHistogram": true
+          },
+          "type": "heatmap",
+          "xAxis": {
+            "show": true
+          },
+          "yAxis": {
+            "decimals": -1,
+            "format": "s",
+            "logBase": 1,
+            "show": true
+          },
+          "yBucketBound": "auto"
         }
       ],
       "title": "Remote cache",
