@@ -245,6 +245,23 @@ func IsolationToString(isolation *dcpb.Isolation) string {
 	return rep
 }
 
+func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb.DeleteResponse, error) {
+	ctx, err := c.readWriteContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := c.getCache(ctx, req.GetIsolation())
+	if err != nil {
+		return nil, err
+	}
+	d := digestFromKey(req.GetKey())
+	err = cache.Delete(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	return &dcpb.DeleteResponse{}, nil
+}
+
 func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.GetMultiResponse, error) {
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
@@ -436,6 +453,23 @@ func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolati
 		})
 	}
 	return missing, nil
+}
+
+func (c *CacheProxy) RemoteDelete(ctx context.Context, peer string, isolation *dcpb.Isolation, digest *repb.Digest) error {
+	req := &dcpb.DeleteRequest{
+		Isolation: isolation,
+		Key:       digestToKey(digest),
+	}
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return err
+	}
+	_, err = client.Delete(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {

@@ -84,6 +84,8 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 	assert.Equal(t, d.GetHash(), d1.GetHash())
 }
 
+// TODO(Maggie): Add test
+
 func TestBasicReadWrite(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
