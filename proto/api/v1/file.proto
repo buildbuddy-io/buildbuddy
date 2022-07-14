@@ -21,3 +21,30 @@ message File {
   string hash = 3;
   int64 size_bytes = 4;
 }
+
+// Request object for DeleteFile
+message DeleteFileRequest {
+  // URI of file to delete.
+  //
+  // CAS URI format:
+  // <instance_name>/<blobs|compressed-blobs/zstd>/<digest_hash>/<digest_size>
+  // Action cache URI format:
+  // <instance_name>/<blobs|compressed-blobs/zstd>/ac/<digest_hash>/<digest_size>
+  //
+  // Examples:
+  // * CAS artifact:
+  //   compressed-blobs/zstd/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //
+  // * CAS artifact with remote_instance_name
+  //   my_remote_instance_name/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //
+  // * Action cache artifact:
+  //   blobs/ac/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //
+  // * Action cache artifact with remote_instance_name
+  //   my_remote_instance_name/blobs/ac/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  string uri = 1;
+}
+
+// Response object for DeleteFile
+message DeleteFileResponse {}
