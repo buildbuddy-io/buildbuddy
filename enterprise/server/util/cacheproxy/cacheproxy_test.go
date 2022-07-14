@@ -75,6 +75,8 @@ func copyAndClose(wc io.WriteCloser, r io.Reader) error {
 	return wc.Close()
 }
 
+// TODO(Maggie): Add test
+
 func TestReaderMaxOffset(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)

@@ -1057,13 +1057,17 @@ func (p *partition) setMulti(ctx context.Context, cacheType interfaces.CacheType
 }
 
 func (p *partition) delete(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) error {
+	fmt.Print("In disk cache")
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return err
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.lru.Remove(k.FullPath())
+	removed := p.lru.Remove(k.FullPath())
+	if !removed {
+		return status.NotFoundErrorf("Key %s not found in disk_cache", d.GetHash())
+	}
 	return nil
 }
 
