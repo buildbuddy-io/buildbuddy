@@ -265,7 +265,6 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
 			Uuid:               r.invocationID,
-			StartTimeMillis:    startTime.UnixMilli(),
 			StartTime:          timestamppb.New(startTime),
 			OptionsDescription: optionsDescription,
 			Command:            cmd,
@@ -315,13 +314,11 @@ func (r *buildEventReporter) Stop(exitCode int, exitCodeName string) error {
 			{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
 		},
 		Payload: &bespb.BuildEvent_Finished{Finished: &bespb.BuildFinished{
-			OverallSuccess: exitCode == 0,
 			ExitCode: &bespb.BuildFinished_ExitCode{
 				Name: exitCodeName,
 				Code: int32(exitCode),
 			},
-			FinishTimeMillis: now.UnixMilli(),
-			FinishTime:       timestamppb.New(now),
+			FinishTime: timestamppb.New(now),
 		}},
 	})
 	elapsedTimeSeconds := float64(time.Since(r.startTime)) / float64(time.Second)
@@ -812,11 +809,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				InvocationId: iid,
 			}}},
 			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
-				ExitCode:        int32(exitCode),
-				StartTimeMillis: cmdStartTime.UnixMilli(),
-				StartTime:       timestamppb.New(cmdStartTime),
-				Duration:        durationpb.New(duration),
-				DurationMillis:  duration.Milliseconds(),
+				ExitCode:  int32(exitCode),
+				StartTime: timestamppb.New(cmdStartTime),
+				Duration:  durationpb.New(duration),
 			}},
 		}
 		if err := ar.reporter.Publish(completedEvent); err != nil {
@@ -828,11 +823,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				InvocationId: iid,
 			}}},
 			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
-				ExitCode:        int32(exitCode),
-				StartTimeMillis: cmdStartTime.UnixMilli(),
-				StartTime:       timestamppb.New(cmdStartTime),
-				Duration:        durationpb.New(duration),
-				DurationMillis:  duration.Milliseconds(),
+				ExitCode:  int32(exitCode),
+				StartTime: timestamppb.New(cmdStartTime),
+				Duration:  durationpb.New(duration),
 			}},
 		}
 		if err := ar.reporter.Publish(childCompletedEvent); err != nil {

@@ -63,7 +63,7 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
             <div className="title">{this.props.testSuite.getAttribute("name")}</div>
             <div className="test-subtitle">
               {testCases.length} {testCases.length == 1 ? "test" : "tests"} {this.getStatusTitle()} in{" "}
-              {format.durationMillis(this.props.testResult.buildEvent.testResult.testAttemptDurationMillis)}
+              {format.durationSec(this.props.testResult.buildEvent.testResult.testAttemptDuration.seconds)}
             </div>
             <div className="test-document">
               <div className="test-suite">

@@ -189,14 +189,14 @@ func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	targetComplete := &bespb.TargetComplete{
 		Success:         true,
-		ImportantOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		DirectoryOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
 	}
 
 	redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Completed{Completed: targetComplete},
 	})
 
-	assert.Equal(t, "uri", targetComplete.ImportantOutput[0].GetUri())
+	assert.Equal(t, "uri", targetComplete.DirectoryOutput[0].GetUri())
 }
 
 func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {

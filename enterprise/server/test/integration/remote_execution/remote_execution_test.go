@@ -1367,8 +1367,7 @@ func TestInvocationCancellation(t *testing.T) {
 	err = bep.Publish(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{
 			Started: &bespb.BuildStarted{
-				StartTimeMillis: startTime.UnixMilli(),
-				StartTime:       timestamppb.New(startTime),
+				StartTime: timestamppb.New(startTime),
 			},
 		},
 	})
@@ -1382,9 +1381,8 @@ func TestInvocationCancellation(t *testing.T) {
 	err = bep.Publish(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Finished{
 			Finished: &bespb.BuildFinished{
-				ExitCode:         &bespb.BuildFinished_ExitCode{Name: "INTERRUPTED", Code: build_event_handler.InterruptedExitCode},
-				FinishTimeMillis: finishTime.UnixMilli(),
-				FinishTime:       timestamppb.New(finishTime),
+				ExitCode:   &bespb.BuildFinished_ExitCode{Name: "INTERRUPTED", Code: build_event_handler.InterruptedExitCode},
+				FinishTime: timestamppb.New(finishTime),
 			},
 		},
 	})

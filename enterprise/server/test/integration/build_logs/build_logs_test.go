@@ -100,7 +100,6 @@ func publishStarted(t *testing.T, bep *build_event_publisher.Publisher) {
 	err := bep.Publish(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Started{
 			Started: &bespb.BuildStarted{
-				StartTimeMillis:    startTime.UnixMilli(),
 				StartTime:          timestamppb.New(startTime),
 				OptionsDescription: "--bes_backend=foo",
 			},
@@ -126,9 +125,8 @@ func publishFinished(t *testing.T, bep *build_event_publisher.Publisher) {
 	err := bep.Publish(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_Finished{
 			Finished: &bespb.BuildFinished{
-				ExitCode:         &bespb.BuildFinished_ExitCode{Name: "OK", Code: 0},
-				FinishTimeMillis: finishTime.UnixMilli(),
-				FinishTime:       timestamppb.New(finishTime),
+				ExitCode:   &bespb.BuildFinished_ExitCode{Name: "OK", Code: 0},
+				FinishTime: timestamppb.New(finishTime),
 			},
 		},
 	})

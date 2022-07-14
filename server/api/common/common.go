@@ -91,7 +91,7 @@ func FillActionOutputFilesFromBuildEvent(event *bespb.BuildEvent, action *apipb.
 	switch p := event.Payload.(type) {
 	case *bespb.BuildEvent_Completed:
 		{
-			action.File = filesFromOutput(p.Completed.ImportantOutput)
+			action.File = filesFromOutput(p.Completed.DirectoryOutput)
 			return action
 		}
 	case *bespb.BuildEvent_TestResult:

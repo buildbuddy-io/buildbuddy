@@ -326,7 +326,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 		}
 	case *bespb.BuildEvent_Completed:
 		{
-			p.Completed.ImportantOutput = stripURLSecretsFromFiles(p.Completed.ImportantOutput)
+			p.Completed.DirectoryOutput = stripURLSecretsFromFiles(p.Completed.DirectoryOutput)
 		}
 	case *bespb.BuildEvent_TestResult:
 		{
