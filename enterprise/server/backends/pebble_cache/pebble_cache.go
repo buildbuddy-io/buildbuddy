@@ -1257,11 +1257,11 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 				continue
 			}
 			closer.Close()
+			log.Infof("Evictor %q attempting to delete file: %q", e.part.ID, sample.fileMetadataKey)
 			if err := e.deleteFile(sample); err != nil {
 				log.Errorf("Error evicting file: %s (ignoring)", err)
 				continue
 			}
-			log.Printf("Evictor %q deleted file: %q", e.part.ID, sample.fileMetadataKey)
 			evicted += 1
 			lastEvicted = sample
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
