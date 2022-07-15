@@ -75,8 +75,6 @@ func copyAndClose(wc io.WriteCloser, r io.Reader) error {
 	return wc.Close()
 }
 
-// TODO(Maggie): Add test
-
 func TestReaderMaxOffset(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
@@ -778,4 +776,43 @@ func TestEmptyRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
+}
+
+func TestDelete(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+	waitUntilServerIsAlive(peer)
+
+	remoteInstanceName := "remote/instance"
+	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+
+	// Write to the cache (with a prefix)
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cache.Set(ctx, d, buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.RemoteDelete(ctx, peer, isolation, d)
+	require.NoError(t, err)
+
+	// Ensure it no longer exists
+	exists, err := c.RemoteContains(ctx, peer, isolation, d)
+	require.NoError(t, err)
+	require.False(t, exists)
 }

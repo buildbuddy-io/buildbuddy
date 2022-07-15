@@ -41,6 +41,7 @@ go_test(
         "//server/build_event_protocol/build_event_handler",
         "//server/tables",
         "//server/testutil/testauth",
+        "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",

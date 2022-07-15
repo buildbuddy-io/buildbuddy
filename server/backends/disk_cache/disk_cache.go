@@ -1057,7 +1057,6 @@ func (p *partition) setMulti(ctx context.Context, cacheType interfaces.CacheType
 }
 
 func (p *partition) delete(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) error {
-	fmt.Print("In disk cache")
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return err

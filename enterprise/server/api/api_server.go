@@ -350,10 +350,18 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	var cacheType interfaces.CacheType
 	if parsedURL.Scheme == "actioncache" {
 		parsedResourceName, err = digest.ParseActionCacheResourceName(urlStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err.Error())
+		}
 		cacheType = interfaces.ActionCacheType
-	} else {
+	} else if parsedURL.Scheme == "bytestream" {
 		parsedResourceName, err = digest.ParseDownloadResourceName(urlStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err.Error())
+		}
 		cacheType = interfaces.CASCacheType
+	} else {
+		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and bytestream schemes supported.")
 	}
 
 	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, parsedResourceName.GetInstanceName())
@@ -363,6 +371,10 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 
 	err = cache.Delete(ctx, parsedResourceName.GetDigest())
 	if err != nil {
+		if status.IsNotFoundError(err) {
+			log.Warningf("File not found, could not be deleted: %s", err.Error())
+			return nil, nil
+		}
 		return nil, err
 	}
 
