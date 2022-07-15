@@ -565,7 +565,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", adInstanceDigest.DownloadString(), invocationID)
 		newExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
-			log.CtxErrorf(ctx, "Error dispatching execution %q: %s", executionID, err.Error())
+			log.CtxErrorf(ctx, "Error dispatching execution for %q: %s", adInstanceDigest.DownloadString(), err)
 			return err
 		}
 		executionID = newExecutionID
@@ -607,7 +607,7 @@ func (e *InProgressExecution) processSerializedOpUpdate(ctx context.Context, ser
 
 func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunning.Operation) (done bool, err error) {
 	stage := operation.ExtractStage(op)
-	log.CtxDebugf(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
+	log.CtxInfof(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
 	if stage < e.lastStage {
 		return false, nil
 	}
@@ -651,7 +651,7 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 }
 
 func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
-	log.CtxDebugf(stream.Context(), "WaitExecution called for: %q", req.GetName())
+	log.CtxInfof(stream.Context(), "WaitExecution called for: %q", req.GetName())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
 		return err
@@ -699,6 +699,7 @@ func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream s
 	for {
 		msg, ok := <-streamPubSubChan
 		if !ok {
+			log.CtxInfof(ctx, "WaitExecution %q: exiting early because PubSub channel was closed", req.GetName())
 			return status.UnavailableErrorf("Stream PubSub channel closed for %q", req.GetName())
 		}
 		var data string
