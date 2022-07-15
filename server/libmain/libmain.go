@@ -56,6 +56,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -362,7 +363,7 @@ func StartAndRunServices(env environment.Env) {
 	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
-		sp.PrintSplashScreen(*port, grpc_server.GRPCPort())
+		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), *port, grpc_server.GRPCPort())
 	}
 
 	server := &http.Server{

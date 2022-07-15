@@ -28,6 +28,7 @@ go_library(
         "//server/build_event_protocol/build_event_server",
         "//server/build_event_protocol/webhooks",
         "//server/buildbuddy_server",
+        "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
         "//server/http/filters",
         "//server/http/protolet",

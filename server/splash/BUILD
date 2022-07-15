@@ -5,5 +5,8 @@ go_library(
     srcs = ["splash.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/splash",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/log"],
+    deps = [
+        "//server/util/log",
+        "@com_github_logrusorgru_aurora//:aurora",
+    ],
 )
