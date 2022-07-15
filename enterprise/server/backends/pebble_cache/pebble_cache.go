@@ -1141,8 +1141,6 @@ func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 
 func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evictionPoolEntry, error) {
 	samples := make([]*evictionPoolEntry, 0, k)
-	fileMetadata := &rfpb.FileMetadata{}
-
 	seen := make(map[string]struct{}, len(e.samplePool))
 	for _, entry := range e.samplePool {
 		seen[string(entry.fileMetadataKey)] = struct{}{}
@@ -1156,6 +1154,7 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 		if !valid {
 			continue
 		}
+		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return nil, err
 		}
