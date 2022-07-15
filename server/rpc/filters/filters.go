@@ -213,7 +213,6 @@ func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercepto
 		}
 		if *enableGRPCMetricsByGroupID {
 			if key, err := quota.GetKey(ctx, env); err == nil {
-				log.Info("quota key is %q, key")
 				metrics.RPCsHandledTotalByQuotaKey.WithLabelValues(info.FullMethod, key, strconv.FormatBool(allow)).Inc()
 			}
 		}
