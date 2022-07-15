@@ -25,11 +25,12 @@ import (
 var (
 	cacheTarget = flag.String("cache_target", "localhost:1985", "Cache target to connect to.")
 
-	concurrency  = flag.Int("concurrency", 10, "Number of concurrent workers to use")
-	sizeBytes    = flag.Int64("size_bytes", 1e8, "Size of blob to upload")
-	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
-	randomSeed   = flag.Int64("random_seed", 0, "Random seed.")
-	headers      = flagtypes.Slice("headers", []string{}, "A list of headers to set (format: 'key=val'")
+	concurrency   = flag.Int("concurrency", 10, "Number of concurrent workers to use")
+	sizeBytes     = flag.Int64("size_bytes", 1e8, "Size of blob to upload")
+	instanceName  = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
+	randomSeed    = flag.Int64("random_seed", 0, "Random seed.")
+	headers       = flagtypes.Slice("headers", []string{}, "A list of headers to set (format: 'key=val'")
+	dialPerThread = flag.Bool("dial_per_thread", false, "")
 )
 
 type randomDataMaker struct {
@@ -121,6 +122,14 @@ func main() {
 		i := i
 		eg.Go(func() error {
 			for {
+				bsClient := bsClient
+				if *dialPerThread {
+					conn, err := grpc_client.DialTarget(*cacheTarget)
+					if err != nil {
+						log.Fatalf("Error dialing: %s", err)
+					}
+					bsClient = bspb.NewByteStreamClient(conn)
+				}
 				select {
 				case <-quitChan:
 					return nil
@@ -131,10 +140,9 @@ func main() {
 					return err
 				}
 				mu.Lock()
-
 				dur := time.Since(start)
 				tput := (float64(d.GetSizeBytes()) / 1e6) / float64(dur.Seconds())
-				log.Printf("Thread %d downloaded %d bytes in %s (%f MB/sec)", i, d.GetSizeBytes(), dur, tput)
+				log.Infof("Thread %d downloaded %d bytes in %s (%f MB/sec)", i, d.GetSizeBytes(), dur, tput)
 				mu.Unlock()
 			}
 			return nil
