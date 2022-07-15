@@ -26,8 +26,6 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	gcodes "google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -403,15 +401,17 @@ func (q *PriorityTaskScheduler) handleTask() {
 		ctx, serializedTask, err := taskLease.Claim(ctx)
 		if err != nil {
 			// NotFound means the task is already claimed.
-			if gstatus.Code(err) != gcodes.NotFound {
-				q.log.Warningf("Error leasing task %q: %s", reservation.GetTaskId(), err.Error())
+			if status.IsNotFoundError(err) {
+				q.log.Infof("Could not claim task %q, it was likely claimed by another executor: %s", reservation.GetTaskId(), err)
+			} else {
+				q.log.Warningf("Error leasing task %q: %s", reservation.GetTaskId(), err)
 			}
 			return
 		}
 
 		execTask := &repb.ExecutionTask{}
 		if err := proto.Unmarshal(serializedTask, execTask); err != nil {
-			q.log.Errorf("error unmarshalling task %q: %s", reservation.GetTaskId(), err.Error())
+			q.log.Errorf("error unmarshalling task %q: %s", reservation.GetTaskId(), err)
 			taskLease.Close(nil, false /*=retry*/)
 			return
 		}
