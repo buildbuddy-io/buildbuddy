@@ -715,6 +715,17 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 	return nil
 }
 
+func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delta int64) {
+	fileMetadataKeyCopy := make([]byte, len(fileMetadataKey))
+	copy(fileMetadataKeyCopy, fileMetadataKey)
+	up := &sizeUpdate{
+		partID: partID,
+		key:    fileMetadataKeyCopy,
+		delta:  delta,
+	}
+	p.edits <- up
+}
+
 func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 	iter := p.db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
@@ -729,7 +740,7 @@ func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 		return err
 	}
 	p.clearAtime(fileMetadataKey)
-	p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, -1 * fileMetadata.GetSizeBytes()}
+	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetSizeBytes())
 	return nil
 }
 
@@ -748,7 +759,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 		return err
 	}
 	p.clearAtime(fileMetadataKey)
-	p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, -1 * fileMetadata.GetSizeBytes()}
+	p.sendSizeUpdate(p.isolation.GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetSizeBytes())
 	return disk.DeleteFile(ctx, fp)
 }
 
@@ -855,7 +866,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		err = p.db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		if err == nil {
 			p.updateAtime(fileMetadataKey)
-			p.edits <- &sizeUpdate{p.isolation.GetPartitionId(), fileMetadataKey, bytesWritten}
+			p.sendSizeUpdate(p.isolation.GetPartitionId(), fileMetadataKey, bytesWritten)
 			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
 		}
 		return err
