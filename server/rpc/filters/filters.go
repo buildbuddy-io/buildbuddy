@@ -201,7 +201,7 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
-func recordRequestMetricsUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		allow := true
 		var err error
@@ -221,7 +221,7 @@ func recordRequestMetricsUnaryServerInterceptor(env environment.Env) grpc.UnaryS
 	}
 }
 
-func recordRequestMetricsStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		allow := true
 		var err error
@@ -268,10 +268,10 @@ func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		requestIDUnaryServerInterceptor(),
-		recordRequestMetricsUnaryServerInterceptor(env),
 		logRequestUnaryServerInterceptor(),
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
+		quotaUnaryServerInterceptor(env),
 		roleAuthUnaryServerInterceptor(env),
 		copyHeadersUnaryServerInterceptor(),
 	)
@@ -280,9 +280,9 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
 		requestIDStreamServerInterceptor(),
-		recordRequestMetricsStreamServerInterceptor(env),
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
+		quotaStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env),
 		copyHeadersStreamServerInterceptor(),
 	)
