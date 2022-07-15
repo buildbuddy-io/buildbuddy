@@ -306,7 +306,7 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 		if startFromTail {
 			msgs, err := p.rdb.XRevRangeN(ctx, psChannel.name, "+", "-", 1).Result()
 			if err != nil {
-				log.Errorf("Unable to retrieve last element of stream!!! %q: %s", psChannel.name, err)
+				log.CtxErrorf(ctx, "Unable to retrieve last element of stream!!! %q: %s", psChannel.name, err)
 				msgChan <- &Message{Err: err}
 				return
 			}
@@ -326,14 +326,14 @@ func (p *StreamPubSub) subscribe(ctx context.Context, psChannel *Channel, startF
 			}).Result()
 			if err != nil {
 				if err != context.Canceled {
-					log.Errorf("Error reading from stream %q: %s", psChannel.name, err)
+					log.CtxErrorf(ctx, "Error reading from stream %q: %s", psChannel.name, err)
 					msgChan <- &Message{Err: err}
 				}
 				return
 			}
 			// We are subscribing to a single stream so there should be exactly one response.
 			if len(result) != 1 {
-				log.Errorf("Did not receive exactly one result for channel %q, got %d", psChannel.name, len(result))
+				log.CtxErrorf(ctx, "Did not receive exactly one result for channel %q, got %d", psChannel.name, len(result))
 				return
 			}
 			for _, msg := range result[0].Messages {
