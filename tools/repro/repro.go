@@ -16,7 +16,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sync/errgroup"
+	gcodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	gstatus "google.golang.org/grpc/status"
 
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -25,12 +27,13 @@ import (
 var (
 	cacheTarget = flag.String("cache_target", "localhost:1985", "Cache target to connect to.")
 
-	concurrency   = flag.Int("concurrency", 10, "Number of concurrent workers to use")
-	sizeBytes     = flag.Int64("size_bytes", 1e8, "Size of blob to upload")
-	instanceName  = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
-	randomSeed    = flag.Int64("random_seed", 0, "Random seed.")
-	headers       = flagtypes.Slice("headers", []string{}, "A list of headers to set (format: 'key=val'")
-	dialPerThread = flag.Bool("dial_per_thread", false, "")
+	concurrency    = flag.Int("concurrency", 10, "Number of concurrent workers to use")
+	sizeBytes      = flag.Int64("size_bytes", 1e8, "Size of blob to upload")
+	instanceName   = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
+	randomSeed     = flag.Int64("random_seed", 0, "Random seed.")
+	headers        = flagtypes.Slice("headers", []string{}, "A list of headers to set (format: 'key=val'")
+	dialPerThread  = flag.Bool("dial_per_thread", false, "Whether to create a separate connection per worker")
+	reportInterval = flag.Duration("report_interval", 5*time.Second, "How often to print perf stats.")
 )
 
 type randomDataMaker struct {
@@ -50,6 +53,64 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 			}
 			offset++
 			val >>= 8
+		}
+	}
+}
+
+func streamBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, cb func(n int)) error {
+	req := &bspb.ReadRequest{
+		ResourceName: r.DownloadString(),
+	}
+	stream, err := bsClient.Read(ctx, req)
+	if err != nil {
+		if gstatus.Code(err) == gcodes.NotFound {
+			return digest.MissingDigestError(r.GetDigest())
+		}
+		return err
+	}
+
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		cb(len(rsp.Data))
+	}
+	return nil
+}
+
+type worker struct {
+	mu       sync.Mutex
+	received int
+	total    int
+}
+
+func (w *worker) Start(ctx context.Context, r *digest.ResourceName, quitChan chan struct{}, bsClient bspb.ByteStreamClient) error {
+	for {
+		bsClient := bsClient
+		if *dialPerThread {
+			conn, err := grpc_client.DialTarget(*cacheTarget)
+			if err != nil {
+				log.Fatalf("Error dialing: %s", err)
+			}
+			bsClient = bspb.NewByteStreamClient(conn)
+		}
+		select {
+		case <-quitChan:
+			return nil
+		default:
+		}
+		err := streamBlob(ctx, bsClient, r, func(n int) {
+			w.mu.Lock()
+			w.received += n
+			w.total += n
+			w.mu.Unlock()
+		})
+		if err != nil {
+			return err
 		}
 	}
 }
@@ -115,39 +176,35 @@ func main() {
 		close(quitChan)
 	}()
 
-	mu := sync.Mutex{}
+	var workers []*worker
 	r := digest.NewResourceName(d, *instanceName)
 	eg := errgroup.Group{}
 	for i := 0; i < *concurrency; i++ {
-		i := i
+		worker := &worker{}
+		workers = append(workers, worker)
 		eg.Go(func() error {
-			for {
-				bsClient := bsClient
-				if *dialPerThread {
-					conn, err := grpc_client.DialTarget(*cacheTarget)
-					if err != nil {
-						log.Fatalf("Error dialing: %s", err)
-					}
-					bsClient = bspb.NewByteStreamClient(conn)
-				}
-				select {
-				case <-quitChan:
-					return nil
-				default:
-				}
-				start := time.Now()
-				if err := cachetools.GetBlob(ctx, bsClient, r, io.Discard); err != nil {
-					return err
-				}
-				mu.Lock()
-				dur := time.Since(start)
-				tput := (float64(d.GetSizeBytes()) / 1e6) / float64(dur.Seconds())
-				log.Infof("Thread %d downloaded %d bytes in %s (%f MB/sec)", i, d.GetSizeBytes(), dur, tput)
-				mu.Unlock()
-			}
-			return nil
+			return worker.Start(ctx, r, quitChan, bsClient)
 		})
 	}
+	eg.Go(func() error {
+		for {
+			start := time.Now()
+			time.Sleep(*reportInterval)
+			dur := time.Since(start)
+			tot := 0
+			for i, w := range workers {
+				w.mu.Lock()
+				tot += w.received
+				tput := (float64(w.received) / 1e6) / float64(dur.Seconds())
+				w.received = 0
+				workerTotal := float64(w.total) / 1e6
+				w.mu.Unlock()
+				log.Infof("Worker %d throughput %f MB/sec (total transferred: %f MB)", i, tput, workerTotal)
+			}
+			tput := (float64(tot) / 1e6) / float64(dur.Seconds())
+			log.Infof("Total throughput %f MB/sec)", tput)
+		}
+	})
 	if err := eg.Wait(); err != nil {
 		log.Fatalf("WaitGroup err: %s", err)
 	}
