@@ -2,6 +2,7 @@ package invocation_stat_service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"time"
@@ -22,12 +23,14 @@ import (
 type InvocationStatService struct {
 	env environment.Env
 	h   interfaces.DBHandle
+	ch  interfaces.ClickHouseDBHandle
 }
 
-func NewInvocationStatService(env environment.Env, h interfaces.DBHandle) *InvocationStatService {
+func NewInvocationStatService(env environment.Env, h interfaces.DBHandle, clickhouse interfaces.ClickHouseDBHandle) *InvocationStatService {
 	return &InvocationStatService{
 		env: env,
 		h:   h,
+		ch:  clickhouse,
 	}
 }
 
@@ -53,19 +56,17 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 	}
 }
 
-func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
-	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
-		return nil, err
-	}
-	if blocklist.IsBlockedForStatsQuery(groupID) {
-		return nil, status.ResourceExhaustedErrorf("Too many rows.")
+func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) string {
+	q := ""
+	if i.ch == nil {
+		q = fmt.Sprintf("SELECT %s as name,", i.h.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
+	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
+	} else {
+		q = fmt.Sprintf("SELECT %s as name,", i.ch.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
+	    SUM(duration_usec) as total_build_time_usec,`
 	}
 
-	reqCtx := req.GetRequestContext()
-	q := query_builder.NewQuery(fmt.Sprintf("SELECT %s as name,", i.h.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())) + `
-	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
-	    COUNT(1) as total_num_builds,
+	q = q + `
 	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
 	    COUNT(DISTINCT user) as user_count,
 	    COUNT(DISTINCT commit_sha) as commit_count,
@@ -82,8 +83,23 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	    SUM(total_download_size_bytes) as total_download_size_bytes,
 	    SUM(total_upload_size_bytes) as total_upload_size_bytes,
 	    SUM(total_download_usec) as total_download_usec,
-            SUM(total_upload_usec) as total_upload_usec
-            FROM Invocations`)
+        SUM(total_upload_usec) as total_upload_usec
+        FROM Invocations`
+	return q
+}
+
+func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
+		return nil, err
+	}
+	if blocklist.IsBlockedForStatsQuery(groupID) {
+		return nil, status.ResourceExhaustedErrorf("Too many rows.")
+	}
+
+	reqCtx := req.GetRequestContext()
+
+	q := query_builder.NewQuery(i.GetTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
 
 	if user := req.GetQuery().GetUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
@@ -143,7 +159,13 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	q.SetGroupBy("name")
 
 	qStr, qArgs := q.Build()
-	rows, err := i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	var rows *sql.Rows
+	var err error
+	if i.ch == nil {
+		rows, err = i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	} else {
+		rows, err = i.ch.DB(ctx).Raw(qStr, qArgs...).Rows()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +176,14 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	for rows.Next() {
 		stat := &inpb.TrendStat{}
-		if err := i.h.DB(ctx).ScanRows(rows, &stat); err != nil {
-			return nil, err
+		if i.ch == nil {
+			if err := i.h.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := i.ch.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
 		}
 		rsp.TrendStat = append(rsp.TrendStat, stat)
 	}
@@ -165,6 +193,27 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		return rsp.TrendStat[i].Name < rsp.TrendStat[j].Name
 	})
 	return rsp, nil
+}
+
+func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) string {
+	q := fmt.Sprintf("SELECT %s as name,", aggColumn)
+	if i.ch == nil {
+		q = q + `
+	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
+	} else {
+		q = q + `
+	    SUM(duration_usec) as total_build_time_usec,`
+	}
+	q = q + `
+	    MAX(updated_at_usec) as latest_build_time_usec,
+	    MAX(CASE WHEN (success AND invocation_status = 1) THEN updated_at_usec END) as last_green_build_usec,
+	    MAX(CASE WHEN (success != true AND invocation_status = 1) THEN updated_at_usec END) as last_red_build_usec,
+	    COUNT(1) as total_num_builds,
+	    COUNT(CASE WHEN (success AND invocation_status = 1) THEN 1 END) as total_num_sucessful_builds,
+	    COUNT(CASE WHEN (success != true AND invocation_status = 1) THEN 1 END) as total_num_failing_builds,
+	    SUM(action_count) as total_actions
+            FROM Invocations`
+	return q
 }
 
 func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error) {
@@ -189,19 +238,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	aggColumn := i.getAggColumn(req.GetRequestContext(), req.AggregationType)
-	q := query_builder.NewQuery(fmt.Sprintf("SELECT %s as name,", aggColumn) + `
-	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
-	    MAX(updated_at_usec) as latest_build_time_usec,
-	    MAX(CASE WHEN (success AND invocation_status = 1) THEN updated_at_usec END) as last_green_build_usec,
-	    MAX(CASE WHEN (success != true AND invocation_status = 1) THEN updated_at_usec END) as last_red_build_usec,
-	    COUNT(1) as total_num_builds,
-	    COUNT(CASE WHEN (success AND invocation_status = 1) THEN 1 END) as total_num_sucessful_builds,
-	    COUNT(CASE WHEN (success != true AND invocation_status = 1) THEN 1 END) as total_num_failing_builds,
-	    SUM(action_count) as total_actions
-            FROM Invocations`)
+	q := query_builder.NewQuery(i.GetInvocationStatBaseQuery(aggColumn))
 
 	if req.AggregationType != inpb.AggType_DATE_AGGREGATION_TYPE {
-		q.AddWhereClause(`? != ""`, aggColumn)
+		q.AddWhereClause(`? != ''`, aggColumn)
 	}
 
 	if user := req.GetQuery().GetUser(); user != "" {
@@ -252,7 +292,13 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	q.SetLimit(int64(limit))
 
 	qStr, qArgs := q.Build()
-	rows, err := i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
+	var rows *sql.Rows
+	var err error
+	if i.ch == nil {
+		rows, err = i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
+	} else {
+		rows, err = i.ch.DB(ctx).Raw(qStr, qArgs...).Rows()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -263,8 +309,14 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	for rows.Next() {
 		stat := &inpb.InvocationStat{}
-		if err := i.h.DB(ctx).ScanRows(rows, &stat); err != nil {
-			return nil, err
+		if i.ch == nil {
+			if err := i.h.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := i.ch.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
 		}
 		rsp.InvocationStat = append(rsp.InvocationStat, stat)
 	}

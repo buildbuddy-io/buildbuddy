@@ -272,6 +272,11 @@ type DBHandle interface {
 	IsDeadlockError(err error) bool
 }
 
+type ClickHouseDBHandle interface {
+	DB(ctx context.Context) *gorm.DB
+	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
+}
+
 type InvocationDB interface {
 	// Invocations API
 	CreateInvocation(ctx context.Context, in *tables.Invocation) (bool, error)
