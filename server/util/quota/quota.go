@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 )
@@ -14,7 +13,7 @@ func getGroupID(ctx context.Context, env environment.Env) string {
 	if a := env.GetAuthenticator(); a != nil {
 		user, err := a.AuthenticatedUser(ctx)
 		if err != nil {
-			return interfaces.AuthAnonymousUser
+			return ""
 		}
 		return user.GetGroupID()
 	}
