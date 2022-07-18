@@ -423,6 +423,18 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 			Complete:      false,
 		}, nil
 	}
+	if rn.GetCompressor() != repb.Compressor_IDENTITY {
+		// When the upload is compressed, we don't know what value to return,
+		// since the committed size depends on how the client compressed the
+		// contents. So return 0 here and let it retry the upload.
+		// TODO(bduffany): For Bazel versions 5.1 and later, we can return
+		// {CommittedSize: -1, Complete: true}.
+		// See https://github.com/bazelbuild/bazel/issues/14654 for context.
+		return &bspb.QueryWriteStatusResponse{
+			CommittedSize: 0,
+			Complete:      false,
+		}, nil
+	}
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
