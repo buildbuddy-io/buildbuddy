@@ -284,6 +284,9 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 func (w *writeState) Write(buf []byte) error {
 	n, err := w.writer.Write(buf)
 	w.offset += int64(n)
+	if err == nil && n < len(buf) {
+		return status.InternalErrorf("wrote %d bytes but expected %d", n, len(buf))
+	}
 	return err
 }
 
