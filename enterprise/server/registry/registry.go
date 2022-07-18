@@ -277,6 +277,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 	rc, err := c.Reader(ctx, rn.GetDigest(), opts.Offset, opts.Limit)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
+		return
 	}
 	defer rc.Close()
 
