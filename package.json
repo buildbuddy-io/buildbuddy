@@ -7,7 +7,7 @@
     "clean": "bazel clean && rm -rf node_modules"
   },
   "devDependencies": {
-    "@bazel/bazelisk": "^1.6.1",
+    "@bazel/bazelisk": "^1.12.0",
     "@bazel/buildifier": "^3.4.0",
     "@bazel/esbuild": "^5.4.0",
     "@bazel/ibazel": "^0.13.2",
