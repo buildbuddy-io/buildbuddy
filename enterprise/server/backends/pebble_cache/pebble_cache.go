@@ -1222,8 +1222,6 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 		parentDir := filepath.Dir(fp)
 		if err := deleteDirIfEmptyAndOld(parentDir); err != nil {
 			log.Debugf("Error deleting dir: %s: %s", parentDir, err)
-		} else {
-			log.Printf("Deleted dir: %s", parentDir)
 		}
 	case md.GetInlineMetadata() != nil:
 		break
