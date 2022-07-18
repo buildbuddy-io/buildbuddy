@@ -571,7 +571,6 @@ func TestMigrationFromDiskV2(t *testing.T) {
 }
 
 func TestStartupScan(t *testing.T) {
-	t.Skip()
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)

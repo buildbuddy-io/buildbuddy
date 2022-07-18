@@ -1464,7 +1464,5 @@ func (p *PebbleCache) Stop() error {
 		return err
 	}
 
-	// TODO(tylerw) re-enable this once shutdown race is debugged.
 	return p.db.Close()
-	//return nil
 }
