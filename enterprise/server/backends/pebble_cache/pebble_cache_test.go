@@ -710,14 +710,15 @@ func TestDeleteOrphans(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
+	// Check that all of the deleted digests are not in the cache.
 	for _, dt := range deletedDigests {
-		// we don't know if this is an action cache or cas digest, so check both
 		if c, err := pc2.WithIsolation(ctx, dt.cacheType, "remoteInstanceName"); err == nil {
 			_, err := c.Get(ctx, dt.digest)
 			require.True(t, status.IsNotFoundError(err))
 		}
 	}
 
+	// Check that all of the non-deleted items are still fetchable.
 	for _, dt := range digests {
 		c, err := pc2.WithIsolation(ctx, dt.cacheType, "remoteInstanceName")
 		require.Nil(t, err)
