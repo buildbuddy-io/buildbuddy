@@ -5,7 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
+	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -617,6 +621,53 @@ func TestStartupScan(t *testing.T) {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
 	}
+}
+
+func TestDeleteEmptyDirs(t *testing.T) {
+	flags.Set(t, "cache.pebble.max_inline_file_size_bytes", 0)
+	flags.Set(t, "cache.pebble.dir_deletion_delay", time.Nanosecond)
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	digests := make(map[string]*repb.Digest, 0)
+	for i := 0; i < 1000; i++ {
+		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, "remoteInstanceName")
+		require.Nil(t, err)
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		err = c.Set(ctx, d, buf)
+		require.Nil(t, err)
+		digests[d.GetHash()] = d
+	}
+	for _, d := range digests {
+		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, "remoteInstanceName")
+		require.Nil(t, err)
+		err = c.Delete(ctx, d)
+		require.Nil(t, err)
+	}
+
+	log.Printf("Wrote and deleted %d digests", len(digests))
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
+
+	err = filepath.Walk(rootDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() && regexp.MustCompile(`^([a-f0-9]{4})$`).MatchString(info.Name()) {
+			t.Fatalf("Subdir %q should have been deleted", path)
+		}
+		return nil
+	})
+	require.Nil(t, err)
 }
 
 func BenchmarkGetMulti(b *testing.B) {

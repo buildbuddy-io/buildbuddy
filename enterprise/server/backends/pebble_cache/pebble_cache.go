@@ -52,6 +52,7 @@ var (
 	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
 	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
 	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.disk.enable_live_updates", "cache.pebble.mirror_active_disk_cache")
+	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
 )
 
 const (
@@ -760,7 +761,14 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 	}
 	p.clearAtime(fileMetadataKey)
 	p.sendSizeUpdate(p.isolation.GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetSizeBytes())
-	return disk.DeleteFile(ctx, fp)
+	if err := disk.DeleteFile(ctx, fp); err != nil {
+		return err
+	}
+	parentDir := filepath.Dir(fp)
+	if err := deleteDirIfEmptyAndOld(parentDir); err != nil {
+		log.Debugf("Error deleting dir: %s: %s", parentDir, err)
+	}
+	return nil
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
@@ -1204,7 +1212,8 @@ func deleteDirIfEmptyAndOld(dir string) error {
 		return err
 	}
 
-	if len(files) != 0 || time.Since(di.ModTime()) < time.Hour {
+	if len(files) != 0 || time.Since(di.ModTime()) < *dirDeletionDelay {
+		log.Printf("num files: %d, age: %s", len(files), time.Since(di.ModTime()))
 		// dir was not empty or was too young
 		return nil
 	}
