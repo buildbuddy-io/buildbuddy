@@ -57,6 +57,7 @@ var (
 		"GetTrend",
 		// Per-invocation actions
 		"UpdateInvocation",
+		"CancelInvocation",
 		"DeleteInvocation",
 		"ExecuteWorkflow",
 		// Setup
