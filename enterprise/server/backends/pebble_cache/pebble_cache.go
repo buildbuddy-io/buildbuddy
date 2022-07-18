@@ -1194,6 +1194,18 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 	return samples, nil
 }
 
+func deleteDirIfEmptyAndOld(dir string) error {
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 0 {
+		return status.FailedPreconditionError("dir not empty")
+	}
+	di, err := os.Stat(dir)
+	if err != nil || time.Since(di.ModTime()) < time.Hour {
+		return status.FailedPreconditionError("dir not old")
+	}
+	return os.Remove(dir)
+}
+
 func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 	if err := e.writer.Delete(sample.fileMetadataKey, &pebble.WriteOptions{Sync: true}); err != nil {
 		return err
@@ -1206,6 +1218,12 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 		fp := filestore.FilePath(e.blobDir, md.GetFileMetadata())
 		if err := disk.DeleteFile(context.TODO(), fp); err != nil {
 			return err
+		}
+		parentDir := filepath.Dir(fp)
+		if err := deleteDirIfEmptyAndOld(parentDir); err != nil {
+			log.Debugf("Error deleting dir: %s: %s", parentDir, err)
+		} else {
+			log.Printf("Deleted dir: %s", parentDir)
 		}
 	case md.GetInlineMetadata() != nil:
 		break
