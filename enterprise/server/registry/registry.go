@@ -52,16 +52,16 @@ var (
 	imageConverterBackend = flag.String("registry.image_converter_backend", "", "gRPC endpoint of the image converter service")
 )
 
-func (r *registry) convertImage(ctx context.Context, remoteDesc *remote.Descriptor, credentials *rgpb.Credentials) (*rgpb.Manifest, error) {
+func (r *registry) convertImage(ctx context.Context, targetImageRef ctrname.Digest, credentials *rgpb.Credentials) (*rgpb.Manifest, error) {
 	rsp, err := r.imageConverterClient.ConvertImage(ctx, &rgpb.ConvertImageRequest{
-		Image:       remoteDesc.Ref.String(),
+		Image:       targetImageRef.String(),
 		Credentials: credentials,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.writeManifest(ctx, remoteDesc.Digest, rsp.GetManifest()); err != nil {
+	if err := r.writeManifest(ctx, targetImageRef.DigestStr(), rsp.GetManifest()); err != nil {
 		return nil, status.UnknownErrorf("could not write converted manifest: %s", err)
 	}
 
@@ -72,14 +72,14 @@ func blobKey(digest string) string {
 	return "estargz-manifest-" + digest
 }
 
-func (r *registry) writeManifest(ctx context.Context, oldDigest v1.Hash, newManifest *rgpb.Manifest) error {
+func (r *registry) writeManifest(ctx context.Context, oldDigest string, newManifest *rgpb.Manifest) error {
 	newDigest := newManifest.GetDigest()
 
 	mfProtoBytes, err := proto.Marshal(newManifest)
 	if err != nil {
 		return status.UnknownErrorf("could not marshal proto for manifest: %s", err)
 	}
-	if _, err := r.manifestStore.WriteBlob(ctx, blobKey(oldDigest.String()), mfProtoBytes); err != nil {
+	if _, err := r.manifestStore.WriteBlob(ctx, blobKey(oldDigest), mfProtoBytes); err != nil {
 		return status.UnknownErrorf("could not write manifest: %s", err)
 	}
 	if _, err := r.manifestStore.WriteBlob(ctx, blobKey(newDigest), mfProtoBytes); err != nil {
@@ -300,7 +300,7 @@ type registry struct {
 
 // checkAccess whether the supplied credentials are sufficient to retrieve
 // the provided img.
-func (r *registry) checkAccess(ctx context.Context, imgRef ctrname.Reference, img v1.Image, authenticator authn.Authenticator) error {
+func (r *registry) checkAccess(ctx context.Context, imgRepo ctrname.Repository, img v1.Image, authenticator authn.Authenticator) error {
 	// Check if we have access to all the layers.
 	layers, err := img.Layers()
 	if err != nil {
@@ -318,7 +318,7 @@ func (r *registry) checkAccess(ctx context.Context, imgRef ctrname.Reference, im
 			if err != nil {
 				return err
 			}
-			layerRef := imgRef.Context().Digest(d.String())
+			layerRef := imgRepo.Digest(d.String())
 			l, err := remote.Layer(layerRef, remoteOpts...)
 			if err != nil {
 				return err
@@ -403,28 +403,34 @@ func (r *registry) GetOptimizedImage(ctx context.Context, req *rgpb.GetOptimized
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	remoteImg, err := r.targetImageFromDescriptor(remoteDesc, req.GetPlatform())
+	targetImg, err := r.targetImageFromDescriptor(remoteDesc, req.GetPlatform())
 	if err != nil {
 		return nil, err
 	}
 
 	// Check whether the supplied credentials are sufficient to access the
 	// remote image.
-	if err := r.checkAccess(ctx, imageRef, remoteImg, authenticator); err != nil {
+	if err := r.checkAccess(ctx, imageRef.Context(), targetImg, authenticator); err != nil {
 		return nil, err
 	}
+
+	targetImgDigest, err := targetImg.Digest()
+	if err != nil {
+		return nil, err
+	}
+	targetImgRef := imageRef.Context().Digest(targetImgDigest.String())
 
 	// If we got here then it means the credentials are valid for the remote
 	// repo. Now we can return the optimized image ref to the client.
 
-	manifest, err := r.getCachedManifest(ctx, remoteDesc.Digest.String())
+	manifest, err := r.getCachedManifest(ctx, targetImgDigest.String())
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not check for cached manifest %s: %s", imageRef, err)
 	}
 	if manifest != nil {
 		log.CtxInfof(ctx, "Using cached manifest information")
 	} else {
-		convertedManifest, err := r.convertImage(ctx, remoteDesc, req.GetImageCredentials())
+		convertedManifest, err := r.convertImage(ctx, targetImgRef, req.GetImageCredentials())
 		if err != nil {
 			return nil, status.UnknownErrorf("could not convert image: %s", err)
 		}
