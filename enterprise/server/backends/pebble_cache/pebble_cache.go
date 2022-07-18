@@ -1196,13 +1196,19 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 
 func deleteDirIfEmptyAndOld(dir string) error {
 	files, err := os.ReadDir(dir)
-	if err != nil || len(files) != 0 {
-		return status.FailedPreconditionError("dir not empty")
+	if err != nil {
+		return err
 	}
 	di, err := os.Stat(dir)
-	if err != nil || time.Since(di.ModTime()) < time.Hour {
-		return status.FailedPreconditionError("dir not old")
+	if err != nil {
+		return err
 	}
+
+	if len(files) != 0 || time.Since(di.ModTime()) < time.Hour {
+		// dir was not empty or was too young
+		return nil
+	}
+
 	return os.Remove(dir)
 }
 
