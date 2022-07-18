@@ -1313,7 +1313,6 @@ func deleteDirIfEmptyAndOld(dir string) error {
 	}
 
 	if len(files) != 0 || time.Since(di.ModTime()) < *dirDeletionDelay {
-		log.Printf("num files: %d, age: %s", len(files), time.Since(di.ModTime()))
 		// dir was not empty or was too young
 		return nil
 	}
