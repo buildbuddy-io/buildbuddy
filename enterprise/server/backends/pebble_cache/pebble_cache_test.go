@@ -632,7 +632,7 @@ type digestAndType struct {
 }
 
 func TestDeleteOrphans(t *testing.T) {
-	flags.Set(t, "cache.disk.orphan_delete_dry_run", false)
+	flags.Set(t, "cache.pebble.orphan_delete_dry_run", false)
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
