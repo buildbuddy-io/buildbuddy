@@ -5,11 +5,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -21,8 +24,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -566,7 +574,6 @@ func TestMigrationFromDiskV2(t *testing.T) {
 }
 
 func TestStartupScan(t *testing.T) {
-	t.Skip()
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -617,6 +624,127 @@ func TestStartupScan(t *testing.T) {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
 	}
+}
+
+type digestAndType struct {
+	cacheType interfaces.CacheType
+	digest    *repb.Digest
+}
+
+func TestDeleteOrphans(t *testing.T) {
+	flags.Set(t, "cache.pebble.orphan_delete_dry_run", false)
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	digests := make(map[string]*digestAndType, 0)
+	for i := 0; i < 1000; i++ {
+		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, "remoteInstanceName")
+		require.Nil(t, err)
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		err = c.Set(ctx, d, buf)
+		require.Nil(t, err)
+		digests[d.GetHash()] = &digestAndType{interfaces.CASCacheType, d}
+	}
+	for i := 0; i < 1000; i++ {
+		c, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
+		require.Nil(t, err)
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		err = c.Set(ctx, d, buf)
+		require.Nil(t, err)
+		digests[d.GetHash()] = &digestAndType{interfaces.ActionCacheType, d}
+	}
+
+	log.Printf("Wrote %d digests", len(digests))
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
+
+	// Now open the pebble database directly and delete some entries.
+	// When we next start up the pebble cache, we'll expect it to
+	// delete the files for the records we manually deleted from the db.
+	db, err := pebble.Open(rootDir, &pebble.Options{})
+	require.Nil(t, err)
+	deletedDigests := make(map[string]*digestAndType, 0)
+
+	iter := db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte{constants.MinByte},
+		UpperBound: []byte{constants.MaxByte},
+	})
+	iter.SeekLT([]byte{constants.MinByte})
+
+	for iter.Next() {
+		if rand.Intn(2) == 0 {
+			continue
+		}
+		err := db.Delete(iter.Key(), &pebble.WriteOptions{Sync: false})
+		require.Nil(t, err)
+
+		fileMetadata := &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+			require.Nil(t, err)
+		}
+		require.Nil(t, err)
+		fr := fileMetadata.GetFileRecord()
+		ct := interfaces.CASCacheType
+		if fr.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
+			ct = interfaces.ActionCacheType
+		}
+		deletedDigests[fr.GetDigest().GetHash()] = &digestAndType{ct, fr.GetDigest()}
+		delete(digests, fileMetadata.GetFileRecord().GetDigest().GetHash())
+	}
+
+	err = iter.Close()
+	require.Nil(t, err)
+	err = db.Close()
+	require.Nil(t, err)
+
+	pc2, err := pebble_cache.NewPebbleCache(te, options)
+	require.Nil(t, err, err)
+	pc2.Start()
+	for !pc2.DoneScanning() {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Check that all of the deleted digests are not in the cache.
+	for _, dt := range deletedDigests {
+		if c, err := pc2.WithIsolation(ctx, dt.cacheType, "remoteInstanceName"); err == nil {
+			_, err := c.Get(ctx, dt.digest)
+			require.True(t, status.IsNotFoundError(err))
+		}
+	}
+
+	// Check that the underlying files have been deleted.
+	err = filepath.Walk(rootDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			if _, ok := deletedDigests[info.Name()]; ok {
+				t.Fatalf("%q file should have been deleted but was found on disk", filepath.Join(path, info.Name()))
+			}
+		}
+		return nil
+	})
+	require.Nil(t, err)
+
+	// Check that all of the non-deleted items are still fetchable.
+	for _, dt := range digests {
+		c, err := pc2.WithIsolation(ctx, dt.cacheType, "remoteInstanceName")
+		require.Nil(t, err)
+
+		_, err = c.Get(ctx, dt.digest)
+		require.Nil(t, err)
+	}
+
+	pc2.Stop()
 }
 
 func BenchmarkGetMulti(b *testing.B) {

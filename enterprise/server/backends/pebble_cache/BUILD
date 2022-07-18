@@ -16,6 +16,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
+        "//server/util/alert",
         "//server/util/disk",
         "//server/util/flagutil/types",
         "//server/util/log",
@@ -36,6 +37,8 @@ go_test(
     shard_count = 8,
     deps = [
         ":pebble_cache",
+        "//enterprise/server/raft/constants",
+        "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/environment",
@@ -48,6 +51,10 @@ go_test(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/prefix",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
     ],
 )
