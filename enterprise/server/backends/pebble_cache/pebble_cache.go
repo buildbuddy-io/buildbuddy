@@ -378,7 +378,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) {
 					if err != nil {
 						return err
 					}
-					log.Printf("Would delete orphaned file: %s (last modified: %s) which is not in cache", path, fi.ModTime())
+					log.Infof("Would delete orphaned file: %s (last modified: %s) which is not in cache", path, fi.ModTime())
 				} else {
 					if err := os.Remove(path); err == nil {
 						log.Infof("Removed orphaned file: %q", path)
