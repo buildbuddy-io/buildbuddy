@@ -142,6 +142,15 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	return &inpb.DeleteInvocationResponse{}, nil
 }
 
+func (s *BuildBuddyServer) CancelInvocation(ctx context.Context, req *inpb.CancelInvocationRequest) (*inpb.CancelInvocationResponse, error) {
+	res := s.env.GetRemoteExecutionService()
+	if err := res.Cancel(ctx, req.InvocationId); err != nil {
+		return nil, err
+	}
+
+	return &inpb.CancelInvocationResponse{}, nil
+}
+
 func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 	r := make([]*grpb.Group, 0)
 	for _, gr := range groupRoles {

@@ -492,6 +492,10 @@ export default class InvocationModel {
     return this.invocations[0]?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
   }
 
+  isInProgress() {
+    return this.invocations[0]?.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
+  }
+
   getFaviconType() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
     if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
