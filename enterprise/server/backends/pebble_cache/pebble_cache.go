@@ -54,6 +54,7 @@ var (
 	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
 	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
 	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.disk.enable_live_updates", "cache.pebble.mirror_active_disk_cache")
+	orphanDeleteDryRun        = flag.Bool("cache.disk.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
 )
 
 const (
@@ -341,7 +342,6 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) {
 	defer iter.Close()
 
 	orphanCount := 0
-	fileMetadata := &rfpb.FileMetadata{}
 	for _, part := range p.opts.Partitions {
 		blobDir := p.partitionBlobDir(part.ID)
 		walkFn := func(path string, d fs.DirEntry, err error) error {
@@ -372,11 +372,23 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) {
 			// Remove the second to last element which is the 4-char hash prefix.
 			parts = append(parts[:prefixIndex], parts[prefixIndex+1:]...)
 			fileMetadataKey := []byte(strings.Join(parts, sep))
-			if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
-				if err := os.Remove(path); err == nil {
-					log.Infof("Removed orphaned file: %q", path)
-					orphanCount += 1
+			if _, err := lookupFileMetadata(iter, fileMetadataKey); status.IsNotFoundError(err) {
+				if *orphanDeleteDryRun {
+					fi, err := d.Info()
+					if err != nil {
+						return err
+					}
+					log.Printf("Would delete orphaned file: %s (last modified: %s) which is not in cache", path, fi.ModTime())
+				} else {
+					if err := os.Remove(path); err == nil {
+						log.Infof("Removed orphaned file: %q", path)
+					}
 				}
+				orphanCount += 1
+			}
+
+			if orphanCount%1000 == 0 {
+				log.Infof("Removed %d orphans", orphanCount)
 			}
 			return nil
 		}
