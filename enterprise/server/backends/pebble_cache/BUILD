@@ -52,6 +52,7 @@ go_test(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",

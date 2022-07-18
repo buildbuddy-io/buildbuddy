@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -629,6 +632,7 @@ type digestAndType struct {
 }
 
 func TestDeleteOrphans(t *testing.T) {
+	flags.Set(t, "cache.disk.orphan_delete_dry_run", false)
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -716,6 +720,20 @@ func TestDeleteOrphans(t *testing.T) {
 			require.True(t, status.IsNotFoundError(err))
 		}
 	}
+
+	// Check that the underlying files have been deleted.
+	err = filepath.Walk(rootDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			if _, ok := deletedDigests[info.Name()]; ok {
+				t.Fatalf("%q file should have been deleted but was found on disk", filepath.Join(path, info.Name()))
+			}
+		}
+		return nil
+	})
+	require.Nil(t, err)
 
 	// Check that all of the non-deleted items are still fetchable.
 	for _, dt := range digests {
