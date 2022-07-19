@@ -1358,7 +1358,6 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 	if *usePebbleAtimeOnly {
 		if s.fileMetadata.GetLastAccessUsec() == 0 {
-			log.Warningf("file had no atime set, setting now()")
 			sendAtimeUpdate(e.accesses, s.fileMetadataKey)
 			return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
 		}
@@ -1488,21 +1487,24 @@ func (e *partitionEvictor) resampleK(k int) error {
 			return err
 		}
 		additions = append(additions, entries...)
+
 	}
 
+	filtered := e.samplePool[:0]
 	// refresh all the entries already in the pool.
-	for i, sample := range e.samplePool {
+	for _, sample := range e.samplePool {
 		fm, err := readFileMetadata(e.reader, sample.fileMetadataKey)
 		if err != nil {
-			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
+			continue
 		}
 		sample.fileMetadata = fm
 		if err := e.refreshAtime(sample); err != nil {
-			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
+			continue
 		}
+		filtered = append(filtered, sample)
 	}
 
-	e.samplePool = append(e.samplePool, additions...)
+	e.samplePool = append(filtered, additions...)
 
 	if len(e.samplePool) > 0 {
 		sort.Slice(e.samplePool, func(i, j int) bool {
