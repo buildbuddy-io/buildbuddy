@@ -324,8 +324,8 @@ func targetCompletedEvent(label string) *anypb.Any {
 		},
 		Payload: &build_event_stream.BuildEvent_Completed{
 			Completed: &build_event_stream.TargetComplete{
-				ImportantOutput: []*build_event_stream.File{
-					&build_event_stream.File{
+				DirectoryOutput: []*build_event_stream.File{
+					{
 						Name: "my-output.txt",
 						File: &build_event_stream.File_Uri{
 							Uri: "bytestream://localhost:8080/buildbuddy-io/buildbuddy/ci/blobs/5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b/152092",

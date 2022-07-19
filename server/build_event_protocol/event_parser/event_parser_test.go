@@ -43,7 +43,6 @@ func TestFillInvocation(t *testing.T) {
 
 	startTime := time.Now()
 	buildStarted := &build_event_stream.BuildStarted{
-		StartTimeMillis:    startTime.UnixMilli(),
 		StartTime:          timestamppb.New(startTime),
 		Command:            "test",
 		OptionsDescription: "foo",
@@ -142,7 +141,7 @@ func TestFillInvocation(t *testing.T) {
 
 	targetComplete := &build_event_stream.TargetComplete{
 		Success:         true,
-		ImportantOutput: singleFiles(),
+		DirectoryOutput: singleFiles(),
 	}
 	events = append(events, &inpb.InvocationEvent{
 		BuildEvent: &build_event_stream.BuildEvent{
@@ -172,8 +171,7 @@ func TestFillInvocation(t *testing.T) {
 
 	finishTime := startTime.Add(time.Millisecond)
 	buildFinished := &build_event_stream.BuildFinished{
-		FinishTimeMillis: finishTime.UnixMilli(),
-		FinishTime:       timestamppb.New(finishTime),
+		FinishTime: timestamppb.New(finishTime),
 		ExitCode: &build_event_stream.BuildFinished_ExitCode{
 			Name: "Success",
 			Code: 0,
@@ -229,8 +227,8 @@ func TestFillInvocation(t *testing.T) {
 	assert.Equal(t, 1, len(invocation.Event[7].BuildEvent.GetNamedSetOfFiles().Files))
 	assert.Equal(t, "uri", invocation.Event[7].BuildEvent.GetNamedSetOfFiles().Files[0].GetUri())
 
-	assert.Equal(t, 1, len(invocation.Event[8].BuildEvent.GetCompleted().ImportantOutput))
-	assert.Equal(t, "uri", invocation.Event[8].BuildEvent.GetCompleted().ImportantOutput[0].GetUri())
+	assert.Equal(t, 1, len(invocation.Event[8].BuildEvent.GetCompleted().DirectoryOutput))
+	assert.Equal(t, "uri", invocation.Event[8].BuildEvent.GetCompleted().DirectoryOutput[0].GetUri())
 
 	assert.Equal(t, 1, len(invocation.Event[9].BuildEvent.GetTestResult().TestActionOutput))
 	assert.Equal(t, "uri", invocation.Event[9].BuildEvent.GetTestResult().TestActionOutput[0].GetUri())

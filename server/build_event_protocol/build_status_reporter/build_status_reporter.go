@@ -209,7 +209,7 @@ func (r *BuildStatusReporter) githubPayloadFromFinishedEvent(event *build_event_
 	if !startTime.IsZero() && endTime.After(startTime) {
 		description = fmt.Sprintf("%s in %s", description, timeutil.ShortFormatDuration(endTime.Sub(startTime)))
 	}
-	if finished.OverallSuccess {
+	if finished.ExitCode.Code == 0 {
 		return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), description, github.SuccessState)
 	}
 
