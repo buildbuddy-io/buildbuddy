@@ -298,7 +298,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.atimes)
+			pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.atimes, pc.accesses)
 			if err != nil {
 				return err
 			}
@@ -667,7 +667,7 @@ func (p *PebbleCache) blobDir() string {
 }
 
 func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
-	p.sendAtimeUpdate(fileMetadataKey)
+	sendAtimeUpdate(p.accesses, fileMetadataKey)
 	nowNanos := time.Now().UnixNano()
 
 	fmkHash := xxhash.Sum64(fileMetadataKey)
@@ -886,16 +886,19 @@ func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delt
 	p.edits <- up
 }
 
-func (p *PebbleCache) sendAtimeUpdate(fileMetadataKey []byte) {
+func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte) {
 	fileMetadataKeyCopy := make([]byte, len(fileMetadataKey))
 	copy(fileMetadataKeyCopy, fileMetadataKey)
 	up := &accessTimeUpdate{fileMetadataKeyCopy}
 
+	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
+	// so in that case just do a regular channel send. Otherwise; use a non-
+	// blocking channel send.
 	if *atimeBufferSize == 0 {
-		p.accesses <- up
+		accesses <- up
 	} else {
 		select {
-		case p.accesses <- up:
+		case accesses <- up:
 			return
 		default:
 			log.Warningf("Dropping atime update for %q", fileMetadataKey)
@@ -1105,12 +1108,13 @@ type evictionPoolEntry struct {
 }
 
 type partitionEvictor struct {
-	mu      *sync.Mutex
-	part    disk.Partition
-	blobDir string
-	reader  pebble.Reader
-	writer  pebble.Writer
-	atimes  *sync.Map
+	mu       *sync.Mutex
+	part     disk.Partition
+	blobDir  string
+	reader   pebble.Reader
+	writer   pebble.Writer
+	atimes   *sync.Map
+	accesses chan<- *accessTimeUpdate
 
 	casPrefix   []byte
 	acPrefix    []byte
@@ -1122,7 +1126,7 @@ type partitionEvictor struct {
 	lastEvicted *evictionPoolEntry
 }
 
-func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, atimes *sync.Map) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, atimes *sync.Map, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:         &sync.Mutex{},
 		part:       part,
@@ -1133,6 +1137,7 @@ func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, ati
 		reader:     db,
 		writer:     db,
 		atimes:     atimes,
+		accesses:   accesses,
 	}
 	start := time.Now()
 	log.Printf("Pebble Cache: Initializing cache partition %q...", part.ID)
@@ -1330,7 +1335,8 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 	if *usePebbleAtimeOnly {
 		if s.fileMetadata.GetLastAccessUsec() == 0 {
-			log.Warningf("file had no atime set")
+			log.Warningf("file had no atime set, setting now()")
+			sendAtimeUpdate(e.accesses, s.fileMetadataKey)
 			return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
 		}
 		s.timestamp = time.UnixMicro(s.fileMetadata.GetLastAccessUsec()).UnixNano()
