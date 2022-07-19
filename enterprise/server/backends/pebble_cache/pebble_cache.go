@@ -346,6 +346,7 @@ func batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *r
 
 func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 	batch := p.db.NewBatch()
+	var lastWrite time.Time
 
 	flush := func() error {
 		if batch.Count() > 0 {
@@ -353,6 +354,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 				return err
 			}
 			batch = p.db.NewBatch()
+			lastWrite = time.Now()
 		}
 		return nil
 	}
@@ -380,12 +382,15 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 			if int(batch.Count()) >= *atimeWriteBatchSize {
 				flush()
 			}
-		case <-time.After(atimeFlushPeriod):
-			flush()
 		case <-time.After(time.Second):
+			if time.Since(lastWrite) > atimeFlushPeriod {
+				flush()
+			}
+
 			exitMu.Lock()
 			done := exiting
 			exitMu.Unlock()
+
 			if done {
 				flush()
 				return
