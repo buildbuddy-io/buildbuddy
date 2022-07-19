@@ -460,7 +460,7 @@ func TestAtimeLRU(t *testing.T) {
 	flags.Set(t, "cache.pebble.atime_update_threshold", 0) // update atime on every access
 	flags.Set(t, "cache.pebble.atime_write_batch_size", 1) // write atime updates synchronously
 	flags.Set(t, "cache.pebble.atime_buffer_size", 0)      // blocking channel of atime updates
-	flags.Set(t, "cache.pebble.min_eviction_age", 0)      // no min eviction age
+	flags.Set(t, "cache.pebble.min_eviction_age", 0)       // no min eviction age
 	flags.Set(t, "cache.pebble.use_pebble_atime_only", true)
 
 	te := testenv.GetTestEnv(t)

@@ -1534,7 +1534,7 @@ func (e *partitionEvictor) resampleK(k int) error {
 func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 	evicted := 0
 	var lastEvicted *evictionPoolEntry
-	for evicted < count {
+	for n := 0; n < count; n++ {
 		lastCount := evicted
 
 		// Resample every time we evict a key
@@ -1565,6 +1565,10 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 			if err := e.resampleK(samplePoolSize); err != nil {
 				return nil, err
 			}
+		}
+
+		if count == evicted {
+			break
 		}
 	}
 	return lastEvicted, nil
