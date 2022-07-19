@@ -497,6 +497,9 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 	if err := np.RefreshNodes(ctx); err != nil {
 		return 0, err
 	}
+	np.mu.Lock()
+	defer np.mu.Unlock()
+
 	if len(np.nodes) == 0 {
 		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", np.key.pool, np.key.os, np.key.arch)
 	}
