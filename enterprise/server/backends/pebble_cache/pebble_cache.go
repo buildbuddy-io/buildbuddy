@@ -356,11 +356,17 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 		return nil
 	}
 
+	exitMu := sync.Mutex{}
+	exiting := false
+	go func() {
+		<-quitChan
+		exitMu.Lock()
+		exiting = true
+		exitMu.Unlock()
+	}()
+
 	for {
 		select {
-		case <-quitChan:
-			flush()
-			return
 		case accessTimeUpdate := <-p.accesses:
 			md, err := readFileMetadata(p.db, accessTimeUpdate.fileMetadataKey)
 			if err != nil {
@@ -375,6 +381,11 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 			}
 		case <-time.After(atimeFlushPeriod):
 			flush()
+		case <-time.After(time.Second):
+			if exiting {
+				flush()
+				return
+			}
 		}
 	}
 }
@@ -1177,6 +1188,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		LowerBound: start,
 		UpperBound: end,
 	})
+	defer iter.Close()
 	iter.SeekLT(start)
 
 	casCount := int64(0)
