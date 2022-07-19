@@ -59,7 +59,7 @@ var (
 	atimeUpdateThreshold      = flag.Duration("cache.pebble.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
 	atimeWriteBatchSize       = flag.Int("cache.pebble.atime_write_batch_size", 1000, "Buffer this many writes before writing atime data")
 	atimeBufferSize           = flag.Int("cache.pebble.atime_buffer_size", 10000, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	usePebbleAtimeOnly        = flag.Bool("cache.pebble.use_pebble_atime_only", false, "If true; only use pebble stored atimes")
+	usePebbleAtimeOnly        = flag.Bool("cache.pebble.use_pebble_atime_only", true, "If true; only use pebble stored atimes")
 	minEvictionAge            = flag.Duration("cache.pebble.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
 )
 

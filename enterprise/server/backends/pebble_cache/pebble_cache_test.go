@@ -367,6 +367,7 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
+	flags.Set(t, "cache.pebble.use_pebble_atime_only", false)
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
