@@ -382,7 +382,10 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 		case <-time.After(atimeFlushPeriod):
 			flush()
 		case <-time.After(time.Second):
-			if exiting {
+			exitMu.Lock()
+			done := exiting
+			exitMu.Unlock()
+			if done {
 				flush()
 				return
 			}
