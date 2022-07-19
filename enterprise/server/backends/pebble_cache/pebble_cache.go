@@ -1606,6 +1606,12 @@ func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
 			return err
 		}
 
+		// If we attempted to evict and were unable to, sleep for a
+		// bit before trying again.
+		if lastEvicted == nil {
+			time.Sleep(time.Second)
+		}
+
 		e.mu.Lock()
 		e.lastRun = time.Now()
 		e.lastEvicted = lastEvicted
