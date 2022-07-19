@@ -98,8 +98,7 @@ func main() {
 				log.Fatal(err.Error())
 			}
 		}
-		out, _ := prototext.Marshal(ar)
-		fmt.Println(string(out))
+		printMessage(ar)
 		return
 	}
 
@@ -109,8 +108,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err.Error())
 		}
-		out, _ := prototext.Marshal(inputTree)
-		fmt.Println(string(out))
+		printMessage(inputTree)
 		return
 	}
 
@@ -127,6 +125,10 @@ func main() {
 	if err := cachetools.GetBlobAsProto(ctx, bsClient, ind, msg); err != nil {
 		log.Fatal(err.Error())
 	}
-	out, _ := prototext.Marshal(msg)
+	printMessage(msg)
+}
+
+func printMessage(msg proto.Message) {
+	out, _ := prototext.MarshalOptions{Multiline: true}.Marshal(msg)
 	fmt.Println(string(out))
 }
