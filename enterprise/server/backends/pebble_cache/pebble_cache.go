@@ -1495,7 +1495,8 @@ func (e *partitionEvictor) resampleK(k int) error {
 
 	}
 
-	filtered := e.samplePool[:0]
+	filtered := make([]*evictionPoolEntry, 0, len(e.samplePool))
+
 	// refresh all the entries already in the pool.
 	for _, sample := range e.samplePool {
 		fm, err := readFileMetadata(e.reader, sample.fileMetadataKey)
