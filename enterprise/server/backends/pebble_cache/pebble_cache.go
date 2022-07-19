@@ -1347,6 +1347,7 @@ var digestRunes = []rune("abcdef1234567890")
 
 func (e *partitionEvictor) randomKey(n int) []byte {
 	randKey := e.part.ID
+	e.mu.Lock()
 	totalCount := e.casCount + e.acCount
 
 	randInt := rand.Int63n(totalCount)
@@ -1355,6 +1356,7 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 	} else {
 		randKey += "/ac/"
 	}
+	e.mu.Unlock()
 	for i := 0; i < n; i++ {
 		randKey += string(digestRunes[rand.Intn(len(digestRunes))])
 	}
@@ -1498,7 +1500,6 @@ func (e *partitionEvictor) resampleK(k int) error {
 			return err
 		}
 		additions = append(additions, entries...)
-
 	}
 
 	filtered := make([]*evictionPoolEntry, 0, len(e.samplePool))
