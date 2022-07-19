@@ -60,6 +60,7 @@ var (
 	atimeWriteBatchSize       = flag.Int("cache.pebble.atime_write_batch_size", 1000, "Buffer this many writes before writing atime data")
 	atimeBufferSize           = flag.Int("cache.pebble.atime_buffer_size", 10000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	usePebbleAtimeOnly        = flag.Bool("cache.pebble.use_pebble_atime_only", false, "If true; only use pebble stored atimes")
+	minEvictionAge            = flag.Duration("cache.pebble.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
 )
 
 const (
@@ -1366,7 +1367,12 @@ func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 			sendAtimeUpdate(e.accesses, s.fileMetadataKey)
 			return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
 		}
-		s.timestamp = time.UnixMicro(s.fileMetadata.GetLastAccessUsec()).UnixNano()
+		atime := time.UnixMicro(s.fileMetadata.GetLastAccessUsec())
+		age := time.Since(atime)
+		if age < *minEvictionAge {
+			return status.FailedPreconditionErrorf("File %q was not old enough: age %s", s.fileMetadataKey, age)
+		}
+		s.timestamp = atime.UnixNano()
 		return nil
 	}
 	if a, ok := e.atimes.Load(xxhash.Sum64(s.fileMetadataKey)); ok {
