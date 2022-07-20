@@ -573,6 +573,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		return err
 	}
 	recordInvocationMetrics(ti)
+	fmt.Print("Save to table\n")
 	updated, err := e.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
 		return err
@@ -593,6 +594,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	e.statsRecorder.Enqueue(ctx, invocation)
+	fmt.Print("Bottom of function")
 	return nil
 }
 
