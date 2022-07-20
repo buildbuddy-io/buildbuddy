@@ -541,7 +541,10 @@ func (np *nodePool) RemoveConnectedExecutor(id string) bool {
 	defer np.mu.Unlock()
 	for i, e := range np.connectedExecutors {
 		if e.executorID == id {
-			np.connectedExecutors = append(np.connectedExecutors[:i], np.connectedExecutors[i+1:]...)
+			nodes := make([]*executionNode, 0, len(np.connectedExecutors)-1)
+			nodes = append(nodes, np.connectedExecutors[:i]...)
+			nodes = append(nodes, np.connectedExecutors[i+1:]...)
+			np.connectedExecutors = nodes
 			return true
 		}
 	}
