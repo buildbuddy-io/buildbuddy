@@ -405,7 +405,7 @@ func TestLRU(t *testing.T) {
 		log.Printf("Using data from 0:%d", quartile*i)
 		for j := 0; j < quartile*i; j++ {
 			d := digestKeys[j]
-			if _, err := pc.Contains(ctx, d); err != nil {
+			if _, err := pc.Get(ctx, d); err != nil {
 				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err)
 			}
 		}
@@ -501,7 +501,7 @@ func TestAtimeLRU(t *testing.T) {
 		log.Printf("Using data from 0:%d", quartile*i)
 		for j := 0; j < quartile*i; j++ {
 			d := digestKeys[j]
-			if _, err := pc.Contains(ctx, d); err != nil {
+			if _, err := pc.Get(ctx, d); err != nil {
 				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err)
 			}
 		}
