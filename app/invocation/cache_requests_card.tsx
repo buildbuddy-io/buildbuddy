@@ -3,6 +3,7 @@ import router from "../router/router";
 import InvocationModel from "./invocation_model";
 import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
+import { invocation } from "../../proto/invocation_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import Link, { TextLink } from "../components/link/link";
@@ -84,7 +85,7 @@ const defaultFilterIndex = 2; // AC Misses
 export default class CacheRequestsCardComponent extends React.Component<CacheRequestsCardProps, State> {
   state: State = {
     searchText: "",
-    loading: true,
+    loading: false,
     results: [],
     nextPageToken: "",
     didInitialFetch: false,
@@ -96,13 +97,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   componentDidMount() {
-    if (this.props.model.isComplete()) {
+    if (areResultsAvailable(this.props.model)) {
       this.fetchResults();
     }
   }
 
   componentDidUpdate(prevProps: Readonly<CacheRequestsCardProps>) {
-    if (!prevProps.model.isComplete() && this.props.model.isComplete()) {
+    if (!areResultsAvailable(prevProps.model) && areResultsAvailable(this.props.model)) {
       this.fetchResults();
       return;
     }
@@ -430,6 +431,14 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       );
     }
 
+    if (!areResultsAvailable(this.props.model)) {
+      return (
+        <RequestsCardContainer>
+          <div>Cache requests will be shown here when the invocation has completed.</div>
+        </RequestsCardContainer>
+      );
+    }
+
     if (!this.state.results.length) {
       return (
         <RequestsCardContainer>
@@ -500,6 +509,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       </RequestsCardContainer>
     );
   }
+}
+
+function areResultsAvailable(model: InvocationModel): boolean {
+  return Boolean(
+    model.invocations[0] &&
+      model.invocations[0].invocationStatus !== invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS
+  );
 }
 
 const RequestsCardContainer: React.FC<JSX.IntrinsicElements["div"]> = ({ className, children, ...props }) => (
