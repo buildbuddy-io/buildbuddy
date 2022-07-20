@@ -669,6 +669,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	if ws.setupError == nil {
 		for _, bazelCmd := range ar.action.BazelCommands {
 			iid, err := newUUID()
+			fmt.Printf("Inner invocation %v\n", iid)
 			if err != nil {
 				return err
 			}

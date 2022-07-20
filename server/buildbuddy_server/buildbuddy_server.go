@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -143,8 +144,13 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 }
 
 func (s *BuildBuddyServer) CancelInvocation(ctx context.Context, req *inpb.CancelInvocationRequest) (*inpb.CancelInvocationResponse, error) {
+	err := s.authorizeInvocationWrite(ctx, req.InvocationId)
+	if err != nil {
+		return nil, err
+	}
+
 	res := s.env.GetRemoteExecutionService()
-	if err := res.Cancel(ctx, req.InvocationId); err != nil {
+	if err = res.Cancel(ctx, req.InvocationId); err != nil {
 		return nil, err
 	}
 
@@ -496,6 +502,25 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 			VisibleToDevelopers: k.VisibleToDevelopers,
 		},
 	}, nil
+}
+
+func (s *BuildBuddyServer) authorizeInvocationWrite(ctx context.Context, invocationID string) error {
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	in, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
+	if err != nil {
+		return err
+	}
+	acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
+
+	return perms.AuthorizeWrite(&authenticatedUser, acl)
 }
 
 func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID string) error {

@@ -877,6 +877,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 			return err
 		}
 		invocationID := invocationUUID.String()
+		fmt.Printf("Outer invocation %s\n", invocationID)
 		_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
 		if err != nil {
 			if err == ApprovalRequired {
