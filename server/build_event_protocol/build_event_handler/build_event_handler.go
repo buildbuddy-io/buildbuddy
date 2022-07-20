@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
@@ -1063,12 +1064,19 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	})
 
 	eg.Go(func() error {
-		redactor := redact.NewStreamingRedactor(env)
 		var screenWriter *terminal.ScreenWriter
 		if !invocation.HasChunkedEventLogs {
 			screenWriter = terminal.NewScreenWriter()
 		}
-		parser := event_parser.NewStreamingEventParser(screenWriter)
+		var redactor *redact.StreamingRedactor
+		var parser *event_parser.StreamingEventParser
+		if ti.RedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
+			// only redact if we hadn't redacted enough, only parse again if we redact
+			redactor = redact.NewStreamingRedactor(env)
+			parser = event_parser.NewStreamingEventParser(screenWriter)
+		}
+		events := []*inpb.InvocationEvent{}
+		structuredCommandLines := []*command_line.CommandLine{}
 		pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
 		for {
 			event := &inpb.InvocationEvent{}
@@ -1080,16 +1088,40 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 				log.Warningf("Error reading proto from log: %s", err)
 				return err
 			}
-			if ti.RedactionFlags&redact.RedactionFlagStandardRedactions == 0 {
+			if redactor != nil {
 				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
 					return err
 				}
 				redactor.RedactMetadata(event.BuildEvent)
+				parser.ParseEvent(event)
+			} else {
+				events = append(events, event)
+				switch p := event.BuildEvent.Payload.(type) {
+				case *build_event_stream.BuildEvent_Progress:
+					if screenWriter != nil {
+						screenWriter.Write([]byte(p.Progress.Stderr))
+						screenWriter.Write([]byte(p.Progress.Stdout))
+					}
+					// Now that we've updated our screenwriter, zero out
+					// progress output in the event so they don't eat up
+					// memory.
+					p.Progress.Stderr = ""
+					p.Progress.Stdout = ""
+				case *build_event_stream.BuildEvent_StructuredCommandLine:
+					structuredCommandLines = append(structuredCommandLines, p.StructuredCommandLine)
+				}
 			}
-			parser.ParseEvent(event)
 		}
 		invocationMu.Lock()
-		parser.FillInvocation(invocation)
+		if parser != nil {
+			parser.FillInvocation(invocation)
+		} else {
+			invocation.Event = events
+			invocation.StructuredCommandLine = structuredCommandLines
+			if screenWriter != nil {
+				invocation.ConsoleBuffer = string(screenWriter.RenderAsANSI())
+			}
+		}
 		invocationMu.Unlock()
 		return nil
 	})
