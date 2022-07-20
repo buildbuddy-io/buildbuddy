@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1657907675144,
+  "iteration": 1658280707313,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -845,8 +845,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -930,8 +929,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -1016,8 +1014,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -1101,8 +1098,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -1187,8 +1183,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -1272,8 +1267,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -3134,8 +3128,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -3266,8 +3259,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -3416,7 +3408,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 33
+            "y": 9
           },
           "hiddenSeries": false,
           "id": 190,
@@ -3521,7 +3513,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 33
+            "y": 9
           },
           "hiddenSeries": false,
           "id": 159,
@@ -3626,7 +3618,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 41
+            "y": 17
           },
           "hiddenSeries": false,
           "id": 210,
@@ -3742,7 +3734,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -3757,7 +3750,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 41
+            "y": 17
           },
           "id": 1209,
           "options": {
@@ -3826,7 +3819,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -3842,7 +3836,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 49
+            "y": 25
           },
           "id": 31,
           "options": {
@@ -3889,7 +3883,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 49
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 178,
@@ -4006,7 +4000,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -4022,7 +4017,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 57
+            "y": 33
           },
           "id": 1216,
           "options": {
@@ -4070,6 +4065,18 @@
               "interval": "",
               "legendFormat": "Estimated memory usage",
               "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(buildbuddy_remote_execution_assignable_ram_bytes{region=\"${region}\", job=\"${pool}\"})",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Max assignable memory",
+              "refId": "D"
             }
           ],
           "title": "Task memory usage",
@@ -4114,7 +4121,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -4130,7 +4138,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 57
+            "y": 33
           },
           "id": 1231,
           "options": {
@@ -4178,6 +4186,18 @@
               "interval": "",
               "legendFormat": "Estimated CPU",
               "refId": "C"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(buildbuddy_remote_execution_assignable_milli_cpu{region=\"${region}\",job=\"${pool}\"})/1000",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Max assignable CPU",
+              "refId": "D"
             }
           ],
           "title": "Task CPU usage (each 100% = 1 fully utilized core)",
@@ -4199,7 +4219,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 41
           },
           "hiddenSeries": false,
           "id": 33,
@@ -4286,7 +4306,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 65
+            "y": 41
           },
           "hiddenSeries": false,
           "id": 35,
@@ -4367,7 +4387,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 49
           },
           "hiddenSeries": false,
           "id": 129,
@@ -4459,7 +4479,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 49
           },
           "hiddenSeries": false,
           "id": 102,
@@ -4572,7 +4592,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -4588,7 +4609,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 57
           },
           "id": 1195,
           "options": {
@@ -4632,7 +4653,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 81
+            "y": 57
           },
           "hiddenSeries": false,
           "id": 180,
@@ -4746,7 +4767,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -4762,7 +4784,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 89
+            "y": 65
           },
           "id": 1202,
           "options": {
@@ -4870,7 +4892,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -4911,7 +4934,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 89
+            "y": 65
           },
           "id": 1196,
           "options": {
@@ -7982,7 +8005,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 16
       },
       "id": 71,
       "panels": [
@@ -8189,7 +8212,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 17
       },
       "id": 1088,
       "panels": [
@@ -8484,7 +8507,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 18
       },
       "id": 962,
       "panels": [
@@ -8661,7 +8684,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 19
       },
       "id": 8,
       "panels": [
@@ -8893,8 +8916,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
