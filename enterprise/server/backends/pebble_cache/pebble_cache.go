@@ -54,6 +54,7 @@ var (
 	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
 	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
 	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.disk.enable_live_updates", "cache.pebble.mirror_active_disk_cache")
+	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
 	atimeUpdateThreshold      = flag.Duration("cache.pebble.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
@@ -1655,10 +1656,12 @@ func (p *PebbleCache) Start() error {
 		p.scanForBrokenFiles(p.quitChan)
 		return nil
 	})
-	p.eg.Go(func() error {
-		p.deleteOrphanedFiles(p.quitChan)
-		return nil
-	})
+	if *scanForOrphanedFiles {
+		p.eg.Go(func() error {
+			p.deleteOrphanedFiles(p.quitChan)
+			return nil
+		})
+	}
 	return nil
 }
 
