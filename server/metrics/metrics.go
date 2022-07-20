@@ -569,6 +569,13 @@ var (
 		Help:      "Estimated RAM on the executor that is currently allocated for task execution, in **bytes**.",
 	})
 
+	RemoteExecutionAssignableRAMBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_ram_bytes",
+		Help:      "Maximum total RAM that can be allocated for task execution, in **bytes**.",
+	})
+
 	RemoteExecutionAssignedMilliCPU = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
@@ -576,21 +583,12 @@ var (
 		Help:      "Estimated CPU time on the executor that is currently allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Average CPU allocated to tasks (average is computed across executor instances).
-	/// # `label_replace` is needed because we export k8s pod name as "pod_name" in Prometheus,
-	/// # while k8s exports it as "pod".
-	/// avg(
-	///   buildbuddy_remote_execution_used_milli_cpu
-	///     /
-	///	  on (pod_name) (label_replace(
-	///     kube_pod_container_resource_limits_cpu_cores{pod=~"executor-.*"},
-	///     "pod_name", "$1", "pod", "(.*)"
-	///   ) * 1000 * 0.6)
-	/// )
-	/// ```
+	RemoteExecutionAssignableMilliCPU = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_milli_cpu",
+		Help:      "Maximum total CPU time on the executor that can be allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
+	})
 
 	RemoteExecutionMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
