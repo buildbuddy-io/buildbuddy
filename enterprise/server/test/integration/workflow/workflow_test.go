@@ -45,13 +45,19 @@ sh_binary(
     name = "nop",
     srcs = ["nop.sh"],
 )
+
+sh_test(
+	name = "sleep_forever_test",
+	srcs = ["sleep_forever_test.sh"]
+)
 `,
-		"nop.sh": ``,
+		"nop.sh":                ``,
+		"sleep_forever_test.sh": "sleep infinity",
 		"buildbuddy.yaml": `
 actions:
   - name: "Test action"
     triggers: { push: { branches: [ master ] } }
-    bazel_commands: [ "build //:nop" ]
+    bazel_commands: [ "build //:sleep_forever_test" ]
 ` + osStr + archStr,
 	}
 
