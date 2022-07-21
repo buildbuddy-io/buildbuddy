@@ -930,10 +930,10 @@ func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
 	return dur, nil
 }
 
-func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {
+func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) (int, error) {
 	ids, err := s.executionIDs(ctx, invocationID)
 	if err != nil {
-		return status.InternalErrorf("failed to lookup execution IDs for invocation %q: %s", invocationID, err)
+		return 0, status.InternalErrorf("failed to lookup execution IDs for invocation %q: %s", invocationID, err)
 	}
 	numCancelled := 0
 	for _, id := range ids {
@@ -952,7 +952,7 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 		}
 	}
 	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCancelled, invocationID)
-	return nil
+	return numCancelled, nil
 }
 
 func (s *ExecutionServer) executionIDs(ctx context.Context, invocationID string) ([]string, error) {

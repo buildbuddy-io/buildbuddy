@@ -719,8 +719,9 @@ func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
 
 // Options for overriding server behavior needed for testing.
 type Options struct {
-	LocalPortOverride            int32
-	RequireExecutorAuthorization bool
+	LocalPortOverride                 int32
+	RequireExecutorAuthorization      bool
+	EnableRedisAvailabilityMonitoring bool
 }
 
 type SchedulerServer struct {
@@ -799,7 +800,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		enableUserOwnedExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		forceUserOwnedDarwinExecutors:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
 		requireExecutorAuthorization:      options.RequireExecutorAuthorization || (remote_execution_config.RemoteExecutionEnabled() && *requireExecutorAuthorization),
-		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
+		enableRedisAvailabilityMonitoring: options.EnableRedisAvailabilityMonitoring || (remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled()),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(s.ownHostPort, s)

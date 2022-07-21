@@ -686,7 +686,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	// Use that signal to cancel any actions that are currently in the remote execution system.
 	if f, ok := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Finished); ok {
 		if f.Finished.GetExitCode().GetCode() == InterruptedExitCode && e.env.GetRemoteExecutionService() != nil {
-			if err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
+			if _, err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
 				log.Warningf("Could not cancel executions for invocation %q: %s", iid, err)
 			}
 		}
