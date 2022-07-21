@@ -357,6 +357,11 @@ type executionNode struct {
 	handle *executorHandle
 }
 
+func (en *executionNode) CanFit(size *scpb.TaskSize) bool {
+	return int64(float64(en.assignableMemoryBytes)*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMemoryBytes() &&
+		int64(float64(en.assignableMilliCpu)*tasksize.MaxResourceCapacityRatio) >= size.GetEstimatedMilliCpu()
+}
+
 func (en *executionNode) String() string {
 	if en.handle != nil {
 		return fmt.Sprintf("connected executor(%s)", en.executorID)
@@ -366,6 +371,16 @@ func (en *executionNode) String() string {
 
 func (en *executionNode) GetExecutorID() string {
 	return en.executorID
+}
+
+func nodesThatFit(nodes []*executionNode, taskSize *scpb.TaskSize) []*executionNode {
+	var out []*executionNode
+	for _, node := range nodes {
+		if node.CanFit(taskSize) {
+			out = append(out, node)
+		}
+	}
+	return out
 }
 
 // TODO(bduffany): Expand interfaces.ExecutionNode interface to include all
@@ -506,8 +521,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 
 	fitCount := 0
 	for _, node := range np.nodes {
-		if int64(float64(node.assignableMemoryBytes)*tasksize.MaxResourceCapacityRatio) >= taskSize.GetEstimatedMemoryBytes() &&
-			int64(float64(node.assignableMilliCpu)*tasksize.MaxResourceCapacityRatio) >= taskSize.GetEstimatedMilliCpu() {
+		if node.CanFit(taskSize) {
 			fitCount++
 		}
 	}
@@ -1398,6 +1412,14 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				nodes = nodeBalancer.GetNodes(opts.scheduleOnConnectedExecutors)
 				if len(nodes) == 0 {
 					return status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", pool, os, arch)
+				}
+				nodes = nodesThatFit(nodes, enqueueRequest.GetTaskSize())
+				if len(nodes) == 0 {
+					return status.UnavailableErrorf(
+						"No registered executors in pool %q with os %q with arch %q can fit a task with %d milli-cpu and %d bytes of memory.",
+						pool, os, arch,
+						enqueueRequest.GetTaskSize().GetEstimatedMilliCpu(),
+						enqueueRequest.GetTaskSize().GetEstimatedMemoryBytes())
 				}
 				rankedNodes := s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(nodes))
 				nodes, err = fromNodeInterfaces(rankedNodes)
