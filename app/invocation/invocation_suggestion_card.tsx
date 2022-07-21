@@ -270,6 +270,10 @@ const matchers: SuggestionMatcher[] = [
   },
   // Suggest experimental_remote_cache_async
   ({ model }) => {
+    // TODO(bduffany): This flag potentially causes cache poisoning; re-enable
+    // with min Bazel version check once issues are fixed.
+    return null;
+
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
