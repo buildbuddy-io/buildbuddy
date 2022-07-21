@@ -2,7 +2,6 @@ package execution_server
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/go-redis/redis/v8"
@@ -34,13 +33,7 @@ func executionServer(t *testing.T) *ExecutionServer {
 	}
 	env.SetTaskRouter(router)
 
-	scheduler, err := scheduler_server.NewSchedulerServerWithOptions(env, &scheduler_server.Options{
-		EnableRedisAvailabilityMonitoring: true,
-		LocalPortOverride:                 80,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	scheduler := scheduler_server.NewMockSchedulerServer()
 	env.SetSchedulerService(scheduler)
 
 	s, err := NewExecutionServer(env)
@@ -57,20 +50,64 @@ func createExecution(t *testing.T, db *gorm.DB, execution *tables.Execution) {
 	}
 }
 
-func createExecutionRedis(t *testing.T, redisClient redis.UniversalClient, executionID string) {
-	key := fmt.Sprintf("task/{%s}", executionID)
-	mockData := map[string]interface{}{
-		"key1": "value1",
-	}
-	numAdded, err := redisClient.HSet(context.Background(), key, mockData).Result()
+func TestCancel(t *testing.T) {
+	ctx := context.Background()
+	s := executionServer(t)
+
+	// Create Execution rows to be canceled
+	db := s.env.GetDBHandle().DB(ctx)
+	testUUID, err := uuid.NewRandom()
 	if err != nil {
 		t.Fatal(err)
-	} else if numAdded == 0 {
-		t.Fatal("Could not add any rows to redis")
 	}
+	testInvocationID := testUUID.String()
+
+	executionID := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
+	execution := &tables.Execution{
+		ExecutionID:  executionID,
+		InvocationID: testInvocationID,
+		Stage:        int64(remote_execution.ExecutionStage_EXECUTING),
+	}
+	createExecution(t, db, execution)
+
+	numCanceled, err := s.Cancel(ctx, testInvocationID)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, numCanceled)
 }
 
-func TestCancel(t *testing.T) {
+func TestCancel_SkipCompletedExecution(t *testing.T) {
+	ctx := context.Background()
+	s := executionServer(t)
+
+	// Create Execution rows to be canceled
+	db := s.env.GetDBHandle().DB(ctx)
+	testUUID, err := uuid.NewRandom()
+	if err != nil {
+		t.Fatal(err)
+	}
+	testInvocationID := testUUID.String()
+
+	executionID1 := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
+	executionID2 := "blobs/2111111111111111111111111111111111111111111111111111111111111111/100"
+	completeExecution := &tables.Execution{
+		ExecutionID:  executionID1,
+		InvocationID: testInvocationID,
+		Stage:        int64(remote_execution.ExecutionStage_COMPLETED),
+	}
+	incompleteExecution := &tables.Execution{
+		ExecutionID:  executionID2,
+		InvocationID: testInvocationID,
+		Stage:        int64(remote_execution.ExecutionStage_EXECUTING),
+	}
+	createExecution(t, db, completeExecution)
+	createExecution(t, db, incompleteExecution)
+
+	numCanceled, err := s.Cancel(ctx, testInvocationID)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, numCanceled)
+}
+
+func TestCancel_MultipleExecutions(t *testing.T) {
 	ctx := context.Background()
 	s := executionServer(t)
 
@@ -103,10 +140,6 @@ func TestCancel(t *testing.T) {
 	createExecution(t, db, completeExecution)
 	createExecution(t, db, incompleteExecution1)
 	createExecution(t, db, incompleteExecution2)
-
-	createExecutionRedis(t, s.rdb, executionID1)
-	createExecutionRedis(t, s.rdb, executionID2)
-	createExecutionRedis(t, s.rdb, executionID3)
 
 	numCanceled, err := s.Cancel(ctx, testInvocationID)
 	assert.Nil(t, err)
