@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
@@ -389,9 +390,17 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *rgpb.ConvertLaye
 func (c *imageConverter) dedupeConvertLayer(ctx context.Context, req *rgpb.ConvertLayerRequest) (*rgpb.ConvertLayerResponse, error) {
 	workKey := fmt.Sprintf("image-converter-layer-%s", req.GetLayerDigest())
 	rspBytes, err := c.deduper.Do(ctx, workKey, func() ([]byte, error) {
+		log.CtxInfof(ctx, "Converting layer %q", req.GetLayerDigest())
+		start := time.Now()
 		r, err := c.convertLayer(ctx, req)
 		if err != nil {
+			log.CtxWarningf(ctx, "Converting layer %q failed: %s", req.GetLayerDigest(), err)
 			return nil, err
+		}
+		if r.GetSkip() {
+			log.CtxInfof(ctx, "Skipped conversion for layer %q", req.GetLayerDigest())
+		} else {
+			log.CtxInfof(ctx, "Converted layer %q to %q, CAS digest %q in %s", req.GetLayerDigest(), r.GetDigest(), r.GetCasDigest(), time.Since(start))
 		}
 		p, err := proto.Marshal(r)
 		if err != nil {
