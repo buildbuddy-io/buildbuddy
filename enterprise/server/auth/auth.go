@@ -940,7 +940,19 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// Still here? Token needs a refresh. Do that now.
 	newToken, err := auth.renewToken(ctx, sesh.RefreshToken)
 	if err != nil {
-		return nil, nil, err
+		// If we failed to renew the session, then the refresh token is likely
+		// either empty or expired. When this happens, clear the session from
+		// the DB, since it is no longer usable. Also make sure to clear the
+		// Session-ID cookie so that the client is forced to go through the
+		// consent screen when they next login, which will let us get a new
+		// refresh token from the oauth provider. (Without going through the
+		// consent screen, we only get an access token, not a refresh token).
+		log.Warningf("Failed to renew token for session %+v: %s", sesh, err)
+		clearLoginCookie(a.env, w)
+		if err := authDB.ClearSession(ctx, sessionID); err != nil {
+			log.Errorf("Failed to clear session %+v: %s", sesh, err)
+		}
+		return nil, nil, status.PermissionDeniedErrorf("%s: failed to renew session", loggedOutMsg)
 	}
 
 	sesh.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
