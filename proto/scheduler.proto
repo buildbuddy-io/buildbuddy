@@ -58,8 +58,27 @@ message TaskSize {
   int64 estimated_free_disk_bytes = 3;
 }
 
+// Next ID: 8
 message SchedulingMetadata {
+  // Task size either explicitly requested via platform properties, or estimated
+  // by BuildBuddy (using basic heuristics).
+  //
+  // This field is used for scheduling purposes, when the app is deciding which
+  // executors (if any) may execute a task.
   TaskSize task_size = 1;
+
+  // Task size measured from a previous task execution of a similar task, if
+  // such data is available.
+  //
+  // This field is purely intended for optimization purposes at the executor
+  // level and should have no effect on how a task is assigned to executors at
+  // the scheduler level. Executors may use this size to determine how many
+  // resources to allot for a task, but may not reject a task from being
+  // executed on the basis of this size being too large. Executors must respect
+  // the scheduler's original decision to enqueue the task, even if it requires
+  // allocating fewer resources than the measured task size.
+  TaskSize measured_task_size = 7;
+
   string os = 2;
   string arch = 3;
   string pool = 4;
