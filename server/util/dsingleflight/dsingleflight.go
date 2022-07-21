@@ -74,16 +74,21 @@ func (c *Coordinator) doWork(ctx context.Context, workKey string, work Work) ([]
 		return nil, status.UnknownErrorf("could not marshal status: %s", err)
 	}
 
+	p := c.rdb.TxPipeline()
+
 	resultKey := redisResultKey(workKey)
-	if err := c.rdb.XAdd(ctx, &redis.XAddArgs{
+	if err := p.XAdd(ctx, &redis.XAddArgs{
 		Stream: resultKey,
 		Values: []string{resultStatusField, string(errStatusBytes), resultDataField, string(r)},
 	}).Err(); err != nil {
 		return nil, status.UnavailableErrorf("could not publish result: %s", err)
 	}
-
-	if err := c.rdb.Expire(ctx, resultKey, resultTTL).Err(); err != nil {
+	if err := p.Expire(ctx, resultKey, resultTTL).Err(); err != nil {
 		return nil, status.UnavailableErrorf("could not update result ttl: %s", err)
+	}
+
+	if _, err := p.Exec(ctx); err != nil {
+		return nil, status.UnavailableErrorf("could not store result: %s", err)
 	}
 
 	return r, nil
