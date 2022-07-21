@@ -133,7 +133,9 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		apiTargetMap:   make(api_common.TargetMap),
 
 		hasReceivedEventWithOptions: false,
-		eventsBeforeOptions:         make([]*inpb.InvocationEvent, 0),
+		hasReceivedStartedEvent:     false,
+		unprocessedStartingEvents:   make(map[string]struct{}),
+		bufferedEvents:              make([]*inpb.InvocationEvent, 0),
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
@@ -439,6 +441,14 @@ func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
 	return false
 }
 
+func (e *EventChannel) isFirstStartedEvent(bazelBuildEvent *build_event_stream.BuildEvent) bool {
+	if e.hasReceivedStartedEvent {
+		return false
+	}
+	_, ok := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Started)
+	return ok
+}
+
 func (e *EventChannel) isFirstEventWithOptions(bazelBuildEvent *build_event_stream.BuildEvent) bool {
 	switch p := bazelBuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
@@ -477,12 +487,15 @@ type EventChannel struct {
 	collector      interfaces.MetricsCollector
 	apiTargetMap   api_common.TargetMap
 
-	eventsBeforeOptions           []*inpb.InvocationEvent
-	numDroppedEventsBeforeOptions uint64
-	hasReceivedEventWithOptions   bool
-	logWriter                     *eventlog.EventLogWriter
-	onClose                       func()
-	attempt                       uint64
+	startedEvent                     *build_event_stream.BuildEvent_Started
+	bufferedEvents                   []*inpb.InvocationEvent
+	unprocessedStartingEvents        map[string]struct{}
+	numDroppedEventsBeforeProcessing uint64
+	hasReceivedEventWithOptions      bool
+	hasReceivedStartedEvent          bool
+	logWriter                        *eventlog.EventLogWriter
+	onClose                          func()
+	attempt                          uint64
 
 	// isVoid determines whether all EventChannel operations are NOPs. This is set
 	// when we're retrying an invocation that is already complete, or is
@@ -696,6 +709,25 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		log.Debugf("First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 	}
 
+	if e.isFirstStartedEvent(&bazelBuildEvent) {
+		e.hasReceivedStartedEvent = true
+		e.unprocessedStartingEvents[bazelBuildEvent.Id.String()] = struct{}{}
+		log.Info(bazelBuildEvent.Id.String())
+		for _, child := range bazelBuildEvent.Children {
+			switch child.Id.(type) {
+			case *build_event_stream.BuildEventId_OptionsParsed:
+				e.unprocessedStartingEvents[child.String()] = struct{}{}
+			case *build_event_stream.BuildEventId_WorkspaceStatus:
+				e.unprocessedStartingEvents[child.String()] = struct{}{}
+			case *build_event_stream.BuildEventId_BuildMetadata:
+				e.unprocessedStartingEvents[child.String()] = struct{}{}
+			case *build_event_stream.BuildEventId_StructuredCommandLine:
+				e.unprocessedStartingEvents[child.String()] = struct{}{}
+			case *build_event_stream.BuildEventId_UnstructuredCommandLine:
+				e.unprocessedStartingEvents[child.String()] = struct{}{}
+			}
+		}
+	}
 	// If this is the first event with options, keep track of the project ID and save any notification keywords.
 	if e.isFirstEventWithOptions(&bazelBuildEvent) {
 		e.hasReceivedEventWithOptions = true
@@ -782,22 +814,22 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				log.Warningf("Failed to record invocation usage: %s", err)
 			}
 		}
-	} else if !e.hasReceivedEventWithOptions {
-		e.eventsBeforeOptions = append(e.eventsBeforeOptions, invocationEvent)
-		if len(e.eventsBeforeOptions) > 100 {
-			e.numDroppedEventsBeforeOptions++
-			e.eventsBeforeOptions = e.eventsBeforeOptions[1:]
+	} else if !e.hasReceivedEventWithOptions || !e.hasReceivedStartedEvent {
+		e.bufferedEvents = append(e.bufferedEvents, invocationEvent)
+		if len(e.bufferedEvents) > 100 {
+			e.numDroppedEventsBeforeProcessing++
+			e.bufferedEvents = e.bufferedEvents[1:]
 		}
 		return nil
 	}
 
 	// Process buffered events.
-	for _, event := range e.eventsBeforeOptions {
+	for _, event := range e.bufferedEvents {
 		if err := e.processSingleEvent(event, iid); err != nil {
 			return err
 		}
 	}
-	e.eventsBeforeOptions = nil
+	e.bufferedEvents = nil
 
 	// Process regular events.
 	return e.processSingleEvent(invocationEvent, iid)
@@ -845,12 +877,17 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 			}
 		}
 	}
-	// When we get the workspace status event, update the invocation in the DB
-	// so that it can be searched by its commit SHA, user name, etc. even
-	// while the invocation is still in progress.
-	if isWorkspaceStatusEvent(event.BuildEvent) {
-		if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
-			return err
+	if len(e.unprocessedStartingEvents) > 0 {
+		if _, ok := e.unprocessedStartingEvents[event.BuildEvent.Id.String()]; ok {
+			delete(e.unprocessedStartingEvents, event.BuildEvent.Id.String())
+			if len(e.unprocessedStartingEvents) == 0 {
+				// When we have processed all starting events, update the invocation in
+				// the DB so that it can be searched by its commit SHA, user name, etc.
+				// even while the invocation is still in progress.
+				if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -956,7 +993,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 }
 
 func (e *EventChannel) GetNumDroppedEvents() uint64 {
-	return e.numDroppedEventsBeforeOptions
+	return e.numDroppedEventsBeforeProcessing
 }
 
 func extractOptions(event *build_event_stream.BuildEvent) (string, error) {

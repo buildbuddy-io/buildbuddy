@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
@@ -23,6 +22,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	bspb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -45,74 +45,89 @@ func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.P
 
 func progressEvent() *anypb.Any {
 	progressAny := &anypb.Any{}
-	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_Progress{
-			Progress: &build_event_stream.Progress{
+	progressAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_Progress{
+			Progress: &bspb.Progress{
 				Stderr: "stderr",
 				Stdout: "stdout",
 			},
 		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Progress{}},
 	})
 	return progressAny
 }
 
 func progressEventWithOutput(stdout, stderr string) *anypb.Any {
 	progressAny := &anypb.Any{}
-	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_Progress{
-			Progress: &build_event_stream.Progress{
+	progressAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_Progress{
+			Progress: &bspb.Progress{
 				Stderr: stderr,
 				Stdout: stdout,
 			},
 		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Progress{}},
 	})
 	return progressAny
 }
 
 func workspaceStatusEvent(key, value string) *anypb.Any {
-	progressAny := &anypb.Any{}
-	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_WorkspaceStatus{
-			WorkspaceStatus: &build_event_stream.WorkspaceStatus{
-				Item: []*build_event_stream.WorkspaceStatus_Item{
+	workspaceStatusAny := &anypb.Any{}
+	workspaceStatusAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_WorkspaceStatus{
+			WorkspaceStatus: &bspb.WorkspaceStatus{
+				Item: []*bspb.WorkspaceStatus_Item{
 					{Key: key, Value: value},
 				},
 			},
 		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_WorkspaceStatus{}},
 	})
-	return progressAny
+	return workspaceStatusAny
 }
 
-func startedEvent(options string) *anypb.Any {
-	progressAny := &anypb.Any{}
-	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_Started{
-			Started: &build_event_stream.BuildStarted{
+func toType[T any](v any, t T) T {
+	return v.(T)
+}
+
+func startedEvent(options string, children ...any) *anypb.Any {
+	startedAny := &anypb.Any{}
+	childIds := []*bspb.BuildEventId{}
+	for _, c := range children {
+		childIds = append(childIds, &bspb.BuildEventId{Id: toType(c, bspb.BuildEventId{}.Id)})
+	}
+	startedAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_Started{
+			Started: &bspb.BuildStarted{
 				OptionsDescription: options,
 			},
 		},
+		Children: childIds,
+		Id:       &bspb.BuildEventId{Id: &bspb.BuildEventId_Started{}},
 	})
-	return progressAny
+	return startedAny
 }
 
 func optionsParsedEvent(options string) *anypb.Any {
-	progressAny := &anypb.Any{}
-	progressAny.MarshalFrom(&build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_OptionsParsed{
-			OptionsParsed: &build_event_stream.OptionsParsed{
+	optionsParsedAny := &anypb.Any{}
+	optionsParsedAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_OptionsParsed{
+			OptionsParsed: &bspb.OptionsParsed{
 				CmdLine: strings.Split(options, " "),
 			},
 		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_OptionsParsed{}},
 	})
-	return progressAny
+	return optionsParsedAny
 }
 
 func buildMetadataEvent(metadata map[string]string) *anypb.Any {
 	metadataAny := &anypb.Any{}
-	metadataAny.MarshalFrom(&build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_BuildMetadata{
-			BuildMetadata: &build_event_stream.BuildMetadata{Metadata: metadata},
+	metadataAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_BuildMetadata{
+			BuildMetadata: &bspb.BuildMetadata{Metadata: metadata},
 		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
 	})
 	return metadataAny
 }
@@ -127,6 +142,7 @@ func structuredCommandLineEvent(env map[string]string) *anypb.Any {
 		})
 	}
 	commandLine := &clpb.CommandLine{
+		CommandLineLabel: "original command line",
 		Sections: []*clpb.CommandLineSection{
 			{
 				SectionLabel: "command options",
@@ -137,22 +153,24 @@ func structuredCommandLineEvent(env map[string]string) *anypb.Any {
 		},
 	}
 	commandLineAny := &anypb.Any{}
-	commandLineAny.MarshalFrom(&build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{
+	commandLineAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_StructuredCommandLine{
 			StructuredCommandLine: commandLine,
 		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bspb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original command line"}}},
 	})
 	return commandLineAny
 }
 
 func finishedEvent() *anypb.Any {
 	finishedAny := &anypb.Any{}
-	finishedAny.MarshalFrom(&build_event_stream.BuildEvent{
-		Payload: &build_event_stream.BuildEvent_Finished{
-			Finished: &build_event_stream.BuildFinished{
-				ExitCode: &build_event_stream.BuildFinished_ExitCode{},
+	finishedAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_Finished{
+			Finished: &bspb.BuildFinished{
+				ExitCode: &bspb.BuildFinished_ExitCode{},
 			},
 		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildFinished{}},
 	})
 	return finishedAny
 }
@@ -212,7 +230,7 @@ func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send authenticated started event with api key
-	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+testauth.APIKeyHeader+"=USER1' --remote_instance_name=foo --should_be_redacted=USER1"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_upload_local_results --remote_header='"+testauth.APIKeyHeader+"=USER1' --remote_instance_name=foo --should_be_redacted=USER1", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -246,7 +264,7 @@ func TestAuthenticatedHandleEventWithOptionlessStartedEvent(t *testing.T) {
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
-	request := streamRequest(startedEvent(""), testInvocationID, 1)
+	request := streamRequest(startedEvent("", &bspb.BuildEventId_WorkspaceStatus{}, &bspb.BuildEventId_OptionsParsed{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -294,7 +312,7 @@ func TestAuthenticatedHandleEventWithProgressFirst(t *testing.T) {
 	assert.Error(t, err)
 
 	// Send started event with api key
-	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1"), testInvocationID, 2)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1' --should_be_redacted=USER1", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 2)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -409,11 +427,11 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	assert.Error(t, err)
 
 	// Send started event with api key
-	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 3)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 3)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
-	// Send started event with api key
+	// Send finished event
 	request = streamRequest(finishedEvent(), testInvocationID, 4)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
@@ -453,6 +471,9 @@ func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
 		"--remote_upload_local_results "+
 			"--build_metadata='ALLOW_ENV=FOO_ALLOWED' "+
 			"--build_metadata='REPO_URL=https://username:githubToken@github.com/acme-inc/acme'",
+		&bspb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bspb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original command line"}},
+		&bspb.BuildEventId_BuildMetadata{},
+		&bspb.BuildEventId_WorkspaceStatus{},
 	), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
@@ -538,7 +559,7 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -586,7 +607,7 @@ func TestFinishedFinalize(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -632,7 +653,7 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -675,7 +696,7 @@ func TestUnfinishedFinalize(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -718,7 +739,7 @@ func TestRetryOnComplete(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -792,7 +813,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -832,7 +853,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 
 	// Attempt to start a new invocation with the same id
 	channel = handler.OpenChannel(ctx, testInvocationID)
-	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -899,7 +920,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	channel := handler.OpenChannel(ctx, testInvocationID)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -939,7 +960,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 
 	// Attempt to start a new invocation with the same id
 	channel = handler.OpenChannel(ctx, testInvocationID)
-	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -989,7 +1010,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 
 	// Attempt to start a new invocation with the same id
 	channel = handler.OpenChannel(ctx, testInvocationID)
-	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -1080,7 +1101,7 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	te.GetInvocationDB().SetNowFunc(testclock.StartingAt(time.Now().Add(-5 * time.Hour)).Now)
 
 	// Send started event with api key
-	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request := streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
@@ -1123,7 +1144,7 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 
 	// Attempt to start a new invocation with the same id
 	channel = handler.OpenChannel(ctx, testInvocationID)
-	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	request = streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)
 	err = channel.HandleEvent(request)
 	assert.NoError(t, err)
 
