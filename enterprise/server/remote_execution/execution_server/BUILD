@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "execution_server",
@@ -35,5 +35,23 @@ go_library(
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "execution_server_test",
+    srcs = ["execution_server_test.go"],
+    deps = [
+        ":execution_server",
+        "//enterprise/server/testutil/testredis",
+        "//enterprise/server/util/redisutil",
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/tables",
+        "//server/testutil/testenv",
+        "@com_github_go_redis_redis_v8//:redis",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_stretchr_testify//require",
+        "@io_gorm_gorm//:gorm",
     ],
 )

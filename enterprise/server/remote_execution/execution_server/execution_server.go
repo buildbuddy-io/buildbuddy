@@ -759,7 +759,6 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error publishing task %q on stream pubsub: %s", taskID, err)
 		return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 	}
-
 	if err := s.updateExecution(ctx, taskID, operation.ExtractStage(op), op); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
 		return err
@@ -932,34 +931,49 @@ func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
 }
 
 func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {
-	dbh := s.env.GetDBHandle()
-	rows, err := dbh.DB(ctx).Raw(
-		"SELECT * FROM Executions WHERE invocation_id = ? AND stage != ?",
-		invocationID,
-		repb.ExecutionStage_COMPLETED).Rows()
+	ids, err := s.executionIDs(ctx, invocationID)
 	if err != nil {
-		return err
+		return status.InternalErrorf("failed to lookup execution IDs for invocation %q: %s", invocationID, err)
 	}
-	defer rows.Close()
 	numCancelled := 0
-	for rows.Next() {
-		e := &tables.Execution{}
-		if err := dbh.DB(ctx).ScanRows(rows, e); err != nil {
-			return err
-		}
-		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, e.ExecutionID)
+	for _, id := range ids {
+		cancelled, err := s.env.GetSchedulerService().CancelTask(ctx, id)
 		if cancelled {
 			numCancelled++
 		}
+		if err != nil {
+			log.Warningf("Failed to cancel task %q: %s", id, err)
+		}
 		if err == nil && cancelled {
-			err = s.MarkExecutionFailed(ctx, e.ExecutionID, status.CanceledError("invocation cancelled"))
+			err = s.MarkExecutionFailed(ctx, id, status.CanceledError("invocation cancelled"))
 			if err != nil {
-				log.CtxWarningf(ctx, "Could not mark execution %q as cancelled: %s", e.ExecutionID, err)
+				log.CtxWarningf(ctx, "Could not mark execution %q as cancelled: %s", id, err)
 			}
 		}
 	}
 	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCancelled, invocationID)
 	return nil
+}
+
+func (s *ExecutionServer) executionIDs(ctx context.Context, invocationID string) ([]string, error) {
+	dbh := s.env.GetDBHandle()
+	rows, err := dbh.DB(ctx).Raw(
+		"SELECT execution_id FROM Executions WHERE invocation_id = ? AND stage != ?",
+		invocationID,
+		repb.ExecutionStage_COMPLETED).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		e := &tables.Execution{}
+		if err := dbh.DB(ctx).ScanRows(rows, e); err != nil {
+			return nil, err
+		}
+		ids = append(ids, e.ExecutionID)
+	}
+	return ids, nil
 }
 
 func statsUnset(md *repb.ExecutedActionMetadata) bool {
