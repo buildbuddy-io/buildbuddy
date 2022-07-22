@@ -43,7 +43,6 @@ go_test(
     srcs = ["execution_server_test.go"],
     deps = [
         ":execution_server",
-        "//enterprise/server/scheduling/task_router",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
@@ -52,7 +51,7 @@ go_test(
         "//server/testutil/testenv",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_google_uuid//:uuid",
-        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",
     ],
 )

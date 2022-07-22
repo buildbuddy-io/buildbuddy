@@ -6,11 +6,10 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -28,46 +27,38 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
-func executionServer(t *testing.T, env *testenv.TestEnv) *execution_server.ExecutionServer {
+func setupEnv(t *testing.T) *testenv.TestEnv {
+	env := testenv.GetTestEnv(t)
+
 	redisTarget := testredis.Start(t).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
 	env.SetRemoteExecutionRedisClient(rdb)
 	env.SetRemoteExecutionRedisPubSubClient(rdb)
 
-	router, err := task_router.New(env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	env.SetTaskRouter(router)
-
 	scheduler := &schedulerServerMock{}
 	env.SetSchedulerService(scheduler)
 
 	s, err := execution_server.NewExecutionServer(env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	require.NoError(t, err)
+	env.SetRemoteExecutionService(s)
+
+	return env
 }
 
 func createExecution(t *testing.T, db *gorm.DB, execution *tables.Execution) {
 	err := db.Create(execution).Error
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestCancel(t *testing.T) {
-	env := testenv.GetTestEnv(t)
+	env := setupEnv(t)
 	ctx := context.Background()
-	s := executionServer(t, env)
+	s := env.GetRemoteExecutionService()
 
 	// Create Execution rows to be canceled
 	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
 	executionID := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
@@ -79,21 +70,19 @@ func TestCancel(t *testing.T) {
 	createExecution(t, db, execution)
 
 	numCanceled, err := s.Cancel(ctx, testInvocationID)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, numCanceled)
+	require.NoError(t, err)
+	require.Equal(t, 1, numCanceled)
 }
 
 func TestCancel_SkipCompletedExecution(t *testing.T) {
-	env := testenv.GetTestEnv(t)
+	env := setupEnv(t)
 	ctx := context.Background()
-	s := executionServer(t, env)
+	s := env.GetRemoteExecutionService()
 
 	// Create Execution rows to be canceled
 	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
 	executionID1 := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
@@ -112,21 +101,19 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 	createExecution(t, db, incompleteExecution)
 
 	numCanceled, err := s.Cancel(ctx, testInvocationID)
-	assert.Nil(t, err)
-	assert.Equal(t, 1, numCanceled)
+	require.NoError(t, err)
+	require.Equal(t, 1, numCanceled)
 }
 
 func TestCancel_MultipleExecutions(t *testing.T) {
-	env := testenv.GetTestEnv(t)
+	env := setupEnv(t)
 	ctx := context.Background()
-	s := executionServer(t, env)
+	s := env.GetRemoteExecutionService()
 
 	// Create Execution rows to be canceled
 	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
 	executionID1 := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
@@ -152,6 +139,6 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 	createExecution(t, db, incompleteExecution2)
 
 	numCanceled, err := s.Cancel(ctx, testInvocationID)
-	assert.Nil(t, err)
-	assert.Equal(t, 2, numCanceled)
+	require.NoError(t, err)
+	require.Equal(t, 2, numCanceled)
 }
