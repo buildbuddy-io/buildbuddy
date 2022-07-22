@@ -489,7 +489,7 @@ type RemoteExecutionService interface {
 	WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error
 	PublishOperation(stream repb.Execution_PublishOperationServer) error
 	MarkExecutionFailed(ctx context.Context, taskID string, reason error) error
-	Cancel(ctx context.Context, invocationID string) (int, error)
+	Cancel(ctx context.Context, invocationID string) error
 	RedisAvailabilityMonitoringEnabled() bool
 }
 

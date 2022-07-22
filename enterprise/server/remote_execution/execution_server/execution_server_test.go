@@ -21,9 +21,12 @@ import (
 
 type schedulerServerMock struct {
 	interfaces.SchedulerService
+
+	canceledCount int
 }
 
 func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bool, error) {
+	s.canceledCount++
 	return true, nil
 }
 
@@ -69,9 +72,11 @@ func TestCancel(t *testing.T) {
 	}
 	createExecution(t, db, execution)
 
-	numCanceled, err := s.Cancel(ctx, testInvocationID)
+	err = s.Cancel(ctx, testInvocationID)
 	require.NoError(t, err)
-	require.Equal(t, 1, numCanceled)
+
+	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, schedulerMock.canceledCount)
 }
 
 func TestCancel_SkipCompletedExecution(t *testing.T) {
@@ -100,9 +105,11 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 	createExecution(t, db, completeExecution)
 	createExecution(t, db, incompleteExecution)
 
-	numCanceled, err := s.Cancel(ctx, testInvocationID)
+	err = s.Cancel(ctx, testInvocationID)
 	require.NoError(t, err)
-	require.Equal(t, 1, numCanceled)
+
+	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 1, schedulerMock.canceledCount)
 }
 
 func TestCancel_MultipleExecutions(t *testing.T) {
@@ -138,7 +145,9 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 	createExecution(t, db, incompleteExecution1)
 	createExecution(t, db, incompleteExecution2)
 
-	numCanceled, err := s.Cancel(ctx, testInvocationID)
+	err = s.Cancel(ctx, testInvocationID)
 	require.NoError(t, err)
-	require.Equal(t, 2, numCanceled)
+
+	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
+	require.Equal(t, 2, schedulerMock.canceledCount)
 }
