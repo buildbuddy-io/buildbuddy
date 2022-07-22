@@ -2,10 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "scheduler_server",
-    srcs = [
-        "scheduler_server.go",
-        "scheduler_server_mock.go",
-    ],
+    srcs = ["scheduler_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server",
     visibility = ["//visibility:public"],
     deps = [
