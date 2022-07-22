@@ -1,4 +1,4 @@
-package execution_server
+package execution_server_test
 
 import (
 	"context"
@@ -9,19 +9,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func executionServer(t *testing.T) *ExecutionServer {
-	env := testenv.GetTestEnv(t)
+type schedulerServerMock struct {
+	interfaces.SchedulerService
+}
 
+func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bool, error) {
+	return true, nil
+}
+
+func executionServer(t *testing.T, env *testenv.TestEnv) *execution_server.ExecutionServer {
 	redisTarget := testredis.Start(t).Target
 	rdb := redis.NewClient(redisutil.TargetToOptions(redisTarget))
 	env.SetRemoteExecutionRedisClient(rdb)
@@ -33,10 +40,10 @@ func executionServer(t *testing.T) *ExecutionServer {
 	}
 	env.SetTaskRouter(router)
 
-	scheduler := scheduler_server.NewMockSchedulerServer()
+	scheduler := &schedulerServerMock{}
 	env.SetSchedulerService(scheduler)
 
-	s, err := NewExecutionServer(env)
+	s, err := execution_server.NewExecutionServer(env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,11 +58,12 @@ func createExecution(t *testing.T, db *gorm.DB, execution *tables.Execution) {
 }
 
 func TestCancel(t *testing.T) {
+	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	s := executionServer(t)
+	s := executionServer(t, env)
 
 	// Create Execution rows to be canceled
-	db := s.env.GetDBHandle().DB(ctx)
+	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
 	if err != nil {
 		t.Fatal(err)
@@ -76,11 +84,12 @@ func TestCancel(t *testing.T) {
 }
 
 func TestCancel_SkipCompletedExecution(t *testing.T) {
+	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	s := executionServer(t)
+	s := executionServer(t, env)
 
 	// Create Execution rows to be canceled
-	db := s.env.GetDBHandle().DB(ctx)
+	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
 	if err != nil {
 		t.Fatal(err)
@@ -108,11 +117,12 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 }
 
 func TestCancel_MultipleExecutions(t *testing.T) {
+	env := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	s := executionServer(t)
+	s := executionServer(t, env)
 
 	// Create Execution rows to be canceled
-	db := s.env.GetDBHandle().DB(ctx)
+	db := env.GetDBHandle().DB(ctx)
 	testUUID, err := uuid.NewRandom()
 	if err != nil {
 		t.Fatal(err)

@@ -41,13 +41,13 @@ go_library(
 go_test(
     name = "execution_server_test",
     srcs = ["execution_server_test.go"],
-    embed = [":execution_server"],
     deps = [
-        "//enterprise/server/scheduling/scheduler_server",
+        ":execution_server",
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
         "//server/tables",
         "//server/testutil/testenv",
         "@com_github_go_redis_redis_v8//:redis",
