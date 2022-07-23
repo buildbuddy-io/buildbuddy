@@ -4870,20 +4870,20 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_gorm_driver_mysql",
         importpath = "gorm.io/driver/mysql",
-        sum = "h1:l8+9VwjjyzEkw0PNPBOr2JHhLOGVk7XEnl5hk42bcvs=",
-        version = "v1.2.0",
+        sum = "h1:/KoBMgsUHC3bExsekDcmNYaBnfH2WNeFuXqqrqMc98Q=",
+        version = "v1.3.4",
     )
     go_repository(
         name = "io_gorm_driver_sqlite",
         importpath = "gorm.io/driver/sqlite",
-        sum = "h1:SStaH/b+280M7C8vXeZLz/zo9cLQmIGwwj3cSj7p6l4=",
-        version = "v1.2.6",
+        sum = "h1:S3LjqAXPL8JzA/LTqlK7P5leBmtuK07r9dN5ER2C33Y=",
+        version = "v1.3.3",
     )
     go_repository(
         name = "io_gorm_gorm",
         importpath = "gorm.io/gorm",
-        sum = "h1:/JS6z+GStEQvJNW3t1FTwJwG/gZ+A7crFdRqtvG5ehA=",
-        version = "v1.22.3",
+        sum = "h1:ww+9Mu5WwHKDSOQZFC4ipu/sgpKMr9EtrJ0uwBqNtB0=",
+        version = "v1.23.7",
     )
     go_repository(
         name = "io_k8s_api",
