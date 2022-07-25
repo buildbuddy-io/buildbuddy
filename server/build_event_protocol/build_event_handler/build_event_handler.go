@@ -712,7 +712,6 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	if e.isFirstStartedEvent(&bazelBuildEvent) {
 		e.hasReceivedStartedEvent = true
 		e.unprocessedStartingEvents[bazelBuildEvent.Id.String()] = struct{}{}
-		log.Info(bazelBuildEvent.Id.String())
 		for _, child := range bazelBuildEvent.Children {
 			switch child.Id.(type) {
 			case *build_event_stream.BuildEventId_OptionsParsed:
