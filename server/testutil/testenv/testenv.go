@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
@@ -28,9 +27,13 @@ import (
 
 var (
 	useMySQL = flag.Bool("testenv.use_mysql", false, "Whether to use MySQL instead of sqlite for tests.")
-
-	configureLoggerOnce sync.Once
 )
+
+func init() {
+	*log.LogLevel = "debug"
+	*log.IncludeShortFileName = true
+	log.Configure()
+}
 
 type ConfigTemplateParams struct {
 	TestRootDir string
@@ -104,12 +107,6 @@ func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
 }
 
 func GetTestEnv(t testing.TB) *TestEnv {
-	configureLoggerOnce.Do(func() {
-		*log.LogLevel = "debug"
-		*log.IncludeShortFileName = true
-		log.Configure()
-	})
-
 	flags.PopulateFlagsFromData(t, []byte(testConfigData))
 	testRootDir := testfs.MakeTempDir(t)
 	if flag.Lookup("storage.disk.root_directory") != nil {
