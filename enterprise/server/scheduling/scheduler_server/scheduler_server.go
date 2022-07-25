@@ -153,7 +153,9 @@ type executorHandle struct {
 	requireAuthorization bool
 	stream               scpb.Scheduler_RegisterAndStreamWorkServer
 	groupID              string
-	registration         *scpb.ExecutionNode
+
+	registrationMu sync.Mutex
+	registration   *scpb.ExecutionNode
 
 	mu       sync.RWMutex
 	requests chan enqueueTaskReservationRequest
@@ -199,6 +201,18 @@ func (h *executorHandle) authorize(ctx context.Context) (string, error) {
 	return user.GetGroupID(), nil
 }
 
+func (h *executorHandle) getRegistration() *scpb.ExecutionNode {
+	h.registrationMu.Lock()
+	defer h.registrationMu.Unlock()
+	return h.registration
+}
+
+func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
+	h.registrationMu.Lock()
+	defer h.registrationMu.Unlock()
+	h.registration = r
+}
+
 func (h *executorHandle) Serve(ctx context.Context) error {
 	groupID, err := h.authorize(ctx)
 	if err != nil {
@@ -207,11 +221,12 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	h.groupID = groupID
 
 	removeConnectedExecutor := func() {
-		if h.registration == nil {
+		registration := h.getRegistration()
+		if registration == nil {
 			return
 		}
-		h.scheduler.RemoveConnectedExecutor(ctx, h, h.registration)
-		h.registration = nil
+		h.scheduler.RemoveConnectedExecutor(ctx, h, registration)
+		h.setRegistration(nil)
 	}
 	defer removeConnectedExecutor()
 
@@ -250,7 +265,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				if err := h.scheduler.AddConnectedExecutor(ctx, h, registration); err != nil {
 					return err
 				}
-				h.registration = registration
+				h.setRegistration(registration)
 				executorID = registration.GetExecutorId()
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
@@ -335,7 +350,8 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 }
 
 func (h *executorHandle) applyMeasuredTaskSize(req *scpb.EnqueueTaskReservationRequest) {
-	if h.registration == nil {
+	registration := h.getRegistration()
+	if registration == nil {
 		return
 	}
 
@@ -343,14 +359,14 @@ func (h *executorHandle) applyMeasuredTaskSize(req *scpb.EnqueueTaskReservationR
 	measuredSize := req.GetSchedulingMetadata().GetMeasuredTaskSize()
 	if measuredSize.GetEstimatedMemoryBytes() != 0 {
 		size.EstimatedMemoryBytes = measuredSize.GetEstimatedMemoryBytes()
-		executorMem := int64(float64(h.registration.GetAssignableMemoryBytes()) * tasksize.MaxResourceCapacityRatio)
+		executorMem := int64(float64(registration.GetAssignableMemoryBytes()) * tasksize.MaxResourceCapacityRatio)
 		if size.EstimatedMemoryBytes > executorMem {
 			size.EstimatedMemoryBytes = executorMem
 		}
 	}
 	if measuredSize.GetEstimatedMilliCpu() != 0 {
 		size.EstimatedMilliCpu = measuredSize.GetEstimatedMilliCpu()
-		executorMilliCPU := int64(float64(h.registration.GetAssignableMilliCpu()) * tasksize.MaxResourceCapacityRatio)
+		executorMilliCPU := int64(float64(registration.GetAssignableMilliCpu()) * tasksize.MaxResourceCapacityRatio)
 		if size.EstimatedMilliCpu > executorMilliCPU {
 			size.EstimatedMilliCpu = executorMilliCPU
 		}
