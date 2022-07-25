@@ -6,6 +6,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { TerminalComponent } from "../terminal/terminal";
 import rpcService from "../service/rpc_service";
 import { CheckCircle, Clock, HelpCircle, PauseCircle, XCircle } from "lucide-react";
+import { durationToMillisWithFallback } from "../util/proto";
 
 interface Props {
   testResult: invocation.InvocationEvent;
@@ -116,6 +117,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
 
   render() {
     const title = <div className="title">Test log</div>;
+    const strategy = this.props.testResult.buildEvent.testResult.executionInfo?.strategy;
     return (
       <>
         <div className={`card ${this.getStatusClass(this.props.testResult.buildEvent.testResult.status)}`}>
@@ -123,7 +125,13 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
           <div className="content">
             <div className="title">
               {this.getStatusTitle(this.props.testResult.buildEvent.testResult.status)} in{" "}
-              {format.durationSec(this.props.testResult.buildEvent.testResult.testAttemptDuration.seconds)}
+              {format.durationMillis(
+                durationToMillisWithFallback(
+                  this.props.testResult.buildEvent.testResult.testAttemptDuration,
+                  this.props.testResult.buildEvent.testResult.testAttemptDurationMillis
+                )
+              )}
+              {strategy && <> ({strategy})</>}
             </div>
             <div className="subtitle">
               On Shard {this.props.testResult.buildEvent.id.testResult.shard} (Run{" "}
