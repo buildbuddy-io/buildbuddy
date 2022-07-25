@@ -48,7 +48,7 @@
     "long": "^4.0.0",
     "lucide-react": "^0.16.29",
     "minimist": "^1.2.6",
-    "moment": "^2.29.2",
+    "moment": "^2.29.4",
     "monaco-editor": "^0.25.2",
     "octokit": "^1.1.0",
     "octokit-plugin-create-pull-request": "^3.9.3",
