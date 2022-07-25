@@ -117,7 +117,7 @@ func TestEstimate_DiskSizePlatformProp_UsesPropValueForDiskSize(t *testing.T) {
 	assert.Equal(t, disk, ts.EstimatedFreeDiskBytes)
 }
 
-func TestSizer_Estimate_ShouldUseRecordedUsageStats(t *testing.T) {
+func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 
 	env := testenv.GetTestEnv(t)
@@ -134,14 +134,9 @@ func TestSizer_Estimate_ShouldUseRecordedUsageStats(t *testing.T) {
 			Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
 		},
 	}
-	ts := sizer.Estimate(ctx, task)
+	ts := sizer.Get(ctx, task)
 
-	assert.Equal(
-		t, tasksize.DefaultMemEstimate, ts.EstimatedMemoryBytes,
-		"initial mem estimate should be the default estimate")
-	assert.Equal(
-		t, tasksize.DefaultCPUEstimate, ts.EstimatedMilliCpu,
-		"initial CPU estimate should be the default estimate")
+	require.Nil(t, ts, "should not return a task size initially")
 
 	execStart := time.Now()
 	md := &repb.ExecutedActionMetadata{
@@ -159,12 +154,12 @@ func TestSizer_Estimate_ShouldUseRecordedUsageStats(t *testing.T) {
 
 	require.NoError(t, err)
 
-	ts = sizer.Estimate(ctx, task)
+	ts = sizer.Get(ctx, task)
 
 	assert.Equal(
-		t, int64(917*1e6), ts.EstimatedMemoryBytes,
+		t, int64(917*1e6), ts.GetEstimatedMemoryBytes(),
 		"subsequent mem estimate should equal recorded peak mem usage")
 	assert.Equal(
-		t, int64(7.13/2*1000), ts.EstimatedMilliCpu,
+		t, int64(7.13/2*1000), ts.GetEstimatedMilliCpu(),
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }

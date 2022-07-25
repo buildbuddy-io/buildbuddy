@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -397,7 +398,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
 	}
 
-	taskSize := sizer.Estimate(ctx, executionTask)
+	taskSize := tasksize.Estimate(executionTask)
+	measuredSize := sizer.Get(ctx, executionTask)
 
 	props := platform.ParseProperties(executionTask)
 
@@ -424,12 +426,13 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	schedulingMetadata := &scpb.SchedulingMetadata{
-		Os:              props.OS,
-		Arch:            props.Arch,
-		Pool:            props.Pool,
-		TaskSize:        taskSize,
-		ExecutorGroupId: executorGroupID,
-		TaskGroupId:     taskGroupID,
+		Os:               props.OS,
+		Arch:             props.Arch,
+		Pool:             props.Pool,
+		TaskSize:         taskSize,
+		MeasuredTaskSize: measuredSize,
+		ExecutorGroupId:  executorGroupID,
+		TaskGroupId:      taskGroupID,
 	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
 		TaskId:         executionID,

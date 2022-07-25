@@ -99,24 +99,24 @@ func NewSizer(env environment.Env) (*taskSizer, error) {
 	return ts, nil
 }
 
-func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
-	initialEstimate := Estimate(task)
+func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
 	if !*useMeasuredSizes {
-		return initialEstimate
+		return nil
 	}
 	props := platform.ParseProperties(task)
+	// If a task size is explicitly requested, measured task size is not used.
 	if props.EstimatedComputeUnits != 0 {
-		return initialEstimate
+		return nil
 	}
 	// TODO(bduffany): Remove or hide behind a dev-only flag once measured task sizing
 	// is battle-tested.
 	if props.DisableMeasuredTaskSize {
-		return initialEstimate
+		return nil
 	}
 	// Don't use measured task sizes for Firecracker tasks for now, since task
 	// sizes are used as hard limits on allowed resources.
 	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
-		return initialEstimate
+		return nil
 	}
 	statusLabel := "hit"
 	defer func() {
@@ -129,18 +129,17 @@ func (s *taskSizer) Estimate(ctx context.Context, task *repb.ExecutionTask) *scp
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to read task size from Redis; falling back to default size estimate: %s", err)
 		statusLabel = "error"
-		return initialEstimate
+		return nil
 	}
 	if recordedSize == nil {
 		statusLabel = "miss"
 		// TODO: return a value indicating "unsized" here, and instead let the
 		// executor run this task once to estimate the size.
-		return initialEstimate
+		return nil
 	}
 	return &scpb.TaskSize{
-		EstimatedMemoryBytes:   recordedSize.EstimatedMemoryBytes,
-		EstimatedMilliCpu:      recordedSize.EstimatedMilliCpu,
-		EstimatedFreeDiskBytes: initialEstimate.EstimatedFreeDiskBytes,
+		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
+		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
 	}
 }
 
