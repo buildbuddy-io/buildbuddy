@@ -817,7 +817,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if response != nil {
 				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
 					// Errors updating the router or recording usage are non-fatal.
-					log.CtxErrorf(ctx, "Could not update task router: %s", err)
+					log.CtxErrorf(ctx, "Could not update post-completion metadata for task %q: %s", taskID, err)
 				}
 			}
 		}
@@ -876,7 +876,11 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		}
 	}
 
-	return s.updateUsage(ctx, cmd, executeResponse)
+	if err := s.updateUsage(ctx, cmd, executeResponse); err != nil {
+		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+	}
+
+	return nil
 }
 
 func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
