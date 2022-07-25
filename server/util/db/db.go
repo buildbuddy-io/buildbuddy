@@ -61,7 +61,7 @@ var (
 	logQueries             = flag.Bool("database.log_queries", false, "If true, log all queries")
 	slowQueryThreshold     = flag.Duration("database.slow_query_threshold", 500*time.Millisecond, "Queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
-	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDB        = flag.Bool("auto_migrate_db", false, "If true, attempt to automigrate the db when connecting")
 	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
 )
 
