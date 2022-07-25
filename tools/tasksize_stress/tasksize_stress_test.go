@@ -35,6 +35,10 @@ func TestCPU4(t *testing.T) {
 	fullyUtilizeCPUCores(4, *duration)
 }
 
+func TestCPU8(t *testing.T) {
+	fullyUtilizeCPUCores(8, *duration)
+}
+
 func fullyUtilizeCPUCores(numGoroutines int, dur time.Duration) {
 	var wg sync.WaitGroup
 	end := time.Now().Add(dur)
