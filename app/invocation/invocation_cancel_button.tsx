@@ -22,7 +22,13 @@ export default class InvocationCancelButtonComponent extends React.Component<Inv
     rpcService.service
       .cancelInvocation(new invocation.CancelInvocationRequest({ invocationId: this.props.invocationId }))
       .catch((e) => errorService.handleError(e))
-      .finally(() => this.setState({ isLoading: false }));
+      .finally(() => {
+        // Delay updating button loading state because after the Cancel RPC completes, can take some time for the
+        // invocation to be marked as disconnected
+        setTimeout(() => {
+          this.setState({ isLoading: false });
+        }, 2000);
+      });
   }
 
   render() {

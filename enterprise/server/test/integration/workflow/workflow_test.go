@@ -58,6 +58,34 @@ actions:
 	return fileNameToFileContentsMap
 }
 
+// repoContentsSlowScript simulates a test repo with the config files required to run a workflow
+// It sets up a slow sample script that takes a while to run so the CI runner does not return immediately,
+// giving tests that need to modify the workflow (Ex. for testing cancellation) time to complete
+func repoContentsSlowScript() map[string]string {
+	// Configure workflow to be executed on an OS / Architecture that matches the local executor spun up by the test
+	osStr := fmt.Sprintf("    os: \"%s\"\n", runtime.GOOS)
+	archStr := fmt.Sprintf("    arch: \"%s\"\n", runtime.GOARCH)
+
+	fileNameToFileContentsMap := map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD": `
+sh_binary(
+    name = "sleep_forever_test",
+    srcs = ["sleep_forever_test.sh"],
+)
+`,
+		"sleep_forever_test.sh": "sleep infinity",
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    triggers: { push: { branches: [ master ] } }
+    bazel_commands: [ "build //:sleep_forever_test" ]
+` + osStr + archStr,
+	}
+
+	return fileNameToFileContentsMap
+}
+
 func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
 	env := rbetest.NewRBETestEnv(t)
 	var workflowService interfaces.WorkflowService
@@ -146,8 +174,6 @@ func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBu
 		require.Greater(t, len(invResp.GetInvocation()), 0)
 		inv := invResp.GetInvocation()[0]
 		status := inv.GetInvocationStatus()
-		fmt.Printf("Invocation status %v", status)
-		require.NotEqual(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, status)
 
 		if status == expectedStatus {
 			logResp, err := bb.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
@@ -298,7 +324,9 @@ func TestCancel(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
 	env, workflowService := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContents())
+
+	// Set up slow script to give cancellation time to complete
+	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsSlowScript())
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	// Create the workflow
@@ -318,15 +346,13 @@ func TestCancel(t *testing.T) {
 
 	// Cancel workflow
 	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
-	_, _ = bb.CancelInvocation(ctx, &inpb.CancelInvocationRequest{
+	cancelResp, err := bb.CancelInvocation(ctx, &inpb.CancelInvocationRequest{
 		RequestContext: reqCtx,
 		InvocationId:   iid,
 	})
-	fmt.Printf("Invocation canceled %v\n", iid)
 
-	// How to guarantee cancel happens before it completes?
-	_ = waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
-	//require.NoError(t, err)
-	//require.NotNil(t, cancelResp)
-	//require.NotNil(t, inv)
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
+	require.NoError(t, err)
+	require.NotNil(t, cancelResp)
+	require.NotNil(t, inv)
 }

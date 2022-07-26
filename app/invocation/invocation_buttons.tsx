@@ -22,14 +22,13 @@ export default class InvocationButtons extends React.Component<InvocationButtons
   }
 
   render() {
+    const showCancelButton = this.props.model.isWorkflowInvocation() && this.props.model.isInProgress();
+    const showRerunButton = !showCancelButton && this.props.model.isWorkflowInvocation() && this.canRerunWorkflow();
+
     return (
       <div className="invocation-top-right-buttons">
-        {this.props.model.isWorkflowInvocation() && this.canRerunWorkflow() && (
-          <WorkflowRerunButton model={this.props.model} />
-        )}
-        {this.props.model.getIsRBEEnabled() && this.props.model.isInProgress() && (
-          <InvocationCancelButton invocationId={this.props.invocationId} />
-        )}
+        {showRerunButton && <WorkflowRerunButton model={this.props.model} />}
+        {showCancelButton && <InvocationCancelButton invocationId={this.props.invocationId} />}
         <InvocationCompareButton invocationId={this.props.invocationId} />
         <InvocationShareButton user={this.props.user} model={this.props.model} invocationId={this.props.invocationId} />
         <InvocationMenuComponent
