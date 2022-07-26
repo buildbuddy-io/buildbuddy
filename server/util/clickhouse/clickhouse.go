@@ -34,6 +34,7 @@ func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 
 type Table interface {
 	TableName() string
+	TableOptions() string
 }
 
 // Invocation constains a subset of tables.Invocations.
@@ -70,6 +71,10 @@ func (i *Invocation) TableName() string {
 	return "Invocations"
 }
 
+func (i *Invocation) TableOptions() string {
+	return "ENGINE=ReplacingMergeTree() ORDER BY (group_id, updated_at_usec)"
+}
+
 // DateFromUsecTimestamp returns an SQL expression compatible with clickhouse
 // that converts the value of the given field from a Unix timestamp (in
 // microseconds since the Unix Epoch) to a date offset by the given UTC offset.
@@ -83,7 +88,7 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 
 func runMigrations(gdb *gorm.DB) error {
 	log.Info("Auto-migrating clickhouse DB")
-	return gdb.AutoMigrate(&Invocation{})
+	return gdb.Set("gorm:table_options", (&Invocation{}).TableOptions()).AutoMigrate(&Invocation{})
 }
 
 func Register(env environment.Env) error {
