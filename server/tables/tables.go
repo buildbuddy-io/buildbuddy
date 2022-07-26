@@ -382,6 +382,7 @@ type Execution struct {
 	StatusCode   int32
 	ExitCode     int32
 	CachedResult bool
+	DoNotCache   bool
 }
 
 func (t *Execution) TableName() string {
