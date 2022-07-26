@@ -9,6 +9,7 @@ import { google } from "../../proto/grpc_code_ts_proto";
 import rpcService from "../service/rpc_service";
 import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
 import DigestComponent from "../components/digest/digest";
+import Link from "../components/link/link";
 
 interface Props {
   model: InvocationModel;
@@ -248,20 +249,17 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     });
   }
 
-  handleActionDigestClick(execution: execution_stats.IExecution) {
-    let path =
-      "/invocation/" +
-      this.props.model.getId() +
-      "?actionDigest=" +
-      execution.actionDigest.hash +
-      "/" +
-      execution.actionDigest.sizeBytes;
-
-    if (execution.actionResultDigest != null) {
-      path += "&actionResultDigest=" + execution.actionResultDigest.hash + "/" + execution.actionResultDigest.sizeBytes;
+  getActionPageLink(execution: execution_stats.IExecution) {
+    const search = new URLSearchParams({
+      actionDigest: `${execution.actionDigest.hash}/${execution.actionDigest.sizeBytes}`,
+    });
+    if (execution.actionResultDigest) {
+      search.set(
+        "actionResultDigest",
+        `${execution.actionResultDigest.hash}/${execution.actionResultDigest.sizeBytes}`
+      );
     }
-
-    router.navigateTo(path + "#action");
+    return `/invocation/${this.props.model.getId()}?${search}#action`;
   }
 
   render() {
@@ -375,10 +373,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
                   {filteredActions.sort(this.sort.bind(this)).map((execution, index) => {
                     const status = getExecutionStatus(execution);
                     return (
-                      <div
-                        key={index}
-                        className="invocation-execution-row clickable"
-                        onClick={this.handleActionDigestClick.bind(this, execution)}>
+                      <Link key={index} className="invocation-execution-row" href={this.getActionPageLink(execution)}>
                         <div className="invocation-execution-row-image">{status.icon}</div>
                         <div>
                           <div className="invocation-execution-row-header">
@@ -403,7 +398,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
                             </div>
                           </div>
                         </div>
-                      </div>
+                      </Link>
                     );
                   })}
                 </div>

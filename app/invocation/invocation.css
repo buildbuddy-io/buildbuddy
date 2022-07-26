@@ -655,12 +655,20 @@
 
 .invocation-execution-row {
   display: flex;
-  margin-top: 16px;
   border-top: 1px solid #eee;
-  padding-top: 16px;
+  padding: 16px 0;
+}
+
+.invocation-execution-row:last-child {
+  border-bottom: 1px solid #eee;
+}
+
+.invocation-execution-row:hover {
+  background: #fafafa;
 }
 
 .invocation-execution-row-image {
+  margin-left: 4px;
   margin-right: 16px;
 }
 
