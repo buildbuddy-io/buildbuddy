@@ -115,9 +115,10 @@ func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
 	}
 
 	var actionResultDigest *repb.Digest
-	if in.StatusCode == int32(codes.OK) && in.ExitCode == 0 {
-		// Action Result with unmodified action digest is only uploaded when there is no error
-		// from the CommandResult(i.e. status code is OK) and the exit code is zero.
+	if in.StatusCode == int32(codes.OK) && in.ExitCode == 0 && !in.DoNotCache {
+		// Action Result with unmodified action digest is only uploaded when
+		// there is no error from the CommandResult(i.e. status code is OK) and
+		// the exit code is zero and the action was not marked with DoNotCache.
 		actionResultDigest = proto.Clone(r.GetDigest()).(*repb.Digest)
 	} else {
 		actionResultDigest, err = digest.AddInvocationIDToDigest(r.GetDigest(), in.InvocationID)

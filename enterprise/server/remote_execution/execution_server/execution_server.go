@@ -257,6 +257,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			}
 		}
 		execution.CachedResult = executeResponse.GetCachedResult()
+		execution.DoNotCache = executeResponse.GetResult().GetExecutionMetadata().GetDoNotCache()
 
 		// Update stats if the operation has been completed.
 		if stage == repb.ExecutionStage_COMPLETED {
