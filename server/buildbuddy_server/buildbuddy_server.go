@@ -144,14 +144,14 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 }
 
 func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.CancelExecutionsRequest) (*inpb.CancelExecutionsResponse, error) {
-	err := s.authorizeInvocationWrite(ctx, req.InvocationId)
-	if err != nil {
-		return nil, err
-	}
-
 	res := s.env.GetRemoteExecutionService()
 	if res == nil {
-		return nil, status.UnimplementedError("Not Implemented")
+		return nil, status.FailedPreconditionError("Remote execution not enabled")
+	}
+
+	err := s.authorizeInvocationWrite(ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
 	}
 
 	if err = res.Cancel(ctx, req.GetInvocationId()); err != nil {

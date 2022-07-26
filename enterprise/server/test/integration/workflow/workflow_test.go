@@ -346,7 +346,7 @@ func TestCancel(t *testing.T) {
 
 	// Cancel workflow
 	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
-	cancelResp, err := bb.CancelInvocation(ctx, &inpb.CancelInvocationRequest{
+	cancelResp, err := bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
 		RequestContext: reqCtx,
 		InvocationId:   iid,
 	})
