@@ -39,7 +39,6 @@ type ConfigTemplateParams struct {
 const testConfigData string = `
 app:
   build_buddy_url: "http://localhost:8080"
-  enable_fast_invocation_response: true
 database:
   data_source: "sqlite3://:memory:"
 storage:

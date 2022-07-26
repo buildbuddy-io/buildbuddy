@@ -5,7 +5,6 @@ app:
   code_editor_enabled: true
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
-  enable_fast_invocation_response: true
 database:
   data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
 storage:

@@ -1,6 +1,4 @@
 # N.B. This file is bundled and distributed in the enterprise docker image.
-app:
-  enable_fast_invocation_response: true
 database:
   data_source: "sqlite3:///buildbuddy/buildbuddy.db"
 storage:

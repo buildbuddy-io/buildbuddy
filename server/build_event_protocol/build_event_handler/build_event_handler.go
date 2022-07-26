@@ -76,9 +76,9 @@ const (
 )
 
 var (
-	chunkFileSizeBytes           = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
-	enableChunkedEventLogs       = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
-	enableFastInvocationResponse = flag.Bool("app.enable_fast_invocation_response", false, "If true, invocation responses will be filled from database values and skip parsing the events on read.")
+	chunkFileSizeBytes                = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	enableChunkedEventLogs            = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	requireInvocationEventParseOnRead = flag.Bool("app.require_invocation_event_parse_on_read", false, "If true, invocation responses will be filled from database values and then by parsing the events on read.")
 
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
@@ -877,23 +877,23 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 			}
 		}
 	}
-	if *enableFastInvocationResponse {
-		if len(e.unprocessedStartingEvents) > 0 {
-			if _, ok := e.unprocessedStartingEvents[event.BuildEvent.Id.String()]; ok {
-				delete(e.unprocessedStartingEvents, event.BuildEvent.Id.String())
-				if len(e.unprocessedStartingEvents) == 0 {
-					// When we have processed all starting events, update the invocation in
-					// the DB so that it can be searched by its commit SHA, user name, etc.
-					// even while the invocation is still in progress.
-					if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
-						return err
-					}
-				}
+	if *requireInvocationEventParseOnRead {
+		if isWorkspaceStatusEvent(event.BuildEvent) {
+			if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
+				return err
 			}
 		}
-	} else if isWorkspaceStatusEvent(event.BuildEvent) {
-		if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
-			return err
+	} else if len(e.unprocessedStartingEvents) > 0 {
+		if _, ok := e.unprocessedStartingEvents[event.BuildEvent.Id.String()]; ok {
+			delete(e.unprocessedStartingEvents, event.BuildEvent.Id.String())
+			if len(e.unprocessedStartingEvents) == 0 {
+				// When we have processed all starting events, update the invocation in
+				// the DB so that it can be searched by its commit SHA, user name, etc.
+				// even while the invocation is still in progress.
+				if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
@@ -1117,7 +1117,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			redactor = redact.NewStreamingRedactor(env)
 		}
 		var parser *event_parser.StreamingEventParser
-		if !*enableFastInvocationResponse || redactor != nil {
+		if *requireInvocationEventParseOnRead || redactor != nil {
 			parser = event_parser.NewStreamingEventParser(screenWriter)
 		}
 		events := []*inpb.InvocationEvent{}

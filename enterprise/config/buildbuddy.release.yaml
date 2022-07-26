@@ -3,7 +3,6 @@
 app:
   events_api_url: "grpc://localhost:1985"
   cache_api_url: "grpc://localhost:1985"
-  enable_fast_invocation_response: true
 storage:
   ttl_seconds: 0 # No TTL (yet).
   disk:
