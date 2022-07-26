@@ -14,6 +14,7 @@ require (
 	cloud.google.com/go/storage v1.21.0
 	github.com/AlecAivazis/survey/v2 v2.3.4
 	github.com/Azure/azure-storage-blob-go v0.14.0
+	github.com/ClickHouse/clickhouse-go/v2 v2.2.0
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.30.0
 	github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e
 	github.com/aws/aws-sdk-go v1.36.30
@@ -90,6 +91,7 @@ require (
 	google.golang.org/protobuf v1.28.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
+	gorm.io/driver/clickhouse v0.4.2
 	gorm.io/driver/mysql v1.3.4
 	gorm.io/driver/sqlite v1.3.3
 	gorm.io/gorm v1.23.7
@@ -100,7 +102,6 @@ require (
 	cloud.google.com/go/iam v0.3.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/BurntSushi/toml v1.0.0 // indirect
-	github.com/ClickHouse/clickhouse-go/v2 v2.2.0 // indirect
 	github.com/DataDog/zstd v1.4.5 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
@@ -237,5 +238,4 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gorm.io/driver/clickhouse v0.4.2 // indirect
 )
