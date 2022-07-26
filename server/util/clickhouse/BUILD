@@ -7,6 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/interfaces",
+        "//server/tables",
         "//server/util/log",
         "//server/util/status",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
