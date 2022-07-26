@@ -351,8 +351,8 @@ func TestCancel(t *testing.T) {
 		InvocationId:   iid,
 	})
 
-	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
 	require.NoError(t, err)
 	require.NotNil(t, cancelResp)
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
 	require.NotNil(t, inv)
 }
