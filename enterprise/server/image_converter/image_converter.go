@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"flag"
 	"fmt"
@@ -27,13 +28,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/containerd/stargz-snapshotter/estargz"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -338,50 +339,51 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *rgpb.ConvertLaye
 		return &rgpb.ConvertLayerResponse{Skip: true}, nil
 	}
 
-	newLayer, err := tarball.LayerFromOpener(func() (io.ReadCloser, error) {
-		layerReader, err := l.Uncompressed()
-		if err != nil {
-			return nil, status.UnknownErrorf("could not create uncompressed reader: %s", err)
-		}
-		return layerReader, nil
-	}, tarball.WithEstargz)
+	remoteLayerReader, err := l.Uncompressed()
 	if err != nil {
-		return nil, status.UnknownErrorf("could not create tarball layer reader: %s", err)
+		return nil, status.UnknownErrorf("could not create uncompressed reader: %s", err)
 	}
 
-	newLayerDigest, err := newLayer.Digest()
+	// The estargz library requires a seekable reader so we suck it up and read
+	// the layer into memory for performance.
+	layerData, err := io.ReadAll(remoteLayerReader)
 	if err != nil {
-		return nil, status.UnknownErrorf("could not get digest for converted layer: %s", err)
-	}
-	newLayerDiffID, err := newLayer.DiffID()
-	if err != nil {
-		return nil, status.UnknownErrorf("could not get diff ID for convered layer: %s", err)
-	}
-	newLayerSize, err := newLayer.Size()
-	if err != nil {
-		return nil, status.UnknownErrorf("could not get size for converted layer: %s", err)
-	}
-	newLayerMediaType, err := newLayer.MediaType()
-	if err != nil {
-		return nil, status.UnknownErrorf("could not get media type for converted layer: %s", err)
-	}
-	newLayerReader, err := newLayer.Compressed()
-	if err != nil {
-		return nil, err
+		return nil, status.UnknownErrorf("could not read original layer data: %s", err)
 	}
 
-	rn := digest.NewResourceName(&repb.Digest{Hash: newLayerDigest.Hex, SizeBytes: newLayerSize}, registryInstanceName)
-	casDigest, err := cachetools.UploadFromReader(ctx, c.bsClient, rn, newLayerReader)
+	layerReader := io.NewSectionReader(bytes.NewReader(layerData), 0, int64(len(layerData)))
+	newLayer, err := estargz.Build(layerReader, estargz.WithCompressionLevel(gzip.BestSpeed))
+	if err != nil {
+		return nil, status.UnknownErrorf("could not convert layer to estargz: %s", err)
+	}
+	// Read the estargz layer into memory so that we can compute the digest
+	// and upload without reading from disk.
+	// The original layer data should not be needed at this point, so hopefully
+	// it's eligible for garbage collection.
+	newLayerData, err := io.ReadAll(newLayer.ReadCloser)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not read converted layer into memory: %s", err)
+	}
+	if err := newLayer.Close(); err != nil {
+		return nil, status.UnknownErrorf("could not close new layer reader: %s", err)
+	}
+	newLayerDigest, err := digest.Compute(bytes.NewReader(newLayerData))
+	if err != nil {
+		return nil, status.UnknownErrorf("could not compute digest of new layer: %s", err)
+	}
+
+	rn := digest.NewResourceName(newLayerDigest, registryInstanceName)
+	casDigest, err := cachetools.UploadFromReader(ctx, c.bsClient, rn, bytes.NewReader(newLayerData))
 	if err != nil {
 		return nil, status.UnknownErrorf("could not upload converted layer %q: %s", newLayerDigest, err)
 	}
 
 	return &rgpb.ConvertLayerResponse{
 		CasDigest: casDigest,
-		Digest:    newLayerDigest.String(),
-		DiffId:    newLayerDiffID.String(),
-		Size:      newLayerSize,
-		MediaType: string(newLayerMediaType),
+		Digest:    "sha256:" + newLayerDigest.GetHash(),
+		DiffId:    newLayer.DiffID().String(),
+		Size:      int64(len(newLayerData)),
+		MediaType: string(types.DockerLayer),
 	}, nil
 }
 
