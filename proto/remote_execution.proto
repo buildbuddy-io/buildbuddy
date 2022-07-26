@@ -907,6 +907,9 @@ message ExecutedActionMetadata {
 
   // Estimated task size that was used for scheduling purposes.
   scheduler.TaskSize estimated_task_size = 1003;
+
+  // Whether the executed Action was marked with `do_not_cache`.
+  bool do_not_cache = 1004;
 }
 
 // An ActionResult represents the result of an

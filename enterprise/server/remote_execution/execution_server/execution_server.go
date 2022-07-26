@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -256,6 +257,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			}
 		}
 		execution.CachedResult = executeResponse.GetCachedResult()
+		execution.DoNotCache = executeResponse.GetResult().GetExecutionMetadata().GetDoNotCache()
 
 		// Update stats if the operation has been completed.
 		if stage == repb.ExecutionStage_COMPLETED {
@@ -397,7 +399,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
 	}
 
-	taskSize := sizer.Estimate(ctx, executionTask)
+	taskSize := tasksize.Estimate(executionTask)
+	measuredSize := sizer.Get(ctx, executionTask)
 
 	props := platform.ParseProperties(executionTask)
 
@@ -424,12 +427,13 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	schedulingMetadata := &scpb.SchedulingMetadata{
-		Os:              props.OS,
-		Arch:            props.Arch,
-		Pool:            props.Pool,
-		TaskSize:        taskSize,
-		ExecutorGroupId: executorGroupID,
-		TaskGroupId:     taskGroupID,
+		Os:               props.OS,
+		Arch:             props.Arch,
+		Pool:             props.Pool,
+		TaskSize:         taskSize,
+		MeasuredTaskSize: measuredSize,
+		ExecutorGroupId:  executorGroupID,
+		TaskGroupId:      taskGroupID,
 	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
 		TaskId:         executionID,
@@ -817,7 +821,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if response != nil {
 				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
 					// Errors updating the router or recording usage are non-fatal.
-					log.CtxErrorf(ctx, "Could not update task router: %s", err)
+					log.CtxErrorf(ctx, "Could not update post-completion metadata for task %q: %s", taskID, err)
 				}
 			}
 		}
@@ -876,7 +880,11 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		}
 	}
 
-	return s.updateUsage(ctx, cmd, executeResponse)
+	if err := s.updateUsage(ctx, cmd, executeResponse); err != nil {
+		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
+	}
+
+	return nil
 }
 
 func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {

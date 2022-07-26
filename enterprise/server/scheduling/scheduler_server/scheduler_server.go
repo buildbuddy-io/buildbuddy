@@ -154,6 +154,9 @@ type executorHandle struct {
 	stream               scpb.Scheduler_RegisterAndStreamWorkServer
 	groupID              string
 
+	registrationMu sync.Mutex
+	registration   *scpb.ExecutionNode
+
 	mu       sync.RWMutex
 	requests chan enqueueTaskReservationRequest
 	replies  map[string]chan<- *scpb.EnqueueTaskReservationResponse
@@ -198,6 +201,18 @@ func (h *executorHandle) authorize(ctx context.Context) (string, error) {
 	return user.GetGroupID(), nil
 }
 
+func (h *executorHandle) getRegistration() *scpb.ExecutionNode {
+	h.registrationMu.Lock()
+	defer h.registrationMu.Unlock()
+	return h.registration
+}
+
+func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
+	h.registrationMu.Lock()
+	defer h.registrationMu.Unlock()
+	h.registration = r
+}
+
 func (h *executorHandle) Serve(ctx context.Context) error {
 	groupID, err := h.authorize(ctx)
 	if err != nil {
@@ -205,13 +220,13 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	}
 	h.groupID = groupID
 
-	var registeredNode *scpb.ExecutionNode
 	removeConnectedExecutor := func() {
-		if registeredNode == nil {
+		registration := h.getRegistration()
+		if registration == nil {
 			return
 		}
-		h.scheduler.RemoveConnectedExecutor(ctx, h, registeredNode)
-		registeredNode = nil
+		h.scheduler.RemoveConnectedExecutor(ctx, h, registration)
+		h.setRegistration(nil)
 	}
 	defer removeConnectedExecutor()
 
@@ -250,7 +265,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				if err := h.scheduler.AddConnectedExecutor(ctx, h, registration); err != nil {
 					return err
 				}
-				registeredNode = registration
+				h.setRegistration(registration)
 				executorID = registration.GetExecutorId()
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
@@ -297,12 +312,20 @@ func (h *executorHandle) handleTaskReservationResponse(response *scpb.EnqueueTas
 func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	// EnqueueTaskReservation may be called multiple times and OpenTelemetry doesn't have clear documentation as to
 	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
+	// We also clone to avoid mutating the proto in applyMeasuredTaskSize below.
 	req, ok := proto.Clone(req).(*scpb.EnqueueTaskReservationRequest)
 	if !ok {
 		log.CtxErrorf(ctx, "could not clone reservation request")
 		return nil, status.InternalError("could not clone reservation request")
 	}
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
+
+	// Just before enqueueing, resize the task to match the measured task size,
+	// up to the executor's limits. This late-resizing approach ensures that we
+	// assign tasks to executors independently of any measured task sizes, to
+	// avoid issues where a task can't be rescheduled due to its measured size
+	// exceeding executor limits.
+	h.applyMeasuredTaskSize(req)
 
 	timeout := time.NewTimer(executorEnqueueTaskReservationTimeout)
 	rspCh := make(chan *scpb.EnqueueTaskReservationResponse, 1)
@@ -323,6 +346,35 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
 	case rsp := <-rspCh:
 		return rsp, nil
+	}
+}
+
+func (h *executorHandle) applyMeasuredTaskSize(req *scpb.EnqueueTaskReservationRequest) {
+	registration := h.getRegistration()
+	if registration == nil {
+		return
+	}
+
+	size := req.GetTaskSize()
+	measuredSize := req.GetSchedulingMetadata().GetMeasuredTaskSize()
+	if measuredSize.GetEstimatedMemoryBytes() != 0 {
+		size.EstimatedMemoryBytes = measuredSize.GetEstimatedMemoryBytes()
+		executorMem := int64(float64(registration.GetAssignableMemoryBytes()) * tasksize.MaxResourceCapacityRatio)
+		if size.EstimatedMemoryBytes > executorMem {
+			size.EstimatedMemoryBytes = executorMem
+		}
+	}
+	if measuredSize.GetEstimatedMilliCpu() != 0 {
+		size.EstimatedMilliCpu = measuredSize.GetEstimatedMilliCpu()
+		executorMilliCPU := int64(float64(registration.GetAssignableMilliCpu()) * tasksize.MaxResourceCapacityRatio)
+		if size.EstimatedMilliCpu > executorMilliCPU {
+			size.EstimatedMilliCpu = executorMilliCPU
+		}
+	}
+
+	req.TaskSize = size
+	if req.SchedulingMetadata != nil {
+		req.SchedulingMetadata.TaskSize = size
 	}
 }
 
@@ -555,7 +607,10 @@ func (np *nodePool) RemoveConnectedExecutor(id string) bool {
 	defer np.mu.Unlock()
 	for i, e := range np.connectedExecutors {
 		if e.executorID == id {
-			np.connectedExecutors = append(np.connectedExecutors[:i], np.connectedExecutors[i+1:]...)
+			nodes := make([]*executionNode, 0, len(np.connectedExecutors)-1)
+			nodes = append(nodes, np.connectedExecutors[:i]...)
+			nodes = append(nodes, np.connectedExecutors[i+1:]...)
+			np.connectedExecutors = nodes
 			return true
 		}
 	}
@@ -963,8 +1018,9 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 	var reqs []*scpb.EnqueueTaskReservationRequest
 	for _, task := range tasks {
 		req := &scpb.EnqueueTaskReservationRequest{
-			TaskId:   task.taskID,
-			TaskSize: task.metadata.GetTaskSize(),
+			TaskId:             task.taskID,
+			TaskSize:           task.metadata.GetTaskSize(),
+			SchedulingMetadata: task.metadata,
 		}
 		reqs = append(reqs, req)
 	}

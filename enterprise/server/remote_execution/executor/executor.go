@@ -180,6 +180,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		ExecutorId:           s.id,
 		IoStats:              &repb.IOStats{},
 		EstimatedTaskSize:    st.GetSchedulingMetadata().GetTaskSize(),
+		DoNotCache:           task.GetAction().GetDoNotCache(),
 	}
 
 	if !req.GetSkipCacheLookup() {
