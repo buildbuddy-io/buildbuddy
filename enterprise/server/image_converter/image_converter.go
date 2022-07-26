@@ -131,6 +131,23 @@ type convertedLayer struct {
 	rsp *rgpb.ConvertLayerResponse
 }
 
+func (c *convertedLayer) Descriptor() (*v1.Descriptor, error) {
+	d, err := c.Digest()
+	if err != nil {
+		return nil, err
+	}
+	as := make(map[string]string)
+	for _, a := range c.rsp.GetAnnotations() {
+		as[a.GetKey()] = a.GetValue()
+	}
+	return &v1.Descriptor{
+		Size:        c.rsp.GetSize(),
+		Annotations: as,
+		Digest:      d,
+		MediaType:   types.MediaType(c.rsp.GetMediaType()),
+	}, nil
+}
+
 func (c *convertedLayer) Digest() (v1.Hash, error) {
 	return v1.NewHash(c.rsp.GetDigest())
 }
@@ -384,6 +401,9 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *rgpb.ConvertLaye
 		DiffId:    newLayer.DiffID().String(),
 		Size:      int64(len(newLayerData)),
 		MediaType: string(types.DockerLayer),
+		Annotations: []*rgpb.ConvertLayerResponse_Annotation{
+			{Key: estargz.TOCJSONDigestAnnotation, Value: newLayer.TOCDigest().String()},
+		},
 	}, nil
 }
 
