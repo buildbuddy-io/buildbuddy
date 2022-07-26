@@ -76,8 +76,9 @@ const (
 )
 
 var (
-	chunkFileSizeBytes     = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
-	enableChunkedEventLogs = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	chunkFileSizeBytes           = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	enableChunkedEventLogs       = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	enableFastInvocationResponse = flag.Bool("app.enable_fast_invocation_response", false, "If true, invocation responses will be filled from database values and skip parsing the events on read.")
 
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
@@ -876,17 +877,23 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 			}
 		}
 	}
-	if len(e.unprocessedStartingEvents) > 0 {
-		if _, ok := e.unprocessedStartingEvents[event.BuildEvent.Id.String()]; ok {
-			delete(e.unprocessedStartingEvents, event.BuildEvent.Id.String())
-			if len(e.unprocessedStartingEvents) == 0 {
-				// When we have processed all starting events, update the invocation in
-				// the DB so that it can be searched by its commit SHA, user name, etc.
-				// even while the invocation is still in progress.
-				if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
-					return err
+	if *enableFastInvocationResponse {
+		if len(e.unprocessedStartingEvents) > 0 {
+			if _, ok := e.unprocessedStartingEvents[event.BuildEvent.Id.String()]; ok {
+				delete(e.unprocessedStartingEvents, event.BuildEvent.Id.String())
+				if len(e.unprocessedStartingEvents) == 0 {
+					// When we have processed all starting events, update the invocation in
+					// the DB so that it can be searched by its commit SHA, user name, etc.
+					// even while the invocation is still in progress.
+					if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
+						return err
+					}
 				}
 			}
+		}
+	} else if isWorkspaceStatusEvent(event.BuildEvent) {
+		if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
+			return err
 		}
 	}
 
@@ -1105,10 +1112,12 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			screenWriter = terminal.NewScreenWriter()
 		}
 		var redactor *redact.StreamingRedactor
-		var parser *event_parser.StreamingEventParser
 		if ti.RedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
 			// only redact if we hadn't redacted enough, only parse again if we redact
 			redactor = redact.NewStreamingRedactor(env)
+		}
+		var parser *event_parser.StreamingEventParser
+		if !*enableFastInvocationResponse || redactor != nil {
 			parser = event_parser.NewStreamingEventParser(screenWriter)
 		}
 		events := []*inpb.InvocationEvent{}
@@ -1124,11 +1133,13 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 				log.Warningf("Error reading proto from log: %s", err)
 				return err
 			}
-			if redactor != nil {
-				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
-					return err
+			if parser != nil {
+				if redactor != nil {
+					if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
+						return err
+					}
+					redactor.RedactMetadata(event.BuildEvent)
 				}
-				redactor.RedactMetadata(event.BuildEvent)
 				parser.ParseEvent(event)
 			} else {
 				events = append(events, event)
