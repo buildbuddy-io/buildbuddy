@@ -179,14 +179,14 @@ message DeleteInvocationResponse {
   context.ResponseContext response_context = 1;
 }
 
-message CancelInvocationRequest {
+message CancelExecutionsRequest {
   context.RequestContext request_context = 1;
 
   // The ID of the invocation to be canceled.
   string invocation_id = 2;
 }
 
-message CancelInvocationResponse {
+message CancelExecutionsResponse {
   context.ResponseContext response_context = 1;
 }
 

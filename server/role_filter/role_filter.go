@@ -57,8 +57,8 @@ var (
 		"GetTrend",
 		// Per-invocation actions
 		"UpdateInvocation",
-		"CancelInvocation",
 		"DeleteInvocation",
+		"CancelExecutions",
 		"ExecuteWorkflow",
 		// Setup
 		"GetApiKeys",

@@ -12,30 +12,32 @@ export interface InvocationCancelButtonComponentProps {
 
 type State = {
   isLoading?: boolean;
+  cancelled?: boolean;
 };
 
 export default class InvocationCancelButtonComponent extends React.Component<InvocationCancelButtonComponentProps> {
   state: State = {};
 
   private onClick() {
-    this.setState({ isLoading: true });
+    this.setState({ isLoading: true, cancelled: true });
     rpcService.service
-      .cancelInvocation(new invocation.CancelInvocationRequest({ invocationId: this.props.invocationId }))
-      .catch((e) => errorService.handleError(e))
-      .finally(() => {
-        // Delay updating button loading state because after the Cancel RPC completes, can take some time for the
-        // invocation to be marked as disconnected
-        setTimeout(() => {
-          this.setState({ isLoading: false });
-        }, 2000);
-      });
+      .cancelExecutions(new invocation.CancelExecutionsRequest({ invocationId: this.props.invocationId }))
+      .catch((e) => {
+        errorService.handleError(e);
+        this.setState({ cancelled: false });
+      })
+      .finally(() => this.setState({ isLoading: false }));
   }
 
   render() {
     const isLoading = this.state.isLoading;
+    const alreadyCancelled = this.state.cancelled;
     return (
       <div className="invocation-cancel-button-container">
-        <OutlinedButton disabled={isLoading} onClick={this.onClick.bind(this)}>
+        <OutlinedButton
+          disabled={isLoading || alreadyCancelled}
+          onClick={this.onClick.bind(this)}
+          title={alreadyCancelled ? "Invocation has already been cancelled and is now being cleaned up." : undefined}>
           {isLoading ? <Spinner className="icon" /> : <SlashIcon className="icon" />}
           <div>Cancel</div>
         </OutlinedButton>

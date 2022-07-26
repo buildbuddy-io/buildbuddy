@@ -32,12 +32,8 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
-// repoContents simulates a test repo with the config files required to run a workflow
-func repoContents() map[string]string {
-	// Configure workflow to be executed on an OS / Architecture that matches the local executor spun up by the test
-	osStr := fmt.Sprintf("    os: \"%s\"\n", runtime.GOOS)
-	archStr := fmt.Sprintf("    arch: \"%s\"\n", runtime.GOARCH)
-
+// simpleRepo simulates a test repo with the config files required to run a workflow
+func simpleRepo() map[string]string {
 	fileNameToFileContentsMap := map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
@@ -52,20 +48,18 @@ actions:
   - name: "Test action"
     triggers: { push: { branches: [ master ] } }
     bazel_commands: [ "build //:nop" ]
-` + osStr + archStr,
+    os: ` + runtime.GOOS + `
+    arch: ` + runtime.GOARCH + `
+`,
 	}
 
 	return fileNameToFileContentsMap
 }
 
-// repoContentsSlowScript simulates a test repo with the config files required to run a workflow
-// It sets up a slow sample script that takes a while to run so the CI runner does not return immediately,
+// repoWithSlowScript simulates a test repo with the config files required to run a workflow
+// It sets up a slow script that takes a while to run so the CI runner does not return immediately,
 // giving tests that need to modify the workflow (Ex. for testing cancellation) time to complete
-func repoContentsSlowScript() map[string]string {
-	// Configure workflow to be executed on an OS / Architecture that matches the local executor spun up by the test
-	osStr := fmt.Sprintf("    os: \"%s\"\n", runtime.GOOS)
-	archStr := fmt.Sprintf("    arch: \"%s\"\n", runtime.GOARCH)
-
+func repoWithSlowScript() map[string]string {
 	fileNameToFileContentsMap := map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
@@ -77,10 +71,12 @@ sh_binary(
 		"sleep_forever_test.sh": "sleep infinity",
 		"buildbuddy.yaml": `
 actions:
-  - name: "Test action"
+  - name: "Slow test action"
     triggers: { push: { branches: [ master ] } }
     bazel_commands: [ "build //:sleep_forever_test" ]
-` + osStr + archStr,
+    os: ` + runtime.GOOS + `
+    arch: ` + runtime.GOARCH + `
+`,
 	}
 
 	return fileNameToFileContentsMap
@@ -122,10 +118,10 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	return env, workflowService
 }
 
-func triggerWebhook(t *testing.T, gitProvider *testgit.FakeProvider, workflowService interfaces.WorkflowService, repoURL string, commitSHA string, webhookURL string) {
+func triggerWebhook(t *testing.T, gitProvider *testgit.FakeProvider, workflowService interfaces.WorkflowService, repoContents map[string]string, repoURL string, commitSHA string, webhookURL string) {
 	// Set up the fake git provider so that GetFileContents can return the
 	// buildbuddy.yaml from our test repo
-	gitProvider.FileContents = repoContents()
+	gitProvider.FileContents = repoContents
 	// Configure the fake webhook data to be parsed from the response
 	gitProvider.WebhookData = &interfaces.WebhookData{
 		EventName:     "push",
@@ -230,7 +226,9 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
 	env, workflowService := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContents())
+
+	repoContentsMap := simpleRepo()
+	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	// Create the workflow
@@ -245,7 +243,7 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	triggerWebhook(t, fakeGitProvider, workflowService, repoURL, commitSHA, createResp.GetWebhookUrl())
+	triggerWebhook(t, fakeGitProvider, workflowService, repoContentsMap, repoURL, commitSHA, createResp.GetWebhookUrl())
 
 	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
 	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_COMPLETE_INVOCATION_STATUS)
@@ -258,10 +256,11 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 
 func TestCreateAndExecute(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
-	fakeGitProvider.FileContents = repoContents()
+	fakeGitProvider.FileContents = simpleRepo()
 	env, _ := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContents())
+
+	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepo())
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
@@ -326,7 +325,8 @@ func TestCancel(t *testing.T) {
 	bb := env.GetBuildBuddyServiceClient()
 
 	// Set up slow script to give cancellation time to complete
-	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsSlowScript())
+	repoContentsMap := repoWithSlowScript()
+	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	// Create the workflow
@@ -342,7 +342,7 @@ func TestCancel(t *testing.T) {
 	require.NoError(t, err)
 
 	// Trigger the workflow to run
-	triggerWebhook(t, fakeGitProvider, workflowService, repoURL, commitSHA, createResp.GetWebhookUrl())
+	triggerWebhook(t, fakeGitProvider, workflowService, repoContentsMap, repoURL, commitSHA, createResp.GetWebhookUrl())
 
 	// Cancel workflow
 	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)

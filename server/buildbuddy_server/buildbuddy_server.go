@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -45,6 +44,7 @@ import (
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
@@ -143,18 +143,22 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	return &inpb.DeleteInvocationResponse{}, nil
 }
 
-func (s *BuildBuddyServer) CancelInvocation(ctx context.Context, req *inpb.CancelInvocationRequest) (*inpb.CancelInvocationResponse, error) {
+func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.CancelExecutionsRequest) (*inpb.CancelExecutionsResponse, error) {
 	err := s.authorizeInvocationWrite(ctx, req.InvocationId)
 	if err != nil {
 		return nil, err
 	}
 
 	res := s.env.GetRemoteExecutionService()
-	if err = res.Cancel(ctx, req.InvocationId); err != nil {
+	if res == nil {
+		return nil, status.UnimplementedError("Not Implemented")
+	}
+
+	if err = res.Cancel(ctx, req.GetInvocationId()); err != nil {
 		return nil, err
 	}
 
-	return &inpb.CancelInvocationResponse{}, nil
+	return &inpb.CancelExecutionsResponse{}, nil
 }
 
 func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {

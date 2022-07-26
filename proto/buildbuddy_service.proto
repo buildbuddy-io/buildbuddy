@@ -32,8 +32,8 @@ service BuildBuddyService {
       returns (invocation.UpdateInvocationResponse);
   rpc DeleteInvocation(invocation.DeleteInvocationRequest)
       returns (invocation.DeleteInvocationResponse);
-  rpc CancelInvocation(invocation.CancelInvocationRequest)
-      returns (invocation.CancelInvocationResponse);
+  rpc CancelExecutions(invocation.CancelExecutionsRequest)
+      returns (invocation.CancelExecutionsResponse);
   rpc GetTrend(invocation.GetTrendRequest)
       returns (invocation.GetTrendResponse);
   rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
