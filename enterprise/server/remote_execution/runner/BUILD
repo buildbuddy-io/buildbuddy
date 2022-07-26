@@ -51,6 +51,7 @@ go_library(
 
 go_test(
     name = "runner_test",
+    size = "small",
     srcs = ["runner_test.go"],
     data = ["//enterprise/server/remote_execution/runner/testworker"],
     embed = [":runner"],

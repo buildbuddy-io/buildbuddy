@@ -27,6 +27,7 @@ go_library(
 
 go_test(
     name = "userdb_test",
+    size = "small",
     srcs = ["userdb_test.go"],
     deps = [
         ":userdb",

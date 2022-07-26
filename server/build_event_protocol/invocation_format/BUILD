@@ -9,6 +9,7 @@ go_library(
 
 go_test(
     name = "invocation_format_test",
+    size = "small",
     srcs = ["invocation_format_test.go"],
     deps = [
         ":invocation_format",

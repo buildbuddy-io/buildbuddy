@@ -15,6 +15,7 @@ go_library(
 
 go_test(
     name = "approximatelru_test",
+    size = "small",
     srcs = ["approximatelru_test.go"],
     deps = [
         ":approximatelru",

@@ -14,6 +14,7 @@ go_library(
 
 go_test(
     name = "paging_test",
+    size = "small",
     srcs = ["paging_test.go"],
     deps = [
         ":paging",

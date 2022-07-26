@@ -2,6 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "remote_cache_test",
+    size = "small",
     srcs = ["remote_cache_test.go"],
     shard_count = 6,
     deps = [

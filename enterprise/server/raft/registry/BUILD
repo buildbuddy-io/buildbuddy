@@ -20,6 +20,7 @@ go_library(
 
 go_test(
     name = "registry_test",
+    size = "small",
     srcs = ["registry_test.go"],
     deps = [
         ":registry",

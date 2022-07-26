@@ -16,6 +16,7 @@ go_library(
 
 go_test(
     name = "event_parser_test",
+    size = "small",
     srcs = ["event_parser_test.go"],
     deps = [
         ":event_parser",

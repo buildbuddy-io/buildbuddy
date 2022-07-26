@@ -48,6 +48,7 @@ go_library(
 
 go_test(
     name = "build_event_handler_test",
+    size = "small",
     srcs = ["build_event_handler_test.go"],
     deps = [
         ":build_event_handler",

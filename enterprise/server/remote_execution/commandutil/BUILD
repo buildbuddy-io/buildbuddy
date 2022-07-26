@@ -18,6 +18,7 @@ go_library(
 
 go_test(
     name = "commandutil_test",
+    size = "small",
     srcs = ["commandutil_test.go"],
     data = ["//enterprise/server/remote_execution/commandutil/test_binary"],
     deps = [

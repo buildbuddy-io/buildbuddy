@@ -20,6 +20,7 @@ go_library(
 
 go_test(
     name = "memory_cache_test",
+    size = "small",
     srcs = ["memory_cache_test.go"],
     deps = [
         ":memory_cache",
