@@ -161,7 +161,7 @@ func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb b
 }
 
 func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, expectedStatus inpb.Invocation_InvocationStatus) *inpb.Invocation {
-	for delay := 50 * time.Millisecond; delay < 50*time.Minute; delay *= 2 {
+	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		invResp, err := bb.GetInvocation(ctx, &inpb.GetInvocationRequest{
 			RequestContext: reqCtx,
 			Lookup:         &inpb.InvocationLookup{InvocationId: invocationID},
