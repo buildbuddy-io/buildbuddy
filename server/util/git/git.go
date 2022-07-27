@@ -147,8 +147,10 @@ func NormalizeRepoURL(repo string) (*url.URL, error) {
 		return nil, err
 	}
 
-	// coerce https for all but localhost
-	if repoURL.Scheme != "https" && repoURL.Hostname() == "localhost" {
+	// coerce https for all but localhost or known `file` schemes
+	if repoURL.Scheme == "file" || (repoURL.Scheme == "" && repoURL.Hostname() == "" && repoURL.Path != "") {
+		repoURL.Scheme = "file"
+	} else if repoURL.Scheme != "https" && repoURL.Hostname() == "localhost" {
 		repoURL.Scheme = "http"
 	} else if repoURL.String() != "" {
 		repoURL.Scheme = "https"
