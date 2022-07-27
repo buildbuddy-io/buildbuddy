@@ -60,9 +60,8 @@ var (
 )
 
 type imageConverter struct {
-	casClient            repb.ContentAddressableStorageClient
-	bsClient             bspb.ByteStreamClient
-	imageConverterClient rgpb.ImageConverterClient
+	casClient repb.ContentAddressableStorageClient
+	bsClient  bspb.ByteStreamClient
 
 	deduper *dsingleflight.Coordinator
 }
@@ -206,7 +205,14 @@ func (c *imageConverter) convertImage(ctx context.Context, req *rgpb.ConvertImag
 		layerDesc := layerDesc
 
 		eg.Go(func() error {
-			newLayer, err := c.imageConverterClient.ConvertLayer(egCtx, &rgpb.ConvertLayerRequest{
+			convConn, err := grpc_client.DialTarget(*imageConverterBackend)
+			if err != nil {
+				return status.UnavailableErrorf("could not connect to image converter: %s", err)
+			}
+			defer convConn.Close()
+
+			imageConverterClient := rgpb.NewImageConverterClient(convConn)
+			newLayer, err := imageConverterClient.ConvertLayer(egCtx, &rgpb.ConvertLayerRequest{
 				Image:       req.GetImage(),
 				Credentials: req.GetCredentials(),
 				LayerDigest: layerDesc.Digest.String(),
@@ -504,21 +510,14 @@ func main() {
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	bsClient := bspb.NewByteStreamClient(conn)
 
-	convConn, err := grpc_client.DialTarget(*imageConverterBackend)
-	if err != nil {
-		log.Fatalf("could not connect to image converter: %s", err)
-	}
-	imageConverterClient := rgpb.NewImageConverterClient(convConn)
-
 	if err := redis_client.RegisterDefault(env); err != nil {
 		log.Fatalf("could not initialize redis client: %s", err)
 	}
 
 	c := &imageConverter{
-		casClient:            casClient,
-		bsClient:             bsClient,
-		imageConverterClient: imageConverterClient,
-		deduper:              dsingleflight.New(env.GetDefaultRedisClient()),
+		casClient: casClient,
+		bsClient:  bsClient,
+		deduper:   dsingleflight.New(env.GetDefaultRedisClient()),
 	}
 	c.Start(env.GetHealthChecker(), env)
 }
