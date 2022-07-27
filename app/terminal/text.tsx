@@ -14,14 +14,14 @@
  *   multiple rows.
  */
 
-import parseAnsi, { AnsiTextSpan } from "./ansi/ansi";
+import parseAnsi, { AnsiTextSpan } from "./ansi";
 import memoizeOne from "memoize-one";
 
 const ANSI_CODES_REGEX = /\x1b\[[\d;]*?m/g;
 
 /**
- * Rounding errors start affecting row positioning when there
- * are this many rows.
+ * Rounding errors start messing with row positioning when there are this many
+ * rows.
  */
 const ROW_LIMIT = 835_000;
 
@@ -157,7 +157,6 @@ export function getContent(text: string, search: string, lineLengthLimit: number
 
 function limitRows(rows: RowData[]): RowData[] {
   if (rows.length < ROW_LIMIT) return rows;
-
   return rows.slice(-ROW_LIMIT);
 }
 
@@ -233,7 +232,7 @@ export function updatedMatchIndexForSearch(
   return 0;
 }
 
-const BLANK_LINE_DATA: SpanData[][] = [[{ text: "", matchIndex: null }]];
+const BLANK_LINE_DATA: SpanData[][] = [[{ text: "", style: {}, matchIndex: null }]];
 /**
  * Splits an ANSI line into multiple wrapped rows, with matched ranges
  * annotated.

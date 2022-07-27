@@ -172,6 +172,9 @@
 
 /* Dark terminal colors */
 
+.terminal .ansi-fg-black {
+  color: black;
+}
 .terminal .ansi-fg-green {
   color: #66bb6a;
 }
@@ -190,8 +193,14 @@
 .terminal .ansi-fg-cyan {
   color: #26c6da;
 }
+.terminal .ansi-fg-white {
+  color: white;
+}
 .terminal .ansi-fg-grey {
   color: #bdbdbd;
+}
+.terminal .ansi-bg-black {
+  background-color: black;
 }
 .terminal .ansi-bg-green {
   background-color: #66bb6a;
@@ -210,6 +219,9 @@
 }
 .terminal .ansi-bg-cyan {
   background-color: #26c6da;
+}
+.terminal .ansi-bg-white {
+  background-color: white;
 }
 .terminal .ansi-bg-grey {
   background-color: #bdbdbd;

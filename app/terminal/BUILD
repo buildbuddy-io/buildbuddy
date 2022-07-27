@@ -46,10 +46,7 @@ ts_library(
 ts_library(
     name = "terminal2",
     srcs = glob(
-        [
-            "*.tsx",
-            "ansi/**/*.tsx",
-        ],
+        ["*.tsx"],
         exclude = ["terminal1.tsx"],
     ),
     deps = [
