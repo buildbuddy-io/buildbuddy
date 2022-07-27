@@ -894,6 +894,15 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	}
 	dur, err := executionDuration(executeResponse.GetResult().GetExecutionMetadata())
 	if err != nil {
+		// If the task encountered an error, it's somewhat expected that the
+		// execution duration will be unset, so don't return an error. For
+		// example, we may have failed to pull the image, so execution could not
+		// even begin. Note that an error doesn't necessarily imply a missing
+		// exec duration though; we may get a DeadlineExceeded error if the task
+		// times out, but still get an exec duration.
+		if execErr := gstatus.ErrorProto(executeResponse.GetStatus()); execErr != nil {
+			return nil
+		}
 		return err
 	}
 	counts := &tables.UsageCounts{}
