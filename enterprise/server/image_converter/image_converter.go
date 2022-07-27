@@ -192,6 +192,8 @@ func (c *imageConverter) convertImage(ctx context.Context, req *rgpb.ConvertImag
 			if err != nil {
 				return status.UnavailableErrorf("could not connect to image converter: %s", err)
 			}
+			defer convConn.Close()
+
 			imageConverterClient := rgpb.NewImageConverterClient(convConn)
 			newLayer, err := imageConverterClient.ConvertLayer(egCtx, &rgpb.ConvertLayerRequest{
 				Image:       req.GetImage(),
