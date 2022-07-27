@@ -120,9 +120,13 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 	}
 	statusLabel := "hit"
 	defer func() {
+		groupID, _ := s.groupKey(ctx)
 		metrics.RemoteExecutionTaskSizeReadRequests.With(prometheus.Labels{
 			metrics.TaskSizeReadStatusLabel: statusLabel,
 			metrics.IsolationTypeLabel:      props.WorkloadIsolationType,
+			metrics.OS:                      props.OS,
+			metrics.Arch:                    props.Arch,
+			metrics.GroupID:                 groupID,
 		}).Inc()
 	}()
 	recordedSize, err := s.lastRecordedSize(ctx, task)
@@ -150,9 +154,13 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	statusLabel := "ok"
 	defer func() {
 		props := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+		groupID, _ := s.groupKey(ctx)
 		metrics.RemoteExecutionTaskSizeWriteRequests.With(prometheus.Labels{
 			metrics.TaskSizeWriteStatusLabel: statusLabel,
 			metrics.IsolationTypeLabel:       props.WorkloadIsolationType,
+			metrics.OS:                       props.OS,
+			metrics.Arch:                     props.Arch,
+			metrics.GroupID:                  groupID,
 		}).Inc()
 	}()
 	// If we are missing CPU/memory stats, do nothing. This is expected in some
@@ -217,15 +225,9 @@ func (s *taskSizer) lastRecordedSize(ctx context.Context, task *repb.ExecutionTa
 
 func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string, error) {
 	// Get group ID (task sizing is segmented by group)
-	u, err := perms.AuthenticatedUser(ctx, s.env)
+	groupKey, err := s.groupKey(ctx)
 	if err != nil {
-		if !perms.IsAnonymousUserError(err) || !s.env.GetAuthenticator().AnonymousUsageEnabled() {
-			return "", err
-		}
-	}
-	groupKey := "ANON"
-	if u != nil {
-		groupKey = u.GetGroupID()
+		return "", err
 	}
 	// For now, associate stats with the exact command, including the full
 	// command line, env vars, and platform.
@@ -236,6 +238,17 @@ func (s *taskSizer) taskSizeKey(ctx context.Context, cmd *repb.Command) (string,
 		return "", err
 	}
 	return fmt.Sprintf("%s/%s/%s", redisKeyPrefix, groupKey, cmdKey), nil
+}
+
+func (s *taskSizer) groupKey(ctx context.Context) (string, error) {
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		if perms.IsAnonymousUserError(err) && s.env.GetAuthenticator().AnonymousUsageEnabled() {
+			return "ANON", nil
+		}
+		return "", err
+	}
+	return u.GetGroupID(), nil
 }
 
 func commandKey(cmd *repb.Command) (string, error) {

@@ -466,6 +466,9 @@ var (
 	}, []string{
 		TaskSizeReadStatusLabel,
 		IsolationTypeLabel,
+		OS,
+		Arch,
+		GroupID,
 	})
 
 	RemoteExecutionTaskSizeWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -476,6 +479,9 @@ var (
 	}, []string{
 		TaskSizeWriteStatusLabel,
 		IsolationTypeLabel,
+		OS,
+		Arch,
+		GroupID,
 	})
 
 	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{
