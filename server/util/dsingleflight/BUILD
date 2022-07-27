@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "dsingleflight_test",
+    size = "small",
     srcs = ["dsingleflight_test.go"],
     embed = [":dsingleflight"],
     deps = [

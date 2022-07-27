@@ -19,6 +19,7 @@ go_library(
 
 go_test(
     name = "pubsub_test",
+    size = "small",
     srcs = ["pubsub_test.go"],
     embed = [":pubsub"],
     deps = [

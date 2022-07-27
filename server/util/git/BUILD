@@ -13,6 +13,7 @@ go_library(
 
 go_test(
     name = "git_test",
+    size = "small",
     srcs = ["git_test.go"],
     deps = [
         ":git",

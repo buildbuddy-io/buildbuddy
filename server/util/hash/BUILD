@@ -9,6 +9,7 @@ go_library(
 
 go_test(
     name = "hash_test",
+    size = "small",
     srcs = ["hash_test.go"],
     deps = [
         ":hash",

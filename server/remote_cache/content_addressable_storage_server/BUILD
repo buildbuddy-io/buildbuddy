@@ -30,6 +30,7 @@ go_library(
 
 go_test(
     name = "content_addressable_storage_server_test",
+    size = "small",
     srcs = ["content_addressable_storage_server_test.go"],
     deps = [
         ":content_addressable_storage_server",

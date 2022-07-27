@@ -49,6 +49,7 @@ go_library(
 
 go_test(
     name = "buildbuddy_server_test",
+    size = "small",
     srcs = ["buildbuddy_server_test.go"],
     deps = [
         ":buildbuddy_server",

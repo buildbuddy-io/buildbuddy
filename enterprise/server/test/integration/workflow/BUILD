@@ -2,6 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "workflow_test",
+    size = "small",
     srcs = ["workflow_test.go"],
     # ci_runner gets invoked directly by this test since the RBE test framework
     # currently does not support dockerized execution of commands. So for now we

@@ -21,6 +21,7 @@ go_library(
 
 go_test(
     name = "github_test",
+    size = "small",
     srcs = ["github_test.go"],
     visibility = [
         "//enterprise:__subpackages__",

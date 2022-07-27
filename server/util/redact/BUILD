@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "redact_test",
+    size = "small",
     srcs = ["redact_test.go"],
     deps = [
         ":redact",

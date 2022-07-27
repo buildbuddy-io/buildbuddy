@@ -31,6 +31,7 @@ go_library(
 
 go_test(
     name = "distributed_test",
+    size = "small",
     srcs = ["distributed_test.go"],
     embed = [":distributed"],
     shard_count = 10,
