@@ -20,6 +20,12 @@ import memoizeOne from "memoize-one";
 const ANSI_CODES_REGEX = /\x1b\[[\d;]*?m/g;
 
 /**
+ * Rounding errors start affecting row positioning when there
+ * are this many rows.
+ */
+const ROW_LIMIT = 835_000;
+
+/**
  * Contains the data needed to render the terminal text.
  */
 export interface Content {
@@ -146,7 +152,13 @@ export function getContent(text: string, search: string, lineLengthLimit: number
     }
     matchStartIndex += matchRanges.length;
   }
-  return { rows, matches };
+  return { rows: limitRows(rows), matches };
+}
+
+function limitRows(rows: RowData[]): RowData[] {
+  if (rows.length < ROW_LIMIT) return rows;
+
+  return rows.slice(-ROW_LIMIT);
 }
 
 function normalizeSpace(text: string) {
