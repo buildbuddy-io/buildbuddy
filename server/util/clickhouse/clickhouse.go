@@ -120,7 +120,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 }
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
-	log.Info("flush stats")
 	inv := ToInvocationFromPrimaryDB(ti)
 	res := h.DB(ctx).Create(inv)
 	return res.Error
