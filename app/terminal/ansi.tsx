@@ -1,3 +1,5 @@
+const ANSI_CODES_REGEX = /\x1b\[[\d;]*?m/g;
+
 export type AnsiTextSpan = {
   /** Text in this span, with ANSI escape sequences removed. */
   text: string;
@@ -86,7 +88,7 @@ function applyCode(span: AnsiTextSpan, code: number) {
   }
 }
 
-export default function parse(text: string): AnsiTextSpan[] {
+export default function parseAnsi(text: string): AnsiTextSpan[] {
   let span = { text: "", style: {} };
   const spans: AnsiTextSpan[] = [];
   let code = "";
@@ -143,4 +145,9 @@ export default function parse(text: string): AnsiTextSpan[] {
     }
   }
   return spans;
+}
+
+/** Strips ANSI codes from text. */
+export function stripAnsiCodes(text: string): string {
+  return text.replace(ANSI_CODES_REGEX, "");
 }

@@ -14,10 +14,8 @@
  *   multiple rows.
  */
 
-import parseAnsi, { AnsiTextSpan } from "./ansi";
+import parseAnsi, { stripAnsiCodes, AnsiTextSpan } from "./ansi";
 import memoizeOne from "memoize-one";
-
-const ANSI_CODES_REGEX = /\x1b\[[\d;]*?m/g;
 
 /**
  * Rounding errors start messing with row positioning when there are this many
@@ -201,10 +199,6 @@ export function normalizeSpace(text: string) {
     visibleLineLength++;
   }
   return out;
-}
-
-function stripAnsiCodes(text: string) {
-  return text.replace(ANSI_CODES_REGEX, "");
 }
 
 export function toPlainText(text: string) {
