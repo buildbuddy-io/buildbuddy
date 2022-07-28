@@ -1,4 +1,4 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 load(":defs.bzl", "TERMINAL_V2_ENABLED")
 
 package(default_visibility = ["//visibility:public"])
@@ -47,7 +47,7 @@ ts_library(
     name = "terminal2",
     srcs = glob(
         ["*.tsx"],
-        exclude = ["terminal1.tsx"],
+        exclude = ["terminal1.tsx"] + glob(["*_test.ts"]),
     ),
     deps = [
         "//app/components/input",
@@ -66,4 +66,10 @@ ts_library(
         "@npm//react-virtualized-auto-sizer",
         "@npm//react-window",
     ],
+)
+
+ts_jasmine_node_test(
+    name = "text_test",
+    srcs = ["text_test.ts"],
+    deps = [":terminal2"],
 )
