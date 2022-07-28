@@ -30,6 +30,7 @@ export function Row({ data, index, style }: ListChildComponentProps<ListData>) {
       {row.map((part, i) => (
         <RowSpan key={i} {...part} isActiveMatch={part.matchIndex === data.activeMatchIndex} />
       ))}
+      {row === rowsForLine[rowsForLine.length - 1] && "\n"}
     </div>
   );
 }
