@@ -25,6 +25,8 @@ const ANSI_CODES_REGEX = /\x1b\[[\d;]*?m/g;
  */
 const ROW_LIMIT = 835_000;
 
+const TAB_STOP_WIDTH = 8;
+
 /**
  * Contains the data needed to render the terminal text.
  */
@@ -160,8 +162,28 @@ function limitRows(rows: RowData[]): RowData[] {
   return rows.slice(-ROW_LIMIT);
 }
 
-function normalizeSpace(text: string) {
-  return text.replace("\t", "    ");
+export function normalizeSpace(text: string) {
+  // Fast path for text not containing tabs.
+  if (!text.includes("\t")) return text;
+
+  // Apply tab stops: every time we encounter a tab, convert it to the number of
+  // spaces required to the reach the next tab stop position.
+  let out = "";
+  let lineStart = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\t") {
+      const stop = lineStart + Math.ceil((out.length - lineStart + 1) / TAB_STOP_WIDTH) * TAB_STOP_WIDTH;
+      while (out.length < stop) {
+        out += " ";
+      }
+      continue;
+    }
+    out += text[i];
+    if (text[i] === "\n") {
+      lineStart = out.length;
+    }
+  }
+  return out;
 }
 
 export function toPlainText(text: string) {

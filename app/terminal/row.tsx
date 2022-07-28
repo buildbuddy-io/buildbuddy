@@ -14,6 +14,10 @@ export function Row({ data, index, style }: ListChildComponentProps<ListData>) {
   // quick succession when rendering each row of a wrapped line.
   const rowsForLine = computeRows(rowData.line, data.rowLength, data.search, rowData.matchStartIndex);
   const row = rowsForLine[rowData.wrapOffset];
+  if (!row) {
+    console.error("Row mismatch:", { rowData, rowsForLine });
+    return null;
+  }
   return (
     <div
       style={{
