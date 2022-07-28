@@ -73,7 +73,7 @@ sh_binary(
 actions:
   - name: "Slow test action"
     triggers: { push: { branches: [ master ] } }
-    bazel_commands: [ "build //:sleep_forever_test" ]
+    bazel_commands: [ "run //:sleep_forever_test" ]
     os: ` + runtime.GOOS + `
     arch: ` + runtime.GOARCH + `
 `,
