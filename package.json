@@ -37,7 +37,7 @@
     "date-fns": "^2.23.0",
     "diff": "^5.0.0",
     "diff-match-patch": "^1.0.5",
-    "escodegen": "^2.0.0",
+    "escodegen": "^1.13.0",
     "espree": "^7.0.0",
     "estraverse": "^5.1.0",
     "events": "^3.2.0",
