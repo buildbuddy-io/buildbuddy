@@ -67,8 +67,8 @@ func redisResultKey(workKey string) string {
 // doWork executes the work function and publishes the result to redis as well
 // as returning it to teh caller.
 func (c *Coordinator) doWork(ctx context.Context, workKey string, work Work) ([]byte, error) {
-	r, err := work()
-	errStatus := gstatus.Convert(err)
+	r, workErr := work()
+	errStatus := gstatus.Convert(workErr)
 	errStatusBytes, err := proto.Marshal(errStatus.Proto())
 	if err != nil {
 		return nil, status.UnknownErrorf("could not marshal status: %s", err)
@@ -91,7 +91,7 @@ func (c *Coordinator) doWork(ctx context.Context, workKey string, work Work) ([]
 		return nil, status.UnavailableErrorf("could not store result: %s", err)
 	}
 
-	return r, nil
+	return r, workErr
 }
 
 // claimWork loops trying to lock the workKey. If locking succeeds, the passed
