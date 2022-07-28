@@ -114,6 +114,11 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	require.NoError(t, err)
 	flags.Set(t, "app.events_api_url", *u)
 
+	// Uncomment this line to print output from the ci_runner to the terminal for debugging purposes
+	// Otherwise, output from ci_runner/main.go and the bazel commands that are configured to run via the
+	// workflow will not be printed
+	//flags.Set(t, "debug_stream_command_outputs", true)
+
 	env.AddExecutors(t, 10)
 	return env, workflowService
 }
