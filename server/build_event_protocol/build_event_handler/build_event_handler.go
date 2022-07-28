@@ -299,7 +299,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		// only flush complete invocation to clickhouse.
 		err = r.flushInvocationStatsToClickHouse(ctx, task.invocationJWT, ti)
 		if err != nil {
-			log.Errorf("failed to flush invocation stats to clickhouse: %s", err)
+			log.Errorf("Failed to flush stats for invocation %s to clickhouse: %s", ti.InvocationID, err)
 		}
 	}
 	// Cleanup regardless of whether the stats are flushed successfully to
