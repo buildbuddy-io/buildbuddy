@@ -145,7 +145,7 @@ var (
 
 	// durationUsecBuckets is a reasonable bucket setting for microsecond-valued
 	// duration metrics (1 usec to 30 days).
-	durationUsecBuckets = exponentialBucketRange(1, float64(thirtyDaysDuration.Microseconds()), 2)
+	durationUsecBuckets = exponentialBucketRange(1, float64(thirtyDaysDuration.Microseconds()), 4)
 )
 
 var (
