@@ -753,6 +753,19 @@
   border: 1px solid var(--illustration-color);
 }
 
+.invocation-cancel-button-container {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.invocation-cancel-button-container .icon {
+  margin-right: 6px;
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+}
+
 .invocation-menu-container {
   position: relative;
 }

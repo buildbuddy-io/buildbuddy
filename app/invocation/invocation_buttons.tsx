@@ -1,5 +1,6 @@
 import React from "react";
 import { User } from "../auth/auth_service";
+import InvocationCancelButton from "./invocation_cancel_button";
 import InvocationCompareButton from "./invocation_compare_button";
 import InvocationMenuComponent from "./invocation_menu";
 import InvocationModel from "./invocation_model";
@@ -21,11 +22,13 @@ export default class InvocationButtons extends React.Component<InvocationButtons
   }
 
   render() {
+    const showCancelButton = this.props.model.isWorkflowInvocation() && this.props.model.isInProgress();
+    const showRerunButton = !showCancelButton && this.props.model.isWorkflowInvocation() && this.canRerunWorkflow();
+
     return (
       <div className="invocation-top-right-buttons">
-        {this.props.model.isWorkflowInvocation() && this.canRerunWorkflow() && (
-          <WorkflowRerunButton model={this.props.model} />
-        )}
+        {showRerunButton && <WorkflowRerunButton model={this.props.model} />}
+        {showCancelButton && <InvocationCancelButton invocationId={this.props.invocationId} />}
         <InvocationCompareButton invocationId={this.props.invocationId} />
         <InvocationShareButton user={this.props.user} model={this.props.model} invocationId={this.props.invocationId} />
         <InvocationMenuComponent

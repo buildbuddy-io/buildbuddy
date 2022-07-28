@@ -21,6 +21,7 @@ go_library(
         "//proto:target_go_proto",
         "//proto:usage_go_proto",
         "//proto:user_go_proto",
+        "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/bytestream",

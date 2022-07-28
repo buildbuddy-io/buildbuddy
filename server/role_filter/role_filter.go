@@ -58,6 +58,7 @@ var (
 		// Per-invocation actions
 		"UpdateInvocation",
 		"DeleteInvocation",
+		"CancelExecutions",
 		"ExecuteWorkflow",
 		// Setup
 		"GetApiKeys",
