@@ -167,27 +167,48 @@ export function normalizeSpace(text: string) {
   if (!text.includes("\t")) return text;
 
   // Apply tab stops: every time we encounter a tab, convert it to the number of
-  // spaces required to the reach the next tab stop position.
+  // spaces required to the reach the next tab stop position. Note that tab stop
+  // positions only take visible characters into account, so we have some
+  // lightweight logic here to account for ANSI sequences.
   let out = "";
-  let lineStart = 0;
+  let visibleLineLength = 0;
+  let inAnsiSequence = false;
   for (let i = 0; i < text.length; i++) {
     if (text[i] === "\t") {
-      const stop = lineStart + Math.ceil((out.length - lineStart + 1) / TAB_STOP_WIDTH) * TAB_STOP_WIDTH;
-      while (out.length < stop) {
+      const stop = Math.ceil((visibleLineLength + 1) / TAB_STOP_WIDTH) * TAB_STOP_WIDTH;
+      while (visibleLineLength < stop) {
         out += " ";
+        visibleLineLength++;
       }
       continue;
     }
     out += text[i];
     if (text[i] === "\n") {
-      lineStart = out.length;
+      visibleLineLength = 0;
+      inAnsiSequence = false;
+      continue;
     }
+    if (inAnsiSequence) {
+      if (text[i] === "m") {
+        inAnsiSequence = false;
+      }
+      continue;
+    }
+    if (text[i] === "\x1b" && text[i + 1] === "[") {
+      inAnsiSequence = true;
+      continue;
+    }
+    visibleLineLength++;
   }
   return out;
 }
 
+function stripAnsiCodes(text: string) {
+  return text.replace(ANSI_CODES_REGEX, "");
+}
+
 export function toPlainText(text: string) {
-  return normalizeSpace(text).replace(ANSI_CODES_REGEX, "");
+  return normalizeSpace(stripAnsiCodes(text));
 }
 
 export function getMatchedRanges(line: string, search: string): Range[] {
