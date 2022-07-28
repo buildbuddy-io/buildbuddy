@@ -1130,11 +1130,11 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID string, claimTim
 		// Success
 		break
 	case 10:
-		return status.NotFoundErrorf("unable to claim task %q: task does not exist", taskID)
+		return status.NotFoundError("task does not exist")
 	case 11:
-		return status.NotFoundErrorf("unable to claim task %q: task already claimed", taskID)
+		return status.NotFoundError("task already claimed")
 	default:
-		return status.UnknownErrorf("unable to claim task %q: unknown error %d", taskID, c)
+		return status.UnknownErrorf("unknown error %d", c)
 	}
 
 	err = s.rdb.HIncrBy(ctx, s.redisKeyForTask(taskID), redisTaskAttempCountField, 1).Err()
