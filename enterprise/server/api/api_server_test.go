@@ -2,19 +2,25 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	"github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
@@ -212,6 +218,156 @@ func TestGetLogAuth(t *testing.T) {
 	resp, err := s.GetLog(ctx, &apipb.GetLogRequest{Selector: &apipb.LogSelector{InvocationId: testInvocationID}})
 	require.Error(t, err)
 	require.Nil(t, resp)
+}
+
+func TestDeleteFile_CAS(t *testing.T) {
+	var err error
+	env, ctx := getEnvAndCtx(t, "user1")
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewAPIServer(env)
+
+	// Save file
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	if err := s.env.GetCache().Set(ctx, d, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+}
+
+func TestDeleteFile_AC(t *testing.T) {
+	var err error
+	env, ctx := getEnvAndCtx(t, "user1")
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewAPIServer(env)
+
+	// Save file
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	actionCache, err := s.env.GetCache().WithIsolation(ctx, interfaces.ActionCacheType, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = actionCache.Set(ctx, d, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	acURI := fmt.Sprintf("blobs/ac/%s/%d", d.GetHash(), d.GetSizeBytes())
+	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+}
+
+func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
+	var err error
+	env, ctx := getEnvAndCtx(t, "user1")
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewAPIServer(env)
+
+	// Save file
+	remoteInstanceName := "remote/instance"
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	actionCache, err := s.env.GetCache().WithIsolation(ctx, interfaces.ActionCacheType, remoteInstanceName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = actionCache.Set(ctx, d, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	acURI := fmt.Sprintf("%s/blobs/ac/%s/%d", remoteInstanceName, d.GetHash(), d.GetSizeBytes())
+	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+}
+
+func TestDeleteFile_NonExistentFile(t *testing.T) {
+	var err error
+	env, ctx := getEnvAndCtx(t, "user1")
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewAPIServer(env)
+	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
+	require.NoError(t, err)
+	require.Nil(t, resp)
+}
+
+func TestDeleteFile_LeadingSlash(t *testing.T) {
+	var err error
+	env, ctx := getEnvAndCtx(t, "user1")
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewAPIServer(env)
+
+	// Save file
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	if err = s.env.GetCache().Set(ctx, d, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	acURI := fmt.Sprintf("/blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+}
+
+func TestDeleteFile_InvalidAuth(t *testing.T) {
+	userID := "user"
+	userWithoutWriteAuth := testauth.TestUser{
+		UserID:       userID,
+		GroupID:      "group",
+		Capabilities: []api_key.ApiKey_Capability{},
+	}
+
+	env := testenv.GetTestEnv(t)
+	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{userID: &userWithoutWriteAuth})
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
+
+	s := NewAPIServer(env)
+	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
+	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+	require.Nil(t, resp)
+}
+
+func TestDeleteFile_InvalidURI(t *testing.T) {
+	var err error
+	env, ctx := getEnvAndCtx(t, "user1")
+	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewAPIServer(env)
+	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	uriNonParsableFormat := fmt.Sprintf("non-valid-blob-type/%s/%d", d.GetHash(), d.GetSizeBytes())
+	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: uriNonParsableFormat})
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err))
+	require.Nil(t, resp)
+
 }
 
 func getEnvAndCtx(t *testing.T, user string) (*testenv.TestEnv, context.Context) {

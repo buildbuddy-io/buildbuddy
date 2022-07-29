@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
@@ -11,9 +12,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
@@ -22,6 +26,7 @@ import (
 	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 )
 
@@ -48,6 +53,17 @@ func (s *APIServer) checkPreconditions(ctx context.Context) (interfaces.UserInfo
 		return nil, status.FailedPreconditionErrorf("No authenticator configured")
 	}
 	return s.env.GetAuthenticator().AuthenticatedUser(ctx)
+}
+
+func (s *APIServer) authorizeWrites(ctx context.Context) error {
+	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY)
+	if err != nil {
+		return err
+	}
+	if !canWrite {
+		return status.PermissionDeniedError("You do not have permission to perform this action.")
+	}
+	return nil
 }
 
 func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationRequest) (*apipb.GetInvocationResponse, error) {
@@ -315,6 +331,56 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 	})
 }
 
+func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
+	ctx, _ = prefix.AttachUserPrefixToContext(ctx, s.env)
+	if _, err := s.checkPreconditions(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.authorizeWrites(ctx); err != nil {
+		return nil, err
+	}
+
+	parsedURL, err := url.Parse(req.GetUri())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("Invalid URL")
+	}
+	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
+
+	var parsedResourceName *digest.ResourceName
+	var cacheType interfaces.CacheType
+	if digest.IsActionCacheResourceName(urlStr) {
+		parsedResourceName, err = digest.ParseActionCacheResourceName(urlStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err.Error())
+		}
+		cacheType = interfaces.ActionCacheType
+	} else if digest.IsDownloadResourceName(urlStr) {
+		parsedResourceName, err = digest.ParseDownloadResourceName(urlStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err.Error())
+		}
+		cacheType = interfaces.CASCacheType
+	} else {
+		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and bytestream schemes supported.")
+	}
+
+	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, parsedResourceName.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+
+	err = cache.Delete(ctx, parsedResourceName.GetDigest())
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			log.Warningf("File not found, could not be deleted: %s", err.Error())
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &apipb.DeleteFileResponse{}, nil
+}
+
 // Handle streaming http GetFile request since protolet doesn't handle streaming rpcs yet.
 func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.checkPreconditions(r.Context()); err != nil {
@@ -337,10 +403,6 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func (s *APIServer) DeleteFile(ctx context.Context, request *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
-	return nil, status.UnimplementedError("not yet implemented")
 }
 
 // Returns true if a selector has an empty target ID or matches the target's ID or tag
