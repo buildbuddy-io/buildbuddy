@@ -21,6 +21,9 @@ service Exec {
   // Prepares the VM for command execution after a fresh start or a resume.
   rpc Initialize(InitializeRequest) returns (InitializeResponse);
 
+  // Calls sync(1) within the VM.
+  rpc Sync(SyncRequest) returns (SyncResponse);
+
   // Unmounts the currently mounted workspace drive so that the backing disk
   // image can safely be hot-swapped with another image. The workspace must
   // be re-mounted via MountWorkspace before it can be used.
@@ -126,6 +129,9 @@ message InitializeRequest {
 message InitializeResponse {
   // This page intentionally left empty.
 }
+
+message SyncRequest {}
+message SyncResponse {}
 
 message UnmountWorkspaceRequest {}
 message UnmountWorkspaceResponse {}

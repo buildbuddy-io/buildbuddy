@@ -4,19 +4,31 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 )
 
+const (
+	// Timeout used for the explicit Sync() call in the case where the command
+	// is cancelled or times out.
+	syncTimeout = 5 * time.Second
+)
+
 // Execute executes the command using the ExecStreamed API.
 func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	var stderr, stdout bytes.Buffer
 	if stdio == nil {
 		stdio = &container.Stdio{}
@@ -102,13 +114,28 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	if res == nil {
 		res = &vmxpb.ExecResponse{ExitCode: commandutil.NoExitCode}
 	}
-	return &interfaces.CommandResult{
+	result := &interfaces.CommandResult{
 		ExitCode:   int(res.ExitCode),
 		Stderr:     stderr.Bytes(),
 		Stdout:     stdout.Bytes(),
 		Error:      err,
 		UsageStats: stats,
 	}
+	// The vmexec server normally calls unix.Sync() after the command is
+	// terminated, but if the context was cancelled then the Sync() call may not
+	// have completed yet. Explicitly sync here so that we have a better chance
+	// of collecting output files in this case.
+	if ctx.Err() != nil {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, syncTimeout)
+		defer cancel()
+		_, err := client.Sync(ctx, &vmxpb.SyncRequest{})
+		if err != nil {
+			result.Error = status.WrapErrorf(
+				status.FromContextError(ctx),
+				"failed to sync filesystem following interrupted command; some output files may be missing from the workspace: %s. command interrupted due to", err)
+		}
+	}
+	return result
 }
 
 type stdinWriter struct {

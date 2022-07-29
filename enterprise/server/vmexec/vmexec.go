@@ -90,6 +90,11 @@ func (x *execServer) Initialize(ctx context.Context, req *vmxpb.InitializeReques
 	return &vmxpb.InitializeResponse{}, nil
 }
 
+func (x *execServer) Sync(ctx context.Context, req *vmxpb.SyncRequest) (*vmxpb.SyncResponse, error) {
+	unix.Sync()
+	return &vmxpb.SyncResponse{}, nil
+}
+
 func (x *execServer) UnmountWorkspace(ctx context.Context, req *vmxpb.UnmountWorkspaceRequest) (*vmxpb.UnmountWorkspaceResponse, error) {
 	if err := syscall.Unmount(workspaceMountPath, 0); err != nil {
 		return nil, status.InternalErrorf("unmount failed: %s", err)
