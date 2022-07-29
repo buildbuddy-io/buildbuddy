@@ -25,7 +25,7 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/disk",
-        "//server/util/flagutil/types",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/network",
         "//server/util/status",

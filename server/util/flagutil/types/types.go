@@ -54,21 +54,6 @@ func NewPrimitiveFlag[T bool | time.Duration | float64 | int | int64 | uint | ui
 	return NewPrimitiveFlagVar(&value)
 }
 
-func Slice[T any](name string, defaultValue []T, usage string) *[]T {
-	slice := &[]T{}
-	SliceVar(slice, name, defaultValue, usage)
-	return slice
-}
-
-func SliceVar[T any](slice *[]T, name string, defaultSlice []T, usage string) {
-	switch s := any(slice).(type) {
-	case *[]string:
-		StringSliceVar(s, name, any(defaultSlice).([]string), usage)
-	default:
-		JSONSliceVar(slice, name, defaultSlice, usage)
-	}
-}
-
 type JSONSliceFlag[T any] reflect.Value
 
 func NewJSONSliceFlag[T any](slice *T) *JSONSliceFlag[T] {
