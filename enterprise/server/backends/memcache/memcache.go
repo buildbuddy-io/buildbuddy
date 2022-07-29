@@ -259,7 +259,7 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	}
 	err = c.mc.Delete(k)
 	if errors.Is(err, memcache.ErrCacheMiss) {
-		return status.NotFoundErrorf("Key %s not found in memcache", d.GetHash())
+		return status.NotFoundErrorf("digest %s/%d not found in memcache: %s", d.GetHash(), d.GetSizeBytes(), err.Error())
 	}
 	return err
 }

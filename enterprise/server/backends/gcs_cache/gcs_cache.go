@@ -301,7 +301,7 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 	// Note, if we decide to retry deletions in the future, be sure to
 	// add a new metric for retry count.
 	if errors.Is(err, storage.ErrObjectNotExist) {
-		return status.NotFoundErrorf("Key %s not found in gcs_cache", d.GetHash())
+		return status.NotFoundErrorf("digest %s/%d not found in gcs_cache: %s", d.GetHash(), d.GetSizeBytes(), err.Error())
 	}
 	return err
 }
