@@ -784,7 +784,7 @@ func TestDelete(t *testing.T) {
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
+		t.Fatalf("error attaching user prefix: %v", err)
 	}
 
 	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -807,12 +807,15 @@ func TestDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	exists, err := c.RemoteContains(ctx, peer, isolation, d)
+	require.NoError(t, err)
+	require.True(t, exists)
 
 	err = c.RemoteDelete(ctx, peer, isolation, d)
 	require.NoError(t, err)
 
 	// Ensure it no longer exists
-	exists, err := c.RemoteContains(ctx, peer, isolation, d)
+	exists, err = c.RemoteContains(ctx, peer, isolation, d)
 	require.NoError(t, err)
 	require.False(t, exists)
 }

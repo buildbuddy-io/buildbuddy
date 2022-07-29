@@ -887,10 +887,15 @@ func TestDelete(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	for i := 0; i < 100; i++ {
-		// Do a write, which should be written to all nodes.
+		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
 			t.Fatal(err)
+		}
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.NoError(t, err)
+			assert.True(t, exists)
 		}
 
 		// Do a delete, and verify no nodes still have the data.
@@ -899,7 +904,7 @@ func TestDelete(t *testing.T) {
 		}
 		for _, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, d)
-			assert.Nil(t, err)
+			assert.NoError(t, err)
 			assert.False(t, exists)
 		}
 	}
@@ -944,6 +949,6 @@ func TestDelete_NonExistentFile(t *testing.T) {
 
 		// Do a delete on a file that does not exist.
 		err := distributedCaches[i%3].Delete(ctx, d)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}
 }
