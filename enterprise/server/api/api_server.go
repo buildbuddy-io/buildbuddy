@@ -332,11 +332,15 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 }
 
 func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
-	ctx, _ = prefix.AttachUserPrefixToContext(ctx, s.env)
-	if _, err := s.checkPreconditions(ctx); err != nil {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeWrites(ctx); err != nil {
+
+	if _, err = s.checkPreconditions(ctx); err != nil {
+		return nil, err
+	}
+	if err = s.authorizeWrites(ctx); err != nil {
 		return nil, err
 	}
 
