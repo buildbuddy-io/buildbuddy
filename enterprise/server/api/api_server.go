@@ -365,7 +365,7 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 		}
 		cacheType = interfaces.CASCacheType
 	} else {
-		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and bytestream schemes supported.")
+		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
 	}
 
 	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, parsedResourceName.GetInstanceName())
