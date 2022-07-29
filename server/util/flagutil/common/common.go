@@ -95,8 +95,13 @@ func ConvertFlagValue(value flag.Value) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !addr.CanConvert(t) {
-		return nil, status.InternalErrorf("Flag of type %T could not be converted to %s.", value, t)
+	if addr.CanConvert(reflect.TypeOf((*reflect.Value)(nil))) {
+		addr = *addr.Convert(reflect.TypeOf((*reflect.Value)(nil))).Interface().(*reflect.Value)
+		if !addr.CanConvert(t) {
+			return nil, status.InternalErrorf("Flag of type %T with concrete type *reflect.Value wrapping type %T could not be converted to %s.", value, addr.Interface(), t)
+		}
+	} else if !addr.CanConvert(t) {
+		return nil, status.InternalErrorf("Flag of type %T with value %v could not be converted to %s.", value, value, t)
 	}
 	addr = addr.Convert(t)
 	return addr.Interface(), nil
@@ -166,14 +171,16 @@ func SetValueWithCustomIndirectBehavior(flagValue flag.Value, name string, newVa
 		}
 		return nil
 	}
-	t, err := GetTypeForFlagValue(flagValue)
+	converted, err := ConvertFlagValue(flagValue)
 	if err != nil {
 		return status.UnimplementedErrorf("Error encountered setting flag %s: %s", name, err)
 	}
-	if !reflect.ValueOf(newValue).CanConvert(t.Elem()) {
-		return status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", newValue, newValue, t.Elem(), name)
+	v := reflect.ValueOf(converted).Elem()
+	t := v.Type()
+	if !reflect.ValueOf(newValue).CanConvert(t) {
+		return status.FailedPreconditionErrorf("Cannot convert value %v of type %T into type %v for flag %s.", newValue, newValue, t, name)
 	}
-	reflect.ValueOf(flagValue).Convert(t).Elem().Set(reflect.ValueOf(newValue).Convert(t.Elem()))
+	v.Set(reflect.ValueOf(newValue).Convert(t))
 	return nil
 }
 
@@ -182,7 +189,7 @@ func SetValueWithCustomIndirectBehavior(flagValue flag.Value, name string, newVa
 func GetDereferencedValue[T any](name string) (T, error) {
 	flg := DefaultFlagSet.Lookup(name)
 	if flg == nil {
-		return *Zero[T](), status.NotFoundErrorf("Undefined flag: %s", name)
+		return Zero[T](), status.NotFoundErrorf("Undefined flag: %s", name)
 	}
 	return getDereferencedValueFrom[T](flg.Value, flg.Name)
 }
@@ -193,7 +200,7 @@ func getDereferencedValueFrom[T any](value flag.Value, name string) (T, error) {
 	}
 	converted, err := ConvertFlagValue(value)
 	if err != nil {
-		return *Zero[T](), status.InternalErrorf("Error dereferencing flag %s: %v", name, err)
+		return Zero[T](), status.InternalErrorf("Error dereferencing flag %s: %v", name, err)
 	}
 	t := reflect.TypeOf((*T)(nil))
 	if t == reflect.TypeOf((*any)(nil)) {
@@ -201,14 +208,14 @@ func getDereferencedValueFrom[T any](value flag.Value, name string) (T, error) {
 	}
 	v, ok := converted.(*T)
 	if !ok {
-		return *Zero[T](), status.InternalErrorf("Failed to assert flag %s of type %T as type %s.", name, converted, t)
+		return Zero[T](), status.InternalErrorf("Failed to assert flag %s of type %T as type %s.", name, converted, t)
 	}
 	return *v, nil
 }
 
-// Zero returns a pointer to a zero-value of the provided type.
-func Zero[T any]() *T {
-	return reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+// Zero returns a zero-value of the provided type.
+func Zero[T any]() T {
+	return *reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 }
 
 // AddTestFlagTypeForTesting adds a type correspondence to the internal

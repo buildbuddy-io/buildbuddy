@@ -231,10 +231,10 @@ func TestPopulateFlagsFromData(t *testing.T) {
 	flagOneTwoStringSlice := flagtypes.Slice("one.two.string_slice", []string{"hi", "hello"}, "")
 	flagOneTwoTwoAndAHalfFloat := flags.Float64("one.two.two_and_a_half.float64", 5.2, "")
 	flagOneTwoThreeStructSlice := []testStruct{{Field: 4, Meadow: "Great"}}
-	flagtypes.SliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", "")
+	flagtypes.SliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
 	flagABString := flags.String("a.b.string", "xxx", "")
 	flagABStructSlice := []testStruct{{Field: 7, Meadow: "Chimney"}}
-	flagtypes.SliceVar(&flagABStructSlice, "a.b.struct_slice", "")
+	flagtypes.SliceVar(&flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
 	flagABURL := flagtypes.URLFromString("a.b.url", "https://www.example.com", "")
 	yamlData := `
 bool: true
@@ -305,10 +305,10 @@ func TestPopulateFlagsFromYAML(t *testing.T) {
 	flagOneTwoStringSlice := flagtypes.Slice("one.two.string_slice", []string{"hi", "hello"}, "")
 	flagOneTwoTwoAndAHalfFloat := flags.Float64("one.two.two_and_a_half.float64", 5.2, "")
 	flagOneTwoThreeStructSlice := []testStruct{{Field: 4, Meadow: "Great"}}
-	flagtypes.SliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", "")
+	flagtypes.SliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
 	flagABString := flags.String("a.b.string", "xxx", "")
 	flagABStructSlice := []testStruct{{Field: 7, Meadow: "Chimney"}}
-	flagtypes.SliceVar(&flagABStructSlice, "a.b.struct_slice", "")
+	flagtypes.SliceVar(&flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
 	flagABURL := flagtypes.URLFromString("a.b.url", "https://www.example.com", "")
 	input := map[string]any{
 		"bool": false,

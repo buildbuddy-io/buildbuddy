@@ -67,6 +67,8 @@ func IgnoreFilter(flg *flag.Flag) bool {
 
 type YAMLTypeAliasable interface {
 	// YAMLTypeAlias returns the type alias we use in YAML for this flag.Value.
+	// Only necessary if the type used for YAML is not the type returned by
+	// AliasedType.
 	YAMLTypeAlias() reflect.Type
 }
 
