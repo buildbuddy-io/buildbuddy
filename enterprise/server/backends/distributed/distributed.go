@@ -445,7 +445,7 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isol
 }
 func (c *Cache) remoteDelete(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) error {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
+		// No prefix (remote instance name + cache type) necessary -- it's already set on the local cache.
 		return c.local.Delete(ctx, d)
 	}
 	return c.cacheProxy.RemoteDelete(ctx, peer, isolation, d)
