@@ -44,7 +44,7 @@ def ts_proto_library(name, proto, **kwargs):
     # Transform .proto files to a single _pb.js file named after the macro
     pbjs(
         name = js_target,
-        data = [":" + proto_target] + _PROTOBUFJS_CLI_DEPS,
+        data = [":" + proto_target],
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbjs-for-javascript
         args = [
@@ -61,7 +61,7 @@ def ts_proto_library(name, proto, **kwargs):
     # Transform the _pb.js file to a .d.ts file with TypeScript types
     pbts(
         name = ts_target,
-        data = [js_target] + _PROTOBUFJS_CLI_DEPS,
+        data = [js_target],
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbts-for-typescript
         args = [
