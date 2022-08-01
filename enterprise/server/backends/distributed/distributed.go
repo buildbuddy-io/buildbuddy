@@ -984,7 +984,6 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 		err := c.remoteDelete(ctx, peer, c.isolation, d)
 		if err != nil {
 			if status.IsNotFoundError(err) {
-				c.log.Warningf("File not found, could not be deleted: %s", err.Error())
 				continue
 			}
 			return err
