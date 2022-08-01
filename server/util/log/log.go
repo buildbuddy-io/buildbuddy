@@ -86,10 +86,6 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 		Debugf("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
 	}
 	if *LogErrorStackTraces {
-		code := gstatus.Code(err)
-		if isExpectedGRPCError(code) {
-			return
-		}
 		if se, ok := err.(interface {
 			StackTrace() status.StackTrace
 		}); ok {
