@@ -272,7 +272,8 @@ type DBHandle interface {
 	IsDeadlockError(err error) bool
 }
 
-type ClickHouseDBHandle interface {
+// OLAPDBHandle is a DB Handle for Online Analytical Processing(OLAP) DB
+type OLAPDBHandle interface {
 	DB(ctx context.Context) *gorm.DB
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 }
