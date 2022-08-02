@@ -244,8 +244,8 @@ func (r *statsRecorder) lookupInvocation(ctx context.Context, ij *invocationJWT)
 	return r.env.GetInvocationDB().LookupInvocation(ctx, ij.id)
 }
 
-func (r *statsRecorder) flushInvocationStatsToClickHouse(ctx context.Context, ij *invocationJWT, ti *tables.Invocation) error {
-	if r.env.GetClickHouseDBHandle() == nil {
+func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *invocationJWT, ti *tables.Invocation) error {
+	if r.env.GetOLAPDBHandle() == nil {
 		return nil
 	}
 	inv, err := r.lookupInvocation(ctx, ij)
@@ -266,7 +266,7 @@ func (r *statsRecorder) flushInvocationStatsToClickHouse(ctx context.Context, ij
 	ti.Success = inv.Success
 	ti.InvocationStatus = inv.InvocationStatus
 
-	return r.env.GetClickHouseDBHandle().FlushInvocationStats(ctx, ti)
+	return r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, ti)
 }
 
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
@@ -297,7 +297,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	if task.invocationStatus == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
-		err = r.flushInvocationStatsToClickHouse(ctx, task.invocationJWT, ti)
+		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationJWT, ti)
 		if err != nil {
 			log.Errorf("Failed to flush stats for invocation %s to clickhouse: %s", ti.InvocationID, err)
 		}
