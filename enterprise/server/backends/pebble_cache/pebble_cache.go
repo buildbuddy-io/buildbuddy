@@ -338,10 +338,14 @@ func partitionLimits(partID string) ([]byte, []byte) {
 	return keyRange(key)
 }
 
+func olderThanAtimeThreshold(atime time.Time) bool {
+	age := time.Since(atime)
+	return age >= *atimeUpdateThreshold
+}
+
 func batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-	age := time.Since(atime)
-	if age < *atimeUpdateThreshold {
+	if !olderThanAtimeThreshold(atime) {
 		return nil
 	}
 	fileMetadata.LastAccessUsec = time.Now().UnixMicro()
@@ -968,7 +972,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 
 	blobDir := p.blobDir()
 	buf := &bytes.Buffer{}
-	fileMetadata := &rfpb.FileMetadata{}
 	for _, d := range digests {
 		fileRecord, err := p.makeFileRecord(ctx, d)
 		if err != nil {
@@ -978,6 +981,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if err != nil {
 			return nil, err
 		}
+		fileMetadata := &rfpb.FileMetadata{}
 		if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
 			continue
 		}
@@ -987,7 +991,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 			continue
 		}
 		p.updateAtime(fileMetadataKey)
-		sendAtimeUpdate(p.accesses, fileMetadataKey)
+		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
 
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
@@ -1031,7 +1035,12 @@ func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delt
 	p.edits <- up
 }
 
-func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte) {
+func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) {
+	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+	if !olderThanAtimeThreshold(atime) {
+		return
+	}
+
 	fileMetadataKeyCopy := make([]byte, len(fileMetadataKey))
 	copy(fileMetadataKeyCopy, fileMetadataKey)
 	up := &accessTimeUpdate{fileMetadataKeyCopy}
@@ -1147,7 +1156,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	rc, err := filestore.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
 		p.updateAtime(fileMetadataKey)
-		sendAtimeUpdate(p.accesses, fileMetadataKey)
+		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
 		p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 	}
@@ -1515,7 +1524,7 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 	if *usePebbleAtimeOnly {
 		if s.fileMetadata.GetLastAccessUsec() == 0 {
-			sendAtimeUpdate(e.accesses, s.fileMetadataKey)
+			sendAtimeUpdate(e.accesses, s.fileMetadataKey, s.fileMetadata)
 			return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
 		}
 		atime := time.UnixMicro(s.fileMetadata.GetLastAccessUsec())
