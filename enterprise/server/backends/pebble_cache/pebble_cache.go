@@ -1810,13 +1810,16 @@ func (p *PebbleCache) Start() error {
 }
 
 func (p *PebbleCache) Stop() error {
+	log.Printf("Pebble Cache: beginning shutdown")
 	close(p.quitChan)
 	if err := p.eg.Wait(); err != nil {
 		return err
 	}
+	log.Printf("Pebble Cache: waitgroups finished")
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
+	log.Printf("Pebble Cache: db flushed")
 
 	p.closedMu.Lock()
 	defer p.closedMu.Unlock()
@@ -1825,6 +1828,7 @@ func (p *PebbleCache) Stop() error {
 	}
 	p.closed = true
 	p.dbWaiters.Wait() // wait for all db users to finish up.
+	log.Printf("Pebble Cache: db leases returned")
 
 	return p.db.Close()
 }
