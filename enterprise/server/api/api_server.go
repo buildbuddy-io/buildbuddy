@@ -374,11 +374,7 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	}
 
 	err = cache.Delete(ctx, parsedResourceName.GetDigest())
-	if err != nil {
-		if status.IsNotFoundError(err) {
-			log.Warningf("File not found, could not be deleted: %s", err.Error())
-			return nil, nil
-		}
+	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
 	}
 
