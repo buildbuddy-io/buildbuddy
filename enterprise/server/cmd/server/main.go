@@ -124,7 +124,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	if err := clickhouse.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	stat := invocation_stat_service.NewInvocationStatService(env, env.GetDBHandle(), env.GetClickHouseDBHandle())
+	stat := invocation_stat_service.NewInvocationStatService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
 	env.SetInvocationStatService(stat)
 
 	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())

@@ -97,7 +97,7 @@ type RealEnv struct {
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
 	registryServer                   rgpb.RegistryServer
-	clickHouseDBHandle               interfaces.ClickHouseDBHandle
+	olapDBHandle                     interfaces.OLAPDBHandle
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -539,10 +539,10 @@ func (r *RealEnv) SetRegistryServer(server rgpb.RegistryServer) {
 	r.registryServer = server
 }
 
-func (r *RealEnv) GetClickHouseDBHandle() interfaces.ClickHouseDBHandle {
-	return r.clickHouseDBHandle
+func (r *RealEnv) GetOLAPDBHandle() interfaces.OLAPDBHandle {
+	return r.olapDBHandle
 }
 
-func (r *RealEnv) SetClickHouseDBHandle(dbh interfaces.ClickHouseDBHandle) {
-	r.clickHouseDBHandle = dbh
+func (r *RealEnv) SetOLAPDBHandle(dbh interfaces.OLAPDBHandle) {
+	r.olapDBHandle = dbh
 }

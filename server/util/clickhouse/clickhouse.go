@@ -17,13 +17,13 @@ import (
 )
 
 var (
-	dataSource      = flag.String("clickhouse.data_source", "", "The clickhouse database to connect to, specified a a connection string")
-	maxOpenConns    = flag.Int("clickhouse.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
-	maxIdleConns    = flag.Int("clickhouse.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
-	connMaxLifetime = flag.Duration("clickhouse.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
+	dataSource      = flag.String("olap_database.data_source", "", "The clickhouse database to connect to, specified a a connection string")
+	maxOpenConns    = flag.Int("olap_database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
+	maxIdleConns    = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
+	connMaxLifetime = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
 
-	autoMigrateDB        = flag.Bool("clickhouse.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
-	autoMigrateDBAndExit = flag.Bool("clickhouse.auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	autoMigrateDB        = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDBAndExit = flag.Bool("olap_database.auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
 )
 
 type DBHandle struct {
@@ -173,6 +173,6 @@ func Register(env environment.Env) error {
 		db: db,
 	}
 
-	env.SetClickHouseDBHandle(dbh)
+	env.SetOLAPDBHandle(dbh)
 	return nil
 }

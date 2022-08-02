@@ -21,16 +21,16 @@ import (
 )
 
 type InvocationStatService struct {
-	env environment.Env
-	h   interfaces.DBHandle
-	ch  interfaces.ClickHouseDBHandle
+	env     environment.Env
+	dbh     interfaces.DBHandle
+	olapdbh interfaces.OLAPDBHandle
 }
 
-func NewInvocationStatService(env environment.Env, h interfaces.DBHandle, clickhouse interfaces.ClickHouseDBHandle) *InvocationStatService {
+func NewInvocationStatService(env environment.Env, dbh interfaces.DBHandle, olapdbh interfaces.OLAPDBHandle) *InvocationStatService {
 	return &InvocationStatService{
-		env: env,
-		h:   h,
-		ch:  clickhouse,
+		env:     env,
+		dbh:     dbh,
+		olapdbh: olapdbh,
 	}
 }
 
@@ -47,7 +47,7 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 	case inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE:
 		return "commit_sha"
 	case inpb.AggType_DATE_AGGREGATION_TYPE:
-		return i.h.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())
+		return i.dbh.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())
 	case inpb.AggType_BRANCH_AGGREGATION_TYPE:
 		return "branch_name"
 	default:
@@ -58,11 +58,11 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 
 func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) string {
 	q := ""
-	if i.ch == nil {
-		q = fmt.Sprintf("SELECT %s as name,", i.h.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
+	if i.olapdbh == nil {
+		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	} else {
-		q = fmt.Sprintf("SELECT %s as name,", i.ch.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
+		q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 	    SUM(duration_usec) as total_build_time_usec,`
 	}
 
@@ -161,10 +161,10 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	qStr, qArgs := q.Build()
 	var rows *sql.Rows
 	var err error
-	if i.ch == nil {
-		rows, err = i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	if i.olapdbh == nil {
+		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 	} else {
-		rows, err = i.ch.DB(ctx).Raw(qStr, qArgs...).Rows()
+		rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
 	}
 	if err != nil {
 		return nil, err
@@ -176,12 +176,12 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	for rows.Next() {
 		stat := &inpb.TrendStat{}
-		if i.ch == nil {
-			if err := i.h.DB(ctx).ScanRows(rows, &stat); err != nil {
+		if i.olapdbh == nil {
+			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
 		} else {
-			if err := i.ch.DB(ctx).ScanRows(rows, &stat); err != nil {
+			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
 		}
@@ -197,7 +197,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) string {
 	q := fmt.Sprintf("SELECT %s as name,", aggColumn)
-	if i.ch == nil {
+	if i.olapdbh == nil {
 		q = q + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	} else {
@@ -294,10 +294,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	qStr, qArgs := q.Build()
 	var rows *sql.Rows
 	var err error
-	if i.ch == nil {
-		rows, err = i.h.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
+	if i.olapdbh == nil {
+		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
 	} else {
-		rows, err = i.ch.DB(ctx).Raw(qStr, qArgs...).Rows()
+		rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
 	}
 	if err != nil {
 		return nil, err
@@ -309,12 +309,12 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	for rows.Next() {
 		stat := &inpb.InvocationStat{}
-		if i.ch == nil {
-			if err := i.h.DB(ctx).ScanRows(rows, &stat); err != nil {
+		if i.olapdbh == nil {
+			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
 		} else {
-			if err := i.ch.DB(ctx).ScanRows(rows, &stat); err != nil {
+			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
 		}
