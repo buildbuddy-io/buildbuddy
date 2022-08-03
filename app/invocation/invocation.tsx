@@ -268,14 +268,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {(this.state.model.workflowConfigured || this.state.model.childInvocationsConfigured) &&
             (activeTab === "all" || activeTab === "commands") && <ChildInvocations model={this.state.model} />}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
-            <TargetsComponent
-              model={this.state.model}
-              mode="failing"
-              filter={this.props.search.get("targetFilter")}
-              pageSize={activeTab === "all" ? smallPageSize : largePageSize}
-            />
-          )}
+          {(isBazelInvocation || this.state.model.isMakeInvocation()) &&
+            (activeTab === "all" || activeTab == "targets") && (
+              <TargetsComponent
+                model={this.state.model}
+                mode="failing"
+                filter={this.props.search.get("targetFilter")}
+                pageSize={activeTab === "all" ? smallPageSize : largePageSize}
+              />
+            )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
             <QueryGraphCardComponent buildLogs={this.getBuildLogs()} />

@@ -101,7 +101,9 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           <InvocationButtons invocationId={this.props.invocationId} model={this.props.model} user={this.props.user} />
         </div>
         <div className="titles">
-          {(this.props.model.isBazelInvocation() || this.props.model.isHostedBazelInvocation()) && (
+          {(this.props.model.isBazelInvocation() ||
+            this.props.model.isHostedBazelInvocation() ||
+            this.props.model.isMakeInvocation()) && (
             <div className="title" title={this.props.model.getAllPatterns()}>
               {this.props.model.getUser(/*possessive=*/ true)} {this.props.model.getCommand()}{" "}
               {this.props.model.getPattern()}

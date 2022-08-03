@@ -947,6 +947,10 @@ code .comment {
   background: #cfd8dc;
 }
 
+.role-badge.MAKE {
+  background: #ffb300;
+}
+
 .empty-state .button {
   width: 100%;
   padding: 24px 64px;

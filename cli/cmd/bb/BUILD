@@ -10,6 +10,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//cli/autoconfig",
+        "//cli/bbmake",
         "//cli/commandline",
         "//cli/logging",
         "//cli/parser",
@@ -17,6 +18,7 @@ go_library(
         "//cli/sidecar",
         "//proto:sidecar_go_proto",
         "//server/util/grpc_client",
+        "//server/util/status",
         "//server/version",
         "@com_github_bazelbuild_bazelisk//core:go_default_library",
         "@com_github_bazelbuild_bazelisk//repositories:go_default_library",

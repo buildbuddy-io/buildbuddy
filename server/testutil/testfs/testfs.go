@@ -3,6 +3,7 @@ package testfs
 import (
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -91,6 +92,23 @@ func CopyFile(t testing.TB, src, destRootDir, destPath string) {
 	if err := os.WriteFile(filepath.Join(destRootDir, destPath), b, info.Mode()); err != nil {
 		assert.FailNow(t, "write failed", err)
 	}
+}
+
+func CopyDir(t testing.TB, src, dest string) {
+	b, err := exec.Command("cp", "-r", src, dest).CombinedOutput()
+	require.NoError(t, err, "command failed (%s): %s", err, string(b))
+}
+
+// TempClone creates a temporary copy of a directory for testing purposes.
+func TempCopyDir(t testing.TB, src string) string {
+	dst := MakeTempDir(t)
+	// Need to specify a destination dir that doesn't exist, otherwise the copy
+	// will be nested underneath it.
+	err := os.RemoveAll(dst)
+	require.NoError(t, err)
+
+	CopyDir(t, src, dst)
+	return dst
 }
 
 func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]string) {

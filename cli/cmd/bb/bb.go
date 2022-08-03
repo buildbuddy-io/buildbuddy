@@ -13,6 +13,7 @@ import (
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
 	"github.com/buildbuddy-io/buildbuddy/cli/autoconfig"
+	"github.com/buildbuddy-io/buildbuddy/cli/bbmake"
 	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
@@ -129,10 +130,18 @@ func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
 }
 
 func main() {
+	ctx := context.Background()
+
+	if len(os.Args) > 1 && os.Args[1] == "make" {
+		// Invoke bb make
+		if err := bbmake.Run(ctx, os.Args[2:]...); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Parse any flags (and remove them so bazel isn't confused).
 	bazelArgs := commandline.ParseFlagsAndRewriteArgs(os.Args[1:])
-
-	ctx := context.Background()
 
 	if *disable {
 		bblog.Printf("Buildbuddy was disabled, just running bazel.")

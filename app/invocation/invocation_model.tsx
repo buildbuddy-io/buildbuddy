@@ -14,6 +14,7 @@ import { durationToMillisWithFallback, timestampToDateWithFallback } from "../ut
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
+export const MAKE_ROLE = "MAKE";
 
 export const InvocationStatus = invocation.Invocation.InvocationStatus;
 
@@ -380,13 +381,20 @@ export default class InvocationModel {
     return this.getRole() === HOSTED_BAZEL_ROLE;
   }
 
+  isMakeInvocation() {
+    return this.getRole() === MAKE_ROLE;
+  }
+
   isBazelInvocation() {
-    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation();
+    return !this.isWorkflowInvocation() && !this.isHostedBazelInvocation() && !this.isMakeInvocation();
   }
 
   getTool() {
     if (this.isWorkflowInvocation()) {
       return "BuildBuddy workflow runner";
+    }
+    if (this.isMakeInvocation()) {
+      return "bb make";
     }
     if (this.isHostedBazelInvocation()) {
       return "BuildBuddy hosted bazel";

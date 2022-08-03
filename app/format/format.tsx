@@ -249,6 +249,9 @@ export function formatRole(role: string): string | null {
   if (role === "CI") {
     return "CI";
   }
+  if (role === "MAKE") {
+    return "Make";
+  }
   // Don't render unknown roles for now.
   return null;
 }
