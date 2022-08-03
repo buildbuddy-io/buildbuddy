@@ -93,6 +93,7 @@ func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) 
 func getTrendQueryWithUnnestedQuantitlesArray(innerQuery string) string {
 	return `SELECT name,
 	total_build_time_usec,
+	total_num_builds,
 	completed_invocation_count,
 	user_count, commit_count,
 	host_count, 

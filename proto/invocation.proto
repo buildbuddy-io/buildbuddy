@@ -404,11 +404,6 @@ message TrendStat {
 
   // The duration (in microseconds) of the longest build.
   int64 max_duration_usec = 9;
-  int64 p99_duration_usec = 21;
-  int64 p95_duration_usec = 22;
-  int64 p90_duration_usec = 23;
-  int64 p75_duration_usec = 24;
-  int64 p50_duration_usec = 25;
 
   // Server-side Action-cache stats.
   int64 action_cache_hits = 10;
@@ -428,6 +423,12 @@ message TrendStat {
 
   // The number of unique branches that were built.
   int64 branch_count = 20;
+
+  double p50_duration_usec = 21;
+  double p75_duration_usec = 22;
+  double p90_duration_usec = 23;
+  double p95_duration_usec = 24;
+  double p99_duration_usec = 25;
 }
 
 message TrendQuery {
