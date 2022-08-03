@@ -987,164 +987,9 @@ code .comment {
 
 /** Misc **/
 
-.terminal-content {
-  position: relative;
-}
-
-.terminal {
-  height: 360px;
-  overflow: visible;
-}
-
-.terminal .ReactVirtualized__Grid {
-  /* !important is needed here to override react-virtualized inline style attribute */
-  overflow-x: scroll !important;
-}
-
-.terminal a {
-  display: none;
-}
-
-.terminal-line {
-  font-size: 14px;
-  font-family: "Source Code Pro", monospace;
-  color: #fff;
-}
-
-.terminal-top-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-}
-
-.terminal-actions {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-  margin-top: 4px;
-}
-
-.terminal-actions,
-.terminal-titles {
-  z-index: 1;
-}
-
-.dense .terminal-actions .icon.icon {
-  display: initial;
-}
-
-.terminal-actions .spinner {
-  --size: 18px;
-  padding: 12px;
-  opacity: 0.7;
-}
-
-.terminal-container {
-  background: #222;
-}
-
-.terminal-container.light-terminal {
-  background: #fafafa;
-}
-
-.light-terminal .terminal-actions {
-  filter: invert();
-}
-
-.light-terminal .react-lazylog-searchbar-input {
-  background-color: white;
-  border: 1px solid #eee;
-  color: black;
-}
-
-.light-terminal .react-lazylog-searchbar-input::placeholder {
-  color: #aaa;
-}
-
-.terminal-actions svg.icon {
-  width: 18px;
-  height: 18px;
-  margin-right: 0;
-}
-
-.terminal-action {
-  border: 0;
-  background-color: transparent;
-  cursor: pointer;
-  padding: 12px;
-  margin: -12px 0;
-  opacity: 0.6;
-}
-
-.terminal-action.active {
-  opacity: 1;
-}
-
 .build-logs-card {
   position: relative;
   padding-bottom: 16px;
-}
-
-.build-logs-card .title {
-  z-index: 1;
-  position: relative;
-  pointer-events: none;
-}
-
-/* Duplicate class selector here is used to increase specificity */
-.react-lazylog-searchbar.react-lazylog-searchbar {
-  margin-right: 84px;
-  background-color: transparent;
-  padding: 1px 0 16px 0;
-}
-
-.terminal-container.has-subtitle .react-lazylog-searchbar {
-  /* Add some extra margin so the subtitle isn't so close to the terminal contents. */
-  margin-bottom: 8px;
-}
-
-.react-lazylog-searchbar-filter {
-  display: none;
-}
-
-@media (max-width: 940px) {
-  .terminal .react-lazylog-searchbar-input {
-    min-width: initial;
-    width: 140px;
-  }
-  .terminal .react-lazylog-searchbar-matches {
-    display: none;
-  }
-}
-
-@media (max-width: 525px) {
-  .terminal {
-    margin-top: 0;
-  }
-  .react-lazylog-searchbar {
-    opacity: 0;
-  }
-}
-
-.react-lazylog-searchbar-input {
-  border-radius: 4px;
-}
-
-.light-terminal .terminal-line {
-  color: #222;
-}
-
-.light-terminal .terminal-line:hover {
-  background-color: #fafafa;
-}
-
-.light-terminal .react-lazylog {
-  background-color: #fafafa;
 }
 
 .inline-code {
@@ -1152,10 +997,6 @@ code .comment {
   background: #eee;
   border-radius: 4px;
   padding: 2px;
-}
-
-.expanded .terminal {
-  height: calc(100vh - 200px);
 }
 
 .disclaimer {
@@ -1351,15 +1192,6 @@ code .comment {
   display: flex;
   margin-left: 8px;
   gap: 8px;
-}
-
-.test-log {
-  height: calc(100vh - 160px);
-  box-sizing: border-box;
-}
-
-.test-log .terminal {
-  height: 100%;
 }
 
 .test-subtitle {
@@ -1906,33 +1738,6 @@ code .comment {
 }
 
 /* Scrollbars */
-
-.terminal ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.terminal::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.light-terminal .terminal::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
-}
-
-.terminal ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-
-.light-terminal .terminal ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 3px;
-}
-
-.terminal ::-webkit-scrollbar-corner {
-  background-color: transparent;
-}
 
 .horizontal-scroll-track {
   position: absolute;

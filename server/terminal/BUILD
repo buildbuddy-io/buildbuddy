@@ -18,6 +18,7 @@ go_library(
 
 go_test(
     name = "terminal_test",
+    size = "small",
     srcs = ["terminal_test.go"],
     deps = [
         ":terminal",

@@ -102,6 +102,12 @@ message ConvertLayerResponse {
   int64 size = 5;
   // The media type of the converted layer.
   string media_type = 6;
+  // Annotations for this layer.
+  message Annotation {
+    string key = 1;
+    string value = 2;
+  }
+  repeated Annotation annotations = 7;
 }
 
 service ImageConverter {

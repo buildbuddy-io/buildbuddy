@@ -13,6 +13,7 @@ go_library(
 
 go_test(
     name = "consistent_hash_test",
+    size = "small",
     srcs = ["consistent_hash_test.go"],
     deps = [
         ":consistent_hash",

@@ -41,6 +41,7 @@ go_library(
 
 go_test(
     name = "execution_server_test",
+    size = "small",
     srcs = ["execution_server_test.go"],
     deps = [
         ":execution_server",

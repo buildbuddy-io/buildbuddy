@@ -21,6 +21,7 @@ go_library(
 
 go_test(
     name = "redisutil_test",
+    size = "small",
     srcs = ["redisutil_test.go"],
     visibility = [
         "//enterprise:__subpackages__",

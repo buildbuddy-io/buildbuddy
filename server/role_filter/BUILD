@@ -16,6 +16,7 @@ go_library(
 
 go_test(
     name = "role_filter_test",
+    size = "small",
     srcs = ["role_filter_test.go"],
     deps = [
         ":role_filter",

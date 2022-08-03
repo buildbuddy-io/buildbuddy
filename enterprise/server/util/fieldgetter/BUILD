@@ -12,6 +12,7 @@ go_library(
 
 go_test(
     name = "fieldgetter_test",
+    size = "small",
     srcs = ["fieldgetter_test.go"],
     deps = [
         ":fieldgetter",

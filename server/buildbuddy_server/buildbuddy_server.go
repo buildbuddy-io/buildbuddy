@@ -44,6 +44,7 @@ import (
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
@@ -140,6 +141,24 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	}
 
 	return &inpb.DeleteInvocationResponse{}, nil
+}
+
+func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.CancelExecutionsRequest) (*inpb.CancelExecutionsResponse, error) {
+	res := s.env.GetRemoteExecutionService()
+	if res == nil {
+		return nil, status.FailedPreconditionError("Remote execution not enabled")
+	}
+
+	err := s.authorizeInvocationWrite(ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+
+	if err = res.Cancel(ctx, req.GetInvocationId()); err != nil {
+		return nil, err
+	}
+
+	return &inpb.CancelExecutionsResponse{}, nil
 }
 
 func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
@@ -487,6 +506,25 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 			VisibleToDevelopers: k.VisibleToDevelopers,
 		},
 	}, nil
+}
+
+func (s *BuildBuddyServer) authorizeInvocationWrite(ctx context.Context, invocationID string) error {
+	auth := s.env.GetAuthenticator()
+	if auth == nil {
+		return status.UnimplementedError("Not Implemented")
+	}
+	authenticatedUser, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	in, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
+	if err != nil {
+		return err
+	}
+	acl := perms.ToACLProto(&uidpb.UserId{Id: in.UserID}, in.GroupID, in.Perms)
+
+	return perms.AuthorizeWrite(&authenticatedUser, acl)
 }
 
 func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID string) error {

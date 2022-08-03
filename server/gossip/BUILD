@@ -15,6 +15,7 @@ go_library(
 
 go_test(
     name = "gossip_test",
+    size = "small",
     srcs = ["gossip_test.go"],
     deps = [
         ":gossip",

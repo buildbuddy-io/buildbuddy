@@ -13,6 +13,7 @@ go_library(
 
 go_test(
     name = "memory_metrics_collector_test",
+    size = "small",
     srcs = ["memory_metrics_collector_test.go"],
     embed = [":memory_metrics_collector"],
     deps = ["@com_github_stretchr_testify//require"],

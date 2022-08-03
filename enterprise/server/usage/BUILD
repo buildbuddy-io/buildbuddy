@@ -22,6 +22,7 @@ go_library(
 
 go_test(
     name = "usage_test",
+    size = "small",
     srcs = ["usage_test.go"],
     deps = [
         ":usage",

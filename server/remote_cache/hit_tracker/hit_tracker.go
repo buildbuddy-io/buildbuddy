@@ -253,7 +253,13 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		// If all of this metadata is missing then we'll wind up rendering empty
 		// columns in the UI. This situation is most likely due to older executor versions
 		// which aren't setting their host ID, so ignore these for now as well.
+		log.Debugf("Cache request for invocation %s is missing expected request metadata: %+v", h.iid, h.requestMetadata)
 		return nil
+	}
+	// Target/action mnemonic metadata is not expected for BES uploads, but
+	// otherwise this metadata is expected if action ID is present.
+	if h.requestMetadata.GetActionId() != "bes-upload" && (h.requestMetadata.GetActionMnemonic() == "" || h.requestMetadata.GetTargetId() == "") {
+		log.Debugf("Cache request for invocation %s is missing ActionMnemonic and/or TargetId: %+v", h.iid, h.requestMetadata)
 	}
 
 	// TODO(bduffany): Use protos instead of counterType so we can avoid this

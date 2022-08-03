@@ -32,7 +32,7 @@ var (
 	headerContextKeys map[string]string
 	once              sync.Once
 
-	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", true, "If enabled, grpc metrics by group ID will be recorded")
+	enableGRPCMetricsByGroupID = flag.Bool("app.enable_grpc_metrics_by_group_id", false, "If enabled, grpc metrics by group ID will be recorded")
 )
 
 func init() {

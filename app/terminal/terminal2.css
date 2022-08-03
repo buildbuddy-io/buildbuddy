@@ -1,0 +1,280 @@
+.terminal {
+  --scrollbar-width: 8px;
+  background: #222;
+}
+.terminal.light-terminal {
+  background: #fafafa;
+}
+
+.terminal .terminal-search {
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 1024px) {
+  .terminal .terminal-search {
+    display: none;
+  }
+}
+
+.terminal .search-navigation {
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 1280px) {
+  .terminal .search-navigation {
+    display: none;
+  }
+}
+
+.terminal .terminal-search-input {
+  height: 32px;
+  max-width: 180px;
+}
+
+.terminal .terminal-text {
+  height: 400px;
+  overflow: visible;
+}
+
+.terminal .terminal-top-bar {
+  display: flex;
+  padding-right: var(--scrollbar-width);
+  padding-bottom: 4px;
+}
+
+.terminal .terminal-titles {
+  display: flex;
+}
+
+.terminal .terminal-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.terminal button.terminal-action {
+  appearance: none;
+  background: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.terminal .terminal-action .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.terminal .terminal-action:disabled {
+  opacity: 0.3;
+}
+
+.terminal .terminal-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+.terminal.light-terminal .terminal-action:hover:not(:disabled) {
+  background: #eee;
+}
+
+.terminal .terminal-action:focus:not(:disabled) {
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+.terminal.light-terminal .terminal-action:focus:not(:disabled) {
+  border: 2px solid #eee;
+}
+
+.terminal .terminal-action:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+.terminal.light-terminal .terminal-action:active:not(:disabled) {
+  background: #bdbdbd;
+}
+
+.terminal .terminal-action:not(.active) .icon {
+  stroke: #607d8b;
+}
+.terminal.light-terminal .terminal-action:not(.active) .icon {
+  stroke: #cfd8dc;
+}
+
+.terminal .terminal-line {
+  /* Render whitespace as-is and disable native line wrapping, since wrapping is
+     handled programmatically. Lines need to be fixed height so that
+     react-window can efficiently determine which lines are currently in the
+     viewport and need to be rendered. */
+  white-space: pre;
+  font-family: "Source Code Pro", monospace;
+}
+
+.terminal .search-result-count {
+  /* Fit 6-digit result counts without layout shifting. */
+  min-width: 128px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.terminal .no-results {
+  opacity: 0.3;
+}
+
+.terminal .lines-list {
+  /* See https://github.com/mozilla-frontend-infra/react-lazylog/issues/90#issuecomment-988285254 */
+  overflow-x: scroll !important;
+}
+
+.terminal.light-terminal .terminal-line {
+  color: #222;
+}
+
+/* Scrollbars */
+
+.terminal ::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-width);
+}
+
+.terminal ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: calc(var(--scrollbar-width) / 2);
+}
+
+.terminal.light-terminal ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.terminal ::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+/* ANSI styles */
+
+.terminal .ansi-bold {
+  font-weight: bold;
+}
+.terminal .ansi-italic {
+  font-style: italic;
+}
+.terminal .ansi-underline {
+  text-decoration: underline;
+}
+
+/* Dark terminal colors */
+
+.terminal .ansi-fg-black {
+  color: black;
+}
+.terminal .ansi-fg-green {
+  color: #66bb6a;
+}
+.terminal .ansi-fg-red {
+  color: #ef5350;
+}
+.terminal .ansi-fg-yellow {
+  color: #ffee58;
+}
+.terminal .ansi-fg-blue {
+  color: #42a5f5;
+}
+.terminal .ansi-fg-magenta {
+  color: #ab47bc;
+}
+.terminal .ansi-fg-cyan {
+  color: #26c6da;
+}
+.terminal .ansi-fg-white {
+  color: white;
+}
+.terminal .ansi-fg-grey {
+  color: #bdbdbd;
+}
+.terminal .ansi-bg-black {
+  background-color: black;
+}
+.terminal .ansi-bg-green {
+  background-color: #66bb6a;
+}
+.terminal .ansi-bg-red {
+  background-color: #ef5350;
+}
+.terminal .ansi-bg-yellow {
+  background-color: #ffee58;
+}
+.terminal .ansi-bg-blue {
+  background-color: #42a5f5;
+}
+.terminal .ansi-bg-magenta {
+  background-color: #ab47bc;
+}
+.terminal .ansi-bg-cyan {
+  background-color: #26c6da;
+}
+.terminal .ansi-bg-white {
+  background-color: white;
+}
+.terminal .ansi-bg-grey {
+  background-color: #bdbdbd;
+}
+
+/* Light terminal color overrides */
+
+.terminal.light-terminal .ansi-fg-green {
+  color: #388e3c;
+}
+.terminal.light-terminal .ansi-fg-red {
+  color: #e53935;
+}
+.terminal.light-terminal .ansi-fg-yellow {
+  color: #f9a825;
+}
+.terminal.light-terminal .ansi-fg-blue {
+  color: #1e88e5;
+}
+.terminal.light-terminal .ansi-fg-magenta {
+  color: #8e24aa;
+}
+.terminal.light-terminal .ansi-fg-cyan {
+  color: #00acc1;
+}
+.terminal.light-terminal .ansi-fg-grey {
+  color: #757575;
+}
+
+.terminal .search-match {
+  background: #37474f;
+  color: white;
+}
+.terminal.light-terminal .search-match {
+  background: #eceff1;
+  color: black;
+}
+
+.terminal .active-search-match {
+  background: #546e7a;
+}
+.terminal.light-terminal .active-search-match {
+  background: #b0bec5;
+}
+
+/* Page-specific overrides */
+
+.expanded .terminal .terminal-text,
+.test-log .terminal-text {
+  height: calc(100vh - 200px);
+}
+
+.invocation-action-card .terminal {
+  padding: 8px 16px;
+  border-radius: 8px;
+}

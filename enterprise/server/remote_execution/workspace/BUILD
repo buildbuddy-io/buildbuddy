@@ -26,6 +26,7 @@ go_library(
 
 go_test(
     name = "workspace_test",
+    size = "small",
     srcs = ["workspace_test.go"],
     deps = [
         ":workspace",

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -142,6 +144,193 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	return rsp, nil
 }
 
+type message struct {
+	Response *vmxpb.ExecStreamedResponse
+	Err      error
+}
+
 func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
-	return status.UnimplementedError("not implemented")
+	ctx := stream.Context()
+
+	msgs := make(chan *message, 128)
+
+	go func() {
+		var cmd *command
+		var cmdFinished chan struct{}
+		defer func() {
+			if cmdFinished != nil {
+				// If a command is running, then it may still be streaming
+				// messages. Wait for all messages to be streamed before we
+				// close the channel.
+				<-cmdFinished
+			}
+			close(msgs)
+		}()
+		for {
+			msg, err := stream.Recv()
+			if err == io.EOF {
+				// If the client hasn't yet started a command, they shouldn't have
+				// closed the stream yet. Report an error.
+				if cmd == nil {
+					msgs <- &message{Err: status.InvalidArgumentError("stream was closed without receiving exec start request")}
+					return
+				}
+				// Otherwise if a command was started and we have an open stdin
+				// pipe, the client closing their end of the stream means we
+				// should close the stdin pipe.
+				if cmd.stdin != nil {
+					if err := cmd.stdin.Close(); err != nil {
+						msgs <- &message{Err: status.InternalErrorf("failed to close stdin pipe: %s", err)}
+						return
+					}
+				}
+				// Done receiving messages; return.
+				return
+			}
+			if msg.Start != nil {
+				if cmd != nil {
+					msgs <- &message{Err: status.InvalidArgumentError("received multiple exec start requests")}
+					return
+				}
+				cmd, err = newCommand(msg.Start, x.reapMutex)
+				if err != nil {
+					msgs <- &message{Err: err}
+					return
+				}
+				cmdFinished = make(chan struct{})
+				go func() {
+					defer close(cmdFinished)
+					res, err := cmd.Run(ctx, msgs)
+					if err != nil {
+						msgs <- &message{Err: err}
+						return
+					}
+					msgs <- &message{Response: res}
+				}()
+			}
+			if len(msg.Stdin) > 0 {
+				if cmd == nil {
+					msgs <- &message{Err: status.InvalidArgumentError("received stdin before exec start request")}
+					return
+				}
+				if cmd.stdin == nil {
+					msgs <- &message{Err: status.InvalidArgumentError("received stdin without specifying open_stdin in exec start request")}
+					return
+				}
+				if _, err := cmd.stdin.Write(msg.Stdin); err != nil {
+					msgs <- &message{Err: status.InternalErrorf("failed to write stdin: %s", err)}
+					return
+				}
+			}
+		}
+	}()
+	for msg := range msgs {
+		if msg.Err != nil {
+			return msg.Err
+		}
+		if err := stream.Send(msg.Response); err != nil {
+			return status.InternalErrorf("failed to send response: %s", err)
+		}
+	}
+	return nil
+}
+
+type command struct {
+	cmd       *exec.Cmd
+	reapMutex *sync.RWMutex
+
+	stdin        io.WriteCloser
+	stdoutWriter *io.PipeWriter
+	stdoutReader *io.PipeReader
+	stderrWriter *io.PipeWriter
+	stderrReader *io.PipeReader
+}
+
+func newCommand(start *vmxpb.ExecRequest, reapMutex *sync.RWMutex) (*command, error) {
+	if len(start.GetArguments()) == 0 {
+		return nil, status.InvalidArgumentError("arguments not specified")
+	}
+	cmd := exec.Command(start.GetArguments()[0], start.GetArguments()[1:]...)
+	if start.GetWorkingDirectory() != "" {
+		cmd.Dir = start.GetWorkingDirectory()
+	}
+	for _, envVar := range start.GetEnvironmentVariables() {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdoutReader, stdoutWriter := io.Pipe()
+	cmd.Stdout = stdoutWriter
+	stderrReader, stderrWriter := io.Pipe()
+	cmd.Stderr = stderrWriter
+	var stdin io.WriteCloser
+	if start.GetOpenStdin() {
+		stdinPipe, err := cmd.StdinPipe()
+		if err != nil {
+			return nil, status.InternalErrorf("failed to open stdin: %s", err)
+		}
+		stdin = stdinPipe
+	}
+	return &command{
+		cmd:          cmd,
+		reapMutex:    reapMutex,
+		stdin:        stdin,
+		stdoutReader: stdoutReader,
+		stdoutWriter: stdoutWriter,
+		stderrReader: stderrReader,
+		stderrWriter: stderrWriter,
+	}, nil
+}
+
+func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStreamedResponse, error) {
+	// TODO(tylerw): use syncfs or something better here.
+	defer unix.Sync()
+
+	c.reapMutex.RLock()
+	defer c.reapMutex.RUnlock()
+
+	log.Debugf("Running command in VM: %q", c.cmd.String())
+	stdoutErrCh := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(&stdoutWriter{msgs}, c.stdoutReader)
+		stdoutErrCh <- err
+	}()
+	stderrErrCh := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(&stderrWriter{msgs}, c.stderrReader)
+		stderrErrCh <- err
+	}()
+	// TODO(bduffany): monitor stats from the whole VM, not just
+	// the process being executed.
+	statsListener := func(stats *repb.UsageStats) {
+		msgs <- &message{Response: &vmxpb.ExecStreamedResponse{UsageStats: stats}}
+	}
+	_, err := commandutil.RunWithProcessTreeCleanup(ctx, c.cmd, statsListener)
+	exitCode, err := commandutil.ExitCode(ctx, c.cmd, err)
+	rsp := &vmxpb.ExecResponse{
+		ExitCode: int32(exitCode),
+		Status:   gstatus.Convert(err).Proto(),
+	}
+	c.stdoutWriter.Close()
+	if err := <-stdoutErrCh; err != nil {
+		return nil, status.InternalErrorf("failed to copy stdout: %s", err)
+	}
+	c.stderrWriter.Close()
+	if err := <-stderrErrCh; err != nil {
+		return nil, status.InternalErrorf("failed to copy stderr: %s", err)
+	}
+	return &vmxpb.ExecStreamedResponse{Response: rsp}, nil
+}
+
+type stdoutWriter struct{ msgs chan *message }
+
+func (w *stdoutWriter) Write(b []byte) (int, error) {
+	w.msgs <- &message{Response: &vmxpb.ExecStreamedResponse{Stdout: b}}
+	return len(b), nil
+}
+
+type stderrWriter struct{ msgs chan *message }
+
+func (w *stderrWriter) Write(b []byte) (int, error) {
+	w.msgs <- &message{Response: &vmxpb.ExecStreamedResponse{Stderr: b}}
+	return len(b), nil
 }

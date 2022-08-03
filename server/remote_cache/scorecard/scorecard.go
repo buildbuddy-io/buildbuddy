@@ -281,12 +281,20 @@ func blobNameDeprecated(invocationID string) string {
 func ExtractFiles(invocation *inpb.Invocation) map[string]*bespb.File {
 	out := map[string]*bespb.File{}
 
-	maybeAddToMap := func(file *bespb.File) {
-		if uri, ok := file.File.(*bespb.File_Uri); ok {
-			m := bytestreamURIPattern.FindStringSubmatch(uri.Uri)
-			if len(m) >= 1 {
-				digestHash := m[1]
-				out[digestHash] = file
+	maybeAddToMap := func(files ...*bespb.File) {
+		for _, file := range files {
+			if file == nil {
+				continue
+			}
+			if file.GetName() == "" {
+				continue
+			}
+			if uri, ok := file.File.(*bespb.File_Uri); ok {
+				m := bytestreamURIPattern.FindStringSubmatch(uri.Uri)
+				if len(m) >= 1 {
+					digestHash := m[1]
+					out[digestHash] = file
+				}
 			}
 		}
 	}
@@ -294,13 +302,24 @@ func ExtractFiles(invocation *inpb.Invocation) map[string]*bespb.File {
 	for _, event := range invocation.Event {
 		switch p := event.BuildEvent.Payload.(type) {
 		case *bespb.BuildEvent_NamedSetOfFiles:
-			for _, f := range p.NamedSetOfFiles.Files {
-				maybeAddToMap(f)
-			}
+			maybeAddToMap(p.NamedSetOfFiles.GetFiles()...)
 		case *bespb.BuildEvent_BuildToolLogs:
-			for _, f := range p.BuildToolLogs.Log {
-				maybeAddToMap(f)
-			}
+			maybeAddToMap(p.BuildToolLogs.GetLog()...)
+		case *bespb.BuildEvent_TestResult:
+			maybeAddToMap(p.TestResult.GetTestActionOutput()...)
+		case *bespb.BuildEvent_TestSummary:
+			maybeAddToMap(p.TestSummary.GetPassed()...)
+			maybeAddToMap(p.TestSummary.GetFailed()...)
+		case *bespb.BuildEvent_RunTargetAnalyzed:
+			maybeAddToMap(p.RunTargetAnalyzed.GetRunfiles()...)
+		case *bespb.BuildEvent_Action:
+			maybeAddToMap(p.Action.GetStdout())
+			maybeAddToMap(p.Action.GetStderr())
+			maybeAddToMap(p.Action.GetPrimaryOutput())
+			maybeAddToMap(p.Action.GetActionMetadataLogs()...)
+		case *bespb.BuildEvent_Completed:
+			maybeAddToMap(p.Completed.GetImportantOutput()...)
+			maybeAddToMap(p.Completed.GetDirectoryOutput()...)
 		}
 	}
 

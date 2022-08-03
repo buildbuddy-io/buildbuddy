@@ -27,6 +27,7 @@ go_library(
 
 go_test(
     name = "api_test",
+    size = "small",
     srcs = ["api_server_test.go"],
     embed = [":api"],
     deps = [

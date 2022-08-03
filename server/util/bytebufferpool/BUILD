@@ -9,6 +9,7 @@ go_library(
 
 go_test(
     name = "bytebufferpool_test",
+    size = "small",
     srcs = ["bytebufferpool_test.go"],
     deps = [
         ":bytebufferpool",
