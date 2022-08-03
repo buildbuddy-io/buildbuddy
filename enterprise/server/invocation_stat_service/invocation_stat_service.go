@@ -83,9 +83,38 @@ func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) 
 	    SUM(total_download_size_bytes) as total_download_size_bytes,
 	    SUM(total_upload_size_bytes) as total_upload_size_bytes,
 	    SUM(total_download_usec) as total_download_usec,
-        SUM(total_upload_usec) as total_upload_usec
+        SUM(total_upload_usec) as total_upload_usec,
+		quantilesExactExclusive(0.50,0.75,0.9,0.95,0.99)(duration_usec) as arr
         FROM Invocations`
 	return q
+}
+
+func getTrendQueryWithUnnestedQuantitlesArray(innerQuery string) string {
+	return `SELECT name,
+	total_build_time_usec,
+	total_num_builds,
+	completed_invocation_count,
+	user_count, commit_count,
+	host_count, 
+	repo_count,
+	branch_count,
+	max_duration_usec,
+	action_cache_hits,
+	action_cache_misses,
+	action_cache_uploads,
+	cas_cache_hits,
+	cas_cache_misses,
+	cas_cache_uploads,
+	total_download_size_bytes,
+	total_upload_size_bytes,
+	total_download_usec,
+	total_upload_usec,
+	arrayElement(arr, 1) as p50_duration_usec,
+	arrayElement(arr, 2) as p75_duration_usec,
+	arrayElement(arr, 3) as p90_duration_usec,
+	arrayElement(arr, 4) as p95_duration_usec,
+	arrayElement(arr, 5) as p99_duration_usec FROM (` +
+		innerQuery + `)`
 }
 
 func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
@@ -159,6 +188,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	q.SetGroupBy("name")
 
 	qStr, qArgs := q.Build()
+	qStr = getTrendQueryWithUnnestedQuantitlesArray(qStr)
 	var rows *sql.Rows
 	var err error
 	if i.olapdbh == nil {
