@@ -67,6 +67,7 @@ func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) 
 	}
 
 	q = q + `
+	    COUNT(1) AS total_num_builds,
 	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
 	    COUNT(DISTINCT user) as user_count,
 	    COUNT(DISTINCT commit_sha) as commit_count,
