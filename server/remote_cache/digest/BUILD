@@ -19,6 +19,7 @@ go_library(
 
 go_test(
     name = "digest_test",
+    size = "small",
     srcs = ["digest_test.go"],
     embed = [":digest"],
     deps = [

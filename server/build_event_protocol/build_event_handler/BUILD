@@ -9,6 +9,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:cache_go_proto",
+        "//proto:command_line_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:user_id_go_proto",
@@ -48,6 +49,7 @@ go_library(
 
 go_test(
     name = "build_event_handler_test",
+    size = "small",
     srcs = ["build_event_handler_test.go"],
     deps = [
         ":build_event_handler",

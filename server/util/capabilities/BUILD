@@ -14,6 +14,7 @@ go_library(
 
 go_test(
     name = "capabilities_test",
+    size = "small",
     srcs = ["capabilities_test.go"],
     deps = [
         ":capabilities",

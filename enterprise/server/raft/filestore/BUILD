@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "filestore_test",
+    size = "small",
     srcs = ["filestore_test.go"],
     deps = [
         ":filestore",

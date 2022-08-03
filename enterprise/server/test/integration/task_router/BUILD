@@ -2,6 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "task_router_test",
+    size = "small",
     srcs = ["task_router_test.go"],
     visibility = ["//visibility:public"],
     deps = [

@@ -14,6 +14,7 @@ go_library(
 
 go_test(
     name = "url_test",
+    size = "small",
     srcs = ["url_test.go"],
     deps = [
         ":url",

@@ -179,6 +179,17 @@ message DeleteInvocationResponse {
   context.ResponseContext response_context = 1;
 }
 
+message CancelExecutionsRequest {
+  context.RequestContext request_context = 1;
+
+  // The ID of the invocation to be canceled.
+  string invocation_id = 2;
+}
+
+message CancelExecutionsResponse {
+  context.ResponseContext response_context = 1;
+}
+
 message InvocationQuery {
   // The search parameters in this query will be ANDed when performing a
   // search -- so if a client species both "user" and "host", all results

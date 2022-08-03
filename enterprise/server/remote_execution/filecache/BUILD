@@ -21,6 +21,7 @@ go_library(
 
 go_test(
     name = "filecache_test",
+    size = "small",
     srcs = ["filecache_test.go"],
     deps = [
         ":filecache",

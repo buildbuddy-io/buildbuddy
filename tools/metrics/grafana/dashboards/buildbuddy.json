@@ -2710,7 +2710,10 @@
           "type": "timeseries"
         },
         {
-          "cards": {},
+          "cards": {
+            "cardPadding": 0.25,
+            "cardRound": 2
+          },
           "color": {
             "cardColor": "#3274D9",
             "colorScale": "sqrt",
@@ -2766,15 +2769,18 @@
           "yBucketBound": "auto"
         },
         {
-          "cards": {},
+          "cards": {
+            "cardPadding": 0.75,
+            "cardRound": 2
+          },
           "color": {
-            "cardColor": "#FADE2A",
+            "cardColor": "#FF9830",
             "colorScale": "sqrt",
             "colorScheme": "interpolateOranges",
             "exponent": 0.5,
             "mode": "opacity"
           },
-          "dataFormat": "tsbuckets",
+          "dataFormat": "timeseries",
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -2797,14 +2803,14 @@
                 "uid": "prom"
               },
               "exemplar": true,
-              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_seconds_since_last_access_bucket[$__interval])) by (le)",
+              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_usec_since_last_access_bucket[$__interval])) by (le)",
               "format": "heatmap",
               "interval": "",
               "legendFormat": "{{le}}",
               "refId": "A"
             }
           ],
-          "title": "Disk Cache by Seconds Since Last Access",
+          "title": "Disk Cache by Time Since Last Access",
           "tooltip": {
             "show": true,
             "showHistogram": true
@@ -2815,9 +2821,10 @@
           },
           "yAxis": {
             "decimals": -1,
-            "format": "s",
-            "logBase": 1,
-            "show": true
+            "format": "µs",
+            "logBase": 10,
+            "show": true,
+            "splitFactor": 4
           },
           "yBucketBound": "auto"
         }

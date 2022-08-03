@@ -21,6 +21,7 @@ go_library(
         "//proto:target_go_proto",
         "//proto:usage_go_proto",
         "//proto:user_go_proto",
+        "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/bytestream",
@@ -49,6 +50,7 @@ go_library(
 
 go_test(
     name = "buildbuddy_server_test",
+    size = "small",
     srcs = ["buildbuddy_server_test.go"],
     deps = [
         ":buildbuddy_server",

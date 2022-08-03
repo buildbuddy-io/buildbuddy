@@ -24,6 +24,7 @@ go_library(
 
 go_test(
     name = "container_test",
+    size = "small",
     srcs = ["container_test.go"],
     deps = [
         ":container",

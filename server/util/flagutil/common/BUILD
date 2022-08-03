@@ -16,6 +16,7 @@ go_library(
 
 go_test(
     name = "common_test",
+    size = "small",
     srcs = ["common_test.go"],
     deps = [
         ":common",

@@ -1,3 +1,4 @@
+load("//app/terminal:defs.bzl", "TERMINAL_V2_ENABLED")
 load("//rules/typescript:index.bzl", "ts_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild")
 load("//rules/sha:index.bzl", "sha")
@@ -63,6 +64,8 @@ genrule(
         "//app/components/radio:radio.css",
         "//app/components/checkbox:checkbox.css",
         "//app/components/spinner:spinner.css",
+    ] + [
+        "//app/terminal:terminal2.css" if TERMINAL_V2_ENABLED else "//app/terminal:terminal1.css",
     ],
     outs = ["style.css"],
     cmd_bash = """

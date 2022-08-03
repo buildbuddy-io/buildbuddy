@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "platform_test",
+    size = "small",
     srcs = ["platform_test.go"],
     embed = [":platform"],
     deps = [
