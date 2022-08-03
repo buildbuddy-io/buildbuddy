@@ -119,8 +119,11 @@ type PebbleCache struct {
 	opts *Options
 
 	env       environment.Env
-	db        *pebble.DB
 	isolation *rfpb.Isolation
+	db        *pebble.DB
+	dbWaiters *sync.WaitGroup
+	closedMu  *sync.Mutex // PROTECTS(closed)
+	closed    bool
 
 	atimes   *sync.Map
 	edits    chan *sizeUpdate
@@ -276,6 +279,9 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		opts:              opts,
 		env:               env,
 		db:                db,
+		dbWaiters:         &sync.WaitGroup{},
+		closed:            false,
+		closedMu:          &sync.Mutex{},
 		quitChan:          make(chan struct{}),
 		brokenFilesDone:   make(chan struct{}),
 		orphanedFilesDone: make(chan struct{}),
@@ -332,10 +338,14 @@ func partitionLimits(partID string) ([]byte, []byte) {
 	return keyRange(key)
 }
 
+func olderThanAtimeThreshold(atime time.Time) bool {
+	age := time.Since(atime)
+	return age >= *atimeUpdateThreshold
+}
+
 func batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-	age := time.Since(atime)
-	if age < *atimeUpdateThreshold {
+	if !olderThanAtimeThreshold(atime) {
 		return nil
 	}
 	fileMetadata.LastAccessUsec = time.Now().UnixMicro()
@@ -346,8 +356,70 @@ func batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *r
 	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 }
 
-func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
-	batch := p.db.NewBatch()
+type dbInterface interface {
+	pebble.Reader
+	pebble.Writer
+	io.Closer
+
+	Metrics() *pebble.Metrics
+	EstimateDiskUsage(start, end []byte) (uint64, error)
+	NewBatch() *pebble.Batch
+	NewIndexedBatch() *pebble.Batch
+	NewSnapshot() *pebble.Snapshot
+	Flush() error
+}
+
+type refCounter struct {
+	wg     *sync.WaitGroup
+	closed bool
+}
+
+func newRefCounter(wg *sync.WaitGroup) *refCounter {
+	wg.Add(1)
+	return &refCounter{
+		wg:     wg,
+		closed: false,
+	}
+}
+
+func (r *refCounter) Close() error {
+	if !r.closed {
+		r.closed = true
+		r.wg.Add(-1)
+	}
+	return nil
+}
+
+type refCountedDB struct {
+	*pebble.DB
+	*refCounter
+}
+
+func (r *refCountedDB) Close() error {
+	// Just close the refcounter, not the DB.
+	return r.refCounter.Close()
+}
+
+func (p *PebbleCache) DB() (dbInterface, error) {
+	p.closedMu.Lock()
+	defer p.closedMu.Unlock()
+	if p.closed {
+		return nil, status.FailedPreconditionError("db is closed.")
+	}
+	return &refCountedDB{
+		p.db,
+		newRefCounter(p.dbWaiters),
+	}, nil
+}
+
+func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
+	db, err := p.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	batch := db.NewBatch()
 	var lastWrite time.Time
 
 	flush := func() error {
@@ -355,7 +427,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
 				return err
 			}
-			batch = p.db.NewBatch()
+			batch = db.NewBatch()
 			lastWrite = time.Now()
 		}
 		return nil
@@ -373,7 +445,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 	for {
 		select {
 		case accessTimeUpdate := <-p.accesses:
-			md, err := readFileMetadata(p.db, accessTimeUpdate.fileMetadataKey)
+			md, err := readFileMetadata(db, accessTimeUpdate.fileMetadataKey)
 			if err != nil {
 				log.Warningf("Error unmarshaling data for %q: %s", accessTimeUpdate.fileMetadataKey, err)
 				continue
@@ -395,7 +467,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) {
 
 			if done {
 				flush()
-				return
+				return nil
 			}
 		}
 	}
@@ -420,9 +492,15 @@ func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
 	}
 }
 
-func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) {
+func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
+	db, err := p.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
 	const sep = "/"
-	iter := p.db.NewIter(&pebble.IterOptions{
+	iter := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{constants.MinByte},
 		UpperBound: []byte{constants.MaxByte},
 	})
@@ -485,10 +563,17 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) {
 	}
 	log.Infof("Pebble Cache: deleteOrphanedFiles removed %d files", orphanCount)
 	close(p.orphanedFilesDone)
+	return nil
 }
 
-func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) {
-	iter := p.db.NewIter(&pebble.IterOptions{
+func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
+	db, err := p.DB()
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+
+	iter := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{constants.MinByte},
 		UpperBound: []byte{constants.MaxByte},
 	})
@@ -522,14 +607,21 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) {
 	}
 	log.Infof("Pebble Cache: scanForBrokenFiles fixed %d files", mismatchCount)
 	close(p.brokenFilesDone)
+	return nil
 }
 
 func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
+	db, err := p.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
 	ch := disk_cache.ScanDiskDirectory(diskDir)
 
 	start := time.Now()
 	inserted := 0
-	err := p.batchProcessCh(ch, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
+	err = p.batchProcessCh(ch, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
 		protoBytes, err := proto.Marshal(fileMetadata)
 		if err != nil {
 			return err
@@ -544,7 +636,7 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 	if err != nil {
 		return err
 	}
-	if err := p.db.Flush(); err != nil {
+	if err := db.Flush(); err != nil {
 		return err
 	}
 	log.Printf("Pebble Cache: Migrated %d files from disk dir %q in %s", inserted, diskDir, time.Since(start))
@@ -554,7 +646,13 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 type batchEditFn func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error
 
 func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchEditFn) error {
-	batch := p.db.NewBatch()
+	db, err := p.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	batch := db.NewBatch()
 	delta := 0
 	for fileMetadata := range ch {
 		delta += 1
@@ -567,7 +665,7 @@ func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchE
 				log.Warningf("Error comitting batch: %s", err)
 				continue
 			}
-			batch = p.db.NewBatch()
+			batch = db.NewBatch()
 		}
 	}
 	if batch.Count() > 0 {
@@ -608,13 +706,19 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 }
 
 func (p *PebbleCache) Statusz(ctx context.Context) string {
+	db, err := p.DB()
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
+
 	p.statusMu.Lock()
 	evictors := p.evictors
 	p.statusMu.Unlock()
 
 	buf := "<pre>"
-	buf += p.db.Metrics().String()
-	diskEstimateBytes, err := p.db.EstimateDiskUsage([]byte{constants.MinByte}, []byte{constants.MaxByte})
+	buf += db.Metrics().String()
+	diskEstimateBytes, err := db.EstimateDiskUsage([]byte{constants.MinByte}, []byte{constants.MaxByte})
 	if err == nil {
 		buf += fmt.Sprintf("Estimated disk usage: %d bytes\n", diskEstimateBytes)
 	}
@@ -759,7 +863,13 @@ func (p *PebbleCache) handleMetadataMismatch(err error, fileMetadataKey []byte, 
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	iter := p.db.NewIter(nil /*default iterOptions*/)
+	db, err := p.DB()
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	fileRecord, err := p.makeFileRecord(ctx, d)
@@ -778,7 +888,13 @@ func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 }
 
 func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	iter := p.db.NewIter(nil /*default iterOptions*/)
+	db, err := p.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	fileRecord, err := p.makeFileRecord(ctx, d)
@@ -798,7 +914,13 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	iter := p.db.NewIter(nil /*default iterOptions*/)
+	db, err := p.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	sort.Slice(digests, func(i, j int) bool {
@@ -834,18 +956,22 @@ func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	db, err := p.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
 
+	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	sort.Slice(digests, func(i, j int) bool {
 		return digests[i].GetHash() < digests[j].GetHash()
 	})
 
-	iter := p.db.NewIter(nil /*default iterOptions*/)
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	blobDir := p.blobDir()
 	buf := &bytes.Buffer{}
-	fileMetadata := &rfpb.FileMetadata{}
 	for _, d := range digests {
 		fileRecord, err := p.makeFileRecord(ctx, d)
 		if err != nil {
@@ -855,6 +981,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if err != nil {
 			return nil, err
 		}
+		fileMetadata := &rfpb.FileMetadata{}
 		if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
 			continue
 		}
@@ -864,7 +991,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 			continue
 		}
 		p.updateAtime(fileMetadataKey)
-		sendAtimeUpdate(p.accesses, fileMetadataKey)
+		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
 
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
@@ -908,7 +1035,12 @@ func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delt
 	p.edits <- up
 }
 
-func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte) {
+func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) {
+	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+	if !olderThanAtimeThreshold(atime) {
+		return
+	}
+
 	fileMetadataKeyCopy := make([]byte, len(fileMetadataKey))
 	copy(fileMetadataKeyCopy, fileMetadataKey)
 	up := &accessTimeUpdate{fileMetadataKeyCopy}
@@ -929,7 +1061,13 @@ func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte) 
 }
 
 func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
-	iter := p.db.NewIter(nil /*default iterOptions*/)
+	db, err := p.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
@@ -938,7 +1076,7 @@ func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 		return err
 	}
 
-	if err := p.db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
+	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
 	p.clearAtime(fileMetadataKey)
@@ -947,7 +1085,13 @@ func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 }
 
 func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) error {
-	iter := p.db.NewIter(nil /*default iterOptions*/)
+	db, err := p.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
@@ -957,7 +1101,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 	}
 
 	fp := filestore.FilePath(p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata())
-	if err := p.db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
+	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
 	p.clearAtime(fileMetadataKey)
@@ -985,7 +1129,13 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	iter := p.db.NewIter(nil /*default iterOptions*/)
+	db, err := p.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
 	fileRecord, err := p.makeFileRecord(ctx, d)
@@ -1006,7 +1156,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	rc, err := filestore.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
 		p.updateAtime(fileMetadataKey)
-		sendAtimeUpdate(p.accesses, fileMetadataKey)
+		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
 		p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 	}
@@ -1036,6 +1186,12 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+	db, err := p.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
 	fileRecord, err := p.makeFileRecord(ctx, d)
 	if err != nil {
 		return nil, err
@@ -1045,7 +1201,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		return nil, err
 	}
 
-	iter := p.db.NewIter(nil /*default iterOptions*/)
+	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 	alreadyExists := hasFileMetadata(iter, fileMetadataKey)
 	if alreadyExists {
@@ -1057,7 +1213,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	if d.GetSizeBytes() < *maxInlineFileSizeBytes {
 		wcm = filestore.InlineWriter(ctx, d.GetSizeBytes())
 	} else {
-		fw, err := filestore.NewWriter(ctx, p.blobDir(), p.db.NewBatch(), fileRecord)
+		fw, err := filestore.NewWriter(ctx, p.blobDir(), db.NewBatch(), fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -1074,7 +1230,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		if err != nil {
 			return err
 		}
-		err = p.db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
+		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		if err == nil {
 			p.updateAtime(fileMetadataKey)
 			p.sendSizeUpdate(p.isolation.GetPartitionId(), fileMetadataKey, bytesWritten)
@@ -1368,7 +1524,7 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 	if *usePebbleAtimeOnly {
 		if s.fileMetadata.GetLastAccessUsec() == 0 {
-			sendAtimeUpdate(e.accesses, s.fileMetadataKey)
+			sendAtimeUpdate(e.accesses, s.fileMetadataKey, s.fileMetadata)
 			return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
 		}
 		atime := time.UnixMicro(s.fileMetadata.GetLastAccessUsec())
@@ -1649,30 +1805,39 @@ func (p *PebbleCache) Start() error {
 		return nil
 	})
 	p.eg.Go(func() error {
-		p.processAccessTimeUpdates(p.quitChan)
-		return nil
+		return p.processAccessTimeUpdates(p.quitChan)
 	})
 	p.eg.Go(func() error {
-		p.scanForBrokenFiles(p.quitChan)
-		return nil
+		return p.scanForBrokenFiles(p.quitChan)
 	})
 	if *scanForOrphanedFiles {
 		p.eg.Go(func() error {
-			p.deleteOrphanedFiles(p.quitChan)
-			return nil
+			return p.deleteOrphanedFiles(p.quitChan)
 		})
 	}
 	return nil
 }
 
 func (p *PebbleCache) Stop() error {
+	log.Printf("Pebble Cache: beginning shutdown")
 	close(p.quitChan)
 	if err := p.eg.Wait(); err != nil {
 		return err
 	}
+	log.Printf("Pebble Cache: waitgroups finished")
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
+	log.Printf("Pebble Cache: db flushed")
+
+	p.closedMu.Lock()
+	defer p.closedMu.Unlock()
+	if p.closed {
+		return nil
+	}
+	p.closed = true
+	p.dbWaiters.Wait() // wait for all db users to finish up.
+	log.Printf("Pebble Cache: db leases returned")
 
 	return p.db.Close()
 }

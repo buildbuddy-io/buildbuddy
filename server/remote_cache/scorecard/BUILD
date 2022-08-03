@@ -20,6 +20,7 @@ go_library(
 
 go_test(
     name = "scorecard_test",
+    size = "small",
     srcs = ["scorecard_test.go"],
     deps = [
         ":scorecard",

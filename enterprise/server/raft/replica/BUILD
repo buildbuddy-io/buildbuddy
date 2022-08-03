@@ -26,6 +26,7 @@ go_library(
 
 go_test(
     name = "replica_test",
+    size = "small",
     srcs = ["replica_test.go"],
     deps = [
         ":replica",

@@ -9,6 +9,7 @@ go_library(
 
 go_test(
     name = "lockingbuffer_test",
+    size = "small",
     srcs = ["lockingbuffer_test.go"],
     deps = [
         ":lockingbuffer",

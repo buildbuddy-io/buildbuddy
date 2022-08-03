@@ -38,6 +38,7 @@ go_library(
 
 go_test(
     name = "auth_test",
+    size = "small",
     srcs = ["auth_test.go"],
     embed = [":auth"],
     deps = [

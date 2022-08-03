@@ -2,6 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "build_logs_test",
+    size = "small",
     srcs = ["build_logs_test.go"],
     deps = [
         "//enterprise/server/build_event_publisher",

@@ -25,6 +25,7 @@ go_library(
 
 go_test(
     name = "quota_test",
+    size = "small",
     srcs = ["quota_manager_test.go"],
     embed = [":quota"],
     deps = [

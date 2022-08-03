@@ -846,3 +846,109 @@ func TestHintedHandoff(t *testing.T) {
 		readAndCompareDigest(t, ctx, dc3, d)
 	}
 }
+
+func TestDelete(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	baseCaches := []interfaces.Cache{
+		memoryCache1,
+		memoryCache2,
+		memoryCache3,
+	}
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	for i := 0; i < 100; i++ {
+		// Do a write, and ensure it was written to all nodes.
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+			t.Fatal(err)
+		}
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+		}
+
+		// Do a delete, and verify no nodes still have the data.
+		if err := distributedCaches[i%3].Delete(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+		for _, baseCache := range baseCaches {
+			exists, err := baseCache.Contains(ctx, d)
+			assert.NoError(t, err)
+			assert.False(t, exists)
+		}
+	}
+}
+
+func TestDelete_NonExistentFile(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	for i := 0; i < 100; i++ {
+		d, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+		// Do a delete on a file that does not exist.
+		err := distributedCaches[i%3].Delete(ctx, d)
+		assert.NoError(t, err)
+	}
+}

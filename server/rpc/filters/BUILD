@@ -23,6 +23,7 @@ go_library(
 
 go_test(
     name = "filters_test",
+    size = "small",
     srcs = ["filters_test.go"],
     deps = [
         "//proto:ping_service_go_proto",

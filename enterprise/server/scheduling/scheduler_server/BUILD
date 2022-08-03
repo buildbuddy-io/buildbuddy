@@ -35,6 +35,7 @@ go_library(
 
 go_test(
     name = "scheduler_server_test",
+    size = "small",
     srcs = ["scheduler_server_test.go"],
     embed = [":scheduler_server"],
     deps = [

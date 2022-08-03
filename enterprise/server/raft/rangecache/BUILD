@@ -18,6 +18,7 @@ go_library(
 
 go_test(
     name = "rangecache_test",
+    size = "small",
     srcs = ["rangecache_test.go"],
     deps = [
         ":rangecache",

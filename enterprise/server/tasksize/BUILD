@@ -25,6 +25,7 @@ go_library(
 
 go_test(
     name = "tasksize_test",
+    size = "small",
     srcs = ["tasksize_test.go"],
     deps = [
         ":tasksize",

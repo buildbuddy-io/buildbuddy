@@ -114,12 +114,24 @@ var (
 		Buckets: prometheus.ExponentialBuckets(1, 2, 20),
 	})
 	// Claim field is set only if task exists & claim field is not present.
+	// Return values:
+	//  - 0 claim failed for unknown reason (shouldn't happen)
+	//  - 1 claim successful
+	//  - 10 task doesn't exist
+	//  - 11 task already claimed
 	redisAcquireClaim = redis.NewScript(`
-		if redis.call("exists", KEYS[1]) == 1 and redis.call("hexists", KEYS[1], "claimed") == 0 then 
-			return redis.call("hset", KEYS[1], "claimed", "1") 
-		else 
-			return 0 
-		end`)
+		-- Task not found
+		if redis.call("exists", KEYS[1]) == 0 then
+			return 10
+		end
+	
+		-- Task already claimed.
+		if redis.call("hexists", KEYS[1], "claimed") == 1 then
+			return 11
+		end
+
+		return redis.call("hset", KEYS[1], "claimed", "1") 
+		`)
 	// Claim field is removed only if it's present.
 	redisReleaseClaim = redis.NewScript(`
 		if redis.call("hget", KEYS[1], "claimed") == "1" then 
@@ -1108,9 +1120,21 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID string, claimTim
 		return err
 	}
 
-	// Someone else claimed the task.
-	if c, ok := r.(int64); !ok || c != 1 {
-		return status.NotFoundErrorf("unable to claim task: %q", taskID)
+	c, ok := r.(int64)
+	if !ok {
+		return status.FailedPreconditionErrorf("unexpected result from claim attempt: %v", r)
+	}
+
+	switch c {
+	case 1:
+		// Success
+		break
+	case 10:
+		return status.NotFoundError("task does not exist")
+	case 11:
+		return status.NotFoundError("task already claimed")
+	default:
+		return status.UnknownErrorf("unknown error %d", c)
 	}
 
 	err = s.rdb.HIncrBy(ctx, s.redisKeyForTask(taskID), redisTaskAttempCountField, 1).Err()
@@ -1304,6 +1328,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			LeaseDurationSeconds: int64(leaseInterval.Seconds()),
 		}
 		if !claimed {
+			log.CtxInfof(ctx, "LeaseTask %q claim attempt from executor %q", taskID, executorID)
 			err = s.claimTask(ctx, taskID, time.Now())
 			if err != nil {
 				return err

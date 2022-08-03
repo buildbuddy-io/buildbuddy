@@ -9,6 +9,7 @@ go_library(
 
 go_test(
     name = "retry_test",
+    size = "small",
     srcs = ["retry_test.go"],
     deps = [
         ":retry",
