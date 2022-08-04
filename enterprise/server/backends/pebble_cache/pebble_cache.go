@@ -1392,7 +1392,6 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 }
 
 func splitRange(left, right []byte, count int) ([][]byte, error) {
-	log.Printf("Splitting between %q and %q", left, right)
 	leftInt := big.NewInt(0).SetBytes(left)
 	rightInt := big.NewInt(0).SetBytes(right)
 	delta := new(big.Int).Sub(rightInt, leftInt)
