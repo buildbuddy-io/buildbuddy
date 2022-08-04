@@ -302,7 +302,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.accesses)
+			pe, err := newPartitionEvictor(part, blobDir, pc, pc.accesses)
 			if err != nil {
 				return err
 			}
@@ -1627,7 +1627,7 @@ func (e *partitionEvictor) resampleK(k int) error {
 	}
 	defer db.Close()
 
-	start, end := partitionLimits(e.part.ID)
+	start, end := keyRange([]byte(e.part.ID + "/"))
 	iter := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
