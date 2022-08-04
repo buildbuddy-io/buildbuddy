@@ -358,7 +358,6 @@ type dbInterface interface {
 	pebble.Writer
 	io.Closer
 
-	Compact(start, end []byte, parallelize bool) error
 	EstimateDiskUsage(start, end []byte) (uint64, error)
 	Flush() error
 	Metrics() *pebble.Metrics
