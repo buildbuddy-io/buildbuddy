@@ -22,7 +22,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
-        "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_cockroachdb_pebble//vfs",
         "@com_github_prometheus_client_golang//prometheus",
