@@ -1311,10 +1311,13 @@ func (ws *workspace) sync(ctx context.Context) error {
 	}
 
 	// Clean up in case a previous workflow made a mess.
-	if err := git(ctx, ws.log, "clean", "-d" /*directories*/, "--force"); err != nil {
-		return err
+	cleanArgs := []string{
+		"clean",
+		"-x", /* include ignored files */
+		"-d", /* recurse into directories */
+		"--force",
 	}
-	if err := git(ctx, ws.log, "clean", "-X" /*ignored files*/, "--force"); err != nil {
+	if err := git(ctx, ws.log, cleanArgs...); err != nil {
 		return err
 	}
 	// Create the branch if it doesn't already exist, then update it to point to
