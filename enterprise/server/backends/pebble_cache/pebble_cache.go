@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/big"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -325,17 +326,15 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	return pc, nil
 }
 
-func keyRange(key []byte) ([]byte, []byte) {
-	start := make([]byte, len(key))
-	end := make([]byte, len(key))
-	copy(start, key)
-	copy(end, key)
-	return append(start, constants.MinByte), append(end, constants.MaxByte)
+func keyPrefix(prefix, key []byte) []byte {
+	v := make([]byte, 0, len(prefix)+len(key))
+	v = append(v, prefix...)
+	v = append(v, key...)
+	return v
 }
 
-func partitionLimits(partID string) ([]byte, []byte) {
-	key := []byte(partID + "/")
-	return keyRange(key)
+func keyRange(key []byte) ([]byte, []byte) {
+	return keyPrefix(key, []byte{constants.MinByte}), keyPrefix(key, []byte{constants.MaxByte})
 }
 
 func olderThanAtimeThreshold(atime time.Time) bool {
@@ -1392,6 +1391,29 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
 }
 
+func splitRange(left, right []byte, count int) ([][]byte, error) {
+	log.Printf("Splitting between %q and %q", left, right)
+	leftInt := big.NewInt(0).SetBytes(left)
+	rightInt := big.NewInt(0).SetBytes(right)
+	delta := new(big.Int).Sub(rightInt, leftInt)
+	interval := new(big.Int).Div(delta, big.NewInt(int64(count)))
+	if interval.Sign() != 1 {
+		return nil, status.InvalidArgumentErrorf("delta (%s) < count (%d)", delta, count)
+	}
+
+	ranges := make([][]byte, 0, count)
+
+	l := leftInt
+	ranges = append(ranges, leftInt.Bytes())
+	for i := 0; i < count; i++ {
+		r := new(big.Int).Add(l, interval)
+		ranges = append(ranges, r.Bytes())
+		l = r
+	}
+	ranges = append(ranges, rightInt.Bytes())
+	return ranges, nil
+}
+
 func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	mu := sync.Mutex{}
 	eg := errgroup.Group{}
@@ -1416,36 +1438,38 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		})
 	}
 
-	acPrefixRange := func(start, end []byte) ([]byte, []byte) {
-		left := make([]byte, 0, len(e.acPrefix)+len(start))
-		left = append(left, e.acPrefix...)
-		left = append(left, start...)
-
-		right := make([]byte, 0, len(e.acPrefix)+len(end))
-		right = append(right, e.acPrefix...)
-		right = append(right, end...)
-		return left, right
-	}
-
 	// Start scanning the AC.
 	// AC keys look like /partitionID/ac/12312312313(crc-32)/digesthash
 	// Start scanning at 10 because crc32s do not begin with 0.
-	for i := 10; i < 99; i++ {
-		left, right := acPrefixRange([]byte(fmt.Sprintf("%d", i)), []byte(fmt.Sprintf("%d", i+1)))
-		goScanRange(left, right)
+	ranges, err := splitRange(keyPrefix(e.acPrefix, []byte("10")), keyPrefix(e.acPrefix, []byte("99")), 100)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	for i, left := range ranges {
+		goScanRange(left, ranges[i+1])
+		if i == len(ranges)-2 {
+			break
+		}
 	}
 	// Additionally scan from 99-> max byte to ensure we cover the full
 	// range.
-	left, right := acPrefixRange([]byte("99"), []byte{constants.MaxByte})
-	goScanRange(left, right)
+	goScanRange(keyPrefix(e.acPrefix, []byte("99")), keyPrefix(e.acPrefix, []byte{constants.MaxByte}))
 
 	// Start scanning the CAS.
 	// CAS keys look like /partitionID/cas/digesthash(sha-256)
-	for i := 0; i < 16; i++ {
-		kr := append(e.casPrefix, []byte(fmt.Sprintf("%x", i))...)
-		start, end := keyRange(kr)
-		goScanRange(start, end)
+	ranges, err = splitRange(keyPrefix(e.casPrefix, []byte("00")), keyPrefix(e.casPrefix, []byte("ff")), 160)
+	if err != nil {
+		return 0, 0, 0, err
 	}
+	for i, left := range ranges {
+		goScanRange(left, ranges[i+1])
+		if i == len(ranges)-2 {
+			break
+		}
+	}
+	// Additionally scan from 99-> max byte to ensure we cover the full
+	// range.
+	goScanRange(keyPrefix(e.casPrefix, []byte("ff")), keyPrefix(e.casPrefix, []byte{constants.MaxByte}))
 
 	if err := eg.Wait(); err != nil {
 		return 0, 0, 0, err
@@ -1476,7 +1500,8 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 }
 
 func (e *partitionEvictor) iter() *pebble.Iterator {
-	start, end := partitionLimits(e.part.ID)
+	key := []byte(e.part.ID + "/")
+	start, end := keyRange(key)
 	iter := e.reader.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
