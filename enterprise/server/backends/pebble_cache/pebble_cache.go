@@ -10,11 +10,9 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -29,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/cespare/xxhash/v2"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
 	"github.com/prometheus/client_golang/prometheus"
@@ -60,7 +57,6 @@ var (
 	atimeUpdateThreshold      = flag.Duration("cache.pebble.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
 	atimeWriteBatchSize       = flag.Int("cache.pebble.atime_write_batch_size", 1000, "Buffer this many writes before writing atime data")
 	atimeBufferSize           = flag.Int("cache.pebble.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	usePebbleAtimeOnly        = flag.Bool("cache.pebble.use_pebble_atime_only", true, "If true; only use pebble stored atimes")
 	minEvictionAge            = flag.Duration("cache.pebble.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
 )
 
@@ -125,7 +121,6 @@ type PebbleCache struct {
 	closedMu  *sync.Mutex // PROTECTS(closed)
 	closed    bool
 
-	atimes   *sync.Map
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
 
@@ -287,7 +282,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		orphanedFilesDone: make(chan struct{}),
 		eg:                &errgroup.Group{},
 		statusMu:          &sync.Mutex{},
-		atimes:            &sync.Map{},
 		edits:             make(chan *sizeUpdate, 1000),
 		accesses:          make(chan *accessTimeUpdate, *atimeBufferSize),
 		evictors:          make([]*partitionEvictor, len(opts.Partitions)),
@@ -307,7 +301,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.atimes, pc.accesses)
+			pe, err := newPartitionEvictor(part, blobDir, pc.db, pc.accesses)
 			if err != nil {
 				return err
 			}
@@ -792,22 +786,6 @@ func (p *PebbleCache) blobDir() string {
 	return p.partitionBlobDir(p.isolation.GetPartitionId())
 }
 
-func (p *PebbleCache) updateAtime(fileMetadataKey []byte) {
-	nowNanos := time.Now().UnixNano()
-
-	fmkHash := xxhash.Sum64(fileMetadataKey)
-	if a, ok := p.atimes.Load(fmkHash); ok {
-		lastAccessNanos := a.(int64)
-		durSinceLastAccess := time.Duration(nowNanos-lastAccessNanos) * time.Nanosecond
-		metrics.DiskCacheUsecSinceLastAccess.Observe(float64(durSinceLastAccess.Microseconds()))
-	}
-	p.atimes.Store(fmkHash, nowNanos)
-}
-
-func (p *PebbleCache) clearAtime(fileMetadataKey []byte) {
-	p.atimes.Delete(xxhash.Sum64(fileMetadataKey))
-}
-
 // hasFileMetadata returns a bool indicating if the provided iterator has the
 // key specified by fileMetadataKey.
 func hasFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) bool {
@@ -881,9 +859,6 @@ func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 		return false, err
 	}
 	found := hasFileMetadata(iter, fileMetadataKey)
-	if found {
-		p.updateAtime(fileMetadataKey)
-	}
 	return found, nil
 }
 
@@ -909,7 +884,6 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	if err != nil {
 		return nil, err
 	}
-	p.updateAtime(fileMetadataKey)
 	return &interfaces.CacheMetadata{SizeBytes: md.GetSizeBytes()}, nil
 }
 
@@ -939,8 +913,6 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 		}
 		if !hasFileMetadata(iter, fileMetadataKey) {
 			missing = append(missing, d)
-		} else {
-			p.updateAtime(fileMetadataKey)
 		}
 	}
 	return missing, nil
@@ -990,7 +962,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 			continue
 		}
-		p.updateAtime(fileMetadataKey)
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
 
 		_, copyErr := io.Copy(buf, rc)
@@ -1079,7 +1050,6 @@ func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
-	p.clearAtime(fileMetadataKey)
 	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetSizeBytes())
 	return nil
 }
@@ -1104,7 +1074,6 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
-	p.clearAtime(fileMetadataKey)
 	p.sendSizeUpdate(p.isolation.GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetSizeBytes())
 	if err := disk.DeleteFile(ctx, fp); err != nil {
 		return err
@@ -1155,7 +1124,6 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 
 	rc, err := filestore.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
-		p.updateAtime(fileMetadataKey)
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
 		p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
@@ -1232,7 +1200,6 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		}
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		if err == nil {
-			p.updateAtime(fileMetadataKey)
 			p.sendSizeUpdate(p.isolation.GetPartitionId(), fileMetadataKey, bytesWritten)
 			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
 		}
@@ -1299,7 +1266,6 @@ type partitionEvictor struct {
 	blobDir  string
 	reader   pebble.Reader
 	writer   pebble.Writer
-	atimes   *sync.Map
 	accesses chan<- *accessTimeUpdate
 
 	casPrefix   []byte
@@ -1312,7 +1278,7 @@ type partitionEvictor struct {
 	lastEvicted *evictionPoolEntry
 }
 
-func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, atimes *sync.Map, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:         &sync.Mutex{},
 		part:       part,
@@ -1322,7 +1288,6 @@ func newPartitionEvictor(part disk.Partition, blobDir string, db *pebble.DB, ati
 		samplePool: make([]*evictionPoolEntry, 0, samplePoolSize),
 		reader:     db,
 		writer:     db,
-		atimes:     atimes,
 		accesses:   accesses,
 	}
 	start := time.Now()
@@ -1485,22 +1450,6 @@ func (e *partitionEvictor) iter() *pebble.Iterator {
 	return iter
 }
 
-func getLastUse(info os.FileInfo) int64 {
-	stat := info.Sys().(*syscall.Stat_t)
-	// Super Gross! https://github.com/golang/go/issues/31735
-	value := reflect.ValueOf(stat)
-	var ts syscall.Timespec
-	if timeField := value.Elem().FieldByName("Atimespec"); timeField.IsValid() {
-		ts = timeField.Interface().(syscall.Timespec)
-	} else if timeField := value.Elem().FieldByName("Atim"); timeField.IsValid() {
-		ts = timeField.Interface().(syscall.Timespec)
-	} else {
-		ts = syscall.Timespec{}
-	}
-	t := time.Unix(ts.Sec, ts.Nsec)
-	return t.UnixNano()
-}
-
 var digestRunes = []rune("abcdef1234567890")
 
 func (e *partitionEvictor) randomKey(n int) []byte {
@@ -1522,36 +1471,16 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 }
 
 func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
-	if *usePebbleAtimeOnly {
-		if s.fileMetadata.GetLastAccessUsec() == 0 {
-			sendAtimeUpdate(e.accesses, s.fileMetadataKey, s.fileMetadata)
-			return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
-		}
-		atime := time.UnixMicro(s.fileMetadata.GetLastAccessUsec())
-		age := time.Since(atime)
-		if age < *minEvictionAge {
-			return status.FailedPreconditionErrorf("File %q was not old enough: age %s", s.fileMetadataKey, age)
-		}
-		s.timestamp = atime.UnixNano()
-		return nil
+	if s.fileMetadata.GetLastAccessUsec() == 0 {
+		sendAtimeUpdate(e.accesses, s.fileMetadataKey, s.fileMetadata)
+		return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
 	}
-	if a, ok := e.atimes.Load(xxhash.Sum64(s.fileMetadataKey)); ok {
-		s.timestamp = a.(int64)
-		return nil
+	atime := time.UnixMicro(s.fileMetadata.GetLastAccessUsec())
+	age := time.Since(atime)
+	if age < *minEvictionAge {
+		return status.FailedPreconditionErrorf("File %q was not old enough: age %s", s.fileMetadataKey, age)
 	}
-
-	md := s.fileMetadata.GetStorageMetadata()
-	switch {
-	case md.GetFileMetadata() != nil:
-		fp := filestore.FilePath(e.blobDir, md.GetFileMetadata())
-		info, err := os.Stat(fp)
-		if err != nil {
-			return err
-		}
-		s.timestamp = getLastUse(info)
-	case md.GetInlineMetadata() != nil:
-		s.timestamp = md.GetInlineMetadata().GetCreatedAtNsec()
-	}
+	s.timestamp = atime.UnixNano()
 	return nil
 }
 
@@ -1621,7 +1550,6 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 	if err := e.writer.Delete(sample.fileMetadataKey, &pebble.WriteOptions{Sync: true}); err != nil {
 		return err
 	}
-	e.atimes.Delete(xxhash.Sum64(sample.fileMetadataKey))
 
 	md := sample.fileMetadata.GetStorageMetadata()
 	switch {
