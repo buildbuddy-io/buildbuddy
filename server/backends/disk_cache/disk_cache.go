@@ -58,7 +58,6 @@ var (
 	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
-	enableLiveUpdates           = flag.Bool("cache.disk.enable_live_updates", false, "If set, enable live updates of disk cache adds / removes")
 )
 
 type Options struct {
@@ -198,11 +197,6 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		remoteInstanceName: "",
 	}
 
-	if *enableLiveUpdates {
-		c.addChan = make(chan *rfpb.FileMetadata, 1000)
-		c.removeChan = make(chan *rfpb.FileMetadata, 1000)
-	}
-
 	partitions := make(map[string]*partition)
 	var defaultPartition *partition
 	for _, pc := range opts.Partitions {
@@ -242,20 +236,6 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 	c.partitions = partitions
 	c.partition = defaultPartition
-
-	if *enableLiveUpdates {
-		c.env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-			for _, p := range c.partitions {
-				p.mu.Lock()
-				p.addChan = nil
-				p.removeChan = nil
-				p.mu.Unlock()
-			}
-			close(c.addChan)
-			close(c.removeChan)
-			return nil
-		})
-	}
 
 	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
