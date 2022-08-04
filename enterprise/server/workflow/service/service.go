@@ -913,7 +913,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
-	in := instanceName(wf, wd, workflowAction.Name)
+	in := instanceName(wf, wd, workflowAction.Name, workflowAction.GitCleanExclude)
 	ad, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, key, in, workflowAction, invocationID, extraCIRunnerArgs)
 	if err != nil {
 		return "", err
