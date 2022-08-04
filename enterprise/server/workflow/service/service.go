@@ -81,15 +81,24 @@ func generateWebhookID() (string, error) {
 	return strings.ToLower(u.String()), nil
 }
 
-func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActionName string) string {
+func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActionName string, gitCleanExclude []string) string {
 	// Use a unique remote instance name per repo URL and workflow action name, to help
 	// route workflow tasks to runners which previously executed the same workflow
 	// action.
 	//
+	// git_clean_exclude is also included in this key so that if a PR is
+	// modifying git_clean_exclude, it sees a consistent view of the excluded
+	// directories throughout the PR.
+	//
 	// Instance name suffix is additionally used to effectively invalidate all
 	// existing runners for the workflow and cause subsequent workflows to be run
 	// from a clean runner.
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(wd.PushedRepoURL+workflowActionName+wf.InstanceNameSuffix)))
+	keys := append([]string{
+		wd.PushedRepoURL,
+		workflowActionName,
+		wf.InstanceNameSuffix,
+	}, gitCleanExclude...)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(keys, "|"))))
 }
 
 type workflowService struct {
@@ -706,6 +715,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			},
 		},
 	}
+	for _, path := range workflowAction.GitCleanExclude {
+		cmd.Arguments = append(cmd.Arguments, "--git_clean_exclude="+path)
+	}
 	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
 	if err != nil {
 		return nil, err
@@ -901,7 +913,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
-	in := instanceName(wf, wd, workflowAction.Name)
+	in := instanceName(wf, wd, workflowAction.Name, workflowAction.GitCleanExclude)
 	ad, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, key, in, workflowAction, invocationID, extraCIRunnerArgs)
 	if err != nil {
 		return "", err

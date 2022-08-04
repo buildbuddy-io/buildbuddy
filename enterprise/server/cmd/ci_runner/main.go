@@ -117,6 +117,7 @@ var (
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 	patchDigests       = flagtypes.Slice("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
+	gitCleanExclude    = flagtypes.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -1316,6 +1317,9 @@ func (ws *workspace) sync(ctx context.Context) error {
 		"-x", /* include ignored files */
 		"-d", /* recurse into directories */
 		"--force",
+	}
+	for _, path := range *gitCleanExclude {
+		cleanArgs = append(cleanArgs, "-e", path)
 	}
 	if err := git(ctx, ws.log, cleanArgs...); err != nil {
 		return err

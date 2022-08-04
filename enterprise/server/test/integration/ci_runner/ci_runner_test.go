@@ -511,6 +511,57 @@ func TestRunAction_RespectsArgs(t *testing.T) {
 	assert.Contains(t, result.Output, "args: {{ Hello world }}")
 }
 
+func TestGitCleanExclude(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	targetRepoPath, commitSHA := makeGitRepo(t, map[string]string{
+		"WORKSPACE": "",
+		"BUILD":     `sh_binary(name = "check_repo", srcs = ["check_repo.sh"])`,
+		"check_repo.sh": `
+			cd "$BUILD_WORKSPACE_DIRECTORY"
+			echo "not_excluded.txt exists:" $([[ -e not_excluded.txt ]] && echo yes || echo no)
+			echo "excluded.txt exists:" $([[ -e excluded.txt ]] && echo yes || echo no)
+			touch ./not_excluded.txt
+			touch ./excluded.txt
+		`,
+		"buildbuddy.yaml": `
+actions:
+- name: Check repo
+  bazel_commands: [ 'bazel run :check_repo' ]
+`,
+	})
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Check repo",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + targetRepoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + commitSHA,
+		"--target_repo_url=file://" + targetRepoPath,
+		"--target_branch=master",
+		"--git_clean_exclude=excluded.txt",
+		// Disable clean checkout fallback for this test since we expect to sync
+		// without errors.
+		"--fallback_to_clean_checkout=false",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+	require.Contains(t, result.Output, "excluded.txt exists: no")
+	require.Contains(t, result.Output, "not_excluded.txt exists: no")
+
+	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+	require.Contains(t, result.Output, "excluded.txt exists: yes")
+	require.Contains(t, result.Output, "not_excluded.txt exists: no")
+}
+
 func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 

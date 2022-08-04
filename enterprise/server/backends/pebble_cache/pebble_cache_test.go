@@ -367,102 +367,10 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
-	flags.Set(t, "cache.pebble.use_pebble_atime_only", false)
-	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
-	ctx := getAnonContext(t, te)
-
-	numDigests := 1000
-	digestSize := 100
-	maxSizeBytes := int64(float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold)) // account for .9 evictor cutoff
-	rootDir := testfs.MakeTempDir(t)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
-	if err != nil {
-		t.Fatal(err)
-	}
-	pc.Start()
-	defer pc.Stop()
-
-	quartile := numDigests / 4
-
-	digestKeys := make([]*repb.Digest, numDigests)
-	for i := range digestKeys {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		digestKeys[i] = d
-		if err := pc.Set(ctx, d, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
-		}
-	}
-
-	// Use the digests in the following way:
-	// 1) first 3 quartiles
-	// 2) first 2 quartiles
-	// 3) first quartile
-	// This sets us up so we add an additional quartile of data
-	// and then expect data from the 3rd quartile (least recently used)
-	// to be the most evicted.
-	for i := 3; i > 0; i-- {
-		log.Printf("Using data from 0:%d", quartile*i)
-		for j := 0; j < quartile*i; j++ {
-			d := digestKeys[j]
-			if _, err := pc.Get(ctx, d); err != nil {
-				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err)
-			}
-		}
-	}
-
-	// Write more data.
-	for i := 0; i < quartile; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		digestKeys = append(digestKeys, d)
-		if err := pc.Set(ctx, d, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
-		}
-	}
-
-	time.Sleep(pebble_cache.JanitorCheckPeriod)
-	pc.TestingWaitForGC()
-
-	evictionsByQuartile := make([][]*repb.Digest, 5)
-	for i, d := range digestKeys {
-		ok, err := pc.Contains(ctx, d)
-		evicted := err != nil || !ok
-		q := i / quartile
-		if evicted {
-			evictionsByQuartile[q] = append(evictionsByQuartile[q], d)
-		}
-	}
-
-	for quartile, evictions := range evictionsByQuartile {
-		count := len(evictions)
-		sample := ""
-		for i, d := range evictions {
-			if i > 3 {
-				break
-			}
-			sample += d.GetHash()
-			sample += ", "
-		}
-		log.Printf("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
-	}
-
-	// None of the files "used" just before adding more should have been
-	// evicted.
-	require.Equal(t, 0, len(evictionsByQuartile[0]))
-
-	// None of the most recently added files should have been evicted.
-	require.Equal(t, 0, len(evictionsByQuartile[4]))
-
-	require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2]))
-	require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
-}
-
-func TestAtimeLRU(t *testing.T) {
 	flags.Set(t, "cache.pebble.atime_update_threshold", 0) // update atime on every access
 	flags.Set(t, "cache.pebble.atime_write_batch_size", 1) // write atime updates synchronously
 	flags.Set(t, "cache.pebble.atime_buffer_size", 0)      // blocking channel of atime updates
 	flags.Set(t, "cache.pebble.min_eviction_age", 0)       // no min eviction age
-	flags.Set(t, "cache.pebble.use_pebble_atime_only", true)
 
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
