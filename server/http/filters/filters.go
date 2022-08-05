@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"flag"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"regexp"
@@ -65,7 +64,7 @@ var gzPool = sync.Pool{
 }
 
 type gzipResponseWriter struct {
-	io.Writer
+	Writer *gzip.Writer
 	http.ResponseWriter
 }
 
@@ -76,6 +75,11 @@ func (w *gzipResponseWriter) WriteHeader(status int) {
 
 func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
+}
+
+func (w *gzipResponseWriter) Flush() {
+	w.Writer.Flush()
+	w.ResponseWriter.(http.Flusher).Flush()
 }
 
 func Gzip(next http.Handler) http.Handler {
@@ -174,6 +178,9 @@ func (w *instrumentedResponseWriter) Write(bytes []byte) (int, error) {
 func (w *instrumentedResponseWriter) WriteHeader(statusCode int) {
 	w.statusCode = statusCode
 	w.ResponseWriter.WriteHeader(statusCode)
+}
+func (w *instrumentedResponseWriter) Flush() {
+	w.ResponseWriter.(http.Flusher).Flush()
 }
 
 func LogRequest(next http.Handler) http.Handler {

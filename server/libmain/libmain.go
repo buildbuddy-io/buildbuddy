@@ -51,6 +51,7 @@ import (
 	bundle "github.com/buildbuddy-io/buildbuddy"
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bbprotolet "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_stream_service_protolet"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -286,6 +287,11 @@ func StartAndRunServices(env environment.Env) {
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
+	bbStreamServer := bbprotolet.NewBuildBuddyStreamServiceServer(env.GetBuildBuddyServer())
+	streamProtoletHandler, err := protolet.GenerateStreamHTTPHandlers(bbStreamServer)
+	if err != nil {
+		log.Fatalf("Error initializing streaming RPC over HTTP handlers for BuildBuddy server: %s", err)
+	}
 
 	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
@@ -335,7 +341,7 @@ func StartAndRunServices(env environment.Env) {
 	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
 	// TODO(bduffany): Make a real RPC service for this and expose it via a
 	// streaming version of protolet.
-	mux.Handle("/rpc/BuildBuddyStreamService/GetBuildEvents", httpfilters.WrapAuthenticatedExternalHandler(env, env.GetBuildEventHandler()))
+	mux.Handle("/rpc/BuildBuddyStreamService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyStreamService/", streamProtoletHandler))
 	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())

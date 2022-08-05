@@ -1,6 +1,7 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load(":defs.bzl", "ts_proto_library")
+load("//rules/protolet:index.bzl", "go_protolet_stream_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -337,6 +338,15 @@ proto_library(
         ":usage_proto",
         ":user_proto",
         ":workflow_proto",
+    ],
+)
+
+proto_library(
+    name = "buildbuddy_stream_service_proto",
+    srcs = ["buildbuddy_stream_service.proto"],
+    deps = [
+        ":eventlog_proto",
+        ":invocation_proto",
     ],
 )
 
@@ -698,6 +708,17 @@ go_proto_library(
         ":usage_go_proto",
         ":user_go_proto",
         ":workflow_go_proto",
+    ],
+)
+
+go_protolet_stream_library(
+    name = "buildbuddy_stream_service_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_stream_service",
+    proto = ":buildbuddy_stream_service_proto",
+    deps = [
+        ":eventlog_go_proto",
+        ":invocation_go_proto",
     ],
 )
 

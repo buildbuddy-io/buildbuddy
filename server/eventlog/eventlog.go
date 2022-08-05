@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
 
@@ -199,6 +200,113 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	return rsp, nil
 }
 
+type ChunkStreamMessage struct {
+	Response *elpb.GetEventLogChunkResponse
+	Err      error
+}
+
+// StreamEventLogChunks streams chunks starting from the chunk ID specified in
+// the request.
+func StreamEventLogChunks(ctx context.Context, env environment.Env, req *elpb.GetEventLogChunkRequest) (chan *ChunkStreamMessage, error) {
+	pubsub := env.GetPubSub()
+	if pubsub == nil {
+		return nil, status.UnimplementedError("pubsub is not supported")
+	}
+
+	// Check access to the invocation and get the last chunk ID.
+	inv, err := env.GetInvocationDB().LookupInvocation(ctx, req.GetInvocationId())
+	if err != nil {
+		return nil, err
+	}
+
+	ch := make(chan *ChunkStreamMessage, 64)
+	if inv.LastChunkId == "" {
+		// TODO: Is this the right thing to do? (When will this happen?)
+		close(ch)
+		return ch, nil
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	updates := make(chan struct{}, 1)
+
+	// Chunkstore subscriber: Listen for new chunks being written to chunkstore
+	// (Redis pubsub).
+	go func() {
+		s := pubsub.Subscribe(ctx, NotifyChannelPrefix(req.GetInvocationId())+"/writeChunk")
+		defer s.Close()
+		for range s.Chan() {
+			select {
+			case updates <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	// Tail subscriber: Listen for updates to the tail of the log
+	// (Redis pubsub).
+	go func() {
+		s := pubsub.Subscribe(ctx, NotifyChannelPrefix(req.GetInvocationId())+"/writeTail")
+		defer s.Close()
+		for range s.Chan() {
+			select {
+			case updates <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	// Sequencer: Call GetEventLogChunk initially and also handle
+	go func() {
+		defer cancel() // cancel subscribers
+		defer close(ch)
+		// TODO: Wait for subscribers to be set up.
+
+		req := proto.Clone(req).(*elpb.GetEventLogChunkRequest)
+		for {
+			// TODO: when new chunks are written, call GetEventLogChunk but
+			// *don't* re-read the invocation row and *don't* check Redis (check
+			// chunkstore only). When only the tail is updated, call
+			// GetEventLogChunk but *don't* re-read the invocation row and
+			// *don't* check chunkstore (check Redis only).
+			// TODO: Pass in the initially fetched invocation here, so that
+			// if the attempt count changes, we still fetch from the original
+			// invocation.
+			// TODO: Subscribe to invocation state changes as well -- when the
+			// invocation is complete, return.
+			res, err := GetEventLogChunk(ctx, env, req)
+			if err != nil {
+				ch <- &ChunkStreamMessage{Err: err}
+				return
+			}
+			snippet := string(res.Buffer)
+			if len(snippet) > 50 {
+				snippet = "..." + snippet[len(snippet)-50:]
+			}
+			// log.Infof("GOT chunk next=%s, live=%v, snippet=%q", res.GetNextChunkId(), res.GetLive(), snippet)
+			ch <- &ChunkStreamMessage{Response: res}
+
+			// Empty next chunk ID means the invocation is complete and we've
+			// reached the end of the log.
+			if res.NextChunkId == "" {
+				return
+			}
+			// New next chunk ID means more chunks may be available. Try
+			// fetching immediately.
+			if req.ChunkId != res.NextChunkId {
+				req.ChunkId = res.NextChunkId
+				continue
+			}
+			// Unchanged next chunk ID means the invocation is in progress and
+			// we should wait for updates to the log before fetching again.
+			select {
+			case <-updates:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch, nil
+}
+
 type chunkReadResult struct {
 	data []byte
 	err  error
@@ -276,13 +384,15 @@ func (q *chunkQueue) pop(ctx context.Context) ([]byte, error) {
 	return result.data, nil
 }
 
-func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, eventLogPath string, numLinesToRetain int) *EventLogWriter {
+func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces.KeyValStore, pubsub interfaces.PubSub, eventLogPath, notifyChannelPrefix string, numLinesToRetain int) *EventLogWriter {
 	chunkstoreOptions := &chunkstore.ChunkstoreOptions{
 		WriteBlockSize: defaultLogChunkSize,
 	}
 	eventLogWriter := &EventLogWriter{
-		keyValueStore: c,
-		eventLogPath:  eventLogPath,
+		keyValueStore:       c,
+		eventLogPath:        eventLogPath,
+		pubsub:              pubsub,
+		notifyChannelPrefix: notifyChannelPrefix,
 	}
 	var writeHook func(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte)
 	if c != nil {
@@ -292,6 +402,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 		WriteTimeoutDuration: defaultChunkTimeout,
 		NoSplitWrite:         true,
 		WriteHook:            writeHook,
+		NotifyChannelPrefix:  notifyChannelPrefix,
 	}
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
@@ -311,13 +422,26 @@ type WriteCloserWithContext interface {
 
 type EventLogWriter struct {
 	WriteCloserWithContext
-	chunkstoreWriter *chunkstore.ChunkstoreWriter
-	lastChunk        *elpb.LiveEventLogChunk
-	keyValueStore    interfaces.KeyValStore
-	eventLogPath     string
+	chunkstoreWriter    *chunkstore.ChunkstoreWriter
+	lastChunk           *elpb.LiveEventLogChunk
+	keyValueStore       interfaces.KeyValStore
+	eventLogPath        string
+	pubsub              interfaces.PubSub
+	notifyChannelPrefix string
 }
 
 func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeRequest *chunkstore.WriteRequest, writeResult *chunkstore.WriteResult, chunk []byte, volatileTail []byte) {
+	notify := true
+	defer func() {
+		if notify && w.pubsub != nil && w.notifyChannelPrefix != "" {
+			// Notify subscribers that a new log tail has been written.
+			channel := w.notifyChannelPrefix + "/writeTail"
+			if err := w.pubsub.Publish(ctx, channel, ""); err != nil {
+				log.Warningf("Failed to publish to %s: %s", channel, err)
+				return
+			}
+		}
+	}()
 	if writeResult.Close {
 		keyval.SetProto(ctx, w.keyValueStore, w.eventLogPath, nil)
 		return
@@ -332,6 +456,7 @@ func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeReque
 		Buffer:  append(chunk, volatileTail...),
 	}
 	if proto.Equal(w.lastChunk, curChunk) {
+		notify = false
 		return
 	}
 	keyval.SetProto(
@@ -345,6 +470,10 @@ func (w *EventLogWriter) writeChunkToKeyValStore(ctx context.Context, writeReque
 
 func (w *EventLogWriter) GetLastChunkId(ctx context.Context) string {
 	return chunkstore.ChunkIndexAsStringId(w.chunkstoreWriter.GetLastChunkIndex(ctx))
+}
+
+func NotifyChannelPrefix(iid string) string {
+	return "invocation/log/" + iid
 }
 
 type WriteWithTailCloser interface {

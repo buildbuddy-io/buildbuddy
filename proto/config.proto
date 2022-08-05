@@ -69,4 +69,7 @@ message FrontendConfig {
   // Whether or not the UI should stream invocation events as a separate RPC,
   // rather than loading them via GetInvocation.
   bool invocation_event_streaming_enabled = 22;
+
+  // Whether the UI should stream invocation logs instead of polling.
+  bool invocation_log_streaming_enabled = 23;
 }

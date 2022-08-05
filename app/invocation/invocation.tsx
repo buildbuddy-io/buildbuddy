@@ -4,7 +4,7 @@ import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
-import rpcService from "../service/rpc_service";
+import rpcService, { CancelablePromise, isRetryable } from "../service/rpc_service";
 import TargetComponent from "../target/target";
 import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
@@ -88,24 +88,66 @@ export default class InvocationComponent extends React.Component<Props, State> {
     clearTimeout(this.timeoutRef);
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
+    this.invocationStateSubscription?.unsubscribe();
   }
 
-  async fetchInvocation() {
-    let request = new invocation.GetInvocationRequest();
-    request.lookup = new invocation.InvocationLookup();
-    request.lookup.invocationId = this.props.invocationId;
+  private invocationStateSubscription: Subscription;
+  private resubscribeDelayMs = 100;
+
+  componentDidUpdate(_: Props, prevState: State) {
+    if (!prevState.model?.invocations?.[0] && this.state.model?.invocations?.[0]) {
+      this.subscribeToInvocationUpdates();
+    }
+  }
+
+  subscribeToInvocationUpdates() {
+    // No need to subscribe to updates if the invocation is not in progress.
+    this.invocationStateSubscription?.unsubscribe();
+    if (!this.state.model.isInProgress()) return;
+
+    this.invocationStateSubscription = rpcService.streamService
+      .getInvocationStateChanges({
+        invocationId: this.props.invocationId,
+      })
+      .subscribe({
+        next: () => {
+          this.fetchInvocation();
+        },
+        error: (e) => {
+          console.error(e);
+          this.invocationStateSubscription?.unsubscribe();
+          // TODO: More standardized way of retrying.
+          if (isRetryable(e)) {
+            // Lost connection; re-establish.
+            console.error("Lost connection; re-establishing:", e);
+            setTimeout(() => this.subscribeToInvocationUpdates(), this.resubscribeDelayMs);
+            this.resubscribeDelayMs = Math.min(1000, this.resubscribeDelayMs * 2);
+          }
+        },
+      });
+  }
+
+  private invocationFetch: CancelablePromise;
+  private invocationEventsFetch: CancelablePromise<invocation.IInvocationEvent[]> | null;
+
+  fetchInvocation() {
+    this.invocationFetch?.cancel();
+    this.invocationEventsFetch?.cancel();
 
     // Load invocation events in parallel.
-    const eventsPromise = capabilities.config.invocationEventStreamingEnabled
+    this.invocationEventsFetch = capabilities.config.invocationEventStreamingEnabled
       ? fetchEvents(this.props.invocationId)
       : null;
 
     const startTimestampMs = window.performance.now();
-    await rpcService.service
-      .getInvocation(request)
+    this.invocationFetch = rpcService.service
+      .getInvocation({
+        lookup: { invocationId: this.props.invocationId },
+        noFetchEvents: capabilities.config.invocationEventStreamingEnabled,
+      })
       .then(async (response: invocation.GetInvocationResponse) => {
-        if (eventsPromise !== null) {
-          const events = await eventsPromise;
+        if (this.invocationEventsFetch) {
+          const events = await this.invocationEventsFetch;
           if (response.invocation[0]) {
             response.invocation[0].event = events;
           }

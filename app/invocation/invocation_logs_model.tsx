@@ -2,6 +2,7 @@ import { Subject, Subscription, from } from "rxjs";
 import { eventlog } from "../../proto/eventlog_ts_proto";
 import errorService from "../errors/error_service";
 import rpcService from "../service/rpc_service";
+import capabilities from "../capabilities/capabilities";
 
 const POLL_TAIL_INTERVAL_MS = 3_000;
 // How many lines to request from the server on each chunk request.
@@ -44,6 +45,33 @@ export default class InvocationLogsModel {
   }
 
   private fetchTail(chunkId = "") {
+    if (capabilities.config.invocationLogStreamingEnabled) {
+      this.responseSubscription = rpcService.streamService
+        .getInvocationLog({
+          invocationId: this.invocationId,
+          chunkId: chunkId,
+          minLines: MIN_LINES,
+        })
+        .subscribe({
+          next: (response) => {
+            console.log("got response", response);
+
+            this.logs = this.logs.slice(0, this.stableLogLength);
+            this.logs = this.logs + new TextDecoder().decode(response.buffer || new Uint8Array());
+            if (!response.live) {
+              this.stableLogLength = this.logs.length;
+            }
+            if (response.buffer?.length) {
+              // Notify of change to `logs` state.
+              this.onChange.next();
+            }
+          },
+          error: (e) =>
+            errorService.handleError(e, { ignoreErrorCodes: ["NotFound", "PermissionDenied", "Unauthenticated"] }),
+        });
+      return;
+    }
+
     this.responseSubscription = from<Promise<eventlog.GetEventLogChunkResponse>>(
       rpcService.service.getEventLogChunk(
         new eventlog.GetEventLogChunkRequest({

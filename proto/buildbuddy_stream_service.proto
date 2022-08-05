@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+import "proto/eventlog.proto";
+import "proto/invocation.proto";
+
+package buildbuddy.service.stream;
+
+option go_package = "buildbuddy_stream_service";
+
+// BuildBuddyStreamService contains RPC methods which return a stream of
+// responses. This exists because the RPC client libraries we use currently do
+// not support streaming RPCs. Instead, we use only the generated Go APIs and
+// write the client RPC interface by hand.
+service BuildBuddyStreamService {
+  // Returns all invocation events that are available. Once all available events
+  // are sent on the stream, the stream is terminated. This does NOT live-stream
+  // events from the invocation. Instead, it is intended to enable more
+  // efficient processing of invocation events, since the client can parse
+  // events as they are sent on the stream.
+  rpc GetInvocationEvents(invocation.GetInvocationEventsRequest)
+      returns (stream invocation.InvocationEvent);
+
+  // Returns a live stream of invocation build logs.
+  rpc GetInvocationLog(eventlog.GetEventLogChunkRequest)
+      returns (stream eventlog.GetEventLogChunkResponse);
+
+  // Returns a live stream of invocation state changes. This can be used to
+  // notify the client that they should re-fetch the invocation.
+  rpc GetInvocationStateChanges(invocation.GetInvocationStateChangesRequest)
+      returns (stream invocation.GetInvocationStateChangesResponse);
+}

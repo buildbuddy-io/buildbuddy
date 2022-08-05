@@ -9,6 +9,7 @@ go_library(
         "//enterprise/server/remote_execution/config",
         "//proto:api_key_go_proto",
         "//proto:bazel_config_go_proto",
+        "//proto:buildbuddy_stream_service_go_proto",
         "//proto:cache_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:execution_stats_go_proto",

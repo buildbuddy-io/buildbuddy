@@ -1,10 +1,12 @@
 import { Subject } from "rxjs";
 import { buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
+import { BuildBuddyStreamService } from "./buildbuddy_stream_service";
 import { context } from "../../proto/context_ts_proto";
 import { CancelablePromise } from "../util/async";
 import * as protobufjs from "protobufjs";
 
 export { CancelablePromise } from "../util/async";
+export { isRetryable } from "./stream";
 
 /**
  * ExtendedBuildBuddyService is an extended version of BuildBuddyService with
@@ -23,6 +25,7 @@ export type BuildBuddyServiceRpcName = RpcMethodNames<buildbuddy.service.BuildBu
 
 class RpcService {
   service: ExtendedBuildBuddyService;
+  streamService: BuildBuddyStreamService;
   events: Subject<string>;
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
@@ -30,6 +33,7 @@ class RpcService {
 
   constructor() {
     this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));
+    this.streamService = this.getExtendedStreamService(new BuildBuddyStreamService());
     this.events = new Subject();
 
     (window as any)._rpcService = this;
@@ -120,12 +124,25 @@ class RpcService {
 
   private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
     const extendedService = Object.create(service);
-    for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
+    for (const rpcName of getRpcMethodNames(service)) {
       extendedService[rpcName] = (request: Record<string, any>) => {
         if (this.requestContext && !request.requestContext) {
           request.requestContext = this.requestContext;
         }
         return new CancelablePromise((service as any)[rpcName](request));
+      };
+    }
+    return extendedService;
+  }
+
+  private getExtendedStreamService(service: BuildBuddyStreamService): BuildBuddyStreamService {
+    const extendedService = Object.create(service);
+    for (const rpcName of getRpcMethodNames(service)) {
+      extendedService[rpcName] = (request: Record<string, any>) => {
+        if (this.requestContext && !request.requestContext) {
+          request.requestContext = this.requestContext;
+        }
+        return (service as any)[rpcName](request);
       };
     }
     return extendedService;
@@ -137,8 +154,8 @@ function uint8ArrayToBase64(array: Uint8Array): string {
   return btoa(str);
 }
 
-function getRpcMethodNames(serviceClass: Function) {
-  return new Set(Object.keys(serviceClass.prototype).filter((key) => key !== "constructor"));
+function getRpcMethodNames(service: Object) {
+  return new Set(Object.getOwnPropertyNames(Object.getPrototypeOf(service)).filter((key) => key !== "constructor"));
 }
 
 type Rpc<Request, Response> = (request: Request) => Promise<Response>;

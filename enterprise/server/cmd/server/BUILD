@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/backends/gcs_cache",
         "//enterprise/server/backends/memcache",
         "//enterprise/server/backends/pebble_cache",
+        "//enterprise/server/backends/pubsub",
         "//enterprise/server/backends/redis_cache",
         "//enterprise/server/backends/redis_client",
         "//enterprise/server/backends/redis_kvstore",

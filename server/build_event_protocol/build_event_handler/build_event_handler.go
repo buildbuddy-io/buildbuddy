@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -141,46 +140,6 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
-	}
-}
-
-// ServeHTTP handles HTTP requests to read back the raw event streams written by
-// the build event handler. It streams responses using a simple binary encoding
-// which is a repeating sequence of:
-//
-//     [encodedLength..., marshaledInvocationEventBytes...], ...
-//
-// Where the encodedLength is written using binary.PutVarint. This format
-// enables clients to pipeline the response parsing, deserializing each event in
-// the stream as it is available, instead of buffering the entire blob in memory
-// and then doing a CPU-heavy parse all at once.
-func (b *BuildEventHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	iid := r.URL.Query().Get("invocation_id")
-	if iid == "" {
-		http.Error(w, "Request is missing invocation_id URL param", http.StatusBadRequest)
-		return
-	}
-	in, err := LookupInvocation(b.env, r.Context(), iid)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	lengthEncoding := make([]byte, binary.MaxVarintLen64)
-	for _, evt := range in.GetEvent() {
-		b, err := proto.Marshal(evt)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		n := binary.PutVarint(lengthEncoding, int64(len(b)))
-		if _, err := w.Write(lengthEncoding[:n]); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if _, err := w.Write(b); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 	}
 }
 
@@ -472,7 +431,7 @@ func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationJW
 	if auth := w.env.GetAuthenticator(); auth != nil {
 		ctx = auth.AuthContextFromTrustedJWT(ctx, ij.jwt)
 	}
-	return LookupInvocation(w.env, ctx, ij.id)
+	return LookupInvocation(w.env, ctx, ij.id, true /*=fetchEvents*/)
 }
 
 func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
@@ -636,6 +595,9 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	if !updated {
 		e.isVoid = true
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, invocation not finalized.", e.attempt, iid)
+	}
+	if err := e.notifyDBWrite(iid, inpb.Invocation_InvocationStatus(ti.InvocationStatus)); err != nil {
+		log.Warningf("Failed to notify DB write for invocation %s: %s", iid, err)
 	}
 
 	e.flushAPIFacets(iid)
@@ -820,6 +782,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			e.isVoid = true
 			return nil
 		}
+		if err := e.notifyDBWrite(iid, inpb.Invocation_InvocationStatus(ti.InvocationStatus)); err != nil {
+			log.Warningf("Failed to notify DB write for invocation %s: %s", iid, err)
+		}
 		e.attempt = ti.Attempt
 		chunkFileSizeBytes := *chunkFileSizeBytes
 		if chunkFileSizeBytes == 0 {
@@ -842,7 +807,9 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 				e.ctx,
 				e.env.GetBlobstore(),
 				e.env.GetKeyValStore(),
+				e.env.GetPubSub(),
 				eventlog.GetEventLogPathFromInvocationIdAndAttempt(iid, e.attempt),
+				eventlog.NotifyChannelPrefix(iid),
 				numLinesToRetain,
 			)
 		}
@@ -1036,11 +1003,31 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 		e.isVoid = true
 		return status.CanceledErrorf("Attempt %d of invocation %s pre-empted by more recent attempt, no build metadata written.", e.attempt, invocationID)
 	}
+	if err := e.notifyDBWrite(invocationID, inpb.Invocation_InvocationStatus(ti.InvocationStatus)); err != nil {
+		log.Warningf("Failed to notify DB write for invocation %s: %s", invocationID, err)
+	}
 	return nil
 }
 
 func (e *EventChannel) GetNumDroppedEvents() uint64 {
 	return e.numDroppedEventsBeforeProcessing
+}
+
+// notifyDBWrite notifies subscribers that the DB state has been updated for
+// an invocation. For convenience, the status is stored in the notification.
+func (e *EventChannel) notifyDBWrite(iid string, status inpb.Invocation_InvocationStatus) error {
+	ps := e.env.GetPubSub()
+	if ps == nil {
+		return nil
+	}
+	if err := ps.Publish(e.ctx, dbWritePubSubChannel(iid), fmt.Sprintf("%d", status)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func dbWritePubSubChannel(iid string) string {
+	return fmt.Sprintf("invocationDBWrites/%s", iid)
 }
 
 func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
@@ -1101,7 +1088,7 @@ func getOptionValues(options []string, optionName string) []string {
 	return values
 }
 
-func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*inpb.Invocation, error) {
+func LookupInvocation(env environment.Env, ctx context.Context, iid string, fetchEvents bool) (*inpb.Invocation, error) {
 	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
 	if err != nil {
 		return nil, err
@@ -1148,6 +1135,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	})
 
 	eg.Go(func() error {
+		if !fetchEvents {
+			return nil
+		}
 		var screenWriter *terminal.ScreenWriter
 		if !invocation.HasChunkedEventLogs {
 			screenWriter = terminal.NewScreenWriter()
@@ -1218,6 +1208,83 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		return nil, err
 	}
 	return invocation, nil
+}
+
+type EventOrError struct {
+	Event *inpb.InvocationEvent
+	Error error
+}
+
+// FetchInvocationEvents fetches all currently stored invocation events.
+// It does NOT live-stream events from the invocation.
+func FetchInvocationEvents(ctx context.Context, env environment.Env, iid string) (chan *EventOrError, error) {
+	ti, err := env.GetInvocationDB().LookupInvocation(ctx, iid)
+	if err != nil {
+		return nil, err
+	}
+	streamID := GetStreamIdFromInvocationIdAndAttempt(iid, ti.Attempt)
+	pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
+	var redactor *redact.StreamingRedactor
+	if ti.RedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
+		// only redact if we hadn't redacted enough, only parse again if we redact
+		redactor = redact.NewStreamingRedactor(env)
+	}
+	ch := make(chan *EventOrError, 64)
+	go func() {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		for {
+			event := &inpb.InvocationEvent{}
+			err := pr.ReadProto(ctx, event)
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				log.Warningf("Error reading proto from blobstore: %s", err)
+				ch <- &EventOrError{Error: err}
+				return
+			}
+			if redactor != nil {
+				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
+					ch <- &EventOrError{Error: err}
+					return
+				}
+				redactor.RedactMetadata(event.BuildEvent)
+			}
+			ch <- &EventOrError{Event: event}
+		}
+	}()
+	return ch, nil
+}
+
+type InvocationUpdate struct {
+	Status inpb.Invocation_InvocationStatus
+	Err    error
+}
+
+func SubscribeToInvocationUpdates(ctx context.Context, env environment.Env, iid string) (chan *InvocationUpdate, error) {
+	ps := env.GetPubSub()
+	if ps == nil {
+		return nil, status.UnimplementedError("pubsub is not supported")
+	}
+	ch := make(chan *InvocationUpdate)
+	go func() {
+		defer close(ch)
+		subscriber := ps.Subscribe(ctx, dbWritePubSubChannel(iid))
+		defer subscriber.Close()
+		for statusStr := range subscriber.Chan() {
+			s, err := strconv.Atoi(statusStr)
+			if err != nil {
+				ch <- &InvocationUpdate{Err: status.InternalErrorf("invalid invocation status: %s", err)}
+				return
+			}
+			ch <- &InvocationUpdate{Status: inpb.Invocation_InvocationStatus(s)}
+			if s != int(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+				break
+			}
+		}
+	}()
+	return ch, nil
 }
 
 func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {

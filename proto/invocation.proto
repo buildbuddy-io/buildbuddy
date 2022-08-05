@@ -105,6 +105,30 @@ message Invocation {
   repeated api_key.ApiKey.Capability created_with_capabilities = 27;
 }
 
+message GetInvocationEventsRequest {
+  context.RequestContext request_context = 1;
+
+  string invocation_id = 2;
+}
+
+message GetInvocationLogsRequest {
+  context.RequestContext request_context = 1;
+
+  string invocation_id = 2;
+}
+
+message GetInvocationStateChangesRequest {
+  context.RequestContext request_context = 1;
+
+  string invocation_id = 2;
+}
+
+message GetInvocationStateChangesResponse {
+  context.ResponseContext response_context = 1;
+
+  Invocation.InvocationStatus status = 2;
+}
+
 message InvocationEvent {
   // The time this event occurred.
   google.protobuf.Timestamp event_time = 1;
@@ -132,6 +156,10 @@ message GetInvocationRequest {
   context.RequestContext request_context = 1;
 
   InvocationLookup lookup = 2;
+
+  // Whether to skip fetching invocation events (this can be set by clients that
+  // want to stream events separately).
+  bool no_fetch_events = 3;
 }
 
 message GetInvocationResponse {

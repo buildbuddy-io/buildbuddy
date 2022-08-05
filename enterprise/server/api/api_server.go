@@ -168,7 +168,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 		return rsp, nil
 	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId())
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetSelector().GetInvocationId(), true /*=fetchEvents*/)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,7 @@ func (s *APIServer) GetAction(ctx context.Context, req *apipb.GetActionRequest) 
 		return rsp, nil
 	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, iid)
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, iid, true /*=fetchEvents*/)
 	if err != nil {
 		return nil, err
 	}

@@ -387,6 +387,8 @@ type ChunkstoreWriterOptions struct {
 	WriteBlockSize       int
 	WriteTimeoutDuration time.Duration
 	NoSplitWrite         bool
+	PubSub               interfaces.PubSub
+	NotifyChannelPrefix  string
 }
 
 type ChunkstoreWriter struct {
@@ -464,6 +466,8 @@ type writeLoop struct {
 	writeBlockSize       int
 	writeTimeoutDuration time.Duration
 	noSplitWrite         bool
+	pubsub               interfaces.PubSub
+	notifyChannelPrefix  string
 }
 
 func (l *writeLoop) write(ctx context.Context, chunk []byte, chunkIndex uint16, lastWriteSize int) (int, error) {
@@ -475,6 +479,10 @@ func (l *writeLoop) write(ctx context.Context, chunk []byte, chunkIndex uint16, 
 	}
 	if _, err := l.chunkstore.writeChunk(ctx, l.blobName, chunkIndex, chunk[:size]); err != nil {
 		return 0, err
+	}
+	if l.pubsub != nil && l.notifyChannelPrefix != "" {
+		// Notify subscribers that a chunk has been written.
+		l.pubsub.Publish(ctx, l.notifyChannelPrefix+"/writeChunk", fmt.Sprintf("%d", chunkIndex))
 	}
 	return size, nil
 }
@@ -598,22 +606,18 @@ func (l *writeLoop) run(ctx context.Context) {
 }
 
 func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *ChunkstoreWriterOptions) *ChunkstoreWriter {
+	if co == nil {
+		co = &ChunkstoreWriterOptions{}
+	}
 	writeBlockSize := c.writeBlockSize
-	if co != nil && co.WriteBlockSize != 0 {
+	if co.WriteBlockSize != 0 {
 		writeBlockSize = co.WriteBlockSize
 	}
 	writeTimeoutDuration := 5 * time.Second
-	if co != nil && co.WriteTimeoutDuration != 0 {
+	if co.WriteTimeoutDuration != 0 {
 		writeTimeoutDuration = co.WriteTimeoutDuration
 	}
-	var writeHook func(context.Context, *WriteRequest, *WriteResult, []byte, []byte)
-	if co != nil {
-		writeHook = co.WriteHook
-	}
-	noSplitWrite := false
-	if co != nil {
-		noSplitWrite = co.NoSplitWrite
-	}
+	writeHook := co.WriteHook
 
 	writer := &ChunkstoreWriter{
 		blobName:     blobName,
@@ -632,7 +636,9 @@ func (c *Chunkstore) Writer(ctx context.Context, blobName string, co *Chunkstore
 		writeHook:            writeHook,
 		writeBlockSize:       writeBlockSize,
 		writeTimeoutDuration: writeTimeoutDuration,
-		noSplitWrite:         noSplitWrite,
+		noSplitWrite:         co.NoSplitWrite,
+		pubsub:               co.PubSub,
+		notifyChannelPrefix:  co.NotifyChannelPrefix,
 	}
 
 	go loop.run(ctx)

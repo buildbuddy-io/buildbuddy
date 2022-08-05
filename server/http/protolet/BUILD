@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/log",
         "//server/util/request_context",
+        "//server/util/status",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//encoding/prototext",

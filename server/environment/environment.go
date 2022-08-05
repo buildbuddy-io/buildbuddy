@@ -140,4 +140,5 @@ type Env interface {
 	SetGRPCSServer(*grpc.Server)
 	GetRegistryServer() rgpb.RegistryServer
 	SetRegistryServer(r rgpb.RegistryServer)
+	GetPubSub() interfaces.PubSub
 }

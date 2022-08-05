@@ -18,6 +18,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	bbsspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_stream_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
@@ -162,6 +163,7 @@ type Authenticator interface {
 
 type BuildBuddyServer interface {
 	bbspb.BuildBuddyServiceServer
+	bbsspb.BuildBuddyStreamServiceServer
 	InvocationEventStreamingEnabled() bool
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
@@ -183,7 +185,6 @@ type BuildEventChannel interface {
 
 type BuildEventHandler interface {
 	OpenChannel(ctx context.Context, iid string) BuildEventChannel
-	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
 // A Blobstore must allow for reading, writing, and deleting blobs.

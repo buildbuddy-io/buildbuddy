@@ -97,6 +97,7 @@ type RealEnv struct {
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
 	registryServer                   rgpb.RegistryServer
+	pubSub                           interfaces.PubSub
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -536,4 +537,11 @@ func (r *RealEnv) GetRegistryServer() rgpb.RegistryServer {
 
 func (r *RealEnv) SetRegistryServer(server rgpb.RegistryServer) {
 	r.registryServer = server
+}
+
+func (r *RealEnv) GetPubSub() interfaces.PubSub {
+	return r.pubSub
+}
+func (r *RealEnv) SetPubSub(val interfaces.PubSub) {
+	r.pubSub = val
 }

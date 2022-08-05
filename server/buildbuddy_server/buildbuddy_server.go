@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -32,6 +33,7 @@ import (
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
+	streampb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_stream_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -87,11 +89,11 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
 	}
 
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
+	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId(), !req.GetNoFetchEvents())
 	if err != nil {
 		return nil, err
 	}
-	if s.env.GetConfigurator().GetAppStreamInvocationEvents() {
+	if *invocationEventStreamingEnabled {
 		inv.Event = nil
 	}
 
@@ -924,6 +926,55 @@ func (s *BuildBuddyServer) ApplyBucket(ctx context.Context, req *qpb.ApplyBucket
 		return qm.ApplyBucket(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetInvocationEvents(req *invocation.GetInvocationEventsRequest, stream streampb.BuildBuddyStreamService_GetInvocationEventsServer) error {
+	if req.GetInvocationId() == "" {
+		return status.InvalidArgumentError("Request is missing invocation_id")
+	}
+	in, err := build_event_handler.LookupInvocation(s.env, stream.Context(), req.GetInvocationId(), true /*=fetchEvents*/)
+	if err != nil {
+		return err
+	}
+	for _, in := range in.Event {
+		if err := stream.Send(in); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *BuildBuddyServer) GetInvocationLog(req *elpb.GetEventLogChunkRequest, stream streampb.BuildBuddyStreamService_GetInvocationLogServer) error {
+	ch, err := eventlog.StreamEventLogChunks(stream.Context(), s.env, req)
+	if err != nil {
+		return err
+	}
+	for msg := range ch {
+		if msg.Err != nil {
+			return msg.Err
+		}
+		if err := stream.Send(msg.Response); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *BuildBuddyServer) GetInvocationStateChanges(req *inpb.GetInvocationStateChangesRequest, stream streampb.BuildBuddyStreamService_GetInvocationStateChangesServer) error {
+	ch, err := build_event_handler.SubscribeToInvocationUpdates(stream.Context(), s.env, req.GetInvocationId())
+	if err != nil {
+		return err
+	}
+	for update := range ch {
+		if update.Err != nil {
+			return update.Err
+		}
+		rsp := &inpb.GetInvocationStateChangesResponse{Status: update.Status}
+		if err := stream.Send(rsp); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type bsLookup struct {

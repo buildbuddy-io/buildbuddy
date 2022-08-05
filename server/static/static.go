@@ -37,6 +37,7 @@ var (
 	testGridV2Enabled          = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
 	usageEnabled               = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
 	expandedSuggestionsEnabled = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
+	logStreamingEnabled        = flag.Bool("app.invocation_log_streaming_enabled", false, "Whether to stream invocation logs in the UI instead of polling.")
 	enableWorkflows            = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
 	enableExecutorKeyCreation  = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
 
@@ -151,6 +152,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		ExpandedSuggestionsEnabled:      *expandedSuggestionsEnabled,
 		QuotaManagementEnabled:          env.GetQuotaManager() != nil,
 		InvocationEventStreamingEnabled: env.GetBuildBuddyServer().InvocationEventStreamingEnabled(),
+		InvocationLogStreamingEnabled:   *logStreamingEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

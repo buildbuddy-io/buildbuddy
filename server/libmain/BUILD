@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//:bundle",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:buildbuddy_stream_service_go_proto_protolet",
         "//proto:publish_build_event_go_proto",
         "//proto:registry_go_proto",
         "//proto:remote_asset_go_proto",
