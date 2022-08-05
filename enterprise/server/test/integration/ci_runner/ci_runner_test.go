@@ -72,7 +72,7 @@ actions:
 
 	workspaceContentsWithRunScript = map[string]string{
 		"WORKSPACE":     `workspace(name = "test")`,
-		"BUILD":         `sh_test(name = "print_args", srcs = ["print_args.sh"])`,
+		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": "echo 'args: {{' $@ '}}'",
 		"buildbuddy.yaml": `
 actions:
@@ -233,7 +233,7 @@ func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsTo
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	checkRunnerResult(t, result)
+	assert.NotEqual(t, 0, result.ExitCode)
 
 	runnerInvocation := singleInvocation(t, app, result)
 	assert.Contains(
@@ -367,12 +367,12 @@ func TestCIRunner_PullRequest_MergesTargetBranchBeforeRunning(t *testing.T) {
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	checkRunnerResult(t, result)
+	require.NotEqual(t, 0, result.ExitCode, "test should fail, so CI runner exit code should be non-zero")
 
 	// Invoke the runner a second time in the same workspace.
 	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	checkRunnerResult(t, result)
+	require.NotEqual(t, 0, result.ExitCode, "test should fail, so CI runner exit code should be non-zero")
 
 	runnerInvocation := singleInvocation(t, app, result)
 	// We should be able to see both of the changes we made, since they should
@@ -562,10 +562,51 @@ actions:
 	require.Contains(t, result.Output, "not_excluded.txt exists: no")
 }
 
+func TestBazelWorkspaceDir(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	repoPath, commitSHA := makeGitRepo(t, map[string]string{
+		"subdir/WORKSPACE": "",
+		"subdir/BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
+		"subdir/pass.sh":   "",
+		"buildbuddy.yaml": `
+actions:
+- name: Test
+  bazel_workspace_dir: subdir
+  bazel_commands: [ 'bazel test :pass' ]
+`,
+	})
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=pull_request",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + commitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+		// Disable clean checkout fallback for this test since we expect to sync
+		// without errors.
+		"--fallback_to_clean_checkout=false",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+}
+
 func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
-	targetRepoPath, _ := makeGitRepo(t, workspaceContentsWithTestsAndNoBuildBuddyYAML)
+	targetRepoPath, _ := makeGitRepo(t, map[string]string{
+		"WORKSPACE": "",
+		"BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
+		"pass.sh":   "exit 0",
+	})
 
 	// Start the app so the runner can use it as the BES backend.
 	app := buildbuddy.Run(t)

@@ -137,6 +137,28 @@ type workspace struct {
 	// of any action's logs yet.
 	reportedInitMetrics bool
 
+	// The root dir under which all work is done.
+	//
+	// This dir has the following structure:
+	//     {rootDir}/
+	//         bazelisk             (copy of embedded bazelisk binary)
+	//         buildbuddy.bazelrc   (BuildBuddy-controlled bazelrc that applies to all bazel commands)
+	//         output-base/         (bazel output base)
+	//         repo-root/           (cloned git repo)
+	//             .git/
+	//             WORKSPACE
+	//             buildbuddy.yaml  (optional workflow config)
+	//             ...
+	//
+	// The CI runner stays in the rootDir while setting up the repo, and then
+	// changes to the "repo-root" dir just before executing any actions.
+	//
+	// For nested bazel workspaces, the CI runner will explicitly set `cmd.Dir`
+	// on the spawned bazel subprocess to match the `bazel_workspace_dir` that
+	// specified in the action config, but the CI runner itself will stay in
+	// "repo-root".
+	rootDir string
+
 	// The machine's hostname.
 	hostname string
 
@@ -405,6 +427,9 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 
 func main() {
 	if err := run(); err != nil {
+		if result, ok := err.(*actionResult); ok {
+			os.Exit(result.exitCode)
+		}
 		log.Errorf("%s", err)
 		os.Exit(int(gstatus.Code(err)))
 	}
@@ -444,6 +469,12 @@ func run() error {
 		}
 	}
 
+	rootDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	ws.rootDir = rootDir
+
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
 		return status.WrapError(err, "ensure HOME")
@@ -479,11 +510,7 @@ func run() error {
 
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		bazeliskPath := filepath.Join(wd, bazeliskBinaryName)
+		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName)
 		if err := extractBazelisk(bazeliskPath); err != nil {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
@@ -499,12 +526,20 @@ func run() error {
 		if err := os.Chdir(repoDirName); err != nil {
 			return err
 		}
-		args, err := bazelArgs("shutdown")
+		cfg, err := readConfig()
+		if err != nil {
+			log.Warningf("Failed to read BuildBuddy config; will run `bazel shutdown` from repo root: %s", err)
+		}
+		wsPath := ""
+		if cfg != nil {
+			wsPath = bazelWorkspacePath(cfg)
+		}
+		args, err := bazelArgs(rootDir, wsPath, "shutdown")
 		if err != nil {
 			return err
 		}
 		printCommandLine(os.Stderr, *bazelCommand, args...)
-		if err := runCommand(ctx, *bazelCommand, args, nil, os.Stderr); err != nil {
+		if err := runCommand(ctx, *bazelCommand, args, nil, wsPath, os.Stderr); err != nil {
 			return err
 		}
 		log.Info("Shutdown complete.")
@@ -550,12 +585,19 @@ func run() error {
 	if err := buildEventReporter.Stop(result.exitCode, result.exitCodeName); err != nil {
 		return err
 	}
+	if result.exitCode != 0 {
+		return result // as error
+	}
 	return nil
 }
 
 type actionResult struct {
 	exitCode     int
 	exitCodeName string
+}
+
+func (r *actionResult) Error() string {
+	return fmt.Sprintf("exit status %d", r.exitCode)
 }
 
 // RunAction runs the specified action and streams the progress to the invocation via the buildEventReporter.
@@ -568,6 +610,7 @@ func (ws *workspace) RunAction(ctx context.Context, action *config.Action, build
 		isWorkflow: *workflowID != "",
 		action:     action,
 		reporter:   buildEventReporter,
+		rootDir:    ws.rootDir,
 		hostname:   ws.hostname,
 		username:   ws.username,
 	}
@@ -626,6 +669,7 @@ type actionRunner struct {
 	isWorkflow bool
 	action     *config.Action
 	reporter   *buildEventReporter
+	rootDir    string
 	username   string
 	hostname   string
 }
@@ -752,7 +796,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
 		}
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		args, err := bazelArgs(bazelCmd)
+		args, err := bazelArgs(ar.rootDir, ar.action.BazelWorkspaceDir, bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
@@ -775,7 +819,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
-		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.reporter)
+		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
@@ -1067,7 +1111,7 @@ func printCommandLine(out io.Writer, command string, args ...string) {
 }
 
 // TODO: Handle shell variable expansion. Probably want to run this with sh -c
-func bazelArgs(cmd string) ([]string, error) {
+func bazelArgs(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
 	tokens, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, err
@@ -1079,13 +1123,17 @@ func bazelArgs(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	startupFlags = append(startupFlags, "--output_base="+filepath.Join("..", outputBaseDirName))
-	startupFlags = append(startupFlags, "--bazelrc="+filepath.Join("..", buildbuddyBazelrcPath))
+	startupFlags = append(startupFlags, "--output_base="+filepath.Join(rootAbsPath, outputBaseDirName))
+	startupFlags = append(startupFlags, "--bazelrc="+filepath.Join(rootAbsPath, buildbuddyBazelrcPath))
 	// Bazel will treat the user's workspace .bazelrc file with lower precedence
 	// than our --bazelrc, which is undesired. So instead, explicitly add the
 	// workspace rc as a --bazelrc flag after ours, and also set --noworkspace_rc
 	// to prevent the workspace rc from getting loaded twice.
-	_, err = os.Stat(".bazelrc")
+	workspacercPath := ".bazelrc"
+	if bazelWorkspaceRelPath != "" {
+		workspacercPath = filepath.Join(bazelWorkspaceRelPath, ".bazelrc")
+	}
+	_, err = os.Stat(workspacercPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -1387,7 +1435,7 @@ func (ws *workspace) clone(ctx context.Context, remoteURL string) error {
 	writeCommandSummary(ws.log, "Cloning target repo...")
 	// Don't show command since the URL may contain the repo access token.
 	args := []string{"clone", "--config=credential.helper=", "--filter=blob:none", "--no-checkout", authURL, "."}
-	if err := runCommand(ctx, "git", args, map[string]string{}, ws.log); err != nil {
+	if err := runCommand(ctx, "git", args, map[string]string{}, "" /*=dir*/, ws.log); err != nil {
 		return status.UnknownError("Command `git clone --filter=blob:none --no-checkout <url>` failed.")
 	}
 	return nil
@@ -1437,7 +1485,7 @@ func git(ctx context.Context, out io.Writer, args ...string) *gitError {
 	var buf bytes.Buffer
 	w := io.MultiWriter(out, &buf)
 	printCommandLine(out, "git", args...)
-	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, w); err != nil {
+	if err := runCommand(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, w); err != nil {
 		return &gitError{err, string(buf.Bytes())}
 	}
 	return nil
@@ -1537,10 +1585,13 @@ func gitRemoteName(repoURL string) string {
 	return forkGitRemoteName
 }
 
-func runCommand(ctx context.Context, executable string, args []string, env map[string]string, outputSink io.Writer) error {
+func runCommand(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) error {
 	cmd := exec.CommandContext(ctx, executable, args...)
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+	if dir != "" {
+		cmd.Dir = dir
 	}
 	f, err := pty.Start(cmd)
 	if err != nil {
@@ -1573,6 +1624,15 @@ func actionDebugString(action *config.Action) string {
 		return fmt.Sprintf("<failed to marshal action: %s>", err)
 	}
 	return string(yamlBytes)
+}
+
+func bazelWorkspacePath(cfg *config.BuildBuddyConfig) string {
+	for _, a := range cfg.Actions {
+		if a.Name == *actionName {
+			return a.BazelWorkspaceDir
+		}
+	}
+	return ""
 }
 
 func newUUID() (string, error) {
