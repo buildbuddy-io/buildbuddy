@@ -1197,7 +1197,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	if d.GetSizeBytes() < *maxInlineFileSizeBytes {
 		wcm = filestore.InlineWriter(ctx, d.GetSizeBytes())
 	} else {
-		fw, err := filestore.NewWriter(ctx, p.blobDir(), db.NewBatch(), fileRecord)
+		fw, err := filestore.FileWriter(ctx, p.blobDir(), fileRecord)
 		if err != nil {
 			return nil, err
 		}
