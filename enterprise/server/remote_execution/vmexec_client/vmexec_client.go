@@ -106,7 +106,9 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 			}
 			if msg.UsageStats != nil {
 				stats = msg.UsageStats
-				statsListener(stats)
+				if statsListener != nil {
+					statsListener(stats)
+				}
 			}
 		}
 	})
