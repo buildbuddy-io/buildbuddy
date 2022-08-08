@@ -12,6 +12,7 @@ go_library(
         "//proto:cache_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:execution_stats_go_proto",
+        "//proto:flagz_go_proto",
         "//proto:github_go_proto",
         "//proto:group_go_proto",
         "//proto:invocation_go_proto",

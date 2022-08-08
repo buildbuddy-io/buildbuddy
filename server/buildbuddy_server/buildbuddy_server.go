@@ -37,6 +37,7 @@ import (
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	fzpb "github.com/buildbuddy-io/buildbuddy/proto/flagz"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -960,6 +961,20 @@ func (s *BuildBuddyServer) ApplyBucket(ctx context.Context, req *qpb.ApplyBucket
 		return qm.ApplyBucket(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetFlagz(ctx context.Context, req *fzpb.GetFlagzRequest) (*fzpb.GetFlagzResponse, error) {
+	if s.env.GetFlagzEndpoint() == nil {
+		return nil, status.UnimplementedError("The flagz endpoint is unsupported on this server.")
+	}
+	return s.env.GetFlagzEndpoint().GetFlagz(ctx, s.env, req)
+}
+
+func (s *BuildBuddyServer) SetFlagz(ctx context.Context, req *fzpb.SetFlagzRequest) (*fzpb.SetFlagzResponse, error) {
+	if s.env.GetFlagzEndpoint() == nil {
+		return nil, status.UnimplementedError("The flagz endpoint is unsupported on this server.")
+	}
+	return s.env.GetFlagzEndpoint().SetFlagz(ctx, s.env, req)
 }
 
 type bsLookup struct {

@@ -83,6 +83,17 @@ proto_library(
 )
 
 proto_library(
+    name = "flagz_proto",
+    srcs = [
+        "flagz.proto",
+    ],
+    deps = [
+        ":context_proto",
+        "@com_google_protobuf//:duration_proto",
+    ],
+)
+
+proto_library(
     name = "health_proto",
     srcs = [
         "health.proto",
@@ -338,6 +349,7 @@ proto_library(
         ":cache_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
+        ":flagz_proto",
         ":github_proto",
         ":group_proto",
         ":invocation_proto",
@@ -709,6 +721,7 @@ go_proto_library(
         ":cache_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
+        ":flagz_go_proto",
         ":github_go_proto",
         ":group_go_proto",
         ":invocation_go_proto",
@@ -811,6 +824,16 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "flagz_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/flagz",
+    proto = ":flagz_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "remote_asset_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_asset",
@@ -899,6 +922,11 @@ ts_proto_library(
 ts_proto_library(
     name = "execution_stats_ts_proto",
     proto = ":execution_stats_proto",
+)
+
+ts_proto_library(
+    name = "flagz_ts_proto",
+    proto = ":flagz_proto",
 )
 
 ts_proto_library(

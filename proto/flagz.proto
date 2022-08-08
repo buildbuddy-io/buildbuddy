@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+import "google/protobuf/duration.proto";
+import "proto/context.proto";
+
+package flagz;
+
+option go_package = "proto;flagz";
+
+message GetFlagzRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // Whether or not to include secrets in the response
+  bool include_secrets = 2;
+}
+
+message GetFlagzResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The YAML representation of the config.
+  bytes yaml_config = 2;
+}
+
+message SetFlagzRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The YAML representation of the update to the config.
+  bytes yaml_update = 2;
+}
+
+message SetFlagzResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+}
