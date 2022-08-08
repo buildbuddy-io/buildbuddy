@@ -24,6 +24,7 @@ go_library(
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/backends/userdb",
         "//enterprise/server/execution_service",
+        "//enterprise/server/flagz",
         "//enterprise/server/hostedrunner",
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/invocation_stat_service",

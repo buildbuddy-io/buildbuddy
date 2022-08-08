@@ -1,0 +1,75 @@
+load("//rules/typescript:index.bzl", "ts_library")
+load("@npm//@bazel/esbuild:index.bzl", "esbuild")
+load("//rules/sha:index.bzl", "sha")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "fastbuild",
+    values = {
+        "compilation_mode": "fastbuild",
+    },
+)
+
+esbuild(
+    name = "app_bundle",
+    args = {
+        "resolveExtensions": [
+            ".mjs",
+            ".js",
+        ],
+        "loader": {
+            ".ttf": "binary",
+            ".css": "binary",
+        },
+    },
+    define = {"process.env.NODE_ENV": '"production"'},
+    entry_points = ["editor.tsx"],
+    metafile = False,
+    minify = select({
+        ":fastbuild": False,
+        "//conditions:default": True,
+    }),
+    deps = [
+        ":editor",
+    ],
+)
+
+ts_library(
+    name = "editor",
+    srcs = glob(["*.tsx"]),
+    deps = [
+        "@npm//@types/react",
+        "@npm//@types/react-dom",
+        "@npm//monaco-editor",
+        "@npm//react",
+        "@npm//react-dom",
+        "@npm//tslib",
+    ],
+)
+
+genrule(
+    name = "style",
+    srcs = [
+        "flagz.css",
+        "//enterprise/app/code:monaco.css",
+    ],
+    outs = ["style.css"],
+    cmd_bash = """
+        touch out;
+        for f in $(SRCS); do
+            if [[ ! -d $$f ]]; then
+            (cat $$f; echo) >> out;
+            fi;
+        done;
+        cat out > $@;
+    """,
+)
+
+sha(
+    name = "sha",
+    srcs = [
+        ":style.css",
+        "//app:app_bundle",
+    ],
+)

@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/flagz"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
@@ -262,6 +263,10 @@ func main() {
 	defer cleanupService.Stop()
 
 	if err := selfauth.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	if err := flagz.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
