@@ -221,18 +221,8 @@ func Message(err error) string {
 	return err.Error()
 }
 
-// FromContextError converts ctx.Err() to the equivalent gRPC status error from
-// this package.
+// FromContextError converts ctx.Err() to the equivalent gRPC status error.
 func FromContextError(ctx context.Context) error {
-	err := ctx.Err()
-	if err == nil {
-		return nil
-	}
-	if err == context.DeadlineExceeded {
-		return DeadlineExceededError(ctx.Err().Error())
-	}
-	if err == context.Canceled {
-		return CanceledError(ctx.Err().Error())
-	}
-	return UnknownError(ctx.Err().Error())
+	s := status.FromContextError(ctx.Err())
+	return status.ErrorProto(s.Proto())
 }
