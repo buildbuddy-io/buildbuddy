@@ -265,12 +265,14 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
-	// Guard against enqueueing tasks that cannot ever be de-queued.
 	if req.GetTaskSize().GetEstimatedMemoryBytes() > q.ramBytesCapacity ||
 		req.GetTaskSize().GetEstimatedMilliCpu() > q.cpuMillisCapacity {
-		// Service-internal error because the scheduler should prevent this.
-		return nil, status.InternalErrorf(
-			"task exceeds executor capacity: requires %d bytes memory of %d available and %d milliCPU of %d available",
+		// TODO(bduffany): Return an error here instead. Currently we cannot
+		// return an error because it causes the executor to disconnect and
+		// reconnect to the scheduler, and the scheduler will keep attempting to
+		// re-enqueue the oversized task onto this executor once reconnected.
+		log.Errorf(
+			"Task exceeds executor capacity: requires %d bytes memory of %d available and %d milliCPU of %d available",
 			req.GetTaskSize().GetEstimatedMemoryBytes(), q.ramBytesCapacity,
 			req.GetTaskSize().GetEstimatedMilliCpu(), q.cpuMillisCapacity,
 		)
