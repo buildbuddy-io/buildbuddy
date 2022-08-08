@@ -213,7 +213,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	res := c.Exec(ctx, cmd, nil, nil)
+	res := c.Exec(ctx, cmd, nil)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -279,7 +279,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
 	}
 
-	res := c.Exec(ctx, cmd, nil /*=reader*/, nil /*=writer*/)
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	if res.Error != nil {
 		t.Fatalf("error: %s", res.Error)
 	}
@@ -601,7 +601,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 		err = c.Remove(ctx)
 		assert.NoError(t, err)
 	})
-	res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test1.sh"}}, nil, nil)
+	res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test1.sh"}}, nil /*=stdio*/)
 	require.NoError(t, res.Error)
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "Hello\n", string(res.Stdout))
@@ -620,7 +620,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	err = c.Unpause(ctx)
 	require.NoError(t, err)
 
-	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil, nil)
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil /*=stdio*/)
 
 	require.NoError(t, res.Error)
 	require.Equal(t, "", string(res.Stderr))
@@ -640,7 +640,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	err = c.Unpause(ctx)
 	require.NoError(t, err)
 
-	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test3.sh"}}, nil, nil)
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test3.sh"}}, nil /*=stdio*/)
 
 	require.NoError(t, res.Error)
 	require.Equal(t, "", string(res.Stderr))
@@ -703,7 +703,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		`},
 		OutputFiles: []string{"preserves.txt"},
 	}
-	res := c.Exec(ctx, cmd, nil, nil)
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
 	require.Equal(t, "", string(res.Stderr))
 	require.Equal(t, "Hello\nworld\n", string(res.Stdout))
@@ -736,7 +736,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 	err = c.Unpause(ctx)
 	require.NoError(t, err)
 
-	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil, nil)
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "test2.sh"}}, nil /*=stdio*/)
 
 	log.Debugf("Resumed VM and executed docker-in-firecracker command in %s", time.Since(start))
 
@@ -799,7 +799,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		`},
 	}
 
-	res := c.Exec(ctx, cmd, nil /*=reader*/, nil /*=writer*/)
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
@@ -820,7 +820,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		`},
 	}
 
-	res = c.Exec(ctx, cmd, nil /*=reader*/, nil /*=writer*/)
+	res = c.Exec(ctx, cmd, nil /*=stdio*/)
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
@@ -910,7 +910,7 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	`}}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	res := c.Exec(ctx, cmd, nil, nil)
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 
 	require.True(
 		t, status.IsDeadlineExceededError(res.Error),

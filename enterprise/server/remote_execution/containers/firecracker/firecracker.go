@@ -106,7 +106,7 @@ const (
 	scratchDriveID = "scratchfs"
 	// minScratchDiskSizeBytes is the minimum size needed for the scratch disk.
 	// This is needed because the init binary needs some space to copy files around.
-	minScratchDiskSizeBytes = 25e6
+	minScratchDiskSizeBytes = 30e6
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
@@ -1400,6 +1400,9 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 // stdout writer.
 func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
 	// TODO(bduffany): Wire up stdin/stdout/stderr from ExecOpts
+	if stdio == nil {
+		stdio = &container.Stdio{}
+	}
 	if stdio.Stderr != nil || stdio.Stdout != nil || stdio.Stdin != nil {
 		return commandutil.ErrorResult(status.FailedPreconditionError("firecracker does not yet support remote persistent workers"))
 	}
