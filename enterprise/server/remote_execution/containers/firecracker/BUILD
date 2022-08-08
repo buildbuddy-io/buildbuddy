@@ -55,7 +55,6 @@ go_library(
             "@com_github_google_uuid//:uuid",
             "@com_github_sirupsen_logrus//:logrus",
             "@org_golang_google_grpc//:go_default_library",
-            "@org_golang_google_grpc//status",
             "@org_golang_x_sync//errgroup",
             "@org_golang_x_sys//unix",
         ],
