@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -25,7 +26,7 @@ const (
 )
 
 // Execute executes the command using the ExecStreamed API.
-func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
+func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir string, statsListener procstats.Listener, stdio *container.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -104,8 +105,10 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 				res = msg.Response
 			}
 			if msg.UsageStats != nil {
-				// TODO: update prometheus metrics
 				stats = msg.UsageStats
+				if statsListener != nil {
+					statsListener(stats)
+				}
 			}
 		}
 	})
