@@ -128,10 +128,9 @@ func TestFirecrackerRunSimple(t *testing.T) {
 		},
 	}
 	expectedResult := &interfaces.CommandResult{
-		ExitCode:           0,
-		Stdout:             []byte("Hello world"),
-		Stderr:             []byte("foo"),
-		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
+		ExitCode: 0,
+		Stdout:   []byte("Hello world"),
+		Stderr:   []byte("foo"),
 	}
 
 	opts := firecracker.ContainerOpts{
@@ -174,10 +173,9 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		},
 	}
 	expectedResult := &interfaces.CommandResult{
-		ExitCode:           0,
-		Stdout:             []byte("Hello world"),
-		Stderr:             []byte("foo"),
-		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
+		ExitCode: 0,
+		Stdout:   []byte("Hello world"),
+		Stderr:   []byte("foo"),
 	}
 
 	opts := firecracker.ContainerOpts{
@@ -273,10 +271,9 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		},
 	}
 	expectedResult := &interfaces.CommandResult{
-		ExitCode:           0,
-		Stdout:             []byte("Hello world"),
-		Stderr:             []byte("foo"),
-		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
+		ExitCode: 0,
+		Stdout:   []byte("Hello world"),
+		Stderr:   []byte("foo"),
 	}
 
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
@@ -316,10 +313,9 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		Arguments: []string{"sh", "-c", `find -name '*.txt' -exec cp {} {}.out \;`},
 	}
 	expectedResult := &interfaces.CommandResult{
-		ExitCode:           0,
-		Stdout:             nil,
-		Stderr:             nil,
-		CommandDebugString: `(firecracker) [sh -c find -name '*.txt' -exec cp {} {}.out \;]`,
+		ExitCode: 0,
+		Stdout:   nil,
+		Stderr:   nil,
 	}
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -372,10 +368,9 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		},
 	}
 	expectedResult := &interfaces.CommandResult{
-		ExitCode:           0,
-		Stdout:             []byte("Hello world"),
-		Stderr:             []byte("foo"),
-		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
+		ExitCode: 0,
+		Stdout:   []byte("Hello world"),
+		Stderr:   []byte("foo"),
 	}
 
 	opts := firecracker.ContainerOpts{
@@ -420,10 +415,9 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		},
 	}
 	expectedResult = &interfaces.CommandResult{
-		ExitCode:           0,
-		Stdout:             []byte("Hello from mars"),
-		Stderr:             []byte("bar"),
-		CommandDebugString: "(firecracker) [sh -c printf \"$GREETING from $(cat mars.txt)\" && printf \"bar\" >&2]",
+		ExitCode: 0,
+		Stdout:   []byte("Hello from mars"),
+		Stderr:   []byte("bar"),
 	}
 
 	// This should resume the previous snapshot.

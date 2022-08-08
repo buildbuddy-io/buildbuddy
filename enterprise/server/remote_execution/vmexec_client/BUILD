@@ -11,7 +11,9 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/interfaces",
+        "//server/util/background",
         "//server/util/status",
+        "//server/util/tracing",
         "@org_golang_x_sync//errgroup",
     ],
 )
