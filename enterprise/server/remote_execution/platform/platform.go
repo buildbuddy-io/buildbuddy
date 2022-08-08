@@ -70,6 +70,7 @@ const (
 	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
 	extraArgsPropertyName                = "extra-args"
 	envOverridesPropertyName             = "env-overrides"
+	podmanImageStreamingPropertyName     = "podman-enable-image-streaming"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -104,20 +105,21 @@ const (
 
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
-	OS                        string
-	Arch                      string
-	Pool                      string
-	EstimatedComputeUnits     int64
-	EstimatedFreeDiskBytes    int64
-	ContainerImage            string
-	ContainerRegistryUsername string
-	ContainerRegistryPassword string
-	WorkloadIsolationType     string
-	DockerForceRoot           bool
-	DockerUser                string
-	DockerNetwork             string
-	RecycleRunner             bool
-	EnableVFS                 bool
+	OS                         string
+	Arch                       string
+	Pool                       string
+	EstimatedComputeUnits      int64
+	EstimatedFreeDiskBytes     int64
+	ContainerImage             string
+	ContainerRegistryUsername  string
+	ContainerRegistryPassword  string
+	WorkloadIsolationType      string
+	DockerForceRoot            bool
+	DockerUser                 string
+	DockerNetwork              string
+	RecycleRunner              bool
+	EnableVFS                  bool
+	EnablePodmanImageStreaming bool
 	// InitDockerd specifies whether to initialize dockerd within the execution
 	// environment if it is available in the execution image, allowing Docker
 	// containers to be spawned by actions. Only available with
@@ -189,33 +191,34 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
 
 	return &Properties{
-		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
-		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
-		Pool:                      strings.ToLower(pool),
-		EstimatedComputeUnits:     int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
-		EstimatedFreeDiskBytes:    int64Prop(m, EstimatedFreeDiskPropertyName, 0),
-		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
-		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
-		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
-		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
-		InitDockerd:               boolProp(m, initDockerdPropertyName, false),
-		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
-		DockerUser:                stringProp(m, dockerUserPropertyName, ""),
-		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
-		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
-		EnableVFS:                 vfsEnabled,
-		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
-		NonrootWorkspace:          boolProp(m, nonrootWorkspacePropertyName, false),
-		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
-		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
-		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),
-		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
-		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
-		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
-		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
-		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
-		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
-		EnvOverrides:              stringListProp(m, envOverridesPropertyName),
+		OS:                         strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
+		Arch:                       strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
+		Pool:                       strings.ToLower(pool),
+		EstimatedComputeUnits:      int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedFreeDiskBytes:     int64Prop(m, EstimatedFreeDiskPropertyName, 0),
+		ContainerImage:             stringProp(m, containerImagePropertyName, ""),
+		ContainerRegistryUsername:  stringProp(m, containerRegistryUsernamePropertyName, ""),
+		ContainerRegistryPassword:  stringProp(m, containerRegistryPasswordPropertyName, ""),
+		WorkloadIsolationType:      stringProp(m, workloadIsolationPropertyName, ""),
+		InitDockerd:                boolProp(m, initDockerdPropertyName, false),
+		DockerForceRoot:            boolProp(m, dockerRunAsRootPropertyName, false),
+		DockerUser:                 stringProp(m, dockerUserPropertyName, ""),
+		DockerNetwork:              stringProp(m, dockerNetworkPropertyName, ""),
+		RecycleRunner:              boolProp(m, RecycleRunnerPropertyName, false),
+		EnableVFS:                  vfsEnabled,
+		EnablePodmanImageStreaming: boolProp(m, podmanImageStreamingPropertyName, false),
+		PreserveWorkspace:          boolProp(m, preserveWorkspacePropertyName, false),
+		NonrootWorkspace:           boolProp(m, nonrootWorkspacePropertyName, false),
+		CleanWorkspaceInputs:       stringProp(m, cleanWorkspaceInputsPropertyName, ""),
+		PersistentWorker:           boolProp(m, persistentWorkerPropertyName, false),
+		PersistentWorkerKey:        stringProp(m, persistentWorkerKeyPropertyName, ""),
+		PersistentWorkerProtocol:   stringProp(m, persistentWorkerProtocolPropertyName, ""),
+		WorkflowID:                 stringProp(m, WorkflowIDPropertyName, ""),
+		HostedBazelAffinityKey:     stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
+		UseSelfHostedExecutors:     boolProp(m, useSelfHostedExecutorsPropertyName, false),
+		DisableMeasuredTaskSize:    boolProp(m, disableMeasuredTaskSizePropertyName, false),
+		ExtraArgs:                  stringListProp(m, extraArgsPropertyName),
+		EnvOverrides:               stringListProp(m, envOverridesPropertyName),
 	}
 }
 
