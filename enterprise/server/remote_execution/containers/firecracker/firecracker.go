@@ -1304,7 +1304,11 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 
 	client := vmxpb.NewExecClient(conn)
 
-	return vmexec_client.Execute(ctx, client, cmd, workDir, stdio)
+	defer container.Metrics.Unregister(c)
+	statsListener := func(stats *repb.UsageStats) {
+		container.Metrics.Observe(c, stats)
+	}
+	return vmexec_client.Execute(ctx, client, cmd, workDir, statsListener, stdio)
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
