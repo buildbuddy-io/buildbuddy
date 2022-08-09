@@ -77,6 +77,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
   render() {
     const ownerGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isBazelInvocation = this.props.model.isBazelInvocation();
+    const isMakeInvocation = this.props.model.isMakeInvocation();
     const roleLabel = format.formatRole(this.props.model.getRole());
     const parentInvocationId = this.props.model.buildMetadataMap.get("PARENT_INVOCATION_ID");
     const parentWorkflowId = this.props.model.buildMetadataMap.get("WORKFLOW_ID");
@@ -142,7 +143,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               {this.props.model.getPattern()}
             </div>
           )}
-          {isBazelInvocation && (
+          {(isBazelInvocation || isMakeInvocation) && (
             <div
               className="detail"
               title={`${this.props.model.buildMetrics?.targetMetrics.targetsConfigured} configured`}>
@@ -150,7 +151,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
               {this.props.model.targets.length} {this.props.model.targets.length == 1 ? "target" : "targets"}
             </div>
           )}
-          {isBazelInvocation && (
+          {(isBazelInvocation || isMakeInvocation) && (
             <div title={`${this.props.model.buildMetrics?.actionSummary.actionsCreated} created`} className="detail">
               <Activity className="icon" />
               {this.props.model.buildMetrics?.actionSummary.actionsExecuted} actions

@@ -11,8 +11,12 @@ if ! [[ -e "$REDIS_REPO_DIR" ]]; then
 fi
 cd "$REDIS_REPO_DIR"
 cd src
+
+
+export PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
+
 make clean
 
 clear
-"$BB_DIR"/bazel-bin/cli/cmd/bb/bb_/bb make redis-server
+"$BB_DIR"/bazel-bin/cli/cmd/bb/bb_/bb make redis-server "$@"
 

@@ -208,6 +208,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       denseMode: this.props.preferences.denseModeEnabled,
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
+    const isMakeInvocation = this.state.model.isMakeInvocation();
     const fetchBuildLogs = () => {
       return rpcService.service
         .getEventLogChunk(
@@ -226,6 +227,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       buildLogs: this.getBuildLogs(),
       user: this.props.user,
     });
+    const targetsVisible = (isBazelInvocation || isMakeInvocation) && (activeTab === "all" || activeTab == "targets");
 
     return (
       <div className="invocation">
@@ -268,15 +270,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {(this.state.model.workflowConfigured || this.state.model.childInvocationsConfigured) &&
             (activeTab === "all" || activeTab === "commands") && <ChildInvocations model={this.state.model} />}
 
-          {(isBazelInvocation || this.state.model.isMakeInvocation()) &&
-            (activeTab === "all" || activeTab == "targets") && (
-              <TargetsComponent
-                model={this.state.model}
-                mode="failing"
-                filter={this.props.search.get("targetFilter")}
-                pageSize={activeTab === "all" ? smallPageSize : largePageSize}
-              />
-            )}
+          {targetsVisible && (
+            <TargetsComponent
+              model={this.state.model}
+              mode="failing"
+              filter={this.props.search.get("targetFilter")}
+              pageSize={activeTab === "all" ? smallPageSize : largePageSize}
+            />
+          )}
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.isQuery() && (
             <QueryGraphCardComponent buildLogs={this.getBuildLogs()} />
@@ -300,7 +301,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab == "targets") && (
+          {targetsVisible && (
             <TargetsComponent
               model={this.state.model}
               mode="passing"
@@ -313,19 +314,19 @@ export default class InvocationComponent extends React.Component<Props, State> {
             <InvocationDetailsCardComponent model={this.state.model} limitResults={!activeTab} />
           )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab == "cache") && (
+          {(isBazelInvocation || isMakeInvocation) && (activeTab === "all" || activeTab == "cache") && (
             <CacheCardComponent model={this.state.model} />
           )}
-          {isBazelInvocation &&
+          {(isBazelInvocation || isMakeInvocation) &&
             (activeTab === "all" || activeTab == "cache") &&
             !capabilities.config.detailedCacheStatsEnabled && <ScorecardCardComponent model={this.state.model} />}
-          {isBazelInvocation &&
+          {(isBazelInvocation || isMakeInvocation) &&
             (activeTab === "all" || activeTab == "cache") &&
             capabilities.config.detailedCacheStatsEnabled && (
               <CacheRequestsCardComponent model={this.state.model} search={this.props.search} />
             )}
 
-          {isBazelInvocation && (activeTab === "all" || activeTab == "artifacts") && (
+          {(isBazelInvocation || isMakeInvocation) && (activeTab === "all" || activeTab == "artifacts") && (
             <ArtifactsCardComponent
               model={this.state.model}
               filter={this.props.search.get("artifactFilter")}

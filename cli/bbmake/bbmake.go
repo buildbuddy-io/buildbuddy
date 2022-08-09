@@ -1,27 +1,37 @@
 package bbmake
 
 import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/bbmake/makedb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -80,16 +90,211 @@ func Run(ctx context.Context, args ...string) error {
 		}
 	}
 	makeCmd.Parse(bbArgs)
-	fmt.Println("makeArgs:", makeArgs)
-	fmt.Println("bbArgs:", bbArgs)
 	return (&Invocation{
 		BESBackend:         *besBackend,
 		BESResultsURL:      *besResultsUrl,
+		RemoteCache:        *remoteCache,
 		RemoteHeaders:      remoteHeaders,
-		PrintCommands:      true,
+		PrintCommands:      false,
 		PrintActionOutputs: true,
 		MakeArgs:           makeArgs,
 	}).Run(ctx)
+}
+
+type ActionGraph struct {
+	notify chan struct{}
+
+	mu       sync.Mutex
+	closed   bool
+	queue    []*Action
+	complete map[string]bool
+}
+
+func NewActionGraph() *ActionGraph {
+	return &ActionGraph{
+		complete: make(map[string]bool),
+		notify:   make(chan struct{}, 1),
+	}
+}
+
+func (g *ActionGraph) Add(a *Action) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.closed {
+		panic("attempted add to closed graph")
+	}
+
+	g.queue = append(g.queue, a)
+	g.complete[a.Name] = false
+}
+
+func (g *ActionGraph) Close() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.closed = true
+	close(g.notify)
+}
+
+func (g *ActionGraph) MarkComplete(target string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.complete[target] = true
+
+	if g.closed {
+		return
+	}
+	select {
+	case g.notify <- struct{}{}:
+	default:
+	}
+}
+
+func (g *ActionGraph) isRunnable(a *Action) bool {
+	for _, dep := range a.ChangedDeps {
+		complete, ok := g.complete[dep]
+		if !ok {
+			// We don't know about this dep, so it's probably already up to
+			// date.
+			continue
+		}
+		if !complete {
+			// A changed dep has yet to be built, so this target is not yet
+			// runnable.
+			return false
+		}
+	}
+	return true
+}
+
+func (g *ActionGraph) pop() (*Action, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.queue) == 0 && g.closed {
+		return nil, io.EOF
+	}
+	for i, a := range g.queue {
+		if g.isRunnable(a) {
+			g.queue = append(g.queue[:i], g.queue[i+1:]...)
+			return a, nil
+		}
+	}
+	return nil, nil
+}
+
+func (g *ActionGraph) IsComplete(action string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.complete[action]
+}
+
+func (g *ActionGraph) CompletedCount() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := 0
+	for _, c := range g.complete {
+		if c {
+			out++
+		}
+	}
+	return out
+}
+
+func (g *ActionGraph) Next(ctx context.Context) (*Action, error) {
+	for {
+		a, err := g.pop()
+		if a != nil || err != nil {
+			return a, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-g.notify:
+		}
+	}
+}
+
+type Profile struct {
+	startTime time.Time
+
+	mu     sync.Mutex
+	events []*ProfileEvent
+}
+
+type ProfileEvent struct {
+	Name       string
+	ThreadName string
+	Start      time.Time
+	Duration   time.Duration
+}
+
+type TraceEvent struct {
+	Ph   string                 `json:"ph"`
+	Pid  int64                  `json:"pid"`
+	Tid  int64                  `json:"tid"`
+	Ts   float64                `json:"ts"`
+	Dur  float64                `json:"dur"`
+	Name string                 `json:"name"`
+	Cat  string                 `json:"cat"`
+	Args map[string]interface{} `json:"args"`
+}
+
+func NewProfile(startTime time.Time) *Profile {
+	return &Profile{
+		startTime: startTime,
+	}
+}
+
+func (p *Profile) Add(event *ProfileEvent) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.events = append(p.events, event)
+}
+
+func (p *Profile) GzipBytes() ([]byte, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var traceEvents []*TraceEvent
+	tid := int64(0)
+	tids := map[string]int64{}
+	for _, e := range p.events {
+		_, ok := tids[e.ThreadName]
+		if !ok {
+			tids[e.ThreadName] = tid
+			traceEvents = append(traceEvents, &TraceEvent{
+				Ph:   "M", // metadata
+				Tid:  tid,
+				Name: "thread_name",
+				Args: map[string]interface{}{
+					"name": e.ThreadName,
+				},
+			})
+			tid++
+		}
+		traceEvents = append(traceEvents, &TraceEvent{
+			Ph:   "X", // duration
+			Tid:  tids[e.ThreadName],
+			Ts:   float64(e.Start.UnixNano()-p.startTime.UnixNano()) / 1e3,
+			Dur:  float64(e.Duration.Nanoseconds()) / 1e3,
+			Name: e.Name,
+			Cat:  "execute recipe",
+		})
+	}
+
+	b, err := json.Marshal(map[string]interface{}{"traceEvents": traceEvents})
+	if err != nil {
+		return nil, err
+	}
+	gzBuf := &bytes.Buffer{}
+	w := gzip.NewWriter(gzBuf)
+	if _, err := io.Copy(w, bytes.NewReader(b)); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	return gzBuf.Bytes(), nil
 }
 
 type Invocation struct {
@@ -99,6 +304,7 @@ type Invocation struct {
 
 	BESBackend         string
 	BESResultsURL      string
+	RemoteCache        string
 	RemoteHeaders      []string
 	InvocationID       string
 	PrintCommands      bool
@@ -108,13 +314,25 @@ type Invocation struct {
 	MakeArgs []string
 
 	bep             *build_event_publisher.Publisher
-	mdb             *makedb.DB
+	bsClient        bspb.ByteStreamClient
 	progressCounter int32
 }
 
 func (inv *Invocation) infof(format string, args ...interface{}) {
 	// TODO: Toggleable colors
-	msg := fmt.Sprintf("\x1b[32mINFO:\x1b[m "+format+"\n", args...)
+	msg := fmt.Sprintf("\x1b[32mINFO:\x1b[m "+format, args...)
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
+	os.Stderr.Write([]byte(msg))
+	inv.publishProgressEvent(msg)
+}
+
+func (inv *Invocation) warnf(format string, args ...interface{}) {
+	msg := fmt.Sprintf("\x1b[33mWARNING:\x1b[m "+format, args...)
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
 	os.Stderr.Write([]byte(msg))
 	inv.publishProgressEvent(msg)
 }
@@ -125,14 +343,28 @@ func (inv *Invocation) errorf(format string, args ...interface{}) {
 	inv.publishProgressEvent(msg)
 }
 
+func (inv *Invocation) printf(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
+	os.Stderr.Write([]byte(msg))
+	inv.publishProgressEvent(msg)
+}
+
 func (inv *Invocation) Run(ctx context.Context) (err error) {
+	startTime := time.Now()
+	// TODO: Currently we'll just treat all make args as targets. Ideally we
+	// could be mostly API-compatible with the `make` CLI and respect arguments
+	// like "--dry-run" etc.
+	targets := inv.MakeArgs
+
 	for _, h := range inv.RemoteHeaders {
 		parts := strings.Split(h, "=")
 		name := parts[0]
 		value := strings.Join(parts[1:], "=")
 		ctx = metadata.AppendToOutgoingContext(ctx, name, value)
 	}
-
 	if inv.InvocationID == "" {
 		iid, err := uuid.NewRandom()
 		if err != nil {
@@ -140,6 +372,20 @@ func (inv *Invocation) Run(ctx context.Context) (err error) {
 		}
 		inv.InvocationID = iid.String()
 	}
+	md := &repb.RequestMetadata{
+		ToolInvocationId: inv.InvocationID,
+		// NOTE: The only cache transfers currently are BES uploads, so this is
+		// fine. If there are other uploads/downloads added, this will need to
+		// be set per cache request.
+		ActionId: "bes-upload",
+	}
+	mdBytes, err := proto.Marshal(md)
+	if err != nil {
+		inv.warnf("Failed to marshal request metadata: %s", err)
+	} else {
+		ctx = metadata.AppendToOutgoingContext(ctx, "build.bazel.remote.execution.v2.requestmetadata-bin", string(mdBytes))
+	}
+
 	if inv.BESResultsURL != "" {
 		bep, err := build_event_publisher.New(inv.BESBackend, "" /*=apiKey*/, inv.InvocationID)
 		if err != nil {
@@ -153,7 +399,6 @@ func (inv *Invocation) Run(ctx context.Context) (err error) {
 	if inv.bep != nil {
 		inv.infof("Streaming results to %s%s", inv.BESResultsURL, inv.InvocationID)
 	}
-	startTime := time.Now()
 	if err := inv.publishStartedEvent(startTime); err != nil {
 		return err
 	}
@@ -166,97 +411,120 @@ func (inv *Invocation) Run(ctx context.Context) (err error) {
 	if err := inv.publishPatternEvent(); err != nil {
 		return err
 	}
-	exitCode := -1
-	defer func() {
+	profile := NewProfile(startTime)
+	actionsCreated := 0
+	exitCode := 0
+	if inv.RemoteCache != "" {
+		conn, err := grpc_client.DialTarget(inv.RemoteCache)
 		if err != nil {
-			inv.errorf("%s", err)
+			inv.errorf("Failed to dial remote cache: %s")
 		}
+		defer conn.Close()
+		inv.bsClient = bspb.NewByteStreamClient(conn)
+	}
+	finalize := func() error {
 		finishTime := time.Now()
-		pubErr := inv.publishFinishedEvent(exitCode, finishTime)
-		if err == nil {
-			err = pubErr
+		var lastErr error
+		if err := inv.publishFinishedEvent(exitCode, finishTime); err != nil {
+			lastErr = err
 		}
-		pubErr = inv.publishBuildToolLogsEvent(finishTime.Sub(startTime))
-		if err == nil {
-			err = pubErr
+		if err := inv.publishBuildMetricsEvent(actionsCreated, len(targets)); err != nil {
+			lastErr = err
 		}
-		stopErr := inv.stopPublisher()
-		if err == nil {
-			err = stopErr
+		profileFile, uploadErr := inv.uploadProfile(ctx, profile)
+		if uploadErr != nil {
+			lastErr = uploadErr
+		}
+		if err := inv.publishBuildToolLogsEvent(finishTime.Sub(startTime), profileFile); err != nil {
+			lastErr = err
+		}
+		inv.infof("Elapsed time: %s", finishTime.Sub(startTime))
+		actionsLabel := "actions"
+		if actionsCreated == 1 {
+			actionsLabel = "action"
+		}
+		inv.infof("Streaming build results to: %s%s", inv.BESResultsURL, inv.InvocationID)
+		if err != nil {
+			inv.errorf("Build failed (%s), %d total %s", err, actionsCreated, actionsLabel)
+		} else {
+			inv.infof("Build completed successfully, %d total %s", actionsCreated, actionsLabel)
+		}
+		if err := inv.stopPublisher(); err != nil {
+			lastErr = err
+		}
+		return lastErr
+	}
+	defer func() {
+		finalizeErr := finalize()
+		if finalizeErr != nil && err == nil {
+			err = finalizeErr
 		}
 	}()
 
-	// TODO: Currently we'll just treat all make args as targets. Ideally we
-	// could be mostly API-compatible with the `make` CLI and respect arguments
-	// like "--dry-run" etc.
-	targets := inv.MakeArgs
 	for _, target := range targets {
 		if err := inv.publishTargetConfiguredEvent(target); err != nil {
 			return err
 		}
 	}
 
-	mdb, err := getMakeDB(ctx, inv.Dir, targets)
-	if err != nil {
-		return err
-	}
-	inv.mdb = mdb
+	g := NewActionGraph()
+	inv.infof("Tracing Makefile")
+	tracedActionsCh := TraceDryRun(ctx, inv.Dir, targets)
 
-	g, err := makeActionGraph(mdb, inv.Dir, targets)
-	if err != nil {
-		return status.WrapError(err, "failed to initialize build graph")
-	}
-
-	actions := make(chan *node)
-	allActionsDone := make(chan struct{})
 	const numWorkers = 8 // TODO: make configurable
-	actionDone := make(chan *node, numWorkers)
-	actionsRun := map[string]struct{}{}
 
-	eg, ctx := errgroup.WithContext(ctx)
-	// Action scheduler: while there are nodes that aren't up to date, or
-	// there are nodes currently in progress, schedule more actions if possible,
-	// then wait for actions to complete.
+	eg, egCtx := errgroup.WithContext(ctx)
+	// `make --trace --dry-run` output consumer: read the output from the make
+	// trace as it becomes available, and add it to the action graph.
 	eg.Go(func() error {
-		defer close(allActionsDone)
-		executing := map[*node]struct{}{}
-		for g.Peek() != nil || len(executing) > 0 {
-			// Schedule any and all schedulable actions.
-			for {
-				n := g.Next()
-				if n == nil {
-					break
-				}
-				// Note: This send will block until a worker is available, but
-				// that's OK.
-				actions <- n
-				executing[n] = struct{}{}
+		defer g.Close()
+		for ae := range tracedActionsCh {
+			if actionsCreated == 0 {
+				profile.Add(&ProfileEvent{
+					Name:       "analyze Makefile",
+					ThreadName: "main thread",
+					Start:      startTime,
+					Duration:   time.Since(startTime),
+				})
 			}
-			select {
-			case n := <-actionDone:
-				actionsRun[n.File.Name] = struct{}{}
-				delete(executing, n)
-				n.Mtime = time.Now()
-				g.MarkComplete(n)
-			case <-ctx.Done():
-				return ctx.Err()
+			if ae.Error != nil {
+				return ae.Error
 			}
+			g.Add(ae.Action)
+			actionsCreated++
 		}
 		return nil
 	})
-
-	// Workers: repeatedly dequeue actions and run them.
+	// Workers: repeatedly dequeue actions from the graph and run them.
 	for i := 0; i < numWorkers; i++ {
+		workerID := i + 1
 		eg.Go(func() error {
+			ctx := egCtx
 			for {
-				select {
-				case action := <-actions:
-					if err := inv.runAction(ctx, action); err != nil {
-						return err
-					}
-					actionDone <- action
-				case <-allActionsDone:
+				a, err := g.Next(ctx)
+				if err == io.EOF {
 					return nil
+				}
+				if err != nil {
+					return err
+				}
+				start := time.Now()
+				err = inv.runAction(ctx, a)
+				profile.Add(&ProfileEvent{
+					ThreadName: fmt.Sprintf("worker %d", workerID),
+					Name:       a.Name,
+					Start:      start,
+					Duration:   time.Since(start),
+				})
+				g.MarkComplete(a.Name)
+				if contains(targets, a.Name) {
+					pubErr := inv.publishTargetCompletedEvent(a.Name, err == nil)
+					if err == nil {
+						err = pubErr
+					}
+				}
+				if err != nil {
+					return err
 				}
 			}
 		})
@@ -268,9 +536,9 @@ func (inv *Invocation) Run(ctx context.Context) (err error) {
 		}
 
 		// For any actions not run, publish a TargetComplete event with
-		// success=false
+		// success=false.
 		for _, target := range targets {
-			if _, ok := actionsRun[target]; ok {
+			if g.IsComplete(target) {
 				continue
 			}
 			inv.publishTargetCompletedEvent(target, false)
@@ -279,7 +547,13 @@ func (inv *Invocation) Run(ctx context.Context) (err error) {
 		return err
 	}
 
-	inv.infof("Build completed successfully.")
+	for _, target := range targets {
+		if g.IsComplete(target) {
+			continue
+		}
+		inv.publishTargetCompletedEvent(target, true)
+	}
+
 	return nil
 }
 
@@ -443,55 +717,88 @@ func (inv *Invocation) publishFinishedEvent(exitCode int, finishTime time.Time) 
 	return inv.bep.Publish(event)
 }
 
-func (inv *Invocation) publishBuildToolLogsEvent(duration time.Duration) error {
+func (inv *Invocation) publishBuildToolLogsEvent(duration time.Duration, profileFile *bespb.File) error {
 	if inv.bep == nil {
 		return nil
+	}
+	files := []*bespb.File{
+		{Name: "elapsed time", File: &bespb.File_Contents{Contents: []byte(fmt.Sprintf("%.6f", duration.Seconds()))}},
+	}
+	if profileFile != nil {
+		files = append(files, profileFile)
 	}
 	event := &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildToolLogs{BuildToolLogs: &bespb.BuildEventId_BuildToolLogsId{}}},
 		Payload: &bespb.BuildEvent_BuildToolLogs{BuildToolLogs: &bespb.BuildToolLogs{
-			Log: []*bespb.File{
-				{Name: "elapsed time", File: &bespb.File_Contents{Contents: []byte(fmt.Sprintf("%.6f", duration.Seconds()))}},
+			Log: files,
+		}},
+	}
+	return inv.bep.Publish(event)
+}
+
+func (inv *Invocation) uploadProfile(ctx context.Context, profile *Profile) (*bespb.File, error) {
+	if inv.bsClient == nil {
+		return nil, nil
+	}
+	u, err := url.Parse(inv.RemoteCache)
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to parse remote_cache endpoint %q: %s", inv.RemoteCache, err)
+	}
+	b, err := profile.GzipBytes()
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to assemble compressed profile: %s", err)
+	}
+	d, err := cachetools.UploadBlob(ctx, inv.bsClient, "", cachetools.NewBytesReadSeekCloser(b))
+	if err != nil {
+		return nil, err
+	}
+	return &bespb.File{
+		Name: "command.profile.gz",
+		File: &bespb.File_Uri{
+			Uri: fmt.Sprintf("bytestream://%s/blobs/%s/%d", u.Host, d.GetHash(), d.GetSizeBytes()),
+		},
+	}, nil
+}
+
+func (inv *Invocation) publishBuildMetricsEvent(actionsCreated, targetsConfigured int) error {
+	if inv.bep == nil {
+		return nil
+	}
+	event := &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetrics{BuildMetrics: &bespb.BuildEventId_BuildMetricsId{}}},
+		Payload: &bespb.BuildEvent_BuildMetrics{BuildMetrics: &bespb.BuildMetrics{
+			ActionSummary: &bespb.BuildMetrics_ActionSummary{
+				ActionsCreated: int64(actionsCreated),
+			},
+			TargetMetrics: &bespb.BuildMetrics_TargetMetrics{
+				TargetsConfigured: int64(targetsConfigured),
 			},
 		}},
 	}
 	return inv.bep.Publish(event)
 }
 
-func (inv *Invocation) runAction(ctx context.Context, action *node) error {
+func (inv *Invocation) runAction(ctx context.Context, action *Action) error {
 	// TODO: BES publishing, profiling
 	// TODO: Remote cache lookup
 	// TODO: Sandboxed execution
 	// TODO: Short-circuit if recipe is empty.
-	recipe := strings.TrimSpace(expandRecipe(action.File, inv.mdb))
+	recipe := action.Recipe
 	if inv.PrintCommands && recipe != "" {
-		inv.infof("Target %q: running %q", action.File.Name, strings.TrimSpace(recipe))
+		inv.infof("Target %q: running %q", action.Name, strings.TrimSpace(recipe))
 	}
 	if inv.PrintCommands && recipe == "" {
-		inv.infof("Target %q: nothing to do", action.File)
+		inv.infof("Target %q: nothing to do", action.Name)
 	}
 	cmd := exec.CommandContext(ctx, "sh", "-c", recipe)
-	cmd.Dir = inv.Dir
+	cmd.Dir = action.Dir
 	b, err := cmd.CombinedOutput()
-	if inv.PrintActionOutputs && len(b) > 0 {
-		logFn := inv.infof
-		if err != nil {
-			logFn = inv.errorf
-		}
-		logFn("Output from building target %q:\n%s", action.File.Name, string(b))
-	}
-	if contains(inv.MakeArgs, action.File.Name) {
-		success := err == nil
-		if pubErr := inv.publishTargetCompletedEvent(action.File.Name, success); pubErr != nil {
-			if err == nil {
-				err = pubErr
-			}
-		}
-
+	if len(b) > 0 {
+		inv.printf("%s", string(b))
 	}
 	if err != nil {
 		if err, ok := err.(*exec.ExitError); ok {
-			return &exitError{Target: action.File.Name, Err: err, ExitCode: err.ProcessState.ExitCode()}
+			return &exitError{Target: action.Name, Err: err, ExitCode: err.ProcessState.ExitCode()}
 		}
 		return err
 	}
@@ -508,15 +815,138 @@ func (e *exitError) Error() string {
 	return fmt.Sprintf("Target %q failed (%s)", e.Target, e.Err)
 }
 
-func mtime(path string) (time.Time, error) {
-	stat, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return time.Time{}, nil
+type Action struct {
+	Dir         string
+	Name        string
+	ChangedDeps []string
+	Recipe      string
+}
+
+type ActionOrError struct {
+	Action *Action
+	Error  error
+}
+
+// TODO: Support filenames other than "Makefile"
+var (
+	upToDateTargetRE     = regexp.MustCompile(`^make: '(.*?)' is up to date.$`)
+	updateTargetRE       = regexp.MustCompile(`^(Makefile):(\d+): update target '(.*?)' due to: (.*)$`)
+	targetDoesNotExistRE = regexp.MustCompile(`^(Makefile):(\d+): target '(.*?)' does not exist$`)
+	dirChangeRE          = regexp.MustCompile(`^make\[(\d+)\]: (Entering|Leaving) directory '(.*?)'$`)
+)
+
+func TraceDryRun(ctx context.Context, dir string, targets []string) chan *ActionOrError {
+	args := append([]string{"--trace", "--dry-run"}, targets...)
+	ctx, cancel := context.WithCancel(ctx)
+	cmd := exec.CommandContext(ctx, "make", args...)
+	cmd.Dir = dir
+	var stderrBuf bytes.Buffer
+	outr, outw := io.Pipe()
+	cmd.Stderr = &stderrBuf
+	cmd.Stdout = outw
+	ch := make(chan *ActionOrError, 128)
+	doneScanning := make(chan struct{})
+	go func() {
+		defer cancel()
+		defer close(doneScanning)
+		scanner := bufio.NewScanner(outr)
+
+		var action *Action
+		flushAction := func() {
+			if action != nil {
+				ch <- &ActionOrError{Action: action}
+				action = nil
+			}
 		}
-		return time.Time{}, err
+
+		dirStack := []string{dir}
+		for scanner.Scan() {
+			line := scanner.Text()
+			m := dirChangeRE.FindStringSubmatch(line)
+			if len(m) > 0 {
+				dir := m[3]
+				if m[2] == "Leaving" {
+					// Validate that we're currently in the directory that make
+					// says we're leaving
+					if dirStack[len(dirStack)-1] != dir {
+						ch <- &ActionOrError{
+							Error: status.UnknownErrorf("unexpected `make --trace` output %q (not currently in directory %s)", line, dir),
+						}
+						fmt.Println("!!!")
+						return
+					}
+					dirStack = dirStack[:len(dirStack)-1]
+					continue
+				}
+				dirStack = append(dirStack, dir)
+				continue
+			}
+			// Don't handle recursive make for now -- just let those be invoked
+			// as regular make commands.
+			// TODO: Replace recursive make commands w/ `bb make`
+			if len(dirStack) > 1 {
+				continue
+			}
+
+			m = upToDateTargetRE.FindStringSubmatch(line)
+			if len(m) > 0 {
+				flushAction()
+				continue
+			}
+
+			m = updateTargetRE.FindStringSubmatch(line)
+			if len(m) > 0 {
+				flushAction()
+				action = &Action{
+					Dir:         dirStack[len(dirStack)-1],
+					Name:        m[3],
+					ChangedDeps: strings.Split(m[4], " "),
+				}
+				continue
+			}
+
+			m = targetDoesNotExistRE.FindStringSubmatch(line)
+			if len(m) > 0 {
+				flushAction()
+				action = &Action{
+					Dir:  dirStack[len(dirStack)-1],
+					Name: m[3],
+				}
+				continue
+			}
+
+			if action == nil {
+				ch <- &ActionOrError{
+					Error: status.UnknownErrorf("unexpected output from `make --trace`: %q", line),
+				}
+				fmt.Println("!!!")
+				return
+			}
+			action.Recipe += line + "\n"
+		}
+		if err := scanner.Err(); err != nil {
+			ch <- &ActionOrError{
+				Error: status.UnknownErrorf("failed to scan output from `make --trace`: %q", err),
+			}
+			return
+		}
+		flushAction()
+	}()
+	if err := cmd.Start(); err != nil {
+		ch <- &ActionOrError{Error: err}
+		close(ch)
+		return ch
 	}
-	return stat.ModTime(), nil
+	go func() {
+		err := cmd.Wait()
+		outw.Close()
+		<-doneScanning
+		if err != nil {
+			ch <- &ActionOrError{Error: err}
+		}
+		close(ch)
+	}()
+	return ch
 }
 
 func contains[T comparable](slice []T, value T) bool {
@@ -526,185 +956,6 @@ func contains[T comparable](slice []T, value T) bool {
 		}
 	}
 	return false
-}
-
-type node struct {
-	File      *makedb.File
-	Parents   map[*node]struct{}
-	Children  map[*node]struct{}
-	Mtime     time.Time
-	Scheduled bool
-}
-
-func newNode() *node {
-	return &node{
-		Parents:  make(map[*node]struct{}, 0),
-		Children: make(map[*node]struct{}, 0),
-	}
-}
-
-func (n *node) UpToDate() bool {
-	if n.Mtime.IsZero() {
-		return false
-	}
-	for c := range n.Children {
-		if c.Mtime.After(n.Mtime) {
-			return false
-		}
-	}
-	return true
-}
-
-func (n *node) ChildrenUpToDate() bool {
-	for c := range n.Children {
-		if !c.UpToDate() {
-			return false
-		}
-	}
-	return true
-}
-
-type graph struct {
-	nodes map[string]*node
-	// next contains nodes to be processed next in the action graph. The
-	// invariant to be maintained is that this is the complete set of nodes
-	// that are not up to date, but whose children are all up to date.
-	next map[*node]struct{}
-}
-
-func makeActionGraph(mdb *makedb.DB, dir string, targets []string) (*graph, error) {
-	// Resolve desired target names to Files
-	files := make([]*makedb.File, 0, len(targets))
-	for _, t := range targets {
-		f := mdb.FilesByName[t]
-		if f == nil {
-			return nil, status.InvalidArgumentErrorf("no such target %q", t)
-		}
-		files = append(files, f)
-	}
-	// Build up the graph
-	g := &graph{
-		nodes: map[string]*node{},
-		next:  map[*node]struct{}{},
-	}
-	for _, f := range files {
-		if err := explore(g, f, nil /*=parent*/, mdb, nil /*=path*/); err != nil {
-			return nil, err
-		}
-	}
-	// Initialize mtimes from the FS.
-	// TODO: Parallelize
-	for _, n := range g.nodes {
-		t, err := mtime(filepath.Join(dir, n.File.Name))
-		if err != nil {
-			return nil, err
-		}
-		n.Mtime = t
-	}
-	// Initialize the "next" set.
-	// TODO: Make this more efficient.
-	for _, n := range g.nodes {
-		if !n.UpToDate() && n.ChildrenUpToDate() {
-			g.next[n] = struct{}{}
-		}
-	}
-	return g, nil
-}
-
-func (g *graph) Peek() *node {
-	return anyKey(g.next)
-}
-
-func (g *graph) Next() *node {
-	n := g.Peek()
-	delete(g.next, n)
-	return n
-}
-
-func (g *graph) MarkComplete(n *node) {
-	delete(g.next, n)
-	for p := range n.Parents {
-		if !p.UpToDate() && p.ChildrenUpToDate() {
-			g.next[p] = struct{}{}
-		}
-	}
-}
-
-func explore(g *graph, f *makedb.File, parent *makedb.File, mdb *makedb.DB, path []string) error {
-	// Detect cycles
-	for _, p := range path {
-		if p == f.Name {
-			return status.InvalidArgumentErrorf("cycle detected in build graph: %s", append(path, f.Name))
-		}
-	}
-	path = append(path, f.Name)
-
-	// Make a node for this file if one doesn't already exist
-	n := g.nodes[f.Name]
-	if n == nil {
-		n = &node{
-			File:     f,
-			Parents:  map[*node]struct{}{},
-			Children: map[*node]struct{}{},
-		}
-		g.nodes[f.Name] = n
-	}
-
-	// Update parent / child relationships
-	if parent != nil {
-		pn := g.nodes[parent.Name]
-		pn.Children[n] = struct{}{}
-		n.Parents[pn] = struct{}{}
-	}
-
-	for _, d := range f.Dependencies {
-		dep := mdb.FilesByName[d]
-		if dep == nil {
-			return status.UnknownErrorf("missing file metadata for dependency %q", d)
-		}
-		if err := explore(g, dep, f, mdb, path); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func expandRecipe(file *makedb.File, db *makedb.DB) string {
-	// TODO: Handle escaping
-	recipe := file.Recipe
-	recipe = makeVariableRE.ReplaceAllStringFunc(recipe, func(match string) string {
-		varName := strings.TrimSpace(match[2 : len(match)-1])
-		v := db.VariablesByName[varName]
-		if v == nil {
-			// TODO: Should this return an "undefined variable" error?
-			return ""
-		}
-		return v.Value
-	})
-	recipe = strings.ReplaceAll(recipe, "$@", file.Name)
-	recipe = strings.ReplaceAll(recipe, "$^", strings.Join(file.Dependencies, " "))
-	// TODO: Handle len(file.Dependencies) == 0 like make does.
-	if len(file.Dependencies) > 0 {
-		recipe = strings.ReplaceAll(recipe, "$<", file.Dependencies[0])
-	}
-	return recipe
-}
-
-func getMakeDB(ctx context.Context, dir string, targets []string) (*makedb.DB, error) {
-	// First, print Make's internal database to get detailed info about
-	// all the targets that can be produced, including commands and variable
-	// expansions.
-	cmd := exec.CommandContext(ctx, "make", "--print-data-base", "--question")
-	cmd.Dir = dir
-	b, _ := cmd.CombinedOutput()
-	db, err := makedb.Parse(b)
-	if err != nil {
-		return nil, status.WrapError(err, "failed to parse make database")
-	}
-	if err := db.ExpandImplicitRules(dir, targets); err != nil {
-		return nil, err
-	}
-	return db, nil
 }
 
 func anyKey[K comparable, V any](m map[K]V) K {
