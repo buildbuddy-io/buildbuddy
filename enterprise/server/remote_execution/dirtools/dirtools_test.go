@@ -77,8 +77,8 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 	env, ctx := testEnv(t)
 	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
-	const fileAContents = "mytestdataA"
-	const fileBContents = "mytestdataB-withDifferentLength"
+	fileAContents := "mytestdataA"
+	fileBContents := "mytestdataB-withDifferentLength"
 	fileADigest := setFile(t, env, ctx, instanceName, fileAContents)
 	fileBDigest := setFile(t, env, ctx, instanceName, fileBContents)
 	tmp := testfs.MakeTempDir(t)
@@ -134,7 +134,8 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	instanceName := "foo"
 
-	fileDigest := setFile(t, env, ctx, instanceName, "mytestdata")
+	fileContents := "mytestdata"
+	fileDigest := setFile(t, env, ctx, instanceName, fileContents)
 	emptyDigest := &repb.Digest{
 		Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		SizeBytes: 0,
@@ -186,7 +187,8 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.NotNil(t, info, "transfers are not nil")
-	assert.Equal(t, int64(3), info.FileCount, "three files were transferred")
+	assert.Equal(t, int64(1), info.FileCount, "only one unique file should be transferred")
+	assert.Equal(t, int64(len(fileContents)), info.BytesTransferred)
 	assert.DirExists(t, filepath.Join(tmpDir, "my-empty-directory"), "my-empty-directory should exist")
 	assert.DirExists(t, filepath.Join(tmpDir, "my-notempty-directory"), "my-notempty-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-notempty-directory/fileA.txt"), "fileA.txt should exist")
