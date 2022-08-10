@@ -11,6 +11,8 @@ config_setting(
     },
 )
 
+exports_files(["index.html"])
+
 esbuild(
     name = "app_bundle",
     args = {
@@ -30,6 +32,7 @@ esbuild(
         ":fastbuild": False,
         "//conditions:default": True,
     }),
+    sourcemap = "inline",
     deps = [
         ":editor",
     ],
@@ -39,6 +42,10 @@ ts_library(
     name = "editor",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//app/auth",
+        "//app/service",
+        "//app/util:errors",
+        "//proto:flagz_ts_proto",
         "@npm//@types/react",
         "@npm//@types/react-dom",
         "@npm//monaco-editor",
