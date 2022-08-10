@@ -4,7 +4,9 @@ go_library(
     name = "autoflags",
     srcs = ["autoflags.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//server/util/flagutil:__subpackages__",
+    ],
     deps = [
         "//server/util/flagutil/common",
         "//server/util/flagutil/types",
