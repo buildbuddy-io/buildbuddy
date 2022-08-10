@@ -72,6 +72,17 @@ proto_library(
 )
 
 proto_library(
+    name = "file_proto",
+    srcs = [
+        "file.proto",
+    ],
+    deps = [
+            ":cache_proto",
+	    ":remote_execution_proto",
+    ],
+)
+
+proto_library(
     name = "health_proto",
     srcs = [
         "health.proto",
