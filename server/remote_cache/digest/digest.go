@@ -46,33 +46,33 @@ var (
 )
 
 type ResourceName struct {
-	*rspb.ResourceName
+	rn *rspb.ResourceName
 }
 
 func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	return &ResourceName{
-		&rspb.ResourceName{
-			Digest: d,
+		rn: &rspb.ResourceName{
+			Digest:       d,
 			InstanceName: instanceName,
-			Compressor: repb.Compressor_IDENTITY,
+			Compressor:   repb.Compressor_IDENTITY,
 		},
 	}
 }
 
 func (r *ResourceName) GetDigest() *repb.Digest {
-	return r.GetDigest()
+	return r.rn.GetDigest()
 }
 
 func (r *ResourceName) GetInstanceName() string {
-	return r.GetInstanceName()
+	return r.rn.GetInstanceName()
 }
 
 func (r *ResourceName) GetCompressor() repb.Compressor_Value {
-	return r.GetCompressor()
+	return r.rn.GetCompressor()
 }
 
 func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
-	r.Compressor = compressor
+	r.rn.Compressor = compressor
 }
 
 // DownloadString returns a string representing the resource name for download

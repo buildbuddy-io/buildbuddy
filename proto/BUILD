@@ -77,8 +77,8 @@ proto_library(
         "resource.proto",
     ],
     deps = [
-            ":cache_proto",
-	    ":remote_execution_proto",
+        ":cache_proto",
+        ":remote_execution_proto",
     ],
 )
 
@@ -657,7 +657,7 @@ go_proto_library(
     proto = ":resource_proto",
     deps = [
         ":cache_go_proto",
-	":remote_execution_go_proto",
+        ":remote_execution_go_proto",
     ],
 )
 
