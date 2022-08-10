@@ -131,15 +131,6 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 		return nil, err
 	}
 
-	if *imageStreamingEnabled {
-		if *imageStreamingRegistryGRPCTarget == "" {
-			return nil, status.FailedPreconditionError("registry gRPC target must be set to use image streaming")
-		}
-		if *imageStreamingRegistryHTTPTarget == "" {
-			return nil, status.FailedPreconditionErrorf("registry HTTP target must be set to use image streaming")
-		}
-	}
-
 	var regClient regpb.RegistryClient
 	if *imageStreamingRegistryGRPCTarget != "" {
 		conn, err := grpc_client.DialTarget(*imageStreamingRegistryGRPCTarget)
@@ -150,6 +141,9 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 	}
 
 	imageStreamingSupported := *imageStreamingRegistryHTTPTarget != "" && *imageStreamingRegistryGRPCTarget != ""
+	if *imageStreamingEnabled && !imageStreamingSupported {
+		return nil, status.FailedPreconditionError("image streaming cannot be enabled w/o configuring registry information")
+	}
 	if imageStreamingSupported {
 		storeConf := `
 no_background_fetch = true
