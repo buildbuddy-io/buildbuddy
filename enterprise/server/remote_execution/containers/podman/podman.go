@@ -392,10 +392,12 @@ func (c *podmanCommandContainer) targetImage(ctx context.Context) (string, error
 	if err != nil {
 		return "", err
 	}
+	log.CtxDebugf(ctx, "Looking up optimized image name for %q", key)
 	optImage, err := c.optImageCache.get(key)
 	if err != nil {
 		return "", err
 	}
+	log.CtxDebugf(ctx, "Found optimized image name %q for key %q", optImage, key)
 	if optImage == "" {
 		return "", status.FailedPreconditionErrorf("optimized image not yet resolved")
 	}
@@ -436,6 +438,10 @@ func (c *podmanCommandContainer) resolveTargetImage(ctx context.Context, credent
 	optImage := fmt.Sprintf("%s/%s", *imageStreamingRegistryHTTPTarget, rsp.GetOptimizedImage())
 	log.CtxInfof(ctx, "Resolved optimized image %q for %q", optImage, c.image)
 	key, err := c.optImageRefKey(ctx)
+	if err != nil {
+		return "", err
+	}
+	log.CtxDebugf(ctx, "Caching optimized image name %q for key %q", optImage, key)
 	c.optImageCache.put(key, optImage)
 	return optImage, nil
 }
