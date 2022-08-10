@@ -1345,6 +1345,14 @@ var (
 		QuotaKey,
 		QuotaAllowed,
 	})
+
+	RegistryBlobRangeLatencyUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "registry",
+		Name:      "blob_range_latency_usec",
+		Help:      "Latency of serving layer blob ranges.",
+		Buckets:   coarseMicrosecondToHour,
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

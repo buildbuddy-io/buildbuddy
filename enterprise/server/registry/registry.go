@@ -10,9 +10,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -218,6 +220,8 @@ func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 }
 
 func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, name, refName string) {
+	reqStartTime := time.Now()
+
 	h, err := v1.NewHash(refName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
@@ -267,6 +271,9 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, blobSize))
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		w.WriteHeader(http.StatusPartialContent)
+		defer func() {
+			metrics.RegistryBlobRangeLatencyUsec.Observe(float64(time.Since(reqStartTime).Microseconds()))
+		}()
 	}
 	rn := blobResourceName(h)
 	c, err := r.cache.WithIsolation(ctx, interfaces.CASCacheType, registryInstanceName)
