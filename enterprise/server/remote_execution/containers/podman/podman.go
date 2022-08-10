@@ -45,6 +45,7 @@ var (
 
 	memUsagePathTemplate             = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
 	cpuUsagePathTemplate             = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
+	imageStreamingEnabled            = flag.Bool("executor.podman.image_streaming.enabled", false, "Whether container image streaming is enabled by default")
 	imageStreamingRegistryGRPCTarget = flag.String("executor.podman.image_streaming.registry_grpc_target", "", "gRPC endpoint of BuildBuddy registry")
 	imageStreamingRegistryHTTPTarget = flag.String("executor.podman.image_streaming.registry_http_target", "", "HTTP endpoint of the BuildBuddy registry")
 
@@ -77,6 +78,9 @@ const (
 	// optImageRefCacheSize is the size of the cache used to store mappings from
 	// the original image name to the optimized image name.
 	optImageRefCacheSize = 1000
+
+	// argument to podman to enable the use of the stargz store for streaming
+	enableStreamingStoreArg = "--storage-opt=additionallayerstore=/var/lib/stargz-store/store:ref"
 )
 
 type optImageCache struct {
@@ -113,12 +117,12 @@ type pullStatus struct {
 }
 
 type Provider struct {
-	env                   environment.Env
-	imageCacheAuth        *container.ImageCacheAuthenticator
-	buildRoot             string
-	imageStreamingEnabled bool
-	regClient             regpb.RegistryClient
-	optImageCache         *optImageCache
+	env                     environment.Env
+	imageCacheAuth          *container.ImageCacheAuthenticator
+	buildRoot               string
+	imageStreamingSupported bool
+	regClient               regpb.RegistryClient
+	optImageCache           *optImageCache
 }
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
@@ -126,6 +130,7 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 	if err != nil {
 		return nil, err
 	}
+
 	var regClient regpb.RegistryClient
 	if *imageStreamingRegistryGRPCTarget != "" {
 		conn, err := grpc_client.DialTarget(*imageStreamingRegistryGRPCTarget)
@@ -135,8 +140,11 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 		regClient = regpb.NewRegistryClient(conn)
 	}
 
-	imageStreamingEnabled := *imageStreamingRegistryHTTPTarget != "" && *imageStreamingRegistryGRPCTarget != ""
-	if imageStreamingEnabled {
+	imageStreamingSupported := *imageStreamingRegistryHTTPTarget != "" && *imageStreamingRegistryGRPCTarget != ""
+	if *imageStreamingEnabled && !imageStreamingSupported {
+		return nil, status.FailedPreconditionError("image streaming cannot be enabled w/o configuring registry information")
+	}
+	if imageStreamingSupported {
 		storeConf := `
 no_background_fetch = true
 `
@@ -153,8 +161,9 @@ no_background_fetch = true
 			return nil, status.UnavailableErrorf("could not start stargz store: %s", err)
 		}
 
-		// Configures podman to check stargz store for image data.
-		storageConf := `
+		if *imageStreamingEnabled {
+			// Configures podman to check stargz store for image data.
+			storageConf := `
 [storage]
 driver = "overlay"
 runroot = "/run/containers/storage"
@@ -162,18 +171,19 @@ graphroot = "/var/lib/containers/storage"
 [storage.options]
 additionallayerstores=["/var/lib/stargz-store/store:ref"]
 `
-		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
-			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
+			if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
+				return nil, status.UnavailableErrorf("could not write storage config: %s", err)
+			}
 		}
 	}
 
 	return &Provider{
-		env:                   env,
-		imageCacheAuth:        imageCacheAuthenticator,
-		buildRoot:             buildRoot,
-		imageStreamingEnabled: imageStreamingEnabled,
-		regClient:             regClient,
-		optImageCache:         c,
+		env:                     env,
+		imageCacheAuth:          imageCacheAuthenticator,
+		buildRoot:               buildRoot,
+		imageStreamingSupported: imageStreamingSupported,
+		regClient:               regClient,
+		optImageCache:           c,
 	}, nil
 }
 
@@ -183,7 +193,7 @@ func (p *Provider) NewContainer(image string, options *PodmanOptions) container.
 		imageCacheAuth:        p.imageCacheAuth,
 		image:                 image,
 		registryClient:        p.regClient,
-		imageStreamingEnabled: *imageStreamingRegistryGRPCTarget != "" && *imageStreamingRegistryHTTPTarget != "",
+		imageStreamingEnabled: p.imageStreamingSupported && (*imageStreamingEnabled || options.EnableImageStreaming),
 		optImageCache:         p.optImageCache,
 		buildRoot:             p.buildRoot,
 		options:               options,
@@ -200,7 +210,8 @@ type PodmanOptions struct {
 	Runtime   string
 	// EnableStats determines whether to enable the stats API. This also enables
 	// resource monitoring while tasks are in progress.
-	EnableStats bool
+	EnableStats          bool
+	EnableImageStreaming bool
 }
 
 // podmanCommandContainer containerizes a command's execution using a Podman container.
@@ -295,6 +306,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	if c.options.Runtime != "" {
 		args = append(args, "--runtime="+c.options.Runtime)
 	}
+	if c.imageStreamingEnabled {
+		args = append(args, enableStreamingStoreArg)
+	}
 	return args
 }
 
@@ -311,7 +325,14 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		result.Error = status.UnavailableErrorf("failed to generate podman container name: %s", err)
 		return result
 	}
-	if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.image); err != nil {
+
+	// Use a different key for caching credential information for regular &
+	// optimized images so that they don't affect each other.
+	imgCacheKey := c.image
+	if c.imageStreamingEnabled {
+		imgCacheKey += "-streaming"
+	}
+	if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, imgCacheKey); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
@@ -636,6 +657,8 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 }
 
 func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.PullCredentials) error {
+	podmanArgs := make([]string, 0, 2)
+
 	targetImage := c.image
 	if c.imageStreamingEnabled {
 		// Always re-resolve image when a pull is requested. This takes care of
@@ -655,9 +678,9 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 		// includes the fix for
 		// https://github.com/containers/storage/issues/1263
 		targetImage = img
+		podmanArgs = append(podmanArgs, enableStreamingStoreArg)
 	}
 
-	podmanArgs := make([]string, 0, 2)
 	if !creds.IsEmpty() {
 		podmanArgs = append(podmanArgs, fmt.Sprintf(
 			"--creds=%s:%s",

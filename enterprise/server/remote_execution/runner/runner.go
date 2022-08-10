@@ -978,14 +978,15 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		)
 	case platform.PodmanContainerType:
 		opts := &podman.PodmanOptions{
-			ForceRoot:   props.DockerForceRoot,
-			User:        props.DockerUser,
-			Network:     props.DockerNetwork,
-			CapAdd:      *dockerCapAdd,
-			Devices:     *dockerDevices,
-			Volumes:     *dockerVolumes,
-			Runtime:     *podmanRuntime,
-			EnableStats: *podmanEnableStats,
+			ForceRoot:            props.DockerForceRoot,
+			User:                 props.DockerUser,
+			Network:              props.DockerNetwork,
+			CapAdd:               *dockerCapAdd,
+			Devices:              *dockerDevices,
+			Volumes:              *dockerVolumes,
+			Runtime:              *podmanRuntime,
+			EnableStats:          *podmanEnableStats,
+			EnableImageStreaming: props.EnablePodmanImageStreaming,
 		}
 		ctr = p.podmanProvider.NewContainer(props.ContainerImage, opts)
 	case platform.FirecrackerContainerType:
