@@ -7,17 +7,17 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 var (
-	hosts      = flagtypes.Slice("build_event_proxy.hosts", []string{}, "The list of hosts to pass build events onto.")
+	hosts      = flagutil.New("build_event_proxy.hosts", []string{}, "The list of hosts to pass build events onto.")
 	bufferSize = flag.Int("build_event_proxy.buffer_size", 100, "The number of build events to buffer locally when proxying build events.")
 )
 
