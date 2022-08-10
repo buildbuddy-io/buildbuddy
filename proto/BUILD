@@ -72,9 +72,9 @@ proto_library(
 )
 
 proto_library(
-    name = "file_proto",
+    name = "resource_proto",
     srcs = [
-        "file.proto",
+        "resource.proto",
     ],
     deps = [
             ":cache_proto",
