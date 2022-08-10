@@ -652,6 +652,16 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "resource_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/resource",
+    proto = ":resource_proto",
+    deps = [
+        ":cache_go_proto",
+	":remote_execution_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "option_filters_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/options",
     proto = ":option_filters_proto",
