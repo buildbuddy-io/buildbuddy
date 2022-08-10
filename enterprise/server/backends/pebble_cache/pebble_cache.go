@@ -120,7 +120,7 @@ type PebbleCache struct {
 	db        *pebble.DB
 	dbWaiters *sync.WaitGroup
 	closedMu  *sync.Mutex // PROTECTS(closed)
-	closed    bool
+	closed    *bool
 
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
@@ -271,12 +271,13 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err != nil {
 		return nil, err
 	}
+	closed := false
 	pc := &PebbleCache{
 		opts:              opts,
 		env:               env,
 		db:                db,
 		dbWaiters:         &sync.WaitGroup{},
-		closed:            false,
+		closed:            &closed,
 		closedMu:          &sync.Mutex{},
 		quitChan:          make(chan struct{}),
 		brokenFilesDone:   make(chan struct{}),
@@ -400,7 +401,7 @@ func (r *refCountedDB) Close() error {
 func (p *PebbleCache) DB() (dbInterface, error) {
 	p.closedMu.Lock()
 	defer p.closedMu.Unlock()
-	if p.closed {
+	if *p.closed {
 		return nil, status.FailedPreconditionError("db is closed.")
 	}
 	return &refCountedDB{
@@ -1822,10 +1823,10 @@ func (p *PebbleCache) Stop() error {
 
 	p.closedMu.Lock()
 	defer p.closedMu.Unlock()
-	if p.closed {
+	if *p.closed {
 		return nil
 	}
-	p.closed = true
+	*p.closed = true
 	p.dbWaiters.Wait() // wait for all db users to finish up.
 	log.Printf("Pebble Cache: db leases returned")
 
