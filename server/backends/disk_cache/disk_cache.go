@@ -316,14 +316,24 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 }
 
 func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	contains, sizeBytes, err := c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
+	k, err := c.partition.key(ctx, c.cacheType, c.remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
-	if !contains {
+
+	lruRecord, err := c.partition.getLRU(k)
+	if err != nil {
+		return nil, err
+	}
+	if lruRecord == nil {
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
-	return &interfaces.CacheMetadata{SizeBytes: sizeBytes}, nil
+
+	return &interfaces.CacheMetadata{
+		SizeBytes:          lruRecord.sizeBytes,
+		LastAccessTimeUsec: lruRecord.lastAccessNanos / 1000,
+		LastModifyTimeUsec: lruRecord.lastModifiedNanos / 1000,
+	}, nil
 }
 
 func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -410,9 +420,10 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 }
 
 type fileRecord struct {
-	key       *fileKey
-	lastUse   int64
-	sizeBytes int64
+	key               *fileKey
+	lastAccessNanos   int64
+	lastModifiedNanos int64
+	sizeBytes         int64
 }
 
 func (fr *fileRecord) FullPath() string {
@@ -469,9 +480,10 @@ func (p *partition) internString(s string) string {
 
 func (p *partition) makeRecord(key *fileKey, sizeBytes int64, lastUse int64) *fileRecord {
 	return &fileRecord{
-		key:       key,
-		sizeBytes: sizeBytes,
-		lastUse:   lastUse,
+		key:               key,
+		sizeBytes:         sizeBytes,
+		lastAccessNanos:   lastUse,
+		lastModifiedNanos: time.Now().UnixNano(),
 	}
 }
 
@@ -515,7 +527,7 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 		return false // should never happen
 	}
 	if fr, ok := value.(*fileRecord); ok {
-		log.Debugf("Delete thread removed item from cache. Last use was: %d", fr.lastUse)
+		log.Debugf("Delete thread removed item from cache. Last use was: %d", fr.lastAccessNanos)
 		p.liveRemove(fr)
 	}
 	p.lastGCTime = time.Now()
@@ -598,7 +610,7 @@ func (p *partition) initializeCache() error {
 		}
 
 		// Sort entries by descending ATime.
-		sort.Slice(records, func(i, j int) bool { return records[i].lastUse > records[j].lastUse })
+		sort.Slice(records, func(i, j int) bool { return records[i].lastAccessNanos > records[j].lastAccessNanos })
 
 		p.mu.Lock()
 		// Populate our LRU with everything we scanned from disk, until the LRU reaches capacity.
@@ -838,22 +850,22 @@ func (p *partition) lruAdd(record *fileRecord) {
 
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
-func (p *partition) addFileToLRUIfExists(key *fileKey) (bool, int64) {
+func (p *partition) addFileToLRUIfExists(key *fileKey) (bool, *fileRecord) {
 	if p.diskIsMapped {
-		return false, 0
+		return false, nil
 	}
 	info, err := os.Stat(key.FullPath())
 	if err == nil {
 		if info.Size() == 0 {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
-			return false, 0
+			return false, nil
 		}
 		record := p.makeRecordFromFileInfo(key, info)
 		p.fileChannel <- record
 		p.lruAdd(record)
-		return true, record.sizeBytes
+		return true, record
 	}
-	return false, 0
+	return false, nil
 }
 
 func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (bool, int64, error) {
@@ -874,24 +886,11 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	// [ActionResult][build.bazel.remote.execution.v2.ActionResult] and will be
 	// for some period of time afterwards. The TTLs of the referenced blobs SHOULD be increased
 	// if necessary and applicable.
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	v, ok := p.lru.Get(k.FullPath())
-	if ok {
-		vr, ok := v.(*fileRecord)
-		if !ok {
-			return false, 0, status.InternalErrorf("not a *fileRecord")
-		}
-		return true, vr.sizeBytes, nil
+	lruRecord, err := p.getLRU(k)
+	if lruRecord == nil {
+		return false, 0, err
 	}
-	if !p.diskIsMapped {
-		// OK if we're here it means the disk contents are still being loaded
-		// into the LRU. But we still need to return an answer! So we'll go
-		// check the FS, and if the file is there we'll add it to the LRU.
-		ok, sizeBytes := p.addFileToLRUIfExists(k)
-		return ok, sizeBytes, nil
-	}
-	return false, 0, nil
+	return true, lruRecord.sizeBytes, nil
 }
 
 func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -976,6 +975,32 @@ func (p *partition) getMulti(ctx context.Context, cacheType interfaces.CacheType
 	}
 
 	return foundMap, nil
+}
+
+func (p *partition) getLRU(key *fileKey) (*fileRecord, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	v, contains := p.lru.Get(key.FullPath())
+	if !contains {
+		if !p.diskIsMapped {
+			// If we're here it means the disk contents are still being loaded
+			// into the LRU. But we still need to return an answer! So we'll go
+			// check the FS, and if the file is there we'll add it to the LRU
+			ok, fr := p.addFileToLRUIfExists(key)
+			if ok {
+				return fr, nil
+			}
+		}
+		// File does not exist, in LRU or disk
+		return nil, nil
+	}
+
+	fr, ok := v.(*fileRecord)
+	if !ok {
+		return nil, status.InternalErrorf("Could not read from LRU. Not a *fileRecord")
+	}
+
+	return fr, nil
 }
 
 func (p *partition) makeFileMetadata(fr *fileRecord) (*rfpb.FileMetadata, error) {
