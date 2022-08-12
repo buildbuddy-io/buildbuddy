@@ -1063,7 +1063,10 @@ func (p *partition) delete(ctx context.Context, cacheType interfaces.CacheType, 
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.lru.Remove(k.FullPath())
+	removed := p.lru.Remove(k.FullPath())
+	if !removed {
+		return status.NotFoundErrorf("digest %s/%d not found in disk cache", d.GetHash(), d.GetSizeBytes())
+	}
 	return nil
 }
 

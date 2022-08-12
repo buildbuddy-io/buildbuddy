@@ -2,6 +2,7 @@ package gcs_cache
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"io/ioutil"
@@ -299,6 +300,9 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 	timer.ObserveDelete(err)
 	// Note, if we decide to retry deletions in the future, be sure to
 	// add a new metric for retry count.
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		return status.NotFoundErrorf("digest %s/%d not found in gcs_cache: %s", d.GetHash(), d.GetSizeBytes(), err.Error())
+	}
 	return err
 }
 

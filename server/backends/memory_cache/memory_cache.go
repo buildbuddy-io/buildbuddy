@@ -204,8 +204,11 @@ func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 		return err
 	}
 	m.lock.Lock()
-	m.l.Remove(k)
+	removed := m.l.Remove(k)
 	m.lock.Unlock()
+	if !removed {
+		return status.NotFoundErrorf("digest %s/%d not found in memory cache", d.GetHash(), d.GetSizeBytes())
+	}
 	return nil
 }
 

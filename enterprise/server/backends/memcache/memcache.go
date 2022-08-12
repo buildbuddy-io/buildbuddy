@@ -3,6 +3,7 @@ package memcache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"sync"
@@ -256,7 +257,11 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	return c.mc.Delete(k)
+	err = c.mc.Delete(k)
+	if errors.Is(err, memcache.ErrCacheMiss) {
+		return status.NotFoundErrorf("digest %s/%d not found in memcache: %s", d.GetHash(), d.GetSizeBytes(), err.Error())
+	}
+	return err
 }
 
 // Low level interface used for seeking and stream-writing.
