@@ -649,7 +649,7 @@ func (p *partition) initializeCache() error {
 			p.liveAdd(record)
 		}
 
-		// Add in-flight records to the LRU. These were new files
+		// Add in-flight recordWrappers to the LRU. These were new files
 		// touched during the loading phase, so we assume they are new
 		// enough to just add to the top of the LRU without sorting.
 		close(p.fileChannel)
@@ -1098,10 +1098,10 @@ func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, rem
 		// If we had an error writing the file, just return that.
 		return err
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	now := time.Now().UnixNano()
 	recordWrapper := p.makeRecordWrapper(k, int64(n), now, now)
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.lruAdd(recordWrapper.fileRecord)
 	return err
 }
