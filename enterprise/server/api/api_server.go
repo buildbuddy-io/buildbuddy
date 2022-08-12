@@ -355,13 +355,13 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	if digest.IsActionCacheResourceName(urlStr) {
 		parsedResourceName, err = digest.ParseActionCacheResourceName(urlStr)
 		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err.Error())
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
 		}
 		cacheType = interfaces.ActionCacheType
 	} else if digest.IsDownloadResourceName(urlStr) {
 		parsedResourceName, err = digest.ParseDownloadResourceName(urlStr)
 		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err.Error())
+			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
 		}
 		cacheType = interfaces.CASCacheType
 	} else {

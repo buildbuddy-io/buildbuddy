@@ -234,11 +234,19 @@ func TestDeleteFile_CAS(t *testing.T) {
 	if err := s.env.GetCache().Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
+	data, err := s.env.GetCache().Get(ctx, d)
+	require.NoError(t, err)
+	require.NotNil(t, data)
 
 	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+
+	// Verify file was deleted
+	data, err = s.env.GetCache().Get(ctx, d)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, data)
 }
 
 func TestDeleteFile_AC(t *testing.T) {
@@ -259,11 +267,19 @@ func TestDeleteFile_AC(t *testing.T) {
 	if err = actionCache.Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
+	data, err := actionCache.Get(ctx, d)
+	require.NoError(t, err)
+	require.NotNil(t, data)
 
 	acURI := fmt.Sprintf("blobs/ac/%s/%d", d.GetHash(), d.GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+
+	// Verify file was deleted
+	data, err = actionCache.Get(ctx, d)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, data)
 }
 
 func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
@@ -285,11 +301,19 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	if err = actionCache.Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
+	data, err := actionCache.Get(ctx, d)
+	require.NoError(t, err)
+	require.NotNil(t, data)
 
 	acURI := fmt.Sprintf("%s/blobs/ac/%s/%d", remoteInstanceName, d.GetHash(), d.GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+
+	// Verify file was deleted
+	data, err = actionCache.Get(ctx, d)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, data)
 }
 
 func TestDeleteFile_NonExistentFile(t *testing.T) {
@@ -298,14 +322,20 @@ func TestDeleteFile_NonExistentFile(t *testing.T) {
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
 		t.Fatal(err)
 	}
-
 	s := NewAPIServer(env)
+
+	// Do not write data to the cache
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
 
 	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
 	require.NoError(t, err)
-	require.Nil(t, resp)
+	require.NotNil(t, resp)
+
+	// Verify file still does not exist - no side effects
+	data, err := s.env.GetCache().Get(ctx, d)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, data)
 }
 
 func TestDeleteFile_LeadingSlash(t *testing.T) {
@@ -322,11 +352,19 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 	if err = s.env.GetCache().Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
+	data, err := s.env.GetCache().Get(ctx, d)
+	require.NoError(t, err)
+	require.NotNil(t, data)
 
 	acURI := fmt.Sprintf("/blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: acURI})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
+
+	// Verify file was deleted
+	data, err = s.env.GetCache().Get(ctx, d)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, data)
 }
 
 func TestDeleteFile_InvalidAuth(t *testing.T) {
