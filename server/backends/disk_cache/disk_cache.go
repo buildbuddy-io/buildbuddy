@@ -649,7 +649,7 @@ func (p *partition) initializeCache() error {
 			p.liveAdd(record)
 		}
 
-		// Add in-flight recordWrappers to the LRU. These were new files
+		// Add in-flight records to the LRU. These were new files
 		// touched during the loading phase, so we assume they are new
 		// enough to just add to the top of the LRU without sorting.
 		close(p.fileChannel)
