@@ -3,6 +3,7 @@ package lru
 import (
 	"container/list"
 	"errors"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -40,9 +41,10 @@ type LRU struct {
 
 // Entry is used to hold a value in the evictList
 type Entry struct {
-	key         uint64
-	conflictKey uint64
-	value       interface{}
+	key               uint64
+	conflictKey       uint64
+	value             interface{}
+	lastAccessedNanos int64
 }
 
 // NewLRU constructs an LRU based on the specified config.
@@ -108,13 +110,13 @@ func (c *LRU) Add(key, value interface{}) bool {
 	}
 	// Check for existing item
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.evictList.MoveToFront(ent)
+		c.moveToFront(ent)
 		ent.Value.(*Entry).value = value
 		return true
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, true /*=front*/)
+	c.addItem(pk, ck, value, true /*=front*/, time.Now().UnixNano())
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -123,7 +125,7 @@ func (c *LRU) Add(key, value interface{}) bool {
 }
 
 // PushBack adds a value to the back of the cache. Returns true if the key was added.
-func (c *LRU) PushBack(key, value interface{}) bool {
+func (c *LRU) PushBack(key, value interface{}, lastAccessedNanos int64) bool {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return false
@@ -135,7 +137,7 @@ func (c *LRU) PushBack(key, value interface{}) bool {
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, false /*=front*/)
+	c.addItem(pk, ck, value, false /*=front*/, lastAccessedNanos)
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -151,7 +153,7 @@ func (c *LRU) Get(key interface{}) (interface{}, bool) {
 		return nil, false
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.evictList.MoveToFront(ent)
+		c.moveToFront(ent)
 		if ent.Value.(*Entry) == nil {
 			return nil, false
 		}
@@ -167,7 +169,7 @@ func (c *LRU) Contains(key interface{}) bool {
 		return false
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.evictList.MoveToFront(ent)
+		c.moveToFront(ent)
 		if ent.Value.(*Entry) == nil {
 			return false
 		}
@@ -205,14 +207,15 @@ func (c *LRU) Remove(key interface{}) (present bool) {
 }
 
 // RemoveOldest removes the oldest item from the cache.
-func (c *LRU) RemoveOldest() (interface{}, bool) {
+// Returns the item and its last access time
+func (c *LRU) RemoveOldest() (interface{}, int64, bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
 		c.removeElement(ent)
 		kv := ent.Value.(*Entry)
-		return kv.value, true
+		return kv.value, kv.lastAccessedNanos, true
 	}
-	return nil, false
+	return nil, 0, false
 }
 
 // Len returns the number of items in the cache.
@@ -251,9 +254,9 @@ func (c *LRU) lookupItem(key, conflictKey uint64) (*list.Element, bool) {
 
 // addElement adds a new item to the cache. It does not perform any
 // size checks.
-func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool) {
+func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool, lastAccessedNanos int64) {
 	// Add new item
-	kv := &Entry{key, conflictKey, value}
+	kv := &Entry{key, conflictKey, value, lastAccessedNanos}
 	var element *list.Element
 	if front {
 		element = c.evictList.PushFront(kv)
@@ -262,6 +265,11 @@ func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool) {
 	}
 	c.items[key] = append(c.items[key], element)
 	c.currentSize += c.sizeFn(value)
+}
+
+func (c *LRU) moveToFront(ent *list.Element) {
+	c.evictList.MoveToFront(ent)
+	ent.Value.(*Entry).lastAccessedNanos = time.Now().UnixNano()
 }
 
 func (c *LRU) removeItem(key, conflictKey uint64) {
