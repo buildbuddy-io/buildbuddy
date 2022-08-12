@@ -791,7 +791,7 @@ type LRU interface {
 
 	// Inserts a value into the back of the LRU. A boolean is returned that
 	// indicates if the value was successfully added.
-	PushBack(key, value interface{}) bool
+	PushBack(key, value interface{}, lastAccessedNanos int64) bool
 
 	// Gets a value from the LRU, returns a boolean indicating if the value
 	// was present.
@@ -812,7 +812,7 @@ type LRU interface {
 	Size() int64
 
 	// Remove()s the oldest value in the LRU. (See Remove() above).
-	RemoveOldest() (interface{}, bool)
+	RemoveOldest() (interface{}, int64, bool)
 
 	// Returns metrics about the status of the LRU.
 	Metrics() string
