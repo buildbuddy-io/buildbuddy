@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -221,6 +222,7 @@ func TestGetLogAuth(t *testing.T) {
 }
 
 func TestDeleteFile_CAS(t *testing.T) {
+	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
@@ -250,6 +252,7 @@ func TestDeleteFile_CAS(t *testing.T) {
 }
 
 func TestDeleteFile_AC(t *testing.T) {
+	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
@@ -283,6 +286,7 @@ func TestDeleteFile_AC(t *testing.T) {
 }
 
 func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
+	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
@@ -317,6 +321,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 }
 
 func TestDeleteFile_NonExistentFile(t *testing.T) {
+	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
@@ -339,6 +344,7 @@ func TestDeleteFile_NonExistentFile(t *testing.T) {
 }
 
 func TestDeleteFile_LeadingSlash(t *testing.T) {
+	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
@@ -368,6 +374,7 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 }
 
 func TestDeleteFile_InvalidAuth(t *testing.T) {
+	flags.Set(t, "enable_cache_delete_api", true)
 	userID := "user"
 	userWithoutWriteAuth := testauth.TestUser{
 		UserID:       userID,
@@ -391,6 +398,7 @@ func TestDeleteFile_InvalidAuth(t *testing.T) {
 }
 
 func TestDeleteFile_InvalidURI(t *testing.T) {
+	flags.Set(t, "enable_cache_delete_api", true)
 	var err error
 	env, ctx := getEnvAndCtx(t, "user1")
 	if ctx, err = prefix.AttachUserPrefixToContext(ctx, env); err != nil {
