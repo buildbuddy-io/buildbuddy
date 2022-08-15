@@ -2,6 +2,7 @@ package lru_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/stretchr/testify/require"
@@ -34,9 +35,10 @@ func TestPushBack(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	require.True(t, l.PushBack("a", 5))
-	require.True(t, l.PushBack("b", 4))
-	require.False(t, l.PushBack("c", 3))
+	now := time.Now().UnixNano()
+	require.True(t, l.PushBack("a", 5, now))
+	require.True(t, l.PushBack("b", 4, now))
+	require.False(t, l.PushBack("c", 3, now))
 	require.Equal(t, 1, len(evictions))
 	require.Equal(t, 3, evictions[0])
 }
