@@ -231,6 +231,8 @@ func TestMetadata(t *testing.T) {
 			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
 		}
 		require.Equal(t, testSize, md.SizeBytes)
+		require.NotZero(t, md.LastAccessTimeUsec)
+		require.NotZero(t, md.LastModifyTimeUsec)
 	}
 }
 

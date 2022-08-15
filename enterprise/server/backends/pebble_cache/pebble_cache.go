@@ -902,7 +902,11 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	if err != nil {
 		return nil, err
 	}
-	return &interfaces.CacheMetadata{SizeBytes: md.GetSizeBytes()}, nil
+	return &interfaces.CacheMetadata{
+		SizeBytes:          md.GetSizeBytes(),
+		LastModifyTimeUsec: md.GetLastModifyUsec(),
+		LastAccessTimeUsec: md.GetLastAccessUsec(),
+	}, nil
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -1206,11 +1210,13 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		wcm = fw
 	}
 	dc := &writeCloser{WriteCloserMetadata: wcm, closeFn: func(bytesWritten int64) error {
+		now := time.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: wcm.Metadata(),
 			SizeBytes:       bytesWritten,
-			LastAccessUsec:  time.Now().UnixMicro(),
+			LastAccessUsec:  now,
+			LastModifyUsec:  now,
 		}
 		protoBytes, err := proto.Marshal(md)
 		if err != nil {
