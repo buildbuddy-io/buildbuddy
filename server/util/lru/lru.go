@@ -110,15 +110,16 @@ func (c *LRU) Add(key, value interface{}) bool {
 		return false
 	}
 	// Check for existing item
+	now := time.Now().UnixNano()
 	if ent, ok := c.lookupItem(pk, ck); ok {
 		c.moveToFront(ent)
 		ent.Value.(*Entry).value = value
-		ent.Value.(*Entry).lastModifiedNanos = time.Now().UnixNano()
+		ent.Value.(*Entry).lastModifiedNanos = now
 		return true
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, true /*=front*/, time.Now().UnixNano(), time.Now().UnixNano())
+	c.addItem(pk, ck, value, true /*=front*/, now, now)
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -136,6 +137,7 @@ func (c *LRU) PushBack(key, value interface{}, lastAccessedNanos int64, lastModi
 	if ent, ok := c.lookupItem(pk, ck); ok {
 		ent.Value.(*Entry).value = value
 		ent.Value.(*Entry).lastAccessedNanos = lastAccessedNanos
+		ent.Value.(*Entry).lastModifiedNanos = lastModifiedNanos
 		return true
 	}
 
