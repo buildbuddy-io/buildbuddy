@@ -1160,10 +1160,11 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 	return &dbWriteOnClose{
 		WriteCloser: writeCloser,
 		closeFn: func(totalBytesWritten int64) error {
-			p.mu.Lock()
-			defer p.mu.Unlock()
 			now := time.Now().UnixNano()
 			recordWrapper := p.makeRecordWrapper(k, totalBytesWritten, now, now)
+
+			p.mu.Lock()
+			defer p.mu.Unlock()
 			p.lruAdd(recordWrapper.fileRecord)
 			return nil
 		},
