@@ -311,19 +311,29 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	contains, _, err := c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
+	contains, err := c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
 	return contains, err
 }
 
 func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	contains, sizeBytes, err := c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
+	k, err := c.partition.key(ctx, c.cacheType, c.remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
-	if !contains {
+
+	lruRecordWrapper, err := c.partition.getLRU(k)
+	if err != nil {
+		return nil, err
+	}
+	if lruRecordWrapper == nil {
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
-	return &interfaces.CacheMetadata{SizeBytes: sizeBytes}, nil
+
+	record := lruRecordWrapper.fileRecord
+	return &interfaces.CacheMetadata{
+		SizeBytes:          record.sizeBytes,
+		LastAccessTimeUsec: lruRecordWrapper.lastUseNanos / 1000,
+	}, nil
 }
 
 func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -865,29 +875,29 @@ func (p *partition) lruAdd(record *fileRecord) {
 
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
-func (p *partition) addFileToLRUIfExists(key *fileKey) (bool, int64) {
+func (p *partition) addFileToLRUIfExists(key *fileKey) (bool, *fileRecordWrapper) {
 	if p.diskIsMapped {
-		return false, 0
+		return false, nil
 	}
 	info, err := os.Stat(key.FullPath())
 	if err == nil {
 		if info.Size() == 0 {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
-			return false, 0
+			return false, nil
 		}
 		recordWrapper := p.makeRecordWrapperFromFileInfo(key, info)
 		record := recordWrapper.fileRecord
 		p.fileChannel <- record
 		p.lruAdd(record)
-		return true, record.sizeBytes
+		return true, recordWrapper
 	}
-	return false, 0
+	return false, nil
 }
 
-func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (bool, int64, error) {
+func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (bool, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
-		return false, 0, err
+		return false, err
 	}
 	// Bazel does frequent "contains" checks, so we want to make this fast.
 	// We could check the disk and see if the file exists, because it's
@@ -902,24 +912,11 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	// [ActionResult][build.bazel.remote.execution.v2.ActionResult] and will be
 	// for some period of time afterwards. The TTLs of the referenced blobs SHOULD be increased
 	// if necessary and applicable.
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	v := p.lru.Get(k.FullPath())
-	if v != nil {
-		vr, ok := v.Value.(*fileRecord)
-		if !ok {
-			return false, 0, status.InternalErrorf("not a *fileRecord")
-		}
-		return true, vr.sizeBytes, nil
+	lruRecordWrapper, err := p.getLRU(k)
+	if lruRecordWrapper == nil {
+		return false, err
 	}
-	if !p.diskIsMapped {
-		// OK if we're here it means the disk contents are still being loaded
-		// into the LRU. But we still need to return an answer! So we'll go
-		// check the FS, and if the file is there we'll add it to the LRU.
-		ok, sizeBytes := p.addFileToLRUIfExists(k)
-		return ok, sizeBytes, nil
-	}
-	return false, 0, nil
+	return true, nil
 }
 
 func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -930,7 +927,7 @@ func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheT
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				exists, _, err := p.contains(ctx, cacheType, remoteInstanceName, d)
+				exists, err := p.contains(ctx, cacheType, remoteInstanceName, d)
 				// NotFoundError is never returned from contains above, so
 				// we don't check for it.
 				if err != nil {
@@ -1004,6 +1001,36 @@ func (p *partition) getMulti(ctx context.Context, cacheType interfaces.CacheType
 	}
 
 	return foundMap, nil
+}
+
+func (p *partition) getLRU(key *fileKey) (*fileRecordWrapper, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	v := p.lru.Get(key.FullPath())
+	if v == nil {
+		if !p.diskIsMapped {
+			// If we're here it means the disk contents are still being loaded
+			// into the LRU. But we still need to return an answer! So we'll go
+			// check the FS, and if the file is there we'll add it to the LRU
+			ok, fr := p.addFileToLRUIfExists(key)
+			if ok {
+				return fr, nil
+			}
+		}
+		// File does not exist, in LRU or disk
+		return nil, nil
+	}
+
+	fr, ok := v.Value.(*fileRecord)
+	if !ok {
+		return nil, status.InternalErrorf("Could not read from LRU. Not a *fileRecord")
+	}
+
+	return &fileRecordWrapper{
+		fileRecord:          fr,
+		lastUseNanos:        v.LastAccessedNanos,
+		lastModifyTimeNanos: v.LastModifiedNanos,
+	}, nil
 }
 
 func (p *partition) makeFileMetadata(fr *fileRecord) (*rfpb.FileMetadata, error) {
