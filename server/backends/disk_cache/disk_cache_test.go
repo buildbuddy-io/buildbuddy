@@ -113,6 +113,17 @@ func TestMetadata(t *testing.T) {
 			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
 		}
 		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime1 := md.LastAccessTimeUsec
+		require.NotZero(t, lastAccessTime1)
+
+		// Last access time should update since last call to Metadata()
+		md, err = c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+		if err != nil {
+			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+		}
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime2 := md.LastAccessTimeUsec
+		require.Greater(t, lastAccessTime2, lastAccessTime1)
 	}
 }
 

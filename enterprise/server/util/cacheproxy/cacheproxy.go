@@ -212,6 +212,7 @@ func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingReque
 	return rsp, nil
 }
 
+// TODO - Add metadata fields here
 func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*dcpb.MetadataResponse, error) {
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
