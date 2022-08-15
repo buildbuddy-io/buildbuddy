@@ -379,12 +379,12 @@ func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
 
 func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
 	c.mu.RLock()
-	v, ok := c.lru.Get(apiKey)
+	v := c.lru.Get(apiKey)
 	c.mu.RUnlock()
-	if !ok {
+	if v == nil {
 		return nil, ok
 	}
-	entry, ok := v.(*apiKeyGroupCacheEntry)
+	entry, ok := v.Value.(*apiKeyGroupCacheEntry)
 	if !ok {
 		// Should never happen.
 		log.Errorf("Data in cache was of wrong type, got type %T", v)
