@@ -783,6 +783,13 @@ type XcodeLocator interface {
 	PathsForVersionAndSDK(xcodeVersion string, sdk string) (string, string, error)
 }
 
+// LRUValue is the output returned when clients fetch data from the LRU cache
+type LRUValue struct {
+	Value             interface{}
+	LastAccessedNanos int64
+	LastModifiedNanos int64
+}
+
 // LRU implements a Least Recently Used cache.
 type LRU interface {
 	// Inserts a value into the LRU. A boolean is returned that indicates
@@ -791,11 +798,10 @@ type LRU interface {
 
 	// Inserts a value into the back of the LRU. A boolean is returned that
 	// indicates if the value was successfully added.
-	PushBack(key, value interface{}, lastAccessedNanos int64) bool
+	PushBack(key, value interface{}, lastAccessedNanos int64, lastModifiedNanos int64) bool
 
-	// Gets a value from the LRU, returns its last access time and a boolean indicating if the value
-	// was present.
-	Get(key interface{}) (interface{}, int64, bool)
+	// Gets a value from the LRU. Returns nil if the value is not present
+	Get(key interface{}) *LRUValue
 
 	// Returns a boolean indicating if the value is present in the LRU.
 	Contains(key interface{}) bool

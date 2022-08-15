@@ -416,10 +416,11 @@ type fileRecord struct {
 }
 
 // fileRecordWrapper is a wrapper for fileRecord that contains additional metadata that does not need to be
-// written to the LRU cache
+// written in the value field to the LRU cache
 type fileRecordWrapper struct {
-	fileRecord   *fileRecord
-	lastUseNanos int64
+	fileRecord          *fileRecord
+	lastUseNanos        int64
+	lastModifyTimeNanos int64
 }
 
 func (fr *fileRecord) FullPath() string {
@@ -442,6 +443,21 @@ func getLastUse(info os.FileInfo) int64 {
 	if timeField := value.Elem().FieldByName("Atimespec"); timeField.IsValid() {
 		ts = timeField.Interface().(syscall.Timespec)
 	} else if timeField := value.Elem().FieldByName("Atim"); timeField.IsValid() {
+		ts = timeField.Interface().(syscall.Timespec)
+	} else {
+		ts = syscall.Timespec{}
+	}
+	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
+}
+
+func getLastModifyTime(info os.FileInfo) int64 {
+	stat := info.Sys().(*syscall.Stat_t)
+	// Super Gross! https://github.com/golang/go/issues/31735
+	value := reflect.ValueOf(stat)
+	var ts syscall.Timespec
+	if timeField := value.Elem().FieldByName("Mtimespec"); timeField.IsValid() {
+		ts = timeField.Interface().(syscall.Timespec)
+	} else if timeField := value.Elem().FieldByName("Mtim"); timeField.IsValid() {
 		ts = timeField.Interface().(syscall.Timespec)
 	} else {
 		ts = syscall.Timespec{}
@@ -474,18 +490,19 @@ func (p *partition) internString(s string) string {
 	return s
 }
 
-func (p *partition) makeRecordWrapper(key *fileKey, sizeBytes int64, lastUse int64) *fileRecordWrapper {
+func (p *partition) makeRecordWrapper(key *fileKey, sizeBytes int64, lastUse int64, lastModifyTime int64) *fileRecordWrapper {
 	return &fileRecordWrapper{
 		fileRecord: &fileRecord{
 			key:       key,
 			sizeBytes: sizeBytes,
 		},
-		lastUseNanos: lastUse,
+		lastUseNanos:        lastUse,
+		lastModifyTimeNanos: lastModifyTime,
 	}
 }
 
 func (p *partition) makeRecordWrapperFromFileInfo(key *fileKey, info os.FileInfo) *fileRecordWrapper {
-	return p.makeRecordWrapper(key, info.Size(), getLastUse(info))
+	return p.makeRecordWrapper(key, info.Size(), getLastUse(info), getLastModifyTime(info))
 }
 
 func (p *partition) makeRecordWrapperFromPathAndFileInfo(fullPath string, info os.FileInfo) (*fileRecordWrapper, error) {
@@ -613,7 +630,7 @@ func (p *partition) initializeCache() error {
 		// Populate our LRU with everything we scanned from disk, until the LRU reaches capacity.
 		for _, wrapper := range recordWrappers {
 			record := wrapper.fileRecord
-			if added := p.lru.PushBack(record.FullPath(), record, wrapper.lastUseNanos); !added {
+			if added := p.lru.PushBack(record.FullPath(), record, wrapper.lastUseNanos, wrapper.lastModifyTimeNanos); !added {
 				break
 			}
 			p.liveAdd(record)
@@ -887,9 +904,9 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	// if necessary and applicable.
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	v, _, ok := p.lru.Get(k.FullPath())
-	if ok {
-		vr, ok := v.(*fileRecord)
+	v := p.lru.Get(k.FullPath())
+	if v != nil {
+		vr, ok := v.Value.(*fileRecord)
 		if !ok {
 			return false, 0, status.InternalErrorf("not a *fileRecord")
 		}
@@ -1053,7 +1070,8 @@ func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, rem
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	recordWrapper := p.makeRecordWrapper(k, int64(n), time.Now().UnixNano())
+	now := time.Now().UnixNano()
+	recordWrapper := p.makeRecordWrapper(k, int64(n), now, now)
 	p.lruAdd(recordWrapper.fileRecord)
 	return err
 }
@@ -1144,7 +1162,8 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 		closeFn: func(totalBytesWritten int64) error {
 			p.mu.Lock()
 			defer p.mu.Unlock()
-			recordWrapper := p.makeRecordWrapper(k, totalBytesWritten, time.Now().UnixNano())
+			now := time.Now().UnixNano()
+			recordWrapper := p.makeRecordWrapper(k, totalBytesWritten, now, now)
 			p.lruAdd(recordWrapper.fileRecord)
 			return nil
 		},

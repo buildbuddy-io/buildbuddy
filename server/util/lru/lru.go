@@ -45,6 +45,7 @@ type Entry struct {
 	conflictKey       uint64
 	value             interface{}
 	lastAccessedNanos int64
+	lastModifiedNanos int64
 }
 
 // NewLRU constructs an LRU based on the specified config.
@@ -112,11 +113,12 @@ func (c *LRU) Add(key, value interface{}) bool {
 	if ent, ok := c.lookupItem(pk, ck); ok {
 		c.moveToFront(ent)
 		ent.Value.(*Entry).value = value
+		ent.Value.(*Entry).lastModifiedNanos = time.Now().UnixNano()
 		return true
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, true /*=front*/, time.Now().UnixNano())
+	c.addItem(pk, ck, value, true /*=front*/, time.Now().UnixNano(), time.Now().UnixNano())
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -125,7 +127,7 @@ func (c *LRU) Add(key, value interface{}) bool {
 }
 
 // PushBack adds a value to the back of the cache. Returns true if the key was added.
-func (c *LRU) PushBack(key, value interface{}, lastAccessedNanos int64) bool {
+func (c *LRU) PushBack(key, value interface{}, lastAccessedNanos int64, lastModifiedNanos int64) bool {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
 		return false
@@ -138,7 +140,7 @@ func (c *LRU) PushBack(key, value interface{}, lastAccessedNanos int64) bool {
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, false /*=front*/, lastAccessedNanos)
+	c.addItem(pk, ck, value, false /*=front*/, lastAccessedNanos, lastModifiedNanos)
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -147,23 +149,30 @@ func (c *LRU) PushBack(key, value interface{}, lastAccessedNanos int64) bool {
 	return true
 }
 
-// Get looks up a key's value from the cache.
-// Returns its last access time and a boolean indicating if the value was present.
-func (c *LRU) Get(key interface{}) (interface{}, int64, bool) {
+// Get looks up a key's value from the cache
+func (c *LRU) Get(key interface{}) *interfaces.LRUValue {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
-		return nil, 0, false
+		return nil
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
 		if ent.Value.(*Entry) == nil {
-			return nil, 0, false
+			return nil
 		}
+
+		// Fetch the previous access time before moving the entry to the front of the list and updating
+		// its last access time to the current time
 		entry := ent.Value.(*Entry)
 		lastAccessed := entry.lastAccessedNanos
+
 		c.moveToFront(ent)
-		return entry.value, lastAccessed, true
+		return &interfaces.LRUValue{
+			Value:             entry.value,
+			LastAccessedNanos: lastAccessed,
+			LastModifiedNanos: entry.lastModifiedNanos,
+		}
 	}
-	return nil, 0, false
+	return nil
 }
 
 // Contains checks if a key is in the cache.
@@ -258,9 +267,9 @@ func (c *LRU) lookupItem(key, conflictKey uint64) (*list.Element, bool) {
 
 // addElement adds a new item to the cache. It does not perform any
 // size checks.
-func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool, lastAccessedNanos int64) {
+func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool, lastAccessedNanos int64, lastModifiedNanos int64) {
 	// Add new item
-	kv := &Entry{key, conflictKey, value, lastAccessedNanos}
+	kv := &Entry{key, conflictKey, value, lastAccessedNanos, lastModifiedNanos}
 	var element *list.Element
 	if front {
 		element = c.evictList.PushFront(kv)
