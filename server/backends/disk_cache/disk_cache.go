@@ -315,15 +315,18 @@ func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	return contains, err
 }
 
+// TODO(Maggie) - Fix
 func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	contains, sizeBytes, err := c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
+	_, err := c.partition.key(ctx, c.cacheType, c.remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
-	if !contains {
-		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
-	}
-	return &interfaces.CacheMetadata{SizeBytes: sizeBytes}, nil
+
+	return &interfaces.CacheMetadata{
+		SizeBytes:          0,
+		LastAccessTimeUsec: 0,
+		LastModifyTimeUsec: 0,
+	}, nil
 }
 
 func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
