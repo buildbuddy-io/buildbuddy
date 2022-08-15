@@ -333,6 +333,7 @@ func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.C
 	return &interfaces.CacheMetadata{
 		SizeBytes:          record.sizeBytes,
 		LastAccessTimeUsec: lruRecordWrapper.lastUseNanos / 1000,
+		LastModifyTimeUsec: record.lastUpdateTimeNanos / 1000,
 	}, nil
 }
 
@@ -421,8 +422,9 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 
 // fileRecord is the data struct we store in the LRU cache
 type fileRecord struct {
-	key       *fileKey
-	sizeBytes int64
+	key                 *fileKey
+	sizeBytes           int64
+	lastUpdateTimeNanos int64
 }
 
 // fileRecordWrapper is a wrapper for fileRecord that contains additional metadata that does not need to be
@@ -459,6 +461,21 @@ func getLastUse(info os.FileInfo) int64 {
 	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
 }
 
+func getLastModifyTime(info os.FileInfo) int64 {
+	stat := info.Sys().(*syscall.Stat_t)
+	// Super Gross! https://github.com/golang/go/issues/31735
+	value := reflect.ValueOf(stat)
+	var ts syscall.Timespec
+	if timeField := value.Elem().FieldByName("Mtimespec"); timeField.IsValid() {
+		ts = timeField.Interface().(syscall.Timespec)
+	} else if timeField := value.Elem().FieldByName("Mtim"); timeField.IsValid() {
+		ts = timeField.Interface().(syscall.Timespec)
+	} else {
+		ts = syscall.Timespec{}
+	}
+	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
+}
+
 func (p *partition) evictFn(value interface{}) {
 	if v, ok := value.(*fileRecord); ok {
 		i, err := os.Stat(v.FullPath())
@@ -484,18 +501,19 @@ func (p *partition) internString(s string) string {
 	return s
 }
 
-func (p *partition) makeRecordWrapper(key *fileKey, sizeBytes int64, lastUse int64) *fileRecordWrapper {
+func (p *partition) makeRecordWrapper(key *fileKey, sizeBytes int64, lastUseNanos int64, lastModifyNanos int64) *fileRecordWrapper {
 	return &fileRecordWrapper{
 		fileRecord: &fileRecord{
-			key:       key,
-			sizeBytes: sizeBytes,
+			key:                 key,
+			sizeBytes:           sizeBytes,
+			lastUpdateTimeNanos: lastModifyNanos,
 		},
-		lastUseNanos: lastUse,
+		lastUseNanos: lastUseNanos,
 	}
 }
 
 func (p *partition) makeRecordWrapperFromFileInfo(key *fileKey, info os.FileInfo) *fileRecordWrapper {
-	return p.makeRecordWrapper(key, info.Size(), getLastUse(info))
+	return p.makeRecordWrapper(key, info.Size(), getLastUse(info), getLastModifyTime(info))
 }
 
 func (p *partition) makeRecordWrapperFromPathAndFileInfo(fullPath string, info os.FileInfo) (*fileRecordWrapper, error) {
@@ -1079,7 +1097,8 @@ func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, rem
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	recordWrapper := p.makeRecordWrapper(k, int64(n), time.Now().UnixNano())
+	now := time.Now().UnixNano()
+	recordWrapper := p.makeRecordWrapper(k, int64(n), now, now)
 	p.lruAdd(recordWrapper.fileRecord)
 	return err
 }
@@ -1170,7 +1189,8 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 		closeFn: func(totalBytesWritten int64) error {
 			p.mu.Lock()
 			defer p.mu.Unlock()
-			recordWrapper := p.makeRecordWrapper(k, totalBytesWritten, time.Now().UnixNano())
+			now := time.Now().UnixNano()
+			recordWrapper := p.makeRecordWrapper(k, totalBytesWritten, now, now)
 			p.lruAdd(recordWrapper.fileRecord)
 			return nil
 		},
