@@ -36,9 +36,9 @@ func TestPushBack(t *testing.T) {
 	require.Nil(t, err)
 
 	now := time.Now().UnixNano()
-	require.True(t, l.PushBack("a", 5, now))
-	require.True(t, l.PushBack("b", 4, now))
-	require.False(t, l.PushBack("c", 3, now))
+	require.True(t, l.PushBack("a", 5, now, now))
+	require.True(t, l.PushBack("b", 4, now, now))
+	require.False(t, l.PushBack("c", 3, now, now))
 	require.Equal(t, 1, len(evictions))
 	require.Equal(t, 3, evictions[0])
 }
@@ -53,17 +53,20 @@ func TestGet(t *testing.T) {
 	require.Nil(t, err)
 
 	longTimeAgoNanos := int64(5)
-	l.PushBack("a", 5, longTimeAgoNanos+2)
-	l.PushBack("b", 4, longTimeAgoNanos)
+	now := time.Now().UnixNano()
+	l.PushBack("a", 5, longTimeAgoNanos+2, now)
+	l.PushBack("b", 4, longTimeAgoNanos, now)
 
-	entry, lastAccessTime, exists := l.Get("b")
-	require.True(t, exists)
-	require.Equal(t, longTimeAgoNanos, lastAccessTime)
-	require.Equal(t, 4, entry.(int))
+	entry := l.Get("b")
+	require.NotNil(t, entry)
+	require.Equal(t, longTimeAgoNanos, entry.LastAccessedNanos)
+	require.Equal(t, now, entry.LastModifiedNanos)
+	require.Equal(t, 4, entry.Value.(int))
 
 	// Verify that lastAccessTime was updated from the last Get
-	entry, lastAccessTime, exists = l.Get("b")
-	require.True(t, exists)
-	require.Greater(t, lastAccessTime, longTimeAgoNanos)
-	require.Equal(t, 4, entry.(int))
+	entry = l.Get("b")
+	require.NotNil(t, entry)
+	require.Greater(t, entry.LastAccessedNanos, longTimeAgoNanos)
+	require.Equal(t, now, entry.LastModifiedNanos)
+	require.Equal(t, 4, entry.Value.(int))
 }
