@@ -411,21 +411,27 @@ func (s3c *S3Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) 
 	return c, err
 }
 
+// TODO - Write last access time
 func (s3c *S3Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	ok, size, err := s3c.contains(ctx, d)
+	ok, metadata, err := s3c.contains(ctx, d)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
-	return &interfaces.CacheMetadata{SizeBytes: size}, nil
+	return &interfaces.CacheMetadata{SizeBytes: metadata.sizeBytes, LastModifyTimeUsec: metadata.lastModifiedUsec}, nil
 }
 
-func (s3c *S3Cache) contains(ctx context.Context, d *repb.Digest) (bool, int64, error) {
+type s3Metadata struct {
+	sizeBytes        int64
+	lastModifiedUsec int64
+}
+
+func (s3c *S3Cache) contains(ctx context.Context, d *repb.Digest) (bool, *s3Metadata, error) {
 	key, err := s3c.key(ctx, d)
 	if err != nil {
-		return false, 0, err
+		return false, nil, err
 	}
 	params := &s3.HeadObjectInput{
 		Bucket: s3c.bucket,
@@ -434,18 +440,19 @@ func (s3c *S3Cache) contains(ctx context.Context, d *repb.Digest) (bool, int64, 
 
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
+	// Can get last modified
 	head, err := s3c.s3.HeadObjectWithContext(ctx, params)
 	if err != nil {
 		if isNotFoundErr(err) {
-			return false, 0, nil
+			return false, nil, nil
 		}
-		return false, 0, err
+		return false, nil, err
 	}
 	bumped := s3c.bumpTTLIfStale(ctx, key, *head.LastModified)
 	if bumped {
-		return true, *head.ContentLength, nil
+		return true, &s3Metadata{sizeBytes: *head.ContentLength, lastModifiedUsec: head.LastModified.UnixMicro()}, nil
 	}
-	return false, 0, nil
+	return false, nil, nil
 }
 
 func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
