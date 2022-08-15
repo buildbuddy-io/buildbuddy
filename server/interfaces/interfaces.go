@@ -793,9 +793,9 @@ type LRU interface {
 	// indicates if the value was successfully added.
 	PushBack(key, value interface{}, lastAccessedNanos int64) bool
 
-	// Gets a value from the LRU, returns a boolean indicating if the value
+	// Gets a value from the LRU, returns its last access time and a boolean indicating if the value
 	// was present.
-	Get(key interface{}) (interface{}, bool)
+	Get(key interface{}) (interface{}, int64, bool)
 
 	// Returns a boolean indicating if the value is present in the LRU.
 	Contains(key interface{}) bool
