@@ -333,6 +333,7 @@ func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.C
 	return &interfaces.CacheMetadata{
 		SizeBytes:          record.sizeBytes,
 		LastAccessTimeUsec: lruRecordWrapper.lastUseNanos / 1000,
+		LastModifyTimeUsec: record.lastUpdateTimeNanos / 1000,
 	}, nil
 }
 
@@ -421,8 +422,9 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 
 // fileRecord is the data struct we store in the LRU cache
 type fileRecord struct {
-	key       *fileKey
-	sizeBytes int64
+	key                 *fileKey
+	sizeBytes           int64
+	lastUpdateTimeNanos int64
 }
 
 // fileRecordWrapper is a wrapper for fileRecord that contains additional metadata that does not need to be
@@ -500,14 +502,15 @@ func (p *partition) internString(s string) string {
 	return s
 }
 
-func (p *partition) makeRecordWrapper(key *fileKey, sizeBytes int64, lastUse int64, lastModifyTime int64) *fileRecordWrapper {
+func (p *partition) makeRecordWrapper(key *fileKey, sizeBytes int64, lastUseNanos int64, lastModifyNanos int64) *fileRecordWrapper {
 	return &fileRecordWrapper{
 		fileRecord: &fileRecord{
-			key:       key,
-			sizeBytes: sizeBytes,
+			key:                 key,
+			sizeBytes:           sizeBytes,
+			lastUpdateTimeNanos: lastModifyNanos,
 		},
-		lastUseNanos:        lastUse,
-		lastModifyTimeNanos: lastModifyTime,
+		lastUseNanos:        lastUseNanos,
+		lastModifyTimeNanos: lastModifyNanos,
 	}
 }
 
