@@ -115,7 +115,7 @@ func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 		return nil, err
 	}
 	m.lock.Lock()
-	v, contains := m.l.Get(k)
+	v, _, contains := m.l.Get(k)
 	m.lock.Unlock()
 
 	if !contains {
@@ -150,7 +150,7 @@ func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 	m.lock.Lock()
-	v, ok := m.l.Get(k)
+	v, _, ok := m.l.Get(k)
 	m.lock.Unlock()
 	if !ok {
 		return nil, status.NotFoundErrorf("Key %s not found", d)

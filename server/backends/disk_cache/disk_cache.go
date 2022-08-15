@@ -887,7 +887,7 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	// if necessary and applicable.
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	v, ok := p.lru.Get(k.FullPath())
+	v, _, ok := p.lru.Get(k.FullPath())
 	if ok {
 		vr, ok := v.(*fileRecord)
 		if !ok {

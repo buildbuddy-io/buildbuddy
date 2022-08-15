@@ -42,3 +42,28 @@ func TestPushBack(t *testing.T) {
 	require.Equal(t, 1, len(evictions))
 	require.Equal(t, 3, evictions[0])
 }
+
+func TestGet(t *testing.T) {
+	evictions := make([]int, 0)
+	l, err := lru.NewLRU(&lru.Config{
+		MaxSize: 10,
+		OnEvict: func(value interface{}) { evictions = append(evictions, value.(int)) },
+		SizeFn:  func(value interface{}) int64 { return int64(value.(int)) },
+	})
+	require.Nil(t, err)
+
+	longTimeAgoNanos := int64(5)
+	l.PushBack("a", 5, longTimeAgoNanos+2)
+	l.PushBack("b", 4, longTimeAgoNanos)
+
+	entry, lastAccessTime, exists := l.Get("b")
+	require.True(t, exists)
+	require.Equal(t, longTimeAgoNanos, lastAccessTime)
+	require.Equal(t, 4, entry.(int))
+
+	// Verify that lastAccessTime was updated from the last Get
+	entry, lastAccessTime, exists = l.Get("b")
+	require.True(t, exists)
+	require.Greater(t, lastAccessTime, longTimeAgoNanos)
+	require.Equal(t, 4, entry.(int))
+}

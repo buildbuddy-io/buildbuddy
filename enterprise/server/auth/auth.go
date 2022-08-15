@@ -379,7 +379,7 @@ func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
 
 func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
 	c.mu.RLock()
-	v, ok := c.lru.Get(apiKey)
+	v, _, ok := c.lru.Get(apiKey)
 	c.mu.RUnlock()
 	if !ok {
 		return nil, ok

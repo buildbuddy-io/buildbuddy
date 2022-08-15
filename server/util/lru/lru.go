@@ -133,6 +133,7 @@ func (c *LRU) PushBack(key, value interface{}, lastAccessedNanos int64) bool {
 	// Check for existing item
 	if ent, ok := c.lookupItem(pk, ck); ok {
 		ent.Value.(*Entry).value = value
+		ent.Value.(*Entry).lastAccessedNanos = lastAccessedNanos
 		return true
 	}
 
@@ -147,19 +148,22 @@ func (c *LRU) PushBack(key, value interface{}, lastAccessedNanos int64) bool {
 }
 
 // Get looks up a key's value from the cache.
-func (c *LRU) Get(key interface{}) (interface{}, bool) {
+// Returns its last access time and a boolean indicating if the value was present.
+func (c *LRU) Get(key interface{}) (interface{}, int64, bool) {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
-		return nil, false
+		return nil, 0, false
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.moveToFront(ent)
 		if ent.Value.(*Entry) == nil {
-			return nil, false
+			return nil, 0, false
 		}
-		return ent.Value.(*Entry).value, true
+		entry := ent.Value.(*Entry)
+		lastAccessed := entry.lastAccessedNanos
+		c.moveToFront(ent)
+		return entry.value, lastAccessed, true
 	}
-	return nil, false
+	return nil, 0, false
 }
 
 // Contains checks if a key is in the cache.
