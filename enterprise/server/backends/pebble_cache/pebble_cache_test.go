@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"math/rand"
 	"path/filepath"
 	"regexp"
@@ -366,6 +367,53 @@ func TestSizeLimit(t *testing.T) {
 	require.LessOrEqual(t, dirSize, maxSizeBytes)
 }
 
+func TestNoEarlyEviction(t *testing.T) {
+	flags.Set(t, "cache.pebble.atime_update_threshold", 0) // update atime on every access
+	flags.Set(t, "cache.pebble.atime_write_batch_size", 1) // write atime updates synchronously
+	flags.Set(t, "cache.pebble.atime_buffer_size", 0)      // blocking channel of atime updates
+	flags.Set(t, "cache.pebble.min_eviction_age", 0)       // no min eviction age
+
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	numDigests := 10
+	digestSize := int64(100)
+	maxSizeBytes := int64(
+		math.Ceil( // account for integer rounding
+			float64(numDigests) *
+				float64(digestSize) *
+				(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
+
+	rootDir := testfs.MakeTempDir(t)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	// Should be able to add 10 things without anything getting evicted
+	digestKeys := make([]*repb.Digest, numDigests)
+	for i := 0; i < numDigests; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, digestSize)
+		digestKeys[i] = d
+		if err := pc.Set(ctx, d, buf); err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
+		}
+	}
+
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+
+	// Verify that nothing was evicted
+	for _, d := range digestKeys {
+		if _, err := pc.Get(ctx, d); err != nil {
+			t.Fatalf("Error getting %q from cache. May have been improperly evicted early: %s", d.GetHash(), err)
+		}
+	}
+}
+
 func TestLRU(t *testing.T) {
 	flags.Set(t, "cache.pebble.atime_update_threshold", 0) // update atime on every access
 	flags.Set(t, "cache.pebble.atime_write_batch_size", 1) // write atime updates synchronously
@@ -378,7 +426,8 @@ func TestLRU(t *testing.T) {
 
 	numDigests := 100
 	digestSize := 100
-	maxSizeBytes := int64(float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold)) // account for .9 evictor cutoff
+	maxSizeBytes := int64(math.Ceil( // account for integer rounding
+		float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 	rootDir := testfs.MakeTempDir(t)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
