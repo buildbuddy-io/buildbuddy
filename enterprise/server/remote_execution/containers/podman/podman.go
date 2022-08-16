@@ -88,8 +88,8 @@ type optImageCache struct {
 }
 
 func (c *optImageCache) get(key string) (string, error) {
-	if v := c.cache.Get(key); v != nil {
-		return v.Value.(string), nil
+	if v, ok := c.cache.Get(key); ok {
+		return v.(string), nil
 	}
 	return "", nil
 }

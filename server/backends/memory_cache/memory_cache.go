@@ -115,14 +115,14 @@ func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 		return nil, err
 	}
 	m.lock.Lock()
-	v := m.l.Get(k)
+	v, contains := m.l.Get(k)
 	m.lock.Unlock()
 
-	if v == nil {
+	if !contains {
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 
-	vb, ok := v.Value.([]byte)
+	vb, ok := v.([]byte)
 	if !ok {
 		return nil, status.InternalErrorf("not a []byte")
 	}
@@ -150,12 +150,12 @@ func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 		return nil, err
 	}
 	m.lock.Lock()
-	v := m.l.Get(k)
+	v, ok := m.l.Get(k)
 	m.lock.Unlock()
-	if v == nil {
+	if !ok {
 		return nil, status.NotFoundErrorf("Key %s not found", d)
 	}
-	value, ok := v.Value.([]byte)
+	value, ok := v.([]byte)
 	if !ok {
 		return nil, status.InternalErrorf("LRU type assertion failed for %s", d)
 	}

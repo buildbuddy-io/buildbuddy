@@ -195,11 +195,11 @@ func (c *fileCache) FastLinkFile(node *repb.FileNode, outputPath string) (hit bo
 			Inc()
 	}()
 
-	e := c.l.Get(key(node))
-	if e == nil {
+	e, ok := c.l.Get(key(node))
+	if !ok {
 		return false
 	}
-	v, ok := e.Value.(*entry)
+	v, ok := e.(*entry)
 	if !ok {
 		return false
 	}
