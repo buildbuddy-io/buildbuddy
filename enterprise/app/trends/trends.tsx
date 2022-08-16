@@ -6,6 +6,7 @@ import { User } from "../../../app/auth/auth_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
+import PercentilesChartComponent from "./percentile_chart";
 import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 import FilterComponent from "../filter/filter";
@@ -253,7 +254,17 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryName="slowest build duration"
                 onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "") : null}
               />
-
+              <PercentilesChartComponent
+                title="Build Time Percentiles"
+                data={this.state.dates}
+                extractLabel={this.formatShortDate}
+                formatHoverLabel={this.formatLongDate}
+                extractP50={(date) => +this.state.dateToStatMap.get(date)?.p50DurationUsec * SECONDS_PER_MICROSECOND}
+                extractP75={(date) => +this.state.dateToStatMap.get(date)?.p75DurationUsec * SECONDS_PER_MICROSECOND}
+                extractP90={(date) => +this.state.dateToStatMap.get(date)?.p90DurationUsec * SECONDS_PER_MICROSECOND}
+                extractP95={(date) => +this.state.dateToStatMap.get(date)?.p95DurationUsec * SECONDS_PER_MICROSECOND}
+                extractP99={(date) => +this.state.dateToStatMap.get(date)?.p99DurationUsec * SECONDS_PER_MICROSECOND}
+              />
               <CacheChartComponent
                 title="Action Cache"
                 data={this.state.dates}
