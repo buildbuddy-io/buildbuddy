@@ -69,7 +69,7 @@ func (p *PeerSet) GetNextPeerAndHandoff() (string, string) {
 	}
 
 	// Give up if we have already tried enough fallback peers.
-	if len(p.FailedFallbackPeers) > maxFailedFallbackPeers {
+	if len(p.FailedFallbackPeers) >= maxFailedFallbackPeers {
 		return "", ""
 	}
 
