@@ -1261,7 +1261,7 @@ func (p *PebbleCache) TestingWaitForGC() error {
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
-			if totalSizeBytes < int64(float64(maxAllowedSize)*.90) {
+			if totalSizeBytes <= maxAllowedSize {
 				done += 1
 			}
 		}
@@ -1676,6 +1676,7 @@ func (e *partitionEvictor) resampleK(k int) error {
 	return nil
 }
 
+// evict is based off the Redis approximated LRU algorithm
 func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -1736,7 +1737,7 @@ func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
 		totalCount := e.casCount + e.acCount
 		e.mu.Unlock()
 
-		if sizeBytes < int64(float64(maxAllowedSize)*.90) {
+		if sizeBytes <= maxAllowedSize {
 			break
 		}
 
