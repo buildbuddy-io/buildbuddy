@@ -60,7 +60,7 @@ require (
 	github.com/lni/dragonboat/v3 v3.3.4
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-shellwords v1.0.12
-	github.com/mattn/go-sqlite3 v1.14.11
+	github.com/mattn/go-sqlite3 v1.14.12
 	github.com/mdlayher/vsock v1.1.1
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/pkg/errors v0.9.1
@@ -91,9 +91,9 @@ require (
 	google.golang.org/protobuf v1.28.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-	gorm.io/driver/mysql v1.2.0
-	gorm.io/driver/sqlite v1.2.6
-	gorm.io/gorm v1.22.3
+	gorm.io/driver/mysql v1.3.4
+	gorm.io/driver/sqlite v1.3.3
+	gorm.io/gorm v1.23.7
 )
 
 require (
@@ -167,7 +167,7 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jinzhu/configor v1.1.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.4 // indirect
+	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jonboulle/clockwork v0.2.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
