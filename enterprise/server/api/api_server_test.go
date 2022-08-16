@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -21,7 +22,6 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
-	"github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )

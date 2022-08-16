@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If false, disable access to cache delete API.")
+	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
 )
 
 type APIServer struct {
@@ -338,7 +338,7 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 
 func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
 	if !*enableCacheDeleteAPI {
-		return nil, status.PermissionDeniedError("DeleteFile API not enabled for this user")
+		return nil, status.PermissionDeniedError("DeleteFile API not enabled")
 	}
 
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
