@@ -406,10 +406,25 @@ func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time)
 
 func (s3c *S3Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	var err error
+	defer timer.ObserveContains(err)
+
 	metadata, err := s3c.metadata(ctx, d)
-	timer.ObserveContains(err)
-	contains := metadata != nil
-	return contains, err
+	if err != nil || metadata == nil {
+		return false, err
+	}
+
+	// Bump TTL to ensure that referenced blobs are available and will be for some period of time afterwards,
+	// as specified by the protocol description
+	key, err := s3c.key(ctx, d)
+	if err != nil {
+		return false, err
+	}
+	bumped := s3c.bumpTTLIfStale(ctx, key, *metadata.LastModified)
+	if bumped {
+		return true, nil
+	}
+	return false, err
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access time
@@ -446,11 +461,8 @@ func (s3c *S3Cache) metadata(ctx context.Context, d *repb.Digest) (*s3.HeadObjec
 		}
 		return nil, err
 	}
-	bumped := s3c.bumpTTLIfStale(ctx, key, *head.LastModified)
-	if bumped {
-		return head, nil
-	}
-	return nil, nil
+
+	return head, nil
 }
 
 func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
