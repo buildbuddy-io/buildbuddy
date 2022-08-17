@@ -118,7 +118,7 @@ func TestMetadata(t *testing.T) {
 		require.NotZero(t, lastAccessTime1)
 		require.NotZero(t, lastModifyTime1)
 
-		// Last access time should update since last call to Metadata()
+		// Last access time should not update since last call to Metadata()
 		md, err = c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
 		if err != nil {
 			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
@@ -126,10 +126,10 @@ func TestMetadata(t *testing.T) {
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
 		lastModifyTime2 := md.LastModifyTimeUsec
-		require.Greater(t, lastAccessTime2, lastAccessTime1)
+		require.Equal(t, lastAccessTime1, lastAccessTime2)
 		require.Equal(t, lastModifyTime1, lastModifyTime2)
 
-		// After updating data, last modify time should update
+		// After updating data, last access and modify time should update
 		err = c.Set(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
@@ -141,8 +141,8 @@ func TestMetadata(t *testing.T) {
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
 		lastModifyTime3 := md.LastModifyTimeUsec
-		require.Greater(t, lastAccessTime3, lastAccessTime2)
-		require.Greater(t, lastModifyTime3, lastModifyTime2)
+		require.Greater(t, lastAccessTime3, lastAccessTime1)
+		require.Greater(t, lastModifyTime3, lastModifyTime1)
 	}
 }
 

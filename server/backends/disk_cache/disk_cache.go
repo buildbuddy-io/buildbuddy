@@ -311,21 +311,29 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 }
 
 func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	contains, _, err := c.partition.contains(ctx, c.cacheType, c.remoteInstanceName, d)
+	record, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
+	contains := record != nil
 	return contains, err
 }
 
-// TODO(Maggie) - Fix
 func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	_, err := c.partition.key(ctx, c.cacheType, c.remoteInstanceName, d)
+	lruRecord, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
 
+	fileInfo, err := os.Stat(lruRecord.FullPath())
+	if err != nil {
+		return nil, err
+	}
+
+	lastUseNanos := getLastUseNanos(fileInfo)
+	lastModifyNanos := getLastModifyTimeNanos(fileInfo)
+
 	return &interfaces.CacheMetadata{
-		SizeBytes:          0,
-		LastAccessTimeUsec: 0,
-		LastModifyTimeUsec: 0,
+		SizeBytes:          lruRecord.sizeBytes,
+		LastAccessTimeUsec: lastUseNanos / 1000,
+		LastModifyTimeUsec: lastModifyNanos / 1000,
 	}, nil
 }
 
@@ -437,7 +445,7 @@ func sizeFn(value interface{}) int64 {
 	return size
 }
 
-func getLastUse(info os.FileInfo) int64 {
+func getLastUseNanos(info os.FileInfo) int64 {
 	stat := info.Sys().(*syscall.Stat_t)
 	// Super Gross! https://github.com/golang/go/issues/31735
 	value := reflect.ValueOf(stat)
@@ -445,6 +453,21 @@ func getLastUse(info os.FileInfo) int64 {
 	if timeField := value.Elem().FieldByName("Atimespec"); timeField.IsValid() {
 		ts = timeField.Interface().(syscall.Timespec)
 	} else if timeField := value.Elem().FieldByName("Atim"); timeField.IsValid() {
+		ts = timeField.Interface().(syscall.Timespec)
+	} else {
+		ts = syscall.Timespec{}
+	}
+	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
+}
+
+func getLastModifyTimeNanos(info os.FileInfo) int64 {
+	stat := info.Sys().(*syscall.Stat_t)
+	// Super Gross! https://github.com/golang/go/issues/31735
+	value := reflect.ValueOf(stat)
+	var ts syscall.Timespec
+	if timeField := value.Elem().FieldByName("Mtimespec"); timeField.IsValid() {
+		ts = timeField.Interface().(syscall.Timespec)
+	} else if timeField := value.Elem().FieldByName("Mtim"); timeField.IsValid() {
 		ts = timeField.Interface().(syscall.Timespec)
 	} else {
 		ts = syscall.Timespec{}
@@ -463,7 +486,7 @@ func (p *partition) evictFn(value interface{}) {
 	if v, ok := value.(*fileRecord); ok {
 		i, err := os.Stat(v.FullPath())
 		if err == nil {
-			lastUse := time.Unix(0, getLastUse(i))
+			lastUse := time.Unix(0, getLastUseNanos(i))
 			ageUsec := float64(time.Now().Sub(lastUse).Microseconds())
 			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id}).Set(ageUsec)
 		}
@@ -491,7 +514,7 @@ func (p *partition) makeTimestampedRecordFromPathAndFileInfo(fullPath string, in
 	}
 	return &timestampedFileRecord{
 		fileRecord:   makeRecord(fk, info.Size()),
-		lastUseNanos: getLastUse(info),
+		lastUseNanos: getLastUseNanos(info),
 	}, nil
 }
 
@@ -766,8 +789,8 @@ func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
 				},
 			},
 			SizeBytes:      info.Size(),
-			LastAccessUsec: getLastUse(info),
-			LastModifyUsec: getLastModifyTime(info),
+			LastAccessUsec: getLastUseNanos(info),
+			LastModifyUsec: getLastModifyTimeNanos(info),
 		}
 		scanned <- fm
 		return nil
@@ -849,28 +872,28 @@ func (p *partition) lruAdd(record *fileRecord) {
 
 // Adds a single file, using the provided path, to the LRU.
 // NB: Callers are responsible for locking the LRU before calling this function.
-func (p *partition) addFileToLRUIfExists(key *fileKey) (bool, int64) {
+func (p *partition) addFileToLRUIfExists(key *fileKey) *fileRecord {
 	if p.diskIsMapped {
-		return false, 0
+		return nil
 	}
 	info, err := os.Stat(key.FullPath())
 	if err == nil {
 		if info.Size() == 0 {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
-			return false, 0
+			return nil
 		}
 		record := makeRecord(key, info.Size())
 		p.fileChannel <- record
 		p.lruAdd(record)
-		return true, record.sizeBytes
+		return record
 	}
-	return false, 0
+	return nil
 }
 
-func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (bool, int64, error) {
+func (p *partition) lruGet(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (*fileRecord, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
-		return false, 0, err
+		return nil, err
 	}
 	// Bazel does frequent "contains" checks, so we want to make this fast.
 	// We could check the disk and see if the file exists, because it's
@@ -891,18 +914,18 @@ func (p *partition) contains(ctx context.Context, cacheType interfaces.CacheType
 	if ok {
 		vr, ok := v.(*fileRecord)
 		if !ok {
-			return false, 0, status.InternalErrorf("not a *fileRecord")
+			return nil, status.InternalErrorf("not a *fileRecord")
 		}
-		return true, vr.sizeBytes, nil
+		return vr, nil
 	}
 	if !p.diskIsMapped {
 		// OK if we're here it means the disk contents are still being loaded
 		// into the LRU. But we still need to return an answer! So we'll go
 		// check the FS, and if the file is there we'll add it to the LRU.
-		ok, sizeBytes := p.addFileToLRUIfExists(k)
-		return ok, sizeBytes, nil
+		lruRecord := p.addFileToLRUIfExists(k)
+		return lruRecord, nil
 	}
-	return false, 0, nil
+	return nil, nil
 }
 
 func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) ([]*repb.Digest, error) {
@@ -913,13 +936,13 @@ func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheT
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				exists, _, err := p.contains(ctx, cacheType, remoteInstanceName, d)
-				// NotFoundError is never returned from contains above, so
+				record, err := p.lruGet(ctx, cacheType, remoteInstanceName, d)
+				// NotFoundError is never returned from lruGet above, so
 				// we don't check for it.
 				if err != nil {
 					return err
 				}
-				if !exists {
+				if record == nil {
 					lock.Lock()
 					missing = append(missing, d)
 					lock.Unlock()

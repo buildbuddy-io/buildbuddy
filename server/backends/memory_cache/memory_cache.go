@@ -126,11 +126,7 @@ func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	if !ok {
 		return nil, status.InternalErrorf("not a []byte")
 	}
-	return &interfaces.CacheMetadata{
-		SizeBytes:          int64(len(vb)),
-		LastAccessTimeUsec: v.LastAccessedNanos / 1000,
-		LastModifyTimeUsec: v.LastModifiedNanos / 1000,
-	}, nil
+	return &interfaces.CacheMetadata{SizeBytes: int64(len(vb))}, nil
 }
 
 func (m *MemoryCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
