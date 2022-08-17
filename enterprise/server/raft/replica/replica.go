@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -30,10 +29,10 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	peerReadTimeout = 60 * time.Second
-)
-
+// Replicas need a reference back to the Store that holds them in order to
+// add and remove themselves, read files from peers, etc. In order to make this
+// more easily testable in a standalone fashion, IStore mocks out just the
+// necessary methods.
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
@@ -110,8 +109,7 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 		return nil, status.NotFoundError("Key not found (empty)")
 	}
 
-	// We need to copy the value from pebble before
-	// closer is closed.
+	// We need to copy the value from pebble before closer is closed.
 	val := make([]byte, len(buf))
 	copy(val, buf)
 	return val, nil
