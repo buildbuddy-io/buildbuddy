@@ -203,7 +203,6 @@ type Group struct {
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	// Do not migratie from tinyint(1) -> boolean
 	UseGroupOwnedExecutors *bool `gorm:"type:tinyint(1)"`
 
 	// The SAML IDP Metadata URL for this group.
@@ -326,9 +325,8 @@ type APIKey struct {
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
-	Capabilities int32 `gorm:"default:1"`
-	// Do not migrate from tinyint(1) -> boolean
-	VisibleToDevelopers bool `gorm:"not null;default:0;type:tinyint(1)"`
+	Capabilities        int32 `gorm:"default:1"`
+	VisibleToDevelopers bool  `gorm:"not null;default:0;type:tinyint(1)"`
 }
 
 func (k *APIKey) TableName() string {
@@ -348,9 +346,7 @@ type Execution struct {
 	StatusMessage           string
 	SerializedStatusDetails []byte `gorm:"size:max"`
 
-	// deprecated
-	// do not migrate from text -> longblob
-	SerializedOperation []byte `gorm:"size:max;type:text"`
+	SerializedOperation []byte `gorm:"size:max;type:text"` // deprecated
 	Model
 
 	Stage int64 `gorm:"index:executions_invocation_id_stage"`
@@ -386,7 +382,6 @@ type Execution struct {
 	StatusCode int32
 	ExitCode   int32
 
-	// Do not migrate from tinyint(1) -> boolean
 	CachedResult bool `gorm:"type:tinyint(1)"`
 	DoNotCache   bool `gorm:"type:tinyint(1)"`
 }
