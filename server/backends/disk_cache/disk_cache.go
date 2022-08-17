@@ -321,6 +321,9 @@ func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.C
 	if err != nil {
 		return nil, err
 	}
+	if lruRecord == nil {
+		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
+	}
 
 	fileInfo, err := os.Stat(lruRecord.FullPath())
 	if err != nil {

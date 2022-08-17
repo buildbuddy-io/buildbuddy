@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -144,6 +145,29 @@ func TestMetadata(t *testing.T) {
 		require.Greater(t, lastAccessTime3, lastAccessTime1)
 		require.Greater(t, lastModifyTime3, lastModifyTime1)
 	}
+}
+
+func TestMetadataFileDoesNotExist(t *testing.T) {
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testSize := int64(100)
+	d, _ := testdigest.NewRandomDigestBuf(t, testSize)
+
+	md, err := c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, md)
 }
 
 func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
