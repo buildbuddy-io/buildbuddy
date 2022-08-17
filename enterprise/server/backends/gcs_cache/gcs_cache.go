@@ -323,10 +323,10 @@ func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) 
 	return true
 }
 
-func (g *GCSCache) contains(ctx context.Context, d *repb.Digest) (bool, int64, error) {
+func (g *GCSCache) metadata(ctx context.Context, d *repb.Digest) (*storage.ObjectAttrs, error) {
 	k, err := g.key(ctx, d)
 	if err != nil {
-		return false, 0, err
+		return nil, err
 	}
 	finalErr := error(nil)
 	numAttempts := 0
@@ -339,13 +339,13 @@ func (g *GCSCache) contains(ctx context.Context, d *repb.Digest) (bool, int64, e
 		numAttempts++
 		finalErr = err
 		if err == storage.ErrObjectNotExist {
-			return false, 0, nil
+			return nil, nil
 		} else if err == nil {
 			bumped := g.bumpTTLIfStale(ctx, k, attrs.Created)
 			if bumped {
-				return true, attrs.Size, nil
+				return attrs, nil
 			}
-			return false, 0, nil
+			return nil, nil
 		} else if isRetryableGCSError(err) {
 			log.Printf("Retrying GCS exists, err: %s", err.Error())
 			continue
@@ -353,23 +353,28 @@ func (g *GCSCache) contains(ctx context.Context, d *repb.Digest) (bool, int64, e
 		break
 	}
 	cache_metrics.RecordSetRetries(cacheLabels, numAttempts-1)
-	return false, 0, finalErr
+	return nil, finalErr
 }
 
 func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	exists, _, err := g.contains(ctx, d)
-	return exists, err
+	metadata, err := g.metadata(ctx, d)
+	contains := metadata != nil
+	return contains, err
 }
 
+// TODO(buildbuddy-internal#1485) - Add last access time
 func (g *GCSCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	exists, size, err := g.contains(ctx, d)
+	metadata, err := g.metadata(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	if !exists {
+	if metadata == nil {
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
-	return &interfaces.CacheMetadata{SizeBytes: size}, nil
+	return &interfaces.CacheMetadata{
+		SizeBytes:          metadata.Size,
+		LastModifyTimeUsec: metadata.Updated.UnixMicro(),
+	}, nil
 }
 
 func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {

@@ -173,7 +173,23 @@ func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.Cache
 	if err != nil {
 		return nil, err
 	}
-	return &interfaces.CacheMetadata{SizeBytes: blobLen}, nil
+
+	secondsSinceLastAccess, err := c.rdb.ObjectIdleTime(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+	lastAccessTimeUsec := time.Now().Add(-secondsSinceLastAccess).UnixMicro()
+
+	lastModifyTimeSec, err := c.rdb.LastSave(ctx).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	return &interfaces.CacheMetadata{
+		SizeBytes:          blobLen,
+		LastAccessTimeUsec: lastAccessTimeUsec,
+		LastModifyTimeUsec: lastModifyTimeSec * 1e6,
+	}, nil
 }
 
 func update(old, new map[string]bool) {
