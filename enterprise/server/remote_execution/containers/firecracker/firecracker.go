@@ -162,6 +162,38 @@ var (
 	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
 )
 
+// WaitForSocket waits for the given file to exist
+func (c *FirecrackerContainer) WaitForSocket(timeout time.Duration, exitchan chan error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+
+	defer func() {
+		cancel()
+		ticker.Stop()
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-exitchan:
+			return err
+		case <-ticker.C:
+			if _, err := os.Stat(c.machine.Cfg.SocketPath); err != nil {
+				continue
+			}
+
+			// Send test HTTP request to make sure socket is available
+			if _, err := c.client.GetMachineConfiguration(); err != nil {
+				continue
+			}
+
+			return nil
+		}
+	}
+}
+
 func openFile(ctx context.Context, env environment.Env, fileName string) (io.ReadCloser, error) {
 	// If the file exists on the filesystem, use that.
 	if path, err := exec.LookPath(fileName); err == nil {
@@ -284,6 +316,7 @@ type FirecrackerContainer struct {
 
 	jailerRoot           string            // the root dir the jailer will work in
 	machine              *fcclient.Machine // the firecracker machine object.
+	client               *fcclient.Client
 	vmLog                *VMLog
 	env                  environment.Env
 	imageCacheAuth       *container.ImageCacheAuthenticator
@@ -588,6 +621,12 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 			ExecFile:       firecrackerBinPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
 		},
+		Snapshot: fcclient.SnapshotConfig{
+			MemFilePath:         fullMemSnapshotName,
+			SnapshotPath:        vmStateSnapshotName,
+			EnableDiffSnapshots: true,
+			ResumeVM:            false,
+		},
 		ForwardSignals: make([]os.Signal, 0),
 	}
 
@@ -610,8 +649,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 
 	vmCtx := context.Background()
 	cmd := c.getJailerCommand(vmCtx)
+	logger := getLogrusLogger(c.constants.DebugMode)
+	c.client = fcclient.NewClient(cfg.SocketPath, logger, false)
 	machineOpts := []fcclient.Opt{
-		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
+		fcclient.WithClient(c.client),
+		fcclient.WithLogger(logger),
 		fcclient.WithProcessRunner(cmd),
 	}
 
@@ -648,14 +690,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 
 	socketWaitStart := time.Now()
 	errCh := make(chan error)
-	if err := c.machine.WaitForSocket(firecrackerSocketWaitTimeout, errCh); err != nil {
+	if err := c.WaitForSocket(firecrackerSocketWaitTimeout, errCh); err != nil {
 		return status.InternalErrorf("timeout waiting for firecracker socket: %s", err)
 	}
 	log.Debugf("waitforsocket took %s", time.Since(socketWaitStart))
-	enableDiffSnapshotsOpt := func(params *operations.LoadSnapshotParams) {
-		params.Body.EnableDiffSnapshots = true
-	}
-	if err := c.machine.LoadSnapshot(ctx, fullMemSnapshotName, vmStateSnapshotName, enableDiffSnapshotsOpt); err != nil {
+	if err := fcclient.LoadSnapshotHandler.Fn(ctx, c.machine); err != nil {
 		return status.InternalErrorf("error loading snapshot: %s", err)
 	}
 	if err := c.machine.ResumeVM(ctx); err != nil {
@@ -835,19 +874,19 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 		// Note: ordering in this list determines the device lettering
 		// (/dev/vda, /dev/vdb, /dev/vdc, ...)
 		Drives: []fcmodels.Drive{
-			fcmodels.Drive{
+			{
 				DriveID:      fcclient.String(containerDriveID),
 				PathOnHost:   &containerFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(true),
 			},
-			fcmodels.Drive{
+			{
 				DriveID:      fcclient.String(scratchDriveID),
 				PathOnHost:   &scratchFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(false),
 			},
-			fcmodels.Drive{
+			{
 				DriveID:      fcclient.String(workspaceDriveID),
 				PathOnHost:   &workspaceFS,
 				IsRootDevice: fcclient.Bool(false),
@@ -855,9 +894,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			},
 		},
 		VsockDevices: []fcclient.VsockDevice{
-			fcclient.VsockDevice{
-				Path: firecrackerVSockPath,
-			},
+			{Path: firecrackerVSockPath},
 		},
 		JailerCfg: &fcclient.JailerConfig{
 			JailerBinary:   jailerBinPath,
@@ -872,7 +909,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 		MachineCfg: fcmodels.MachineConfiguration{
 			VcpuCount:       fcclient.Int64(c.constants.NumCPUs),
 			MemSizeMib:      fcclient.Int64(c.constants.MemSizeMB),
-			HtEnabled:       fcclient.Bool(false),
+			Smt:             fcclient.Bool(false),
 			TrackDirtyPages: true,
 		},
 	}
