@@ -58,6 +58,7 @@ var (
 	maxIdleConns           = flag.Int("database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
 	connMaxLifetimeSeconds = flag.Int("database.conn_max_lifetime_seconds", 0, "The maximum lifetime of a connection to the db")
 	logQueries             = flag.Bool("database.log_queries", false, "If true, log all queries")
+	slowQueryThreshold     = flag.Duration("database.slow_query_threshold", 500*time.Millisecond, "Queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
 	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
@@ -291,7 +292,7 @@ func openDB(dialect string, connString string) (*gorm.DB, error) {
 	gormLogger := logger.New(
 		golog.New(os.Stderr, "\r\n", golog.LstdFlags),
 		logger.Config{
-			SlowThreshold: 500 * time.Millisecond,
+			SlowThreshold: *slowQueryThreshold,
 			LogLevel:      logger.Warn,
 			// Disable log colors when structured logging is enabled.
 			Colorful: *log.EnableStructuredLogging,
