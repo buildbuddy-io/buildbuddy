@@ -202,7 +202,7 @@ func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(clusterID)
 }
 
-// We need to implement the RangeTracker interface so that stores opened and
+// We need to implement the Add/RemoveRange interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -551,7 +551,7 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 		if writeCloser == nil {
 			// It's expected that clients will directly write bytes
 			// to all replicas in a range and then syncpropose a
-			// write which confirms the data is inplace. For that
+			// write which confirms the data is in place. For that
 			// reason, we don't check if the range is leased here.
 			r, err := s.GetReplica(req.GetHeader().GetRangeId())
 			if err != nil {
