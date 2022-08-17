@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/log",
         "//server/util/network",
+        "//server/util/statusz",
         "@com_github_hashicorp_memberlist//:memberlist",
         "@com_github_hashicorp_serf//serf",
     ],
