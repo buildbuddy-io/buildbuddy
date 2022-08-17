@@ -383,7 +383,7 @@ func (s3c *S3Cache) delete(ctx context.Context, key string) error {
 }
 
 func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) bool {
-	if int64(time.Since(t).Hours()) < 24*s3c.ttlInDays/2 {
+	if s3c.ttlInDays == 0 || int64(time.Since(t).Hours()) < 24*s3c.ttlInDays/2 {
 		return true
 	}
 	input := &s3.CopyObjectInput{
