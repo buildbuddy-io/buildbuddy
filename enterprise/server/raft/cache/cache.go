@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
+	"github.com/google/uuid"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -157,9 +158,13 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.raftAddress = net.JoinHostPort(listenHost, strconv.Itoa(conf.HTTPPort))
 	rc.grpcAddress = net.JoinHostPort(listenHost, strconv.Itoa(conf.GRPCPort))
 
+	u, err := uuid.NewRandom()
+	if err != nil {
+                return nil, err
+	}
 	// Initialize a gossip manager, which will contact other nodes
 	// and exchange information.
-	gossipManager, err := gossip.NewGossipManager(conf.ListenAddress, conf.Join)
+	gossipManager, err := gossip.NewGossipManager(u.String(), conf.ListenAddress, conf.Join)
 	if err != nil {
 		return nil, err
 	}

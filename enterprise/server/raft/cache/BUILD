@@ -30,6 +30,7 @@ go_library(
         "//server/util/network",
         "//server/util/status",
         "//server/util/statusz",
+        "@com_github_google_uuid//:uuid",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//config",
         "@com_github_lni_dragonboat_v3//raftio",
