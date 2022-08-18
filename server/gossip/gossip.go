@@ -123,7 +123,7 @@ func (gm *GossipManager) Statusz(ctx context.Context) string {
 	buf += "Tags:\n"
 	tagStrings := make([]string, len(gm.getTags()))
 	for tagKey, tagValue := range gm.getTags() {
-		tagStrings = append(tagStrings, fmt.Sprintf("Tag: %q => %q", tagKey, tagValue))
+		tagStrings = append(tagStrings, fmt.Sprintf("\t%q => %q\n", tagKey, tagValue))
 	}
 	sort.Strings(tagStrings)
 	for _, tagString := range tagStrings {
