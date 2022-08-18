@@ -449,6 +449,13 @@ func getLastUse(info os.FileInfo) int64 {
 	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
 }
 
+func makeRecord(key *fileKey, sizeBytes int64) *fileRecord {
+	return &fileRecord{
+		key:       key,
+		sizeBytes: sizeBytes,
+	}
+}
+
 func (p *partition) evictFn(value interface{}) {
 	if v, ok := value.(*fileRecord); ok {
 		i, err := os.Stat(v.FullPath())
@@ -474,26 +481,15 @@ func (p *partition) internString(s string) string {
 	return s
 }
 
-func (p *partition) makeTimestampedRecord(key *fileKey, sizeBytes int64, lastUse int64) *timestampedFileRecord {
-	return &timestampedFileRecord{
-		fileRecord: &fileRecord{
-			key:       key,
-			sizeBytes: sizeBytes,
-		},
-		lastUseNanos: lastUse,
-	}
-}
-
-func (p *partition) makeTimestampedRecordFromFileInfo(key *fileKey, info os.FileInfo) *timestampedFileRecord {
-	return p.makeTimestampedRecord(key, info.Size(), getLastUse(info))
-}
-
 func (p *partition) makeTimestampedRecordFromPathAndFileInfo(fullPath string, info os.FileInfo) (*timestampedFileRecord, error) {
 	fk := &fileKey{}
 	if err := fk.FromPartitionAndPath(p, fullPath); err != nil {
 		return nil, err
 	}
-	return p.makeTimestampedRecordFromFileInfo(fk, info), nil
+	return &timestampedFileRecord{
+		fileRecord:   makeRecord(fk, info.Size()),
+		lastUseNanos: getLastUse(info),
+	}, nil
 }
 
 func (p *partition) WaitUntilMapped() {
@@ -858,8 +854,7 @@ func (p *partition) addFileToLRUIfExists(key *fileKey) (bool, int64) {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
 			return false, 0
 		}
-		timestampedRecord := p.makeTimestampedRecordFromFileInfo(key, info)
-		record := timestampedRecord.fileRecord
+		record := makeRecord(key, info.Size())
 		p.fileChannel <- record
 		p.lruAdd(record)
 		return true, record.sizeBytes
@@ -1051,11 +1046,11 @@ func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, rem
 		// If we had an error writing the file, just return that.
 		return err
 	}
-	timestampedRecord := p.makeTimestampedRecord(k, int64(n), time.Now().UnixNano())
+	record := makeRecord(k, int64(n))
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.lruAdd(timestampedRecord.fileRecord)
+	p.lruAdd(record)
 	return err
 }
 
@@ -1143,11 +1138,11 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 	return &dbWriteOnClose{
 		WriteCloser: writeCloser,
 		closeFn: func(totalBytesWritten int64) error {
-			timestampedRecord := p.makeTimestampedRecord(k, totalBytesWritten, time.Now().UnixNano())
+			record := makeRecord(k, totalBytesWritten)
 
 			p.mu.Lock()
 			defer p.mu.Unlock()
-			p.lruAdd(timestampedRecord.fileRecord)
+			p.lruAdd(record)
 			return nil
 		},
 	}, nil
