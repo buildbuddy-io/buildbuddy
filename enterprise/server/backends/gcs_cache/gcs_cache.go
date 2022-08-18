@@ -307,7 +307,7 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) bool {
-	if int64(time.Since(t).Hours()) < 24*g.ttlInDays/2 {
+	if g.ttlInDays == 0 || int64(time.Since(t).Hours()) < 24*g.ttlInDays/2 {
 		return true
 	}
 	obj := g.bucketHandle.Object(key)
@@ -341,11 +341,7 @@ func (g *GCSCache) metadata(ctx context.Context, d *repb.Digest) (*storage.Objec
 		if err == storage.ErrObjectNotExist {
 			return nil, nil
 		} else if err == nil {
-			bumped := g.bumpTTLIfStale(ctx, k, attrs.Created)
-			if bumped {
-				return attrs, nil
-			}
-			return nil, nil
+			return attrs, nil
 		} else if isRetryableGCSError(err) {
 			log.Printf("Retrying GCS exists, err: %s", err.Error())
 			continue
@@ -358,8 +354,21 @@ func (g *GCSCache) metadata(ctx context.Context, d *repb.Digest) (*storage.Objec
 
 func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	metadata, err := g.metadata(ctx, d)
-	contains := metadata != nil
-	return contains, err
+	if err != nil || metadata == nil {
+		return false, err
+	}
+
+	// Bump TTL to ensure that referenced blobs are available and will be for some period of time afterwards,
+	// as specified by the protocol description
+	k, err := g.key(ctx, d)
+	if err != nil {
+		return false, err
+	}
+	bumped := g.bumpTTLIfStale(ctx, k, metadata.Created)
+	if bumped {
+		return true, nil
+	}
+	return false, nil
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access time
