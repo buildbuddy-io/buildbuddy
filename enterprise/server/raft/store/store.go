@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sort"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/cockroachdb/pebble"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
@@ -95,7 +97,48 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 	gossipManager.AddListener(s)
 
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&s.leaderUpdatedCB)
+	statusz.AddSection("raft_store", "Store", s)
 	return s
+}
+
+func (s *Store) replicaString(r *replica.Replica) string {
+	ru, err := r.Usage()
+	if err != nil {
+		return "UNKNOWN"
+	}
+	clusterString := fmt.Sprintf("(c%dn%d)", ru.GetReplica().GetClusterId(), ru.GetReplica().GetNodeId())
+	rangeLeaseString := ""
+	if rd := s.lookupRange(ru.GetReplica().GetClusterId()); rd != nil {
+		clusterString = fmt.Sprintf("%d: [%q %q)\t", rd.GetRangeId(), rd.GetLeft(), rd.GetRight()) + clusterString
+		if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok {
+			if rl, ok := rlIface.(*rangelease.Lease); ok {
+				rangeLeaseString = rl.String()
+			}
+		}
+	}
+	mbUsed := ru.GetEstimatedDiskBytesUsed() / 1e6
+	return fmt.Sprintf("\t%s Usage: %dMB, Lease: %s\n", clusterString, mbUsed, rangeLeaseString)
+}
+
+func (s *Store) Statusz(ctx context.Context) string {
+	buf := "<pre>"
+	buf += fmt.Sprintf("NHID: %s\n", s.nodeHost.ID())
+	buf += fmt.Sprintf("Liveness lease: %s\n", s.liveness)
+
+	replicaStrings := make([]string, 0)
+	s.replicas.Range(func(key, value any) bool {
+		if r, ok := value.(*replica.Replica); ok {
+			replicaStrings = append(replicaStrings, s.replicaString(r))
+		}
+		return true
+	})
+	buf += "Replicas:\n"
+	sort.Strings(replicaStrings)
+	for _, replicaString := range replicaStrings {
+		buf += replicaString
+	}
+	buf += "</pre>"
+	return buf
 }
 
 func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {

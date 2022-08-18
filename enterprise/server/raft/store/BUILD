@@ -26,6 +26,7 @@ go_library(
         "//server/util/grpc_server",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/statusz",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//:dragonboat",
