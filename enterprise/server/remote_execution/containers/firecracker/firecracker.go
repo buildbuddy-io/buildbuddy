@@ -625,7 +625,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 			MemFilePath:         fullMemSnapshotName,
 			SnapshotPath:        vmStateSnapshotName,
 			EnableDiffSnapshots: true,
-			ResumeVM:            false,
+			ResumeVM:            true,
 		},
 		ForwardSignals: make([]os.Signal, 0),
 	}
