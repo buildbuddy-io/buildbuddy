@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
 	"google.golang.org/protobuf/proto"
 
@@ -146,7 +147,7 @@ func (cm *clusterMap) String() string {
 	sort.Strings(nhids)
 	buf := ""
 	for _, nhid := range nhids {
-		buf += fmt.Sprintf("%q: %s\n", nhid, strings.Join(nodeStrings[nhid], ", "))
+		buf += fmt.Sprintf("\t%q: %s\n", nhid, strings.Join(nodeStrings[nhid], ", "))
 	}
 	return buf
 }
@@ -413,6 +414,7 @@ func New(store rfspb.ApiServer, gossipManager *gossip.GossipManager, opts Opts) 
 	// Register the node registry as a gossip listener so that it receives
 	// gossip callbacks.
 	gossipManager.AddListener(d)
+	statusz.AddSection("raft_driver", "Placement Driver", d)
 	return d
 }
 
@@ -772,4 +774,40 @@ func (d *Driver) manageClusters() error {
 
 	log.Printf("proposed changes: %+v", changes)
 	return d.modifyCluster(ctx, state, changes)
+}
+
+func (d *Driver) Statusz(ctx context.Context) string {
+	state, err := d.computeState(ctx)
+	if err != nil {
+		return fmt.Sprintf("Error computing state: %s", err)
+	}
+	buf := "<pre>"
+	if len(state.myClusters) == 0 {
+		buf += "no managed clusters</pre>"
+		return buf
+	}
+	buf += fmt.Sprintf("state: %+v\n", state)
+	buf += fmt.Sprintf("cluster map:\n%s\n", d.clusterMap.String())
+	changes := d.proposeChanges(state)
+
+	if len(changes.overloadedReplicas) > 0 {
+		buf += "Overloaded Replicas:\n"
+		for rep, _ := range changes.overloadedReplicas {
+			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+		}
+	}
+	if len(changes.deadReplicas) > 0 {
+		buf += "Dead Replicas:\n"
+		for rep, _ := range changes.deadReplicas {
+			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+		}
+	}
+	if len(changes.moveableReplicas) > 0 {
+		buf += "Moveable Replicas:\n"
+		for rep, _ := range changes.moveableReplicas {
+			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+		}
+	}
+	buf += "</pre>"
+	return buf
 }

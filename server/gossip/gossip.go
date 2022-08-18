@@ -1,13 +1,16 @@
 package gossip
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 
 	"github.com/hashicorp/memberlist"
 	"github.com/hashicorp/serf/serf"
@@ -91,12 +94,50 @@ func (gm *GossipManager) SetTags(tags map[string]string) error {
 	return gm.serfInstance.SetTags(gm.tags)
 }
 
+func (gm *GossipManager) getTags() map[string]string {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+	rmap := make(map[string]string, len(gm.tags))
+	for tagName, tagValue := range gm.tags {
+		rmap[tagName] = tagValue
+	}
+	return rmap
+}
+
 func (gm *GossipManager) SendUserEvent(name string, payload []byte, coalesce bool) error {
 	return gm.serfInstance.UserEvent(name, payload, coalesce)
 }
 
 func (gm *GossipManager) Query(name string, payload []byte, params *serf.QueryParam) (*serf.QueryResponse, error) {
 	return gm.serfInstance.Query(name, payload, params)
+}
+
+func formatMember(m serf.Member) string {
+	return fmt.Sprintf("Name: %s Addr: %s:%d Status: %+v", m.Name, m.Addr.String(), m.Port, m.Status)
+}
+
+func (gm *GossipManager) Statusz(ctx context.Context) string {
+	buf := "<pre>"
+	buf += fmt.Sprintf("Node: %+v\n", formatMember(gm.LocalMember()))
+
+	buf += "Tags:\n"
+	tagStrings := make([]string, len(gm.getTags()))
+	for tagKey, tagValue := range gm.getTags() {
+		tagStrings = append(tagStrings, fmt.Sprintf("\t%q => %q\n", tagKey, tagValue))
+	}
+	sort.Strings(tagStrings)
+	for _, tagString := range tagStrings {
+		buf += tagString
+	}
+
+	buf += "Peers:\n"
+	peers := gm.Members()
+	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
+	for _, peerMember := range peers {
+		buf += fmt.Sprintf("\t%s\n", formatMember(peerMember))
+	}
+	buf += "</pre>"
+	return buf
 }
 
 // Adapt our log writer into one that is compatible with
@@ -173,5 +214,6 @@ func NewGossipManager(listenAddress string, join []string) (*GossipManager, erro
 		}
 	}
 	gossipMan.serfInstance = serfInstance
+	statusz.AddSection("gossip_manager", "Serf Gossip Network", gossipMan)
 	return gossipMan, nil
 }

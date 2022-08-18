@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"path/filepath"
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 
@@ -120,6 +122,7 @@ func Register(env environment.Env) error {
 		return status.InternalErrorf("Error enabling raft cache: %s", err.Error())
 	}
 	env.SetCache(rc)
+	statusz.AddSection("raft_cache", "Raft Cache", rc)
 	env.GetHealthChecker().RegisterShutdownFunction(
 		func(ctx context.Context) error {
 			rc.Stop()
@@ -234,6 +237,18 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return rc.Stop()
 	})
 	return rc, nil
+}
+
+func (rc *RaftCache) Statusz(ctx context.Context) string {
+	buf := "<pre>"
+	buf += fmt.Sprintf("Root directory: %q\n", rc.conf.RootDir)
+	buf += fmt.Sprintf("Listen addr: %q\n", rc.conf.ListenAddress)
+	buf += fmt.Sprintf("Raft (HTTP) port: %d\n", rc.conf.HTTPPort)
+	buf += fmt.Sprintf("GRPC port: %d\n", rc.conf.GRPCPort)
+	buf += fmt.Sprintf("Join: %q\n", strings.Join(rc.conf.Join, ", "))
+	buf += fmt.Sprintf("ClusterStarter complete: %t\n", rc.clusterStarter.Done())
+	buf += "</pre>"
+	return buf
 }
 
 func (rc *RaftCache) Check(ctx context.Context) error {
