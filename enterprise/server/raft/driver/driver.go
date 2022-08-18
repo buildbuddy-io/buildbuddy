@@ -779,11 +779,11 @@ func (d *Driver) manageClusters() error {
 func (d *Driver) Statusz(ctx context.Context) string {
 	state, err := d.computeState(ctx)
 	if err != nil {
-		return "UNKNOWN"
+		return fmt.Sprintf("Error computing state: %s", err)
 	}
 	buf := "<pre>"
 	if len(state.myClusters) == 0 {
-		buf += "<no managed clusters></pre>"
+		buf += "no managed clusters</pre>"
 		return buf
 	}
 	buf += fmt.Sprintf("state: %+v\n", state)
