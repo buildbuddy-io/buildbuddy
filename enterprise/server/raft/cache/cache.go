@@ -246,6 +246,7 @@ func (rc *RaftCache) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("Raft (HTTP) port: %d\n", rc.conf.HTTPPort)
 	buf += fmt.Sprintf("GRPC port: %d\n", rc.conf.GRPCPort)
 	buf += fmt.Sprintf("Join: %q\n", strings.Join(rc.conf.Join, ", "))
+	buf += fmt.Sprintf("ClusterStarter complete: %t\n", rc.clusterStarter.Done())
 	buf += "</pre>"
 	return buf
 }
