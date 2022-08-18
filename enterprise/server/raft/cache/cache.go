@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,9 +33,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/google/uuid"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
-	"github.com/google/uuid"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -44,11 +45,12 @@ import (
 )
 
 var (
-	rootDirectory = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
-	listenAddr    = flag.String("cache.raft.listen_addr", "", "The address to listen for local gossip traffic on. Ex. 'localhost:1991")
-	join          = flagutil.New("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
-	httpPort      = flag.Int("cache.raft.http_port", 0, "The address to listen for HTTP raft traffic. Ex. '1992'")
-	gRPCPort      = flag.Int("cache.raft.grpc_port", 0, "The address to listen for internal API traffic on. Ex. '1993'")
+	rootDirectory       = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
+	listenAddr          = flag.String("cache.raft.listen_addr", "", "The address to listen for local gossip traffic on. Ex. 'localhost:1991")
+	join                = flagutil.New("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+	httpPort            = flag.Int("cache.raft.http_port", 0, "The address to listen for HTTP raft traffic. Ex. '1992'")
+	gRPCPort            = flag.Int("cache.raft.grpc_port", 0, "The address to listen for internal API traffic on. Ex. '1993'")
+	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
 )
 
 const (
@@ -145,6 +147,11 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	if len(conf.Join) < 3 {
 		return nil, status.InvalidArgumentError("Join must contain at least 3 nodes.")
 	}
+	if *clearCacheOnStartup {
+		if err := os.RemoveAll(conf.RootDir); err != nil {
+			return nil, err
+		}
+	}
 	if err := disk.EnsureDirectoryExists(conf.RootDir); err != nil {
 		return nil, err
 	}
@@ -160,7 +167,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	u, err := uuid.NewRandom()
 	if err != nil {
-                return nil, err
+		return nil, err
 	}
 	// Initialize a gossip manager, which will contact other nodes
 	// and exchange information.
