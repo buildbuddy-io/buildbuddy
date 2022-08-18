@@ -227,7 +227,9 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 		return nil, err
 	}
 	return &dcpb.MetadataResponse{
-		SizeBytes: md.SizeBytes,
+		SizeBytes:      md.SizeBytes,
+		LastModifyUsec: md.LastModifyTimeUsec,
+		LastAccessUsec: md.LastAccessTimeUsec,
 	}, nil
 }
 
