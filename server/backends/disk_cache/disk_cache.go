@@ -409,10 +409,17 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 	return p, nil
 }
 
+// fileRecord is the data struct we store in the LRU cache
 type fileRecord struct {
 	key       *fileKey
-	lastUse   int64
 	sizeBytes int64
+}
+
+// timestampedFileRecord is a wrapper for fileRecord that contains additional metadata that does not need to be
+// written in the value field to the LRU cache
+type timestampedFileRecord struct {
+	*fileRecord
+	lastUseNanos int64
 }
 
 func (fr *fileRecord) FullPath() string {
@@ -442,6 +449,13 @@ func getLastUse(info os.FileInfo) int64 {
 	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
 }
 
+func makeRecord(key *fileKey, sizeBytes int64) *fileRecord {
+	return &fileRecord{
+		key:       key,
+		sizeBytes: sizeBytes,
+	}
+}
+
 func (p *partition) evictFn(value interface{}) {
 	if v, ok := value.(*fileRecord); ok {
 		i, err := os.Stat(v.FullPath())
@@ -467,24 +481,15 @@ func (p *partition) internString(s string) string {
 	return s
 }
 
-func (p *partition) makeRecord(key *fileKey, sizeBytes int64, lastUse int64) *fileRecord {
-	return &fileRecord{
-		key:       key,
-		sizeBytes: sizeBytes,
-		lastUse:   lastUse,
-	}
-}
-
-func (p *partition) makeRecordFromFileInfo(key *fileKey, info os.FileInfo) *fileRecord {
-	return p.makeRecord(key, info.Size(), getLastUse(info))
-}
-
-func (p *partition) makeRecordFromPathAndFileInfo(fullPath string, info os.FileInfo) (*fileRecord, error) {
+func (p *partition) makeTimestampedRecordFromPathAndFileInfo(fullPath string, info os.FileInfo) (*timestampedFileRecord, error) {
 	fk := &fileKey{}
 	if err := fk.FromPartitionAndPath(p, fullPath); err != nil {
 		return nil, err
 	}
-	return p.makeRecordFromFileInfo(fk, info), nil
+	return &timestampedFileRecord{
+		fileRecord:   makeRecord(fk, info.Size()),
+		lastUseNanos: getLastUse(info),
+	}, nil
 }
 
 func (p *partition) WaitUntilMapped() {
@@ -515,7 +520,7 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 		return false // should never happen
 	}
 	if fr, ok := value.(*fileRecord); ok {
-		log.Debugf("Delete thread removed item from cache. Last use was: %d", fr.lastUse)
+		log.Debugf("Delete thread removed item from cache with key %v.", fr.key)
 		p.liveRemove(fr)
 	}
 	p.lastGCTime = time.Now()
@@ -545,7 +550,7 @@ func (p *partition) initializeCache() error {
 
 	go func() {
 		start := time.Now()
-		records := make([]*fileRecord, 0)
+		timestampedRecords := make([]*timestampedFileRecord, 0)
 		inFlightRecords := make([]*fileRecord, 0)
 		finishedFileChannel := make(chan struct{})
 		go func() {
@@ -582,14 +587,14 @@ func (p *partition) initializeCache() error {
 				log.Debugf("Skipping 0 length file: %q", path)
 				return nil
 			}
-			fileRecord, err := p.makeRecordFromPathAndFileInfo(path, info)
+			timestampedRecord, err := p.makeTimestampedRecordFromPathAndFileInfo(path, info)
 			if err != nil {
 				log.Debugf("Skipping file: %s", err)
 				return nil
 			}
-			records = append(records, fileRecord)
-			if len(records)%1e6 == 0 {
-				log.Printf("Disk Cache: progress: scanned %d files in %s...", len(records), time.Since(start))
+			timestampedRecords = append(timestampedRecords, timestampedRecord)
+			if len(timestampedRecords)%1e6 == 0 {
+				log.Printf("Disk Cache: progress: scanned %d files in %s...", len(timestampedRecords), time.Since(start))
 			}
 			return nil
 		}
@@ -598,11 +603,12 @@ func (p *partition) initializeCache() error {
 		}
 
 		// Sort entries by descending ATime.
-		sort.Slice(records, func(i, j int) bool { return records[i].lastUse > records[j].lastUse })
+		sort.Slice(timestampedRecords, func(i, j int) bool { return timestampedRecords[i].lastUseNanos > timestampedRecords[j].lastUseNanos })
 
 		p.mu.Lock()
 		// Populate our LRU with everything we scanned from disk, until the LRU reaches capacity.
-		for _, record := range records {
+		for _, timestampedRecord := range timestampedRecords {
+			record := timestampedRecord.fileRecord
 			if added := p.lru.PushBack(record.FullPath(), record); !added {
 				break
 			}
@@ -618,7 +624,7 @@ func (p *partition) initializeCache() error {
 			p.lruAdd(record)
 		}
 		inFlightRecords = nil
-		log.Infof("DiskCache partition %q: loaded %d files in %s", p.id, len(records), time.Since(start))
+		log.Infof("DiskCache partition %q: loaded %d files in %s", p.id, len(timestampedRecords), time.Since(start))
 		log.Infof("Finished initializing disk cache partition %q at %q. Current size: %d (max: %d) bytes", p.id, p.rootDir, p.lru.Size(), p.maxSizeBytes)
 
 		p.diskIsMapped = true
@@ -848,7 +854,7 @@ func (p *partition) addFileToLRUIfExists(key *fileKey) (bool, int64) {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
 			return false, 0
 		}
-		record := p.makeRecordFromFileInfo(key, info)
+		record := makeRecord(key, info.Size())
 		p.fileChannel <- record
 		p.lruAdd(record)
 		return true, record.sizeBytes
@@ -1040,9 +1046,10 @@ func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, rem
 		// If we had an error writing the file, just return that.
 		return err
 	}
+	record := makeRecord(k, int64(n))
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	record := p.makeRecord(k, int64(n), time.Now().UnixNano())
 	p.lruAdd(record)
 	return err
 }
@@ -1131,9 +1138,10 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 	return &dbWriteOnClose{
 		WriteCloser: writeCloser,
 		closeFn: func(totalBytesWritten int64) error {
+			record := makeRecord(k, totalBytesWritten)
+
 			p.mu.Lock()
 			defer p.mu.Unlock()
-			record := p.makeRecord(k, totalBytesWritten, time.Now().UnixNano())
 			p.lruAdd(record)
 			return nil
 		},
