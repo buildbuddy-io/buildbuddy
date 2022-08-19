@@ -128,6 +128,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	return false, err
 }
 
+// TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	key, err := c.key(ctx, d)
 	if err != nil {
