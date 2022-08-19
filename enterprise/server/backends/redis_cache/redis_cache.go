@@ -157,7 +157,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	return found, err
 }
 
-// TODO(buildbuddy-internal#1485) - Add last access time
+// TODO(buildbuddy-internal#1485) - Add last access and modify time
 // Note: Can't use rdb.ObjectIdleTime to calculate last access time, because rdb.StrLen resets the idle time to 0,
 // so this API will always incorrectly set the last access time to the current time
 func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
@@ -177,14 +177,8 @@ func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.Cache
 		return nil, err
 	}
 
-	lastModifyTimeSec, err := c.rdb.LastSave(ctx).Result()
-	if err != nil {
-		return nil, err
-	}
-
 	return &interfaces.CacheMetadata{
-		SizeBytes:          blobLen,
-		LastModifyTimeUsec: lastModifyTimeSec * 1e6,
+		SizeBytes: blobLen,
 	}, nil
 }
 
