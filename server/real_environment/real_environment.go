@@ -2,6 +2,7 @@ package real_environment
 
 import (
 	"context"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"io/fs"
 	"time"
 
@@ -97,6 +98,8 @@ type RealEnv struct {
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
 	registryServer                   rgpb.RegistryServer
+
+	migrationCache *migration_cache.MigrationCache
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -104,7 +107,12 @@ func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 		healthChecker:    h,
 		serverContext:    context.Background(),
 		executionClients: make(map[string]*executionClientConfig, 0),
+		migrationCache:   &migration_cache.MigrationCache{},
 	}
+}
+
+func (r *RealEnv) GetMigrationCache() *migration_cache.MigrationCache {
+	return r.migrationCache
 }
 
 // Required -- no SETTERs for these.

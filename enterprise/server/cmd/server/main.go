@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"io/fs"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
@@ -240,6 +241,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
+	if err := migration_cache.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 	executionService := execution_service.NewExecutionService(realEnv)
 	realEnv.SetExecutionService(executionService)
 

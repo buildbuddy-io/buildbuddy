@@ -2,6 +2,7 @@ package environment
 
 import (
 	"context"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"io/fs"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -140,4 +141,6 @@ type Env interface {
 	SetGRPCSServer(*grpc.Server)
 	GetRegistryServer() rgpb.RegistryServer
 	SetRegistryServer(r rgpb.RegistryServer)
+
+	GetMigrationCache() *migration_cache.MigrationCache
 }

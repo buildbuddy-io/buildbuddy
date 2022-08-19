@@ -13,8 +13,58 @@ storage:
     root_directory: /tmp/buildbuddy_enterprise
   enable_chunked_event_logs: true
 cache:
+  # Sample flow if migration disk -> pebble
+
+  # Begin double writing, and still return data from disk
   disk:
     root_directory: /tmp/buildbuddy-enterprise-cache
+    migration_src: true
+  pebble:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+    migration_dest: true
+
+  # Copy all data from disk -> pebble
+  disk:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+    migration_src: true
+  pebble:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+    migration_dest: true
+  migration_cache:
+    migrate_and_exit: true
+
+  # Double read for a period, fix any bugs, still use disk as source of truth
+  disk:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+    migration_src: true
+  pebble:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+    migration_dest: true
+  migration_cache:
+      double_read_percentage: 0.1
+
+  # Once double reads are stable, keep double writing, but now return data from pebble
+  disk:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+    migration_dest: true
+  pebble:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+    migration_src: true
+
+  # Something goes wrong with pebble - i.e. bug with write logic and we want to stop double writes
+  # and clean up corrupted data in pebble
+  disk:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+  migration:
+     clear_cache_before_migration: true
+
+  # Fully confident with pebble, want to stop double writing to disk
+  pebble:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+
+
+
+
 auth:
   enable_anonymous_usage: true
   enable_self_auth: true
