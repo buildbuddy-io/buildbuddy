@@ -140,15 +140,17 @@ func (c *MigrationCache) Migrate(ctx context.Context, srcRootDir string) error {
 		// Sanity checks on data
 
 		digest, err := parseFilePath(rootDir, path)
-		data, err := c.Src.Get(ctx, digest)
 
+		c.mu.Lock()
+		data, err := c.Src.Get(ctx, digest)
 		c.Dest.Set(ctx, digest, data)
+		c.mu.Unlock()
 
 		return nil
 	}
 	go func() {
 		if err := filepath.WalkDir(srcRootDir, walkFn); err != nil {
-			alert.UnexpectedEvent("disk_cache_error_walking_directory", "err: %s", err)
+			alert.UnexpectedEvent("walking_directory", "err: %s", err)
 		}
 	}()
 	return nil
