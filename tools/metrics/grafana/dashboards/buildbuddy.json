@@ -3570,7 +3570,7 @@
               "refId": "B"
             },
             {
-              "expr": "kube_hpa_status_desired_replicas{region=\"${region}\", hpa=\"${pool}-autoscaler\"}",
+              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"${pool}-autoscaler\"}",
               "interval": "",
               "legendFormat": "Autoscaler target",
               "refId": "C"
