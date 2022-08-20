@@ -118,7 +118,8 @@ func formatMember(m serf.Member) string {
 
 func (gm *GossipManager) Statusz(ctx context.Context) string {
 	buf := "<pre>"
-	buf += fmt.Sprintf("Node: %+v\n", formatMember(gm.LocalMember()))
+	thisNode := gm.LocalMember()
+	buf += fmt.Sprintf("Node: %+v\n", formatMember(thisNode))
 
 	buf += "Tags:\n"
 	tagStrings := make([]string, len(gm.getTags()))
@@ -134,6 +135,9 @@ func (gm *GossipManager) Statusz(ctx context.Context) string {
 	peers := gm.Members()
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
 	for _, peerMember := range peers {
+		if peerMember.Name == thisNode.Name {
+			continue
+		}
 		buf += fmt.Sprintf("\t%s\n", formatMember(peerMember))
 	}
 	buf += "</pre>"
