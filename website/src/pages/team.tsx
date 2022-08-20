@@ -80,7 +80,7 @@ function Team() {
               <div className={common.title}>We're deeply passionate about making developers more productive.</div>
               <div className={common.subtitle}>
                 <br />
-                <b>We're based out of Palo Alto, California. </b>
+                <b>We're based out of San Francisco, California. </b>
                 Prior to starting BuildBuddy — we collectively spent over a decade at Google building products across
                 Android, Google Maps, Search, Google Assistant, Google Cloud, AdWords, and Area 120.
               </div>

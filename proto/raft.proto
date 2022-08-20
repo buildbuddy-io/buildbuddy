@@ -72,6 +72,9 @@ message FileMetadata {
 
   // Last access time of the record.
   int64 last_access_usec = 4;
+
+  // Last modify time of the record
+  int64 last_modify_usec = 5;
 }
 
 message FileWriteRequest {
