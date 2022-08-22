@@ -114,9 +114,9 @@ type Invocation struct {
 	DurationUsec                   int64
 	UploadThroughputBytesPerSecond int64
 	ActionCount                    int64
-	Perms                          int `gorm:"index:perms"`
+	Perms                          int `gorm:"index:perms;type:int(11);default:NULL"`
 	CreatedWithCapabilities        int32
-	RedactionFlags                 int
+	RedactionFlags                 int   `gorm:"default:NULL;type:int(11);default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                int64
 	ActionCacheMisses              int64
@@ -146,8 +146,8 @@ type Invocation struct {
 	TotalUploadUsec                  int64
 	TotalCachedActionExecUsec        int64
 	DownloadThroughputBytesPerSecond int64
-	InvocationUUID                   []byte `gorm:"size:16;uniqueIndex:invocation_invocation_uuid"`
-	Success                          bool
+	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
+	Success                          bool   `gorm:"type:tinyint(1)"`
 	Attempt                          uint64 `gorm:"not null;default:0"`
 	BazelExitCode                    string
 }
@@ -175,7 +175,7 @@ type Group struct {
 	// A unique URL segment that is displayed in group-related URLs.
 	// e.g. "example-org" in app.buildbuddy.com/join/example-org or
 	// "example-org.buildbuddy.com" if we support subdomains in the future.
-	URLIdentifier *string `gorm:"uniqueIndex:url_identifier_unique_index"`
+	URLIdentifier *string `gorm:"default:NULL;unique;uniqueIndex:url_identifier_unique_index;"`
 
 	// The group ID -- a unique ID.
 	GroupID string `gorm:"primaryKey;"`
@@ -199,11 +199,11 @@ type Group struct {
 	GithubToken *string
 	Model
 
-	SharingEnabled bool `gorm:"default:true"`
+	SharingEnabled bool `gorm:"default:1;type:tinyint(1)"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	UseGroupOwnedExecutors *bool
+	UseGroupOwnedExecutors *bool `gorm:"type:tinyint(1)"`
 
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl *string
@@ -318,15 +318,15 @@ type APIKey struct {
 	UserID   string
 	GroupID  string `gorm:"index:api_key_group_id_index"`
 	// The API key token used for authentication.
-	Value string `gorm:"uniqueIndex:api_key_value_index"`
+	Value string `gorm:"default:NULL;unique;uniqueIndex:api_key_value_index;"`
 	Model
-	Perms int
+	Perms int `gorm:"type:int(11);default:NULL"`
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
 	Capabilities        int32 `gorm:"default:1"`
-	VisibleToDevelopers bool  `gorm:"not null;default:false"`
+	VisibleToDevelopers bool  `gorm:"not null;default:0;type:tinyint(1)"`
 }
 
 func (k *APIKey) TableName() string {
@@ -346,7 +346,7 @@ type Execution struct {
 	StatusMessage           string
 	SerializedStatusDetails []byte `gorm:"size:max"`
 
-	SerializedOperation []byte `gorm:"size:max"` // deprecated
+	SerializedOperation []byte `gorm:"size:max;type:text"` // deprecated
 	Model
 
 	Stage int64 `gorm:"index:executions_invocation_id_stage"`
@@ -368,7 +368,7 @@ type Execution struct {
 	EstimatedMilliCPU    int64
 
 	// ExecutedActionMetadata (in addition to Worker above)
-	Perms                              int `gorm:"index:executions_perms"`
+	Perms                              int `gorm:"index:executions_perms;type:int(11);default:NULL"`
 	QueuedTimestampUsec                int64
 	WorkerStartTimestampUsec           int64
 	WorkerCompletedTimestampUsec       int64
@@ -379,10 +379,11 @@ type Execution struct {
 	OutputUploadStartTimestampUsec     int64
 	OutputUploadCompletedTimestampUsec int64
 
-	StatusCode   int32
-	ExitCode     int32
-	CachedResult bool
-	DoNotCache   bool
+	StatusCode int32
+	ExitCode   int32
+
+	CachedResult bool `gorm:"type:tinyint(1)"`
+	DoNotCache   bool `gorm:"type:tinyint(1)"`
 }
 
 func (t *Execution) TableName() string {
@@ -414,10 +415,11 @@ type TelemetryLog struct {
 	RegisteredUserCount int64
 	BazelUserCount      int64
 	BazelHostCount      int64
-	FeatureCacheEnabled bool
-	FeatureRBEEnabled   bool
-	FeatureAPIEnabled   bool
-	FeatureAuthEnabled  bool
+
+	FeatureCacheEnabled bool `gorm:"type:tinyint(1)"`
+	FeatureRBEEnabled   bool `gorm:"type:tinyint(1)"`
+	FeatureAPIEnabled   bool `gorm:"type:tinyint(1)"`
+	FeatureAuthEnabled  bool `gorm:"type:tinyint(1)"`
 }
 
 func (t *TelemetryLog) TableName() string {
@@ -444,7 +446,7 @@ type Target struct {
 	RepoURL  string
 	Label    string
 	Model
-	Perms int `gorm:"index:target_perms"`
+	Perms int `gorm:"index:target_perms;type:int(11);default:NULL"`
 	// TargetID is made up of repoURL + label.
 	TargetID int64 `gorm:"uniqueIndex:target_target_id_group_id_idx,priority:1"`
 }
@@ -480,9 +482,9 @@ type Workflow struct {
 	Name        string
 	Username    string
 	AccessToken string `gorm:"size:4096"`
-	WebhookID   string `gorm:"uniqueIndex:workflow_webhook_id_index"`
+	WebhookID   string `gorm:"default:NULL;unique;uniqueIndex:workflow_webhook_id_index;"`
 	Model
-	Perms int `gorm:"index:workflow_perms"`
+	Perms int `gorm:"index:workflow_perms;type:int(11);default:NULL"`
 	// InstanceNameSuffix is appended to the remote instance name for CI runner
 	// actions associated with this workflow. It can be updated in order to
 	// prevent reusing a bad workspace.

@@ -1,6 +1,7 @@
 package status
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 
@@ -218,4 +219,10 @@ func Message(err error) string {
 		return s.Message()
 	}
 	return err.Error()
+}
+
+// FromContextError converts ctx.Err() to the equivalent gRPC status error.
+func FromContextError(ctx context.Context) error {
+	s := status.FromContextError(ctx.Err())
+	return status.ErrorProto(s.Proto())
 }

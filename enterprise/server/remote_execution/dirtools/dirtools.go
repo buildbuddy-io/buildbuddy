@@ -459,6 +459,9 @@ type BatchFileFetcher struct {
 	instanceName string
 	once         *sync.Once
 	compress     bool
+
+	statsMu sync.Mutex
+	stats   repb.IOStats
 }
 
 // NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
@@ -507,6 +510,16 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	if err != nil {
 		return err
 	}
+
+	ff.statsMu.Lock()
+	for _, fileResponse := range rsp.GetResponses() {
+		if fileResponse.GetStatus().GetCode() != int32(codes.OK) {
+			continue
+		}
+		ff.stats.FileDownloadSizeBytes += fileResponse.GetDigest().GetSizeBytes()
+		ff.stats.FileDownloadCount += 1
+	}
+	ff.statsMu.Unlock()
 
 	fileCache := ff.env.GetFileCache()
 	for _, fileResponse := range rsp.GetResponses() {
@@ -642,6 +655,12 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	return eg.Wait()
 }
 
+func (ff *BatchFileFetcher) GetStats() *repb.IOStats {
+	ff.statsMu.Lock()
+	defer ff.statsMu.Unlock()
+	return proto.Clone(&ff.stats).(*repb.IOStats)
+}
+
 // bytestreamReadFiles reads the given digest from the bytestream and creates
 // files pointing to those contents.
 func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceName string, d *repb.Digest, fps []*FilePointer, opts *DownloadTreeOpts) error {
@@ -669,6 +688,12 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, f); err != nil {
 		return err
 	}
+
+	ff.statsMu.Lock()
+	ff.stats.FileDownloadSizeBytes += d.GetSizeBytes()
+	ff.stats.FileDownloadCount += 1
+	ff.statsMu.Unlock()
+
 	if err := f.Close(); err != nil {
 		return err
 	}
@@ -771,17 +796,11 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 					return
 				}
 				dk := digest.NewKey(d)
-				if _, ok := filesToFetch[dk]; !ok {
-					// TODO: If the fetch is fulfilled via file cache, don't increment
-					// this count.
-					txInfo.BytesTransferred += d.GetSizeBytes()
-				}
 				filesToFetch[dk] = append(filesToFetch[dk], &FilePointer{
 					FileNode:     node,
 					FullPath:     fullPath,
 					RelativePath: relPath,
 				})
-				txInfo.FileCount += 1
 				trackTransfersFn(relPath, node)
 			}(fileNode, parentDir)
 		}
@@ -821,6 +840,9 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	}
 	endTime := time.Now()
 	txInfo.TransferDuration = endTime.Sub(startTime)
+	stats := ff.GetStats()
+	txInfo.BytesTransferred = stats.GetFileDownloadSizeBytes()
+	txInfo.FileCount = stats.GetFileDownloadCount()
 
 	return txInfo, nil
 }

@@ -109,6 +109,7 @@ func (m *MemoryCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 	return contains, nil
 }
 
+// TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	k, err := m.key(ctx, d)
 	if err != nil {
@@ -204,8 +205,11 @@ func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 		return err
 	}
 	m.lock.Lock()
-	m.l.Remove(k)
+	removed := m.l.Remove(k)
 	m.lock.Unlock()
+	if !removed {
+		return status.NotFoundErrorf("digest %s/%d not found in memory cache", d.GetHash(), d.GetSizeBytes())
+	}
 	return nil
 }
 

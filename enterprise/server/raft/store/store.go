@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sort"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/cockroachdb/pebble"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
@@ -95,7 +97,48 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 	gossipManager.AddListener(s)
 
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&s.leaderUpdatedCB)
+	statusz.AddSection("raft_store", "Store", s)
 	return s
+}
+
+func (s *Store) replicaString(r *replica.Replica) string {
+	ru, err := r.Usage()
+	if err != nil {
+		return "UNKNOWN"
+	}
+	clusterString := fmt.Sprintf("(c%dn%d)", ru.GetReplica().GetClusterId(), ru.GetReplica().GetNodeId())
+	rangeLeaseString := ""
+	if rd := s.lookupRange(ru.GetReplica().GetClusterId()); rd != nil {
+		clusterString = fmt.Sprintf("%d: [%q %q)\t", rd.GetRangeId(), rd.GetLeft(), rd.GetRight()) + clusterString
+		if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok {
+			if rl, ok := rlIface.(*rangelease.Lease); ok {
+				rangeLeaseString = rl.String()
+			}
+		}
+	}
+	mbUsed := ru.GetEstimatedDiskBytesUsed() / 1e6
+	return fmt.Sprintf("\t%s Usage: %dMB, Lease: %s\n", clusterString, mbUsed, rangeLeaseString)
+}
+
+func (s *Store) Statusz(ctx context.Context) string {
+	buf := "<pre>"
+	buf += fmt.Sprintf("NHID: %s\n", s.nodeHost.ID())
+	buf += fmt.Sprintf("Liveness lease: %s\n", s.liveness)
+
+	replicaStrings := make([]string, 0)
+	s.replicas.Range(func(key, value any) bool {
+		if r, ok := value.(*replica.Replica); ok {
+			replicaStrings = append(replicaStrings, s.replicaString(r))
+		}
+		return true
+	})
+	buf += "Replicas:\n"
+	sort.Strings(replicaStrings)
+	for _, replicaString := range replicaStrings {
+		buf += replicaString
+	}
+	buf += "</pre>"
+	return buf
 }
 
 func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
@@ -202,7 +245,7 @@ func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(clusterID)
 }
 
-// We need to implement the RangeTracker interface so that stores opened and
+// We need to implement the Add/RemoveRange interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -551,7 +594,7 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 		if writeCloser == nil {
 			// It's expected that clients will directly write bytes
 			// to all replicas in a range and then syncpropose a
-			// write which confirms the data is inplace. For that
+			// write which confirms the data is in place. For that
 			// reason, we don't check if the range is leased here.
 			r, err := s.GetReplica(req.GetHeader().GetRangeId())
 			if err != nil {

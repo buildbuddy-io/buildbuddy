@@ -819,3 +819,54 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, exists)
 }
+
+func TestMetadata(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Fatalf("error attaching user prefix: %v", err)
+	}
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	if err := c.StartListening(); err != nil {
+		t.Fatalf("Error setting up cacheproxy: %s", err)
+	}
+	waitUntilServerIsAlive(peer)
+
+	remoteInstanceName := "remote/instance"
+	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+	cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
+
+	// Write to the cache
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cache.Set(ctx, d, buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify cacheproxy returns same metadata as underlying cache
+	cacheproxyMetadata, err := c.Metadata(ctx, &dcpb.MetadataRequest{
+		Isolation: isolation,
+		Key: &dcpb.Key{
+			Key:       d.GetHash(),
+			SizeBytes: d.GetSizeBytes(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Error fetching metadata from cacheproxy: %s", err)
+	}
+	cacheMetadata, err := cache.Metadata(ctx, d)
+	if err != nil {
+		t.Fatalf("Error fetching metadata from underlying cache: %s", err)
+	}
+	require.NoError(t, err)
+	require.Equal(t, cacheMetadata.SizeBytes, cacheproxyMetadata.SizeBytes)
+	require.Equal(t, cacheMetadata.LastAccessTimeUsec, cacheproxyMetadata.LastAccessUsec)
+	require.Equal(t, cacheMetadata.LastModifyTimeUsec, cacheproxyMetadata.LastModifyUsec)
+}

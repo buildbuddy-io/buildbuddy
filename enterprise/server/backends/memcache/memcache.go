@@ -3,6 +3,7 @@ package memcache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"sync"
@@ -12,16 +13,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
-var memcacheTargets = flagtypes.Slice("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
+var memcacheTargets = flagutil.New("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
 
 const (
 	mcCutoffSizeBytes = 134217728 - 1 // 128 MB
@@ -127,6 +128,7 @@ func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	return false, err
 }
 
+// TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	key, err := c.key(ctx, d)
 	if err != nil {
@@ -256,7 +258,11 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	return c.mc.Delete(k)
+	err = c.mc.Delete(k)
+	if errors.Is(err, memcache.ErrCacheMiss) {
+		return status.NotFoundErrorf("digest %s/%d not found in memcache: %s", d.GetHash(), d.GetSizeBytes(), err.Error())
+	}
+	return err
 }
 
 // Low level interface used for seeking and stream-writing.

@@ -12,6 +12,7 @@ go_library(
         "//server/gossip",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/statusz",
         "@com_github_hashicorp_serf//serf",
         "@org_golang_google_protobuf//proto",
     ],

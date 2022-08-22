@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -113,7 +114,61 @@ func TestMetadata(t *testing.T) {
 			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
 		}
 		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime1 := md.LastAccessTimeUsec
+		lastModifyTime1 := md.LastModifyTimeUsec
+		require.NotZero(t, lastAccessTime1)
+		require.NotZero(t, lastModifyTime1)
+
+		// Last access time should not update since last call to Metadata()
+		md, err = c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+		if err != nil {
+			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+		}
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime2 := md.LastAccessTimeUsec
+		lastModifyTime2 := md.LastModifyTimeUsec
+		require.Equal(t, lastAccessTime1, lastAccessTime2)
+		require.Equal(t, lastModifyTime1, lastModifyTime2)
+
+		// After updating data, last access and modify time should update
+		time.Sleep(1 * time.Second) // Sleep to guarantee timestamps change
+		err = c.Set(ctx, d, buf)
+		if err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		}
+		md, err = c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+		if err != nil {
+			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+		}
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime3 := md.LastAccessTimeUsec
+		lastModifyTime3 := md.LastModifyTimeUsec
+		require.Greater(t, lastAccessTime3, lastAccessTime1)
+		require.Greater(t, lastModifyTime3, lastModifyTime1)
 	}
+}
+
+func TestMetadataFileDoesNotExist(t *testing.T) {
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testSize := int64(100)
+	d, _ := testdigest.NewRandomDigestBuf(t, testSize)
+
+	md, err := c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, md)
 }
 
 func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {

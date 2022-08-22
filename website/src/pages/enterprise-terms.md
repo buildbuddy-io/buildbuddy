@@ -4,13 +4,13 @@ title: Enterprise Terms & Conditions
 
 # Enterprise Terms & Conditions
 
-<div className="pill">Updated December 3, 2020</div>
+<div className="pill">Updated August 18, 2022</div>
 
 ## BUILDBUDDY SUBSCRIPTION LICENSE AGREEMENT
 
 ### v2020-12-03
 
-This License Agreement (“Agreement”) is made between ITERATION, Inc. with a place of business at 2501 Ash St #R3, Palo Alto, CA 94306 (“Company”), and the Customer listed below (“Customer”). This Agreement includes and incorporates the order form signed by the parties hereto (the “Order Form”) for Customer’s subscription to that certain licensed Company software described on such Order Form (the “Product”). The “Effective Date” of this Agreement is the date of Customer’s initial Order Form or the date of Customer’s initial access to the Services, whichever is earlier. There shall be no force or effect to any different terms of any related purchase order or similar form even if signed by the parties after the date hereof.
+This License Agreement (“Agreement”) is made between ITERATION, Inc. with a place of business at 2261 Market Street #4889, San Francisco, CA 94114 (“Company”), and the Customer listed below (“Customer”). This Agreement includes and incorporates the order form signed by the parties hereto (the “Order Form”) for Customer’s subscription to that certain licensed Company software described on such Order Form (the “Product”). The “Effective Date” of this Agreement is the date of Customer’s initial Order Form or the date of Customer’s initial access to the Services, whichever is earlier. There shall be no force or effect to any different terms of any related purchase order or similar form even if signed by the parties after the date hereof.
 
 ## 1. SUBSCRIPTION
 

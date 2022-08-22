@@ -1645,6 +1645,12 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 		scheduleOnConnectedExecutors: false,
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task.serializedTask, opts); err != nil {
+		// Unavailable indicates that it's impossible to schedule the task (no executors in pool).
+		if status.IsUnavailableError(err) {
+			if markErr := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, err); markErr != nil {
+				log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, markErr)
+			}
+		}
 		return err
 	}
 	log.CtxDebugf(ctx, "ReEnqueueTask succeeded for task %q", taskID)

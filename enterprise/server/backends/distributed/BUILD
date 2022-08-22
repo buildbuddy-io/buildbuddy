@@ -20,7 +20,7 @@ go_library(
         "//server/resources",
         "//server/util/background",
         "//server/util/consistent_hash",
-        "//server/util/flagutil/types",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/peerset",
         "//server/util/status",

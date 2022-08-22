@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+import "proto/remote_execution.proto";
+import "proto/cache.proto";
+
+package file;
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Stored file protos. Use caution, these protos may be stored to disk.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+message ResourceName {
+  // The digest (hash + size) of this resource.
+  // Ex. 17547d520cf27d13aaaacbcf47cc33e1918ef98b7f252dfda28824b26052551/188
+  build.bazel.remote.execution.v2.Digest digest = 1;
+
+  // The namespace (remote instance name) this resource is stored in.
+  // Ex. "", "ios/1", "my_remote_instance"
+  string instance_name = 2;
+
+  // The compressor (if any) used to compress the resource data.
+  // Ex. IDENTITY, ZSTD, DEFLATE.
+  build.bazel.remote.execution.v2.Compressor.Value compressor = 3;
+
+  // The cache isolation type of this resource. For now, that can
+  // be either CAS or AC. Other cache types may exist in the future.
+  // Ex. CAS, AC
+  cache.CacheType cache_type = 4;
+}

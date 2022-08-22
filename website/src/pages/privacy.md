@@ -4,7 +4,7 @@ title: Privacy Policy
 
 # Privacy Policy
 
-<div class="pill">Updated April 20, 2020</div>
+<div class="pill">Updated August 18, 2022</div>
 
 This privacy policy (“Policy”) describes how ITERATION, Inc. and its related companies (“Company”) collect, use and share personal information of consumer users of this website, buildbuddy.io (the “Site”). This Policy also applies to any of our other websites that post this Policy. This Policy does not apply to websites that post different statements.
 
@@ -68,8 +68,8 @@ You can typically remove and reject cookies from our Site with your browser sett
 We welcome your comments or questions about this privacy policy to privacy@buildbuddy.io. You may also contact us at our address:
 
 ITERATION, Inc.<br/>
-2501 Ash St. Apt #3<br/>
-Palo Alto, California 94306
+2261 Market Street #4889<br/>
+San Francisco, CA 94114
 
 ## Changes to this Privacy Policy
 
