@@ -142,8 +142,7 @@ message CASResponse {
 message FindSplitPointRequest {}
 
 message FindSplitPointResponse {
-  bytes left = 1;
-  bytes right = 2;
+  bytes split = 1;
 
   int64 left_size_bytes = 3;
   int64 right_size_bytes = 4;
