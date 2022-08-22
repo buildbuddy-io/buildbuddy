@@ -118,7 +118,8 @@ func formatMember(m serf.Member) string {
 
 func (gm *GossipManager) Statusz(ctx context.Context) string {
 	buf := "<pre>"
-	buf += fmt.Sprintf("Node: %+v\n", formatMember(gm.LocalMember()))
+	thisNode := gm.LocalMember()
+	buf += fmt.Sprintf("Node: %+v\n", formatMember(thisNode))
 
 	buf += "Tags:\n"
 	tagStrings := make([]string, len(gm.getTags()))
@@ -134,6 +135,9 @@ func (gm *GossipManager) Statusz(ctx context.Context) string {
 	peers := gm.Members()
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Name < peers[j].Name })
 	for _, peerMember := range peers {
+		if peerMember.Name == thisNode.Name {
+			continue
+		}
 		buf += fmt.Sprintf("\t%s\n", formatMember(peerMember))
 	}
 	buf += "</pre>"
@@ -151,9 +155,9 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	// Gossip logs are very verbose and there is
 	// very little useful info in DEBUG/INFO level logs.
 	if strings.Contains(s, "[DEBUG]") {
-		//		log.Debug(s)
+		// log.Debug(s)
 	} else if strings.Contains(s, "[INFO]") {
-		//		log.Info(s)
+		// log.Info(s)
 	} else {
 		log.Warning(s)
 	}
@@ -161,10 +165,10 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	return len(d), nil
 }
 
-func NewGossipManager(listenAddress string, join []string) (*GossipManager, error) {
+func NewGossipManager(name, listenAddress string, join []string) (*GossipManager, error) {
 	log.Printf("Starting GossipManager on %q", listenAddress)
 
-	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", listenAddress))
+	subLog := log.NamedSubLogger(fmt.Sprintf("GossipManager(%s)", name))
 
 	bindAddr, bindPort, err := network.ParseAddress(listenAddress)
 	if err != nil {
@@ -176,7 +180,7 @@ func NewGossipManager(listenAddress string, join []string) (*GossipManager, erro
 	memberlistConfig.LogOutput = &logWriter{subLog}
 
 	serfConfig := serf.DefaultConfig()
-	serfConfig.NodeName = listenAddress
+	serfConfig.NodeName = name
 	serfConfig.MemberlistConfig = memberlistConfig
 	serfConfig.LogOutput = &logWriter{subLog}
 	// this is the maximum value that serf supports.

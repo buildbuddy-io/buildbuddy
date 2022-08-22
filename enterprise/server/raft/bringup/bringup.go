@@ -3,6 +3,7 @@ package bringup
 import (
 	"context"
 	"fmt"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -68,7 +69,7 @@ func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn db
 	// Only nodes in the "join" list should register as gossip listeners to
 	// be eligible for auto bringup.
 	for _, joinAddr := range cs.join {
-		if cs.listenAddr == joinAddr {
+		if inJoinList, err := cs.matchesListenAddress(joinAddr); err == nil && inJoinList {
 			gossipMan.AddListener(cs)
 			break
 		}
@@ -79,7 +80,7 @@ func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn db
 
 func (cs *ClusterStarter) markBringupComplete() {
 	cs.doneOnce.Do(func() {
-		log.Printf("Bringup is complete on %s", cs.nodeHost.ID())
+		cs.log.Infof("Bringup is complete on %s", cs.nodeHost.ID())
 		close(cs.doneSetup)
 	})
 }
@@ -101,6 +102,66 @@ func (cs *ClusterStarter) rejoinConfiguredClusters() (int, error) {
 	return clustersAlreadyConfigured, nil
 }
 
+func getMyIPs() ([]net.IP, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var myIPs []net.IP
+
+	for _, i := range ifaces {
+		addrs, err := i.Addrs()
+		if err != nil {
+			return nil, err
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			myIPs = append(myIPs, ip)
+		}
+	}
+	return myIPs, nil
+}
+
+func (cs *ClusterStarter) matchesListenAddress(hostAndPort string) (bool, error) {
+	// This is the port we're listening on.
+	_, listenPort, err := net.SplitHostPort(cs.listenAddr)
+	if err != nil {
+		return false, err
+	}
+
+	host, port, err := net.SplitHostPort(hostAndPort)
+	if err != nil {
+		return false, err
+	}
+
+	if port != listenPort {
+		return false, nil
+	}
+
+	addrs, err := net.LookupIP(host)
+	if err != nil {
+		return false, err
+	}
+	myIPs, err := getMyIPs()
+	if err != nil {
+		return false, err
+	}
+	for _, addr := range addrs {
+		for _, myIP := range myIPs {
+			if addr.String() == myIP.String() {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func (cs *ClusterStarter) InitializeClusters() error {
 	// Attempt to rejoin any configured clusters. This looks at what is
 	// stored on disk and attempts to rejoin any clusters that this nodehost
@@ -118,8 +179,10 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	cs.bootstrapped = clustersAlreadyConfigured > 0
 	cs.log.Infof("%d clusters already configured. (bootstrapped: %t)", clustersAlreadyConfigured, cs.bootstrapped)
 
-	isBringupCoordinator := cs.listenAddr == cs.join[0]
-
+	isBringupCoordinator, err := cs.matchesListenAddress(cs.join[0])
+	if err != nil {
+		return err
+	}
 	if cs.bootstrapped || !isBringupCoordinator {
 		cs.markBringupComplete()
 		return nil
@@ -130,12 +193,14 @@ func (cs *ClusterStarter) InitializeClusters() error {
 	// bringup.
 	go func() {
 		for !cs.bootstrapped {
+			cs.log.Debugf("not bootstrapped yet; calling attemptQueryAndBringupOnce")
 			if err := cs.attemptQueryAndBringupOnce(); err != nil {
 				cs.log.Debugf("attemptQueryAndBringupOnce did not succeed yet: %s", err)
 				continue
 			}
 			cs.bootstrapped = true
 			cs.markBringupComplete()
+			cs.log.Debugf("bootstrapping complete")
 		}
 	}()
 	return nil
@@ -378,11 +443,11 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 				},
 			})
 		}
-		log.Debugf("Attempting to start cluster %d on: %+v", clusterID, bootstrapInfo)
+		cs.log.Debugf("Attempting to start cluster %d on: %+v", clusterID, bootstrapInfo)
 		if err := StartCluster(ctx, cs.apiClient, bootstrapInfo, batch); err != nil {
 			return err
 		}
-		log.Debugf("Cluster %d started on: %+v", clusterID, bootstrapInfo)
+		cs.log.Debugf("Cluster %d started on: %+v", clusterID, bootstrapInfo)
 
 		// Increment clusterID, nodeID and rangeID before creating the next cluster.
 		metaRangeBatch := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{

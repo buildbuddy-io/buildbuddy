@@ -5,9 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
+	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,9 +28,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/network"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/google/uuid"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 
@@ -43,11 +42,12 @@ import (
 )
 
 var (
-	rootDirectory = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
-	listenAddr    = flag.String("cache.raft.listen_addr", "", "The address to listen for local gossip traffic on. Ex. 'localhost:1991")
-	join          = flagutil.New("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
-	httpPort      = flag.Int("cache.raft.http_port", 0, "The address to listen for HTTP raft traffic. Ex. '1992'")
-	gRPCPort      = flag.Int("cache.raft.grpc_port", 0, "The address to listen for internal API traffic on. Ex. '1993'")
+	rootDirectory       = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
+	listenAddr          = flag.String("cache.raft.listen_addr", "", "The address to listen for local gossip traffic on. Ex. 'localhost:1991")
+	join                = flagutil.New("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
+	httpAddr            = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
+	gRPCAddr            = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
+	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
 )
 
 const (
@@ -58,15 +58,15 @@ type Config struct {
 	// Required fields.
 	RootDir string
 
-	// Gossip Config
+	// Gossip Address
 	ListenAddress string
 	Join          []string
 
-	// Raft Config
-	HTTPPort int
+	// Raft Address
+	HTTPAddr string
 
-	// GRPC API Config
-	GRPCPort int
+	// GRPC Address
+	GRPCAddr string
 
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
@@ -114,8 +114,8 @@ func Register(env environment.Env) error {
 		RootDir:       *rootDirectory,
 		ListenAddress: *listenAddr,
 		Join:          *join,
-		HTTPPort:      *httpPort,
-		GRPCPort:      *gRPCPort,
+		HTTPAddr:      *httpAddr,
+		GRPCAddr:      *gRPCAddr,
 	}
 	rc, err := NewRaftCache(env, rcConfig)
 	if err != nil {
@@ -144,22 +144,30 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	if len(conf.Join) < 3 {
 		return nil, status.InvalidArgumentError("Join must contain at least 3 nodes.")
 	}
+	if *clearCacheOnStartup {
+		log.Warningf("Clearing cache on startup!")
+		if err := os.RemoveAll(conf.RootDir); err != nil {
+			return nil, err
+		}
+	}
 	if err := disk.EnsureDirectoryExists(conf.RootDir); err != nil {
 		return nil, err
 	}
 
-	// Parse the listenAddress into host and port; we'll listen for grpc and
-	// raft traffic on the same interface but on different ports.
-	listenHost, _, err := network.ParseAddress(conf.ListenAddress)
-	if err != nil {
-		return nil, err
-	}
-	rc.raftAddress = net.JoinHostPort(listenHost, strconv.Itoa(conf.HTTPPort))
-	rc.grpcAddress = net.JoinHostPort(listenHost, strconv.Itoa(conf.GRPCPort))
+	rc.raftAddress = conf.HTTPAddr
+	rc.grpcAddress = conf.GRPCAddr
 
+	myName := os.Getenv("MY_POD_NAME")
+	if myName == "" {
+		u, err := uuid.NewRandom()
+		if err != nil {
+			return nil, err
+		}
+		myName = u.String()
+	}
 	// Initialize a gossip manager, which will contact other nodes
 	// and exchange information.
-	gossipManager, err := gossip.NewGossipManager(conf.ListenAddress, conf.Join)
+	gossipManager, err := gossip.NewGossipManager(myName, conf.ListenAddress, conf.Join)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +228,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
 	rc.clusterStarter = bringup.New(nodeHost, rc.grpcAddress, rc.store.ReplicaFactoryFn, rc.gossipManager, rc.apiClient)
-	rc.clusterStarter.InitializeClusters()
+	if err := rc.clusterStarter.InitializeClusters(); err != nil {
+		return nil, err
+	}
 
 	// start the driver once bringup is complete.
 	rc.driver = driver.New(rc.store, rc.gossipManager, driver.TestingOpts())
@@ -243,8 +253,8 @@ func (rc *RaftCache) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("Root directory: %q\n", rc.conf.RootDir)
 	buf += fmt.Sprintf("Listen addr: %q\n", rc.conf.ListenAddress)
-	buf += fmt.Sprintf("Raft (HTTP) port: %d\n", rc.conf.HTTPPort)
-	buf += fmt.Sprintf("GRPC port: %d\n", rc.conf.GRPCPort)
+	buf += fmt.Sprintf("Raft (HTTP) addr: %s\n", rc.conf.HTTPAddr)
+	buf += fmt.Sprintf("GRPC addr: %s\n", rc.conf.GRPCAddr)
 	buf += fmt.Sprintf("Join: %q\n", strings.Join(rc.conf.Join, ", "))
 	buf += fmt.Sprintf("ClusterStarter complete: %t\n", rc.clusterStarter.Done())
 	buf += "</pre>"
