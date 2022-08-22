@@ -394,7 +394,7 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
-	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
+	fileMetadataKey, err := filestore.FileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}

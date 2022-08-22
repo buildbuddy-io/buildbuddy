@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -354,7 +355,7 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit i
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +383,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +431,7 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -447,7 +448,7 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 
 	missingDigests := make([]*repb.Digest, 0)
 	for _, req := range reqs {
-		fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord()[0])
+		fileMetadataKey, err := filestore.FileMetadataKey(req.GetFileRecord()[0])
 		if err != nil {
 			return nil, err
 		}

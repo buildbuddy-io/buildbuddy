@@ -628,7 +628,7 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 		if err != nil {
 			return err
 		}
-		fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+		fileMetadataKey, err := filestore.FileMetadataKey(fileMetadata.GetFileRecord())
 		if err != nil {
 			return err
 		}
@@ -686,7 +686,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 				if err != nil {
 					return err
 				}
-				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				fileMetadataKey, err := filestore.FileMetadataKey(fileMetadata.GetFileRecord())
 				if err != nil {
 					return err
 				}
@@ -695,7 +695,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 		})
 		p.eg.Go(func() error {
 			return p.batchProcessCh(removes, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
-				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				fileMetadataKey, err := filestore.FileMetadataKey(fileMetadata.GetFileRecord())
 				if err != nil {
 					return err
 				}
@@ -872,7 +872,7 @@ func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 	if err != nil {
 		return false, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 	if err != nil {
 		return false, err
 	}
@@ -894,7 +894,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -929,7 +929,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -971,7 +971,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -1112,7 +1112,7 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 	if err != nil {
 		return err
 	}
@@ -1133,7 +1133,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -1186,7 +1186,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
