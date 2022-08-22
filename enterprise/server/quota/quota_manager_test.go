@@ -55,7 +55,7 @@ func fetchQuotaBuckets(t *testing.T, env *testenv.TestEnv, ctx context.Context, 
 		q.AddWhereClause("namespace = ?", namespace)
 	}
 	qStr, qArgs := q.Build()
-	rows, err := dbh.DB(ctx).Raw(qStr, qArgs).Rows()
+	rows, err := dbh.DB(ctx).Raw(qStr, qArgs...).Rows()
 	require.NoError(t, err)
 
 	for rows.Next() {
