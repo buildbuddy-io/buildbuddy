@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "filestore",
@@ -6,8 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
         "//server/util/disk",
         "//server/util/status",
