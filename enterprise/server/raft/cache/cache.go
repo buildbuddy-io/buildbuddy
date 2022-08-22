@@ -95,7 +95,7 @@ type RaftCache struct {
 	shutdown     chan struct{}
 	shutdownOnce *sync.Once
 
-	fileStorer   filestore.Store
+	fileStorer filestore.Store
 }
 
 // We need to provide a factory method that creates the DynamicNodeRegistry, and

@@ -73,7 +73,7 @@ type Store struct {
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
 
-	fileStorer      filestore.Store
+	fileStorer filestore.Store
 }
 
 func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
@@ -94,7 +94,7 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		replicas: sync.Map{},
 
 		metaRangeData: "",
-		fileStorer:   filestore.New(true /*=includeGroupIDInFilePaths*/),
+		fileStorer:    filestore.New(true /*=includeGroupIDInFilePaths*/),
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)

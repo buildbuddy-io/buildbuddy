@@ -85,7 +85,7 @@ type Replica struct {
 	rangeDescriptor *rfpb.RangeDescriptor
 	mappedRange     *rangemap.Range
 
-	fileStorer      filestore.Store
+	fileStorer filestore.Store
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -1265,14 +1265,14 @@ func (sm *Replica) Close() error {
 // CreateReplica creates an ondisk statemachine.
 func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Replica {
 	return &Replica{
-		closedMu:  &sync.RWMutex{},
-		wg:        sync.WaitGroup{},
-		rootDir:   rootDir,
-		fileDir:   fileDir,
-		clusterID: clusterID,
-		nodeID:    nodeID,
-		store:     store,
-		log:       log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		closedMu:   &sync.RWMutex{},
+		wg:         sync.WaitGroup{},
+		rootDir:    rootDir,
+		fileDir:    fileDir,
+		clusterID:  clusterID,
+		nodeID:     nodeID,
+		store:      store,
+		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 		fileStorer: filestore.New(true /*=includeGroupIDInFilePaths*/),
 	}
 }
