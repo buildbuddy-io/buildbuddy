@@ -413,22 +413,14 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         </>
         {result.lastAccessedTimeUsec ? (
           <>
-            <b>Last accessed</b>{" "}
-            <span>
-              {format.formatDate(new Date(result.lastAccessedTimeUsec / 1000))}
-            </span>
+            <b>Last accessed</b> <span>{format.formatDate(new Date(result.lastAccessedTimeUsec / 1000))}</span>
           </>
-        ) : null
-        }
+        ) : null}
         {result.lastModifiedTimeUsec ? (
-            <>
-              <b>Last modified</b>{" "}
-              <span>
-              {format.formatDate(new Date(result.lastModifiedTimeUsec / 1000))}
-            </span>
-            </>
-        ) : null
-        }
+          <>
+            <b>Last modified</b> <span>{format.formatDate(new Date(result.lastModifiedTimeUsec / 1000))}</span>
+          </>
+        ) : null}
       </div>
     );
   }
