@@ -101,8 +101,15 @@ func (v *BEValues) InvocationID() string {
 func (v *BEValues) StartTime() time.Time {
 	return v.buildStartTime
 }
+
+// RepoURL returns the normalized repo URL.
 func (v *BEValues) RepoURL() string {
-	return v.getStringValue(repoURLFieldName)
+	rawURL := v.getStringValue(repoURLFieldName)
+	normalizedURL, err := gitutil.NormalizeRepoURL(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	return normalizedURL.String()
 }
 
 func (v *BEValues) BranchName() string {
