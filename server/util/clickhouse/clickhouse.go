@@ -87,7 +87,7 @@ func (i *Invocation) TableOptions() string {
 	} else {
 		engine = "ReplacingMergeTree()"
 	}
-	return fmt.Sprint("ENGINE=%s ORDER BY (group_id, updated_at_usec)", engine)
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec)", engine)
 }
 
 func (i *Invocation) TableClusterOption() string {
