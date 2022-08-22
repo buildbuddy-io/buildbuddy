@@ -1,5 +1,14 @@
 package types
 
+// For user-defined flag value types. New flag value types should be declared
+// either as a type definition of the type they contain (see `StringSliceFlag`
+// for an example) or a type definition of a `reflect.Value` which will itself
+// wrap the desired value (see `JSONSliceFlag` for an example). Any new type
+// should also be added to the `Var` function in the `autoflags` subpackage of
+// this package.
+//
+// New flag value types should implement `common.TypeAliased` and `flag.Value`.
+
 import (
 	"encoding/json"
 	"flag"
@@ -45,95 +54,141 @@ func NewPrimitiveFlag[T bool | time.Duration | float64 | int | int64 | uint | ui
 	return NewPrimitiveFlagVar(&value)
 }
 
-type SliceFlag[T any] []T
+type JSONSliceFlag[T any] reflect.Value
 
-func NewSliceFlag[T any](slice *[]T) *SliceFlag[T] {
-	return (*SliceFlag[T])(slice)
+func NewJSONSliceFlag[T any](slice *T) *JSONSliceFlag[T] {
+	v := (JSONSliceFlag[T])(reflect.ValueOf(slice))
+	return &v
 }
 
-func Slice[T any](name string, defaultValue []T, usage string) *[]T {
-	slice := make([]T, len(defaultValue))
-	copy(slice, defaultValue)
-	common.DefaultFlagSet.Var(NewSliceFlag(&slice), name, usage)
-	return &slice
+func JSONSlice[T any](name string, defaultValue T, usage string) *T {
+	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	JSONSliceVar(value, name, defaultValue, usage)
+	return value
 }
 
-func SliceVar[T any](slice *[]T, name, usage string) {
-	common.DefaultFlagSet.Var(NewSliceFlag(slice), name, usage)
-}
-
-func (f *SliceFlag[T]) String() string {
-	switch v := any((*[]T)(f)).(type) {
-	case *[]string:
-		return strings.Join(*v, ",")
-	default:
-		b, err := json.Marshal(f)
-		if err != nil {
-			alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
-			return "[]"
-		}
-		return string(b)
+func JSONSliceVar[T any](value *T, name string, defaultValue T, usage string) {
+	src := reflect.ValueOf(defaultValue)
+	if src.Kind() != reflect.Slice {
+		log.Fatalf("JSONSliceVar called for flag %s with non-slice value %v of type %T.", name, defaultValue, defaultValue)
 	}
+	v := reflect.ValueOf(value)
+	if src.IsNil() && !v.Elem().IsNil() {
+		v.Elem().Set(reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Elem())
+	} else if v.Elem().Len() != src.Len() || v.Elem().IsNil() {
+		v.Elem().Set(reflect.MakeSlice(reflect.TypeOf((*T)(nil)).Elem(), src.Len(), src.Len()))
+	}
+	reflect.Copy(v.Elem(), src)
+	common.DefaultFlagSet.Var((*JSONSliceFlag[T])(&v), name, usage)
 }
 
-func (f *SliceFlag[T]) Set(values string) error {
-	if v, ok := any((*[]T)(f)).(*[]string); ok {
-		for _, val := range strings.Split(values, ",") {
-			*v = append(*v, val)
-		}
-		return nil
+func (f *JSONSliceFlag[T]) String() string {
+	b, err := json.Marshal((*reflect.Value)(f).Interface())
+	if err != nil {
+		alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
+		return "[]"
 	}
-	v := (*[]T)(f)
+	return string(b)
+}
+
+func (f *JSONSliceFlag[T]) Set(values string) error {
 	var a any
 	if err := json.Unmarshal([]byte(values), &a); err != nil {
 		return err
 	}
+	v := (reflect.Value)(*f).Elem()
 	if _, ok := a.([]any); ok {
-		var dst []T
-		if err := json.Unmarshal([]byte(values), &dst); err != nil {
+		dst := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface()
+		if err := json.Unmarshal([]byte(values), dst); err != nil {
 			return err
 		}
-		*v = append(*v, dst...)
+		v.Set(reflect.AppendSlice(v, reflect.ValueOf(dst).Elem()))
 		return nil
 	}
 	if _, ok := a.(map[string]any); ok {
-		var dst T
-		if err := json.Unmarshal([]byte(values), &dst); err != nil {
+		dst := reflect.New(reflect.TypeOf((*T)(nil)).Elem().Elem()).Interface()
+		if err := json.Unmarshal([]byte(values), dst); err != nil {
 			return err
 		}
-		*v = append(*v, dst)
+		v.Set(reflect.Append(v, reflect.ValueOf(dst).Elem()))
 		return nil
 	}
 	return fmt.Errorf("Default Set for SliceFlag can only accept JSON objects or arrays, but type was %T", a)
 }
 
-func (f *SliceFlag[T]) AppendSlice(slice any) error {
-	s, ok := slice.([]T)
-	if !ok {
-		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type %T.", slice, slice, ([]T)(nil))
+func (f *JSONSliceFlag[T]) AppendSlice(slice any) error {
+	v := (reflect.Value)(*f)
+	if _, ok := slice.(T); !ok {
+		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type %s.", slice, slice, v.Type().Elem())
 	}
-	v := (*[]T)(f)
-	*v = append(*v, s...)
+	v.Elem().Set(reflect.AppendSlice(v.Elem(), reflect.ValueOf(slice)))
 	return nil
 }
 
-func (f *SliceFlag[T]) AliasedType() reflect.Type {
-	return reflect.TypeOf((*[]T)(nil))
+func (f *JSONSliceFlag[T]) AliasedType() reflect.Type {
+	return reflect.TypeOf((*T)(nil))
 }
 
-func (f *SliceFlag[T]) YAMLTypeAlias() reflect.Type {
-	return f.AliasedType()
+func (f *JSONSliceFlag[T]) Slice() T {
+	return *(reflect.Value)(*f).Interface().(*T)
+}
+
+type StringSliceFlag []string
+
+func NewStringSliceFlag(slice *[]string) *StringSliceFlag {
+	return (*StringSliceFlag)(slice)
+}
+
+func StringSlice(name string, defaultValue []string, usage string) *[]string {
+	value := &[]string{}
+	StringSliceVar(value, name, defaultValue, usage)
+	return value
+}
+
+func StringSliceVar(value *[]string, name string, defaultValue []string, usage string) {
+	if defaultValue == nil && *value != nil {
+		*value = nil
+	} else if len(*value) != len(defaultValue) || *value == nil {
+		*value = make([]string, len(defaultValue))
+	}
+	copy(*value, defaultValue)
+	common.DefaultFlagSet.Var((*StringSliceFlag)(value), name, usage)
+}
+
+func (f *StringSliceFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *StringSliceFlag) Set(values string) error {
+	for _, val := range strings.Split(values, ",") {
+		*f = append(*f, val)
+	}
+	return nil
+}
+
+func (f *StringSliceFlag) AppendSlice(slice any) error {
+	s, ok := slice.([]string)
+	if !ok {
+		return status.FailedPreconditionErrorf("Cannot append value %v of type %T to flag of type []string.", slice, slice)
+	}
+	*f = append(*f, s...)
+	return nil
+}
+
+func (f *StringSliceFlag) AliasedType() reflect.Type {
+	return reflect.TypeOf((*[]string)(nil))
 }
 
 type URLFlag url.URL
 
-func URL(name string, value url.URL, usage string) *url.URL {
-	u := &value
-	common.DefaultFlagSet.Var((*URLFlag)(u), name, usage)
-	return u
+func URL(name string, defaultValue url.URL, usage string) *url.URL {
+	value := &url.URL{}
+	URLVar(value, name, defaultValue, usage)
+	return value
 }
 
-func URLVar(value *url.URL, name string, usage string) {
+func URLVar(value *url.URL, name string, defaultValue url.URL, usage string) {
+	*value = *defaultValue.ResolveReference(&url.URL{})
 	common.DefaultFlagSet.Var((*URLFlag)(value), name, usage)
 }
 
@@ -218,8 +273,8 @@ func (f *FlagAlias[T]) Set(value string) error {
 }
 
 func (f *FlagAlias[T]) String() string {
-	if f.name == "" && f.WrappedValue() == nil {
-		return fmt.Sprint(*common.Zero[T]())
+	if f == nil || (f.name == "" && f.WrappedValue() == nil) {
+		return fmt.Sprint(common.Zero[T]())
 	}
 	return f.WrappedValue().String()
 }
@@ -239,7 +294,7 @@ func (f *FlagAlias[T]) WrappedValue() flag.Value {
 type DeprecatedFlag[T any] struct {
 	flag.Value
 	name          string
-	migrationPlan string
+	MigrationPlan string
 }
 
 // DeprecatedVar takes a flag.Value (which can be obtained for primitive types
@@ -258,16 +313,40 @@ type DeprecatedFlag[T any] struct {
 //   "All of our foos were destroyed in a fire, please specify a bar instead.",
 // )
 func DeprecatedVar[T any](value flag.Value, name string, usage, migrationPlan string) *T {
-	common.DefaultFlagSet.Var(&DeprecatedFlag[T]{value, name, migrationPlan}, name, usage+" **DEPRECATED** "+migrationPlan)
+	common.DefaultFlagSet.Var(value, name, usage)
+	Deprecate[T](name, migrationPlan)
 	converted, err := common.ConvertFlagValue(value)
 	if err != nil {
 		log.Fatalf("Error creating deprecated flag %s: %v", name, err)
 	}
-	return converted.(*T)
+	c, ok := converted.(*T)
+	if !ok {
+		log.Fatalf("Error creating deprecated flag %s: could not coerce flag of type %T to type %T.", name, converted, (*T)(nil))
+	}
+	return c
+}
+
+// Deprecate deprecates an existing flag by name; generally this should be
+// called in an init func. While simpler to use than DeprecatedVar, it does
+// decouple the flag declaration from the flag deprecation.
+func Deprecate[T any](name, migrationPlan string) {
+	flg := common.DefaultFlagSet.Lookup(name)
+	converted, err := common.ConvertFlagValue(flg.Value)
+	if err != nil {
+		log.Fatalf("Error creating deprecated flag %s: %v", name, err)
+	} else if _, ok := converted.(*T); !ok {
+		log.Fatalf("Error creating deprecated flag %s: could not coerce flag of type %T to type %T.", name, converted, (*T)(nil))
+	}
+	flg.Value = &DeprecatedFlag[T]{
+		Value:         flg.Value,
+		name:          flg.Name,
+		MigrationPlan: migrationPlan,
+	}
+	flg.Usage = flg.Usage + " **DEPRECATED** " + migrationPlan
 }
 
 func (d *DeprecatedFlag[T]) Set(value string) error {
-	log.Warningf("Flag \"%s\" was set on the command line but has been deprecated: %s", d.name, d.migrationPlan)
+	log.Warningf("Flag \"%s\" was set on the command line but has been deprecated: %s", d.name, d.MigrationPlan)
 	return d.Value.Set(value)
 }
 
@@ -276,16 +355,16 @@ func (d *DeprecatedFlag[T]) WrappedValue() flag.Value {
 }
 
 func (d *DeprecatedFlag[T]) SetValueForFlagNameHook() {
-	log.Warningf("Flag \"%s\" was set programmatically by name but has been deprecated: %s", d.name, d.migrationPlan)
+	log.Warningf("Flag \"%s\" was set programmatically by name but has been deprecated: %s", d.name, d.MigrationPlan)
 }
 
 func (d *DeprecatedFlag[T]) YAMLSetValueHook() {
-	log.Warningf("Flag \"%s\" was set through the YAML config but has been deprecated: %s", d.name, d.migrationPlan)
+	log.Warningf("Flag \"%s\" was set through the YAML config but has been deprecated: %s", d.name, d.MigrationPlan)
 }
 
 func (d *DeprecatedFlag[T]) String() string {
-	if d.Value == nil {
-		return fmt.Sprint(*common.Zero[T]())
+	if d == nil || d.Value == nil {
+		return fmt.Sprint(common.Zero[T]())
 	}
 	return d.Value.String()
 }

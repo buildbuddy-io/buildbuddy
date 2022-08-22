@@ -185,7 +185,7 @@ export default class InvocationModel {
       model.workspaceStatusMap.set(item.key, item.value);
     }
     for (let log of model.toolLogs?.log || []) {
-      model.toolLogMap.set(log.name, new TextDecoder().decode(log.contents));
+      model.toolLogMap.set(log.name, new TextDecoder().decode(log.contents || new Uint8Array()));
     }
     for (let commandLine of model.structuredCommandLine || []) {
       for (let section of commandLine.sections || []) {
@@ -490,6 +490,10 @@ export default class InvocationModel {
 
   isComplete() {
     return this.invocations[0]?.invocationStatus === InvocationStatus.COMPLETE_INVOCATION_STATUS;
+  }
+
+  isInProgress() {
+    return this.invocations[0]?.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
   getFaviconType() {

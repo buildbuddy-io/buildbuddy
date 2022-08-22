@@ -9,6 +9,7 @@ go_library(
 
 go_test(
     name = "query_builder_test",
+    size = "small",
     srcs = ["query_builder_test.go"],
     deps = [
         ":query_builder",

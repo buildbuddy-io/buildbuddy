@@ -15,8 +15,8 @@ cache:
   in_memory: true
   raft:
     listen_addr: "127.0.0.1:9201" # gossip
-    http_port: 9301 # raft HTTP
-    grpc_port: 9401 # filecache backhaul
+    http_addr: "127.0.0.1:9301" # raft HTTP
+    grpc_addr: "127.0.0.1:9401" # filecache backhaul
     join: ["127.0.0.1:9201", "127.0.0.1:9202", "127.0.0.1:9203"]
 auth:
   enable_anonymous_usage: true

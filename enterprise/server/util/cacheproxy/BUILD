@@ -31,6 +31,7 @@ go_library(
 
 go_test(
     name = "cacheproxy_test",
+    size = "small",
     srcs = ["cacheproxy_test.go"],
     deps = [
         ":cacheproxy",

@@ -34,6 +34,7 @@ func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
 	commandArgs := []string{
 		fmt.Sprintf("--telemetry_port=%d", testport.FindFree(t)),
 		"--app_directory=/enterprise/app",
+		"--disable_telemetry",
 		"--app.default_redis_target=" + redisTarget,
 	}
 	commandArgs = append(commandArgs, args...)

@@ -20,6 +20,7 @@ go_library(
 
 go_test(
     name = "rangelease_test",
+    size = "small",
     srcs = ["rangelease_test.go"],
     deps = [
         ":rangelease",

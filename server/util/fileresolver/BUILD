@@ -13,6 +13,7 @@ go_library(
 
 go_test(
     name = "fileresolver_test",
+    size = "small",
     srcs = ["fileresolver_test.go"],
     deps = [
         ":fileresolver",

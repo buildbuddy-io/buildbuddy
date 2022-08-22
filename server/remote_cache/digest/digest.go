@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	guuid "github.com/google/uuid"
 	gcodes "google.golang.org/grpc/codes"
 	gmetadata "google.golang.org/grpc/metadata"
@@ -45,33 +46,33 @@ var (
 )
 
 type ResourceName struct {
-	digest       *repb.Digest
-	instanceName string
-	compressor   repb.Compressor_Value
+	rn *rspb.ResourceName
 }
 
 func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	return &ResourceName{
-		digest:       d,
-		instanceName: instanceName,
-		compressor:   repb.Compressor_IDENTITY,
+		rn: &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+		},
 	}
 }
 
 func (r *ResourceName) GetDigest() *repb.Digest {
-	return r.digest
+	return r.rn.GetDigest()
 }
 
 func (r *ResourceName) GetInstanceName() string {
-	return r.instanceName
+	return r.rn.GetInstanceName()
 }
 
 func (r *ResourceName) GetCompressor() repb.Compressor_Value {
-	return r.compressor
+	return r.rn.GetCompressor()
 }
 
 func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
-	r.compressor = compressor
+	r.rn.Compressor = compressor
 }
 
 // DownloadString returns a string representing the resource name for download

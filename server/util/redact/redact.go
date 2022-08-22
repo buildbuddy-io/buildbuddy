@@ -48,6 +48,14 @@ var (
 	redactedPlatformProps = []string{
 		"container-registry-username", "container-registry-password",
 	}
+
+	// Here we match 20 alphanumeric characters preceded by the api key header flag
+	apiKeyHeaderPattern = regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
+
+	// Here we match 20 alphanum chars at the start of a line or anywhere in the
+	// line, preceded by a non-alphanum char (to ensure the match is exactly 20
+	// alphanum chars long), followed by an @ symbol.
+	apiKeyAtPattern = regexp.MustCompile("(^|[^[:alnum:]])[[:alnum:]]{20}@")
 )
 
 func stripURLSecrets(input string) string {
@@ -391,30 +399,21 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 	// (20 alphanumeric characters).
 
 	// Replace x-buildbuddy-api-key header.
-	pat := regexp.MustCompile("x-buildbuddy-api-key=[[:alnum:]]{20}")
-	txt = []byte(pat.ReplaceAllLiteralString(string(txt), "x-buildbuddy-api-key=<REDACTED>"))
+	txt = []byte(apiKeyHeaderPattern.ReplaceAllLiteralString(string(txt), "x-buildbuddy-api-key=<REDACTED>"))
 
 	// Replace sequences that look like API keys immediately followed by '@',
 	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
 	// or "bes_backend=$API_KEY@domain.com".
 
-	// Here we match 20 alphanum chars occurring at the start of a line.
-	pat = regexp.MustCompile("^[[:alnum:]]{20}@")
-	txt = []byte(pat.ReplaceAllLiteralString(string(txt), "<REDACTED>@"))
-	// Here we match 20 alphanum chars anywhere in the line, preceded by a non-
-	// alphanum char (to ensure the match is exactly 20 alphanum chars long).
-	pat = regexp.MustCompile("([^[:alnum:]])[[:alnum:]]{20}@")
-	txt = []byte(pat.ReplaceAllString(string(txt), "$1<REDACTED>@"))
+	txt = []byte(apiKeyAtPattern.ReplaceAllString(string(txt), "$1<REDACTED>@"))
 
 	// Replace the literal API key set up via the BuildBuddy config, which does not
 	// need to conform to the way we generate API keys.
-	configuredKey := getAPIKeyFromBuildBuddyConfig(r.env)
-	if configuredKey != "" {
+	if configuredKey := getAPIKeyFromBuildBuddyConfig(r.env); configuredKey != "" {
 		txt = []byte(strings.ReplaceAll(string(txt), configuredKey, "<REDACTED>"))
 	}
 
-	contextKey, ok := ctx.Value("x-buildbuddy-api-key").(string)
-	if ok {
+	if contextKey, ok := ctx.Value("x-buildbuddy-api-key").(string); ok {
 		txt = []byte(strings.ReplaceAll(string(txt), contextKey, "<REDACTED>"))
 	}
 

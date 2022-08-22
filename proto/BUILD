@@ -72,6 +72,17 @@ proto_library(
 )
 
 proto_library(
+    name = "resource_proto",
+    srcs = [
+        "resource.proto",
+    ],
+    deps = [
+        ":cache_proto",
+        ":remote_execution_proto",
+    ],
+)
+
+proto_library(
     name = "health_proto",
     srcs = [
         "health.proto",
@@ -637,6 +648,16 @@ go_proto_library(
     proto = ":command_line_proto",
     deps = [
         ":option_filters_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "resource_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/resource",
+    proto = ":resource_proto",
+    deps = [
+        ":cache_go_proto",
+        ":remote_execution_go_proto",
     ],
 )
 

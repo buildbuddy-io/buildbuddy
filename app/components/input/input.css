@@ -10,6 +10,12 @@
   border-radius: 2px;
 }
 
+.text-input.dark {
+  background-color: #424242;
+  color: white;
+  caret-color: white;
+}
+
 .text-input::placeholder {
   color: #aaa;
 }

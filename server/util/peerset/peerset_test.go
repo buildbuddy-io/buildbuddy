@@ -58,6 +58,32 @@ func TestGetNextPeer(t *testing.T) {
 				{"", ""},
 			},
 		},
+		{
+			peerset.New([]string{"a", "b", "c"}, []string{"d", "e", "f", "g"}),
+			[]string{"c", "d"},
+			[]wantPeerHandoff{
+				{"a", ""},
+				{"b", ""},
+				{"c", ""},
+				{"d", "c"},
+				{"e", "c"},
+				{"", ""},
+			},
+		},
+		{
+			peerset.New([]string{"a", "b", "c"}, []string{"d", "e", "f", "g"}),
+			[]string{"b", "c", "d", "e"},
+			[]wantPeerHandoff{
+				{"a", ""},
+				{"b", ""},
+				{"c", ""},
+				{"d", "b"},
+				{"e", "b"},
+				{"f", "b"},
+				{"g", "c"},
+				{"", ""},
+			},
+		},
 	}
 
 	for _, test := range tests {

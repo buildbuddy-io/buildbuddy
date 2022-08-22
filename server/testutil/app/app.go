@@ -42,6 +42,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
 		fmt.Sprintf("--port=%d", app.httpPort),
 		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
+		fmt.Sprintf("--internal_grpc_port=%d", testport.FindFree(t)),
 		fmt.Sprintf("--monitoring_port=%d", app.monitoringPort),
 		"--static_directory=static",
 		"--app_directory=/app",

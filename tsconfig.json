@@ -23,6 +23,5 @@
       "bazel-out/darwin_arm64-opt/bin",
       "bazel-out/darwin_arm64-fastbuild/bin"
     ]
-  },
-  "exclude": ["bazel-out", "bazel-bin"]
+  }
 }

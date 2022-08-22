@@ -34,7 +34,7 @@ go_library(
         "//server/resources",
         "//server/util/alert",
         "//server/util/background",
-        "//server/util/flagutil/types",
+        "//server/util/flagutil",
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/perms",
@@ -51,6 +51,7 @@ go_library(
 
 go_test(
     name = "runner_test",
+    size = "small",
     srcs = ["runner_test.go"],
     data = ["//enterprise/server/remote_execution/runner/testworker"],
     embed = [":runner"],

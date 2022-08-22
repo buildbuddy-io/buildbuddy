@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/log",
         "//server/util/network",
+        "//server/util/statusz",
         "@com_github_hashicorp_memberlist//:memberlist",
         "@com_github_hashicorp_serf//serf",
     ],
@@ -15,6 +16,7 @@ go_library(
 
 go_test(
     name = "gossip_test",
+    size = "small",
     srcs = ["gossip_test.go"],
     deps = [
         ":gossip",

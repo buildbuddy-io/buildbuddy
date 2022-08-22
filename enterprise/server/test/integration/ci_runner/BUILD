@@ -2,6 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "ci_runner_test",
+    size = "small",
     srcs = ["ci_runner_test.go"],
     data = [
         "//enterprise/server/cmd/ci_runner",
@@ -11,7 +12,7 @@ go_test(
     exec_properties = {
         "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.8",
     },
-    shard_count = 9,
+    shard_count = 11,
     visibility = [
         "//enterprise:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",

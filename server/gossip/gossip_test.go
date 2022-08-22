@@ -29,7 +29,7 @@ func localAddr(t *testing.T) string {
 }
 
 func newGossipManager(t *testing.T, addr string, seeds []string, broker gossip.Listener) *gossip.GossipManager {
-	node, err := gossip.NewGossipManager(addr, seeds)
+	node, err := gossip.NewGossipManager("name-"+addr, addr, seeds)
 	require.Nil(t, err)
 	require.NotNil(t, node)
 	node.AddListener(broker)

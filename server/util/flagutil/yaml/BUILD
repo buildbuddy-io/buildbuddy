@@ -16,6 +16,7 @@ go_library(
 
 go_test(
     name = "yaml_test",
+    size = "small",
     srcs = ["yaml_test.go"],
     deps = [
         ":yaml",

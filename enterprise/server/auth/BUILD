@@ -18,7 +18,7 @@ go_library(
         "//server/tables",
         "//server/util/alert",
         "//server/util/capabilities",
-        "//server/util/flagutil/types",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/random",
@@ -38,6 +38,7 @@ go_library(
 
 go_test(
     name = "auth_test",
+    size = "small",
     srcs = ["auth_test.go"],
     embed = [":auth"],
     deps = [

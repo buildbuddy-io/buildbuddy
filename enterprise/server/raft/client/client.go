@@ -290,9 +290,9 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 			}
 			return err
 		}
-		break
+		return nil
 	}
-	return nil
+	return status.DeadlineExceededErrorf("exceeded retry limit for node host function")
 }
 
 func getRequestState(ctx context.Context, rs *dragonboat.RequestState) (dbsm.Result, error) {

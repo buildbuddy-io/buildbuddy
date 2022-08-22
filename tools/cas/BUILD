@@ -14,7 +14,7 @@ go_library(
         "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//metadata",
-        "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
     ],
 )

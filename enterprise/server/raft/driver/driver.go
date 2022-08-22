@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math"
 	"sort"
@@ -14,11 +15,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+)
+
+var (
+	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", false, "If set, allow splitting oversize replicas")
+	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", false, "If set, allow moving replicas between nodes")
+	enableReplacingReplicas = flag.Bool("cache.raft.enable_replacing_replicas", false, "If set, allow replacing dead / down replicas")
 )
 
 const (
@@ -146,7 +154,7 @@ func (cm *clusterMap) String() string {
 	sort.Strings(nhids)
 	buf := ""
 	for _, nhid := range nhids {
-		buf += fmt.Sprintf("%q: %s\n", nhid, strings.Join(nodeStrings[nhid], ", "))
+		buf += fmt.Sprintf("\t%q: %s\n", nhid, strings.Join(nodeStrings[nhid], ", "))
 	}
 	return buf
 }
@@ -413,6 +421,7 @@ func New(store rfspb.ApiServer, gossipManager *gossip.GossipManager, opts Opts) 
 	// Register the node registry as a gossip listener so that it receives
 	// gossip callbacks.
 	gossipManager.AddListener(d)
+	statusz.AddSection("raft_driver", "Placement Driver", d)
 	return d
 }
 
@@ -691,50 +700,55 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 // modifyCluster applies `changes` to the cluster when possible.
 func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes *clusterChanges) error {
 	// Splits are going to happen before anything else.
-	for rs, _ := range changes.overloadedReplicas {
-		rd, ok := state.managedRanges[rs.clusterID]
-		if !ok {
-			continue
-		}
-		_, err := d.store.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-			Range: rd,
-		})
-		if err != nil {
-			log.Warningf("Error splitting cluster: %s", err)
-		} else {
-			log.Printf("Successfully split %+v", rs)
-		}
-		time.Sleep(10 * time.Second)
-		if err := d.updateState(ctx, state); err != nil {
-			return err
-		}
-	}
-
-	requiredMoves := d.makeMoveInstructions(changes.deadReplicas)
-	for _, move := range requiredMoves {
-		log.Printf("Making required move: %+v", move)
-		if err := d.applyMove(ctx, move, state); err != nil {
-			log.Warningf("Error applying move: %s", err)
-		}
-		time.Sleep(10 * time.Second)
-		if err := d.updateState(ctx, state); err != nil {
-			return err
+	if *enableSplittingReplicas {
+		for rs, _ := range changes.overloadedReplicas {
+			rd, ok := state.managedRanges[rs.clusterID]
+			if !ok {
+				continue
+			}
+			_, err := d.store.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+				Range: rd,
+			})
+			if err != nil {
+				log.Warningf("Error splitting cluster: %s", err)
+			} else {
+				log.Printf("Successfully split %+v", rs)
+			}
+			time.Sleep(10 * time.Second)
+			if err := d.updateState(ctx, state); err != nil {
+				return err
+			}
 		}
 	}
 
-	optionalMoves := d.makeMoveInstructions(changes.moveableReplicas)
-	currentFitScore := d.clusterMap.FitScore()
-	for _, move := range optionalMoves {
-		if d.clusterMap.FitScore(move) >= currentFitScore {
-			continue
+	if *enableReplacingReplicas {
+		requiredMoves := d.makeMoveInstructions(changes.deadReplicas)
+		for _, move := range requiredMoves {
+			log.Printf("Making required move: %+v", move)
+			if err := d.applyMove(ctx, move, state); err != nil {
+				log.Warningf("Error applying move: %s", err)
+			}
+			time.Sleep(10 * time.Second)
+			if err := d.updateState(ctx, state); err != nil {
+				return err
+			}
 		}
-		log.Printf("Making optional move: %+v", move)
-		if err := d.applyMove(ctx, move, state); err != nil {
-			log.Warningf("Error applying move: %s", err)
-		}
-		time.Sleep(10 * time.Second)
-		if err := d.updateState(ctx, state); err != nil {
-			return err
+	}
+	if *enableMovingReplicas {
+		optionalMoves := d.makeMoveInstructions(changes.moveableReplicas)
+		currentFitScore := d.clusterMap.FitScore()
+		for _, move := range optionalMoves {
+			if d.clusterMap.FitScore(move) >= currentFitScore {
+				continue
+			}
+			log.Printf("Making optional move: %+v", move)
+			if err := d.applyMove(ctx, move, state); err != nil {
+				log.Warningf("Error applying move: %s", err)
+			}
+			time.Sleep(10 * time.Second)
+			if err := d.updateState(ctx, state); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -772,4 +786,40 @@ func (d *Driver) manageClusters() error {
 
 	log.Printf("proposed changes: %+v", changes)
 	return d.modifyCluster(ctx, state, changes)
+}
+
+func (d *Driver) Statusz(ctx context.Context) string {
+	state, err := d.computeState(ctx)
+	if err != nil {
+		return fmt.Sprintf("Error computing state: %s", err)
+	}
+	buf := "<pre>"
+	if len(state.myClusters) == 0 {
+		buf += "no managed clusters</pre>"
+		return buf
+	}
+	buf += fmt.Sprintf("state: %+v\n", state)
+	buf += fmt.Sprintf("cluster map:\n%s\n", d.clusterMap.String())
+	changes := d.proposeChanges(state)
+
+	if len(changes.overloadedReplicas) > 0 {
+		buf += "Overloaded Replicas:\n"
+		for rep, _ := range changes.overloadedReplicas {
+			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+		}
+	}
+	if len(changes.deadReplicas) > 0 {
+		buf += "Dead Replicas:\n"
+		for rep, _ := range changes.deadReplicas {
+			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+		}
+	}
+	if len(changes.moveableReplicas) > 0 {
+		buf += "Moveable Replicas:\n"
+		for rep, _ := range changes.moveableReplicas {
+			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+		}
+	}
+	buf += "</pre>"
+	return buf
 }

@@ -219,7 +219,9 @@ func (t CacheType) Prefix() string {
 
 type CacheMetadata struct {
 	// Size of the cache contents (uncompressed).
-	SizeBytes int64
+	SizeBytes          int64
+	LastAccessTimeUsec int64
+	LastModifyTimeUsec int64
 }
 
 // Similar to a blobstore, a cache allows for reading and writing data, but

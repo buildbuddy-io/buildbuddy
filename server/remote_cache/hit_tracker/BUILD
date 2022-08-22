@@ -26,6 +26,7 @@ go_library(
 
 go_test(
     name = "hit_tracker_test",
+    size = "small",
     srcs = ["hit_tracker_test.go"],
     deps = [
         ":hit_tracker",
