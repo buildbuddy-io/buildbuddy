@@ -130,9 +130,17 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackEmptyHit()
 		return nil
 	}
-	reader, err := cache.Reader(ctx, r.GetDigest(), req.ReadOffset, req.ReadLimit)
-	if err != nil {
-		ht.TrackMiss(r.GetDigest())
+
+	reader, readErr := cache.Reader(ctx, r.GetDigest(), req.ReadOffset, req.ReadLimit)
+
+	// Call metadata API after Get, so lastAccessTime reflects the current time
+	metadata, metadataErr := cache.Metadata(ctx, r.GetDigest())
+	if metadataErr != nil {
+		log.Debugf("Could not fetch cache metadata for digest %s: %s", r.GetDigest(), err)
+	}
+
+	if readErr != nil {
+		ht.TrackMiss(r.GetDigest(), metadata)
 		return err
 	}
 	defer reader.Close()
@@ -159,7 +167,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
 	n, err := io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
-	downloadTracker.CloseWithBytesTransferred(n, r.GetCompressor())
+	downloadTracker.CloseWithBytesTransferred(n, r.GetCompressor(), metadata)
 	return err
 }
 
@@ -316,7 +324,10 @@ func (w *writeState) Commit() error {
 }
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
-	ctx := stream.Context()
+	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+	if err != nil {
+		return err
+	}
 
 	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
 	if err != nil {
@@ -355,9 +366,16 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				}
 			}()
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-			uploadTracker := ht.TrackUpload(streamState.resourceName.GetDigest())
+			digest := streamState.resourceName.GetDigest()
+			uploadTracker := ht.TrackUpload(digest)
+
+			metadata, err := s.cache.Metadata(ctx, digest)
+			if err != nil {
+				log.Debugf("Could not fetch cache metadata for digest %s: %s", digest, err)
+			}
+
 			defer func() {
-				uploadTracker.CloseWithBytesTransferred(streamState.offset, streamState.resourceName.GetCompressor())
+				uploadTracker.CloseWithBytesTransferred(streamState.offset, streamState.resourceName.GetCompressor(), metadata)
 			}()
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {
@@ -486,7 +504,13 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(r.GetDigest())
 			remainingSize, err = s.recvAll(stream)
-			uploadTracker.CloseWithBytesTransferred(int64(len(firstRequest.Data))+remainingSize, r.GetCompressor())
+
+			metadata, err := s.cache.Metadata(ctx, r.GetDigest())
+			if err != nil {
+				log.Debugf("Could not fetch cache metadata for digest %s: %s", r.GetDigest(), err)
+			}
+
+			uploadTracker.CloseWithBytesTransferred(int64(len(firstRequest.Data))+remainingSize, r.GetCompressor(), metadata)
 			if err != nil {
 				return err
 			}

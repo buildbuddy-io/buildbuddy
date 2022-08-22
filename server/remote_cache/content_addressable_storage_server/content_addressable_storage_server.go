@@ -184,9 +184,14 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			return nil, err
 		}
 		uploadTracker := ht.TrackUpload(uploadDigest)
+
+		metadata, err := cache.Metadata(ctx, uploadDigest)
+		if err != nil {
+			log.Debugf("Could not fetch cache metadata for digest %s: %s", uploadDigest, err)
+		}
 		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
 		// so doing 100-1000 or so in this loop is fine.
-		defer uploadTracker.CloseWithBytesTransferred(int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor())
+		defer uploadTracker.CloseWithBytesTransferred(int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor(), metadata)
 
 		if uploadDigest.GetHash() == digest.EmptySha256 {
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
@@ -292,7 +297,12 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 		downloadTracker := ht.TrackDownload(readDigest)
 		closeTrackerFuncs = append(closeTrackerFuncs, func(res *repb.BatchReadBlobsResponse_Response) {
-			downloadTracker.CloseWithBytesTransferred(int64(len(res.Data)), res.Compressor)
+			metadata, err := s.cache.Metadata(ctx, res.GetDigest())
+			if err != nil {
+				log.Debugf("BatchReadBlobs: Could not fetch cache metadata for digest %s: %s", res.GetDigest(), err)
+			}
+
+			downloadTracker.CloseWithBytesTransferred(int64(len(res.Data)), res.Compressor, metadata)
 		})
 
 		if readDigest.GetHash() != digest.EmptySha256 {

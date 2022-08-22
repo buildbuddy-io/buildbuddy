@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -157,12 +158,20 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
-	blob, err := cache.Get(ctx, d)
-	if err != nil {
-		ht.TrackMiss(d)
+
+	blob, getErr := cache.Get(ctx, d)
+
+	// Call metadata API after Get, so lastAccessTime reflects the current time
+	metadata, metadataErr := cache.Metadata(ctx, d)
+	if metadataErr != nil {
+		log.Debugf("Could not fetch cache metadata for digest %s: %s", d, err)
+	}
+
+	if getErr != nil {
+		ht.TrackMiss(d, metadata)
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
-	defer downloadTracker.Close()
+	defer downloadTracker.Close(metadata)
 
 	rsp := &repb.ActionResult{}
 	if err := proto.Unmarshal(blob, rsp); err != nil {
@@ -237,6 +246,11 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err := cache.Set(ctx, d, blob); err != nil {
 		return nil, err
 	}
-	uploadTracker.Close()
+
+	metadata, err := cache.Metadata(ctx, d)
+	if err != nil {
+		log.Debugf("Could not fetch cache metadata for digest %s: %s", d, err)
+	}
+	uploadTracker.Close(metadata)
 	return req.ActionResult, nil
 }

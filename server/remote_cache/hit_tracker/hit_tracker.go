@@ -189,7 +189,7 @@ func makeTargetField(actionMnemonic, targetID, actionID string) string {
 // if err := ht.TrackMiss(); err != nil {
 //   log.Printf("Error counting cache miss.")
 // }
-func (h *HitTracker) TrackMiss(d *repb.Digest) error {
+func (h *HitTracker) TrackMiss(d *repb.Digest, cacheMetadata *interfaces.CacheMetadata) error {
 	start := time.Now()
 	metrics.CacheEvents.With(prometheus.Labels{
 		metrics.CacheTypeLabel:      h.cacheTypeLabel(),
@@ -207,7 +207,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 			StartTime: start,
 			Duration:  time.Since(start),
 		}
-		if err := h.recordDetailedStats(d, stats); err != nil {
+		if err := h.recordDetailedStats(d, stats, cacheMetadata); err != nil {
 			return err
 		}
 	} else if h.actionCache {
@@ -237,14 +237,14 @@ func (h *HitTracker) TrackEmptyHit() error {
 			StartTime: start,
 			Duration:  time.Since(start),
 		}
-		if err := h.recordDetailedStats(emptyDigest, stats); err != nil {
+		if err := h.recordDetailedStats(emptyDigest, stats, nil); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) error {
+func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats, cacheMetadata *interfaces.CacheMetadata) error {
 	if h.requestMetadata.GetExecutorDetails().GetExecutorHostId() != "" {
 		// Don't store executor requests in the scorecard for now.
 		return nil
@@ -280,6 +280,13 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 	startTimeProto := timestamppb.New(stats.StartTime)
 	durationProto := durationpb.New(stats.Duration)
 
+	var lastAccessedUsec int64
+	var lastModifiedUsec int64
+	if cacheMetadata != nil {
+		lastModifiedUsec = cacheMetadata.LastModifyTimeUsec
+		lastAccessedUsec = cacheMetadata.LastAccessTimeUsec
+	}
+
 	result := &capb.ScoreCard_Result{
 		ActionMnemonic:       h.requestMetadata.ActionMnemonic,
 		TargetId:             h.requestMetadata.TargetId,
@@ -293,6 +300,8 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		Compressor:           stats.Compressor,
 		TransferredSizeBytes: stats.TransferredSizeBytes,
 		// TODO(bduffany): Committed
+		LastAccessedTimeUsec: lastAccessedUsec,
+		LastModifiedTimeUsec: lastModifiedUsec,
 	}
 	b, err := proto.Marshal(result)
 	if err != nil {
@@ -352,11 +361,11 @@ type transferTimer struct {
 	// TODO(bduffany): response code
 }
 
-func (t *transferTimer) Close() error {
-	return t.CloseWithBytesTransferred(t.d.GetSizeBytes(), repb.Compressor_IDENTITY)
+func (t *transferTimer) Close(cacheMetadata *interfaces.CacheMetadata) error {
+	return t.CloseWithBytesTransferred(t.d.GetSizeBytes(), repb.Compressor_IDENTITY, cacheMetadata)
 }
 
-func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, compressor repb.Compressor_Value) error {
+func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, compressor repb.Compressor_Value, cacheMetadata *interfaces.CacheMetadata) error {
 	dur := time.Since(t.start)
 
 	h := t.h
@@ -405,7 +414,7 @@ func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, co
 			Compressor:           compressor,
 			TransferredSizeBytes: transferredSizeBytes,
 		}
-		if err := h.recordDetailedStats(t.d, stats); err != nil {
+		if err := h.recordDetailedStats(t.d, stats, cacheMetadata); err != nil {
 			return err
 		}
 	} else if h.actionCache && t.actionCounter == Miss {

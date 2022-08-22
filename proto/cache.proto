@@ -214,6 +214,9 @@ message ScoreCard {
     // kept separate.
     // Ex: "bazel-out/k8-fastbuild/bin"
     string path_prefix = 13;
+
+    int64 last_accessed_time_usec = 14;
+    int64 last_modified_time_usec = 15;
   }
 
   // In the interest of saving space, we only show cache misses.
