@@ -115,6 +115,14 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 	return val, nil
 }
 
+func sizeOf(val []byte) (int64, error) {
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(val, fileMetadata); err != nil {
+		return 0, err
+	}
+	return fileMetadata.GetSizeBytes() + int64(len(val)), nil
+}
+
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
@@ -122,14 +130,29 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 			NodeId:    sm.nodeID,
 		},
 	}
-	if sm.db != nil {
-		du, err := sm.db.EstimateDiskUsage(keys.Key{constants.MinByte}, keys.Key{constants.MaxByte})
+	db, err := sm.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	iterOpts := &pebble.IterOptions{
+		LowerBound: keys.Key([]byte{constants.MinByte}),
+		UpperBound: keys.Key([]byte{constants.MaxByte}),
+	}
+
+	iter := db.NewIter(iterOpts)
+	defer iter.Close()
+
+	estimatedBytesUsed := int64(0)
+	for iter.Next() {
+		sizeBytes, err := sizeOf(iter.Value())
 		if err != nil {
-			log.Errorf("Error estimating disk usage: %s", err)
 			return nil, err
 		}
-		ru.EstimatedDiskBytesUsed = int64(du)
+		estimatedBytesUsed += sizeBytes
 	}
+	ru.EstimatedDiskBytesUsed = estimatedBytesUsed
 	return ru, nil
 }
 
@@ -480,17 +503,18 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 
 	iter := wb.NewIter(iterOpts)
 	defer iter.Close()
-	var t bool = iter.First()
 
 	totalSize := int64(0)
-	for ; t; t = iter.Next() {
-		if t {
-			totalSize += int64(len(iter.Value()))
+	for iter.Next() {
+		sizeBytes, err := sizeOf(iter.Value())
+		if err != nil {
+			return nil, err
 		}
+		totalSize += sizeBytes
 	}
 
 	leftSplitSize := int64(0)
-	t = iter.First()
+	var t bool = iter.First()
 	var lastKey []byte
 	for ; t; t = iter.Next() {
 		if leftSplitSize >= totalSize/2 && canSplitKeys(lastKey, iter.Key()) {
