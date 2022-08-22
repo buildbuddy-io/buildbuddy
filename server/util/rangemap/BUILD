@@ -10,6 +10,7 @@ go_library(
 
 go_test(
     name = "rangemap_test",
+    size = "small",
     srcs = ["rangemap_test.go"],
     deps = [
         ":rangemap",

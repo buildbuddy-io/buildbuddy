@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/environment",
-        "//server/util/flagutil/types",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "platform_test",
+    size = "small",
     srcs = ["platform_test.go"],
     embed = [":platform"],
     deps = [

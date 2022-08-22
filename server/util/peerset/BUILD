@@ -9,6 +9,7 @@ go_library(
 
 go_test(
     name = "peerset_test",
+    size = "small",
     srcs = ["peerset_test.go"],
     deps = [
         ":peerset",

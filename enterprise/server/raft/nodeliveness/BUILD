@@ -20,6 +20,7 @@ go_library(
 
 go_test(
     name = "nodeliveness_test",
+    size = "small",
     srcs = ["nodeliveness_test.go"],
     deps = [
         ":nodeliveness",

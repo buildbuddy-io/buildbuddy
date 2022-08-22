@@ -20,7 +20,7 @@ go_library(
         "//server/resources",
         "//server/util/background",
         "//server/util/consistent_hash",
-        "//server/util/flagutil/types",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/peerset",
         "//server/util/status",
@@ -31,6 +31,7 @@ go_library(
 
 go_test(
     name = "distributed_test",
+    size = "small",
     srcs = ["distributed_test.go"],
     embed = [":distributed"],
     shard_count = 10,

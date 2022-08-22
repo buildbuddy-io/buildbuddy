@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@go_googleapis//google/rpc:errdetails_go_proto",
@@ -19,6 +20,7 @@ go_library(
 
 go_test(
     name = "digest_test",
+    size = "small",
     srcs = ["digest_test.go"],
     embed = [":digest"],
     deps = [

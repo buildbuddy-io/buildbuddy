@@ -4,19 +4,23 @@ import (
 	"math/rand"
 )
 
+const maxFailedFallbackPeers = 3
+
 type PeerSet struct {
-	PreferredPeers []string
-	FallbackPeers  []string
-	FailedPeers    []string
-	i              int // next peer index
+	PreferredPeers      []string
+	FallbackPeers       []string
+	FailedPeers         []string
+	FailedFallbackPeers []string
+	i                   int // next peer index
 }
 
 func New(preferredPeers, fallbackPeers []string) *PeerSet {
 	return &PeerSet{
-		i:              0,
-		PreferredPeers: preferredPeers,
-		FallbackPeers:  fallbackPeers,
-		FailedPeers:    nil,
+		i:                   0,
+		PreferredPeers:      preferredPeers,
+		FallbackPeers:       fallbackPeers,
+		FailedPeers:         nil,
+		FailedFallbackPeers: nil,
 	}
 }
 
@@ -43,6 +47,7 @@ func (p *PeerSet) MarkPeerAsFailed(failedPeer string) {
 			return
 		}
 	}
+	p.FailedFallbackPeers = append(p.FailedFallbackPeers, failedPeer)
 }
 
 // GetNextPeerAndHandoff returns the next available peer and a handoff peer
@@ -62,11 +67,26 @@ func (p *PeerSet) GetNextPeerAndHandoff() (string, string) {
 		defer increment()
 		return p.PreferredPeers[i], ""
 	}
+
+	// Give up if we have already tried enough fallback peers.
+	if len(p.FailedFallbackPeers) >= maxFailedFallbackPeers {
+		return "", ""
+	}
+
+	// Once we're out of preferred peers, start going through the fallback
+	// peers.
 	i -= numPreferred
 
-	if i < len(p.FallbackPeers) && i < len(p.FailedPeers) {
+	fallbackIdx := i
+	// If a fallback peer is marked as failed after this function returns, it
+	// will be added to the list of failed fallback peers. We use this fact to
+	// prevent failedIdx from advancing to the next failed peer until we find a
+	// good fallback peer.
+	failedIdx := i - len(p.FailedFallbackPeers)
+
+	if fallbackIdx < len(p.FallbackPeers) && failedIdx < len(p.FailedPeers) {
 		defer increment()
-		return p.FallbackPeers[i], p.FailedPeers[i]
+		return p.FallbackPeers[fallbackIdx], p.FailedPeers[failedIdx]
 	}
 	return "", ""
 }

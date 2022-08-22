@@ -17,6 +17,7 @@ go_library(
 
 go_test(
     name = "redis_metrics_collector_test",
+    size = "small",
     srcs = ["redis_metrics_collector_test.go"],
     deps = [
         ":redis_metrics_collector",

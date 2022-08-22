@@ -28,6 +28,7 @@ go_test(
     srcs = ["dirtools_test.go"],
     deps = [
         ":dirtools",
+        "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/remote_cache/byte_stream_server",

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,8 +32,9 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
-var (
-	simpleRepoContents = map[string]string{
+// simpleRepo simulates a test repo with the config files required to run a workflow
+func simpleRepo() map[string]string {
+	fileNameToFileContentsMap := map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD": `
 sh_binary(
@@ -46,9 +48,39 @@ actions:
   - name: "Test action"
     triggers: { push: { branches: [ master ] } }
     bazel_commands: [ "build //:nop" ]
+    os: ` + runtime.GOOS + `
+    arch: ` + runtime.GOARCH + `
 `,
 	}
+
+	return fileNameToFileContentsMap
+}
+
+// repoWithSlowScript simulates a test repo with the config files required to run a workflow
+// It sets up a slow script that takes a while to run so the CI runner does not return immediately,
+// giving tests that need to modify the workflow (Ex. for testing cancellation) time to complete
+func repoWithSlowScript() map[string]string {
+	fileNameToFileContentsMap := map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD": `
+sh_binary(
+    name = "sleep_forever_test",
+    srcs = ["sleep_forever_test.sh"],
 )
+`,
+		"sleep_forever_test.sh": "sleep infinity",
+		"buildbuddy.yaml": `
+actions:
+  - name: "Slow test action"
+    triggers: { push: { branches: [ master ] } }
+    bazel_commands: [ "run //:sleep_forever_test" ]
+    os: ` + runtime.GOOS + `
+    arch: ` + runtime.GOARCH + `
+`,
+	}
+
+	return fileNameToFileContentsMap
+}
 
 func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.WorkflowService) {
 	env := rbetest.NewRBETestEnv(t)
@@ -82,8 +114,33 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	require.NoError(t, err)
 	flags.Set(t, "app.events_api_url", *u)
 
+	// Uncomment this line to print output from the ci_runner to the terminal for debugging purposes
+	// Otherwise, output from ci_runner/main.go and the bazel commands that are configured to run via the
+	// workflow will not be printed
+	//flags.Set(t, "debug_stream_command_outputs", true)
+
 	env.AddExecutors(t, 10)
 	return env, workflowService
+}
+
+func triggerWebhook(t *testing.T, gitProvider *testgit.FakeProvider, workflowService interfaces.WorkflowService, repoContents map[string]string, repoURL string, commitSHA string, webhookURL string) {
+	// Set up the fake git provider so that GetFileContents can return the
+	// buildbuddy.yaml from our test repo
+	gitProvider.FileContents = repoContents
+	// Configure the fake webhook data to be parsed from the response
+	gitProvider.WebhookData = &interfaces.WebhookData{
+		EventName:     "push",
+		PushedRepoURL: repoURL,
+		PushedBranch:  "master",
+		SHA:           commitSHA,
+		TargetRepoURL: repoURL,
+		TargetBranch:  "master",
+	}
+	// Generate a "push event" to Github. As configured under `triggers` in buildbuddy.yaml, a push
+	// should trigger the action to be executed on an executor spun up by the test
+	req, err := http.NewRequest("POST", webhookURL, nil /*=body*/)
+	require.NoError(t, err)
+	workflowService.ServeHTTP(NewTestResponseWriter(t), req)
 }
 
 func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
@@ -108,7 +165,7 @@ func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb b
 	return ""
 }
 
-func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string) *inpb.Invocation {
+func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, expectedStatus inpb.Invocation_InvocationStatus) *inpb.Invocation {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		invResp, err := bb.GetInvocation(ctx, &inpb.GetInvocationRequest{
 			RequestContext: reqCtx,
@@ -118,9 +175,8 @@ func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.Build
 		require.Greater(t, len(invResp.GetInvocation()), 0)
 		inv := invResp.GetInvocation()[0]
 		status := inv.GetInvocationStatus()
-		require.NotEqual(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, status)
 
-		if status == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
+		if status == expectedStatus {
 			logResp, err := bb.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 				InvocationId: invocationID,
 				MinLines:     math.MaxInt32,
@@ -133,7 +189,7 @@ func waitForInvocationComplete(t *testing.T, ctx context.Context, bb bbspb.Build
 		time.Sleep(delay)
 	}
 
-	require.FailNowf(t, "timeout", "Timed out waiting for invocation to complete")
+	require.FailNowf(t, "timeout", "Timed out waiting for invocation to reach expected status %v", expectedStatus)
 	return nil
 }
 
@@ -175,7 +231,9 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
 	env, workflowService := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepoContents)
+
+	repoContentsMap := simpleRepo()
+	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 
 	// Create the workflow
@@ -190,26 +248,10 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Set up the fake git provider so that GetFileContents can return the
-	// buildbuddy.yaml from our test repo
-	fakeGitProvider.FileContents = simpleRepoContents
-	// Configure the fake webhook data to be parsed from the response, then
-	// trigger the webhook.
-	fakeGitProvider.WebhookData = &interfaces.WebhookData{
-		EventName:     "push",
-		PushedRepoURL: repoURL,
-		PushedBranch:  "master",
-		SHA:           commitSHA,
-		TargetRepoURL: repoURL,
-		TargetBranch:  "master",
-	}
-
-	req, err := http.NewRequest("POST", createResp.GetWebhookUrl(), nil /*=body*/)
-	require.NoError(t, err)
-	workflowService.ServeHTTP(NewTestResponseWriter(t), req)
+	triggerWebhook(t, fakeGitProvider, workflowService, repoContentsMap, repoURL, commitSHA, createResp.GetWebhookUrl())
 
 	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
-	inv := waitForInvocationComplete(t, ctx, bb, reqCtx, iid)
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_COMPLETE_INVOCATION_STATUS)
 
 	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
 	require.Equal(t, repoURL, inv.GetRepoUrl())
@@ -219,10 +261,11 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 
 func TestCreateAndExecute(t *testing.T) {
 	fakeGitProvider := testgit.NewFakeProvider()
-	fakeGitProvider.FileContents = simpleRepoContents
+	fakeGitProvider.FileContents = simpleRepo()
 	env, _ := setup(t, fakeGitProvider)
 	bb := env.GetBuildBuddyServiceClient()
-	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepoContents)
+
+	repoPath, commitSHA := testgit.MakeTempRepo(t, simpleRepo())
 	repoURL := fmt.Sprintf("file://%s", repoPath)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
@@ -238,10 +281,12 @@ func TestCreateAndExecute(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, createResp.GetId())
 
+	// actionName should match an action name from buildbuddy.yaml to tell the workflow service which action config to use
+	actionName := "Test action"
 	execReq := &wfpb.ExecuteWorkflowRequest{
 		RequestContext: reqCtx,
 		WorkflowId:     createResp.GetId(),
-		ActionName:     "Test action",
+		ActionName:     actionName,
 		CommitSha:      commitSHA,
 		PushedRepoUrl:  repoURL,
 		PushedBranch:   "master",
@@ -254,7 +299,7 @@ func TestCreateAndExecute(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, execResp.GetInvocationId())
 
-	inv := waitForInvocationComplete(t, ctx, bb, reqCtx, execResp.GetInvocationId())
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, execResp.GetInvocationId(), inpb.Invocation_COMPLETE_INVOCATION_STATUS)
 
 	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
 	require.Equal(t, repoURL, inv.GetRepoUrl())
@@ -269,7 +314,7 @@ func TestCreateAndExecute(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, execResp.GetInvocationId())
 
-	inv = waitForInvocationComplete(t, ctx, bb, reqCtx, execResp.GetInvocationId())
+	inv = waitForInvocationStatus(t, ctx, bb, reqCtx, execResp.GetInvocationId(), inpb.Invocation_COMPLETE_INVOCATION_STATUS)
 
 	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
 	nActionsSecondRun := actionCount(t, inv)
@@ -277,4 +322,42 @@ func TestCreateAndExecute(t *testing.T) {
 		t, nActionsSecondRun, nActionsFirstRun,
 		"should execute fewer actions on second run since build should be cached",
 	)
+}
+
+func TestCancel(t *testing.T) {
+	fakeGitProvider := testgit.NewFakeProvider()
+	env, workflowService := setup(t, fakeGitProvider)
+	bb := env.GetBuildBuddyServiceClient()
+
+	// Set up slow script to give cancellation time to complete
+	repoContentsMap := repoWithSlowScript()
+	repoPath, commitSHA := testgit.MakeTempRepo(t, repoContentsMap)
+	repoURL := fmt.Sprintf("file://%s", repoPath)
+
+	// Create the workflow
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	createResp, err := bb.CreateWorkflow(ctx, &wfpb.CreateWorkflowRequest{
+		RequestContext: reqCtx,
+		GitRepo:        &wfpb.CreateWorkflowRequest_GitRepo{RepoUrl: repoURL},
+	})
+	require.NoError(t, err)
+
+	// Trigger the workflow to run
+	triggerWebhook(t, fakeGitProvider, workflowService, repoContentsMap, repoURL, commitSHA, createResp.GetWebhookUrl())
+
+	// Cancel workflow
+	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
+	cancelResp, err := bb.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{
+		RequestContext: reqCtx,
+		InvocationId:   iid,
+	})
+
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
+	require.NoError(t, err)
+	require.NotNil(t, cancelResp)
+	require.NotNil(t, inv)
 }

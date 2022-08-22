@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -45,7 +46,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/durationpb"
 
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -54,7 +54,6 @@ import (
 	dockerclient "github.com/docker/docker/client"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
-	gstatus "google.golang.org/grpc/status"
 )
 
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
@@ -106,7 +105,7 @@ const (
 	scratchDriveID = "scratchfs"
 	// minScratchDiskSizeBytes is the minimum size needed for the scratch disk.
 	// This is needed because the init binary needs some space to copy files around.
-	minScratchDiskSizeBytes = 25e6
+	minScratchDiskSizeBytes = 30e6
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
@@ -140,19 +139,8 @@ const (
 	// The path in the guest where VFS is mounted.
 	guestVFSMountDir = "/vfs"
 
-	// How much of the context deadline to allocate towards collecting outputs
-	// from the command. The remaining time is allocated towards actually
-	// executing the command.
-	collectOutputsDuration = 1 * time.Second
-
-	// How long to allow for the VM to be removed when called as part of Run().
-	// This deadline isn't used for the Exec() codepath because removal is handled
-	// in the background by the runner pool.
+	// How long to allow for the VM to be finalized (paused, outputs copied, etc.)
 	finalizationTimeout = 10 * time.Second
-
-	// Max recv message size for Exec() requests, which can have lots of stderr/
-	// stdout in the response.
-	grpcMaxRecvMsgSizeBytes = 50_000_000
 )
 
 var (
@@ -1303,30 +1291,24 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return nil
 }
 
-func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
+func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *repb.Command, workDir string, stdio *container.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	// TODO(bduffany): Reuse connection from Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
 	if err != nil {
-		return nil, status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err)
+		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
 	}
 	defer conn.Close()
 
 	client := vmxpb.NewExecClient(conn)
 
-	// Allocate some of the deadline towards collecting outputs. If we let the
-	// command take up the entire deadline, then we will just get a
-	// DeadlineExceeded error from the exec request instead of any debug output on
-	// stdout/stderr, and there won't be any time left to collect output files
-	// from the workspace which are also useful for debugging.
-	if deadline, ok := ctx.Deadline(); ok {
-		execDeadline := deadline.Add(-collectOutputsDuration)
-		req.Timeout = durationpb.New(time.Until(execDeadline))
+	defer container.Metrics.Unregister(c)
+	statsListener := func(stats *repb.UsageStats) {
+		container.Metrics.Observe(c, stats)
 	}
-
-	return c.vmExec(ctx, client, req)
+	return vmexec_client.Execute(ctx, client, cmd, workDir, statsListener, stdio)
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
@@ -1350,18 +1332,6 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 		return nil, status.InternalErrorf("Failed to connect to firecracker VM exec server: %s", err)
 	}
 	return conn, nil
-}
-
-func (c *FirecrackerContainer) vmExec(ctx context.Context, client vmxpb.ExecClient, req *vmxpb.ExecRequest) (*vmxpb.ExecResponse, error) {
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
-
-	opt := grpc.MaxRecvMsgSizeCallOption{MaxRecvMsgSize: grpcMaxRecvMsgSizeBytes}
-	rsp, err := client.Exec(ctx, req, opt)
-	if err != nil {
-		return nil, status.WrapError(err, "Firecracker exec failed")
-	}
-	return rsp, nil
 }
 
 func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
@@ -1399,11 +1369,6 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
 func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *container.Stdio) *interfaces.CommandResult {
-	// TODO(bduffany): Wire up stdin/stdout/stderr from ExecOpts
-	if stdio.Stderr != nil || stdio.Stdout != nil || stdio.Stdin != nil {
-		return commandutil.ErrorResult(status.FailedPreconditionError("firecracker does not yet support remote persistent workers"))
-	}
-
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1412,10 +1377,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		log.Debugf("Exec took %s", time.Since(start))
 	}()
 
-	result := &interfaces.CommandResult{
-		CommandDebugString: fmt.Sprintf("(firecracker) %s", cmd.GetArguments()),
-		ExitCode:           commandutil.NoExitCode,
-	}
+	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 
 	if c.fsLayout == nil {
 		if err := c.syncWorkspace(ctx); err != nil {
@@ -1431,17 +1393,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}
 
-	execRequest := &vmxpb.ExecRequest{
-		Arguments:        cmd.GetArguments(),
-		WorkingDirectory: "/workspace/",
-	}
+	workDir := "/workspace/"
 	if c.fsLayout != nil {
-		execRequest.WorkingDirectory = guestVFSMountDir
-	}
-	for _, ev := range cmd.GetEnvironmentVariables() {
-		execRequest.EnvironmentVariables = append(execRequest.EnvironmentVariables, &vmxpb.ExecRequest_EnvironmentVariable{
-			Name: ev.GetName(), Value: ev.GetValue(),
-		})
+		workDir = guestVFSMountDir
 	}
 
 	defer func() {
@@ -1450,14 +1404,10 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			log.Warningf("OOM error occurred during task execution: %s", err)
 		}
 	}()
-	rsp, err := c.SendExecRequestToGuest(ctx, execRequest)
-	if err != nil {
-		result.Error = err
-		return result
-	}
-	if rsp.Status != nil {
-		result.Error = gstatus.ErrorProto(rsp.Status)
-	}
+	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
+	ctx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
+	defer cancel()
+
 	// If FUSE is enabled then outputs are already in the workspace.
 	if c.fsLayout == nil {
 		// Command was successful, let's unpack the files back to our
@@ -1479,9 +1429,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}
 
-	result.ExitCode = int(rsp.GetExitCode())
-	result.Stdout = rsp.GetStdout()
-	result.Stderr = rsp.GetStderr()
 	return result
 }
 

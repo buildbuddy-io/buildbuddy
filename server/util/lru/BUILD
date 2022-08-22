@@ -16,6 +16,7 @@ go_library(
 
 go_test(
     name = "lru_test",
+    size = "small",
     srcs = ["lru_test.go"],
     deps = [
         ":lru",

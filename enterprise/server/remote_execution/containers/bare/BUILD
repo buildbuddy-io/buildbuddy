@@ -16,6 +16,7 @@ go_library(
 
 go_test(
     name = "bare_test",
+    size = "small",
     srcs = ["bare_test.go"],
     deps = [
         ":bare",

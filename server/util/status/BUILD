@@ -14,6 +14,7 @@ go_library(
 
 go_test(
     name = "status_test",
+    size = "small",
     srcs = ["status_test.go"],
     deps = [
         ":status",

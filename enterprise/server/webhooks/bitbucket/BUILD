@@ -18,6 +18,7 @@ go_library(
 
 go_test(
     name = "bitbucket_test",
+    size = "small",
     srcs = ["bitbucket_test.go"],
     deps = [
         ":bitbucket",

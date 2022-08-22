@@ -18,11 +18,11 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/disk",
+        "//server/util/flagutil",
         "//server/util/flagutil/types",
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
-        "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_cockroachdb_pebble//vfs",
         "@com_github_prometheus_client_golang//prometheus",
@@ -33,6 +33,7 @@ go_library(
 
 go_test(
     name = "pebble_cache_test",
+    size = "small",
     srcs = ["pebble_cache_test.go"],
     shard_count = 8,
     deps = [

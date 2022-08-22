@@ -15,7 +15,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/disk",
-        "//server/util/flagutil/types",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/prefix",
@@ -28,6 +28,7 @@ go_library(
 
 go_test(
     name = "disk_cache_test",
+    size = "small",
     srcs = ["disk_cache_test.go"],
     deps = [
         ":disk_cache",
@@ -42,6 +43,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/prefix",
+        "//server/util/status",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",

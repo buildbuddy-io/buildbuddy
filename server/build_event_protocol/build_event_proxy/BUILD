@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//proto:publish_build_event_go_proto",
         "//server/environment",
-        "//server/util/flagutil/types",
+        "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/log",
         "@org_golang_google_grpc//:go_default_library",

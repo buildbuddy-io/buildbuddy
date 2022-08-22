@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -30,10 +29,10 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	peerReadTimeout = 60 * time.Second
-)
-
+// Replicas need a reference back to the Store that holds them in order to
+// add and remove themselves, read files from peers, etc. In order to make this
+// more easily testable in a standalone fashion, IStore mocks out just the
+// necessary methods.
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
@@ -110,11 +109,18 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 		return nil, status.NotFoundError("Key not found (empty)")
 	}
 
-	// We need to copy the value from pebble before
-	// closer is closed.
+	// We need to copy the value from pebble before closer is closed.
 	val := make([]byte, len(buf))
 	copy(val, buf)
 	return val, nil
+}
+
+func sizeOf(val []byte) (int64, error) {
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(val, fileMetadata); err != nil {
+		return 0, err
+	}
+	return fileMetadata.GetSizeBytes() + int64(len(val)), nil
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
@@ -124,14 +130,29 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 			NodeId:    sm.nodeID,
 		},
 	}
-	if sm.db != nil {
-		du, err := sm.db.EstimateDiskUsage(keys.Key{constants.MinByte}, keys.Key{constants.MaxByte})
+	db, err := sm.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	iterOpts := &pebble.IterOptions{
+		LowerBound: keys.Key([]byte{constants.MinByte}),
+		UpperBound: keys.Key([]byte{constants.MaxByte}),
+	}
+
+	iter := db.NewIter(iterOpts)
+	defer iter.Close()
+
+	estimatedBytesUsed := int64(0)
+	for iter.Next() {
+		sizeBytes, err := sizeOf(iter.Value())
 		if err != nil {
-			log.Errorf("Error estimating disk usage: %s", err)
 			return nil, err
 		}
-		ru.EstimatedDiskBytesUsed = int64(du)
+		estimatedBytesUsed += sizeBytes
 	}
+	ru.EstimatedDiskBytesUsed = estimatedBytesUsed
 	return ru, nil
 }
 
@@ -482,28 +503,27 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 
 	iter := wb.NewIter(iterOpts)
 	defer iter.Close()
-	var t bool = iter.First()
 
 	totalSize := int64(0)
-	for ; t; t = iter.Next() {
-		if t {
-			totalSize += int64(len(iter.Value()))
+	for iter.Next() {
+		sizeBytes, err := sizeOf(iter.Value())
+		if err != nil {
+			return nil, err
 		}
+		totalSize += sizeBytes
 	}
 
 	leftSplitSize := int64(0)
-	t = iter.First()
+	var t bool = iter.First()
 	var lastKey []byte
 	for ; t; t = iter.Next() {
 		if leftSplitSize >= totalSize/2 && canSplitKeys(lastKey, iter.Key()) {
 			sp := &rfpb.FindSplitPointResponse{
-				Left:           make([]byte, len(lastKey)),
+				Split:          make([]byte, len(iter.Key())),
 				LeftSizeBytes:  leftSplitSize,
-				Right:          make([]byte, len(iter.Key())),
 				RightSizeBytes: totalSize - leftSplitSize,
 			}
-			copy(sp.Left, lastKey)
-			copy(sp.Right, iter.Key())
+			copy(sp.Split, iter.Key())
 			log.Debugf("Found split point: %+v", sp)
 			return sp, nil
 		}
@@ -682,11 +702,10 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	// Delete the keys from each side that are now owned by the other side.
 	// Right side delete should be a no-op if this is a freshly created replica.
 	sp := req.GetSplitPoint()
-	rightDeleteEnd := keys.Key(sp.GetLeft()).Next()
-	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, rightDeleteEnd, nil /*ignored write options*/); err != nil {
+	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, sp.GetSplit(), nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
-	if err := wb.DeleteRange(sp.GetRight(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+	if err := wb.DeleteRange(sp.GetSplit(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
 
@@ -697,8 +716,8 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	leftRD.Generation += 1                     // increment rd generation upon split
 	rightRD.Generation = leftRD.Generation + 1 // increment rd generation upon split
 	rightRD.Right = req.GetLeft().GetRight()   // new range's end is the prev range's end
-	rightRD.Left = sp.GetRight()               // new range's beginning is split point right side
-	leftRD.Right = sp.GetLeft()                // old range's end is now split point left side
+	rightRD.Left = sp.GetSplit()               // new range's beginning is split point right side
+	leftRD.Right = sp.GetSplit()               // old range's end is now split point left side
 	rightRDBuf, err := proto.Marshal(rightRD)
 	if err != nil {
 		return nil, err

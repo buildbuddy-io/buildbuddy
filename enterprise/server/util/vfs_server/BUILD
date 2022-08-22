@@ -31,6 +31,7 @@ go_library(
 
 go_test(
     name = "vfs_server_test",
+    size = "small",
     srcs = ["vfs_server_test.go"],
     deps = [
         ":vfs_server",

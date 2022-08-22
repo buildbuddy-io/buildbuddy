@@ -12,7 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -129,6 +129,6 @@ func main() {
 }
 
 func printMessage(msg proto.Message) {
-	out, _ := prototext.MarshalOptions{Multiline: true}.Marshal(msg)
+	out, _ := protojson.MarshalOptions{Multiline: true}.Marshal(msg)
 	fmt.Println(string(out))
 }
