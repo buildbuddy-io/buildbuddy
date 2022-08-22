@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math"
 	"sort"
@@ -20,6 +21,12 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+)
+
+var (
+	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", false, "If set, allow splitting oversize replicas")
+	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", false, "If set, allow moving replicas between nodes")
+	enableReplacingReplicas = flag.Bool("cache.raft.enable_replacing_replicas", false, "If set, allow replacing dead / down replicas")
 )
 
 const (
@@ -693,50 +700,55 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 // modifyCluster applies `changes` to the cluster when possible.
 func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes *clusterChanges) error {
 	// Splits are going to happen before anything else.
-	for rs, _ := range changes.overloadedReplicas {
-		rd, ok := state.managedRanges[rs.clusterID]
-		if !ok {
-			continue
-		}
-		_, err := d.store.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-			Range: rd,
-		})
-		if err != nil {
-			log.Warningf("Error splitting cluster: %s", err)
-		} else {
-			log.Printf("Successfully split %+v", rs)
-		}
-		time.Sleep(10 * time.Second)
-		if err := d.updateState(ctx, state); err != nil {
-			return err
-		}
-	}
-
-	requiredMoves := d.makeMoveInstructions(changes.deadReplicas)
-	for _, move := range requiredMoves {
-		log.Printf("Making required move: %+v", move)
-		if err := d.applyMove(ctx, move, state); err != nil {
-			log.Warningf("Error applying move: %s", err)
-		}
-		time.Sleep(10 * time.Second)
-		if err := d.updateState(ctx, state); err != nil {
-			return err
+	if *enableSplittingReplicas {
+		for rs, _ := range changes.overloadedReplicas {
+			rd, ok := state.managedRanges[rs.clusterID]
+			if !ok {
+				continue
+			}
+			_, err := d.store.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+				Range: rd,
+			})
+			if err != nil {
+				log.Warningf("Error splitting cluster: %s", err)
+			} else {
+				log.Printf("Successfully split %+v", rs)
+			}
+			time.Sleep(10 * time.Second)
+			if err := d.updateState(ctx, state); err != nil {
+				return err
+			}
 		}
 	}
 
-	optionalMoves := d.makeMoveInstructions(changes.moveableReplicas)
-	currentFitScore := d.clusterMap.FitScore()
-	for _, move := range optionalMoves {
-		if d.clusterMap.FitScore(move) >= currentFitScore {
-			continue
+	if *enableReplacingReplicas {
+		requiredMoves := d.makeMoveInstructions(changes.deadReplicas)
+		for _, move := range requiredMoves {
+			log.Printf("Making required move: %+v", move)
+			if err := d.applyMove(ctx, move, state); err != nil {
+				log.Warningf("Error applying move: %s", err)
+			}
+			time.Sleep(10 * time.Second)
+			if err := d.updateState(ctx, state); err != nil {
+				return err
+			}
 		}
-		log.Printf("Making optional move: %+v", move)
-		if err := d.applyMove(ctx, move, state); err != nil {
-			log.Warningf("Error applying move: %s", err)
-		}
-		time.Sleep(10 * time.Second)
-		if err := d.updateState(ctx, state); err != nil {
-			return err
+	}
+	if *enableMovingReplicas {
+		optionalMoves := d.makeMoveInstructions(changes.moveableReplicas)
+		currentFitScore := d.clusterMap.FitScore()
+		for _, move := range optionalMoves {
+			if d.clusterMap.FitScore(move) >= currentFitScore {
+				continue
+			}
+			log.Printf("Making optional move: %+v", move)
+			if err := d.applyMove(ctx, move, state); err != nil {
+				log.Warningf("Error applying move: %s", err)
+			}
+			time.Sleep(10 * time.Second)
+			if err := d.updateState(ctx, state); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
