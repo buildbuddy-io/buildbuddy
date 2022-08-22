@@ -495,13 +495,11 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 	for ; t; t = iter.Next() {
 		if leftSplitSize >= totalSize/2 && canSplitKeys(lastKey, iter.Key()) {
 			sp := &rfpb.FindSplitPointResponse{
-				Left:           make([]byte, len(lastKey)),
+				Split:          make([]byte, len(iter.Key())),
 				LeftSizeBytes:  leftSplitSize,
-				Right:          make([]byte, len(iter.Key())),
 				RightSizeBytes: totalSize - leftSplitSize,
 			}
-			copy(sp.Left, lastKey)
-			copy(sp.Right, iter.Key())
+			copy(sp.Split, iter.Key())
 			log.Debugf("Found split point: %+v", sp)
 			return sp, nil
 		}
@@ -680,11 +678,10 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	// Delete the keys from each side that are now owned by the other side.
 	// Right side delete should be a no-op if this is a freshly created replica.
 	sp := req.GetSplitPoint()
-	rightDeleteEnd := keys.Key(sp.GetLeft()).Next()
-	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, rightDeleteEnd, nil /*ignored write options*/); err != nil {
+	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, sp.GetSplit(), nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
-	if err := wb.DeleteRange(sp.GetRight(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+	if err := wb.DeleteRange(sp.GetSplit(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
 
@@ -695,8 +692,8 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	leftRD.Generation += 1                     // increment rd generation upon split
 	rightRD.Generation = leftRD.Generation + 1 // increment rd generation upon split
 	rightRD.Right = req.GetLeft().GetRight()   // new range's end is the prev range's end
-	rightRD.Left = sp.GetRight()               // new range's beginning is split point right side
-	leftRD.Right = sp.GetLeft()                // old range's end is now split point left side
+	rightRD.Left = sp.GetSplit()               // new range's beginning is split point right side
+	leftRD.Right = sp.GetSplit()               // old range's end is now split point left side
 	rightRDBuf, err := proto.Marshal(rightRD)
 	if err != nil {
 		return nil, err
