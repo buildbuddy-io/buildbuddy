@@ -371,18 +371,18 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
     return (
       <div className="cache-result-hovercard">
-        {result.targetId && (
+        {result.targetId ? (
           <>
             <b>Target</b> <span>{result.targetId}</span>
           </>
-        )}
-        {(result.actionMnemonic || result.actionId) && (
+        ) : null}
+        {result.actionMnemonic || result.actionId ? (
           <>
             <b>{result.actionMnemonic ? "Action" : "Digest"}</b>
             <span>{result.actionMnemonic || result.actionId}</span>
           </>
-        )}
-        {result.name && (
+        ) : null}
+        {result.name ? (
           <>
             <b>File</b>{" "}
             <span>
@@ -390,7 +390,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
               {result.name}
             </span>
           </>
-        )}
+        ) : null}
         <>
           <b>Size</b>
           <span>{format.bytes(result.digest.sizeBytes)}</span>
