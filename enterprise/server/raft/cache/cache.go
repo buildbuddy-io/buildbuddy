@@ -94,6 +94,8 @@ type RaftCache struct {
 	isolation    *rfpb.Isolation
 	shutdown     chan struct{}
 	shutdownOnce *sync.Once
+
+	fileStorer   filestore.Store
 }
 
 // We need to provide a factory method that creates the DynamicNodeRegistry, and
@@ -140,6 +142,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		rangeCache:   rangecache.New(),
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
+		fileStorer:   filestore.New(true /*=includeGroupIDInFilePaths*/),
 	}
 
 	if len(conf.Join) < 3 {
@@ -355,7 +358,7 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit i
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +386,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +434,7 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := filestore.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -448,7 +451,7 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 
 	missingDigests := make([]*repb.Digest, 0)
 	for _, req := range reqs {
-		fileMetadataKey, err := filestore.FileMetadataKey(req.GetFileRecord()[0])
+		fileMetadataKey, err := rc.fileStorer.FileMetadataKey(req.GetFileRecord()[0])
 		if err != nil {
 			return nil, err
 		}

@@ -84,6 +84,8 @@ type Replica struct {
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
 	mappedRange     *rangemap.Range
+
+	fileStorer      filestore.Store
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -369,7 +371,7 @@ func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRe
 	}
 	defer rc.Close()
 
-	wc, err := filestore.NewWriter(ctx, sm.fileDir, wb, fileRecord)
+	wc, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, wb, fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +396,7 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
-	fileMetadataKey, err := filestore.FileMetadataKey(req.GetFileRecord())
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
@@ -1271,5 +1273,6 @@ func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Repli
 		nodeID:    nodeID,
 		store:     store,
 		log:       log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		fileStorer: filestore.New(true /*=includeGroupIDInFilePaths*/),
 	}
 }
