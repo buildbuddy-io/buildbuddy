@@ -1,66 +1,35 @@
 package testdigest
 
 import (
-	"bytes"
 	"io"
-	"io/ioutil"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	realdigest "github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 )
 
 var (
 	randomSeedOnce sync.Once
-	randomSrc      io.Reader
+	randomGen      *digest.Generator
 )
-
-type randomDataMaker struct {
-	src rand.Source
-}
-
-func (r *randomDataMaker) Read(p []byte) (n int, err error) {
-	todo := len(p)
-	offset := 0
-	for {
-		val := int64(r.src.Int63())
-		for i := 0; i < 8; i++ {
-			p[offset] = byte(val & 0xff)
-			todo--
-			if todo == 0 {
-				return len(p), nil
-			}
-			offset++
-			val >>= 8
-		}
-	}
-}
 
 func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
 	randomSeedOnce.Do(func() {
-		randomSrc = &randomDataMaker{rand.NewSource(time.Now().Unix())}
+		randomGen = digest.RandomGenerator(time.Now().Unix())
 	})
-
-	// Read some random bytes.
-	buf := new(bytes.Buffer)
-	io.CopyN(buf, randomSrc, sizeBytes)
-	readSeeker := bytes.NewReader(buf.Bytes())
-
-	// Compute a digest for the random bytes.
-	d, err := realdigest.Compute(readSeeker)
+	d, r, err := randomGen.RandomDigestReader(sizeBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	readSeeker.Seek(0, 0)
-	return d, readSeeker
+	return d, r
 }
 
 func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 	d, rs := NewRandomDigestReader(t, sizeBytes)
-	buf, err := ioutil.ReadAll(rs)
+	buf, err := io.ReadAll(rs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +38,7 @@ func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 
 func ReadDigestAndClose(t *testing.T, r io.ReadCloser) *repb.Digest {
 	defer r.Close()
-
-	d, err := realdigest.Compute(r)
+	d, err := digest.Compute(r)
 	if err != nil {
 		t.Fatal(err)
 	}
