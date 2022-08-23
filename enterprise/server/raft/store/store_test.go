@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
@@ -399,7 +400,7 @@ func writeRecord(ctx context.Context, t *testing.T, stores []*TestingStore, grou
 		},
 		Digest: d,
 	}
-	fk, err := constants.FileMetadataKey(fr)
+	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
 	require.Nil(t, err)
 
 	rd, err := stores[0].Sender.LookupRangeDescriptor(ctx, fk, true /*skipCache*/)
@@ -420,7 +421,7 @@ func writeRecord(ctx context.Context, t *testing.T, stores []*TestingStore, grou
 }
 
 func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.FileRecord) {
-	fk, err := constants.FileMetadataKey(fr)
+	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
 	require.Nil(t, err)
 
 	err = ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {

@@ -72,6 +72,8 @@ type Store struct {
 
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
+
+	fileStorer filestore.Store
 }
 
 func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
@@ -92,6 +94,7 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		replicas: sync.Map{},
 
 		metaRangeData: "",
+		fileStorer:    filestore.New(true /*=isolateByGroupIDs*/),
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)
@@ -342,7 +345,7 @@ func (s *Store) Sender() *sender.Sender {
 }
 
 func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := s.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +509,7 @@ func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (
 
 	rsp := &rfpb.FindMissingResponse{}
 	for _, fileRecord := range req.GetFileRecord() {
-		fileMetadaKey, err := constants.FileMetadataKey(fileRecord)
+		fileMetadaKey, err := s.fileStorer.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -546,7 +549,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
+	fileMetadataKey, err := s.fileStorer.FileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return err
 	}
@@ -562,7 +565,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	}
 	offset := req.GetOffset()
 	limit := req.GetLimit()
-	readCloser, err := filestore.NewReader(stream.Context(), s.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	readCloser, err := s.fileStorer.NewReader(stream.Context(), s.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
 		return err
 	}
@@ -606,11 +609,11 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 			}
 			defer db.Close()
 			batch = db.NewBatch()
-			fileMetadataKey, err = constants.FileMetadataKey(req.GetFileRecord())
+			fileMetadataKey, err = s.fileStorer.FileMetadataKey(req.GetFileRecord())
 			if err != nil {
 				return err
 			}
-			writeCloser, err = filestore.NewWriter(stream.Context(), s.fileDir, batch, req.GetFileRecord())
+			writeCloser, err = s.fileStorer.NewWriter(stream.Context(), s.fileDir, batch, req.GetFileRecord())
 			if err != nil {
 				return err
 			}
@@ -678,7 +681,7 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 			return err
 		}
 		if writeCloser == nil {
-			fmk, err := constants.FileMetadataKey(req.GetFileRecord())
+			fmk, err := s.fileStorer.FileMetadataKey(req.GetFileRecord())
 			if err != nil {
 				return err
 			}

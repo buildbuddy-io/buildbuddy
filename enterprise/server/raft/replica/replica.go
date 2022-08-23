@@ -84,6 +84,8 @@ type Replica struct {
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
 	mappedRange     *rangemap.Range
+
+	fileStorer filestore.Store
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -369,7 +371,7 @@ func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRe
 	}
 	defer rc.Close()
 
-	wc, err := filestore.NewWriter(ctx, sm.fileDir, wb, fileRecord)
+	wc, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, wb, fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +396,7 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
-	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
@@ -1260,13 +1262,14 @@ func (sm *Replica) Close() error {
 // CreateReplica creates an ondisk statemachine.
 func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Replica {
 	return &Replica{
-		closedMu:  &sync.RWMutex{},
-		wg:        sync.WaitGroup{},
-		rootDir:   rootDir,
-		fileDir:   fileDir,
-		clusterID: clusterID,
-		nodeID:    nodeID,
-		store:     store,
-		log:       log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		closedMu:   &sync.RWMutex{},
+		wg:         sync.WaitGroup{},
+		rootDir:    rootDir,
+		fileDir:    fileDir,
+		clusterID:  clusterID,
+		nodeID:     nodeID,
+		store:      store,
+		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		fileStorer: filestore.New(true /*=isolateByGroupIDs*/),
 	}
 }

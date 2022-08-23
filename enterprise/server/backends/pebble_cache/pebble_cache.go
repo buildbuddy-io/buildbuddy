@@ -134,6 +134,8 @@ type PebbleCache struct {
 
 	brokenFilesDone   chan struct{}
 	orphanedFilesDone chan struct{}
+
+	fileStorer filestore.Store
 }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
@@ -291,7 +293,9 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		isolation: &rfpb.Isolation{
 			CacheType:   rfpb.Isolation_CAS_CACHE,
 			PartitionId: defaultPartitionID,
+			GroupId:     interfaces.AuthAnonymousUser,
 		},
+		fileStorer: filestore.New(false /*gid filepaths*/),
 	}
 
 	peMu := sync.Mutex{}
@@ -304,7 +308,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, blobDir, pc, pc.accesses)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc, pc.accesses)
 			if err != nil {
 				return err
 			}
@@ -602,7 +606,7 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 			continue
 		}
 		blobDir = p.partitionBlobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
-		_, err := filestore.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
+		_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 			mismatchCount += 1
@@ -628,7 +632,7 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 		if err != nil {
 			return err
 		}
-		fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+		fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileMetadata.GetFileRecord())
 		if err != nil {
 			return err
 		}
@@ -686,7 +690,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 				if err != nil {
 					return err
 				}
-				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileMetadata.GetFileRecord())
 				if err != nil {
 					return err
 				}
@@ -695,7 +699,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 		})
 		p.eg.Go(func() error {
 			return p.batchProcessCh(removes, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
-				fileMetadataKey, err := constants.FileMetadataKey(fileMetadata.GetFileRecord())
+				fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileMetadata.GetFileRecord())
 				if err != nil {
 					return err
 				}
@@ -741,25 +745,25 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (p *PebbleCache) lookupPartitionID(ctx context.Context, remoteInstanceName string) (string, error) {
+func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
 	auth := p.env.GetAuthenticator()
 	if auth == nil {
-		return defaultPartitionID, nil
+		return interfaces.AuthAnonymousUser, defaultPartitionID, nil
 	}
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		return defaultPartitionID, nil
+		return interfaces.AuthAnonymousUser, defaultPartitionID, nil
 	}
 	for _, pm := range p.opts.PartitionMappings {
 		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
-			return pm.PartitionID, nil
+			return user.GetGroupID(), pm.PartitionID, nil
 		}
 	}
-	return defaultPartitionID, nil
+	return user.GetGroupID(), defaultPartitionID, nil
 }
 
 func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	partID, err := p.lookupPartitionID(ctx, remoteInstanceName)
+	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -775,7 +779,7 @@ func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType interfaces.Ca
 	}
 	newIsolation.RemoteInstanceName = remoteInstanceName
 	newIsolation.PartitionId = partID
-
+	newIsolation.GroupId = groupID
 	clone := *p
 	clone.isolation = newIsolation
 	return &clone, nil
@@ -872,7 +876,7 @@ func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 	if err != nil {
 		return false, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return false, err
 	}
@@ -894,7 +898,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -929,7 +933,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -971,7 +975,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -979,7 +983,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
 			continue
 		}
-		rc, err := filestore.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
+		rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 			continue
@@ -1092,7 +1096,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 		return err
 	}
 
-	fp := filestore.FilePath(p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata())
+	fp := p.fileStorer.FilePath(p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata())
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
@@ -1112,7 +1116,7 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 	if err != nil {
 		return err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return err
 	}
@@ -1133,7 +1137,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -1144,7 +1148,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 		return nil, err
 	}
 
-	rc, err := filestore.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
+	rc, err := p.fileStorer.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
@@ -1186,7 +1190,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -1201,9 +1205,9 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 
 	var wcm filestore.WriteCloserMetadata
 	if d.GetSizeBytes() < *maxInlineFileSizeBytes {
-		wcm = filestore.InlineWriter(ctx, d.GetSizeBytes())
+		wcm = p.fileStorer.InlineWriter(ctx, d.GetSizeBytes())
 	} else {
-		fw, err := filestore.FileWriter(ctx, p.blobDir(), fileRecord)
+		fw, err := p.fileStorer.FileWriter(ctx, p.blobDir(), fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -1285,11 +1289,12 @@ type evictionPoolEntry struct {
 }
 
 type partitionEvictor struct {
-	mu       *sync.Mutex
-	part     disk.Partition
-	blobDir  string
-	dbGetter dbGetter
-	accesses chan<- *accessTimeUpdate
+	mu         *sync.Mutex
+	part       disk.Partition
+	fileStorer filestore.Store
+	blobDir    string
+	dbGetter   dbGetter
+	accesses   chan<- *accessTimeUpdate
 
 	casPrefix   []byte
 	acPrefix    []byte
@@ -1301,10 +1306,11 @@ type partitionEvictor struct {
 	lastEvicted *evictionPoolEntry
 }
 
-func newPartitionEvictor(part disk.Partition, blobDir string, dbg dbGetter, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg dbGetter, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:         &sync.Mutex{},
 		part:       part,
+		fileStorer: fileStorer,
 		blobDir:    blobDir,
 		casPrefix:  []byte(part.ID + "/cas/"),
 		acPrefix:   []byte(part.ID + "/ac/"),
@@ -1607,7 +1613,7 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 	md := sample.fileMetadata.GetStorageMetadata()
 	switch {
 	case md.GetFileMetadata() != nil:
-		fp := filestore.FilePath(e.blobDir, md.GetFileMetadata())
+		fp := e.fileStorer.FilePath(e.blobDir, md.GetFileMetadata())
 		if err := disk.DeleteFile(context.TODO(), fp); err != nil {
 			return err
 		}

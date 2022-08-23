@@ -4,13 +4,12 @@ package filestore
 import (
 	"bytes"
 	"context"
+	"hash/crc32"
 	"io"
 	"path/filepath"
 	"strconv"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
@@ -35,7 +34,115 @@ type WriteCloserMetadata interface {
 	MetadataWriter
 }
 
-func NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
+// returns partitionID, groupID, isolation, remote_instance_name, hash
+// callers may choose to use all or some of these elements when constructing
+// a file path or file key. because these strings may be persisted to disk, this
+// function should rarely change and must be kept backwards compatible.
+func fileRecordSegments(r *rfpb.FileRecord) (partID string, groupID string, isolation string, remoteInstanceHash string, digestHash string, err error) {
+	if r.GetIsolation().GetPartitionId() == "" {
+		err = status.FailedPreconditionError("Empty partition ID not allowed in filerecord.")
+		return
+	}
+	partID = r.GetIsolation().GetPartitionId()
+	groupID = r.GetIsolation().GetGroupId()
+
+	if r.GetIsolation().GetCacheType() == rfpb.Isolation_CAS_CACHE {
+		isolation = "cas"
+	} else if r.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
+		isolation = "ac"
+		if remoteInstanceName := r.GetIsolation().GetRemoteInstanceName(); remoteInstanceName != "" {
+			remoteInstanceHash = strconv.Itoa(int(crc32.ChecksumIEEE([]byte(remoteInstanceName))))
+		}
+	} else {
+		err = status.FailedPreconditionError("Isolation type must be explicitly set, not UNKNOWN.")
+		return
+	}
+	if len(r.GetDigest().GetHash()) <= 4 {
+		err = status.FailedPreconditionError("Malformed digest; too short.")
+		return
+	}
+	digestHash = r.GetDigest().GetHash()
+	return
+}
+
+type Store interface {
+	FileKey(r *rfpb.FileRecord) ([]byte, error)
+	FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string
+	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
+
+	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
+	NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error)
+
+	InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
+	InlineWriter(ctx context.Context, sizeBytes int64) WriteCloserMetadata
+
+	FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error)
+	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error)
+}
+
+type fileStorer struct {
+	isolateByGroupIDs bool
+}
+
+// New creates a new filestorer interface. If isolateByGroupIDs is set, then
+// filepaths and filekeys will include groupIDs.
+func New(isolateByGroupIDs bool) Store {
+	return &fileStorer{isolateByGroupIDs}
+}
+
+func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
+	fp := f.GetFilename()
+	if !filepath.IsAbs(fp) {
+		fp = filepath.Join(fileDir, f.GetFilename())
+	}
+	return fp
+}
+
+// FileKey is the partial path where a file will be written.
+// For example, given a fileRecord with FileKey: "foo/bar", the filestore will
+// write the file at a path like "/root/dir/blobs/foo/bar".
+func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
+	// This function cannot change without a data migration.
+	// filekeys look like this:
+	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	//   // for example:
+	//   //   PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	if err != nil {
+		return nil, err
+	}
+	if fs.isolateByGroupIDs {
+		return []byte(filepath.Join(partID, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	} else {
+		return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	}
+}
+
+// FileMetadataKey is the partial key name where a file's metadata will be
+// written in pebble.
+// For example, given a fileRecord with FileMetadataKey: "baz/bap", the filestore will
+// write the file's metadata under pebble key like:
+//   - baz/bap
+func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
+	// This function cannot change without a data migration.
+	// Metadata keys look like this:
+	//   // {groupID}/{ac|cas}/{hash}
+	//   // for example:
+	//   //   PART123456/ac/44321/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123456/cas/abcd12345asdasdasd123123123asdasdasd
+	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	if err != nil {
+		return nil, err
+	}
+	if fs.isolateByGroupIDs {
+		return []byte(filepath.Join(partID, groupID, isolation, remoteInstanceHash, hash)), nil
+	} else {
+		return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash)), nil
+	}
+}
+
+func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
 	// New files are written using this method. Existing files will be read
 	// from wherever they were originally written according to their stored
 	// StorageMetadata.
@@ -45,21 +152,21 @@ func NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord
 	// files will be read from wherever they stored, regardless of this
 	// setting.
 	// return PebbleWriter(wb, fileRecord) NB: Pebble only writer needs more testing.
-	return FileWriter(ctx, fileDir, fileRecord)
+	return fs.FileWriter(ctx, fileDir, fileRecord)
 }
 
-func NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
+func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
 	switch {
 	case md.GetFileMetadata() != nil:
-		return FileReader(ctx, fileDir, md.GetFileMetadata(), offset, limit)
+		return fs.FileReader(ctx, fileDir, md.GetFileMetadata(), offset, limit)
 	case md.GetInlineMetadata() != nil:
-		return InlineReader(md.GetInlineMetadata(), offset, limit)
+		return fs.InlineReader(md.GetInlineMetadata(), offset, limit)
 	default:
 		return nil, status.InvalidArgumentErrorf("No stored metadata: %+v", md)
 	}
 }
 
-func InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error) {
+func (fs *fileStorer) InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error) {
 	r := bytes.NewReader(f.GetData())
 	r.Seek(offset, 0)
 	length := int64(len(f.GetData()))
@@ -89,7 +196,7 @@ func (iw *inlineWriter) Metadata() *rfpb.StorageMetadata {
 	}
 }
 
-func InlineWriter(ctx context.Context, sizeBytes int64) WriteCloserMetadata {
+func (fs *fileStorer) InlineWriter(ctx context.Context, sizeBytes int64) WriteCloserMetadata {
 	return &inlineWriter{bytes.NewBuffer(make([]byte, 0, sizeBytes))}
 }
 
@@ -106,21 +213,13 @@ func (c *fileChunker) Metadata() *rfpb.StorageMetadata {
 	}
 }
 
-func FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
-	fp := f.GetFilename()
-	if !filepath.IsAbs(fp) {
-		fp = filepath.Join(fileDir, f.GetFilename())
-	}
-	return fp
-}
-
-func FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
-	fp := FilePath(fileDir, f)
+func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
+	fp := fs.FilePath(fileDir, f)
 	return disk.FileReader(ctx, fp, offset, limit)
 }
 
-func FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
-	file, err := constants.FileKey(fileRecord)
+func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
+	file, err := fs.FileKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -132,163 +231,4 @@ func FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord
 		WriteCloser: wc,
 		fileName:    string(file),
 	}, nil
-}
-
-func chunkName(key []byte, idx int64) []byte {
-	return append(key, []byte(strconv.FormatInt(idx, 10))...)
-}
-
-type pebbleChunker struct {
-	wb       pebble.Writer
-	key      keys.Key
-	idx      int
-	chunkNum int64
-	buf      []byte
-	closed   bool
-}
-
-// PebbleWriter takes a stream of data and writes it to sequential pebble KVs
-// with a maximum size of maxPebbleValueSize. Chunks names begin at 1, and are
-// equal to key + "-%d" where %d is the chunk number. StreamChunker implements
-// the WriteCloser interface, but additionally implements a Metadata call,
-// which returns a bit of metedata in proto form describing the data written.
-func PebbleWriter(wb pebble.Writer, fr *rfpb.FileRecord) (WriteCloserMetadata, error) {
-	key, err := constants.FileDataKey(fr)
-	if err != nil {
-		return nil, err
-	}
-	return &pebbleChunker{
-		wb:       wb,
-		key:      key,
-		idx:      0,
-		chunkNum: initialChunkNum,
-		buf:      make([]byte, maxPebbleValueSize),
-		closed:   false,
-	}, nil
-}
-
-func (c *pebbleChunker) Write(data []byte) (int, error) {
-	if c.closed {
-		return 0, status.FailedPreconditionError("writer already closed")
-	}
-	dataReadPtr := 0
-	for {
-		n := cap(c.buf) - c.idx
-		copied := copy(c.buf[c.idx:c.idx+n], data[dataReadPtr:])
-		c.idx += copied
-		dataReadPtr += copied
-		if c.idx == cap(c.buf) {
-			if err := c.flush(); err != nil {
-				return 0, err
-			}
-		}
-		if dataReadPtr == len(data) {
-			break
-		}
-	}
-	return dataReadPtr, nil
-}
-
-func (c *pebbleChunker) flush() error {
-	if c.idx > 0 {
-		if err := c.wb.Set(chunkName(c.key, c.chunkNum), c.buf[:c.idx], nil /*ignored write options*/); err != nil {
-			return err
-		}
-		c.idx = 0
-		c.chunkNum += 1
-	}
-	return nil
-}
-
-func (c *pebbleChunker) Close() error {
-	if c.closed {
-		return status.FailedPreconditionError("writer already closed")
-	}
-	if err := c.flush(); err != nil {
-		return err
-	}
-	c.closed = true
-	return nil
-}
-
-func (c *pebbleChunker) Metadata() *rfpb.StorageMetadata {
-	if !c.closed {
-		return nil
-	}
-	md := &rfpb.StorageMetadata{
-		PebbleMetadata: &rfpb.StorageMetadata_PebbleMetadata{
-			Key:    c.key,
-			Chunks: c.chunkNum - initialChunkNum,
-		},
-	}
-	return md
-}
-
-type pebbleStreamer struct {
-	iter      *pebble.Iterator
-	key       keys.Key
-	idx       int64
-	numChunks int64
-	buf       []byte
-}
-
-// ChunkStreamer takes a pebble iterator and a key and reads sequential pebble
-// KVS in a stream. Any missing chunks will cause an OutOfRangeError to be
-// returned from Read().
-func PebbleReader(iter *pebble.Iterator, p *rfpb.StorageMetadata_PebbleMetadata) io.ReadCloser {
-	return &pebbleStreamer{
-		iter:      iter,
-		key:       p.GetKey(),
-		idx:       initialChunkNum,
-		numChunks: p.GetChunks(),
-	}
-}
-
-func (c *pebbleStreamer) Read(buf []byte) (int, error) {
-	copied := 0
-	for {
-		if len(c.buf) == 0 {
-			if err := c.fetchNext(); err != nil {
-				return copied, err
-			}
-		}
-		n := copy(buf, c.buf)
-		copied += n
-		c.buf = c.buf[n:]
-		if n == len(buf) {
-			return copied, nil
-		}
-	}
-}
-
-func (c *pebbleStreamer) Close() error {
-	return nil
-}
-
-// fetchNext is guaranteed to either return an error or
-// fill c.buf.
-func (c *pebbleStreamer) fetchNext() error {
-	if c.idx >= c.numChunks+initialChunkNum {
-		return io.EOF
-	}
-	chunk := chunkName(c.key, c.idx)
-	found := c.iter.SeekGE(chunk)
-	if !found || bytes.Compare(chunk, c.iter.Key()) != 0 {
-		return status.OutOfRangeErrorf("chunk %q not found", chunkName(c.key, c.idx))
-	}
-	c.buf = make([]byte, len(c.iter.Value()))
-	copy(c.buf, c.iter.Value())
-	c.idx += 1
-	return nil
-}
-
-func PebbleHasChunks(iter *pebble.Iterator, p *rfpb.StorageMetadata_PebbleMetadata) bool {
-	for idx := int64(initialChunkNum); idx <= p.GetChunks(); idx++ {
-		chunk := chunkName(p.GetKey(), idx)
-		found := iter.SeekGE(chunk)
-		if !found || bytes.Compare(chunk, iter.Key()) != 0 {
-			return false
-		}
-	}
-	return true
 }
