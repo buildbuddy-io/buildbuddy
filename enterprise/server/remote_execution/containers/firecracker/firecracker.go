@@ -638,9 +638,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	}
 
 	vmCtx := context.Background()
-	logger := getLogrusLogger(c.constants.DebugMode)
 	machineOpts := []fcclient.Opt{
-		fcclient.WithLogger(logger),
+		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
 		fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName),
 	}
 	log.Debugf("fullMemSnapshotName: %s, vmStateSnapshotName %s", fullMemSnapshotName, vmStateSnapshotName)
