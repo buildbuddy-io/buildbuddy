@@ -582,7 +582,6 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 	})
 	defer iter.Close()
 
-	iter.SeekGE([]byte{constants.MinByte})
 	fileMetadata := &rfpb.FileMetadata{}
 	blobDir := ""
 
@@ -591,7 +590,7 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 	}()
 
 	mismatchCount := 0
-	for iter.Next() {
+	for iter.First(); iter.Valid(); iter.Next() {
 		// Check if we're shutting down; exit if so.
 		select {
 		case <-quitChan:
