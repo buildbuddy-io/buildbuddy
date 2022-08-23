@@ -299,6 +299,37 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	go s.releaseRangeLease(rd.GetRangeId())
 }
 
+func (s *Store) validatedRange(header *rfpb.Header) (*rfpb.RangeDescriptor, error) {
+	if header == nil {
+		return nil, status.FailedPreconditionError("Nil header not allowed")
+	}
+
+	s.rangeMu.RLock()
+	rd, rangeOK := s.openRanges[header.GetRangeId()]
+	s.rangeMu.RUnlock()
+	if !rangeOK {
+		return nil, status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, header.GetRangeId())
+	}
+
+	if len(rd.GetReplicas()) == 0 {
+		return nil, status.OutOfRangeErrorf("%s: range had no replicas %d", constants.RangeNotFoundMsg, header.GetRangeId())
+	}
+
+	// Ensure the header generation matches what we have locally -- if not,
+	// force client to go back and re-pull the rangeDescriptor from the meta
+	// range.
+	if rd.GetGeneration() != header.GetGeneration() {
+		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), header.GetGeneration())
+	}
+
+	return rd, nil
+}
+
+func (s *Store) rangeIsValid(header *rfpb.Header) error {
+	_, err := s.validatedRange(header)
+	return err
+}
+
 func (s *Store) RangeIsActive(header *rfpb.Header) error {
 	if header == nil {
 		return status.FailedPreconditionError("Nil header not allowed")
@@ -595,6 +626,9 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 			return err
 		}
 		if writeCloser == nil {
+			if err := s.rangeIsValid(req.GetHeader()); err != nil {
+				return err
+			}
 			// It's expected that clients will directly write bytes
 			// to all replicas in a range and then syncpropose a
 			// write which confirms the data is in place. For that
@@ -686,11 +720,16 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 				return err
 			}
 			fileMetadataKey = fmk
-			peers, err := s.sender.GetAllNodes(ctx, fileMetadataKey)
-			if err != nil {
-				return err
-			}
-			mwc, err := s.apiClient.MultiWriter(ctx, peers, req.GetFileRecord())
+
+			var mwc io.WriteCloser
+			err = s.sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
+				w, err := s.apiClient.MultiWriter(ctx, peers, req.GetFileRecord())
+				if err != nil {
+					return err
+				}
+				mwc = w
+				return nil
+			})
 			if err != nil {
 				return err
 			}
