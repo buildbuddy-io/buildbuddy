@@ -117,10 +117,10 @@ func (c *APIClient) RemoteReader(ctx context.Context, client rfspb.ApiClient, re
 }
 
 type streamWriteCloser struct {
-	stream        rfspb.Api_WriteClient
-	header        *rfpb.Header
-	fileRecord    *rfpb.FileRecord
-	bytesUploaded int64
+	stream         rfspb.Api_WriteClient
+	header         *rfpb.Header
+	fileRecord     *rfpb.FileRecord
+	firstWriteDone bool
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
@@ -130,8 +130,19 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 		Data:        data,
 		FinishWrite: false,
 	}
-	err := wc.stream.Send(req)
-	return len(data), err
+	if err := wc.stream.Send(req); err != nil {
+		return 0, err
+	}
+	// On the first write, the peer will send us an empty response to indicate
+	// that it has accepted the write so we wait here to make sure the write
+	// was not rejected.
+	if !wc.firstWriteDone {
+		if _, err := wc.stream.Recv(); err != nil {
+			return 0, err
+		}
+		wc.firstWriteDone = true
+	}
+	return len(data), nil
 }
 
 func (wc *streamWriteCloser) Close() error {
@@ -143,7 +154,10 @@ func (wc *streamWriteCloser) Close() error {
 	if err := wc.stream.Send(req); err != nil {
 		return err
 	}
-	_, err := wc.stream.CloseAndRecv()
+	if err := wc.stream.CloseSend(); err != nil {
+		return err
+	}
+	_, err := wc.stream.Recv()
 	return err
 }
 
@@ -153,10 +167,9 @@ func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Head
 		return nil, err
 	}
 	wc := &streamWriteCloser{
-		header:        header,
-		fileRecord:    fileRecord,
-		bytesUploaded: 0,
-		stream:        stream,
+		header:     header,
+		fileRecord: fileRecord,
+		stream:     stream,
 	}
 	return wc, nil
 }
@@ -167,20 +180,11 @@ func RemoteSyncWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.
 		return nil, err
 	}
 	wc := &streamWriteCloser{
-		header:        header,
-		fileRecord:    fileRecord,
-		bytesUploaded: 0,
-		stream:        stream,
+		header:     header,
+		fileRecord: fileRecord,
+		stream:     stream,
 	}
 	return wc, nil
-}
-
-func (c *APIClient) RemoteWriter(ctx context.Context, peerHeader *PeerHeader, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
-	client, err := c.getClient(ctx, peerHeader.GRPCAddr)
-	if err != nil {
-		return nil, err
-	}
-	return RemoteWriter(ctx, client, peerHeader.Header, fileRecord)
 }
 
 type multiWriteCloser struct {

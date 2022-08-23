@@ -645,6 +645,11 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 			if err != nil {
 				return err
 			}
+			// Send the client an empty write response as an indicator that we
+			// have accepted the write.
+			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
+				return err
+			}
 		}
 		n, err := writeCloser.Write(req.Data)
 		if err != nil {
@@ -670,7 +675,7 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
 				return err
 			}
-			return stream.SendAndClose(&rfpb.WriteResponse{
+			return stream.Send(&rfpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
 		}
@@ -722,10 +727,23 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 				if err != nil {
 					return err
 				}
+				// Attempt the first write to see if all the peers will accept
+				// it. If the range information is stale, the write will fail
+				// here and the entire operation will be retried via RunAll.
+				n, err := w.Write(req.Data)
+				if err != nil {
+					return err
+				}
+				bytesWritten += int64(n)
 				mwc = w
 				return nil
 			})
 			if err != nil {
+				return err
+			}
+			// Send the client an empty write response as an indicator that we
+			// have accepted the write.
+			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
 				return err
 			}
 			rwc := &raftWriteCloser{mwc, func() error {
@@ -740,17 +758,18 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 				return err
 			}}
 			writeCloser = rwc
+		} else {
+			n, err := writeCloser.Write(req.Data)
+			if err != nil {
+				return err
+			}
+			bytesWritten += int64(n)
 		}
-		n, err := writeCloser.Write(req.Data)
-		if err != nil {
-			return err
-		}
-		bytesWritten += int64(n)
 		if req.FinishWrite {
 			if err := writeCloser.Close(); err != nil {
 				return err
 			}
-			return stream.SendAndClose(&rfpb.WriteResponse{
+			return stream.Send(&rfpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
 		}
