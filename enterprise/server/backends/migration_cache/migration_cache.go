@@ -6,21 +6,19 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sync/errgroup"
-	"io/fs"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"sync"
+	"time"
 )
 
 var (
-	doubleReadPercentage      = flag.Float64("cache.migration_cache.double_read_percentage", 0, "The percentage of reads we should double read, to ensure the two caches have the same data. Float [0, 1]. 0 for no double reads, 1 for double reads on every read")
-	migrateAndExit            = flag.Bool("cache.migration_cache.migrate_and_exit", false, "If true, attempt to migrate src cache to dest cache and exit upon completion.")
+	doubleReadPercentage  = flag.Float64("cache.migration_cache.double_read_percentage", 0, "The percentage of reads we should double read, to ensure the two caches have the same data. Float [0, 1]. 0 for no double reads, 1 for double reads on every read")
+	autoFixDoubleReadErrs = flag.Bool("cache.migration.auto_fix_double_read_errs", false, "If set, automatically fix any double read errs in the dest cache")
+
+	maxDoubleWritesPerSecond = flag.Int("cache.migration.max_double_writes_per_second", 1, "We will buffer double writes, so copying data doesn't monopolize resources (as copying will happen during Gets, which are very frequent)")
+
 	clearCacheBeforeMigration = flag.Bool("cache.migration.clear_cache_before_migration", false, "If set, clear any existing cache content in the dest cache.")
-	autoFixDoubleReadErrs     = flag.Bool("cache.migration.auto_fix_double_read_errs", false, "If set, automatically fix any double read errs in the dest cache")
 )
 
 type MigrationCache struct {
@@ -28,9 +26,10 @@ type MigrationCache struct {
 	Dest       MigrationDestCache
 	SrcRootDir string
 
-	mu             sync.RWMutex
-	eg             *errgroup.Group
-	doubleReadChan chan *repb.Digest
+	mu              sync.RWMutex
+	eg              *errgroup.Group
+	doubleReadChan  chan *repb.Digest
+	doubleWriteChan chan *DoubleWriteData
 }
 
 type MigrationDestCache interface {
@@ -61,18 +60,13 @@ func Register(env environment.Env) error {
 		// Return error - both must be set
 	}
 
-	ctx := context.Background()
 	mc.eg = &errgroup.Group{}
 	env.SetCache(mc)
 
-	if *migrateAndExit {
-		if err := mc.Migrate(ctx, mc.srcRootDir); err != nil {
-			log.Errorf("Migration failed: %s", err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
-
+	mc.eg.Go(func() error {
+		mc.ProcessDoubleWrites(context.Background())
+		return nil
+	})
 	mc.eg.Go(func() error {
 		mc.ProcessDoubleReads(context.Background())
 		return nil
@@ -82,27 +76,56 @@ func Register(env environment.Env) error {
 }
 
 func (c *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	c.mu.Lock()
+	srcData, err := c.Src.Get(ctx, d)
+
+	// Enqueue non-blocking copying during Get
+	select {
+	case c.doubleWriteChan <- &DoubleWriteData{
+		digest: d,
+		add:    &Add{Data: srcData},
+	}:
+	default:
+		// Log error that channel is full so we can increase the size if needed, but don't block
+	}
+	c.mu.Unlock()
+
+	// Double read some proportion to guarantee that data is consistent between caches
 	shouldDoubleRead := rand.Float64() <= *doubleReadPercentage
 	if shouldDoubleRead {
 		c.doubleReadChan <- d
 	}
 
-	return c.Src.Get(ctx, d)
+	return srcData, err
 }
 
 func (c *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.Src.Set(ctx, d, data); err != nil {
-		return err
+
+	// Double write in parallel
+	c.eg.Go(func() error {
+		return c.Src.Set(ctx, d, data)
+	})
+	c.eg.Go(func() error {
+		// Enqueue blocking double write
+		c.doubleWriteChan <- &DoubleWriteData{
+			digest: d,
+			add:    &Add{Data: data},
+		}
+		return nil
+	})
+
+	// If error during write to source cache (source of truth), must delete from destination cache
+	err := c.eg.Wait()
+	if err != nil {
+		c.doubleWriteChan <- &DoubleWriteData{
+			digest: d,
+			remove: &Remove{},
+		}
 	}
-	if err := c.Dest.DoubleWrite(ctx, DoubleWriteData{
-		digest: d,
-		add:    &Add{Data: data},
-	}); err != nil {
-		// Log error but don't fail the call
-	}
-	return nil
+
+	return err
 }
 
 func (c *MigrationCache) ProcessDoubleReads(ctx context.Context) {
@@ -111,47 +134,48 @@ func (c *MigrationCache) ProcessDoubleReads(ctx context.Context) {
 			c.mu.Lock()
 			defer c.mu.Unlock()
 
-			primaryData, err := c.Src.Get(ctx, digest)
-			secondaryData, err := c.Dest.Get(ctx, digest)
+			primaryData, primaryErr := c.Src.Get(ctx, digest)
+			secondaryData, secondaryErr := c.Dest.Get(ctx, digest)
 
-			if primaryData != secondaryData {
+			if primaryErr != nil {
+				// Return early - just skip the double read
+				return nil
+			} else if secondaryData == nil {
+				// Return early - data may have just not been copied yet
+				return nil
+			} else if secondaryErr != nil {
+				// Log - so we know if there are read problems with new cache
+			} else if primaryData != secondaryData {
 				// Log so we can identify and debug double read errors
-			}
 
-			//
-			if *autoFixDoubleReadErrs {
-				c.Dest.Set(ctx, digest, primaryData)
+				if *autoFixDoubleReadErrs {
+					c.doubleWriteChan <- &DoubleWriteData{
+						digest: digest,
+						add:    &Add{Data: primaryData},
+					}
+				}
 			}
 		})
 	}
 }
 
-// Migrate copies all data from the src cache to the dest cache
-func (c *MigrationCache) Migrate(ctx context.Context, srcRootDir string) error {
-	walkFn := func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil // keep going
-		}
-		rootDir := srcRootDir
+func (c *MigrationCache) ProcessDoubleWrites(ctx context.Context) {
+	for doubleWriteData := range c.doubleWriteChan {
+		c.eg.Go(func() error {
+			c.mu.Lock()
+			defer c.mu.Unlock()
 
-		// Sanity checks on data
+			if doubleWriteData.remove != nil {
+				c.Dest.Delete(ctx, doubleWriteData.digest)
+			} else if doubleWriteData.add != nil {
+				c.Dest.Set(ctx, doubleWriteData.digest, doubleWriteData.add.Data)
+			} else {
+				// Log - exactly one field should be set
+			}
+		})
 
-		digest, err := parseFilePath(rootDir, path)
-
-		c.mu.Lock()
-		data, err := c.Src.Get(ctx, digest)
-		c.Dest.Set(ctx, digest, data)
-		c.mu.Unlock()
-
-		return nil
+		// Buffer double writes, to ensure copying data doesn't monopolize resources
+		sleepMs := int((float64(1) / float64(*maxDoubleWritesPerSecond)) * 1000)
+		time.Sleep(time.Duration(sleepMs) * time.Millisecond)
 	}
-	go func() {
-		if err := filepath.WalkDir(srcRootDir, walkFn); err != nil {
-			alert.UnexpectedEvent("walking_directory", "err: %s", err)
-		}
-	}()
-	return nil
 }
