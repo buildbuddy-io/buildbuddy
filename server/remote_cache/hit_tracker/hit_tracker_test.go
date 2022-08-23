@@ -41,11 +41,15 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	}
 	compressedSize := int64(123)
 	ctx = withRequestMetadata(t, ctx, rmd)
-	require.NoError(t, err)
+	cacheMetadata := &interfaces.CacheMetadata{
+		SizeBytes:          1000,
+		LastAccessTimeUsec: 55,
+		LastModifyTimeUsec: 44,
+	}
 	ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 	dl := ht.TrackDownload(d)
-	dl.CloseWithBytesTransferred(compressedSize, repb.Compressor_ZSTD)
+	dl.CloseWithBytesTransferred(compressedSize, repb.Compressor_ZSTD, cacheMetadata)
 
 	sc := hit_tracker.ScoreCard(ctx, env, iid)
 	require.Len(t, sc.Results, 1, "expected exactly one cache result")
@@ -61,6 +65,9 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	assert.Equal(t, d.SizeBytes, actual.GetDigest().GetSizeBytes())
 	assert.Equal(t, repb.Compressor_ZSTD, actual.GetCompressor())
 	assert.Equal(t, compressedSize, actual.GetTransferredSizeBytes())
+	require.Equal(t, int64(55), actual.GetLastAccessedTimeUsec())
+	require.Equal(t, int64(44), actual.GetLastModifiedTimeUsec())
+
 	stats := hit_tracker.CollectCacheStats(ctx, env, iid)
 	assert.Equal(t, int64(1), stats.GetCasCacheHits())
 	assert.Equal(t, d.SizeBytes, stats.GetTotalDownloadSizeBytes())
@@ -68,6 +75,51 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	assert.Equal(t, int64(0), stats.GetCasCacheUploads())
 	assert.Equal(t, int64(0), stats.GetTotalUploadSizeBytes())
 	assert.Equal(t, int64(0), stats.GetTotalUploadTransferredSizeBytes())
+}
+
+func TestHitTracker_DetailedStatsNilCacheMetadata(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	flags.Set(t, "cache.detailed_stats_enabled", true)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	env.SetMetricsCollector(mc)
+	actionCache := false
+	ctx := context.Background()
+	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
+	rmd := &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+		ActionMnemonic:   "GoCompile",
+		TargetId:         "//foo:bar",
+	}
+	d := &repb.Digest{
+		Hash:      "c9c111006b30ffe6ce309fd64c44da651bffa068d530c7b1898698186b4afe2b",
+		SizeBytes: 1234,
+	}
+	compressedSize := int64(123)
+	ctx = withRequestMetadata(t, ctx, rmd)
+	require.NoError(t, err)
+	ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
+
+	dl := ht.TrackDownload(d)
+	dl.CloseWithBytesTransferred(compressedSize, repb.Compressor_ZSTD, nil)
+
+	sc := hit_tracker.ScoreCard(ctx, env, iid)
+	require.Len(t, sc.Results, 1, "expected exactly one cache result")
+	actual := sc.Results[0]
+	assert.Greater(t, actual.GetStartTime().AsTime().UnixNano(), int64(0), "missing timestamp")
+	assert.Greater(t, actual.GetDuration().AsDuration().Nanoseconds(), int64(0), "missing duration")
+	assert.Equal(t, "GoCompile", actual.ActionMnemonic)
+	assert.Equal(t, "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4", actual.ActionId)
+	assert.Equal(t, "//foo:bar", actual.TargetId)
+	assert.Equal(t, capb.CacheType_CAS, actual.CacheType)
+	assert.Equal(t, capb.RequestType_READ, actual.RequestType)
+	assert.Equal(t, d.Hash, actual.GetDigest().GetHash())
+	assert.Equal(t, d.SizeBytes, actual.GetDigest().GetSizeBytes())
+	assert.Equal(t, repb.Compressor_ZSTD, actual.GetCompressor())
+	assert.Equal(t, compressedSize, actual.GetTransferredSizeBytes())
+	require.Equal(t, int64(0), actual.GetLastAccessedTimeUsec())
+	require.Equal(t, int64(0), actual.GetLastModifiedTimeUsec())
 }
 
 func TestHitTracker_RecordsUsage(t *testing.T) {
@@ -100,7 +152,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(compressedSize, repb.Compressor_ZSTD)
+		dl.CloseWithBytesTransferred(compressedSize, repb.Compressor_ZSTD, nil)
 
 		require.Len(t, ut.Increments, 1)
 		assert.Equal(t, []*tables.UsageCounts{{
@@ -129,7 +181,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(compressedSize, repb.Compressor_ZSTD)
+		dl.CloseWithBytesTransferred(compressedSize, repb.Compressor_ZSTD, nil)
 
 		assert.Equal(t, []*tables.UsageCounts{{
 			CASCacheHits:           1,
@@ -155,7 +207,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(d.SizeBytes, repb.Compressor_IDENTITY)
+		dl.CloseWithBytesTransferred(d.SizeBytes, repb.Compressor_IDENTITY, nil)
 
 		assert.Equal(t, []*tables.UsageCounts{{
 			ActionCacheHits:        1,
