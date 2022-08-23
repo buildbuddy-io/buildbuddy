@@ -513,7 +513,7 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 	defer iter.Close()
 
 	totalSize := int64(0)
-	for iter.Next() {
+	for iter.First(); iter.Valid(); iter.Next() {
 		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
@@ -522,9 +522,8 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 	}
 
 	leftSplitSize := int64(0)
-	var t bool = iter.First()
 	var lastKey []byte
-	for ; t; t = iter.Next() {
+	for iter.First(); iter.Valid(); iter.Next() {
 		if leftSplitSize >= totalSize/2 && canSplitKeys(lastKey, iter.Key()) {
 			sp := &rfpb.FindSplitPointResponse{
 				Split:          make([]byte, len(iter.Key())),
@@ -535,13 +534,12 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 			log.Debugf("Found split point: %+v", sp)
 			return sp, nil
 		}
-		if t {
-			leftSplitSize += int64(len(iter.Value()))
-			if len(lastKey) != len(iter.Key()) {
-				lastKey = make([]byte, len(iter.Key()))
-			}
-			copy(lastKey, iter.Key())
+
+		leftSplitSize += int64(len(iter.Value()))
+		if len(lastKey) != len(iter.Key()) {
+			lastKey = make([]byte, len(iter.Key()))
 		}
+		copy(lastKey, iter.Key())
 	}
 	return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSplitSize)
 }
