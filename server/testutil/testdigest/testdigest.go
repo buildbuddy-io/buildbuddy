@@ -3,7 +3,6 @@ package testdigest
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"sync"
 	"testing"
@@ -15,7 +14,7 @@ import (
 
 var (
 	randomSeedOnce sync.Once
-	randomSrc      io.Reader
+	randomGen      *Generator
 )
 
 type randomDataMaker struct {
@@ -39,28 +38,58 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 	}
 }
 
-func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
-	randomSeedOnce.Do(func() {
-		randomSrc = &randomDataMaker{rand.NewSource(time.Now().Unix())}
-	})
+type Generator struct {
+	randMaker *randomDataMaker
+}
 
+func NewGenerator(seed int64) *Generator {
+	return &Generator{randMaker: &randomDataMaker{rand.NewSource(seed)}}
+}
+
+func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSeeker, error) {
 	// Read some random bytes.
 	buf := new(bytes.Buffer)
-	io.CopyN(buf, randomSrc, sizeBytes)
+	if _, err := io.CopyN(buf, g.randMaker, sizeBytes); err != nil {
+		return nil, nil, err
+	}
 	readSeeker := bytes.NewReader(buf.Bytes())
 
 	// Compute a digest for the random bytes.
 	d, err := realdigest.Compute(readSeeker)
 	if err != nil {
-		t.Fatal(err)
+		return nil, nil, err
 	}
-	readSeeker.Seek(0, 0)
-	return d, readSeeker
+	if _, err := readSeeker.Seek(0, 0); err != nil {
+		return nil, nil, err
+	}
+	return d, readSeeker, nil
 }
 
-func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
-	d, rs := NewRandomDigestReader(t, sizeBytes)
-	buf, err := ioutil.ReadAll(rs)
+func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, error) {
+	d, rs, err := g.RandomDigestReader(sizeBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	buf, err := io.ReadAll(rs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return d, buf, nil
+}
+
+func NewRandomDigestReader(t *testing.T, sizeBytes int64) (*repb.Digest, io.ReadSeeker, error) {
+	randomSeedOnce.Do(func() {
+		randomGen = NewGenerator(time.Now().UnixNano())
+	})
+	return randomGen.RandomDigestReader(sizeBytes)
+}
+
+func NewRandomDigestBuf(t *testing.T, sizeBytes int64) (*repb.Digest, []byte) {
+	d, rs, err := NewRandomDigestReader(t, sizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf, err := io.ReadAll(rs)
 	if err != nil {
 		t.Fatal(err)
 	}
