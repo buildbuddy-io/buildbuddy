@@ -178,6 +178,16 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	return 0, status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
 }
 
+// Run looks up the replicas that are responsible for the given key and executes
+// fn for each replica until the function succeeds or returns an unretriable
+// error.
+//
+// The range ownership information is retrieved from the range cache, so it can
+// be stale. If the remote peer indicates that the client is using a stale
+// range, this function will look up the range information again bypassing the
+// cache and try the fn again with the new replica information. If the
+// fn succeeds with the new replicas, the range cache will be updated with
+// the new ownership information.
 func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
@@ -205,6 +215,15 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 	return status.UnavailableError("sender.Run retries exceeded")
 }
 
+// RunAll is similar to Run but instead of trying replicas one at a time,
+// fn will be passed information about all the replicas for performing
+// operations that span multiple replicas.
+//
+// If any of the replicas indicate that range information is stale, the whole
+// operation will be retried using fresh range information.
+//
+// Run should generally be used instead unless there's a specialized reason that
+// all replicas need to be consulted.
 func (s *Sender) RunAll(ctx context.Context, key []byte, fn runAllFunc) error {
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false

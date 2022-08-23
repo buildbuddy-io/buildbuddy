@@ -299,6 +299,10 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	go s.releaseRangeLease(rd.GetRangeId())
 }
 
+// validatedRange verifies that the header is valid and the client is using
+// an up-to-date range descriptor. In most cases, it's also necessary to verify
+// that a local replica has a range lease for the given range ID which can be
+// done by using the RangeIsActive function.
 func (s *Store) validatedRange(header *rfpb.Header) (*rfpb.RangeDescriptor, error) {
 	if header == nil {
 		return nil, status.FailedPreconditionError("Nil header not allowed")
@@ -325,11 +329,18 @@ func (s *Store) validatedRange(header *rfpb.Header) (*rfpb.RangeDescriptor, erro
 	return rd, nil
 }
 
+// rangeIsValid verifies that the header is valid and the client is using
+// an up-to-date range descriptor. In most cases, it's also necessary to verify
+// that a local replica has a range lease for the given range ID which can be
+// done by using the RangeIsActive function.
 func (s *Store) rangeIsValid(header *rfpb.Header) error {
 	_, err := s.validatedRange(header)
 	return err
 }
 
+// RangeIsActive verifies that the header is valid and the client is using
+// an up-to-date range descriptor. It also checks that a local replica owns
+// the range lease for the requested range.
 func (s *Store) RangeIsActive(header *rfpb.Header) error {
 	if header == nil {
 		return status.FailedPreconditionError("Nil header not allowed")
