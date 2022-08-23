@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"math/rand"
 	"os"
 	"sync"
@@ -48,29 +47,8 @@ const (
 	findMissingBlobs = "build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs"
 )
 
-type randomDataMaker struct {
-	src rand.Source
-}
-
-func (r *randomDataMaker) Read(p []byte) (n int, err error) {
-	todo := len(p)
-	offset := 0
-	for {
-		val := int64(r.src.Int63())
-		for i := 0; i < 8; i++ {
-			p[offset] = byte(val & 0xff)
-			todo--
-			if todo == 0 {
-				return len(p), nil
-			}
-			offset++
-			val >>= 8
-		}
-	}
-}
-
 var (
-	randomSrc         io.Reader
+	digestGenerator   *digest.Generator
 	mu                sync.Mutex
 	preWrittenDigests []*repb.Digest
 )
@@ -150,18 +128,11 @@ func writeBlobsForReading(ctx context.Context, numBlobs int) []*repb.Digest {
 }
 
 func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
-	buf := new(bytes.Buffer)
-	mu.Lock()
-	io.CopyN(buf, randomSrc, sizeBytes)
-	mu.Unlock()
-	readSeeker := bytes.NewReader(buf.Bytes())
-
-	// Compute a digest for the random bytes.
-	d, err := digest.Compute(readSeeker)
+	d, buf, err := digestGenerator.RandomDigestBuf(sizeBytes)
 	if err != nil {
-		log.Fatalf("Error computing digest: %s", err)
+		log.Fatalf("Error generating digset: %s", err)
 	}
-	return d, buf.Bytes()
+	return d, buf
 }
 
 func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
@@ -234,7 +205,7 @@ func main() {
 	if seed == 0 {
 		seed = time.Now().Unix()
 	}
-	randomSrc = &randomDataMaker{rand.NewSource(seed)}
+	digestGenerator = digest.RandomGenerator(seed)
 	ctx := context.Background()
 
 	if *method == byteStreamRead {

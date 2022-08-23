@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"math/rand"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -273,4 +274,65 @@ func Parse(str string) (*repb.Digest, error) {
 		Hash:      dParts[0],
 		SizeBytes: i,
 	}, nil
+}
+
+type randomDataMaker struct {
+	src rand.Source
+}
+
+func (r *randomDataMaker) Read(p []byte) (n int, err error) {
+	todo := len(p)
+	offset := 0
+	for {
+		val := int64(r.src.Int63())
+		for i := 0; i < 8; i++ {
+			p[offset] = byte(val & 0xff)
+			todo--
+			if todo == 0 {
+				return len(p), nil
+			}
+			offset++
+			val >>= 8
+		}
+	}
+}
+
+type Generator struct {
+	randMaker *randomDataMaker
+}
+
+// RandomGenerator returns a digest sample generator for use in testing tools.
+func RandomGenerator(seed int64) *Generator {
+	return &Generator{randMaker: &randomDataMaker{rand.NewSource(seed)}}
+}
+
+func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSeeker, error) {
+	// Read some random bytes.
+	buf := new(bytes.Buffer)
+	if _, err := io.CopyN(buf, g.randMaker, sizeBytes); err != nil {
+		return nil, nil, err
+	}
+	readSeeker := bytes.NewReader(buf.Bytes())
+
+	// Compute a digest for the random bytes.
+	d, err := Compute(readSeeker)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := readSeeker.Seek(0, 0); err != nil {
+		return nil, nil, err
+	}
+	return d, readSeeker, nil
+}
+
+func (g *Generator) RandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte, error) {
+	d, rs, err := g.RandomDigestReader(sizeBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	buf, err := io.ReadAll(rs)
+	if err != nil {
+		return nil, nil, err
+	}
+	return d, buf, nil
 }
