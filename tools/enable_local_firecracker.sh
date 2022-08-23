@@ -29,9 +29,25 @@ then
     exit 1
 fi
 
+groupadd -f -r cgroups
+usermod -a -G cgroups root
+usermod -a -G cgroups $SUDO_USER
+
 # jailer will create stuff here; ensure the dir exists and owner is user.
 mkdir -p /sys/fs/cgroup/cpuset/firecracker
-chown -R $SUDO_USER:$SUDO_USER /sys/fs/cgroup/cpuset/firecracker
+chown -R $SUDO_USER:cgroups /sys/fs/cgroup/cpuset/firecracker
+chmod -R g+rw /sys/fs/cgroup/cpuset/firecracker
+
+mkdir -p /sys/fs/cgroup/firecracker
+chown -R $SUDO_USER:cgroups /sys/fs/cgroup/firecracker
+chmod -R g+rw /sys/fs/cgroup/firecracker
+
+chown -R root:cgroups /sys/fs/cgroup/cgroup.subtree_control
+chmod -R g+rw /sys/fs/cgroup/cgroup.subtree_control
+chown -R root:cgroups /sys/fs/cgroup/cgroup.procs
+chmod -R g+rw /sys/fs/cgroup/cgroup.procs
+
+setfacl -m u:${SUDO_USER}:rw /dev/kvm
 
 # enable IP forwarding.
 echo 1 > /proc/sys/net/ipv4/ip_forward

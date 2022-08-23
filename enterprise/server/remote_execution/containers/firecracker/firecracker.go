@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -57,6 +58,7 @@ import (
 )
 
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
+var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "1", "Specifies the cgroup version for firecracker to use.")
 
 const (
 	// How long to wait for the VMM to listen on the firecracker socket.
@@ -573,10 +575,24 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
+	var netNS string
+	if c.constants.EnableNetworking {
+		netNS = "/var/run/netns/" + c.id
+	}
+
+	var stdout io.Writer = c.vmLog
+	var stderr io.Writer = c.vmLog
+	if c.constants.DebugMode {
+		stdout = io.MultiWriter(stdout, os.Stdout)
+		stderr = io.MultiWriter(stderr, os.Stderr)
+	}
+
 	// We start firecracker with this reduced config because we will load a
 	// snapshot that is already configured.
 	cfg := fcclient.Config{
 		SocketPath:        firecrackerSocketPath,
+		NetNS:             netNS,
+		Seccomp:           fcclient.SeccompConfig{Enabled: true},
 		DisableValidation: true,
 		JailerCfg: &fcclient.JailerConfig{
 			JailerBinary:   jailerBinPath,
@@ -584,9 +600,18 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 			ID:             c.id,
 			UID:            fcclient.Int(unix.Geteuid()),
 			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(0),
+			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
 			ExecFile:       firecrackerBinPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
+			Stdout:         stdout,
+			Stderr:         stderr,
+			CgroupVersion:  *firecrackerCgroupVersion,
+		},
+		Snapshot: fcclient.SnapshotConfig{
+			MemFilePath:         fullMemSnapshotName,
+			SnapshotPath:        vmStateSnapshotName,
+			EnableDiffSnapshots: true,
+			ResumeVM:            true,
 		},
 		ForwardSignals: make([]os.Signal, 0),
 	}
@@ -608,56 +633,38 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	vmCtx := context.Background()
-	cmd := c.getJailerCommand(vmCtx)
-	machineOpts := []fcclient.Opt{
-		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
-		fcclient.WithProcessRunner(cmd),
-	}
-
-	// Start Firecracker
-	err = cmd.Start()
-	if err != nil {
-		return status.InternalErrorf("Failed starting firecracker binary: %s", err)
-	}
-
-	c.externalJailerCmd = cmd
-
-	// Wait for the jailer directory to be created. We have to do this because we
-	// are starting the command ourselves and loading a snapshot, rather than
-	// going through the normal flow and letting the library start the cmd.
-	waitOpts := disk.WaitOpts{Timeout: jailerDirectoryCreationTimeout}
-	if err := disk.WaitUntilExists(ctx, c.getChroot(), waitOpts); err != nil {
-		return status.UnavailableErrorf("error while waiting for jailer directory creation: %s", err)
-	}
-
-	// Wait until jailer directory exists because the host vsock socket is created in that directory.
 	if err := c.setupVFSServer(ctx); err != nil {
 		return err
 	}
 
-	if err := loader.UnpackSnapshot(c.getChroot()); err != nil {
-		return err
+	vmCtx := context.Background()
+	machineOpts := []fcclient.Opt{
+		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
+		fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName),
 	}
+	log.Debugf("fullMemSnapshotName: %s, vmStateSnapshotName %s", fullMemSnapshotName, vmStateSnapshotName)
 
 	machine, err := fcclient.NewMachine(vmCtx, cfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
 	}
+	log.Debugf("Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
+
+	if err := loader.UnpackSnapshot(c.getChroot()); err != nil {
+		return err
+	}
+
+	err = (func() error {
+		_, span := tracing.StartSpan(ctx)
+		defer span.End()
+		span.SetName("StartMachine")
+		return machine.Start(vmCtx)
+	})()
+	if err != nil {
+		return status.InternalErrorf("Failed starting machine: %s", err)
+	}
 	c.machine = machine
 
-	socketWaitStart := time.Now()
-	errCh := make(chan error)
-	if err := c.machine.WaitForSocket(firecrackerSocketWaitTimeout, errCh); err != nil {
-		return status.InternalErrorf("timeout waiting for firecracker socket: %s", err)
-	}
-	log.Debugf("waitforsocket took %s", time.Since(socketWaitStart))
-	enableDiffSnapshotsOpt := func(params *operations.LoadSnapshotParams) {
-		params.Body.EnableDiffSnapshots = true
-	}
-	if err := c.machine.LoadSnapshot(ctx, fullMemSnapshotName, vmStateSnapshotName, enableDiffSnapshotsOpt); err != nil {
-		return status.InternalErrorf("error loading snapshot: %s", err)
-	}
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		return status.InternalErrorf("error resuming VM: %s", err)
 	}
@@ -775,39 +782,19 @@ func (c *FirecrackerContainer) getChroot() string {
 	return filepath.Join(c.jailerRoot, "firecracker", c.id, "root")
 }
 
-func (c *FirecrackerContainer) getJailerCommand(ctx context.Context) *exec.Cmd {
-	builder := fcclient.NewJailerCommandBuilder().
-		WithBin(jailerBinPath).
-		WithChrootBaseDir(c.jailerRoot).
-		WithID(c.id).
-		WithUID(unix.Geteuid()).
-		WithGID(unix.Getegid()).
-		WithNumaNode(0). // TODO(tylerw): randomize this?
-		WithExecFile(firecrackerBinPath).
-		WithFirecrackerArgs("--api-sock", firecrackerSocketPath)
-
-	if c.constants.EnableNetworking {
-		builder = builder.WithNetNS("/var/run/netns/" + c.id)
-	}
-	var stdout io.Writer = c.vmLog
-	var stderr io.Writer = c.vmLog
-	if c.constants.DebugMode {
-		stdout = io.MultiWriter(stdout, os.Stdout)
-		stderr = io.MultiWriter(stderr, os.Stderr)
-		builder = builder.WithStdin(os.Stdin)
-	}
-	builder = builder.WithStdout(stdout).WithStderr(stderr)
-	return builder.Build(ctx)
-}
-
 // getConfig returns the firecracker config for the current container and given
 // filesystem image paths. The image paths are not expected to be in the chroot;
 // they will be hardlinked to the chroot when starting the machine (see
 // NaiveChrootStrategy).
 func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
 	bootArgs := "ro console=ttyS0 noapic reboot=k panic=1 pci=off nomodules=1 random.trust_cpu=on i8042.noaux=1 tsc=reliable ipv6.disable=1"
+	var netNS string
+	var stdout io.Writer = c.vmLog
+	var stderr io.Writer = c.vmLog
+
 	if c.constants.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs
+		netNS = "/var/run/netns/" + c.id
 	}
 
 	// End the kernel args, before passing some more args to init.
@@ -818,6 +805,8 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 	// Pass some flags to the init script.
 	if c.constants.DebugMode {
 		bootArgs = "-debug_mode " + bootArgs
+		stdout = io.MultiWriter(stdout, os.Stdout)
+		stderr = io.MultiWriter(stderr, os.Stderr)
 	}
 	if c.constants.EnableNetworking {
 		bootArgs = "-set_default_route " + bootArgs
@@ -832,22 +821,24 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 		InitrdPath:      initrdImagePath,
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),
+		NetNS:           netNS,
+		Seccomp:         fcclient.SeccompConfig{Enabled: true},
 		// Note: ordering in this list determines the device lettering
 		// (/dev/vda, /dev/vdb, /dev/vdc, ...)
 		Drives: []fcmodels.Drive{
-			fcmodels.Drive{
+			{
 				DriveID:      fcclient.String(containerDriveID),
 				PathOnHost:   &containerFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(true),
 			},
-			fcmodels.Drive{
+			{
 				DriveID:      fcclient.String(scratchDriveID),
 				PathOnHost:   &scratchFS,
 				IsRootDevice: fcclient.Bool(false),
 				IsReadOnly:   fcclient.Bool(false),
 			},
-			fcmodels.Drive{
+			{
 				DriveID:      fcclient.String(workspaceDriveID),
 				PathOnHost:   &workspaceFS,
 				IsRootDevice: fcclient.Bool(false),
@@ -855,9 +846,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			},
 		},
 		VsockDevices: []fcclient.VsockDevice{
-			fcclient.VsockDevice{
-				Path: firecrackerVSockPath,
-			},
+			{Path: firecrackerVSockPath},
 		},
 		JailerCfg: &fcclient.JailerConfig{
 			JailerBinary:   jailerBinPath,
@@ -865,14 +854,17 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			ID:             c.id,
 			UID:            fcclient.Int(unix.Geteuid()),
 			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(0),
+			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
 			ExecFile:       firecrackerBinPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
+			Stdout:         stdout,
+			Stderr:         stderr,
+			CgroupVersion:  *firecrackerCgroupVersion,
 		},
 		MachineCfg: fcmodels.MachineConfiguration{
 			VcpuCount:       fcclient.Int64(c.constants.NumCPUs),
 			MemSizeMib:      fcclient.Int64(c.constants.MemSizeMB),
-			HtEnabled:       fcclient.Bool(false),
+			Smt:             fcclient.Bool(false),
 			TrackDirtyPages: true,
 		},
 	}
@@ -1271,13 +1263,14 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
-		fcclient.WithProcessRunner(c.getJailerCommand(vmCtx)),
 	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
 		return status.InternalErrorf("Failed creating machine: %s", err)
 	}
+	log.Debugf("Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(m)).FieldByName("cmd")).FieldByName("Args"))
+
 	err = (func() error {
 		_, span := tracing.StartSpan(ctx)
 		defer span.End()
