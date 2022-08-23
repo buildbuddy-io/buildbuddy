@@ -371,13 +371,15 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
     let lastAccessed = "";
     if (result.lastAccessedTimeUsec) {
-      const lastAccessedMs = result.lastAccessedTimeUsec / 1000;
+      const lastAccessedUsec: number = result.lastAccessedTimeUsec;
+      const lastAccessedMs = lastAccessedUsec / 1000;
       lastAccessed = format.formatDate(new Date(lastAccessedMs));
     }
 
     let lastModified = "";
     if (result.lastModifiedTimeUsec) {
-      const lastModifiedMs = result.lastModifiedTimeUsec / 1000;
+      const lastModifiedUsec: number = result.lastModifiedTimeUsec;
+      const lastModifiedMs = lastModifiedUsec / 1000;
       lastModified = format.formatDate(new Date(lastModifiedMs));
     }
 
