@@ -369,6 +369,18 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
+    let lastAccessed = "";
+    if (result.lastAccessedTimeUsec) {
+      const lastAccessedMs = result.lastAccessedTimeUsec / 1000;
+      lastAccessed = format.formatDate(new Date(lastAccessedMs));
+    }
+
+    let lastModified = "";
+    if (result.lastModifiedTimeUsec) {
+      const lastModifiedMs = result.lastModifiedTimeUsec / 1000;
+      lastModified = format.formatDate(new Date(lastModifiedMs));
+    }
+
     return (
       <div className="cache-result-hovercard">
         {result.targetId && (
@@ -411,14 +423,14 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         <>
           <b>Duration</b> <span>{format.durationMillis(proto.durationToMillis(result.duration))}</span>
         </>
-        {result.lastAccessedTimeUsec ? (
+        {lastAccessed ? (
           <>
-            <b>Last accessed</b> <span>{format.formatDate(new Date(result.lastAccessedTimeUsec / 1000))}</span>
+            <b>Last accessed</b> <span>{lastAccessed}</span>
           </>
         ) : null}
-        {result.lastModifiedTimeUsec ? (
+        {lastModified ? (
           <>
-            <b>Last modified</b> <span>{format.formatDate(new Date(result.lastModifiedTimeUsec / 1000))}</span>
+            <b>Last modified</b> <span>{lastModified}</span>
           </>
         ) : null}
       </div>
