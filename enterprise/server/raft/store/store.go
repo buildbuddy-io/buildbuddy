@@ -630,6 +630,7 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 			md := &rfpb.FileMetadata{
 				FileRecord:      req.GetFileRecord(),
 				StorageMetadata: writeCloser.Metadata(),
+				SizeBytes:       bytesWritten,
 			}
 			protoBytes, err := proto.Marshal(md)
 			if err != nil {
