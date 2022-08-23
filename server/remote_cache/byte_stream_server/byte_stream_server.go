@@ -141,7 +141,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	if readErr != nil {
 		ht.TrackMiss(r.GetDigest(), metadata)
-		return err
+		return readErr
 	}
 	defer reader.Close()
 
