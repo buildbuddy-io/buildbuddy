@@ -173,6 +173,10 @@ func AddInvocationIDToDigest(digest *repb.Digest, invocationID string) (*repb.Di
 	}, nil
 }
 
+func isResourceName(url string, matcher *regexp.Regexp) bool {
+	return matcher.MatchString(url)
+}
+
 func parseResourceName(resourceName string, matcher *regexp.Regexp) (*ResourceName, error) {
 	match := matcher.FindStringSubmatch(resourceName)
 	result := make(map[string]string, len(match))
@@ -226,6 +230,14 @@ func ParseDownloadResourceName(resourceName string) (*ResourceName, error) {
 
 func ParseActionCacheResourceName(resourceName string) (*ResourceName, error) {
 	return parseResourceName(resourceName, actionCacheRegex)
+}
+
+func IsDownloadResourceName(url string) bool {
+	return isResourceName(url, downloadRegex)
+}
+
+func IsActionCacheResourceName(url string) bool {
+	return isResourceName(url, actionCacheRegex)
 }
 
 func blobTypeSegment(compressor repb.Compressor_Value) string {
