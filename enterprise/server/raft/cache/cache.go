@@ -142,7 +142,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		rangeCache:   rangecache.New(),
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
-		fileStorer:   filestore.New(true /*=includeGroupIDInFilePaths*/),
+		fileStorer:   filestore.New(true /*=isolateByGroupIDs*/),
 	}
 
 	if len(conf.Join) < 3 {

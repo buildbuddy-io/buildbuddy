@@ -34,8 +34,10 @@ type WriteCloserMetadata interface {
 	MetadataWriter
 }
 
-// returns partitionID, isolation, hash or
-// returns partitionID, isolation, remote_instance_name, hahs
+// returns partitionID, groupID, isolation, remote_instance_name, hash
+// callers may choose to use all or some of these elements when constructing
+// a file path or file key. because these strings may be persisted to disk, this
+// function should rarely change and must be kept backwards compatible.
 func fileRecordSegments(r *rfpb.FileRecord) (partID string, groupID string, isolation string, remoteInstanceHash string, digestHash string, err error) {
 	if r.GetIsolation().GetPartitionId() == "" {
 		err = status.FailedPreconditionError("Empty partition ID not allowed in filerecord.")
@@ -79,11 +81,13 @@ type Store interface {
 }
 
 type fileStorer struct {
-	includeGroupIDInFilePaths bool
+	isolateByGroupIDs bool
 }
 
-func New(includeGroupIDInFilePaths bool) Store {
-	return &fileStorer{includeGroupIDInFilePaths}
+// New creates a new filestorer interface. If isolateByGroupIDs is set, then
+// filepaths and filekeys will include groupIDs.
+func New(isolateByGroupIDs bool) Store {
+	return &fileStorer{isolateByGroupIDs}
 }
 
 func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
@@ -108,7 +112,7 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fs.includeGroupIDInFilePaths {
+	if fs.isolateByGroupIDs {
 		return []byte(filepath.Join(partID, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	} else {
 		return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash[:4], hash)), nil
@@ -131,7 +135,7 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fs.includeGroupIDInFilePaths {
+	if fs.isolateByGroupIDs {
 		return []byte(filepath.Join(partID, groupID, isolation, remoteInstanceHash, hash)), nil
 	} else {
 		return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash)), nil

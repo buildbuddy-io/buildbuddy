@@ -1273,6 +1273,6 @@ func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Repli
 		nodeID:     nodeID,
 		store:      store,
 		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
-		fileStorer: filestore.New(true /*=includeGroupIDInFilePaths*/),
+		fileStorer: filestore.New(true /*=isolateByGroupIDs*/),
 	}
 }

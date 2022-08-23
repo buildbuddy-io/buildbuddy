@@ -400,7 +400,7 @@ func writeRecord(ctx context.Context, t *testing.T, stores []*TestingStore, grou
 		},
 		Digest: d,
 	}
-	fk, err := filestore.New(true /*=includeGroupIDInFilePaths*/).FileMetadataKey(fr)
+	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
 	require.Nil(t, err)
 
 	rd, err := stores[0].Sender.LookupRangeDescriptor(ctx, fk, true /*skipCache*/)
@@ -421,7 +421,7 @@ func writeRecord(ctx context.Context, t *testing.T, stores []*TestingStore, grou
 }
 
 func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.FileRecord) {
-	fk, err := filestore.New(true /*=includeGroupIDInFilePaths*/).FileMetadataKey(fr)
+	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
 	require.Nil(t, err)
 
 	err = ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {

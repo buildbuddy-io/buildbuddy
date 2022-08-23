@@ -94,7 +94,7 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		replicas: sync.Map{},
 
 		metaRangeData: "",
-		fileStorer:    filestore.New(true /*=includeGroupIDInFilePaths*/),
+		fileStorer:    filestore.New(true /*=isolateByGroupIDs*/),
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)
