@@ -117,7 +117,13 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 	return val, nil
 }
 
-func sizeOf(val []byte) (int64, error) {
+func sizeOf(key []byte, val []byte) (int64, error) {
+	if bytes.HasPrefix(key, constants.LocalPrefix) ||
+		bytes.HasPrefix(key, constants.SystemPrefix) ||
+		bytes.HasPrefix(key, constants.MetaRangePrefix) {
+		return int64(len(val)), nil
+	}
+
 	fileMetadata := &rfpb.FileMetadata{}
 	if err := proto.Unmarshal(val, fileMetadata); err != nil {
 		return 0, err
@@ -147,8 +153,8 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	defer iter.Close()
 
 	estimatedBytesUsed := int64(0)
-	for iter.Next() {
-		sizeBytes, err := sizeOf(iter.Value())
+	for iter.First(); iter.Valid(); iter.Next() {
+		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -508,7 +514,7 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 
 	totalSize := int64(0)
 	for iter.Next() {
-		sizeBytes, err := sizeOf(iter.Value())
+		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
