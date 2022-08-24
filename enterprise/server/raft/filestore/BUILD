@@ -9,6 +9,5 @@ go_library(
         "//proto:raft_go_proto",
         "//server/util/disk",
         "//server/util/status",
-        "@com_github_cockroachdb_pebble//:pebble",
     ],
 )
