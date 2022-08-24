@@ -105,10 +105,7 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 func tempJailerRoot(t *testing.T) string {
 	// NOTE: JailerRoot needs to be < 38 chars long, so can't just use
 	// testfs.MakeTempDir(t).
-	root := "/tmp/buildbuddy-test-jailer-root"
-	err := os.MkdirAll(root, 0755)
-	require.NoError(t, err)
-	return root
+	return testfs.MakeTempSymlink(t, "/tmp", "buildbuddy-*-jailer", testfs.MakeTempDir(t))
 }
 
 func TestFirecrackerRunSimple(t *testing.T) {
