@@ -22,6 +22,7 @@ go_test(
     embed = [":dsingleflight"],
     deps = [
         "//enterprise/server/testutil/testredis",
+        "//server/util/status",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
     ],

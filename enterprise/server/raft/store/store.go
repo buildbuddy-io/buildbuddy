@@ -340,26 +340,9 @@ func (s *Store) rangeIsValid(header *rfpb.Header) error {
 // an up-to-date range descriptor. It also checks that a local replica owns
 // the range lease for the requested range.
 func (s *Store) RangeIsActive(header *rfpb.Header) error {
-	if header == nil {
-		return status.FailedPreconditionError("Nil header not allowed")
-	}
-
-	s.rangeMu.RLock()
-	rd, rangeOK := s.openRanges[header.GetRangeId()]
-	s.rangeMu.RUnlock()
-	if !rangeOK {
-		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, header.GetRangeId())
-	}
-
-	if len(rd.GetReplicas()) == 0 {
-		return status.OutOfRangeErrorf("%s: range had no replicas %d", constants.RangeNotFoundMsg, header.GetRangeId())
-	}
-
-	// Ensure the header generation matches what we have locally -- if not,
-	// force client to go back and re-pull the rangeDescriptor from the meta
-	// range.
-	if rd.GetGeneration() != header.GetGeneration() {
-		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), header.GetGeneration())
+	rd, err := s.validatedRange(header)
+	if err != nil {
+		return err
 	}
 
 	if rlIface, ok := s.leases.Load(header.GetRangeId()); ok {
@@ -612,6 +595,11 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 				return err
 			}
 			defer writeCloser.Close()
+			// Send the client an empty write response as an indicator that we
+			// have accepted the write.
+			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
+				return err
+			}
 		}
 		n, err := writeCloser.Write(req.Data)
 		if err != nil {
@@ -622,7 +610,7 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
-			return stream.SendAndClose(&rfpb.WriteResponse{
+			return stream.Send(&rfpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
 		}
@@ -670,10 +658,23 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 				if err != nil {
 					return err
 				}
+				// Attempt the first write to see if all the peers will accept
+				// it. If the range information is stale, the write will fail
+				// here and the entire operation will be retried via RunAll.
+				n, err := w.Write(req.Data)
+				if err != nil {
+					return err
+				}
+				bytesWritten += int64(n)
 				mwc = w
 				return nil
 			})
 			if err != nil {
+				return err
+			}
+			// Send the client an empty write response as an indicator that we
+			// have accepted the write.
+			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
 				return err
 			}
 			rwc := &raftWriteCloser{mwc, func() error {
@@ -688,17 +689,18 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 				return err
 			}}
 			writeCloser = rwc
+		} else {
+			n, err := writeCloser.Write(req.Data)
+			if err != nil {
+				return err
+			}
+			bytesWritten += int64(n)
 		}
-		n, err := writeCloser.Write(req.Data)
-		if err != nil {
-			return err
-		}
-		bytesWritten += int64(n)
 		if req.FinishWrite {
 			if err := writeCloser.Close(); err != nil {
 				return err
 			}
-			return stream.SendAndClose(&rfpb.WriteResponse{
+			return stream.Send(&rfpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
 		}
