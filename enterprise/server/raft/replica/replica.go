@@ -1252,8 +1252,8 @@ func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) erro
 			return err
 		}
 
-		var msgLength int64
-		var reader io.Reader
+		var dataLength int64
+		var dataReader io.Reader
 
 		if !isLocalKey(iter.Key()) {
 			fileMetadata := &rfpb.FileMetadata{}
@@ -1269,10 +1269,10 @@ func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) erro
 				return err
 			}
 			defer rc.Close()
-			reader = rc
-			msgLength = fileMetadata.GetSizeBytes()
+			dataReader = rc
+			dataLength = fileMetadata.GetSizeBytes()
 		}
-		if err := encodeDataToWriter(w, reader, msgLength); err != nil {
+		if err := encodeDataToWriter(w, dataReader, dataLength); err != nil {
 			return err
 		}
 	}
@@ -1300,8 +1300,17 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 			return err
 		}
 		if count == 0 {
+			// Skip 0-length sections which are present
+			// after non-fileMetadata type keys.
 			continue
 		}
+		// FileMetadata KVs and file data are interleaved in the
+		// snapshot. To parse it, first read a KV. If the KV is not a
+		// local-key, a fileMetadata proto is unmarshalled from the
+		// KV.Value. The following chunk must be a data chunk that
+		// contains all the data associated with that fileMetadata.
+		// After reading the data chunk and writing it to the filestore,
+		// fileMetadata is cleared and the process restarts.
 		if fileMetadata == nil {
 			protoBytes := make([]byte, count)
 			n, err := io.ReadFull(readBuf, protoBytes)
