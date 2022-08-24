@@ -12,16 +12,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-)
-
-// This should be the same or an evenly divisible value of
-// the stream request size which is 1MB.
-const (
-	initialChunkNum    = 1
-	maxPebbleValueSize = 3000000 // 3MB
 )
 
 type MetadataWriter interface {
@@ -32,6 +24,11 @@ type WriteCloserMetadata interface {
 	io.Writer
 	io.Closer
 	MetadataWriter
+}
+
+type CommittedWriter interface {
+	WriteCloserMetadata
+	Commit() error
 }
 
 // returns partitionID, groupID, isolation, remote_instance_name, hash
@@ -71,7 +68,7 @@ type Store interface {
 	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
 
 	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
-	NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error)
+	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error)
 
 	InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
 	InlineWriter(ctx context.Context, sizeBytes int64) WriteCloserMetadata
@@ -142,16 +139,10 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	}
 }
 
-func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, wb pebble.Writer, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
+func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
 	// New files are written using this method. Existing files will be read
 	// from wherever they were originally written according to their stored
 	// StorageMetadata.
-	//
-	// Uncommenting one of the following stanzas will cause newly written
-	// files to be written either to pebble or to disk. Already written
-	// files will be read from wherever they stored, regardless of this
-	// setting.
-	// return PebbleWriter(wb, fileRecord) NB: Pebble only writer needs more testing.
 	return fs.FileWriter(ctx, fileDir, fileRecord)
 }
 

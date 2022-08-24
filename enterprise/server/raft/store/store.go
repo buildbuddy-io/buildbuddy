@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -28,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/cockroachdb/pebble"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -524,25 +522,13 @@ func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (
 	if err != nil {
 		return nil, err
 	}
-	reader, err := r.Reader()
+	missing, err := r.FindMissing(ctx, req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
-	iter := reader.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	rsp := &rfpb.FindMissingResponse{}
-	for _, fileRecord := range req.GetFileRecord() {
-		fileMetadaKey, err := s.fileStorer.FileMetadataKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-		if !iter.SeekGE(fileMetadaKey) || bytes.Compare(iter.Key(), fileMetadaKey) != 0 {
-			rsp.FileRecord = append(rsp.FileRecord, fileRecord)
-		}
-	}
-	return rsp, nil
+	return &rfpb.FindMissingResponse{
+		FileRecord: missing,
+	}, nil
 }
 
 type streamWriter struct {
@@ -565,32 +551,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 		return err
 	}
 
-	db, err := r.Reader()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	fileMetadataKey, err := s.fileStorer.FileMetadataKey(req.GetFileRecord())
-	if err != nil {
-		return err
-	}
-
-	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	found := iter.SeekGE(fileMetadataKey)
-	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return status.NotFoundErrorf("file %q not found", fileMetadataKey)
-	}
-	fileMetadata := &rfpb.FileMetadata{}
-	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
-	}
-	offset := req.GetOffset()
-	limit := req.GetLimit()
-	readCloser, err := s.fileStorer.NewReader(stream.Context(), s.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	readCloser, err := r.Reader(stream.Context(), req.GetFileRecord(), req.GetOffset(), req.GetLimit())
 	if err != nil {
 		return err
 	}
@@ -606,11 +567,9 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	return err
 }
 
-func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
+func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 	var bytesWritten int64
-	var fileMetadataKey []byte
-	var writeCloser filestore.WriteCloserMetadata
-	var batch *pebble.Batch
+	var writeCloser filestore.CommittedWriter
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -631,20 +590,11 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			db, err := r.DB()
+			writeCloser, err = r.Writer(stream.Context(), req.GetFileRecord())
 			if err != nil {
 				return err
 			}
-			defer db.Close()
-			batch = db.NewBatch()
-			fileMetadataKey, err = s.fileStorer.FileMetadataKey(req.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			writeCloser, err = s.fileStorer.NewWriter(stream.Context(), s.fileDir, batch, req.GetFileRecord())
-			if err != nil {
-				return err
-			}
+			defer writeCloser.Close()
 			// Send the client an empty write response as an indicator that we
 			// have accepted the write.
 			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
@@ -657,22 +607,7 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 		}
 		bytesWritten += int64(n)
 		if req.FinishWrite {
-			if err := writeCloser.Close(); err != nil {
-				return err
-			}
-			md := &rfpb.FileMetadata{
-				FileRecord:      req.GetFileRecord(),
-				StorageMetadata: writeCloser.Metadata(),
-				SizeBytes:       bytesWritten,
-			}
-			protoBytes, err := proto.Marshal(md)
-			if err != nil {
-				return err
-			}
-			if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
-				return err
-			}
-			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
 			return stream.Send(&rfpb.WriteResponse{
@@ -681,10 +616,6 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 		}
 	}
 	return nil
-}
-
-func (s *Store) Write(stream rfspb.Api_WriteServer) error {
-	return s.handleWrite(stream)
 }
 
 type raftWriteCloser struct {
