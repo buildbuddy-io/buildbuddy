@@ -3,9 +3,11 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.18
 
 replace (
+	github.com/firecracker-microvm/firecracker-go-sdk => github.com/tylerwilliams/firecracker-go-sdk v0.22.3-0.20220510004253-f4e930e29424
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
 	github.com/lni/dragonboat/v3 => github.com/tylerwilliams/dragonboat/v3 v3.3.4-rc5
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
+	github.com/tensorflow/tensorflow => github.com/bduffany/go-tensorflow v0.0.0-20220824230604-fd0334e8abf5
 )
 
 require (
@@ -32,7 +34,7 @@ require (
 	github.com/docker/docker v20.10.16+incompatible
 	github.com/docker/go-units v0.4.0
 	github.com/elastic/gosigar v0.11.0
-	github.com/firecracker-microvm/firecracker-go-sdk v0.22.1-0.20220812215434-490e3369bc97
+	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/go-git/go-git/v5 v5.2.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
 	github.com/go-redis/redis/v8 v8.10.0
@@ -68,7 +70,7 @@ require (
 	github.com/rs/zerolog v1.20.0
 	github.com/shirou/gopsutil/v3 v3.21.10
 	github.com/sirupsen/logrus v1.8.1
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.7.1
 	github.com/tebeka/selenium v0.9.9
 	github.com/throttled/throttled/v2 v2.0.0-00010101000000-000000000000
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
@@ -79,7 +81,7 @@ require (
 	go.opentelemetry.io/otel/exporters/jaeger v1.2.0
 	go.opentelemetry.io/otel/sdk v1.3.0
 	go.opentelemetry.io/otel/trace v1.6.1
-	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5
 	golang.org/x/sync v0.0.0-20220513210516-0976fa681c29
@@ -89,7 +91,7 @@ require (
 	google.golang.org/grpc v1.45.0
 	google.golang.org/protobuf v1.28.0
 	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 v3.0.1
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	gorm.io/driver/mysql v1.3.4
 	gorm.io/driver/sqlite v1.3.6
 	gorm.io/gorm v1.23.7
@@ -139,14 +141,15 @@ require (
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.19.6 // indirect
 	github.com/go-openapi/loads v0.21.1 // indirect
-	github.com/go-openapi/runtime v0.24.0 // indirect
+	github.com/go-openapi/runtime v0.23.3 // indirect
 	github.com/go-openapi/spec v0.20.4 // indirect
 	github.com/go-openapi/strfmt v0.21.2 // indirect
 	github.com/go-openapi/swag v0.21.1 // indirect
-	github.com/go-openapi/validate v0.22.0 // indirect
+	github.com/go-openapi/validate v0.21.0 // indirect
 	github.com/go-redis/redis/extra/rediscmd/v8 v8.8.2 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/goccy/go-json v0.7.10 // indirect
+	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -207,6 +210,7 @@ require (
 	github.com/russellhaering/goxmldsig v1.1.1 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
+	github.com/tensorflow/tensorflow v2.9.0+incompatible
 	github.com/tklauser/go-sysconf v0.3.9 // indirect
 	github.com/tklauser/numcpus v0.3.0 // indirect
 	github.com/valyala/fastrand v1.1.0 // indirect

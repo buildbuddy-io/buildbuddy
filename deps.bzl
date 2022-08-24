@@ -4,8 +4,6 @@ load("@io_bazel_rules_go//extras:embed_data_deps.bzl", "go_embed_data_dependenci
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_buildbuddy_dependencies
 def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
-    # Bazel releases used for integration tests.
-
     go_embed_data_dependencies()
 
     go_repository(
@@ -45,6 +43,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.1.0",
     )
 
+    go_repository(
+        name = "com_github_agnivade_levenshtein",
+        importpath = "github.com/agnivade/levenshtein",
+        sum = "h1:3oJU7J3FGFmyhn8KHjmVaZCN5hxTr7GxgRue+sxIXdQ=",
+        version = "v1.0.1",
+    )
     go_repository(
         name = "com_github_ajg_form",
         importpath = "github.com/ajg/form",
@@ -101,6 +105,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/AndreasBriese/bbloom",
         sum = "h1:HD8gA2tkByhMAwYaFAX9w2l7vxvBQ5NMoxDrkhqhtn4=",
         version = "v0.0.0-20190306092124-e2d15f34fcf9",
+    )
+
+    go_repository(
+        name = "com_github_andreyvit_diff",
+        importpath = "github.com/andreyvit/diff",
+        sum = "h1:bvNMNQO63//z+xNgfBlViaCIJKLlCJ6/fmUseuG0wVQ=",
+        version = "v0.0.0-20170406064948-c7f18ee00883",
     )
 
     go_repository(
@@ -1199,8 +1210,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
             "gazelle:resolve go github.com/containernetworking/cni/pkg/types/current @com_github_containernetworking_cni//pkg/types/current",
         ],
         importpath = "github.com/firecracker-microvm/firecracker-go-sdk",
-        sum = "h1:jsAoXG/SN1nBsJRXOcJjROKjHQD27AqeYLfB+SyNOFY=",
-        version = "v0.22.1-0.20220812215434-490e3369bc97",
+        replace = "github.com/tylerwilliams/firecracker-go-sdk",
+        sum = "h1:WSkIV9e6G66fYUazc4zqofj3qsqLAkG1HfJ5IJnd5bk=",
+        version = "v0.22.3-0.20220510004253-f4e930e29424",
     )
     go_repository(
         name = "com_github_flosch_pongo2",
@@ -1305,7 +1317,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:6zsha5zo/TWhRhwqCD3+EarCAgZ2yN28ipRnGPnwkI0=",
         version = "v0.2.2",
     )
-
+    go_repository(
+        name = "com_github_globalsign_mgo",
+        importpath = "github.com/globalsign/mgo",
+        sum = "h1:DujepqpGd1hyOd7aW59XpK7Qymp8iy83xq74fLr21is=",
+        version = "v0.0.0-20181015135952-eeefdecb41b8",
+    )
     go_repository(
         name = "com_github_go_check_check",
         importpath = "github.com/go-check/check",
@@ -1451,8 +1468,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_openapi_runtime",
         importpath = "github.com/go-openapi/runtime",
-        sum = "h1:vTgDijpGLCgJOJTdAp5kG+O+nRsVCbH417YQ3O0iZo0=",
-        version = "v0.24.0",
+        sum = "h1:/dxjx4KCOQI5ImBMz036F6v/DzZ2NUjSRvbLJs1rgoE=",
+        version = "v0.23.3",
     )
 
     go_repository(
@@ -1477,14 +1494,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_openapi_validate",
         importpath = "github.com/go-openapi/validate",
-        sum = "h1:b0QecH6VslW/TxtpKgzpO1SNG7GU2FsaqKdP1E2T50Y=",
-        version = "v0.22.0",
-    )
-    go_repository(
-        name = "com_github_go_ping_ping",
-        importpath = "github.com/go-ping/ping",
-        sum = "h1:dhy9OQKGBh4zVXbjwbxxHjRxMJtLXj3zfgpBYQaR4Q4=",
-        version = "v0.0.0-20211130115550-779d1e919534",
+        sum = "h1:+Wqk39yKOhfpLqNLEC0/eViCkzM5FVXVqrvt526+wcI=",
+        version = "v0.21.0",
     )
 
     go_repository(
@@ -4119,15 +4130,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_stretchr_objx",
         importpath = "github.com/stretchr/objx",
-        sum = "h1:M2gUjqZET1qApGOWNSnZ49BAIMX4F/1plDv3+l31EJ4=",
-        version = "v0.4.0",
+        sum = "h1:Hbg2NidpLE8veEBkEZTL3CvlkUIVzuU9jDplZO54c48=",
+        version = "v0.2.0",
     )
 
     go_repository(
         name = "com_github_stretchr_testify",
         importpath = "github.com/stretchr/testify",
-        sum = "h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PKk=",
-        version = "v1.8.0",
+        sum = "h1:5TQK59W5E3v0r2duFAb7P95B6hEeOyEnHRa8MjYSMTY=",
+        version = "v1.7.1",
     )
 
     go_repository(
@@ -4179,6 +4190,14 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/tenntenn/text/transform",
         sum = "h1:f+jULpRQGxTSkNYKJ51yaw6ChIqO+Je8UqsTKN/cDag=",
         version = "v0.0.0-20200319021203-7eef512accb3",
+    )
+    go_repository(
+        name = "com_github_tensorflow_tensorflow",
+        build_file_proto_mode = "disable",
+        importpath = "github.com/tensorflow/tensorflow",
+        replace = "github.com/bduffany/go-tensorflow",
+        sum = "h1:eAm8C1b6hLXslg9gd3bAmLSfIiWFuSXVx8n+0CZ/JWE=",
+        version = "v0.0.0-20220824230604-fd0334e8abf5",
     )
 
     go_repository(
@@ -4349,6 +4368,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
 
     go_repository(
+        name = "com_github_vektah_gqlparser",
+        importpath = "github.com/vektah/gqlparser",
+        sum = "h1:ZsyLGn7/7jDNI+y4SEhI4yAxRChlv15pUHMjijT+e68=",
+        version = "v1.1.2",
+    )
+    go_repository(
         name = "com_github_victoriametrics_metrics",
         importpath = "github.com/VictoriaMetrics/metrics",
         sum = "h1:OZ0+kTTto8oPfHnVAnTOoyl0XlRhRkoQrD2n2cOuRw0=",
@@ -4404,6 +4429,19 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/xdg-go/stringprep",
         sum = "h1:6iq84/ryjjeRmMJwxutI51F2GIPlP5BfTvXHeYjyhBc=",
         version = "v1.0.2",
+    )
+
+    go_repository(
+        name = "com_github_xdg_scram",
+        importpath = "github.com/xdg/scram",
+        sum = "h1:u40Z8hqBAAQyv+vATcGgV0YCnDjqSL7/q/JyPhhJSPk=",
+        version = "v0.0.0-20180814205039-7eeb5667e42c",
+    )
+    go_repository(
+        name = "com_github_xdg_stringprep",
+        importpath = "github.com/xdg/stringprep",
+        sum = "h1:n+nNi93yXLkJvKwXNP9d55HC7lGK4H/SRcwB5IaUZLo=",
+        version = "v0.0.0-20180714160509-73f8eece6fdc",
     )
 
     go_repository(
@@ -4746,8 +4784,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "in_gopkg_yaml_v3",
         importpath = "gopkg.in/yaml.v3",
-        sum = "h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
-        version = "v3.0.1",
+        sum = "h1:h8qDotaEPuJATrMmW04NCwg7v22aHH28wwpauUhK9Oo=",
+        version = "v3.0.0-20210107192922-496545a6307b",
     )
     http_file(
         name = "io_bazel_bazel-3.7-darwin-x86_64",
@@ -5083,6 +5121,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:7uVkIFmeBqHfdjD+gZwtXXI+RODJ2Wc4O7MPEh/QiW4=",
         version = "v1.3.0",
     )
+    http_file(
+        name = "libtensorflow-cpu-linux-x86_64-2.9.0.tar.gz",
+        downloaded_file_path = "libtensorflow-cpu-linux-x86_64-2.9.0.tar.gz",
+        sha256 = "a81188b91a1df911a6d69fcfd55529abad893e2da0ddcc51ef3da5d5bd067d0c",
+        urls = ["https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-2.9.0.tar.gz"],
+    )
 
     go_repository(
         name = "org_bazil_fuse",
@@ -5141,14 +5185,14 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_protobuf",
         importpath = "google.golang.org/protobuf",
-        sum = "h1:w43yiav+6bVFTBQFZX0r7ipe9JQ1QsbMgHwbBziscLw=",
-        version = "v1.28.0",
+        sum = "h1:d0NfwRgPtno5B1Wa6L2DAG+KivqkdutMf1UhdNx175w=",
+        version = "v1.28.1",
     )
     go_repository(
         name = "org_golang_x_crypto",
         importpath = "golang.org/x/crypto",
-        sum = "h1:sK3txAijHtOK88l68nt020reeT1ZdKLIYetKl95FzVY=",
-        version = "v0.0.0-20220622213112-05595931fe9d",
+        sum = "h1:7I4JAnoQBe7ZtJcBaYHi5UtiO8tQHbUSXxL+pnGRANg=",
+        version = "v0.0.0-20210921155107-089bfa567519",
     )
 
     go_repository(
