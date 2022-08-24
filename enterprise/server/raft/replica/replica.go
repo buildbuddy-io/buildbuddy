@@ -37,7 +37,6 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	Sender() *sender.Sender
-	ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
 	GetReplica(rangeID uint64) (*Replica, error)
 }
 
@@ -138,7 +137,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 			NodeId:    sm.nodeID,
 		},
 	}
-	db, err := sm.Reader()
+	db, err := sm.ReadOnlyDB()
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +300,7 @@ func (r *refCountedDB) Close() error {
 	return r.refCounter.Close()
 }
 
-func (sm *Replica) Reader() (ReplicaReader, error) {
+func (sm *Replica) ReadOnlyDB() (ReplicaReader, error) {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
 	if sm.closed {
@@ -366,34 +365,6 @@ func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
 	sm.setRange(constants.LocalRangeKey, buf)
 }
 
-func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord, wb *pebble.Batch) (*rfpb.FileMetadata, error) {
-	thisReplica := &rfpb.ReplicaDescriptor{
-		ClusterId: sm.clusterID,
-		NodeId:    sm.nodeID,
-	}
-	rc, err := sm.store.ReadFileFromPeer(ctx, thisReplica, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-
-	wc, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, wb, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(wc, rc); err != nil {
-		return nil, err
-	}
-	if err := wc.Close(); err != nil {
-		return nil, err
-	}
-
-	return &rfpb.FileMetadata{
-		FileRecord:      fileRecord,
-		StorageMetadata: wc.Metadata(),
-	}, nil
-}
-
 func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
 	// In the common case, this doesn't actually write any data, because
 	// it's already been written it in a separate Write RPC. It simply
@@ -409,18 +380,9 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 
 	found := iter.SeekGE(fileMetadataKey)
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		md, err := sm.readFileFromPeer(context.TODO(), req.GetFileRecord(), wb)
-		if err != nil {
-			log.Errorf("Error recovering file %v from peer: %s", req.GetFileRecord(), err)
-			return nil, err
-		}
-		protoBytes, err := proto.Marshal(md)
-		if err := sm.rangeCheckedSet(wb, fileMetadataKey, protoBytes); err != nil {
-			return nil, err
-		}
+		return nil, status.NotFoundErrorf("file data for %v was not found in replica", req.GetFileRecord())
 	}
 	return &rfpb.FileWriteResponse{}, nil
-
 }
 
 func (sm *Replica) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
@@ -883,6 +845,184 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 	return rsp
 }
 
+func lookupAndSetFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
+	found := iter.SeekGE(fileMetadataKey)
+	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
+		return status.NotFoundErrorf("record %q not found", fileMetadataKey)
+	}
+	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		return status.InternalErrorf("error reading record %q metadata", fileMetadataKey)
+	}
+	return nil
+}
+
+func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+		return nil, err
+	}
+	return fileMetadata, nil
+}
+
+type fnReadCloser struct {
+	io.ReadCloser
+	fn func() error
+}
+
+func (f fnReadCloser) Close() error {
+	if err := f.ReadCloser.Close(); err != nil {
+		return err
+	}
+	return f.fn()
+}
+
+func (sm *Replica) Reader(ctx context.Context, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
+	db, err := sm.ReadOnlyDB()
+	if err != nil {
+		return nil, err
+	}
+
+	// The DB lease should stay open as long as the returned ReadCloser is
+	// being used. This prevents splits and other operations from happening
+	// while a file is mid-read. But to prevent leaks, a cleanup call is
+	// deferred. If a reader is returned below, needCleanup will be set to
+	// false and the defer not run.
+	needCleanup := true
+	cleanup := func() error {
+		if needCleanup {
+			needCleanup = false
+			return db.Close()
+		}
+		return nil
+	}
+	defer cleanup()
+
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	iter.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	needCleanup = false
+	return &fnReadCloser{rc, func() error {
+		return db.Close()
+	}}, nil
+}
+
+func (sm *Replica) FindMissing(ctx context.Context, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
+	reader, err := sm.ReadOnlyDB()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	iter := reader.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	missing := make([]*rfpb.FileRecord, 0)
+	for _, fileRecord := range fileRecords {
+		fileMetadaKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		if !iter.SeekGE(fileMetadaKey) || bytes.Compare(iter.Key(), fileMetadaKey) != 0 {
+			missing = append(missing, fileRecord)
+		}
+	}
+	return missing, nil
+}
+
+type writeCloser struct {
+	filestore.WriteCloserMetadata
+	commitFn     func(n int64) error
+	bytesWritten int64
+	closeFn      func() error
+}
+
+func (dc *writeCloser) Commit() error {
+	if err := dc.WriteCloserMetadata.Close(); err != nil {
+		return err
+	}
+	return dc.commitFn(dc.bytesWritten)
+}
+
+func (dc *writeCloser) Close() error {
+	return dc.closeFn()
+}
+
+func (dc *writeCloser) Write(p []byte) (int, error) {
+	n, err := dc.WriteCloserMetadata.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	dc.bytesWritten += int64(n)
+	return n, nil
+}
+
+func (sm *Replica) Writer(ctx context.Context, fileRecord *rfpb.FileRecord) (filestore.CommittedWriter, error) {
+	db, err := sm.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	// The DB lease should stay open as long as the returned WriteCloser is
+	// being used. This prevents splits and other operations from happening
+	// while a file is mid-write. But to prevent leaks, a cleanup call is
+	// deferred. If a writer is returned below, needCleanup will be set to
+	// false and the defer not run.
+	needCleanup := true
+	cleanup := func() error {
+		if needCleanup {
+			return db.Close()
+		}
+		return nil
+	}
+	defer cleanup()
+
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	writeCloserMetadata, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	commitFn := func(bytesWritten int64) error {
+		batch := db.NewBatch()
+		md := &rfpb.FileMetadata{
+			FileRecord:      fileRecord,
+			StorageMetadata: writeCloserMetadata.Metadata(),
+			SizeBytes:       bytesWritten,
+		}
+		protoBytes, err := proto.Marshal(md)
+		if err != nil {
+			return err
+		}
+		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
+			return err
+		}
+		return batch.Commit(&pebble.WriteOptions{Sync: true})
+	}
+
+	needCleanup = false
+	return &writeCloser{
+		WriteCloserMetadata: writeCloserMetadata,
+		commitFn:            commitFn,
+		closeFn:             db.Close,
+	}, nil
+}
+
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
 // is a list of continuous proposed and committed commands from clients, they
 // are provided together as a batch so the IOnDiskStateMachine implementation
@@ -1001,7 +1141,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
-	db, err := sm.Reader()
+	db, err := sm.ReadOnlyDB()
 	if err != nil {
 		return nil, err
 	}
@@ -1208,7 +1348,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 
-	readDB, err := sm.Reader()
+	readDB, err := sm.ReadOnlyDB()
 	if err != nil {
 		return err
 	}
