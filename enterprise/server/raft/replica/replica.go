@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -535,25 +534,25 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 }
 
 func (sm *Replica) populateReplicaFromSnapshot(rightSM *Replica) error {
-	// Create a snapshot of the left range.
-	f, err := os.CreateTemp(sm.fileDir, "replica-*.snap")
-	if err != nil {
-		return err
+	if sm == rightSM {
+		return status.FailedPreconditionError("cannot populate replica from self")
 	}
-	defer os.Remove(f.Name())
 
 	snap := sm.db.NewSnapshot()
 	defer snap.Close()
-	if err := sm.SaveSnapshotToWriter(f, snap); err != nil {
-		return err
-	}
+
 	rightDB, err := rightSM.DB()
 	if err != nil {
 		return nil
 	}
-	// Load the snapshot into the new right range.
-	f.Seek(0, 0)
-	return rightSM.ApplySnapshotFromReader(f, rightDB)
+
+	r, w := io.Pipe()
+	go func() {
+		if err := sm.SaveSnapshotToWriter(w, snap); err != nil {
+			w.CloseWithError(err)
+		}
+	}()
+	return rightSM.ApplySnapshotFromReader(r, rightDB)
 }
 
 func (sm *Replica) updateMetarange(oldLeft, left, right *rfpb.RangeDescriptor) error {
@@ -668,7 +667,7 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	rwb := rightDB.NewIndexedBatch()
 	defer rwb.Close()
 
-	// Delete the keys from each side that are now owned by the other side.
+	// Delete the keys (and data) from each side that are now owned by the other side.
 	// Right side delete should be a no-op if this is a freshly created replica.
 	sp := req.GetSplitPoint()
 	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, sp.GetSplit(), nil /*ignored write options*/); err != nil {
