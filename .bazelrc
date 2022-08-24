@@ -70,6 +70,8 @@ build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 build:workflows --color=yes
 build:workflows --disk_cache=
 build:workflows --flaky_test_attempts=2
+# TODO(http://go/b/1575): De-flake and remove this
+build:workflows --flaky_test_attempts=//enterprise/server/test/webdriver/invocation:invocation_test_chromium-local@4
 # Use BuildBuddy endpoints from the CI runner systemrc.
 build:workflows --config=buildbuddy_bes_backend
 build:workflows --config=buildbuddy_bes_results_url
