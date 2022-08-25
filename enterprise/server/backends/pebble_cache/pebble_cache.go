@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"io"
 	"io/fs"
 	"math/big"
@@ -996,13 +995,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		buf.Reset()
 	}
 	return foundMap, nil
-}
-
-func (p *PebbleCache) DoubleWrite(ctx context.Context, d migration_cache.DoubleWriteData) error {
-	// Write to a channel, have a function like ProcessLiveUpdates running in the background
-	// so the double write doesn't slow down writes to the primary db with 2 synchronous writes
-
-	return nil
 }
 
 func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

@@ -59,9 +59,6 @@ var (
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
 	enableLiveUpdates           = flag.Bool("cache.disk.enable_live_updates", false, "If set, enable live updates of disk cache adds / removes")
-
-	isMigrationSrc  = flag.Bool("cache.disk.migration_src", false, "")
-	isMigrationDest = flag.Bool("cache.disk.migration_dest", false, "")
 )
 
 type Options struct {
@@ -182,20 +179,7 @@ func Register(env environment.Env) error {
 		return status.InternalErrorf("Error configuring cache: %s", err)
 	}
 
-	if *isMigrationSrc {
-		if env.GetMigrationCache().Src != nil {
-			// Error
-		}
-		env.GetMigrationCache().Src = c
-		env.GetMigrationCache().SrcRootDir = *rootDirectory
-	} else if *isMigrationDest {
-		if env.GetMigrationCache().Dest != nil {
-			// Error
-		}
-		env.GetMigrationCache().Dest = c
-	} else {
-		env.SetCache(c)
-	}
+	env.SetCache(c)
 	return nil
 }
 

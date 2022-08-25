@@ -36,7 +36,7 @@ cache:
 # Because `migration` is not set, config/migration.yaml will be ignored
 cache:
   pebble:
-    root_directory: /disk_dir
+    root_directory: /pebble_dir
 
 auth:
   enable_anonymous_usage: true
