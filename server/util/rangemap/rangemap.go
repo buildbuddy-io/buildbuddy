@@ -126,30 +126,24 @@ func (rm *RangeMap) GetOverlapping(left, right []byte) []*Range {
 	if len(rm.ranges) == 0 {
 		return nil
 	}
-	// Search returns the smallest i for which func returns true.
-	// We want the smallest range that is bigger than this key
-	// aka, starts AFTER this key, and then we'll go one left of it
-	leftIndex := sort.Search(len(rm.ranges), func(i int) bool {
-		//  0 if a==b, -1 if a < b, and +1 if a > b
-		return bytes.Compare(rm.ranges[i].Left, left) > 0
-	})
 
-	if leftIndex > 0 && rm.ranges[leftIndex-1].Contains(left) {
-		leftIndex -= 1
+	testRange := &Range{
+		Left:  left,
+		Right: right,
+		Val:   nil,
 	}
 
-	// Search returns the smallest i for which func returns true.
-	// We want the smallest range that is bigger than this key
-	// aka, starts AFTER this key, and then we'll go one left of it
-	rightIndex := sort.Search(len(rm.ranges), func(i int) bool {
-		//  0 if a==b, -1 if a < b, and +1 if a > b
-		return bytes.Compare(rm.ranges[i].Left, right) >= 0
-	})
-
-	if rightIndex > 0 {
-		rightIndex -= 1
+	overlaps := make([]*Range, 0)
+	for _, r := range rm.ranges {
+		if testRange.Contains(r.Left) {
+			overlaps = append(overlaps, r)
+		} else if testRange.Contains(r.Right) && bytes.Compare(testRange.Left, r.Right) != 0 {
+			overlaps = append(overlaps, r)
+		} else if r.Contains(testRange.Right) && bytes.Compare(r.Left, testRange.Right) != 0 {
+			overlaps = append(overlaps, r)
+		}
 	}
-	return rm.ranges[leftIndex : rightIndex+1]
+	return overlaps
 }
 
 func (rm *RangeMap) Lookup(key []byte) interface{} {

@@ -179,10 +179,31 @@ func TestGetOverlapping(t *testing.T) {
 		return ids
 	}
 
-	require.Equal(t, overlappingRangeIDs("d", "m"), []int{1, 2})
-	require.Equal(t, overlappingRangeIDs("d", "n"), []int{1, 2, 3})
-	require.Equal(t, overlappingRangeIDs("d", "q"), []int{1, 2, 3})
-	require.Equal(t, overlappingRangeIDs("a", "q"), []int{1, 2, 3})
+	require.Equal(t, []int{1, 2}, overlappingRangeIDs("d", "m"))
+	require.Equal(t, []int{1, 2, 3}, overlappingRangeIDs("d", "n"))
+	require.Equal(t, []int{1, 2, 3}, overlappingRangeIDs("d", "q"))
+	require.Equal(t, []int{1, 2, 3}, overlappingRangeIDs("a", "q"))
+}
+
+func TestOverlappingAndAdd(t *testing.T) {
+	rm := rangemap.New()
+	addRange := func(left, right string, id int) {
+		_, err := rm.Add([]byte(left), []byte(right), id)
+		require.Nil(t, err)
+	}
+
+	// addRange("\x00", "o8dozmb44zx528uv/cas/c2ae29118a71e9fb8cf8b8906e294424ec6bb972bbfd1eb6c598d0e49d49ca97", 1)
+	addRange("o8dozmb44zx528uv/cas/c2ae29118a71e9fb8cf8b8906e294424ec6bb972bbfd1eb6c598d0e49d49ca97", "\xff", 1)
+
+	overlappingRangeIDs := func(left, right string) []int {
+		var ids []int
+		for _, r := range rm.GetOverlapping([]byte(left), []byte(right)) {
+			ids = append(ids, r.Val.(int))
+		}
+		return ids
+	}
+
+	require.ElementsMatch(t, []int{}, overlappingRangeIDs("\x00", "o8dozmb44zx528uv/cas/c2ae29118a71e9fb8cf8b8906e294424ec6bb972bbfd1eb6c598d0e49d49ca97"))
 }
 
 func TestRemove(t *testing.T) {
