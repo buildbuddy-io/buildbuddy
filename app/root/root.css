@@ -1103,11 +1103,6 @@ code .comment {
   text-decoration: underline;
 }
 
-.target {
-  display: flex;
-  align-self: center;
-}
-
 .target-status-icon {
   display: none;
 }
