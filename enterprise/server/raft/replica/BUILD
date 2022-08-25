@@ -31,10 +31,12 @@ go_test(
     deps = [
         ":replica",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
+        "//server/interfaces",
         "//server/testutil/testdigest",
         "//server/testutil/testfs",
         "//server/util/status",

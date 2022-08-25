@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
@@ -1052,6 +1053,45 @@ func TestComplexActionIOWithCompression(t *testing.T) {
 		}
 	}
 	assert.Empty(t, missing)
+}
+
+func TestSaturateTaskQueue(t *testing.T) {
+	// Configure the scheduler to allow 2 BCU worth of concurrent tasks.
+	mem := 2 * tasksize.ComputeUnitsToRAMBytes / tasksize.MaxResourceCapacityRatio
+	cpu := 2 * tasksize.ComputeUnitsToMilliCPU / tasksize.MaxResourceCapacityRatio
+	flags.Set(t, "executor.memory_bytes", int64(mem)+1)
+	flags.Set(t, "executor.millicpu", int64(cpu)+1)
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	// Schedule 10 tasks concurrently which each consume 1 BCU, so that only up
+	// to 2 tasks can be run at once.
+	cmdProto := &repb.Command{
+		Arguments: []string{"sleep", "0.05"}, // 50ms
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "OSFamily", Value: runtime.GOOS},
+				{Name: "Arch", Value: runtime.GOARCH},
+				{Name: "EstimatedComputeUnits", Value: "1"},
+			},
+		},
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			cmd := rbe.Execute(cmdProto, &rbetest.ExecuteOpts{})
+			res := cmd.Wait()
+
+			require.NoError(t, res.Err)
+			require.Equal(t, 0, res.ExitCode)
+		}()
+	}
+	wg.Wait()
 }
 
 func TestUnregisterExecutor(t *testing.T) {
