@@ -80,38 +80,16 @@ func MakeTempFile(t testing.TB, rootDir, pattern string) string {
 }
 
 func MakeTempSymlink(t testing.TB, rootDir, pattern, dst string) string {
-	if rootDir == "" {
-		rootDir = os.Getenv("TEST_TMPDIR")
+	name := MakeTempFile(t, rootDir, pattern)
+	if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+		assert.FailNow(t, "failed to remove temp file to be replaced with symlink", err)
 	}
-	if pattern == "" {
-		pattern = "buildbuddy-test-*"
+	if err := os.Symlink(dst, name); os.IsExist(err) {
+		assert.FailNow(t, "Failed to create temp symlink; file exists.", err.Error())
+	} else if err != nil {
+		assert.FailNow(t, "failed to create temp symlink", err)
 	}
-	for i := 0; ; i++ {
-		tmpFile, err := os.CreateTemp(rootDir, pattern)
-		if err != nil {
-			assert.FailNow(t, "failed to create temp file to be replaced with symlink", err)
-		}
-		if err := tmpFile.Close(); err != nil {
-			assert.FailNow(t, "failed to close temp file to be replaced with symlink", err)
-		}
-		if err := os.Remove(tmpFile.Name()); err != nil && !os.IsNotExist(err) {
-			assert.FailNow(t, "failed to remove temp file to be replaced with symlink", err)
-		}
-		if err := os.Symlink(dst, tmpFile.Name()); os.IsExist(err) {
-			if i < 100 {
-				continue
-			}
-			assert.FailNow(t, "Failed to create temp symlink after 100 attempts.", err.Error())
-		} else if err != nil {
-			assert.FailNow(t, "failed to create temp symlink", err)
-		}
-		t.Cleanup(func() {
-			if err := os.Remove(tmpFile.Name()); err != nil && !os.IsNotExist(err) {
-				assert.FailNow(t, "failed to clean up temp symlink", err)
-			}
-		})
-		return tmpFile.Name()
-	}
+	return name
 }
 
 func CopyFile(t testing.TB, src, destRootDir, destPath string) {
