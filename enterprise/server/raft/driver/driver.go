@@ -704,8 +704,12 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes *clusterChanges) error {
 	// Splits are going to happen before anything else.
 	if *enableSplittingReplicas {
+		overloadedClusters := make(map[uint64]struct{})
 		for rs, _ := range changes.overloadedReplicas {
-			rd, ok := state.managedRanges[rs.clusterID]
+			overloadedClusters[rs.clusterID] = struct{}{}
+		}
+		for clusterID := range overloadedClusters {
+			rd, ok := state.managedRanges[clusterID]
 			if !ok {
 				continue
 			}
@@ -715,7 +719,7 @@ func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes
 			if err != nil {
 				log.Warningf("Error splitting cluster: %s", err)
 			} else {
-				log.Printf("Successfully split %+v", rs)
+				log.Infof("Successfully split %+v", rd)
 			}
 			time.Sleep(10 * time.Second)
 			if err := d.updateState(ctx, state); err != nil {
