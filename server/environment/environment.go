@@ -140,4 +140,6 @@ type Env interface {
 	SetGRPCSServer(*grpc.Server)
 	GetRegistryServer() rgpb.RegistryServer
 	SetRegistryServer(r rgpb.RegistryServer)
+	GetOLAPDBHandle() interfaces.OLAPDBHandle
+	SetOLAPDBHandle(dbh interfaces.OLAPDBHandle)
 }

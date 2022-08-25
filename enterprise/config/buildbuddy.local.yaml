@@ -7,6 +7,8 @@ app:
   enable_target_tracking: true
 database:
   data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
+#olap_database:
+#data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
 storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:

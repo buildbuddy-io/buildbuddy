@@ -50,6 +50,7 @@ go_library(
         "//server/real_environment",
         "//server/static",
         "//server/telemetry",
+        "//server/util/clickhouse",
         "//server/util/fileresolver",
         "//server/util/flagutil",
         "//server/util/flagutil/yaml",

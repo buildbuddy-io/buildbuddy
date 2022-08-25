@@ -97,6 +97,7 @@ type RealEnv struct {
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
 	registryServer                   rgpb.RegistryServer
+	olapDBHandle                     interfaces.OLAPDBHandle
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -536,4 +537,12 @@ func (r *RealEnv) GetRegistryServer() rgpb.RegistryServer {
 
 func (r *RealEnv) SetRegistryServer(server rgpb.RegistryServer) {
 	r.registryServer = server
+}
+
+func (r *RealEnv) GetOLAPDBHandle() interfaces.OLAPDBHandle {
+	return r.olapDBHandle
+}
+
+func (r *RealEnv) SetOLAPDBHandle(dbh interfaces.OLAPDBHandle) {
+	r.olapDBHandle = dbh
 }

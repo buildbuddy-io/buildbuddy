@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -120,7 +121,10 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	}
 	env.SetUserDB(userDB)
 
-	stat := invocation_stat_service.NewInvocationStatService(env, env.GetDBHandle())
+	if err := clickhouse.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
+	stat := invocation_stat_service.NewInvocationStatService(env, env.GetDBHandle(), env.GetOLAPDBHandle())
 	env.SetInvocationStatService(stat)
 
 	search := invocation_search_service.NewInvocationSearchService(env, env.GetDBHandle())
