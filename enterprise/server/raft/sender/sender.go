@@ -51,8 +51,16 @@ func makeHeader(rangeDescriptor *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Hea
 	}
 }
 
-func (s *Sender) connectionForReplicaDescriptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
+func (s *Sender) grpcAddrForReplicaDescriptor(rd *rfpb.ReplicaDescriptor) (string, error) {
 	addr, _, err := s.nodeRegistry.ResolveGRPC(rd.GetClusterId(), rd.GetNodeId())
+	if err != nil {
+		return "", err
+	}
+	return addr, nil
+}
+
+func (s *Sender) connectionForReplicaDescriptor(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
+	addr, err := s.grpcAddrForReplicaDescriptor(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -137,29 +145,8 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 	return rangeDescriptor, nil
 }
 
-func (s *Sender) GetAllNodes(ctx context.Context, key []byte) ([]*client.PeerHeader, error) {
-	rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, false /*skipCache*/)
-	if err != nil {
-		return nil, err
-	}
-
-	allNodes := make([]*client.PeerHeader, 0, len(rangeDescriptor.GetReplicas()))
-	for i, replica := range rangeDescriptor.GetReplicas() {
-		addr, _, err := s.nodeRegistry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
-		if err != nil {
-			log.Errorf("registry error resolving %+v: %s", replica, err)
-			continue
-		}
-
-		allNodes = append(allNodes, &client.PeerHeader{
-			Header:   makeHeader(rangeDescriptor, i),
-			GRPCAddr: addr,
-		})
-	}
-	return allNodes, nil
-}
-
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
+type runAllFunc func(peerHeaders []*client.PeerHeader) error
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) (int, error) {
 	for i, replica := range rd.GetReplicas() {
@@ -191,6 +178,16 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	return 0, status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
 }
 
+// Run looks up the replicas that are responsible for the given key and executes
+// fn for each replica until the function succeeds or returns an unretriable
+// error.
+//
+// The range ownership information is retrieved from the range cache, so it can
+// be stale. If the remote peer indicates that the client is using a stale
+// range, this function will look up the range information again bypassing the
+// cache and try the fn again with the new replica information. If the
+// fn succeeds with the new replicas, the range cache will be updated with
+// the new ownership information.
 func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
@@ -216,6 +213,51 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 		}
 	}
 	return status.UnavailableError("sender.Run retries exceeded")
+}
+
+// RunAll is similar to Run but instead of trying replicas one at a time,
+// fn will be passed information about all the replicas for performing
+// operations that span multiple replicas.
+//
+// If any of the replicas indicate that range information is stale, the whole
+// operation will be retried using fresh range information.
+//
+// Run should generally be used instead unless there's a specialized reason that
+// all replicas need to be consulted.
+func (s *Sender) RunAll(ctx context.Context, key []byte, fn runAllFunc) error {
+	retrier := retry.DefaultWithContext(ctx)
+	skipRangeCache := false
+	for retrier.Next() {
+		rd, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
+		if err != nil {
+			log.Warningf("sender.RunAll error getting rd for %q: %s, %s, %+v", key, err, s.rangeCache.String(), s.rangeCache.Get(key))
+			continue
+		}
+
+		var clients []*client.PeerHeader
+		for i, replica := range rd.GetReplicas() {
+			addr, err := s.grpcAddrForReplicaDescriptor(replica)
+			if err != nil {
+				return err
+			}
+			c, err := s.apiClient.Get(ctx, addr)
+			h := makeHeader(rd, i)
+			clients = append(clients, &client.PeerHeader{Header: h, GRPCAddr: addr, GRPClient: c})
+		}
+
+		err = fn(clients)
+		if err == nil {
+			if err := s.rangeCache.UpdateRange(rd); err != nil {
+				log.Errorf("Error updating rangecache: %s", err)
+			}
+			return nil
+		}
+		skipRangeCache = true
+		if !status.IsOutOfRangeError(err) {
+			return err
+		}
+	}
+	return status.UnavailableError("sender.RunAll retries exceeded")
 }
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {

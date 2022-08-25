@@ -27,6 +27,7 @@ message Isolation {
   CacheType cache_type = 1;
   string remote_instance_name = 2;
   string partition_id = 3;
+  string group_id = 4;
 }
 
 message FileRecord {

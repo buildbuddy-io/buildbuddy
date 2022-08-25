@@ -23,7 +23,21 @@ service Api {
 
   // Data API.
   rpc Read(ReadRequest) returns (stream ReadResponse);
-  rpc Write(stream WriteRequest) returns (WriteResponse);
-  rpc SyncWriter(stream WriteRequest) returns (WriteResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
+
+  // Write semantics:
+  //
+  // After creating the stream, the client will send an initial WriteRequest
+  // containing the metadata and the first (and possibly only) chunk of data to
+  // be written.
+  //
+  // If the server is able to accept the write, it will send an
+  // empty WriteResponse, otherwise it will close the stream with an error.
+  //
+  // After the initial WriteResponse, the server will not send another
+  // WriteResponse until the client sends a WriteRequest with finish_write set
+  // to true at which point it will indicate how many bytes were written on the
+  // server.
+  rpc Write(stream WriteRequest) returns (stream WriteResponse);
+  rpc SyncWriter(stream WriteRequest) returns (stream WriteResponse);
 }

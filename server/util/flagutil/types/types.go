@@ -83,6 +83,9 @@ func JSONSliceVar[T any](value *T, name string, defaultValue T, usage string) {
 }
 
 func (f *JSONSliceFlag[T]) String() string {
+	if !(*reflect.Value)(f).IsValid() || (*reflect.Value)(f).IsNil() {
+		return "[]"
+	}
 	b, err := json.Marshal((*reflect.Value)(f).Interface())
 	if err != nil {
 		alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
@@ -273,7 +276,7 @@ func (f *FlagAlias[T]) Set(value string) error {
 }
 
 func (f *FlagAlias[T]) String() string {
-	if f == nil || (f.name == "" && f.WrappedValue() == nil) {
+	if f.name == "" && f.WrappedValue() == nil {
 		return fmt.Sprint(common.Zero[T]())
 	}
 	return f.WrappedValue().String()
@@ -363,7 +366,7 @@ func (d *DeprecatedFlag[T]) YAMLSetValueHook() {
 }
 
 func (d *DeprecatedFlag[T]) String() string {
-	if d == nil || d.Value == nil {
+	if d.Value == nil {
 		return fmt.Sprint(common.Zero[T]())
 	}
 	return d.Value.String()

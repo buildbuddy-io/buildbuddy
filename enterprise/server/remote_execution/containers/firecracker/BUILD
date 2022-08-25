@@ -64,6 +64,7 @@ go_library(
 
 go_test(
     name = "firecracker_test",
+    timeout = "long",
     srcs = ["firecracker_test.go"],
     tags = [
         "manual",  # Don't include this target in wildcard patterns

@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -34,50 +36,6 @@ func (fs *fakeStore) GetReplica(rangeID uint64) (*replica.Replica, error) {
 }
 func (fs *fakeStore) Sender() *sender.Sender {
 	return nil
-}
-
-func TestSnapshotAndRestore(t *testing.T) {
-	baseDir := testfs.MakeTempDir(t)
-	db, err := pebble.Open(baseDir, &pebble.Options{})
-	require.Nil(t, err)
-
-	snapFile, err := os.CreateTemp(baseDir, "snapfile-*")
-	require.Nil(t, err)
-	snapFileName := snapFile.Name()
-	defer os.Remove(snapFileName)
-
-	hashes := make(map[string]struct{}, 0)
-	for i := 0; i < 100; i++ {
-		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		hashes[d.GetHash()] = struct{}{}
-		err := db.Set([]byte(d.GetHash()), buf, nil)
-		require.Nil(t, err)
-	}
-
-	err = replica.SaveSnapshotToWriter(snapFile, db.NewSnapshot())
-	require.Nil(t, err)
-	snapFile.Close()
-	db.Close()
-
-	snapFile, err = os.Open(snapFileName)
-	require.Nil(t, err)
-
-	newDir := testfs.MakeTempDir(t)
-	db, err = pebble.Open(newDir, &pebble.Options{})
-	require.Nil(t, err)
-	err = replica.ApplySnapshotFromReader(snapFile, db)
-	require.Nil(t, err)
-
-	iter := db.NewIter(&pebble.IterOptions{})
-	for iter.First(); iter.Valid(); iter.Next() {
-		hash := string(iter.Key())
-		if _, ok := hashes[hash]; !ok {
-			t.Fatalf("Read hash from snapshot created DB that was not written.")
-		}
-		delete(hashes, hash)
-	}
-	require.Equal(t, 0, len(hashes))
-	db.Close()
 }
 
 func TestOpenCloseReplica(t *testing.T) {
@@ -390,4 +348,182 @@ func TestReplicaScan(t *testing.T) {
 
 	err = repl.Close()
 	require.Nil(t, err)
+}
+
+func TestReplicaFileWrite(t *testing.T) {
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	fileDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.Nil(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	db, err := repl.DB()
+	require.Nil(t, err)
+
+	// Write a file to the replica's data dir.
+	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	fileRecord := &rfpb.FileRecord{
+		Isolation: &rfpb.Isolation{
+			CacheType:   rfpb.Isolation_CAS_CACHE,
+			PartitionId: "default",
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest: d,
+	}
+
+	fileStorer := filestore.New(true /*=isolateByGroupIDs*/)
+	fileMetadataKey, err := fileStorer.FileMetadataKey(fileRecord)
+	require.Nil(t, err)
+
+	writeCloser, err := fileStorer.NewWriter(ctx, fileDir, fileRecord)
+	require.Nil(t, err)
+
+	_, err = writeCloser.Write(buf)
+	require.Nil(t, err)
+	require.Nil(t, writeCloser.Close())
+
+	md := &rfpb.FileMetadata{
+		FileRecord:      fileRecord,
+		StorageMetadata: writeCloser.Metadata(),
+		SizeBytes:       d.GetSizeBytes(),
+	}
+	protoBytes, err := proto.Marshal(md)
+	require.Nil(t, err)
+	batch := db.NewBatch()
+	err = batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+	require.Nil(t, err)
+	err = batch.Commit(&pebble.WriteOptions{Sync: true})
+	require.Nil(t, err)
+
+	// Do a FileWrite for the just written file: it should succeed.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+			FileRecord: fileRecord,
+		}))
+		entries := []dbsm.Entry{entry}
+		writeRsp, err := repl.Update(entries)
+		require.Nil(t, err)
+		require.Equal(t, 1, len(writeRsp))
+	}
+
+	// Do a FileWrite for a file that does not exist: it should fail.
+	{
+		d, _ := testdigest.NewRandomDigestBuf(t, 1000)
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+			FileRecord: &rfpb.FileRecord{
+				Isolation: &rfpb.Isolation{
+					CacheType:   rfpb.Isolation_CAS_CACHE,
+					PartitionId: "default",
+					GroupId:     interfaces.AuthAnonymousUser,
+				},
+				Digest: d,
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		writeRsp, err := repl.Update(entries)
+		require.Nil(t, err)
+		require.Equal(t, 1, len(writeRsp))
+
+		writeBatch := rbuilder.NewBatchResponse(writeRsp)
+		_, err = writeBatch.FileWriteResponse(0)
+		require.NotNil(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), err)
+	}
+}
+
+func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	fileDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.Nil(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	db, err := repl.DB()
+	require.Nil(t, err)
+
+	// Write a file to the replica's data dir.
+	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	fileRecord := &rfpb.FileRecord{
+		Isolation: &rfpb.Isolation{
+			CacheType:   rfpb.Isolation_CAS_CACHE,
+			PartitionId: "default",
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest: d,
+	}
+
+	fileStorer := filestore.New(true /*=isolateByGroupIDs*/)
+	fileMetadataKey, err := fileStorer.FileMetadataKey(fileRecord)
+	require.Nil(t, err)
+
+	writeCloser, err := fileStorer.NewWriter(ctx, fileDir, fileRecord)
+	require.Nil(t, err)
+
+	_, err = writeCloser.Write(buf)
+	require.Nil(t, err)
+	require.Nil(t, writeCloser.Close())
+
+	md := &rfpb.FileMetadata{
+		FileRecord:      fileRecord,
+		StorageMetadata: writeCloser.Metadata(),
+		SizeBytes:       d.GetSizeBytes(),
+	}
+
+	protoBytes, err := proto.Marshal(md)
+	require.Nil(t, err)
+	batch := db.NewBatch()
+	err = batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+	require.Nil(t, err)
+	err = batch.Commit(&pebble.WriteOptions{Sync: true})
+	require.Nil(t, err)
+
+	readCloser, err := repl.Reader(ctx, fileRecord, 0, 0)
+	require.Nil(t, err)
+	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
+
+	// Create a snapshot of the replica.
+	snapI, err := repl.PrepareSnapshot()
+	require.Nil(t, err)
+
+	baseDir := testfs.MakeTempDir(t)
+	snapFile, err := os.CreateTemp(baseDir, "snapfile-*")
+	require.Nil(t, err)
+	snapFileName := snapFile.Name()
+	defer os.Remove(snapFileName)
+
+	err = repl.SaveSnapshot(snapI, snapFile, nil /*=quitChan*/)
+	require.Nil(t, err)
+	snapFile.Seek(0, 0)
+
+	// Restore a new replica from the created snapshot.
+	rootDir2 := testfs.MakeTempDir(t)
+	fileDir2 := testfs.MakeTempDir(t)
+	repl2 := replica.New(rootDir2, fileDir2, 2, 2, store)
+	require.NotNil(t, repl2)
+	_, err = repl2.Open(stopc)
+	require.Nil(t, err)
+
+	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
+	require.Nil(t, err, err)
+
+	// Verify that the file is readable.
+	readCloser, err = repl2.Reader(ctx, fileRecord, 0, 0)
+	require.Nil(t, err)
+	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }
