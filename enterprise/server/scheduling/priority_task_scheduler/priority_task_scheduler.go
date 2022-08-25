@@ -33,10 +33,6 @@ var (
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
 )
 
-const (
-	queueCheckSleepInterval = 10 * time.Millisecond
-)
-
 var shuttingDownLogOnce sync.Once
 
 type groupPriorityQueue struct {
@@ -155,14 +151,14 @@ type Options struct {
 }
 
 type PriorityTaskScheduler struct {
-	env           environment.Env
-	log           log.Logger
-	shuttingDown  bool
-	exec          *executor.Executor
-	runnerPool    interfaces.RunnerPool
-	newTaskSignal chan struct{}
-	rootContext   context.Context
-	rootCancel    context.CancelFunc
+	env              environment.Env
+	log              log.Logger
+	shuttingDown     bool
+	exec             *executor.Executor
+	runnerPool       interfaces.RunnerPool
+	checkQueueSignal chan struct{}
+	rootContext      context.Context
+	rootCancel       context.CancelFunc
 
 	mu                      sync.Mutex
 	q                       *taskQueue
@@ -193,7 +189,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		q:                       newTaskQueue(),
 		exec:                    exec,
 		runnerPool:              runnerPool,
-		newTaskSignal:           make(chan struct{}, 1),
+		checkQueueSignal:        make(chan struct{}, 64),
 		rootContext:             rootContext,
 		rootCancel:              rootCancel,
 		activeTaskCancelFuncs:   make(map[*context.CancelFunc]struct{}, 0),
@@ -282,7 +278,9 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 	q.q.Enqueue(req)
 	q.mu.Unlock()
 	q.log.Infof("Added task %+v to pq.", req)
-	q.newTaskSignal <- struct{}{}
+	// Wake up the scheduling loop so that it can run the task if there are
+	// enough resources available.
+	q.checkQueueSignal <- struct{}{}
 	return &scpb.EnqueueTaskReservationResponse{}, nil
 }
 
@@ -406,8 +404,11 @@ func (q *PriorityTaskScheduler) handleTask() {
 		defer cancel()
 		defer func() {
 			q.mu.Lock()
-			defer q.mu.Unlock()
 			q.untrackTask(reservation, &cancel)
+			q.mu.Unlock()
+			// Wake up the scheduling loop since the resources we just freed up
+			// may allow another task to become runnable.
+			q.checkQueueSignal <- struct{}{}
 		}()
 
 		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.ID(), reservation.GetTaskId())
@@ -442,13 +443,8 @@ func (q *PriorityTaskScheduler) handleTask() {
 
 func (q *PriorityTaskScheduler) Start() error {
 	go func() {
-		for {
-			select {
-			case _ = <-q.newTaskSignal:
-				q.handleTask()
-			case _ = <-time.After(queueCheckSleepInterval):
-				q.handleTask()
-			}
+		for range q.checkQueueSignal {
+			q.handleTask()
 		}
 	}()
 	return nil
