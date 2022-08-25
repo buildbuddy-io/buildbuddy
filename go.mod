@@ -5,6 +5,7 @@ go 1.18
 replace (
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
 	github.com/lni/dragonboat/v3 => github.com/tylerwilliams/dragonboat/v3 v3.3.4-rc5
+	github.com/tensorflow/tensorflow => github.com/bduffany/go-tensorflow v0.0.0-20220824230604-fd0334e8abf5
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
 )
 
@@ -71,6 +72,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.8.0
 	github.com/tebeka/selenium v0.9.9
+	github.com/tensorflow/tensorflow v2.9.0+incompatible
 	github.com/throttled/throttled/v2 v2.0.0-00010101000000-000000000000
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
 	go.opentelemetry.io/contrib/detectors/gcp v1.2.0
@@ -89,7 +91,7 @@ require (
 	google.golang.org/api v0.75.0
 	google.golang.org/genproto v0.0.0-20220421151946-72621c1f0bd3
 	google.golang.org/grpc v1.45.0
-	google.golang.org/protobuf v1.28.0
+	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/clickhouse v0.4.2
