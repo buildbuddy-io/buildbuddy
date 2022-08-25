@@ -756,6 +756,8 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 		t = iter.SeekLT(req.GetLeft())
 	case rfpb.ScanRequest_SEEKGE_SCAN_TYPE:
 		t = iter.SeekGE(req.GetLeft())
+	case rfpb.ScanRequest_SEEKGT_SCAN_TYPE:
+		t = iter.SeekGE(keys.Key(req.GetLeft()).Next())
 	default:
 		t = iter.SeekGE(req.GetLeft())
 	}

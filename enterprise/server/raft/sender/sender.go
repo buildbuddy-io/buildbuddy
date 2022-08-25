@@ -71,7 +71,7 @@ func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Heade
 	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
 		Left:     keys.RangeMetaKey(key),
 		Right:    constants.SystemPrefix,
-		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
+		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
 	}).ToProto()
 	if err != nil {
 		return nil, err

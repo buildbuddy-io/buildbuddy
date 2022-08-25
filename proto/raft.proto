@@ -116,6 +116,7 @@ message ScanRequest {
     UNDEFINED_SCAN_TYPE = 0;
     SEEKLT_SCAN_TYPE = 1;
     SEEKGE_SCAN_TYPE = 2;
+    SEEKGT_SCAN_TYPE = 3;
   }
   ScanType scan_type = 3;
 }
