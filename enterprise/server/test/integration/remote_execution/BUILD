@@ -13,6 +13,7 @@ go_test(
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/scheduling/scheduler_server",
+        "//enterprise/server/tasksize",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/testutil/testexecutor",

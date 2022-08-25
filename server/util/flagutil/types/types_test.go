@@ -65,6 +65,9 @@ func TestStringSliceFlag(t *testing.T) {
 	testFlag := NewStringSliceFlag(&testSlice)
 	testFlag.AppendSlice(([]string)(*testFlag))
 	assert.Equal(t, []string{"yes", "si", "hai", "yes", "si", "hai"}, testSlice)
+
+	// `String` should not panic on zero-constructed flag
+	assert.Equal(t, "", reflect.New(reflect.TypeOf((*StringSliceFlag)(nil)).Elem()).Interface().(flag.Value).String())
 }
 
 func TestStructSliceFlag(t *testing.T) {
@@ -111,6 +114,9 @@ func TestStructSliceFlag(t *testing.T) {
 	testFlag := NewJSONSliceFlag(&testSlice)
 	testFlag.AppendSlice(testFlag.Slice())
 	assert.Equal(t, []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}, {}, {Field: 1}, {Meadow: "Paradise"}}, testSlice)
+
+	// `String` should not panic on zero-constructed flag
+	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*JSONSliceFlag[[]testStruct])(nil)).Elem()).Interface().(flag.Value).String())
 }
 
 func TestProtoSliceFlag(t *testing.T) {
@@ -158,6 +164,8 @@ func TestProtoSliceFlag(t *testing.T) {
 	testFlag.AppendSlice(testFlag.Slice())
 	assert.Equal(t, []*timestamppb.Timestamp{{}, {Seconds: 1}, {Nanos: 99}, {}, {Seconds: 1}, {Nanos: 99}}, testSlice)
 
+	// `String` should not panic on zero-constructed flag
+	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*JSONSliceFlag[[]*timestamppb.Timestamp])(nil)).Elem()).Interface().(flag.Value).String())
 }
 
 func TestFlagAlias(t *testing.T) {
@@ -384,6 +392,10 @@ string_alias: "meow"
 	structSlice, err := common.GetDereferencedValue[[]testStruct]("struct_slice")
 	require.NoError(t, err)
 	assert.Equal(t, []testStruct{{Field: 1}, {Field: 2}}, structSlice)
+
+	// `String` should not panic on zero-constructed flag
+	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*FlagAlias[[]testStruct])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "", reflect.New(reflect.TypeOf((*FlagAlias[string])(nil)).Elem()).Interface().(flag.Value).String())
 }
 
 func TestDeprecatedVar(t *testing.T) {
@@ -439,6 +451,9 @@ deprecated_string_slice:
 	_, ok = d.(flagyaml.YAMLSetValueHooked)
 	assert.True(t, ok)
 
+	// `String` should not panic on zero-constructed flag
+	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*DeprecatedFlag[[]testStruct])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "", reflect.New(reflect.TypeOf((*DeprecatedFlag[string])(nil)).Elem()).Interface().(flag.Value).String())
 }
 
 func TestDeprecate(t *testing.T) {
@@ -499,5 +514,9 @@ deprecated_string_slice:
 	assert.True(t, ok)
 	_, ok = d.(flagyaml.YAMLSetValueHooked)
 	assert.True(t, ok)
+}
 
+func TestURLFlag(t *testing.T) {
+	// `String` should not panic on zero-constructed flag
+	assert.Equal(t, "", reflect.New(reflect.TypeOf((*URLFlag)(nil)).Elem()).Interface().(flag.Value).String())
 }

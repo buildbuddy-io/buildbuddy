@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -32,12 +31,11 @@ import (
 // Replicas need a reference back to the Store that holds them in order to
 // add and remove themselves, read files from peers, etc. In order to make this
 // more easily testable in a standalone fashion, IStore mocks out just the
-// necessary methods.
+// necessary methods that a Replica requires a Store to have.
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	Sender() *sender.Sender
-	ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
 	GetReplica(rangeID uint64) (*Replica, error)
 }
 
@@ -84,6 +82,8 @@ type Replica struct {
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
 	mappedRange     *rangemap.Range
+
+	fileStorer filestore.Store
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -115,7 +115,17 @@ func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
 	return val, nil
 }
 
-func sizeOf(val []byte) (int64, error) {
+func isLocalKey(key []byte) bool {
+	return bytes.HasPrefix(key, constants.LocalPrefix) ||
+		bytes.HasPrefix(key, constants.SystemPrefix) ||
+		bytes.HasPrefix(key, constants.MetaRangePrefix)
+}
+
+func sizeOf(key []byte, val []byte) (int64, error) {
+	if isLocalKey(key) {
+		return int64(len(val)), nil
+	}
+
 	fileMetadata := &rfpb.FileMetadata{}
 	if err := proto.Unmarshal(val, fileMetadata); err != nil {
 		return 0, err
@@ -130,7 +140,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 			NodeId:    sm.nodeID,
 		},
 	}
-	db, err := sm.Reader()
+	db, err := sm.ReadOnlyDB()
 	if err != nil {
 		return nil, err
 	}
@@ -145,8 +155,8 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	defer iter.Close()
 
 	estimatedBytesUsed := int64(0)
-	for iter.Next() {
-		sizeBytes, err := sizeOf(iter.Value())
+	for iter.First(); iter.Valid(); iter.Next() {
+		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -293,7 +303,7 @@ func (r *refCountedDB) Close() error {
 	return r.refCounter.Close()
 }
 
-func (sm *Replica) Reader() (ReplicaReader, error) {
+func (sm *Replica) ReadOnlyDB() (ReplicaReader, error) {
 	sm.closedMu.RLock()
 	defer sm.closedMu.RUnlock()
 	if sm.closed {
@@ -358,34 +368,6 @@ func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
 	sm.setRange(constants.LocalRangeKey, buf)
 }
 
-func (sm *Replica) readFileFromPeer(ctx context.Context, fileRecord *rfpb.FileRecord, wb *pebble.Batch) (*rfpb.FileMetadata, error) {
-	thisReplica := &rfpb.ReplicaDescriptor{
-		ClusterId: sm.clusterID,
-		NodeId:    sm.nodeID,
-	}
-	rc, err := sm.store.ReadFileFromPeer(ctx, thisReplica, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-
-	wc, err := filestore.NewWriter(ctx, sm.fileDir, wb, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(wc, rc); err != nil {
-		return nil, err
-	}
-	if err := wc.Close(); err != nil {
-		return nil, err
-	}
-
-	return &rfpb.FileMetadata{
-		FileRecord:      fileRecord,
-		StorageMetadata: wc.Metadata(),
-	}, nil
-}
-
 func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
 	// In the common case, this doesn't actually write any data, because
 	// it's already been written it in a separate Write RPC. It simply
@@ -394,25 +376,16 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
-	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
 
 	found := iter.SeekGE(fileMetadataKey)
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		md, err := sm.readFileFromPeer(context.TODO(), req.GetFileRecord(), wb)
-		if err != nil {
-			log.Errorf("Error recovering file %v from peer: %s", req.GetFileRecord(), err)
-			return nil, err
-		}
-		protoBytes, err := proto.Marshal(md)
-		if err := sm.rangeCheckedSet(wb, fileMetadataKey, protoBytes); err != nil {
-			return nil, err
-		}
+		return nil, status.NotFoundErrorf("file data for %v was not found in replica", req.GetFileRecord())
 	}
 	return &rfpb.FileWriteResponse{}, nil
-
 }
 
 func (sm *Replica) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
@@ -505,8 +478,8 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 	defer iter.Close()
 
 	totalSize := int64(0)
-	for iter.Next() {
-		sizeBytes, err := sizeOf(iter.Value())
+	for iter.First(); iter.Valid(); iter.Next() {
+		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -514,9 +487,8 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 	}
 
 	leftSplitSize := int64(0)
-	var t bool = iter.First()
 	var lastKey []byte
-	for ; t; t = iter.Next() {
+	for iter.First(); iter.Valid(); iter.Next() {
 		if leftSplitSize >= totalSize/2 && canSplitKeys(lastKey, iter.Key()) {
 			sp := &rfpb.FindSplitPointResponse{
 				Split:          make([]byte, len(iter.Key())),
@@ -527,13 +499,12 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 			log.Debugf("Found split point: %+v", sp)
 			return sp, nil
 		}
-		if t {
-			leftSplitSize += int64(len(iter.Value()))
-			if len(lastKey) != len(iter.Key()) {
-				lastKey = make([]byte, len(iter.Key()))
-			}
-			copy(lastKey, iter.Key())
+
+		leftSplitSize += int64(len(iter.Value()))
+		if len(lastKey) != len(iter.Key()) {
+			lastKey = make([]byte, len(iter.Key()))
 		}
+		copy(lastKey, iter.Key())
 	}
 	return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSplitSize)
 }
@@ -562,23 +533,27 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	return true
 }
 
-func (sm *Replica) populateDBFromSnapshot(sourceDB, destDB ReplicaWriter) error {
-	// Create a snapshot of the left range.
-	f, err := os.CreateTemp(sm.fileDir, "replica-*.snap")
-	if err != nil {
-		return err
+func (sm *Replica) populateReplicaFromSnapshot(rightSM *Replica) error {
+	if sm == rightSM {
+		return status.FailedPreconditionError("cannot populate replica from self")
 	}
-	defer os.Remove(f.Name())
 
-	snap := sourceDB.NewSnapshot()
+	snap := sm.db.NewSnapshot()
 	defer snap.Close()
-	if err := SaveSnapshotToWriter(f, snap); err != nil {
-		return err
+
+	rightDB, err := rightSM.DB()
+	if err != nil {
+		return nil
 	}
 
-	// Load the snapshot into the new right range.
-	f.Seek(0, 0)
-	return ApplySnapshotFromReader(f, destDB)
+	r, w := io.Pipe()
+	go func() {
+		if err := sm.SaveSnapshotToWriter(w, snap); err != nil {
+			w.CloseWithError(err)
+		}
+		w.Close()
+	}()
+	return rightSM.ApplySnapshotFromReader(r, rightDB)
 }
 
 func (sm *Replica) updateMetarange(oldLeft, left, right *rfpb.RangeDescriptor) error {
@@ -661,12 +636,6 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 		return nil, status.FailedPreconditionError("unable to split range: couldn't find split point")
 	}
 
-	leftDB, err := sm.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer leftDB.Close()
-
 	// Lock the range to external writes.
 	sm.splitMu.Lock()
 	defer sm.splitMu.Unlock()
@@ -693,13 +662,13 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	}
 	defer rightDB.Close()
 
-	if err := sm.populateDBFromSnapshot(leftDB, rightDB); err != nil {
+	if err := sm.populateReplicaFromSnapshot(rightSM); err != nil {
 		return nil, err
 	}
 	rwb := rightDB.NewIndexedBatch()
 	defer rwb.Close()
 
-	// Delete the keys from each side that are now owned by the other side.
+	// Delete the keys (and data) from each side that are now owned by the other side.
 	// Right side delete should be a no-op if this is a freshly created replica.
 	sp := req.GetSplitPoint()
 	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, sp.GetSplit(), nil /*ignored write options*/); err != nil {
@@ -793,12 +762,14 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 
 	rsp := &rfpb.ScanResponse{}
 	for ; t; t = iter.Next() {
-		if t {
-			rsp.Kvs = append(rsp.Kvs, &rfpb.KV{
-				Key:   iter.Key(),
-				Value: iter.Value(),
-			})
-		}
+		k := make([]byte, len(iter.Key()))
+		copy(k, iter.Key())
+		v := make([]byte, len(iter.Value()))
+		copy(v, iter.Value())
+		rsp.Kvs = append(rsp.Kvs, &rfpb.KV{
+			Key:   k,
+			Value: v,
+		})
 	}
 	return rsp, nil
 }
@@ -875,6 +846,184 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 		rsp.Status = statusProto(status.UnimplementedErrorf("Read handling for %+v not implemented.", req))
 	}
 	return rsp
+}
+
+func lookupAndSetFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
+	found := iter.SeekGE(fileMetadataKey)
+	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
+		return status.NotFoundErrorf("record %q not found", fileMetadataKey)
+	}
+	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		return status.InternalErrorf("error reading record %q metadata", fileMetadataKey)
+	}
+	return nil
+}
+
+func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+		return nil, err
+	}
+	return fileMetadata, nil
+}
+
+type fnReadCloser struct {
+	io.ReadCloser
+	fn func() error
+}
+
+func (f fnReadCloser) Close() error {
+	if err := f.ReadCloser.Close(); err != nil {
+		return err
+	}
+	return f.fn()
+}
+
+func (sm *Replica) Reader(ctx context.Context, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
+	db, err := sm.ReadOnlyDB()
+	if err != nil {
+		return nil, err
+	}
+
+	// The DB lease should stay open as long as the returned ReadCloser is
+	// being used. This prevents splits and other operations from happening
+	// while a file is mid-read. But to prevent leaks, a cleanup call is
+	// deferred. If a reader is returned below, needCleanup will be set to
+	// false and the defer not run.
+	needCleanup := true
+	cleanup := func() error {
+		if needCleanup {
+			needCleanup = false
+			return db.Close()
+		}
+		return nil
+	}
+	defer cleanup()
+
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	iter.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	needCleanup = false
+	return &fnReadCloser{rc, func() error {
+		return db.Close()
+	}}, nil
+}
+
+func (sm *Replica) FindMissing(ctx context.Context, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
+	reader, err := sm.ReadOnlyDB()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	iter := reader.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	missing := make([]*rfpb.FileRecord, 0)
+	for _, fileRecord := range fileRecords {
+		fileMetadaKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		if !iter.SeekGE(fileMetadaKey) || bytes.Compare(iter.Key(), fileMetadaKey) != 0 {
+			missing = append(missing, fileRecord)
+		}
+	}
+	return missing, nil
+}
+
+type writeCloser struct {
+	filestore.WriteCloserMetadata
+	commitFn     func(n int64) error
+	bytesWritten int64
+	closeFn      func() error
+}
+
+func (dc *writeCloser) Commit() error {
+	if err := dc.WriteCloserMetadata.Close(); err != nil {
+		return err
+	}
+	return dc.commitFn(dc.bytesWritten)
+}
+
+func (dc *writeCloser) Close() error {
+	return dc.closeFn()
+}
+
+func (dc *writeCloser) Write(p []byte) (int, error) {
+	n, err := dc.WriteCloserMetadata.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	dc.bytesWritten += int64(n)
+	return n, nil
+}
+
+func (sm *Replica) Writer(ctx context.Context, fileRecord *rfpb.FileRecord) (filestore.CommittedWriter, error) {
+	db, err := sm.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	// The DB lease should stay open as long as the returned WriteCloser is
+	// being used. This prevents splits and other operations from happening
+	// while a file is mid-write. But to prevent leaks, a cleanup call is
+	// deferred. If a writer is returned below, needCleanup will be set to
+	// false and the defer not run.
+	needCleanup := true
+	cleanup := func() error {
+		if needCleanup {
+			return db.Close()
+		}
+		return nil
+	}
+	defer cleanup()
+
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	writeCloserMetadata, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	commitFn := func(bytesWritten int64) error {
+		batch := db.NewBatch()
+		md := &rfpb.FileMetadata{
+			FileRecord:      fileRecord,
+			StorageMetadata: writeCloserMetadata.Metadata(),
+			SizeBytes:       bytesWritten,
+		}
+		protoBytes, err := proto.Marshal(md)
+		if err != nil {
+			return err
+		}
+		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
+			return err
+		}
+		return batch.Commit(&pebble.WriteOptions{Sync: true})
+	}
+
+	needCleanup = false
+	return &writeCloser{
+		WriteCloserMetadata: writeCloserMetadata,
+		commitFn:            commitFn,
+		closeFn:             db.Close,
+	}, nil
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
@@ -995,7 +1144,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
-	db, err := sm.Reader()
+	db, err := sm.ReadOnlyDB()
 	if err != nil {
 		return nil, err
 	}
@@ -1056,39 +1205,84 @@ func (sm *Replica) PrepareSnapshot() (interface{}, error) {
 	return snap, nil
 }
 
-func SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) error {
+func encodeDataToWriter(w io.Writer, r io.Reader, msgLength int64) error {
+	varintBuf := make([]byte, binary.MaxVarintLen64)
+	varintSize := binary.PutVarint(varintBuf, msgLength)
+
+	// Write a header-chunk to know how big the data coming is
+	if _, err := w.Write(varintBuf[:varintSize]); err != nil {
+		return err
+	}
+	if msgLength == 0 {
+		return nil
+	}
+
+	n, err := io.Copy(w, r)
+	if err != nil {
+		return err
+	}
+	if int64(n) != msgLength {
+		return status.FailedPreconditionErrorf("wrote wrong number of bytes?")
+	}
+	return nil
+}
+
+func readDataFromReader(r *bufio.Reader) (io.Reader, int64, error) {
+	count, err := binary.ReadVarint(r)
+	if err != nil {
+		return nil, 0, err
+	}
+	return io.LimitReader(r, count), count, nil
+}
+
+func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) error {
+	ctx := context.Background()
 	iter := snap.NewIter(&pebble.IterOptions{})
 	defer iter.Close()
 	for iter.First(); iter.Valid(); iter.Next() {
-		kv := &rfpb.KV{}
-		kv.Key = iter.Key()
-		kv.Value = iter.Value()
+		kv := &rfpb.KV{
+			Key:   iter.Key(),
+			Value: iter.Value(),
+		}
 		protoBytes, err := proto.Marshal(kv)
 		if err != nil {
 			return err
 		}
-		msgLength := int64(len(protoBytes))
-		varintBuf := make([]byte, binary.MaxVarintLen64)
-		varintSize := binary.PutVarint(varintBuf, msgLength)
 
-		// Write a header-chunk to know how big the proto is
-		if _, err := w.Write(varintBuf[:varintSize]); err != nil {
+		protoLength := int64(len(protoBytes))
+		if err := encodeDataToWriter(w, bytes.NewReader(protoBytes), protoLength); err != nil {
 			return err
 		}
 
-		// Then write the proto itself.
-		n, err := w.Write(protoBytes)
-		if err != nil {
-			return err
+		var dataLength int64
+		var dataReader io.Reader
+
+		if !isLocalKey(iter.Key()) {
+			fileMetadata := &rfpb.FileMetadata{}
+			if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+				return err
+			}
+			if fileMetadata.GetSizeBytes() == 0 {
+				log.Errorf("File %q has size 0, which is not permitted. Metadata: %+v", iter.Key(), fileMetadata)
+				return status.FailedPreconditionError("Cannot encode 0 length file data into snapshot")
+			}
+			rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), 0, 0)
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+			dataReader = rc
+			dataLength = fileMetadata.GetSizeBytes()
 		}
-		if int64(n) != msgLength {
-			return status.FailedPreconditionErrorf("wrote wrong number of bytes?")
+		if err := encodeDataToWriter(w, dataReader, dataLength); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
+func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
+	ctx := context.Background()
 	wb := db.NewBatch()
 	defer wb.Close()
 
@@ -1097,29 +1291,68 @@ func ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 		return err
 	}
 
+	var fileMetadata *rfpb.FileMetadata
 	readBuf := bufio.NewReader(r)
 	for {
-		count, err := binary.ReadVarint(readBuf)
+		r, count, err := readDataFromReader(readBuf)
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
 			return err
 		}
-		protoBytes := make([]byte, count)
-		n, err := io.ReadFull(readBuf, protoBytes)
-		if err != nil {
-			return err
+		if count == 0 {
+			// Skip 0-length sections which are present
+			// after non-fileMetadata type keys.
+			continue
 		}
-		if int64(n) != count {
-			return status.FailedPreconditionErrorf("Count %d != bytes read %d", count, n)
-		}
-		kv := &rfpb.KV{}
-		if err := proto.Unmarshal(protoBytes, kv); err != nil {
-			return err
-		}
-		if err := wb.Set(kv.Key, kv.Value, nil /*ignored write options*/); err != nil {
-			return err
+		// FileMetadata KVs and file data are interleaved in the
+		// snapshot. To parse it, first read a KV. If the KV is not a
+		// local-key, a fileMetadata proto is unmarshalled from the
+		// KV.Value. The following chunk must be a data chunk that
+		// contains all the data associated with that fileMetadata.
+		// After reading the data chunk and writing it to the filestore,
+		// fileMetadata is cleared and the process restarts.
+		if fileMetadata == nil {
+			protoBytes := make([]byte, count)
+			n, err := io.ReadFull(readBuf, protoBytes)
+			if err != nil {
+				return err
+			}
+			if int64(n) != count {
+				return status.FailedPreconditionErrorf("Count %d != bytes read %d", count, n)
+			}
+			kv := &rfpb.KV{}
+			if err := proto.Unmarshal(protoBytes, kv); err != nil {
+				return err
+			}
+			if err := wb.Set(kv.Key, kv.Value, nil /*ignored write options*/); err != nil {
+				return err
+			}
+			if !isLocalKey(kv.GetKey()) {
+				fm := &rfpb.FileMetadata{}
+				if err := proto.Unmarshal(kv.Value, fm); err != nil {
+					return err
+				}
+				fileMetadata = fm
+			}
+		} else {
+			writeCloserMetadata, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, fileMetadata.GetFileRecord())
+			if err != nil {
+				return err
+			}
+			n, err := io.Copy(writeCloserMetadata, r)
+			if n != fileMetadata.GetSizeBytes() {
+				return status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
+			}
+			if err := writeCloserMetadata.Close(); err != nil {
+				return err
+			}
+			if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
+				log.Errorf("Stored metadata differs after restoring snapshot. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
+				return status.FailedPreconditionError("stored metadata changed when restoring snapshot")
+			}
+			fileMetadata = nil
 		}
 	}
 	if err := db.Apply(wb, &pebble.WriteOptions{Sync: true}); err != nil {
@@ -1170,7 +1403,7 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
 	}
 	defer snap.Close()
-	return SaveSnapshotToWriter(w, snap)
+	return sm.SaveSnapshotToWriter(w, snap)
 }
 
 // RecoverFromSnapshot recovers the state of the IOnDiskStateMachine instance
@@ -1196,13 +1429,13 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 	if err != nil {
 		return err
 	}
-	err = ApplySnapshotFromReader(r, db)
+	err = sm.ApplySnapshotFromReader(r, db)
 	db.Close() // close the DB before handling errors or checking keys.
 	if err != nil {
 		return err
 	}
 
-	readDB, err := sm.Reader()
+	readDB, err := sm.ReadOnlyDB()
 	if err != nil {
 		return err
 	}
@@ -1260,13 +1493,14 @@ func (sm *Replica) Close() error {
 // CreateReplica creates an ondisk statemachine.
 func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Replica {
 	return &Replica{
-		closedMu:  &sync.RWMutex{},
-		wg:        sync.WaitGroup{},
-		rootDir:   rootDir,
-		fileDir:   fileDir,
-		clusterID: clusterID,
-		nodeID:    nodeID,
-		store:     store,
-		log:       log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		closedMu:   &sync.RWMutex{},
+		wg:         sync.WaitGroup{},
+		rootDir:    rootDir,
+		fileDir:    fileDir,
+		clusterID:  clusterID,
+		nodeID:     nodeID,
+		store:      store,
+		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		fileStorer: filestore.New(true /*=isolateByGroupIDs*/),
 	}
 }

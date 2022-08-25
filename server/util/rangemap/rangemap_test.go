@@ -161,9 +161,9 @@ func TestGet(t *testing.T) {
 }
 
 func TestGetOverlapping(t *testing.T) {
-	r := rangemap.New()
+	rm := rangemap.New()
 	addRange := func(left, right string, id int) {
-		_, err := r.Add([]byte(left), []byte(right), id)
+		_, err := rm.Add([]byte(left), []byte(right), id)
 		require.Nil(t, err)
 	}
 
@@ -171,11 +171,18 @@ func TestGetOverlapping(t *testing.T) {
 	addRange("e", "i", 2)
 	addRange("m", "q", 3)
 
-	overlap := r.GetOverlapping([]byte("d"), []byte("m"))
+	overlappingRangeIDs := func(left, right string) []int {
+		var ids []int
+		for _, r := range rm.GetOverlapping([]byte(left), []byte(right)) {
+			ids = append(ids, r.Val.(int))
+		}
+		return ids
+	}
 
-	require.Equal(t, 1, overlap[0].Val)
-	require.Equal(t, 2, overlap[1].Val)
-	require.Equal(t, 3, overlap[2].Val)
+	require.Equal(t, overlappingRangeIDs("d", "m"), []int{1, 2})
+	require.Equal(t, overlappingRangeIDs("d", "n"), []int{1, 2, 3})
+	require.Equal(t, overlappingRangeIDs("d", "q"), []int{1, 2, 3})
+	require.Equal(t, overlappingRangeIDs("a", "q"), []int{1, 2, 3})
 }
 
 func TestRemove(t *testing.T) {

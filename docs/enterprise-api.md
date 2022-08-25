@@ -667,3 +667,67 @@ message File {
   int64 size_bytes = 4;
 }
 ```
+
+## DeleteFile
+
+The `DeleteFile` endpoint allows you to delete a specific cache entry, which is associated with a uri.
+This can be used to address cache poisoning.
+
+### Endpoint
+
+```
+https://app.buildbuddy.io/api/v1/DeleteFile
+```
+
+### Service
+
+```protobuf
+// Delete the File with the given uri.
+rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+```
+
+### Example cURL request
+
+```bash
+curl -d '{"uri":"bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216"}' \
+  -H 'x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY' \
+  -H 'Content-Type: application/json' \
+  https://app.buildbuddy.io/api/v1/DeleteFile
+```
+
+Make sure to replace `YOUR_BUILDBUDDY_API_KEY` and the file uri `bytestream://remote.buildbuddy.io/buildbuddy-io/buildbuddy-internal/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216` with your own values.
+
+### DeleteFileRequest
+
+```protobuf
+// Request object for DeleteFile
+message DeleteFileRequest {
+  // URI of file to delete.
+  //
+  // CAS URI format:
+  // <instance_name>/<blobs|compressed-blobs/zstd>/<digest_hash>/<digest_size>
+  // Action cache URI format:
+  // <instance_name>/<blobs|compressed-blobs/zstd>/ac/<digest_hash>/<digest_size>
+  //
+  // Examples:
+  // * CAS artifact:
+  //   compressed-blobs/zstd/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //
+  // * CAS artifact with remote_instance_name
+  //   my_remote_instance_name/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //
+  // * Action cache artifact:
+  //   blobs/ac/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  //
+  // * Action cache artifact with remote_instance_name
+  //   my_remote_instance_name/blobs/ac/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/2084
+  string uri = 1;
+}
+```
+
+### DeleteFileResponse
+
+```protobuf
+// Response object for DeleteFile
+message DeleteFileResponse {}
+```

@@ -31,8 +31,8 @@ const (
 
 	// Definitions for BCU ("BuildBuddy Compute Unit")
 
-	computeUnitsToMilliCPU = 1000      // 1 BCU = 1000 milli-CPU
-	computeUnitsToRAMBytes = 2.5 * 1e9 // 1 BCU = 2.5GB of memory
+	ComputeUnitsToMilliCPU = 1000      // 1 BCU = 1000 milli-CPU
+	ComputeUnitsToRAMBytes = 2.5 * 1e9 // 1 BCU = 2.5GB of memory
 
 	// Default resource estimates
 
@@ -323,8 +323,8 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 	}
 
 	if props.EstimatedComputeUnits > 0 {
-		cpuEstimate = props.EstimatedComputeUnits * computeUnitsToMilliCPU
-		memEstimate = props.EstimatedComputeUnits * computeUnitsToRAMBytes
+		cpuEstimate = props.EstimatedComputeUnits * ComputeUnitsToMilliCPU
+		memEstimate = props.EstimatedComputeUnits * ComputeUnitsToRAMBytes
 	}
 	if props.EstimatedFreeDiskBytes > 0 {
 		freeDiskEstimate = props.EstimatedFreeDiskBytes

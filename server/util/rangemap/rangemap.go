@@ -143,7 +143,7 @@ func (rm *RangeMap) GetOverlapping(left, right []byte) []*Range {
 	// aka, starts AFTER this key, and then we'll go one left of it
 	rightIndex := sort.Search(len(rm.ranges), func(i int) bool {
 		//  0 if a==b, -1 if a < b, and +1 if a > b
-		return bytes.Compare(rm.ranges[i].Left, right) > 0
+		return bytes.Compare(rm.ranges[i].Left, right) >= 0
 	})
 
 	if rightIndex > 0 {

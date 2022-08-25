@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -28,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/cockroachdb/pebble"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -72,6 +70,8 @@ type Store struct {
 
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
+
+	fileStorer filestore.Store
 }
 
 func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
@@ -92,6 +92,7 @@ func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *
 		replicas: sync.Map{},
 
 		metaRangeData: "",
+		fileStorer:    filestore.New(true /*=isolateByGroupIDs*/),
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)
@@ -296,27 +297,52 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	go s.releaseRangeLease(rd.GetRangeId())
 }
 
-func (s *Store) RangeIsActive(header *rfpb.Header) error {
+// validatedRange verifies that the header is valid and the client is using
+// an up-to-date range descriptor. In most cases, it's also necessary to verify
+// that a local replica has a range lease for the given range ID which can be
+// done by using the RangeIsActive function.
+func (s *Store) validatedRange(header *rfpb.Header) (*rfpb.RangeDescriptor, error) {
 	if header == nil {
-		return status.FailedPreconditionError("Nil header not allowed")
+		return nil, status.FailedPreconditionError("Nil header not allowed")
 	}
 
 	s.rangeMu.RLock()
 	rd, rangeOK := s.openRanges[header.GetRangeId()]
 	s.rangeMu.RUnlock()
 	if !rangeOK {
-		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, header.GetRangeId())
+		return nil, status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, header.GetRangeId())
 	}
 
 	if len(rd.GetReplicas()) == 0 {
-		return status.OutOfRangeErrorf("%s: range had no replicas %d", constants.RangeNotFoundMsg, header.GetRangeId())
+		return nil, status.OutOfRangeErrorf("%s: range had no replicas %d", constants.RangeNotFoundMsg, header.GetRangeId())
 	}
 
 	// Ensure the header generation matches what we have locally -- if not,
 	// force client to go back and re-pull the rangeDescriptor from the meta
 	// range.
 	if rd.GetGeneration() != header.GetGeneration() {
-		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), header.GetGeneration())
+		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), header.GetGeneration())
+	}
+
+	return rd, nil
+}
+
+// rangeIsValid verifies that the header is valid and the client is using
+// an up-to-date range descriptor. In most cases, it's also necessary to verify
+// that a local replica has a range lease for the given range ID which can be
+// done by using the RangeIsActive function.
+func (s *Store) rangeIsValid(header *rfpb.Header) error {
+	_, err := s.validatedRange(header)
+	return err
+}
+
+// RangeIsActive verifies that the header is valid and the client is using
+// an up-to-date range descriptor. It also checks that a local replica owns
+// the range lease for the requested range.
+func (s *Store) RangeIsActive(header *rfpb.Header) error {
+	rd, err := s.validatedRange(header)
+	if err != nil {
+		return err
 	}
 
 	if rlIface, ok := s.leases.Load(header.GetRangeId()); ok {
@@ -339,33 +365,6 @@ func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMach
 
 func (s *Store) Sender() *sender.Sender {
 	return s.sender
-}
-
-func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
-	fileMetadataKey, err := constants.FileMetadataKey(fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	var rc io.ReadCloser
-	err = s.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		if h.GetReplica().GetClusterId() == except.GetClusterId() &&
-			h.GetReplica().GetNodeId() == except.GetNodeId() {
-			return status.OutOfRangeError("except node")
-		}
-		req := &rfpb.ReadRequest{
-			Header:     h,
-			FileRecord: fileRecord,
-			Offset:     0,
-			Limit:      0,
-		}
-		r, err := s.apiClient.RemoteReader(ctx, c, req)
-		if err != nil {
-			return err
-		}
-		rc = r
-		return nil
-	})
-	return rc, err
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
@@ -496,25 +495,13 @@ func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (
 	if err != nil {
 		return nil, err
 	}
-	reader, err := r.Reader()
+	missing, err := r.FindMissing(ctx, req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
-	iter := reader.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	rsp := &rfpb.FindMissingResponse{}
-	for _, fileRecord := range req.GetFileRecord() {
-		fileMetadaKey, err := constants.FileMetadataKey(fileRecord)
-		if err != nil {
-			return nil, err
-		}
-		if !iter.SeekGE(fileMetadaKey) || bytes.Compare(iter.Key(), fileMetadaKey) != 0 {
-			rsp.FileRecord = append(rsp.FileRecord, fileRecord)
-		}
-	}
-	return rsp, nil
+	return &rfpb.FindMissingResponse{
+		FileRecord: missing,
+	}, nil
 }
 
 type streamWriter struct {
@@ -537,32 +524,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 		return err
 	}
 
-	db, err := r.Reader()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-
-	fileMetadataKey, err := constants.FileMetadataKey(req.GetFileRecord())
-	if err != nil {
-		return err
-	}
-
-	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	found := iter.SeekGE(fileMetadataKey)
-	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return status.NotFoundErrorf("file %q not found", fileMetadataKey)
-	}
-	fileMetadata := &rfpb.FileMetadata{}
-	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return status.InternalErrorf("error reading file %q metadata", fileMetadataKey)
-	}
-	offset := req.GetOffset()
-	limit := req.GetLimit()
-	readCloser, err := filestore.NewReader(stream.Context(), s.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	readCloser, err := r.Reader(stream.Context(), req.GetFileRecord(), req.GetOffset(), req.GetLimit())
 	if err != nil {
 		return err
 	}
@@ -578,11 +540,9 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	return err
 }
 
-func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
+func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 	var bytesWritten int64
-	var fileMetadataKey []byte
-	var writeCloser filestore.WriteCloserMetadata
-	var batch *pebble.Batch
+	var writeCloser filestore.CommittedWriter
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -592,6 +552,9 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 			return err
 		}
 		if writeCloser == nil {
+			if err := s.rangeIsValid(req.GetHeader()); err != nil {
+				return err
+			}
 			// It's expected that clients will directly write bytes
 			// to all replicas in a range and then syncpropose a
 			// write which confirms the data is in place. For that
@@ -600,18 +563,14 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			db, err := r.DB()
+			writeCloser, err = r.Writer(stream.Context(), req.GetFileRecord())
 			if err != nil {
 				return err
 			}
-			defer db.Close()
-			batch = db.NewBatch()
-			fileMetadataKey, err = constants.FileMetadataKey(req.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			writeCloser, err = filestore.NewWriter(stream.Context(), s.fileDir, batch, req.GetFileRecord())
-			if err != nil {
+			defer writeCloser.Close()
+			// Send the client an empty write response as an indicator that we
+			// have accepted the write.
+			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
 				return err
 			}
 		}
@@ -621,33 +580,15 @@ func (s *Store) handleWrite(stream rfspb.Api_WriteServer) error {
 		}
 		bytesWritten += int64(n)
 		if req.FinishWrite {
-			if err := writeCloser.Close(); err != nil {
+			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
-			md := &rfpb.FileMetadata{
-				FileRecord:      req.GetFileRecord(),
-				StorageMetadata: writeCloser.Metadata(),
-			}
-			protoBytes, err := proto.Marshal(md)
-			if err != nil {
-				return err
-			}
-			if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
-				return err
-			}
-			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
-				return err
-			}
-			return stream.SendAndClose(&rfpb.WriteResponse{
+			return stream.Send(&rfpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
 		}
 	}
 	return nil
-}
-
-func (s *Store) Write(stream rfspb.Api_WriteServer) error {
-	return s.handleWrite(stream)
 }
 
 type raftWriteCloser struct {
@@ -678,17 +619,35 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 			return err
 		}
 		if writeCloser == nil {
-			fmk, err := constants.FileMetadataKey(req.GetFileRecord())
+			fmk, err := s.fileStorer.FileMetadataKey(req.GetFileRecord())
 			if err != nil {
 				return err
 			}
 			fileMetadataKey = fmk
-			peers, err := s.sender.GetAllNodes(ctx, fileMetadataKey)
+
+			var mwc io.WriteCloser
+			err = s.sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
+				w, err := s.apiClient.MultiWriter(ctx, peers, req.GetFileRecord())
+				if err != nil {
+					return err
+				}
+				// Attempt the first write to see if all the peers will accept
+				// it. If the range information is stale, the write will fail
+				// here and the entire operation will be retried via RunAll.
+				n, err := w.Write(req.Data)
+				if err != nil {
+					return err
+				}
+				bytesWritten += int64(n)
+				mwc = w
+				return nil
+			})
 			if err != nil {
 				return err
 			}
-			mwc, err := s.apiClient.MultiWriter(ctx, peers, req.GetFileRecord())
-			if err != nil {
+			// Send the client an empty write response as an indicator that we
+			// have accepted the write.
+			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
 				return err
 			}
 			rwc := &raftWriteCloser{mwc, func() error {
@@ -703,17 +662,18 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 				return err
 			}}
 			writeCloser = rwc
+		} else {
+			n, err := writeCloser.Write(req.Data)
+			if err != nil {
+				return err
+			}
+			bytesWritten += int64(n)
 		}
-		n, err := writeCloser.Write(req.Data)
-		if err != nil {
-			return err
-		}
-		bytesWritten += int64(n)
 		if req.FinishWrite {
 			if err := writeCloser.Close(); err != nil {
 				return err
 			}
-			return stream.SendAndClose(&rfpb.WriteResponse{
+			return stream.Send(&rfpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
 		}
