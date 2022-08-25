@@ -2,12 +2,14 @@ package clickhouse
 
 import (
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"os"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	gormclickhouse "gorm.io/driver/clickhouse"
@@ -84,6 +86,43 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 	offsetUsec := int64(timezoneOffsetMinutes) * 60 * 1e6
 	timestampExpr := fmt.Sprintf("intDiv(%s + (%d), 1000000)", fieldName, -offsetUsec)
 	return fmt.Sprintf("FROM_UNIXTIME(%s,", timestampExpr) + "'%F')"
+}
+
+func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
+	return &Invocation{
+		GroupID:                          ti.GroupID,
+		UpdatedAtUsec:                    ti.UpdatedAtUsec,
+		InvocationUUID:                   hex.EncodeToString(ti.InvocationUUID),
+		Role:                             ti.Role,
+		User:                             ti.User,
+		Host:                             ti.Host,
+		CommitSHA:                        ti.CommitSHA,
+		BranchName:                       ti.BranchName,
+		ActionCount:                      ti.ActionCount,
+		InvocationStatus:                 ti.InvocationStatus,
+		RepoURL:                          ti.RepoURL,
+		DurationUsec:                     ti.DurationUsec,
+		Success:                          ti.Success,
+		ActionCacheHits:                  ti.ActionCacheHits,
+		ActionCacheMisses:                ti.ActionCacheMisses,
+		ActionCacheUploads:               ti.ActionCacheUploads,
+		CasCacheHits:                     ti.CasCacheHits,
+		CasCacheMisses:                   ti.CasCacheMisses,
+		CasCacheUploads:                  ti.CasCacheUploads,
+		TotalDownloadSizeBytes:           ti.TotalDownloadSizeBytes,
+		TotalUploadSizeBytes:             ti.TotalUploadSizeBytes,
+		TotalDownloadUsec:                ti.TotalDownloadUsec,
+		TotalUploadUsec:                  ti.TotalUploadUsec,
+		TotalCachedActionExecUsec:        ti.TotalCachedActionExecUsec,
+		DownloadThroughputBytesPerSecond: ti.DownloadThroughputBytesPerSecond,
+		UploadThroughputBytesPerSecond:   ti.UploadThroughputBytesPerSecond,
+	}
+}
+
+func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
+	inv := ToInvocationFromPrimaryDB(ti)
+	res := h.DB(ctx).Create(inv)
+	return res.Error
 }
 
 func runMigrations(gdb *gorm.DB) error {

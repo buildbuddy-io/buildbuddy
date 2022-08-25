@@ -161,7 +161,8 @@ type recordStatsTask struct {
 	createdAt time.Time
 	// files contains a mapping of file digests to file name metadata for files
 	// referenced in the BEP.
-	files map[string]*build_event_stream.File
+	files            map[string]*build_event_stream.File
+	invocationStatus inpb.Invocation_InvocationStatus
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -212,8 +213,9 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 			attempt: invocation.Attempt,
 			jwt:     jwt,
 		},
-		createdAt: time.Now(),
-		files:     scorecard.ExtractFiles(invocation),
+		createdAt:        time.Now(),
+		files:            scorecard.ExtractFiles(invocation),
+		invocationStatus: invocation.GetInvocationStatus(),
 	}
 	select {
 	case r.tasks <- req:
@@ -239,6 +241,38 @@ func (r *statsRecorder) Start() {
 	}
 }
 
+func (r *statsRecorder) lookupInvocation(ctx context.Context, ij *invocationJWT) (*tables.Invocation, error) {
+	if auth := r.env.GetAuthenticator(); auth != nil {
+		ctx = auth.AuthContextFromTrustedJWT(ctx, ij.jwt)
+	}
+	return r.env.GetInvocationDB().LookupInvocation(ctx, ij.id)
+}
+
+func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *invocationJWT, ti *tables.Invocation) error {
+	if r.env.GetOLAPDBHandle() == nil {
+		return nil
+	}
+	inv, err := r.lookupInvocation(ctx, ij)
+	if err != nil {
+		return status.InternalErrorf("failed to flush invocation stats to clickhouse: %s", err)
+	}
+
+	ti.GroupID = inv.GroupID
+	ti.UpdatedAtUsec = inv.UpdatedAtUsec
+	ti.InvocationUUID = inv.InvocationUUID
+	ti.Role = inv.Role
+	ti.User = inv.User
+	ti.Host = inv.Host
+	ti.CommitSHA = inv.CommitSHA
+	ti.BranchName = inv.BranchName
+	ti.ActionCount = inv.ActionCount
+	ti.RepoURL = inv.RepoURL
+	ti.Success = inv.Success
+	ti.InvocationStatus = inv.InvocationStatus
+
+	return r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, ti)
+}
+
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	start := time.Now()
 	defer func() {
@@ -262,7 +296,15 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
-		log.Errorf("Failed to write cache stats for invocation: %s", err)
+		log.Errorf("Failed to write cache stats for invocation to primaryDB: %s", err)
+	}
+
+	if task.invocationStatus == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
+		// only flush complete invocation to clickhouse.
+		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationJWT, ti)
+		if err != nil {
+			log.Errorf("Failed to flush stats for invocation %s to clickhouse: %s", ti.InvocationID, err)
+		}
 	}
 	// Cleanup regardless of whether the stats are flushed successfully to
 	// the DB (since we won't retry the flush and we don't need these stats

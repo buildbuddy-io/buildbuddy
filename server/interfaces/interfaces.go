@@ -278,6 +278,7 @@ type DBHandle interface {
 type OLAPDBHandle interface {
 	DB(ctx context.Context) *gorm.DB
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
+	FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error
 }
 
 type InvocationDB interface {
