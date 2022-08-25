@@ -1322,7 +1322,8 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 			if err := c.parseFatalInitError(); err != nil {
 				return nil, err
 			}
-			return nil, status.DeadlineExceededErrorf("Failed to connect to firecracker VM exec server: %s", err)
+			// Intentionally not returning DeadlineExceededError here since it is not
+			// a Bazel-retryable error, but this particular timeout should be retryable.
 		}
 		return nil, status.InternalErrorf("Failed to connect to firecracker VM exec server: %s", err)
 	}
