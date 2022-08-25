@@ -79,6 +79,19 @@ func MakeTempFile(t testing.TB, rootDir, pattern string) string {
 	return tmpFile.Name()
 }
 
+func MakeTempSymlink(t testing.TB, rootDir, pattern, dst string) string {
+	name := MakeTempFile(t, rootDir, pattern)
+	if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+		assert.FailNow(t, "failed to remove temp file to be replaced with symlink", err)
+	}
+	if err := os.Symlink(dst, name); os.IsExist(err) {
+		assert.FailNow(t, "Failed to create temp symlink; file exists.", err.Error())
+	} else if err != nil {
+		assert.FailNow(t, "failed to create temp symlink", err)
+	}
+	return name
+}
+
 func CopyFile(t testing.TB, src, destRootDir, destPath string) {
 	info, err := os.Stat(src)
 	if err != nil {

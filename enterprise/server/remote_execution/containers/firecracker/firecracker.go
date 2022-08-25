@@ -146,9 +146,9 @@ const (
 )
 
 var (
-	locateBinariesOnce  sync.Once
-	locateBinariesError error
-	masqueradingOnce    sync.Once
+	locateBinariesOnceMap sync.Map
+	locateBinariesError   error
+	masqueradingOnce      sync.Once
 
 	// kernel + initrd
 	kernelImagePath string
@@ -893,7 +893,8 @@ func copyStaticFiles(ctx context.Context, env environment.Env, workingDir string
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	locateBinariesOnce.Do(func() {
+	locateBinariesOnce, _ := locateBinariesOnceMap.LoadOrStore(workingDir, &sync.Once{})
+	locateBinariesOnce.(*sync.Once).Do(func() {
 		initrdImagePath, locateBinariesError = putFileIntoDir(ctx, env, "enterprise/vmsupport/bin/initrd.cpio", workingDir, 0755)
 		if locateBinariesError != nil {
 			return
@@ -1321,6 +1322,8 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 			if err := c.parseFatalInitError(); err != nil {
 				return nil, err
 			}
+			// Intentionally not returning DeadlineExceededError here since it is not
+			// a Bazel-retryable error, but this particular timeout should be retryable.
 		}
 		return nil, status.InternalErrorf("Failed to connect to firecracker VM exec server: %s", err)
 	}
