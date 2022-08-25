@@ -83,7 +83,7 @@ func (i *Invocation) TableName() string {
 func (i *Invocation) TableOptions() string {
 	engine := ""
 	if *dataReplicationEnabled {
-		engine = fmt.Sprintf("ReplicatedReplacingMergeTree(%q, %q)", *zooPath, *replicaName)
+		engine = fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s')", *zooPath, *replicaName)
 	} else {
 		engine = "ReplacingMergeTree()"
 	}
@@ -92,7 +92,7 @@ func (i *Invocation) TableOptions() string {
 
 func (i *Invocation) TableClusterOption() string {
 	if *dataReplicationEnabled {
-		return "on cluster " + *clusterName
+		return fmt.Sprintf("on cluster '%s'", *clusterName)
 	}
 	return ""
 }
@@ -147,14 +147,11 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 
 func runMigrations(gdb *gorm.DB) error {
 	log.Info("Auto-migrating clickhouse DB")
-	err := gdb.Set("gorm:table_options", (&Invocation{}).TableOptions()).AutoMigrate(&Invocation{})
-	if err != nil {
-		return err
-	}
+	gdb = gdb.Set("gorm:table_options", (&Invocation{}).TableOptions())
 	if clusterOpts := (&Invocation{}).TableClusterOption(); clusterOpts != "" {
-		return gdb.Set("gorm:table_cluster_options", clusterOpts).AutoMigrate(&Invocation{})
+		gdb = gdb.Set("gorm:table_cluster_options", clusterOpts)
 	}
-	return nil
+	return gdb.AutoMigrate(&Invocation{})
 }
 
 func Register(env environment.Env) error {
