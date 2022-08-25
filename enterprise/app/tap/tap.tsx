@@ -374,7 +374,7 @@ export default class TapComponent extends React.Component<Props, State> {
     const headerLeftSection = (
       <div className="tap-header-left-section">
         <div className="tap-title">Test grid</div>
-        {this.isV2 && this.state.repos.length && (
+        {this.isV2 && this.state.repos.length > 0 && (
           <Select onChange={this.handleRepoChange.bind(this)} value={this.selectedRepo()} className="repo-picker">
             {this.state.repos.map((repo) => (
               <Option key={repo} value={repo}>
