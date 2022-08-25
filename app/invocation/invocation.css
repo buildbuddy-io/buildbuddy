@@ -78,6 +78,41 @@
   color: #263238;
 }
 
+.invocation-targets-card .targets-table {
+  display: grid;
+  grid-template-columns: auto max-content;
+}
+
+.invocation-targets-card .target-row {
+  display: contents;
+}
+
+.invocation-targets-card .target-row > * {
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.invocation-targets-card .target-label {
+  display: flex;
+  gap: 8px;
+  font-weight: 600;
+  color: #263238;
+}
+
+.invocation-targets-card .root-cause-badge {
+  background: #eee;
+  padding: 0 8px;
+  border-radius: 16px;
+  word-break: break-word;
+}
+
+.invocation-targets-card .target-duration {
+  padding-left: 8px;
+  color: #757575;
+}
+
 .invocation-action-card .icon.file-icon {
   margin-right: 4px;
   width: 18px;
