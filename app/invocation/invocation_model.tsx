@@ -63,6 +63,7 @@ export default class InvocationModel {
   testResultMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
   testSummaryMap: Map<string, invocation.InvocationEvent> = new Map<string, invocation.InvocationEvent>();
   actionMap: Map<string, invocation.InvocationEvent[]> = new Map<string, invocation.InvocationEvent[]>();
+  rootCauseTargetLabels: Set<String>;
 
   private fileSetIDToFilesMap: Map<string, build_event_stream.IFile[]> = new Map();
 
@@ -158,7 +159,13 @@ export default class InvocationModel {
         }
       }
     }
-
+    model.rootCauseTargetLabels = new Set(
+      [...model.completedMap.values()]
+        .filter((e) => !e.buildEvent.completed.success)
+        .map((e) => e.buildEvent.children.filter((child) => child.actionCompleted?.label))
+        .flat()
+        .map((child) => child.actionCompleted.label)
+    );
     for (let label of model.completedMap.keys()) {
       let buildEvent = model.completedMap.get(label)?.buildEvent;
       let testResult = model.testSummaryMap.get(label)?.buildEvent.testSummary;
