@@ -551,6 +551,7 @@ func (sm *Replica) populateReplicaFromSnapshot(rightSM *Replica) error {
 		if err := sm.SaveSnapshotToWriter(w, snap); err != nil {
 			w.CloseWithError(err)
 		}
+		w.Close()
 	}()
 	return rightSM.ApplySnapshotFromReader(r, rightDB)
 }
