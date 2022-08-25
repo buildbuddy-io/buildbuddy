@@ -13,31 +13,22 @@ import (
 )
 
 var (
-	doubleReadPercentage  = flag.Float64("cache.migration_cache.double_read_percentage", 0, "The percentage of reads we should double read, to ensure the two caches have the same data. Float [0, 1]. 0 for no double reads, 1 for double reads on every read")
-	autoFixDoubleReadErrs = flag.Bool("cache.migration.auto_fix_double_read_errs", false, "If set, automatically fix any double read errs in the dest cache")
+	isMigrationEnabled = flag.Bool("cache.migration", false, "Whether a migration is happening. If true, read migration details from config/migration.yaml")
 
+	// TODO - Move these flags to migration config
+	doubleReadPercentage     = flag.Float64("cache.migration_cache.double_read_percentage", 0, "The percentage of reads we should double read, to ensure the two caches have the same data. Float [0, 1]. 0 for no double reads, 1 for double reads on every read")
+	autoFixDoubleReadErrs    = flag.Bool("cache.migration.auto_fix_double_read_errs", false, "If set, automatically fix any double read errs in the dest cache")
 	maxDoubleWritesPerSecond = flag.Int("cache.migration.max_double_writes_per_second", 1, "We will buffer double writes, so copying data doesn't monopolize resources (as copying will happen during Gets, which are very frequent)")
-
-	clearCacheBeforeMigration = flag.Bool("cache.migration.clear_cache_before_migration", false, "If set, clear any existing cache content in the dest cache.")
 )
 
 type MigrationCache struct {
-	Src        interfaces.Cache
-	Dest       MigrationDestCache
-	SrcRootDir string
+	Src  interfaces.Cache
+	Dest interfaces.Cache
 
 	mu              sync.RWMutex
 	eg              *errgroup.Group
 	doubleReadChan  chan *repb.Digest
 	doubleWriteChan chan *DoubleWriteData
-}
-
-type MigrationDestCache interface {
-	interfaces.Cache
-
-	// Implementation should be async, so that the double write doesn't slow down operations on the primary db
-	// with 2 synchronous writes
-	DoubleWrite(ctx context.Context, d DoubleWriteData) error
 }
 
 type DoubleWriteData struct {
@@ -53,14 +44,16 @@ type Add struct {
 type Remove struct{}
 
 func Register(env environment.Env) error {
-	mc := env.GetMigrationCache()
-	if mc.Src == nil && mc.Dest == nil {
+	if !*isMigrationEnabled {
 		return nil
-	} else if mc.Src == nil || mc.Dest == nil {
-		// Return error - both must be set
 	}
 
+	mc := ParseConfig(env)
+	if mc == nil {
+		return nil
+	}
 	mc.eg = &errgroup.Group{}
+
 	env.SetCache(mc)
 
 	mc.eg.Go(func() error {

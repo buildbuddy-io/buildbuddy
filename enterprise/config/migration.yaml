@@ -1,0 +1,71 @@
+### Sample flow if migrating disk -> pebble
+
+# Begin migration - Start double writes
+#
+# On writes: Will write to both caches
+# On reads: Will return data from src cache
+src:
+  disk:
+    root_directory: /disk_dir
+dest:
+  pebble:
+    root_directory: /pebble_dir
+
+# When double writes are stable, start copying data on reads and double reading
+#
+# On writes: Will write to both caches
+# On reads: On 20% reads, will copy data from src -> dest cache, return data from src cache
+# Will double read 10% of reads, and log if there are discrepancies
+copy_on_read_percentage: 0.2
+double_read_percentage: 0.1
+auto_fix_double_read_errs: true
+src:
+  disk:
+    root_directory: /disk_dir
+dest:
+  pebble:
+    root_directory: /pebble_dir
+
+# Once double reads are stable, keep double writing, but return data from dest cache
+#
+# On writes: Will write to both caches
+# On reads: Will return data from src cache (now pebble)
+src:
+  pebble:
+    root_directory: /pebble_dir
+dest:
+  disk:
+    root_directory: /disk_dir
+
+
+# Something goes wrong with pebble - i.e. bug with write logic and we want to stop double writes:
+# Leave this config empty and set cache: disk in buildbuddy.yaml
+
+
+# After fixing double write bug, ready to try double writing again. First clear the corrupted data in pebble
+clear_dest_cache_before_migration: true
+src:
+  disk:
+    root_directory: /disk_dir
+dest:
+  pebble:
+    root_directory: /pebble_dir
+
+
+# Fully confident with pebble, want to stop double writing to disk
+# Leave this config empty and set cache: pebble in buildbuddy.yaml
+
+
+
+
+
+
+
+### Example migrating with two of the same cache type: pebble -> pebble
+src:
+  pebble:
+    root_directory: /pebble_dir_1
+dest:
+  pebble:
+    root_directory: /pebble_dir_2
+
