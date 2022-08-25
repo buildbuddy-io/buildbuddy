@@ -139,6 +139,9 @@ func NewClusterMap() *clusterMap {
 }
 
 func (cm *clusterMap) String() string {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
 	nodeStrings := make(map[string][]string, 0)
 	nhids := make([]string, 0, len(cm.nodeReplicas))
 	for nhid, set := range cm.nodeReplicas {
