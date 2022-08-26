@@ -32,7 +32,7 @@ interface State {
   nextPageToken: string;
   didInitialFetch: boolean;
 
-  digestToCacheMetadata: Map<string, distributed_cache.MetadataRequest>;
+  digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse>;
 }
 
 const SEARCH_DEBOUNCE_INTERVAL_MS = 300;
@@ -92,7 +92,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     results: [],
     nextPageToken: "",
     didInitialFetch: false,
-    digestToCacheMetadata: new Map<string, distributed_cache.MetadataRequest>(),
+    digestToCacheMetadata: new Map<string, cache.GetCacheMetadataResponse>(),
   };
 
   constructor(props: CacheRequestsCardProps) {
