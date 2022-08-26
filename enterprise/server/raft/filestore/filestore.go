@@ -6,6 +6,7 @@ import (
 	"context"
 	"hash/crc32"
 	"io"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -75,6 +76,8 @@ type Store interface {
 
 	FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error)
 	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error)
+
+	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 }
 
 type fileStorer struct {
@@ -222,4 +225,13 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 		WriteCloser: wc,
 		fileName:    string(file),
 	}, nil
+}
+
+func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error {
+	switch {
+	case md.GetFileMetadata() != nil:
+		return os.Remove(fs.FilePath(fileDir, md.GetFileMetadata()))
+	default:
+		return nil
+	}
 }

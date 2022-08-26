@@ -211,20 +211,9 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	}
 	rc.nodeHost = nodeHost
 
-	// PebbleLogDir is a parent directory for pebble data. Within this
-	// directory, subdirs will be created per raft (cluster_id, node_id).
-	pebbleLogDir := filepath.Join(conf.RootDir, "pebble")
-
-	// FileDir is a parent directory where files will be stored. This data
-	// is managed entirely by the raft statemachine.
-	fileDir := filepath.Join(conf.RootDir, "files")
-	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
-		return nil, err
-	}
-
 	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	rc.store = store.New(pebbleLogDir, fileDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient)
+	rc.store = store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient)
 	if err := rc.store.Start(rc.grpcAddress); err != nil {
 		return nil, err
 	}
