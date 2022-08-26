@@ -374,39 +374,31 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private getCacheMetadata(scorecardResult: cache.ScoreCard.IResult) {
     const digest = scorecardResult.digest;
     const remoteInstanceName = this.props.model.getRemoteInstanceName();
+
+    // Set an empty struct in the map so the FE doesn't fire duplicate requests while the first request is in progress
+    // or if there is an invalid result
+    this.state.digestToCacheMetadata.set(digest.hash, null);
+
     rpc_service.service
-      .getCacheMetadata(
-        new cache.GetCacheMetadataRequest({
-          resourceName: {
-            digest: digest,
-            cacheType: scorecardResult.cacheType,
-            instanceName: remoteInstanceName,
-          },
-        })
-      )
+      .getCacheMetadata({
+        resourceName: {
+          digest: digest,
+          cacheType: scorecardResult.cacheType,
+          instanceName: remoteInstanceName,
+        },
+      })
       .then((response) => {
-        this.setState(function (prevState, props) {
-          prevState.digestToCacheMetadata.set(digest.hash, response);
-          return {
-            digestToCacheMetadata: prevState.digestToCacheMetadata,
-          };
-        });
+        this.state.digestToCacheMetadata.set(digest.hash, response);
+        this.forceUpdate();
       })
       .catch((e) => {
         console.log("Could not fetch metadata: " + BuildBuddyError.parse(e));
-
-        // Set an empty struct in the map, so FE doesn't keep trying to fetch an invalid result
-        this.setState(function (prevState, props) {
-          prevState.digestToCacheMetadata.set(digest.hash, null);
-          return {
-            digestToCacheMetadata: prevState.digestToCacheMetadata,
-          };
-        });
       });
   }
 
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
     const digest = result.digest.hash;
+    // TODO(bduffany): Add an `onHover` prop to <Tooltip> and move this logic there
     if (!this.state.digestToCacheMetadata.has(digest)) {
       this.getCacheMetadata(result);
     }

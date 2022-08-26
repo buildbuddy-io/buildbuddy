@@ -360,7 +360,7 @@
 
   display: grid;
   grid-template-columns: min-content auto;
-  grid-gap: 0 18px;
+  grid-gap: 0 16px;
 }
 
 .cache-result-hovercard > * {
