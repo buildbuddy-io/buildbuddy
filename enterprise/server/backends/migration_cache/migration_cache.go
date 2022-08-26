@@ -34,10 +34,19 @@ type MigrationCache struct {
 type DoubleWriteData struct {
 	digest *repb.Digest
 	add    *Add
+	copy   *Copy
 	remove *Remove
 }
 
+// Add will always set data in the dest cache
+// This is intended for double writes, when the updates should always propagate to both caches
 type Add struct {
+	Data []byte
+}
+
+// Copy will only set data in the dest cache if the key does not already exist
+// This is intended to prevent unnecessary writes for data that has already been copied
+type Copy struct {
 	Data []byte
 }
 
@@ -76,7 +85,7 @@ func (c *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error
 	select {
 	case c.doubleWriteChan <- &DoubleWriteData{
 		digest: d,
-		add:    &Add{Data: srcData},
+		copy:   &Copy{Data: srcData},
 	}:
 	default:
 		// Log error that channel is full so we can increase the size if needed, but don't block
@@ -158,10 +167,16 @@ func (c *MigrationCache) ProcessDoubleWrites(ctx context.Context) {
 			c.mu.Lock()
 			defer c.mu.Unlock()
 
+			// TODO: What should we do if there's a double write failure?
+			// Should we automatically enqueue the key to be deleted so there is no stale data in the dest cache?
 			if doubleWriteData.remove != nil {
 				c.Dest.Delete(ctx, doubleWriteData.digest)
 			} else if doubleWriteData.add != nil {
 				c.Dest.Set(ctx, doubleWriteData.digest, doubleWriteData.add.Data)
+			} else if doubleWriteData.copy != nil {
+				if alreadyCopied, err := c.Dest.Contains(ctx, doubleWriteData.digest); !alreadyCopied {
+					c.Dest.Set(ctx, doubleWriteData.digest, doubleWriteData.add.Data)
+				}
 			} else {
 				// Log - exactly one field should be set
 			}
