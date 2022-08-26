@@ -596,7 +596,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	written := writeNRecords(ctx, t, stores, 5)
+	written := writeNRecords(ctx, t, stores, 50)
 
 	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
 		Range: rd,
@@ -615,7 +615,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	}
 
 	// Write some more records to the new right range.
-	written = append(written, writeNRecords(ctx, t, stores, 5)...)
+	written = append(written, writeNRecords(ctx, t, stores, 50)...)
 
 	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
 		Range: s1.GetRange(2),
