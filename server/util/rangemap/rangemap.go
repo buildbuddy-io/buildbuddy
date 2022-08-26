@@ -146,10 +146,10 @@ func (rm *RangeMap) GetOverlapping(left, right []byte) []*Range {
 		return bytes.Compare(rm.ranges[i].Left, right) >= 0
 	})
 
-	if rightIndex > 0 {
-		rightIndex -= 1
+	if rightIndex == 0 {
+		return nil
 	}
-	return rm.ranges[leftIndex : rightIndex+1]
+	return rm.ranges[leftIndex:rightIndex]
 }
 
 func (rm *RangeMap) Lookup(key []byte) interface{} {
