@@ -167,7 +167,7 @@ func TestGetOverlapping(t *testing.T) {
 		require.Nil(t, err)
 	}
 
-	addRange("a", "e", 1)
+	addRange("b", "e", 1)
 	addRange("e", "i", 2)
 	addRange("m", "q", 3)
 
@@ -179,10 +179,12 @@ func TestGetOverlapping(t *testing.T) {
 		return ids
 	}
 
-	require.Equal(t, overlappingRangeIDs("d", "m"), []int{1, 2})
-	require.Equal(t, overlappingRangeIDs("d", "n"), []int{1, 2, 3})
-	require.Equal(t, overlappingRangeIDs("d", "q"), []int{1, 2, 3})
-	require.Equal(t, overlappingRangeIDs("a", "q"), []int{1, 2, 3})
+	require.Equal(t, []int{1, 2}, overlappingRangeIDs("d", "m"))
+	require.Equal(t, []int{1, 2, 3}, overlappingRangeIDs("d", "n"))
+	require.Equal(t, []int{1, 2, 3}, overlappingRangeIDs("d", "q"))
+	require.Equal(t, []int{1, 2, 3}, overlappingRangeIDs("b", "q"))
+	require.Empty(t, overlappingRangeIDs("a", "b"))
+	require.Empty(t, overlappingRangeIDs("q", "z"))
 }
 
 func TestRemove(t *testing.T) {
