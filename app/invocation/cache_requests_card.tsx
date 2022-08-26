@@ -3,7 +3,6 @@ import router from "../router/router";
 import InvocationModel from "./invocation_model";
 import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
-import { distributed_cache } from "../../proto/distributed_cache_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
@@ -372,39 +371,38 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     ));
   }
 
-  private getCacheMetadata(
-      scorecardResult: cache.ScoreCard.IResult
-  ) {
+  private getCacheMetadata(scorecardResult: cache.ScoreCard.IResult) {
     const digest = scorecardResult.digest;
     const remoteInstanceName = this.props.model.getRemoteInstanceName();
     rpc_service.service
-        .getCacheMetadata(new cache.GetCacheMetadataRequest({
+      .getCacheMetadata(
+        new cache.GetCacheMetadataRequest({
           resourceName: {
             digest: digest,
             cacheType: scorecardResult.cacheType,
             instanceName: remoteInstanceName,
           },
-        }))
-        .then((response) => {
-          this.setState(function(prevState, props) {
-            prevState.digestToCacheMetadata.set(digest.hash, response);
-            return {
-              digestToCacheMetadata: prevState.digestToCacheMetadata
-            }
-          });
-
         })
-        .catch((e) => {
-          console.log("Could not fetch metadata: " + BuildBuddyError.parse(e));
-
-          // Set an empty struct in the map, so FE doesn't keep trying to fetch an invalid result
-          this.setState(function(prevState, props) {
-            prevState.digestToCacheMetadata.set(digest.hash, {});
-            return {
-              digestToCacheMetadata: prevState.digestToCacheMetadata
-            }
-          });
+      )
+      .then((response) => {
+        this.setState(function (prevState, props) {
+          prevState.digestToCacheMetadata.set(digest.hash, response);
+          return {
+            digestToCacheMetadata: prevState.digestToCacheMetadata,
+          };
         });
+      })
+      .catch((e) => {
+        console.log("Could not fetch metadata: " + BuildBuddyError.parse(e));
+
+        // Set an empty struct in the map, so FE doesn't keep trying to fetch an invalid result
+        this.setState(function (prevState, props) {
+          prevState.digestToCacheMetadata.set(digest.hash, null);
+          return {
+            digestToCacheMetadata: prevState.digestToCacheMetadata,
+          };
+        });
+      });
   }
 
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {

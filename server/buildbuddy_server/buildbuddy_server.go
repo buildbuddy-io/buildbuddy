@@ -893,8 +893,8 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 	if err != nil {
 		return nil, err
 	}
-	resourceName := req.GetResourceName()
 
+	resourceName := req.GetResourceName()
 	cacheType, err := ProtoCacheTypeToCacheType(resourceName.GetCacheType())
 	if err != nil {
 		return nil, err
@@ -906,7 +906,9 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 
 	metadata, err := cache.Metadata(ctx, resourceName.GetDigest())
 	if err != nil {
-		// TODO catch not found errors - or maybe on FE?
+		if status.IsNotFoundError(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -917,7 +919,6 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 	}, nil
 }
 
-// TODO - FE cache enum for cache_proto is different than BE cache enum for distributed_cache_proto
 func ProtoCacheTypeToCacheType(cacheType resource.CacheType) (interfaces.CacheType, error) {
 	switch cacheType {
 	case resource.CacheType_AC:
