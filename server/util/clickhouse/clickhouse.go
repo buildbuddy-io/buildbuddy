@@ -24,6 +24,13 @@ var (
 
 	autoMigrateDB        = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	autoMigrateDBAndExit = flag.Bool("olap_database.auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+
+	// {installation}, {cluster}, {shard}, {replica} are macros provided by
+	// Altinity/clickhouse-operator; {database}, {table} are macros provided by clickhouse.
+	dataReplicationEnabled = flag.Bool("olap_database.enable_data_replication", false, "If true, data replication is enabled.")
+	zooPath                = flag.String("olap_database.zoo_path", "/clickhouse/{installation}/{cluster}/tables/{shard}/{database}/{table}", "The path to the table name in zookeeper, used to set up data replication")
+	replicaName            = flag.String("olap_database.replica_name", "{replica}", "The replica name of the table in zookeeper")
+	clusterName            = flag.String("olap_database.cluster_name", "{cluster}", "The cluster name of the database")
 )
 
 type DBHandle struct {
@@ -74,7 +81,20 @@ func (i *Invocation) TableName() string {
 }
 
 func (i *Invocation) TableOptions() string {
-	return "ENGINE=ReplacingMergeTree() ORDER BY (group_id, updated_at_usec)"
+	engine := ""
+	if *dataReplicationEnabled {
+		engine = fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s')", *zooPath, *replicaName)
+	} else {
+		engine = "ReplacingMergeTree()"
+	}
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec)", engine)
+}
+
+func (i *Invocation) TableClusterOption() string {
+	if *dataReplicationEnabled {
+		return fmt.Sprintf("on cluster '%s'", *clusterName)
+	}
+	return ""
 }
 
 // DateFromUsecTimestamp returns an SQL expression compatible with clickhouse
@@ -127,7 +147,11 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 
 func runMigrations(gdb *gorm.DB) error {
 	log.Info("Auto-migrating clickhouse DB")
-	return gdb.Set("gorm:table_options", (&Invocation{}).TableOptions()).AutoMigrate(&Invocation{})
+	gdb = gdb.Set("gorm:table_options", (&Invocation{}).TableOptions())
+	if clusterOpts := (&Invocation{}).TableClusterOption(); clusterOpts != "" {
+		gdb = gdb.Set("gorm:table_cluster_options", clusterOpts)
+	}
+	return gdb.AutoMigrate(&Invocation{})
 }
 
 func Register(env environment.Env) error {
