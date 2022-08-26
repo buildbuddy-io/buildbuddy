@@ -134,6 +134,9 @@
   overflow-x: scroll !important;
 }
 
+.terminal .terminal-line {
+  color: white;
+}
 .terminal.light-terminal .terminal-line {
   color: #222;
 }
