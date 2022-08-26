@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -41,7 +41,6 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
@@ -889,31 +888,29 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *distributed_cache.MetadataRequest) (*distributed_cache.MetadataResponse, error) {
+func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCacheMetadataRequest) (*capb.GetCacheMetadataResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
+	resourceName := req.GetResourceName()
 
-	cacheType, err := ProtoCacheTypeToCacheType(req.Isolation.GetCacheType())
+	cacheType, err := ProtoCacheTypeToCacheType(resourceName.GetCacheType())
 	if err != nil {
 		return nil, err
 	}
-	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, req.Isolation.GetRemoteInstanceName())
+	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, resourceName.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
 
-	metadata, err := cache.Metadata(ctx, &repb.Digest{
-		Hash:      req.GetKey().GetKey(),
-		SizeBytes: req.GetKey().GetSizeBytes(),
-	})
+	metadata, err := cache.Metadata(ctx, resourceName.GetDigest())
 	if err != nil {
 		// TODO catch not found errors - or maybe on FE?
 		return nil, err
 	}
 
-	return &distributed_cache.MetadataResponse{
+	return &capb.GetCacheMetadataResponse{
 		SizeBytes:      metadata.SizeBytes,
 		LastAccessUsec: metadata.LastAccessTimeUsec,
 		LastModifyUsec: metadata.LastModifyTimeUsec,
@@ -921,13 +918,11 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *distribute
 }
 
 // TODO - FE cache enum for cache_proto is different than BE cache enum for distributed_cache_proto
-func ProtoCacheTypeToCacheType(cacheType distributed_cache.Isolation_CacheType) (interfaces.CacheType, error) {
+func ProtoCacheTypeToCacheType(cacheType resource.CacheType) (interfaces.CacheType, error) {
 	switch cacheType {
-	case distributed_cache.Isolation_CAS_CACHE:
-		//fmt.Println("Action cache type")
+	case resource.CacheType_AC:
 		return interfaces.ActionCacheType, nil
-	case distributed_cache.Isolation_ACTION_CACHE:
-		//fmt.Println("Cas cache")
+	case resource.CacheType_CAS:
 		return interfaces.CASCacheType, nil
 	default:
 		return interfaces.UnknownCacheType, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)

@@ -375,22 +375,19 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private getCacheMetadata(
       scorecardResult: cache.ScoreCard.IResult
   ) {
-    const digest = scorecardResult.digest.hash;
+    const digest = scorecardResult.digest;
     const remoteInstanceName = this.props.model.getRemoteInstanceName();
     rpc_service.service
-        .getCacheMetadata({
-          isolation: {
+        .getCacheMetadata(new cache.GetCacheMetadataRequest({
+          resourceName: {
+            digest: digest,
             cacheType: scorecardResult.cacheType,
-            remoteInstanceName: remoteInstanceName,
+            instanceName: remoteInstanceName,
           },
-          key: {
-            key: digest,
-            sizeBytes: scorecardResult.digest.sizeBytes,
-          },
-        })
+        }))
         .then((response) => {
           this.setState(function(prevState, props) {
-            prevState.digestToCacheMetadata.set(digest, response);
+            prevState.digestToCacheMetadata.set(digest.hash, response);
             return {
               digestToCacheMetadata: prevState.digestToCacheMetadata
             }
@@ -402,7 +399,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
           // Set an empty struct in the map, so FE doesn't keep trying to fetch an invalid result
           this.setState(function(prevState, props) {
-            prevState.digestToCacheMetadata.set(digest, {});
+            prevState.digestToCacheMetadata.set(digest.hash, {});
             return {
               digestToCacheMetadata: prevState.digestToCacheMetadata
             }
