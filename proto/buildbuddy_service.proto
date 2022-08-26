@@ -3,6 +3,7 @@ syntax = "proto3";
 import "proto/api_key.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
+import "proto/distributed_cache.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/grp.proto";
@@ -77,6 +78,8 @@ service BuildBuddyService {
   // Cache API
   rpc GetCacheScoreCard(cache.GetCacheScoreCardRequest)
       returns (cache.GetCacheScoreCardResponse);
+  rpc GetCacheMetadata(distributed_cache.MetadataRequest)
+      returns (distributed_cache.MetadataResponse);
 
   // Target API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);

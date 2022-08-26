@@ -3,6 +3,7 @@ import router from "../router/router";
 import InvocationModel from "./invocation_model";
 import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
+import { distributed_cache } from "../../proto/distributed_cache_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
@@ -30,6 +31,8 @@ interface State {
   results: cache.ScoreCard.IResult[];
   nextPageToken: string;
   didInitialFetch: boolean;
+
+  digestToCacheMetadata: Map<string, distributed_cache.MetadataRequest>;
 }
 
 const SEARCH_DEBOUNCE_INTERVAL_MS = 300;
@@ -89,6 +92,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     results: [],
     nextPageToken: "",
     didInitialFetch: false,
+    digestToCacheMetadata: new Map<string, distributed_cache.MetadataRequest>(),
   };
 
   constructor(props: CacheRequestsCardProps) {
@@ -368,17 +372,64 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     ));
   }
 
+  private getCacheMetadata(
+      scorecardResult: cache.ScoreCard.IResult
+  ) {
+    const digest = scorecardResult.digest.hash;
+    const remoteInstanceName = this.props.model.getRemoteInstanceName();
+    rpc_service.service
+        .getCacheMetadata({
+          isolation: {
+            cacheType: scorecardResult.cacheType,
+            remoteInstanceName: remoteInstanceName,
+          },
+          key: {
+            key: digest,
+            sizeBytes: scorecardResult.digest.sizeBytes,
+          },
+        })
+        .then((response) => {
+          this.setState(function(prevState, props) {
+            prevState.digestToCacheMetadata.set(digest, response);
+            return {
+              digestToCacheMetadata: prevState.digestToCacheMetadata
+            }
+          });
+
+        })
+        .catch((e) => {
+          console.log("Could not fetch metadata: " + BuildBuddyError.parse(e));
+
+          // Set an empty struct in the map, so FE doesn't keep trying to fetch an invalid result
+          this.setState(function(prevState, props) {
+            prevState.digestToCacheMetadata.set(digest, {});
+            return {
+              digestToCacheMetadata: prevState.digestToCacheMetadata
+            }
+          });
+        });
+  }
+
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
-    let lastAccessed = "";
-    if (result.lastAccessedTimeUsec) {
-      const lastAccessedMs = Number(result.lastAccessedTimeUsec) / 1000;
-      lastAccessed = format.formatDate(new Date(lastAccessedMs));
+    const digest = result.digest.hash;
+    if (!this.state.digestToCacheMetadata.has(digest)) {
+      this.getCacheMetadata(result);
     }
 
+    const cacheMetadata = this.state.digestToCacheMetadata.get(digest);
+
+    let lastAccessed = "";
     let lastModified = "";
-    if (result.lastModifiedTimeUsec) {
-      const lastModifiedMs = Number(result.lastModifiedTimeUsec) / 1000;
-      lastModified = format.formatDate(new Date(lastModifiedMs));
+    if (cacheMetadata) {
+      if (cacheMetadata.lastAccessUsec) {
+        const lastAccessedMs = Number(cacheMetadata.lastAccessUsec) / 1000;
+        lastAccessed = format.formatDate(new Date(lastAccessedMs));
+      }
+
+      if (cacheMetadata.lastModifyUsec) {
+        const lastModifiedMs = Number(cacheMetadata.lastModifyUsec) / 1000;
+        lastModified = format.formatDate(new Date(lastModifiedMs));
+      }
     }
 
     return (
