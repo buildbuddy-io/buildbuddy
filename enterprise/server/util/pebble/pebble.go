@@ -32,9 +32,9 @@ type IPebbleDB interface {
 	NewSnapshot() *pebble.Snapshot
 }
 
-// DBGetter is an interface implemented by the leaser that allows clients to get
+// Leaser is an interface implemented by the leaser that allows clients to get
 // a leased pebble DB or close the leaser.
-type DBGetter interface {
+type Leaser interface {
 	DB() (IPebbleDB, error)
 	Close()
 	AcquireSplitLock()
@@ -62,7 +62,7 @@ type leaser struct {
 // Additionally, if AcquireSplitLock() is called, the leaser will wait for all
 // all handles to be returned and prevent prevent additional handles from being
 // leased until ReleaseSplitLock() is called.
-func NewDBLeaser(db *pebble.DB) DBGetter {
+func NewDBLeaser(db *pebble.DB) Leaser {
 	return &leaser{
 		db:       db,
 		waiters:  sync.WaitGroup{},

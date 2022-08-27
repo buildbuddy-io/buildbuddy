@@ -1,7 +1,6 @@
 package pebble_test
 
 import (
-	"runtime"
 	"testing"
 	"time"
 
