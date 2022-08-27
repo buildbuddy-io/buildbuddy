@@ -35,6 +35,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
+	pebble_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
@@ -119,9 +120,7 @@ type PebbleCache struct {
 	env       environment.Env
 	isolation *rfpb.Isolation
 	db        *pebble.DB
-	dbWaiters *sync.WaitGroup
-	closedMu  *sync.Mutex // PROTECTS(closed)
-	closed    *bool
+	leaser    pebble_util.Leaser
 
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
@@ -274,15 +273,11 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	closed := false
 	pc := &PebbleCache{
 		opts:              opts,
 		env:               env,
 		db:                db,
-		dbWaiters:         &sync.WaitGroup{},
-		closed:            &closed,
-		closedMu:          &sync.Mutex{},
-		quitChan:          make(chan struct{}),
+		leaser:            pebble_util.NewDBLeaser(db),
 		brokenFilesDone:   make(chan struct{}),
 		orphanedFilesDone: make(chan struct{}),
 		eg:                &errgroup.Group{},
@@ -308,7 +303,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc, pc.accesses)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses)
 			if err != nil {
 				return err
 			}
@@ -355,64 +350,8 @@ func batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *r
 	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 }
 
-type dbGetter interface {
-	DB() (dbInterface, error)
-}
-
-type dbInterface interface {
-	pebble.Reader
-	pebble.Writer
-	io.Closer
-
-	EstimateDiskUsage(start, end []byte) (uint64, error)
-	Flush() error
-	Metrics() *pebble.Metrics
-	NewBatch() *pebble.Batch
-	NewIndexedBatch() *pebble.Batch
-	NewSnapshot() *pebble.Snapshot
-}
-
-type refCounter struct {
-	wg     *sync.WaitGroup
-	closed bool
-}
-
-func newRefCounter(wg *sync.WaitGroup) *refCounter {
-	wg.Add(1)
-	return &refCounter{
-		wg:     wg,
-		closed: false,
-	}
-}
-
-func (r *refCounter) Close() error {
-	if !r.closed {
-		r.closed = true
-		r.wg.Add(-1)
-	}
-	return nil
-}
-
-type refCountedDB struct {
-	*pebble.DB
-	*refCounter
-}
-
-func (r *refCountedDB) Close() error {
-	// Just close the refcounter, not the DB.
-	return r.refCounter.Close()
-}
-
-func (p *PebbleCache) DB() (dbInterface, error) {
-	p.closedMu.Lock()
-	defer p.closedMu.Unlock()
-	if *p.closed {
-		return nil, status.FailedPreconditionError("db is closed.")
-	}
-	return &refCountedDB{
-		p.db,
-		newRefCounter(p.dbWaiters),
-	}, nil
+func (p *PebbleCache) DB() (pebble_util.IPebbleDB, error) {
+	return p.leaser.DB()
 }
 
 func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
@@ -1292,7 +1231,7 @@ type partitionEvictor struct {
 	part       disk.Partition
 	fileStorer filestore.Store
 	blobDir    string
-	dbGetter   dbGetter
+	dbGetter   pebble_util.Leaser
 	accesses   chan<- *accessTimeUpdate
 
 	casPrefix   []byte
@@ -1305,7 +1244,7 @@ type partitionEvictor struct {
 	lastEvicted *evictionPoolEntry
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg dbGetter, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble_util.Leaser, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:         &sync.Mutex{},
 		part:       part,
@@ -1834,13 +1773,7 @@ func (p *PebbleCache) Stop() error {
 	}
 	log.Printf("Pebble Cache: db flushed")
 
-	p.closedMu.Lock()
-	defer p.closedMu.Unlock()
-	if *p.closed {
-		return nil
-	}
-	*p.closed = true
-	p.dbWaiters.Wait() // wait for all db users to finish up.
+	p.leaser.Close()
 	log.Printf("Pebble Cache: db leases returned")
 
 	return p.db.Close()
