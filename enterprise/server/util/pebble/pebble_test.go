@@ -1,15 +1,15 @@
 package pebble_test
 
 import (
-	"testing"
 	"runtime"
+	"testing"
 	"time"
-	
+
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
-	
+
 	pebble_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 )
 
@@ -52,5 +52,3 @@ func TestCloseLeasedDB(t *testing.T) {
 	// that the serialization is working properly.
 	require.Less(t, dbReturnTime, leaserCloseTime)
 }
-
-

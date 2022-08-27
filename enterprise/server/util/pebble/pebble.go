@@ -1,9 +1,9 @@
 package pebble
 
 import (
-	"io"
 	"flag"
 	"fmt"
+	"io"
 	"runtime"
 	"sync"
 
@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	warnAboutLeaks        = flag.Bool("cache.pebble.warn_about_leaks", true, "If set, warn about leaked DB handles")
+	warnAboutLeaks = flag.Bool("cache.pebble.warn_about_leaks", true, "If set, warn about leaked DB handles")
 )
 
 // IPebbleDB is an interface the covers the methods on a pebble.DB used by our
@@ -42,10 +42,10 @@ type DBGetter interface {
 }
 
 type leaser struct {
-	db        *pebble.DB
-	waiters   sync.WaitGroup
-	closedMu  sync.Mutex // PROTECTS(closed)
-	closed    bool
+	db       *pebble.DB
+	waiters  sync.WaitGroup
+	closedMu sync.Mutex // PROTECTS(closed)
+	closed   bool
 	splitMu  sync.RWMutex
 }
 
@@ -58,17 +58,17 @@ type leaser struct {
 //
 // Once the DB leaser has been closed with Close(), no new handles can be
 // acquired, instead an error is returned.
-// 
+//
 // Additionally, if AcquireSplitLock() is called, the leaser will wait for all
 // all handles to be returned and prevent prevent additional handles from being
 // leased until ReleaseSplitLock() is called.
 func NewDBLeaser(db *pebble.DB) DBGetter {
 	return &leaser{
-		db: db,
-		waiters: sync.WaitGroup{},
+		db:       db,
+		waiters:  sync.WaitGroup{},
 		closedMu: sync.Mutex{},
-		closed: false,
-		splitMu: sync.RWMutex{},
+		closed:   false,
+		splitMu:  sync.RWMutex{},
 	}
 }
 
@@ -76,7 +76,7 @@ func (l *leaser) Close() {
 	l.closedMu.Lock()
 	defer l.closedMu.Unlock()
 	if l.closed {
-		return 
+		return
 	}
 	l.closed = true
 
@@ -101,7 +101,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 	}
 	l.splitMu.RLock()
 	defer l.splitMu.RUnlock()
-	
+
 	handle := &refCountedDB{
 		l.db,
 		newRefCounter(&l.waiters),
@@ -117,7 +117,7 @@ func (l *leaser) DB() (IPebbleDB, error) {
 				log.Errorf("DB() handle leak at %s!", location)
 			}
 		})
-        }
+	}
 	return handle, nil
 }
 
