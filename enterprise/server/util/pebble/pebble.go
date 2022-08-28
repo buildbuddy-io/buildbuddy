@@ -86,7 +86,6 @@ func (l *leaser) Close() {
 
 func (l *leaser) AcquireSplitLock() {
 	l.splitMu.Lock()
-	l.waiters.Wait()
 }
 
 func (l *leaser) ReleaseSplitLock() {
@@ -94,13 +93,14 @@ func (l *leaser) ReleaseSplitLock() {
 }
 
 func (l *leaser) DB() (IPebbleDB, error) {
+	l.splitMu.RLock()
+	defer l.splitMu.RUnlock()
+
 	l.closedMu.Lock()
 	defer l.closedMu.Unlock()
 	if l.closed {
 		return nil, status.FailedPreconditionError("db is closed")
 	}
-	l.splitMu.RLock()
-	defer l.splitMu.RUnlock()
 
 	handle := &refCountedDB{
 		l.db,

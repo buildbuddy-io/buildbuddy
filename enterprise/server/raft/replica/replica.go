@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
+	pebble_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -64,10 +65,8 @@ type IStore interface {
 // It also provides opportunities for the system to signal Raft Log compactions
 // to free up disk spaces.
 type Replica struct {
-	db       *pebble.DB
-	closedMu *sync.RWMutex // PROTECTS(closed)
-	closed   bool
-	wg       sync.WaitGroup
+	db     *pebble.DB
+	leaser pebble_util.Leaser
 
 	rootDir   string
 	fileDir   string
@@ -273,64 +272,12 @@ type ReplicaWriter interface {
 	NewSnapshot() *pebble.Snapshot
 }
 
-type refCounter struct {
-	wg     *sync.WaitGroup
-	closed bool
-}
-
-func newRefCounter(wg *sync.WaitGroup) *refCounter {
-	wg.Add(1)
-	return &refCounter{
-		wg:     wg,
-		closed: false,
-	}
-}
-func (r *refCounter) Close() error {
-	if !r.closed {
-		r.closed = true
-		r.wg.Add(-1)
-	}
-	return nil
-}
-
-type refCountedDB struct {
-	*pebble.DB
-	*refCounter
-}
-
-func (r *refCountedDB) Close() error {
-	// Just close the refcounter, not the DB.
-	return r.refCounter.Close()
-}
-
 func (sm *Replica) ReadOnlyDB() (ReplicaReader, error) {
-	sm.closedMu.RLock()
-	defer sm.closedMu.RUnlock()
-	if sm.closed {
-		return nil, status.FailedPreconditionError("db is closed.")
-	}
-
-	return &refCountedDB{
-		sm.db,
-		newRefCounter(&sm.wg),
-	}, nil
+	return sm.leaser.DB()
 }
 
 func (sm *Replica) DB() (ReplicaWriter, error) {
-	sm.closedMu.RLock()
-	defer sm.closedMu.RUnlock()
-	if sm.closed {
-		return nil, status.FailedPreconditionError("db is closed.")
-	}
-
-	// RLock the split lock. This prevents DB writes during a split.
-	sm.splitMu.RLock()
-	defer sm.splitMu.RUnlock()
-
-	return &refCountedDB{
-		sm.db,
-		newRefCounter(&sm.wg),
-	}, nil
+	return sm.leaser.DB()
 }
 
 // Open opens the existing on disk state machine to be used or it creates a
@@ -350,10 +297,8 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	sm.closedMu.Lock()
 	sm.db = db
-	sm.closed = false
-	sm.closedMu.Unlock()
+	sm.leaser = pebble_util.NewDBLeaser(db)
 
 	sm.checkAndSetRangeDescriptor(db)
 	return sm.getLastAppliedIndex(db)
@@ -637,8 +582,8 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	}
 
 	// Lock the range to external writes.
-	sm.splitMu.Lock()
-	defer sm.splitMu.Unlock()
+	sm.leaser.AcquireSplitLock()
+	defer sm.leaser.ReleaseSplitLock()
 
 	sm.rangeMu.Lock()
 	rd := sm.rangeDescriptor
@@ -1079,6 +1024,7 @@ func (sm *Replica) Writer(ctx context.Context, fileRecord *rfpb.FileRecord) (fil
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
+
 	db, err := sm.DB()
 	if err != nil {
 		return nil, err
@@ -1476,13 +1422,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 // IOnDiskStateMachine instance has been closed, the Close method is not
 // allowed to update the state of IOnDiskStateMachine visible to the outside.
 func (sm *Replica) Close() error {
-	sm.closedMu.Lock()
-	defer sm.closedMu.Unlock()
-	if sm.closed {
-		return nil
-	}
-	sm.closed = true
-	sm.wg.Wait() // wait for all db users to finish up.
+	sm.leaser.Close()
 
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
@@ -1491,17 +1431,13 @@ func (sm *Replica) Close() error {
 	if sm.store != nil && rangeDescriptor != nil {
 		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
-	if sm.db != nil {
-		return sm.db.Close()
-	}
-	return nil
+	return sm.db.Close()
 }
 
 // CreateReplica creates an ondisk statemachine.
 func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Replica {
 	return &Replica{
-		closedMu:   &sync.RWMutex{},
-		wg:         sync.WaitGroup{},
+		leaser:     nil,
 		rootDir:    rootDir,
 		fileDir:    fileDir,
 		clusterID:  clusterID,
