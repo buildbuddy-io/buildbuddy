@@ -220,8 +220,8 @@ github.com/bazelbuild/rules_go v0.29.0 h1:SfxjyO/V68rVnzOHop92fB0gv/Aa75KNLAN0PM
 github.com/bazelbuild/rules_go v0.29.0/go.mod h1:MC23Dc/wkXEyk3Wpq6lCqz0ZAYOZDw2DR5y3N1q2i7M=
 github.com/bazelbuild/rules_webtesting v0.2.0 h1:nhqjA2IslEOLViRBF5djQCiOD//7VyyHNKrqAZ1AuYA=
 github.com/bazelbuild/rules_webtesting v0.2.0/go.mod h1:M+vCvqp/1BViNuVL630BoiGqld9Q1vQzvf9bN/dWTeg=
-github.com/bduffany/go-tensorflow v0.0.0-20220824230604-fd0334e8abf5 h1:eAm8C1b6hLXslg9gd3bAmLSfIiWFuSXVx8n+0CZ/JWE=
-github.com/bduffany/go-tensorflow v0.0.0-20220824230604-fd0334e8abf5/go.mod h1:nw4CfMheI+6+aUzRZhvb32RaWQyGbgCzcLbZ1LK5h3k=
+github.com/bduffany/go-tensorflow v0.0.0-20220829154158-35855b13822d h1:3WU8fhrz/8ucFejgXUdGwo08YgIB1NHFfySLLKJrNZ0=
+github.com/bduffany/go-tensorflow v0.0.0-20220829154158-35855b13822d/go.mod h1:nw4CfMheI+6+aUzRZhvb32RaWQyGbgCzcLbZ1LK5h3k=
 github.com/bduffany/redsync/v4 v4.4.1-minimal h1:wyBDr+ApDWybbLGMSsepl30KzPAl+HlIQMhJSoLdRKg=
 github.com/bduffany/redsync/v4 v4.4.1-minimal/go.mod h1:9+8jiPGz2n9ZaN8znvOqjyeXP/acSo6VAFPaG5Xdb2M=
 github.com/beevik/etree v1.1.0 h1:T0xke/WvNtMoCqgzPhkX2r4rjY3GDZFi+FjpRZY2Jbs=

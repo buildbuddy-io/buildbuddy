@@ -5,7 +5,7 @@ go 1.18
 replace (
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
 	github.com/lni/dragonboat/v3 => github.com/tylerwilliams/dragonboat/v3 v3.3.4-rc5
-	github.com/tensorflow/tensorflow => github.com/bduffany/go-tensorflow v0.0.0-20220824230604-fd0334e8abf5
+	github.com/tensorflow/tensorflow => github.com/bduffany/go-tensorflow v0.0.0-20220829154158-35855b13822d
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
 )
 

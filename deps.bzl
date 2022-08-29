@@ -4235,8 +4235,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         build_file_proto_mode = "disable",
         importpath = "github.com/tensorflow/tensorflow",
         replace = "github.com/bduffany/go-tensorflow",
-        sum = "h1:eAm8C1b6hLXslg9gd3bAmLSfIiWFuSXVx8n+0CZ/JWE=",
-        version = "v0.0.0-20220824230604-fd0334e8abf5",
+        sum = "h1:3WU8fhrz/8ucFejgXUdGwo08YgIB1NHFfySLLKJrNZ0=",
+        version = "v0.0.0-20220829154158-35855b13822d",
     )
 
     # keep
