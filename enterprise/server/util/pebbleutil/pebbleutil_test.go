@@ -1,4 +1,4 @@
-package pebble_test
+package pebbleutil_test
 
 import (
 	"testing"
