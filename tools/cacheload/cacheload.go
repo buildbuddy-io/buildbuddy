@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -130,10 +131,12 @@ func main() {
 	}
 	log.Printf("Applying load to cache W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
 
-	conn, err := grpc_client.DialTarget(*cacheTarget)
+	conn, err := grpc_client.DialTargetWithOptions(*cacheTarget, false, grpc.WithBlock(), grpc.WithTimeout(5*time.Second))
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", *cacheTarget, err)
 	}
+	log.Printf("Connected to cache: %q", *cacheTarget)
+
 	bsClient := bspb.NewByteStreamClient(conn)
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	eg, gctx := errgroup.WithContext(ctx)
