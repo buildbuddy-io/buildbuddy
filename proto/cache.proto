@@ -8,6 +8,7 @@ import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "proto/context.proto";
 import "proto/remote_execution.proto";
+import "proto/resource.proto";
 
 // Next Tag: 16
 message CacheStats {
@@ -221,4 +222,19 @@ message ScoreCard {
   repeated Result misses = 1;
 
   repeated Result results = 2;
+}
+
+// Fetches metadata about a cache resource
+message GetCacheMetadataRequest {
+  context.RequestContext request_context = 1;
+
+  // The name of the resource we wish to fetch metadata for
+  resource.ResourceName resource_name = 2;
+}
+
+message GetCacheMetadataResponse {
+  context.ResponseContext response_context = 1;
+  int64 size_bytes = 2;
+  int64 last_access_usec = 3;
+  int64 last_modify_usec = 4;
 }

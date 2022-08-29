@@ -77,6 +77,8 @@ service BuildBuddyService {
   // Cache API
   rpc GetCacheScoreCard(cache.GetCacheScoreCardRequest)
       returns (cache.GetCacheScoreCardResponse);
+  rpc GetCacheMetadata(cache.GetCacheMetadataRequest)
+      returns (cache.GetCacheMetadataResponse);
 
   // Target API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);

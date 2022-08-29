@@ -30,6 +30,8 @@ interface State {
   results: cache.ScoreCard.IResult[];
   nextPageToken: string;
   didInitialFetch: boolean;
+
+  digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse>;
 }
 
 const SEARCH_DEBOUNCE_INTERVAL_MS = 300;
@@ -89,6 +91,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     results: [],
     nextPageToken: "",
     didInitialFetch: false,
+    digestToCacheMetadata: new Map<string, cache.GetCacheMetadataResponse>(),
   };
 
   constructor(props: CacheRequestsCardProps) {
@@ -368,7 +371,54 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     ));
   }
 
+  private getCacheMetadata(scorecardResult: cache.ScoreCard.IResult) {
+    const digest = scorecardResult.digest;
+    const remoteInstanceName = this.props.model.getRemoteInstanceName();
+
+    // Set an empty struct in the map so the FE doesn't fire duplicate requests while the first request is in progress
+    // or if there is an invalid result
+    this.state.digestToCacheMetadata.set(digest.hash, null);
+
+    rpc_service.service
+      .getCacheMetadata({
+        resourceName: {
+          digest: digest,
+          cacheType: scorecardResult.cacheType,
+          instanceName: remoteInstanceName,
+        },
+      })
+      .then((response) => {
+        this.state.digestToCacheMetadata.set(digest.hash, response);
+        this.forceUpdate();
+      })
+      .catch((e) => {
+        console.log("Could not fetch metadata: " + BuildBuddyError.parse(e));
+      });
+  }
+
   private renderResultHovercard(result: cache.ScoreCard.IResult, startTimeMillis: number) {
+    const digest = result.digest.hash;
+    // TODO(bduffany): Add an `onHover` prop to <Tooltip> and move this logic there
+    if (!this.state.digestToCacheMetadata.has(digest)) {
+      this.getCacheMetadata(result);
+    }
+
+    const cacheMetadata = this.state.digestToCacheMetadata.get(digest);
+
+    let lastAccessed = "";
+    let lastModified = "";
+    if (cacheMetadata) {
+      if (cacheMetadata.lastAccessUsec) {
+        const lastAccessedMs = Number(cacheMetadata.lastAccessUsec) / 1000;
+        lastAccessed = format.formatDate(new Date(lastAccessedMs));
+      }
+
+      if (cacheMetadata.lastModifyUsec) {
+        const lastModifiedMs = Number(cacheMetadata.lastModifyUsec) / 1000;
+        lastModified = format.formatDate(new Date(lastModifiedMs));
+      }
+    }
+
     return (
       <div className="cache-result-hovercard">
         {result.targetId ? (
@@ -411,6 +461,16 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         <>
           <b>Duration</b> <span>{format.durationMillis(proto.durationToMillis(result.duration))}</span>
         </>
+        {lastAccessed ? (
+          <>
+            <b>Last accessed</b> <span>{lastAccessed}</span>
+          </>
+        ) : null}
+        {lastModified ? (
+          <>
+            <b>Last modified</b> <span>{lastModified}</span>
+          </>
+        ) : null}
       </div>
     );
   }
