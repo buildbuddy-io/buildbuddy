@@ -11,9 +11,9 @@ go_library(
         "//server/backends/chunkstore",
         "//server/environment",
         "//server/interfaces",
-        "//server/terminal",
         "//server/util/keyval",
         "//server/util/status",
+        "@com_github_buildbuddy_io_buildbuddy//server/terminal:go_default_library",
         "@org_golang_google_protobuf//proto",
     ],
 )
