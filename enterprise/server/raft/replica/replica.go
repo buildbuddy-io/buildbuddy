@@ -862,7 +862,27 @@ func (f fnReadCloser) Close() error {
 	return f.fn()
 }
 
-func (sm *Replica) Reader(ctx context.Context, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
+// validateRange checks that the requested range generation matches our range
+// generation. We perform the generation check both in the store and the replica
+// because of a race condition during splits. The replica may receive concurrent
+// read/write & split requests that may pass the store generation check and
+// enter the replica code. The split will hold the split lock and modify the
+// internal state with the new range information. goroutines that are unblocked
+// after the split lock is released need to verify that the generation has not
+// changed under them.
+func (sm *Replica) validateRange(header *rfpb.Header) error {
+	sm.rangeMu.RLock()
+	defer sm.rangeMu.RUnlock()
+	if sm.rangeDescriptor == nil {
+		return status.FailedPreconditionError("range descriptor is not set")
+	}
+	if sm.rangeDescriptor.GetGeneration() != header.GetGeneration() {
+		return status.OutOfRangeErrorf("%s: generation: %d requested: %d (split)", constants.RangeNotCurrentMsg, sm.rangeDescriptor.GetGeneration(), header.GetGeneration())
+	}
+	return nil
+}
+
+func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
 	db, err := sm.ReadOnlyDB()
 	if err != nil {
 		return nil, err
@@ -882,6 +902,10 @@ func (sm *Replica) Reader(ctx context.Context, fileRecord *rfpb.FileRecord, offs
 		return nil
 	}
 	defer cleanup()
+
+	if err := sm.validateRange(header); err != nil {
+		return nil, err
+	}
 
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
@@ -906,12 +930,16 @@ func (sm *Replica) Reader(ctx context.Context, fileRecord *rfpb.FileRecord, offs
 	}}, nil
 }
 
-func (sm *Replica) FindMissing(ctx context.Context, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
+func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
 	reader, err := sm.ReadOnlyDB()
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
+
+	if err := sm.validateRange(header); err != nil {
+		return nil, err
+	}
 
 	iter := reader.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
@@ -956,7 +984,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (sm *Replica) Writer(ctx context.Context, fileRecord *rfpb.FileRecord) (filestore.CommittedWriter, error) {
+func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (filestore.CommittedWriter, error) {
 	db, err := sm.DB()
 	if err != nil {
 		return nil, err
@@ -975,6 +1003,10 @@ func (sm *Replica) Writer(ctx context.Context, fileRecord *rfpb.FileRecord) (fil
 		return nil
 	}
 	defer cleanup()
+
+	if err := sm.validateRange(header); err != nil {
+		return nil, err
+	}
 
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
