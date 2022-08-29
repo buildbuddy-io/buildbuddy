@@ -350,12 +350,8 @@ func batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *r
 	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 }
 
-func (p *PebbleCache) DB() (pebbleutil.IPebbleDB, error) {
-	return p.leaser.DB()
-}
-
 func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -435,7 +431,7 @@ func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
 }
 
 func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -509,7 +505,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 }
 
 func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return nil
 	}
@@ -555,7 +551,7 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 }
 
 func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -590,7 +586,7 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 type batchEditFn func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error
 
 func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchEditFn) error {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -650,7 +646,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 }
 
 func (p *PebbleCache) Statusz(ctx context.Context) string {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return ""
 	}
@@ -801,7 +797,7 @@ func (p *PebbleCache) handleMetadataMismatch(err error, fileMetadataKey []byte, 
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return false, err
 	}
@@ -823,7 +819,7 @@ func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 }
 
 func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -852,7 +848,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -892,7 +888,7 @@ func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -996,7 +992,7 @@ func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte, 
 }
 
 func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -1019,7 +1015,7 @@ func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 }
 
 func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) error {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -1062,7 +1058,7 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1118,7 +1114,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	db, err := p.DB()
+	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}

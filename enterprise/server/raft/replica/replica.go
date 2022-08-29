@@ -140,7 +140,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 			NodeId:    sm.nodeID,
 		},
 	}
-	db, err := sm.ReadOnlyDB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -271,14 +271,6 @@ type ReplicaWriter interface {
 	NewBatch() *pebble.Batch
 	NewIndexedBatch() *pebble.Batch
 	NewSnapshot() *pebble.Snapshot
-}
-
-func (sm *Replica) ReadOnlyDB() (ReplicaReader, error) {
-	return sm.leaser.DB()
-}
-
-func (sm *Replica) DB() (ReplicaWriter, error) {
-	return sm.leaser.DB()
 }
 
 // Open opens the existing on disk state machine to be used or it creates a
@@ -487,7 +479,7 @@ func (sm *Replica) populateReplicaFromSnapshot(rightSM *Replica) error {
 	snap := sm.db.NewSnapshot()
 	defer snap.Close()
 
-	rightDB, err := rightSM.DB()
+	rightDB, err := rightSM.leaser.DB()
 	if err != nil {
 		return nil
 	}
@@ -626,7 +618,7 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	}
 
 	// Populate the new replica.
-	rightDB, err := rightSM.DB()
+	rightDB, err := rightSM.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -863,7 +855,7 @@ func (f fnReadCloser) Close() error {
 }
 
 func (sm *Replica) Reader(ctx context.Context, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
-	db, err := sm.ReadOnlyDB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -907,7 +899,7 @@ func (sm *Replica) Reader(ctx context.Context, fileRecord *rfpb.FileRecord, offs
 }
 
 func (sm *Replica) FindMissing(ctx context.Context, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
-	reader, err := sm.ReadOnlyDB()
+	reader, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -957,7 +949,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 }
 
 func (sm *Replica) Writer(ctx context.Context, fileRecord *rfpb.FileRecord) (filestore.CommittedWriter, error) {
-	db, err := sm.DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1056,7 +1048,7 @@ func (sm *Replica) Writer(ctx context.Context, fileRecord *rfpb.FileRecord) (fil
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 
-	db, err := sm.DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1128,7 +1120,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
-	db, err := sm.ReadOnlyDB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1180,7 +1172,7 @@ func (sm *Replica) Sync() error {
 // PrepareSnapshot returns an error when there is unrecoverable error for
 // preparing the snapshot.
 func (sm *Replica) PrepareSnapshot() (interface{}, error) {
-	db, err := sm.DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1409,7 +1401,7 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
-	db, err := sm.DB()
+	db, err := sm.leaser.DB()
 	if err != nil {
 		return err
 	}
@@ -1419,7 +1411,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 
-	readDB, err := sm.ReadOnlyDB()
+	readDB, err := sm.leaser.DB()
 	if err != nil {
 		return err
 	}
