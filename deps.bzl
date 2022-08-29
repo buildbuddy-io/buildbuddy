@@ -4233,6 +4233,16 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20200319021203-7eef512accb3",
     )
 
+    # keep
+    go_repository(
+        name = "com_github_tensorflow_tensorflow",
+        build_file_proto_mode = "disable",
+        importpath = "github.com/tensorflow/tensorflow",
+        replace = "github.com/bduffany/go-tensorflow",
+        sum = "h1:3WU8fhrz/8ucFejgXUdGwo08YgIB1NHFfySLLKJrNZ0=",
+        version = "v0.0.0-20220829154158-35855b13822d",
+    )
+
     go_repository(
         name = "com_github_tetafro_godot",
         importpath = "github.com/tetafro/godot",
