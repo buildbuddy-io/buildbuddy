@@ -41,10 +41,6 @@ var (
 	fileExtensionRegexp = regexp.MustCompile(`\.[a-z0-9]{1,4}$`)
 )
 
-func init() {
-	New = NewTFModel
-}
-
 type TFModel struct {
 	// Data needed to compute feature vectors ("X").
 
@@ -60,8 +56,8 @@ type TFModel struct {
 	cpuModel    *tf.SavedModel
 }
 
-// NewTFModel returns a TensorFlow model configured from the root path.
-func NewTFModel() (Model, error) {
+// New returns a TensorFlow model configured from the root path.
+func New() (Model, error) {
 	m := &TFModel{}
 
 	f, err := os.Open(filepath.Join(*rootPath, "features.json"))
