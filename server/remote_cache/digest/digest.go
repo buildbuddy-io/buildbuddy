@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -311,14 +312,21 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 
 type Generator struct {
 	randMaker *randomDataMaker
+	mu        sync.Mutex
 }
 
 // RandomGenerator returns a digest sample generator for use in testing tools.
 func RandomGenerator(seed int64) *Generator {
-	return &Generator{randMaker: &randomDataMaker{rand.NewSource(seed)}}
+	return &Generator{
+		randMaker: &randomDataMaker{rand.NewSource(seed)},
+		mu:        sync.Mutex{},
+	}
 }
 
 func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSeeker, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	// Read some random bytes.
 	buf := new(bytes.Buffer)
 	if _, err := io.CopyN(buf, g.randMaker, sizeBytes); err != nil {

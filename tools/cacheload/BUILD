@@ -11,6 +11,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//metadata",
         "@org_golang_x_sync//errgroup",

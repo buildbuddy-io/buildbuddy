@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/metadata"
@@ -93,11 +94,7 @@ func randomBlobSize() int64 {
 	return randRange(histBuckets[len(histBuckets)-2], histBuckets[len(histBuckets)-1])
 }
 
-var generatorMu = sync.Mutex{}
-
 func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
-	generatorMu.Lock()
-	defer generatorMu.Unlock()
 	d, buf, err := digestGenerator.RandomDigestBuf(sizeBytes)
 	if err != nil {
 		log.Fatalf("Error generating digest: %s", err)
@@ -107,13 +104,18 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 
 func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	_, err := cachetools.UploadBlob(ctx, client, *instanceName, bytes.NewReader(buf))
-	return d, err
+	if _, err := cachetools.UploadBlob(ctx, client, *instanceName, bytes.NewReader(buf)); err != nil {
+		return nil, status.InternalErrorf("Error writing digest: %s/%d: %s", d.GetHash(), d.GetSizeBytes(), err)
+	}
+	return d, nil
 }
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest) error {
 	resourceName := digest.NewResourceName(d, *instanceName)
-	return cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+	if err := cachetools.GetBlob(ctx, client, resourceName, io.Discard); err != nil {
+		return status.InternalErrorf("Error reading digest: %s/%d: %s", resourceName.GetDigest().GetHash(), resourceName.GetDigest().GetSizeBytes(), err)
+	}
+	return nil
 }
 
 func main() {
