@@ -81,12 +81,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends gettext-base &&
     cat /tmp/BUILD | envsubst > BUILD && \
     cat /tmp/deps.bzl | envsubst > deps.bzl
 
+# Copy the system libgcc and libstdc++ into the repo since TF depends on them.
+# We don't want to rely on these being available on the host system -- for
+# example, distroless images will not have these available. Together they are
+# ~2 MB so copying into the repo should be OK.
+RUN apt-get update && apt-get install --no-install-recommends -y libgcc-s1 && \
+    cp /lib/x86_64-linux-gnu/libgcc_s.so.1 . && \
+    cp /usr/lib/x86_64-linux-gnu/libstdc++.so.6 .
+
 # Make some adjustments to gazelle's default output to link against the TF
 # release libraries and headers, and add a "keep" comment to prevent gazelle
 # from modifying it.
 RUN buildozer 'remove clinkopts' //tensorflow/go && \
     buildozer 'remove copts' //tensorflow/go && \
-    buildozer 'add cdeps //:libtensorflow' //tensorflow/go && \
+    buildozer 'add cdeps //:libtensorflow //:libstdc++ //:libgcc_s' //tensorflow/go && \
     buildozer 'comment keep' //tensorflow/go
 
 # Remove the system install of TF to ensure those aren't used in the test build.
