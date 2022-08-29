@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	pebble_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 )
 
 func TestCloseLeasedDB(t *testing.T) {
@@ -17,7 +17,7 @@ func TestCloseLeasedDB(t *testing.T) {
 	db, err := pebble.Open(rootDir, &pebble.Options{})
 	require.NoError(t, err)
 
-	leaser := pebble_util.NewDBLeaser(db)
+	leaser := pebbleutil.NewDBLeaser(db)
 	require.NotNil(t, leaser)
 
 	var leaserCloseTime time.Time

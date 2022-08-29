@@ -23,7 +23,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
-	pebble_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	pebbleutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -67,7 +67,7 @@ type IStore interface {
 // to free up disk spaces.
 type Replica struct {
 	db     *pebble.DB
-	leaser pebble_util.Leaser
+	leaser pebbleutil.Leaser
 
 	rootDir   string
 	fileDir   string
@@ -299,7 +299,7 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 		return 0, err
 	}
 	sm.db = db
-	sm.leaser = pebble_util.NewDBLeaser(db)
+	sm.leaser = pebbleutil.NewDBLeaser(db)
 
 	sm.checkAndSetRangeDescriptor(db)
 	return sm.getLastAppliedIndex(db)

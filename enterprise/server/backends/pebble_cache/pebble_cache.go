@@ -35,7 +35,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
-	pebble_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	pebbleutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
@@ -120,7 +120,7 @@ type PebbleCache struct {
 	env       environment.Env
 	isolation *rfpb.Isolation
 	db        *pebble.DB
-	leaser    pebble_util.Leaser
+	leaser    pebbleutil.Leaser
 
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
@@ -277,7 +277,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		opts:              opts,
 		env:               env,
 		db:                db,
-		leaser:            pebble_util.NewDBLeaser(db),
+		leaser:            pebbleutil.NewDBLeaser(db),
 		brokenFilesDone:   make(chan struct{}),
 		orphanedFilesDone: make(chan struct{}),
 		eg:                &errgroup.Group{},
@@ -350,7 +350,7 @@ func batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *r
 	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 }
 
-func (p *PebbleCache) DB() (pebble_util.IPebbleDB, error) {
+func (p *PebbleCache) DB() (pebbleutil.IPebbleDB, error) {
 	return p.leaser.DB()
 }
 
@@ -1231,7 +1231,7 @@ type partitionEvictor struct {
 	part       disk.Partition
 	fileStorer filestore.Store
 	blobDir    string
-	dbGetter   pebble_util.Leaser
+	dbGetter   pebbleutil.Leaser
 	accesses   chan<- *accessTimeUpdate
 
 	casPrefix   []byte
@@ -1244,7 +1244,7 @@ type partitionEvictor struct {
 	lastEvicted *evictionPoolEntry
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble_util.Leaser, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:         &sync.Mutex{},
 		part:       part,

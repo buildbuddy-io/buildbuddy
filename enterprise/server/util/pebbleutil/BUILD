@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "pebble",
-    srcs = ["pebble.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble",
+    name = "pebbleutil",
+    srcs = ["pebbleutil.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil",
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/log",
@@ -13,10 +13,10 @@ go_library(
 )
 
 go_test(
-    name = "pebble_test",
-    srcs = ["pebble_test.go"],
+    name = "pebbleutil_test",
+    srcs = ["pebbleutil_test.go"],
     deps = [
-        ":pebble",
+        ":pebbleutil",
         "//server/testutil/testfs",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//require",
