@@ -9,8 +9,8 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
         "//proto:invocation_go_proto",
-        "//server/terminal",
         "//server/util/timeutil",
+        "@com_github_buildkite_terminal_to_html_v3//:terminal-to-html",
     ],
 )
 

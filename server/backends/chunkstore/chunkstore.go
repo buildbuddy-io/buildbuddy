@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -435,6 +436,7 @@ func (w *ChunkstoreWriter) WriteWithTail(ctx context.Context, p []byte, tail []b
 	if w.closed {
 		return 0, nil
 	}
+	log.Infof("Writing chunk: {\n%s\n}\nTail: {\n%s\n}", string(p), string(tail))
 	w.writeChannel <- &WriteRequest{ctx: ctx, Chunk: p, VolatileTail: tail}
 	return w.readFromWriteResultChannel()
 }

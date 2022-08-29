@@ -6,8 +6,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+	"github.com/buildkite/terminal-to-html/v3"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )

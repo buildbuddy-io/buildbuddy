@@ -260,6 +260,8 @@ github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6 h1:
 github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6/go.mod h1:sbWYLPDSURZSehjnwnFclswM4ErueZHCVxXimWH6Uo4=
 github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2 h1:l9PGL9DJwcCgQcVt/zFzVjJbSzb+BmpU8NBeo6leHKU=
 github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2/go.mod h1:LSVJkC18NVPon/lADUB4AabAylh2dnsZbk4SkMCk4KQ=
+github.com/buildkite/terminal-to-html/v3 v3.7.0 h1:chdLUSpiOj/A4v3dzxyOqixXI6aw7IDA6Dk77FXsvNU=
+github.com/buildkite/terminal-to-html/v3 v3.7.0/go.mod h1:g0ME1XqbkBSgXR9YmlIHcJIjzaMyWW+HbsG0rPb5puo=
 github.com/butuzov/ireturn v0.1.1/go.mod h1:Wh6Zl3IMtTpaIKbmwzqi6olnM9ptYQxxVacMsOEFPoc=
 github.com/cavaliergopher/cpio v1.0.1 h1:KQFSeKmZhv0cr+kawA3a0xTQCU4QxXF1vhU7P7av2KM=
 github.com/cavaliergopher/cpio v1.0.1/go.mod h1:pBdaqQjnvXxdS/6CvNDwIANIFSP0xRKI16PX4xejRQc=
@@ -1661,6 +1663,7 @@ github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijb
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/urfave/cli v1.22.2/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/urfave/cli v1.22.4/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
+github.com/urfave/cli/v2 v2.2.0/go.mod h1:SE9GqnLQmjVa0iPEY0f1w3ygNIYcIJ0OKPMoW2caLfQ=
 github.com/urfave/negroni v1.0.0/go.mod h1:Meg73S6kFm/4PpbYdq35yYWoCZ9mS/YSx+lKnmiohz4=
 github.com/uudashr/gocognit v1.0.1/go.mod h1:j44Ayx2KW4+oB6SWMv8KsmHzZrOInQav7D3cQMJ5JUM=
 github.com/uudashr/gocognit v1.0.5/go.mod h1:wgYz0mitoKOTysqxTDMOUXg+Jb5SvtihkfmugIZYpEA=

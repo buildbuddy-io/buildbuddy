@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
@@ -297,7 +298,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
 		WriteWithTailCloser:           cw,
 		screenWriter:                  terminal.NewScreenWriter(),
-		numLinesToRetainForANSICursor: numLinesToRetain,
+		numLinesToRetainForANSICursor: math.MaxInt,
 	}
 	eventLogWriter.chunkstoreWriter = cw
 
@@ -369,6 +370,7 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 	if p == nil || len(p) == 0 {
 		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 	}
+
 	if _, err := w.screenWriter.Write(p); err != nil {
 		return 0, err
 	}
