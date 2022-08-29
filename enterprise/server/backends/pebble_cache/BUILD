@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/filestore",
+        "//enterprise/server/util/pebbleutil",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
