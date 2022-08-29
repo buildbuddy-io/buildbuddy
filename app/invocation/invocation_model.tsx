@@ -307,6 +307,10 @@ export default class InvocationModel {
     return "Cache on";
   }
 
+  getRemoteInstanceName() {
+    return this.optionsMap.get("remote_instance_name") ?? "";
+  }
+
   getIsRBEEnabled() {
     return Boolean(this.stringCommandLineOption("remote_executor"));
   }

@@ -73,9 +73,10 @@ func (em *entryMaker) makeEntry(batch *rbuilder.BatchBuilder) dbsm.Entry {
 func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
 	// Do a direct write of the range local range.
 	rdBuf, err := proto.Marshal(&rfpb.RangeDescriptor{
-		Left:    []byte{constants.MinByte},
-		Right:   []byte("z"),
-		RangeId: 1,
+		Left:       []byte{constants.MinByte},
+		Right:      []byte("z"),
+		RangeId:    1,
+		Generation: 1,
 	})
 	require.Nil(t, err)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
@@ -368,8 +369,15 @@ func TestReplicaFileWrite(t *testing.T) {
 		Digest: d,
 	}
 
-	writeCommitter, err := repl.Writer(ctx, fileRecord)
-	require.Nil(t, err)
+	// Mismatched generation should fail with an OutOfRange error.
+	_, err = repl.Writer(ctx, &rfpb.Header{RangeId: 1, Generation: 2}, fileRecord)
+	require.ErrorContains(t, err, constants.RangeNotCurrentMsg)
+	require.True(t, status.IsOutOfRangeError(err))
+
+	header := &rfpb.Header{RangeId: 1, Generation: 1}
+
+	writeCommitter, err := repl.Writer(ctx, header, fileRecord)
+	require.NoError(t, err)
 
 	_, err = writeCommitter.Write(buf)
 	require.Nil(t, err)
@@ -436,16 +444,17 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 		},
 		Digest: d,
 	}
+	header := &rfpb.Header{RangeId: 1, Generation: 1}
 
-	writeCommitter, err := repl.Writer(ctx, fileRecord)
-	require.Nil(t, err)
+	writeCommitter, err := repl.Writer(ctx, header, fileRecord)
+	require.NoError(t, err)
 
 	_, err = writeCommitter.Write(buf)
 	require.Nil(t, err)
 	require.Nil(t, writeCommitter.Commit())
 	require.Nil(t, writeCommitter.Close())
 
-	readCloser, err := repl.Reader(ctx, fileRecord, 0, 0)
+	readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
 	require.Nil(t, err)
 	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 
@@ -474,7 +483,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.Nil(t, err, err)
 
 	// Verify that the file is readable.
-	readCloser, err = repl2.Reader(ctx, fileRecord, 0, 0)
+	readCloser, err = repl2.Reader(ctx, header, fileRecord, 0, 0)
 	require.Nil(t, err)
 	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }

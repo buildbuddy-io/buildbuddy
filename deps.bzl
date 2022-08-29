@@ -4,8 +4,6 @@ load("@io_bazel_rules_go//extras:embed_data_deps.bzl", "go_embed_data_dependenci
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_buildbuddy_dependencies
 def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
-    # Bazel releases used for integration tests.
-
     go_embed_data_dependencies()
 
     go_repository(
@@ -4232,7 +4230,14 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:f+jULpRQGxTSkNYKJ51yaw6ChIqO+Je8UqsTKN/cDag=",
         version = "v0.0.0-20200319021203-7eef512accb3",
     )
-
+    go_repository(
+        name = "com_github_tensorflow_tensorflow",
+        build_file_proto_mode = "disable",
+        importpath = "github.com/tensorflow/tensorflow",
+        replace = "github.com/bduffany/go-tensorflow",
+        sum = "h1:3WU8fhrz/8ucFejgXUdGwo08YgIB1NHFfySLLKJrNZ0=",
+        version = "v0.0.0-20220829154158-35855b13822d",
+    )
     go_repository(
         name = "com_github_tetafro_godot",
         importpath = "github.com/tetafro/godot",
@@ -5206,8 +5211,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_protobuf",
         importpath = "google.golang.org/protobuf",
-        sum = "h1:w43yiav+6bVFTBQFZX0r7ipe9JQ1QsbMgHwbBziscLw=",
-        version = "v1.28.0",
+        sum = "h1:d0NfwRgPtno5B1Wa6L2DAG+KivqkdutMf1UhdNx175w=",
+        version = "v1.28.1",
     )
     go_repository(
         name = "org_golang_x_crypto",

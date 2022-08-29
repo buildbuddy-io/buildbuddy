@@ -395,7 +395,7 @@
 
   display: grid;
   grid-template-columns: min-content auto;
-  grid-gap: 0 8px;
+  grid-gap: 0 16px;
 }
 
 .cache-result-hovercard > * {

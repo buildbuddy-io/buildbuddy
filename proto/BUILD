@@ -50,6 +50,7 @@ proto_library(
     deps = [
         ":context_proto",
         ":remote_execution_proto",
+        ":resource_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:field_mask_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -77,7 +78,6 @@ proto_library(
         "resource.proto",
     ],
     deps = [
-        ":cache_proto",
         ":remote_execution_proto",
     ],
 )
@@ -342,6 +342,7 @@ proto_library(
         ":group_proto",
         ":invocation_proto",
         ":quota_proto",
+        ":resource_proto",
         ":runner_proto",
         ":scheduler_proto",
         ":target_proto",
@@ -656,7 +657,6 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/resource",
     proto = ":resource_proto",
     deps = [
-        ":cache_go_proto",
         ":remote_execution_go_proto",
     ],
 )
@@ -713,6 +713,7 @@ go_proto_library(
         ":group_go_proto",
         ":invocation_go_proto",
         ":quota_go_proto",
+        ":resource_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
         ":target_go_proto",
@@ -777,6 +778,7 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":remote_execution_go_proto",
+        ":resource_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )

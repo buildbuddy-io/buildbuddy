@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -884,6 +886,48 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 		return us.GetUsage(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCacheMetadataRequest) (*capb.GetCacheMetadataResponse, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
+	resourceName := req.GetResourceName()
+	cacheType, err := ProtoCacheTypeToCacheType(resourceName.GetCacheType())
+	if err != nil {
+		return nil, err
+	}
+	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, resourceName.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+
+	metadata, err := cache.Metadata(ctx, resourceName.GetDigest())
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &capb.GetCacheMetadataResponse{
+		SizeBytes:      metadata.SizeBytes,
+		LastAccessUsec: metadata.LastAccessTimeUsec,
+		LastModifyUsec: metadata.LastModifyTimeUsec,
+	}, nil
+}
+
+func ProtoCacheTypeToCacheType(cacheType resource.CacheType) (interfaces.CacheType, error) {
+	switch cacheType {
+	case resource.CacheType_AC:
+		return interfaces.ActionCacheType, nil
+	case resource.CacheType_CAS:
+		return interfaces.CASCacheType, nil
+	default:
+		return interfaces.UnknownCacheType, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
+	}
 }
 
 func (s *BuildBuddyServer) GetCacheScoreCard(ctx context.Context, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {

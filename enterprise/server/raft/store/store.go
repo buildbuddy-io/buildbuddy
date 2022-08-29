@@ -493,7 +493,7 @@ func (s *Store) FindMissing(ctx context.Context, req *rfpb.FindMissingRequest) (
 	if err != nil {
 		return nil, err
 	}
-	missing, err := r.FindMissing(ctx, req.GetFileRecord())
+	missing, err := r.FindMissing(ctx, req.GetHeader(), req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
@@ -522,7 +522,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 		return err
 	}
 
-	readCloser, err := r.Reader(stream.Context(), req.GetFileRecord(), req.GetOffset(), req.GetLimit())
+	readCloser, err := r.Reader(stream.Context(), req.GetHeader(), req.GetFileRecord(), req.GetOffset(), req.GetLimit())
 	if err != nil {
 		return err
 	}
@@ -561,7 +561,7 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			writeCloser, err = r.Writer(stream.Context(), req.GetFileRecord())
+			writeCloser, err = r.Writer(stream.Context(), req.GetHeader(), req.GetFileRecord())
 			if err != nil {
 				return err
 			}
