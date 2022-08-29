@@ -25,32 +25,11 @@ type MigrationCache struct {
 	Src  interfaces.Cache
 	Dest interfaces.Cache
 
-	mu              sync.RWMutex
-	eg              *errgroup.Group
-	doubleReadChan  chan *repb.Digest
-	doubleWriteChan chan *DoubleWriteData
+	mu             sync.RWMutex
+	eg             *errgroup.Group
+	doubleReadChan chan *repb.Digest
+	copyChan       chan *repb.Digest
 }
-
-type DoubleWriteData struct {
-	digest *repb.Digest
-	add    *Add
-	copy   *Copy
-	remove *Remove
-}
-
-// Add will always set data in the dest cache
-// This is intended for double writes, when the updates should always propagate to both caches
-type Add struct {
-	Data []byte
-}
-
-// Copy will only set data in the dest cache if the key does not already exist
-// This is intended to prevent unnecessary writes for data that has already been copied
-type Copy struct {
-	Data []byte
-}
-
-type Remove struct{}
 
 func Register(env environment.Env) error {
 	if !*isMigrationEnabled {
@@ -66,7 +45,7 @@ func Register(env environment.Env) error {
 	env.SetCache(mc)
 
 	mc.eg.Go(func() error {
-		mc.ProcessDoubleWrites(context.Background())
+		mc.CopyDataInBackground(context.Background())
 		return nil
 	})
 	mc.eg.Go(func() error {
@@ -74,23 +53,22 @@ func Register(env environment.Env) error {
 		return nil
 	})
 
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		return mc.Stop()
+	})
+
 	return nil
 }
 
 func (c *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	c.mu.Lock()
 	srcData, err := c.Src.Get(ctx, d)
 
 	// Enqueue non-blocking copying during Get
 	select {
-	case c.doubleWriteChan <- &DoubleWriteData{
-		digest: d,
-		copy:   &Copy{Data: srcData},
-	}:
+	case c.copyChan <- d:
 	default:
 		// Log error that channel is full so we can increase the size if needed, but don't block
 	}
-	c.mu.Unlock()
 
 	// Double read some proportion to guarantee that data is consistent between caches
 	shouldDoubleRead := rand.Float64() <= *doubleReadPercentage
@@ -110,21 +88,13 @@ func (c *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) e
 		return c.Src.Set(ctx, d, data)
 	})
 	c.eg.Go(func() error {
-		// Enqueue blocking double write
-		c.doubleWriteChan <- &DoubleWriteData{
-			digest: d,
-			add:    &Add{Data: data},
-		}
-		return nil
+		return c.Dest.Set(ctx, d, data)
 	})
 
 	// If error during write to source cache (source of truth), must delete from destination cache
 	err := c.eg.Wait()
 	if err != nil {
-		c.doubleWriteChan <- &DoubleWriteData{
-			digest: d,
-			remove: &Remove{},
-		}
+		// Log double write error
 	}
 
 	return err
@@ -161,29 +131,25 @@ func (c *MigrationCache) ProcessDoubleReads(ctx context.Context) {
 	}
 }
 
-func (c *MigrationCache) ProcessDoubleWrites(ctx context.Context) {
-	for doubleWriteData := range c.doubleWriteChan {
+func (c *MigrationCache) CopyDataInBackground(ctx context.Context) {
+	for digestToCopy := range c.copyChan {
 		c.eg.Go(func() error {
 			c.mu.Lock()
 			defer c.mu.Unlock()
 
-			// TODO: What should we do if there's a double write failure?
-			// Should we automatically enqueue the key to be deleted so there is no stale data in the dest cache?
-			if doubleWriteData.remove != nil {
-				c.Dest.Delete(ctx, doubleWriteData.digest)
-			} else if doubleWriteData.add != nil {
-				c.Dest.Set(ctx, doubleWriteData.digest, doubleWriteData.add.Data)
-			} else if doubleWriteData.copy != nil {
-				if alreadyCopied, err := c.Dest.Contains(ctx, doubleWriteData.digest); !alreadyCopied {
-					c.Dest.Set(ctx, doubleWriteData.digest, doubleWriteData.add.Data)
-				}
-			} else {
-				// Log - exactly one field should be set
+			if alreadyCopied, err := c.Dest.Contains(ctx, digestToCopy); !alreadyCopied {
+				srcData, err := c.Src.Get(ctx, digestToCopy)
+				c.Dest.Set(ctx, digestToCopy, srcData)
 			}
+			return nil
 		})
 
-		// Buffer double writes, to ensure copying data doesn't monopolize resources
+		// Buffer to ensure copying data doesn't monopolize resources
 		sleepMs := int((float64(1) / float64(*maxDoubleWritesPerSecond)) * 1000)
 		time.Sleep(time.Duration(sleepMs) * time.Millisecond)
 	}
+}
+
+func (c *MigrationCache) Stop() error {
+	return nil
 }
