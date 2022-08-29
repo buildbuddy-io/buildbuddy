@@ -51,7 +51,6 @@ const (
 
 type Store struct {
 	rootDir  string
-	fileDir  string
 	grpcAddr string
 
 	nodeHost      *dragonboat.NodeHost
@@ -74,10 +73,9 @@ type Store struct {
 	fileStorer filestore.Store
 }
 
-func New(rootDir, fileDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
+func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
 	s := &Store{
 		rootDir:       rootDir,
-		fileDir:       fileDir,
 		nodeHost:      nodeHost,
 		gossipManager: gossipManager,
 		sender:        sender,
@@ -360,7 +358,7 @@ func (s *Store) RangeIsActive(header *rfpb.Header) error {
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-	return replica.New(s.rootDir, s.fileDir, clusterID, nodeID, s)
+	return replica.New(s.rootDir, clusterID, nodeID, s)
 }
 
 func (s *Store) Sender() *sender.Sender {

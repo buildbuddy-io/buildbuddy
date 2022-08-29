@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/raft/sender",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
+        "//server/util/disk",
         "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",
@@ -32,7 +33,6 @@ go_test(
     deps = [
         ":replica",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/sender",
@@ -41,7 +41,6 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testfs",
         "//server/util/status",
-        "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_lni_dragonboat_v3//statemachine",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",
