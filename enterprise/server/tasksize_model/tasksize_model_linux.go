@@ -139,18 +139,7 @@ func (m *TFModel) predict(model *tf.SavedModel, xt *tf.Tensor) (float32, error) 
 // Predict predicts the resource usage of a task based on the configured
 // model parameters. It returns nil if the model is not configured.
 func (m *TFModel) Predict(task *repb.ExecutionTask) *scpb.TaskSize {
-	// Don't use predicted task sizes for Firecracker tasks for now, since task
-	// sizes are used as hard limits on allowed resources.
-	props := platform.ParseProperties(task)
-	// If a task size is explicitly requested, measured task size is not used.
-	if props.EstimatedComputeUnits != 0 {
-		return nil
-	}
-	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
-		return nil
-	}
-	// TODO(bduffany): Implement this platform prop and re-enable
-	if props.DisablePredictedTaskSize {
+	if !isPredictionEnabled(task) {
 		return nil
 	}
 
