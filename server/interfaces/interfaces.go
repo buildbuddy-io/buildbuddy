@@ -552,11 +552,15 @@ type TaskRouter interface {
 	MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
-// TaskSizer allows storing and retrieving task size measurements for a task.
+// TaskSizer allows storing, retrieving, and predicting task size measurements for a task.
 type TaskSizer interface {
 	// Get returns the previously measured size for a task, or nil if this data
 	// is not available.
 	Get(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+
+	// Predict returns a predicted task size using a model, or nil if no model
+	// is configured.
+	Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
 
 	// Update records a measured task size.
 	Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error

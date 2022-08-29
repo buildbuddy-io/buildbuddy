@@ -201,10 +201,9 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
 		return nil
 	}
-	// TODO(bduffany): Implement this platform prop and re-enable
-	// if props.DisablePredictedTaskSize {
-	// 	return nil
-	// }
+	if props.DisablePredictedTaskSize {
+		return nil
+	}
 
 	x := m.featureVector(task)
 

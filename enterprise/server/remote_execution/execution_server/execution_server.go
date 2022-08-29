@@ -401,6 +401,10 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	taskSize := tasksize.Estimate(executionTask)
 	measuredSize := sizer.Get(ctx, executionTask)
+	var predictedSize *scpb.TaskSize
+	if measuredSize == nil {
+		predictedSize = sizer.Predict(ctx, executionTask)
+	}
 
 	props := platform.ParseProperties(executionTask)
 
@@ -427,13 +431,14 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	schedulingMetadata := &scpb.SchedulingMetadata{
-		Os:               props.OS,
-		Arch:             props.Arch,
-		Pool:             props.Pool,
-		TaskSize:         taskSize,
-		MeasuredTaskSize: measuredSize,
-		ExecutorGroupId:  executorGroupID,
-		TaskGroupId:      taskGroupID,
+		Os:                props.OS,
+		Arch:              props.Arch,
+		Pool:              props.Pool,
+		TaskSize:          taskSize,
+		MeasuredTaskSize:  measuredSize,
+		PredictedTaskSize: predictedSize,
+		ExecutorGroupId:   executorGroupID,
+		TaskGroupId:       taskGroupID,
 	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
 		TaskId:         executionID,

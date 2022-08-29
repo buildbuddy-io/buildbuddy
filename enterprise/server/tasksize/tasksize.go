@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize_model"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -24,6 +25,7 @@ import (
 
 var (
 	useMeasuredSizes = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
+	modelEnabled     = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
 )
 
 const (
@@ -84,8 +86,9 @@ func Register(env environment.Env) error {
 }
 
 type taskSizer struct {
-	env environment.Env
-	rdb redis.UniversalClient
+	env   environment.Env
+	rdb   redis.UniversalClient
+	model *tasksize_model.Model
 }
 
 func NewSizer(env environment.Env) (*taskSizer, error) {
@@ -95,6 +98,13 @@ func NewSizer(env environment.Env) (*taskSizer, error) {
 			return nil, status.FailedPreconditionError("missing Redis client configuration")
 		}
 		ts.rdb = env.GetRemoteExecutionRedisClient()
+	}
+	if *modelEnabled {
+		m, err := tasksize_model.New(env)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("Failed to initialize task size model: %s", err)
+		}
+		ts.model = m
 	}
 	return ts, nil
 }
@@ -145,6 +155,13 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
 	}
+}
+
+func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+	if s.model == nil {
+		return nil
+	}
+	return s.model.Predict(ctx, task)
 }
 
 func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
