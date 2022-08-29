@@ -491,6 +491,7 @@ func (sm *Replica) populateReplicaFromSnapshot(rightSM *Replica) error {
 	if err != nil {
 		return nil
 	}
+	defer rightDB.Close()
 
 	r, w := io.Pipe()
 	go func() {
