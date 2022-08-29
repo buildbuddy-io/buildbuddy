@@ -1249,7 +1249,7 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invoca
 	i.BlobID = blobID
 	i.InvocationStatus = int64(p.InvocationStatus)
 	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
-		i.Perms = perms.OTHERS_READ
+		i.Perms |= perms.OTHERS_READ
 	}
 	i.LastChunkId = p.LastChunkId
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
