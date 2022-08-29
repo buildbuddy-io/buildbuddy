@@ -4,6 +4,7 @@ go_library(
     name = "tasksize_model",
     srcs = [
         "tasksize_model.go",
+        "tasksize_model_darwin.go",
         "tasksize_model_linux.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize_model",

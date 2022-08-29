@@ -1,7 +1,7 @@
 //go:build darwin && !ios
 // +build darwin,!ios
 
-package task_size_model
+package tasksize_model
 
 // We don't yet support model-based prediction on Mac apps, so when model-based
 // prediction is enabled just return these constants that are loosely based on
