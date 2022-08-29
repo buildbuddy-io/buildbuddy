@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -23,7 +24,6 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
-	pebbleutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"

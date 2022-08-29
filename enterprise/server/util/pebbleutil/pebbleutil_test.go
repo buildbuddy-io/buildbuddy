@@ -4,12 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 )
 
 func TestCloseLeasedDB(t *testing.T) {
