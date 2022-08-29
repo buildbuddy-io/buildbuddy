@@ -27,7 +27,7 @@ import (
 var (
 	cacheTarget  = flag.String("cache_target", "localhost:1985", "Cache target to connect to.")
 	writeQPS     = flag.Uint("write_qps", 100, "How many queries per second to attempt to write.")
-	readQPS     = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
+	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 
@@ -43,8 +43,8 @@ const (
 )
 
 var (
-	digestGenerator   *digest.Generator
-	mu                sync.Mutex
+	digestGenerator *digest.Generator
+	mu              sync.Mutex
 )
 
 var (
@@ -63,6 +63,7 @@ func init() {
 type Counter struct {
 	c uint64
 }
+
 func (c *Counter) Get() uint64 {
 	return atomic.LoadUint64(&c.c)
 }
@@ -135,18 +136,18 @@ func main() {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	eg, gctx := errgroup.WithContext(ctx)
 
-	numWriters := int(1 + (*writeQPS/100))
-	numReaders := int(1 + (*readQPS/100))
+	numWriters := int(1 + (*writeQPS / 100))
+	numReaders := int(1 + (*readQPS / 100))
 
 	writtenDigests := make(chan *repb.Digest, 10000)
-	readsPerWrite := int(math.Ceil(float64(*readQPS)/float64(*writeQPS)))
+	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
 
 	writeQPSCounter := &Counter{}
 	readQPSCounter := &Counter{}
 
 	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), int(*writeQPS))
 	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), int(*readQPS))
-	
+
 	eg.Go(func() error {
 		lastWriteCount := writeQPSCounter.Get()
 		lastReadCount := readQPSCounter.Get()
@@ -186,7 +187,6 @@ func main() {
 		})
 	}
 
-	
 	for i := 0; i < numReaders; i++ {
 		eg.Go(func() error {
 			for {
@@ -201,7 +201,7 @@ func main() {
 					}
 					readQPSCounter.Inc()
 				}
-				if rand.Intn(10) < int(*recycleRate * 10) {
+				if rand.Intn(10) < int(*recycleRate*10) {
 					writtenDigests <- d
 				}
 			}
