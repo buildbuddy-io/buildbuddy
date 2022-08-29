@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
@@ -16,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
@@ -40,9 +38,8 @@ func (fs *fakeStore) Sender() *sender.Sender {
 
 func TestOpenCloseReplica(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -95,9 +92,8 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 
 func TestReplicaDirectReadWrite(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -138,9 +134,8 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 
 func TestReplicaIncrement(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -186,9 +181,8 @@ func TestReplicaIncrement(t *testing.T) {
 
 func TestReplicaCAS(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -250,9 +244,8 @@ func TestReplicaCAS(t *testing.T) {
 
 func TestReplicaScan(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
-	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -353,9 +346,8 @@ func TestReplicaScan(t *testing.T) {
 func TestReplicaFileWrite(t *testing.T) {
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
-	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -364,9 +356,6 @@ func TestReplicaFileWrite(t *testing.T) {
 
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
-
-	db, err := repl.DB()
-	require.Nil(t, err)
 
 	// Write a file to the replica's data dir.
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
@@ -379,29 +368,13 @@ func TestReplicaFileWrite(t *testing.T) {
 		Digest: d,
 	}
 
-	fileStorer := filestore.New(true /*=isolateByGroupIDs*/)
-	fileMetadataKey, err := fileStorer.FileMetadataKey(fileRecord)
+	writeCommitter, err := repl.Writer(ctx, fileRecord)
 	require.Nil(t, err)
 
-	writeCloser, err := fileStorer.NewWriter(ctx, fileDir, fileRecord)
+	_, err = writeCommitter.Write(buf)
 	require.Nil(t, err)
-
-	_, err = writeCloser.Write(buf)
-	require.Nil(t, err)
-	require.Nil(t, writeCloser.Close())
-
-	md := &rfpb.FileMetadata{
-		FileRecord:      fileRecord,
-		StorageMetadata: writeCloser.Metadata(),
-		SizeBytes:       d.GetSizeBytes(),
-	}
-	protoBytes, err := proto.Marshal(md)
-	require.Nil(t, err)
-	batch := db.NewBatch()
-	err = batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
-	require.Nil(t, err)
-	err = batch.Commit(&pebble.WriteOptions{Sync: true})
-	require.Nil(t, err)
+	require.Nil(t, writeCommitter.Commit())
+	require.Nil(t, writeCommitter.Close())
 
 	// Do a FileWrite for the just written file: it should succeed.
 	{
@@ -442,9 +415,8 @@ func TestReplicaFileWrite(t *testing.T) {
 func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
-	fileDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, fileDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -453,9 +425,6 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
-
-	db, err := repl.DB()
-	require.Nil(t, err)
 
 	// Write a file to the replica's data dir.
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
@@ -468,30 +437,13 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 		Digest: d,
 	}
 
-	fileStorer := filestore.New(true /*=isolateByGroupIDs*/)
-	fileMetadataKey, err := fileStorer.FileMetadataKey(fileRecord)
+	writeCommitter, err := repl.Writer(ctx, fileRecord)
 	require.Nil(t, err)
 
-	writeCloser, err := fileStorer.NewWriter(ctx, fileDir, fileRecord)
+	_, err = writeCommitter.Write(buf)
 	require.Nil(t, err)
-
-	_, err = writeCloser.Write(buf)
-	require.Nil(t, err)
-	require.Nil(t, writeCloser.Close())
-
-	md := &rfpb.FileMetadata{
-		FileRecord:      fileRecord,
-		StorageMetadata: writeCloser.Metadata(),
-		SizeBytes:       d.GetSizeBytes(),
-	}
-
-	protoBytes, err := proto.Marshal(md)
-	require.Nil(t, err)
-	batch := db.NewBatch()
-	err = batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
-	require.Nil(t, err)
-	err = batch.Commit(&pebble.WriteOptions{Sync: true})
-	require.Nil(t, err)
+	require.Nil(t, writeCommitter.Commit())
+	require.Nil(t, writeCommitter.Close())
 
 	readCloser, err := repl.Reader(ctx, fileRecord, 0, 0)
 	require.Nil(t, err)
@@ -513,8 +465,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	// Restore a new replica from the created snapshot.
 	rootDir2 := testfs.MakeTempDir(t)
-	fileDir2 := testfs.MakeTempDir(t)
-	repl2 := replica.New(rootDir2, fileDir2, 2, 2, store)
+	repl2 := replica.New(rootDir2, 2, 2, store)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
 	require.Nil(t, err)

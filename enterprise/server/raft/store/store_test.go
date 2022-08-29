@@ -84,13 +84,12 @@ type TestingStore struct {
 	Sender    *sender.Sender
 
 	RootDir     string
-	FileDir     string
 	RaftAddress string
 	GRPCAddress string
 }
 
 func (ts *TestingStore) NewReplica(clusterID, nodeID uint64) *replica.Replica {
-	return replica.New(ts.RootDir, ts.FileDir, clusterID, nodeID, ts.Store)
+	return replica.New(ts.RootDir, clusterID, nodeID, ts.Store)
 }
 
 func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeHost) {
@@ -102,10 +101,8 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 		RaftAddress: localAddr(t),
 		GRPCAddress: localAddr(t),
 		RootDir:     filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
-		FileDir:     filepath.Join(sf.fileDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
 	}
 	require.Nil(t, disk.EnsureDirectoryExists(ts.RootDir))
-	require.Nil(t, disk.EnsureDirectoryExists(ts.FileDir))
 
 	reg := sf.reg
 	nrf := nodeRegistryFactory(func(nhid string, streamConnections uint64, v dbConfig.TargetValidator) (raftio.INodeRegistry, error) {
@@ -139,7 +136,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	gm.AddListener(rc)
 	ts.Sender = sender.New(rc, reg, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
-	s := store.New(ts.RootDir, ts.FileDir, nodeHost, gm, ts.Sender, reg, apiClient)
+	s := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, apiClient)
 	require.NotNil(t, s)
 	s.Start(ts.GRPCAddress)
 	ts.Store = s

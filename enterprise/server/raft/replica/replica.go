@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -628,6 +629,30 @@ func printRange(wb *pebble.Batch, tag string) {
 	defer iter.Close()
 }
 
+func (sm *Replica) deleteStoredFiles(start, end []byte) error {
+	ctx := context.Background()
+	iter := sm.db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	defer iter.Close()
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		if isLocalKey(iter.Key()) {
+			continue
+		}
+
+		fileMetadata := &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+			return err
+		}
+		if err := sm.fileStorer.DeleteStoredFile(ctx, sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitResponse, error) {
 	if req.GetLeft() == nil || req.GetProposedRight() == nil {
 		return nil, status.FailedPreconditionError("left and right ranges must be provided")
@@ -674,7 +699,13 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, sp.GetSplit(), nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
+	if err := rightSM.deleteStoredFiles([]byte{constants.MinByte}, sp.GetSplit()); err != nil {
+		return nil, err
+	}
 	if err := wb.DeleteRange(sp.GetSplit(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+	if err := sm.deleteStoredFiles(sp.GetSplit(), []byte{constants.MaxByte}); err != nil {
 		return nil, err
 	}
 
@@ -1498,7 +1529,11 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(rootDir, fileDir string, clusterID, nodeID uint64, store IStore) *Replica {
+func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
+	fileDir := filepath.Join(rootDir, fmt.Sprintf("files-c%dn%d", clusterID, nodeID))
+	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
+		log.Errorf("Error creating fileDir %q for replica: %s", fileDir, err)
+	}
 	return &Replica{
 		closedMu:   &sync.RWMutex{},
 		wg:         sync.WaitGroup{},
