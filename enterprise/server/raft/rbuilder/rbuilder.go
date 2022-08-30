@@ -74,6 +74,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_Split{
 			Split: value,
 		}
+	case *rfpb.FileDeleteRequest:
+		req.Value = &rfpb.RequestUnion_FileDelete{
+			FileDelete: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -211,4 +215,13 @@ func (br *BatchResponse) SplitResponse(n int) (*rfpb.SplitResponse, error) {
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetSplit(), br.unionError(u)
+}
+
+func (br *BatchResponse) FileDeleteResponse(n int) (*rfpb.FileDeleteResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetFileDelete(), br.unionError(u)
 }
