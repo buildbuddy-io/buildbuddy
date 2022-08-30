@@ -355,45 +355,15 @@ func (cs *ClusterStarter) syncProposeLocal(ctx context.Context, clusterID uint64
 	return rbuilder.NewBatchResponseFromProto(rsp), nil
 }
 
-func getStartingRangesSimple() []*rfpb.RangeDescriptor {
-	return []*rfpb.RangeDescriptor{
-		&rfpb.RangeDescriptor{
-			Left:  keys.Key{constants.MinByte},
-			Right: keys.MakeKey([]byte("ANON/cas/7")),
-		},
-		&rfpb.RangeDescriptor{
-			Left:  keys.MakeKey([]byte("ANON/cas/7")),
-			Right: keys.Key{constants.MaxByte},
-		},
-	}
-}
-
-func getStartingRangesComplex() []*rfpb.RangeDescriptor {
-	ranges := make([]*rfpb.RangeDescriptor, 0)
-
-	left := keys.Key{constants.MinByte}
-	for _, char := range []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"} {
-		endPoint := keys.MakeKey([]byte(fmt.Sprintf("ANON/cas/%s", char)))
-		ranges = append(ranges, &rfpb.RangeDescriptor{
-			Left:  left,
-			Right: endPoint,
-		})
-		left = endPoint
-	}
-	ranges = append(ranges, &rfpb.RangeDescriptor{
-		Left:  left,
-		Right: keys.Key{constants.MaxByte},
-	})
-	for i, r := range ranges {
-		log.Printf("Starting range %d is: %+v", i, r)
-	}
-	return ranges
-}
-
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
 func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpcAddrs map[string]string) error {
-	startingRanges := getStartingRangesSimple()
+	startingRanges := []*rfpb.RangeDescriptor{
+		&rfpb.RangeDescriptor{
+			Left:  keys.Key{constants.MinByte},
+			Right: keys.Key{constants.MaxByte},
+		},
+	}
 
 	clusterID := uint64(constants.InitialClusterID)
 	nodeID := uint64(constants.InitialNodeID)
