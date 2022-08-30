@@ -306,6 +306,32 @@ func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
 	sm.setRange(constants.LocalRangeKey, buf)
 }
 
+func (sm *Replica) fileDelete(wb *pebble.Batch, req *rfpb.FileDeleteRequest) (*rfpb.FileDeleteResponse, error) {
+	iter := wb.NewIter(nil /*default iter options*/)
+	defer iter.Close()
+
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
+	if err != nil {
+		return nil, err
+	}
+
+	found := iter.SeekGE(fileMetadataKey)
+	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
+		return nil, status.NotFoundErrorf("file data for %v was not found in replica", req.GetFileRecord())
+	}
+	fileMetadata := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+		return nil, err
+	}
+	if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
+		return nil, err
+	}
+	if err := wb.Delete(fileMetadataKey, nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+	return &rfpb.FileDeleteResponse{}, nil
+}
+
 func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
 	// In the common case, this doesn't actually write any data, because
 	// it's already been written it in a separate Write RPC. It simply
@@ -795,7 +821,12 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 			Split: r,
 		}
 		rsp.Status = statusProto(err)
-
+	case *rfpb.RequestUnion_FileDelete:
+		r, err := sm.fileDelete(wb, value.FileDelete)
+		rsp.Value = &rfpb.ResponseUnion_FileDelete{
+			FileDelete: r,
+		}
+		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}

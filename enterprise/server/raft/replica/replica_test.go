@@ -487,3 +487,72 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }
+
+func TestReplicaFileWriteDelete(t *testing.T) {
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := replica.New(rootDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.Nil(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	// Write a file to the replica's data dir.
+	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	fileRecord := &rfpb.FileRecord{
+		Isolation: &rfpb.Isolation{
+			CacheType:   rfpb.Isolation_CAS_CACHE,
+			PartitionId: "default",
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest: d,
+	}
+
+	header := &rfpb.Header{RangeId: 1, Generation: 1}
+	writeCommitter, err := repl.Writer(ctx, header, fileRecord)
+	require.NoError(t, err)
+
+	_, err = writeCommitter.Write(buf)
+	require.Nil(t, err)
+	require.Nil(t, writeCommitter.Commit())
+	require.Nil(t, writeCommitter.Close())
+
+	// Do a FileWrite for the just written file: it should succeed.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+			FileRecord: fileRecord,
+		}))
+		entries := []dbsm.Entry{entry}
+		writeRsp, err := repl.Update(entries)
+		require.Nil(t, err)
+		require.Equal(t, 1, len(writeRsp))
+	}
+	// Verify that the file is readable.
+	{
+		readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
+		require.Nil(t, err)
+		require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
+	}
+	// Delete the file.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
+			FileRecord: fileRecord,
+		}))
+		entries := []dbsm.Entry{entry}
+		deleteRsp, err := repl.Update(entries)
+		require.Nil(t, err)
+		require.Equal(t, 1, len(deleteRsp))
+	}
+	// Verify that the file is no longer readable and reading it returns a
+	// NotFoundError.
+	{
+		_, err := repl.Reader(ctx, header, fileRecord, 0, 0)
+		require.NotNil(t, err)
+		require.True(t, status.IsNotFoundError(err), err)
+	}
+}

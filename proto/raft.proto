@@ -84,6 +84,12 @@ message FileWriteRequest {
 
 message FileWriteResponse {}
 
+message FileDeleteRequest {
+  FileRecord file_record = 1;
+}
+
+message FileDeleteResponse {}
+
 message DirectWriteRequest {
   KV kv = 1;
 }
@@ -177,6 +183,7 @@ message RequestUnion {
     CASRequest cas = 6;
     FindSplitPointRequest find_split_point = 7;
     SplitRequest split = 8;
+    FileDeleteRequest file_delete = 9;
   }
 }
 
@@ -196,6 +203,7 @@ message ResponseUnion {
     CASResponse cas = 7;
     FindSplitPointResponse find_split_point = 8;
     SplitResponse split = 9;
+    FileDeleteResponse file_delete = 10;
   }
 }
 
