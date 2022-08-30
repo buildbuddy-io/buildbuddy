@@ -463,8 +463,11 @@ func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequ
 			log.Debugf("Found split point: %+v", sp)
 			return sp, nil
 		}
-
-		leftSplitSize += int64(len(iter.Value()))
+		size, err := sizeOf(iter.Key(), iter.Value())
+		if err != nil {
+			return nil, err
+		}
+		leftSplitSize += size
 		if len(lastKey) != len(iter.Key()) {
 			lastKey = make([]byte, len(iter.Key()))
 		}
