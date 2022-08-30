@@ -36,6 +36,7 @@ var (
 	realisticBlobSizes = flag.Bool("realistic_blob_sizes", true, "If true, use realistic blob sizes, ignoring blob_size flag.")
 	blobSize           = flag.Int64("blob_size", 100000, "Num bytes (max) of blob to send/read.")
 	recycleRate        = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
+	timeout            = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
 )
 
 const (
@@ -158,7 +159,7 @@ func main() {
 		lastReadCount := readQPSCounter.Get()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-gctx.Done():
 				return nil
 			case <-time.After(time.Second):
 				writeCount := writeQPSCounter.Get()
@@ -177,7 +178,9 @@ func main() {
 				if err := writeLimiter.Wait(gctx); err != nil {
 					return err
 				}
-				d, err := writeBlob(gctx, bsClient)
+				ctx, cancel := context.WithTimeout(gctx, *timeout)
+				d, err := writeBlob(ctx, bsClient)
+				cancel()
 				if err != nil {
 					return err
 				}
@@ -200,7 +203,9 @@ func main() {
 					if err := readLimiter.Wait(gctx); err != nil {
 						return err
 					}
-					err := readBlob(gctx, bsClient, d)
+					ctx, cancel := context.WithTimeout(gctx, *timeout)
+					err := readBlob(ctx, bsClient, d)
+					cancel()
 					if err != nil {
 						return err
 					}
