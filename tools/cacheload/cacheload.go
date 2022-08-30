@@ -159,7 +159,7 @@ func main() {
 		lastReadCount := readQPSCounter.Get()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-gctx.Done():
 				return nil
 			case <-time.After(time.Second):
 				writeCount := writeQPSCounter.Get()
