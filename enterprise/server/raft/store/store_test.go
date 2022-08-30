@@ -445,7 +445,7 @@ func writeNRecords(ctx context.Context, t *testing.T, stores []*TestingStore, n 
 			require.Nil(t, err)
 			groupID = strings.ToLower(g)
 		}
-		out = append(out, writeRecord(ctx, t, stores, groupID, 100))
+		out = append(out, writeRecord(ctx, t, stores, groupID, 1000))
 	}
 	return out
 }
