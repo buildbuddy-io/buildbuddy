@@ -95,11 +95,18 @@ const (
 // Options is a struct containing the pebble cache configuration options.
 // Once a cache is created, the options may not be changed.
 type Options struct {
-	RootDirectory       string
-	Partitions          []disk.Partition
-	PartitionMappings   []disk.PartitionMapping
-	MaxSizeBytes        int64
-	BlockCacheSizeBytes int64
+	RootDirectory     string
+	Partitions        []disk.Partition
+	PartitionMappings []disk.PartitionMapping
+
+	MaxSizeBytes           int64
+	BlockCacheSizeBytes    int64
+	MaxInlineFileSizeBytes int64
+
+	AtimeUpdateThreshold time.Duration
+	AtimeWriteBatchSize  int
+	AtimeBufferSize      int
+	MinEvictionAge       time.Duration
 }
 
 type sizeUpdate struct {
@@ -166,11 +173,16 @@ func Register(env environment.Env) error {
 		}
 	}
 	opts := &Options{
-		RootDirectory:       *rootDirectory,
-		Partitions:          *partitions,
-		PartitionMappings:   *partitionMappings,
-		BlockCacheSizeBytes: *blockCacheSizeBytes,
-		MaxSizeBytes:        cache_config.MaxSizeBytes(),
+		RootDirectory:          *rootDirectory,
+		Partitions:             *partitions,
+		PartitionMappings:      *partitionMappings,
+		BlockCacheSizeBytes:    *blockCacheSizeBytes,
+		MaxSizeBytes:           cache_config.MaxSizeBytes(),
+		MaxInlineFileSizeBytes: *maxInlineFileSizeBytes,
+		AtimeUpdateThreshold:   *atimeUpdateThreshold,
+		AtimeWriteBatchSize:    *atimeWriteBatchSize,
+		AtimeBufferSize:        *atimeBufferSize,
+		MinEvictionAge:         *minEvictionAge,
 	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
@@ -263,8 +275,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	ensureDefaultPartitionExists(opts)
 
 	pebbleOptions := defaultPebbleOptions()
-	if *blockCacheSizeBytes > 0 {
-		c := pebble.NewCache(*blockCacheSizeBytes)
+	if opts.BlockCacheSizeBytes > 0 {
+		c := pebble.NewCache(opts.BlockCacheSizeBytes)
 		defer c.Unref()
 		pebbleOptions.Cache = c
 	}
@@ -303,7 +315,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, opts.AtimeBufferSize, opts.MinEvictionAge)
 			if err != nil {
 				return err
 			}
@@ -332,14 +344,14 @@ func keyRange(key []byte) ([]byte, []byte) {
 	return keyPrefix(key, []byte{constants.MinByte}), keyPrefix(key, []byte{constants.MaxByte})
 }
 
-func olderThanAtimeThreshold(atime time.Time) bool {
-	age := time.Since(atime)
-	return age >= *atimeUpdateThreshold
+func olderThanThreshold(t time.Time, threshold time.Duration) bool {
+	age := time.Since(t)
+	return age >= threshold
 }
 
-func batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
+func (p *PebbleCache) batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-	if !olderThanAtimeThreshold(atime) {
+	if !olderThanThreshold(atime, p.opts.AtimeUpdateThreshold) {
 		return nil
 	}
 	fileMetadata.LastAccessUsec = time.Now().UnixMicro()
@@ -388,10 +400,10 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 				log.Warningf("Error unmarshaling data for %q: %s", accessTimeUpdate.fileMetadataKey, err)
 				continue
 			}
-			if err := batchEditAtime(batch, accessTimeUpdate.fileMetadataKey, md); err != nil {
+			if err := p.batchEditAtime(batch, accessTimeUpdate.fileMetadataKey, md); err != nil {
 				log.Warningf("Error updating atime: %s", err)
 			}
-			if int(batch.Count()) >= *atimeWriteBatchSize {
+			if int(batch.Count()) >= p.opts.AtimeWriteBatchSize {
 				flush()
 			}
 		case <-time.After(time.Second):
@@ -922,7 +934,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 			continue
 		}
-		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
+		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.opts.AtimeUpdateThreshold, p.opts.AtimeBufferSize)
 
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
@@ -966,9 +978,9 @@ func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delt
 	p.edits <- up
 }
 
-func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) {
+func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata, updateThreshold time.Duration, atimeBufferSize int) {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-	if !olderThanAtimeThreshold(atime) {
+	if !olderThanThreshold(atime, updateThreshold) {
 		return
 	}
 
@@ -979,7 +991,7 @@ func sendAtimeUpdate(accesses chan<- *accessTimeUpdate, fileMetadataKey []byte, 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
 	// so in that case just do a regular channel send. Otherwise; use a non-
 	// blocking channel send.
-	if *atimeBufferSize == 0 {
+	if atimeBufferSize == 0 {
 		accesses <- up
 	} else {
 		select {
@@ -1084,7 +1096,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 
 	rc, err := p.fileStorer.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
-		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata)
+		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.opts.AtimeUpdateThreshold, p.opts.AtimeBufferSize)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
 		p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 	}
@@ -1138,7 +1150,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	}
 
 	var wcm filestore.WriteCloserMetadata
-	if d.GetSizeBytes() < *maxInlineFileSizeBytes {
+	if d.GetSizeBytes() < p.opts.MaxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, d.GetSizeBytes())
 	} else {
 		fw, err := p.fileStorer.FileWriter(ctx, p.blobDir(), fileRecord)
@@ -1238,19 +1250,25 @@ type partitionEvictor struct {
 	acCount     int64
 	lastRun     time.Time
 	lastEvicted *evictionPoolEntry
+
+	atimeUpdateThreshold time.Duration
+	atimeBufferSize      int
+	minEvictionAge       time.Duration
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:         &sync.Mutex{},
-		part:       part,
-		fileStorer: fileStorer,
-		blobDir:    blobDir,
-		casPrefix:  []byte(part.ID + "/cas/"),
-		acPrefix:   []byte(part.ID + "/ac/"),
-		samplePool: make([]*evictionPoolEntry, 0, samplePoolSize),
-		dbGetter:   dbg,
-		accesses:   accesses,
+		mu:              &sync.Mutex{},
+		part:            part,
+		fileStorer:      fileStorer,
+		blobDir:         blobDir,
+		casPrefix:       []byte(part.ID + "/cas/"),
+		acPrefix:        []byte(part.ID + "/ac/"),
+		samplePool:      make([]*evictionPoolEntry, 0, samplePoolSize),
+		dbGetter:        dbg,
+		accesses:        accesses,
+		atimeBufferSize: atimeBufferSize,
+		minEvictionAge:  minEvictionAge,
 	}
 	start := time.Now()
 	log.Printf("Pebble Cache: Initializing cache partition %q...", part.ID)
@@ -1459,12 +1477,12 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 
 func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 	if s.fileMetadata.GetLastAccessUsec() == 0 {
-		sendAtimeUpdate(e.accesses, s.fileMetadataKey, s.fileMetadata)
+		sendAtimeUpdate(e.accesses, s.fileMetadataKey, s.fileMetadata /* force an update */, 0, e.atimeBufferSize)
 		return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
 	}
 	atime := time.UnixMicro(s.fileMetadata.GetLastAccessUsec())
 	age := time.Since(atime)
-	if age < *minEvictionAge {
+	if age < e.minEvictionAge {
 		return status.FailedPreconditionErrorf("File %q was not old enough: age %s", s.fileMetadataKey, age)
 	}
 	s.timestamp = atime.UnixNano()
