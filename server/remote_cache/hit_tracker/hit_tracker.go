@@ -42,6 +42,11 @@ const (
 	// detailed results from the metrics collector.
 	scorecardResultsExpiration = 3 * time.Hour
 
+	// CacheMissScoreCardLimit is the maximum number of results to return in
+	// the "cache misses" card (the card displayed when detailed stats are
+	// not enabled).
+	CacheMissScoreCardLimit = 1000
+
 	// Prometheus CacheEventTypeLabel values
 
 	hitLabel    = "hit"
@@ -512,8 +517,8 @@ func ScoreCard(ctx context.Context, env environment.Env, iid string) *capb.Score
 	// the number of cache misses to 1K if there are more than that. Too
 	// many are not useful in the UI and we don't want to pay the storage
 	// cost either.
-	if len(sortedKeys) > 1000 {
-		sortedKeys = sortedKeys[:1000]
+	if len(sortedKeys) > CacheMissScoreCardLimit {
+		sortedKeys = sortedKeys[:CacheMissScoreCardLimit]
 	}
 	sort.Strings(sortedKeys)
 
