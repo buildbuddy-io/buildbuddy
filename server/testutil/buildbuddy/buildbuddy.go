@@ -7,11 +7,11 @@ import (
 )
 
 // Run a local BuildBuddy server for the scope of the given test case.
-func Run(t *testing.T) *app.App {
+func Run(t *testing.T, args ...string) *app.App {
 	return app.Run(
 		t,
 		/* commandPath= */ "server/cmd/buildbuddy/buildbuddy_/buildbuddy",
-		/* commandArgs= */ []string{},
+		/* commandArgs= */ args,
 		/* configPath= */ "config/buildbuddy.local.yaml",
 	)
 }

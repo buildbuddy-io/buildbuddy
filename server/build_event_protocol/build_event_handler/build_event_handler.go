@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
@@ -40,11 +41,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
@@ -473,7 +476,42 @@ func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationJW
 	if auth := w.env.GetAuthenticator(); auth != nil {
 		ctx = auth.AuthContextFromTrustedJWT(ctx, ij.jwt)
 	}
-	return LookupInvocation(w.env, ctx, ij.id)
+	inv, err := LookupInvocation(w.env, ctx, ij.id)
+	if err != nil {
+		return nil, err
+	}
+	// If detailed cache stats are enabled, the invocation will be missing the
+	// scorecard misses field (with only AC misses) that we used to populate.
+	// Populate these here for backwards compatibility.
+	if hit_tracker.DetailedStatsEnabled() {
+		tok, err := paging.EncodeOffsetLimit(&pgpb.OffsetLimit{Limit: hit_tracker.CacheMissScoreCardLimit})
+		if err != nil {
+			return nil, status.InternalErrorf("failed to encode page token: %s", err)
+		}
+		req := &capb.GetCacheScoreCardRequest{
+			InvocationId: ij.id,
+			PageToken:    tok,
+			Filter: &capb.GetCacheScoreCardRequest_Filter{
+				Mask: &fieldmaskpb.FieldMask{
+					Paths: []string{
+						"cache_type",
+						"request_type",
+						"response_type",
+					},
+				},
+				CacheType:    capb.CacheType_AC,
+				RequestType:  capb.RequestType_READ,
+				ResponseType: capb.ResponseType_NOT_FOUND,
+			},
+		}
+		sc, err := scorecard.GetCacheScoreCard(ctx, w.env, req)
+		if err != nil {
+			log.Warningf("Failed to read cache scorecard for invocation %q: %s", req.InvocationId, err)
+		} else {
+			inv.ScoreCard = &capb.ScoreCard{Misses: sc.GetResults()}
+		}
+	}
+	return inv, nil
 }
 
 func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
