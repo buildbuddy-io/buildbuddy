@@ -1285,9 +1285,8 @@ type partitionEvictor struct {
 	lastRun     time.Time
 	lastEvicted *evictionPoolEntry
 
-	atimeUpdateThreshold time.Duration
-	atimeBufferSize      int
-	minEvictionAge       time.Duration
+	atimeBufferSize int
+	minEvictionAge  time.Duration
 }
 
 func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration) (*partitionEvictor, error) {
@@ -1511,7 +1510,7 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 
 func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
 	if s.fileMetadata.GetLastAccessUsec() == 0 {
-		sendAtimeUpdate(e.accesses, s.fileMetadataKey, s.fileMetadata /* force an update */, 0, e.atimeBufferSize)
+		sendAtimeUpdate(e.accesses, s.fileMetadataKey, s.fileMetadata, 0 /*force an update*/, e.atimeBufferSize)
 		return status.FailedPreconditionErrorf("File %q had no atime set", s.fileMetadataKey)
 	}
 	atime := time.UnixMicro(s.fileMetadata.GetLastAccessUsec())
