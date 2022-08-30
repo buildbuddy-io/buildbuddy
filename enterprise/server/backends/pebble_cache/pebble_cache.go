@@ -44,8 +44,8 @@ import (
 
 var (
 	rootDirectory          = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
-	blockCacheSizeBytes    = flag.Int64("cache.pebble.block_cache_size_bytes", 1000*megabyte, "How much ram to give the block cache")
-	maxInlineFileSizeBytes = flag.Int64("cache.pebble.max_inline_file_size_bytes", 1024, "Files smaller than this may be inlined directly into pebble")
+	blockCacheSizeBytes    = flag.Int64("cache.pebble.block_cache_size_bytes", defaultBlockCacheSizeBytes, "How much ram to give the block cache")
+	maxInlineFileSizeBytes = flag.Int64("cache.pebble.max_inline_file_size_bytes", defaultMaxInlineFileSizeBytes, "Files smaller than this may be inlined directly into pebble")
 	partitions             = flagutil.New("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappings      = flagutil.New("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
@@ -57,10 +57,10 @@ var (
 	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
-	atimeUpdateThreshold      = flag.Duration("cache.pebble.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
-	atimeWriteBatchSize       = flag.Int("cache.pebble.atime_write_batch_size", 1000, "Buffer this many writes before writing atime data")
-	atimeBufferSize           = flag.Int("cache.pebble.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	minEvictionAge            = flag.Duration("cache.pebble.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
+	atimeUpdateThreshold      = flag.Duration("cache.pebble.atime_update_threshold", defaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
+	atimeWriteBatchSize       = flag.Int("cache.pebble.atime_write_batch_size", defaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
+	atimeBufferSize           = flag.Int("cache.pebble.atime_buffer_size", defaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	minEvictionAge            = flag.Duration("cache.pebble.min_eviction_age", defaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 )
 
 const (
@@ -90,6 +90,14 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
+
+	// Default values for options
+	defaultBlockCacheSizeBytes    = 1000 * megabyte
+	defaultMaxInlineFileSizeBytes = 1024
+	defaultAtimeUpdateThreshold   = 10 * time.Minute
+	defaultAtimeWriteBatchSize    = 1000
+	defaultAtimeBufferSize        = 100000
+	defaultMinEvictionAge         = 6 * time.Hour
 )
 
 // Options is a struct containing the pebble cache configuration options.
@@ -223,6 +231,9 @@ func Register(env environment.Env) error {
 // validateOpts validates that each partition mapping references a partition
 // and that MaxSizeBytes is non-zero.
 func validateOpts(opts *Options) error {
+	if opts.RootDirectory == "" {
+		return status.FailedPreconditionError("Pebble cache root directory must be set")
+	}
 	if opts.MaxSizeBytes == 0 {
 		return status.FailedPreconditionError("Pebble cache size must be greater than 0")
 	}
@@ -240,6 +251,28 @@ func validateOpts(opts *Options) error {
 		}
 	}
 	return nil
+}
+
+// setOptionDefaults sets default values on the Options if they are not set
+func setOptionDefaults(opts *Options) {
+	if opts.BlockCacheSizeBytes == 0 {
+		opts.BlockCacheSizeBytes = defaultBlockCacheSizeBytes
+	}
+	if opts.MaxInlineFileSizeBytes == 0 {
+		opts.MaxInlineFileSizeBytes = defaultMaxInlineFileSizeBytes
+	}
+	if opts.AtimeUpdateThreshold == 0 {
+		opts.AtimeUpdateThreshold = defaultAtimeUpdateThreshold
+	}
+	if opts.AtimeWriteBatchSize == 0 {
+		opts.AtimeWriteBatchSize = defaultAtimeWriteBatchSize
+	}
+	if opts.AtimeBufferSize == 0 {
+		opts.AtimeBufferSize = defaultAtimeBufferSize
+	}
+	if opts.MinEvictionAge == 0 {
+		opts.MinEvictionAge = defaultMinEvictionAge
+	}
 }
 
 func ensureDefaultPartitionExists(opts *Options) {
@@ -266,6 +299,7 @@ func defaultPebbleOptions() *pebble.Options {
 
 // NewPebbleCache creates a new cache from the provided env and opts.
 func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
+	setOptionDefaults(opts)
 	if err := validateOpts(opts); err != nil {
 		return nil, err
 	}
