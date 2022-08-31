@@ -171,6 +171,9 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 
 	defer r.setConnected(false)
 
+	registrationTicker := time.NewTicker(schedulerCheckInInterval)
+	defer registrationTicker.Stop()
+
 	for {
 		stream, err := r.schedulerClient.RegisterAndStreamWork(ctx)
 		if err != nil {
@@ -204,7 +207,6 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 			}
 		}()
 
-		registrationTicker := time.NewTicker(schedulerCheckInInterval)
 		for {
 			done, err := r.processWorkStream(ctx, stream, schedulerMsgs, registrationTicker)
 			if err != nil {

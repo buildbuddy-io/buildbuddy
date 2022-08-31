@@ -260,6 +260,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 	}()
 
 	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
+	defer checkCredentialsTicker.Stop()
 
 	executorID := "unknown"
 	for {

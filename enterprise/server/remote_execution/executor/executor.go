@@ -245,6 +245,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// Run a timer that periodically sends update messages back
 	// to our caller while execution is ongoing.
 	updateTicker := time.NewTicker(execProgressCallbackPeriod)
+	defer updateTicker.Stop()
 	var cmdResult *interfaces.CommandResult
 	for cmdResult == nil {
 		select {
