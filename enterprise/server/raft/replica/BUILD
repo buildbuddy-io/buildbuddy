@@ -40,6 +40,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testdigest",
         "//server/testutil/testfs",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_lni_dragonboat_v3//statemachine",
         "@com_github_stretchr_testify//require",

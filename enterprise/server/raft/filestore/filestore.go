@@ -78,6 +78,7 @@ type Store interface {
 	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error)
 
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
+	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
 }
 
 type fileStorer struct {
@@ -233,5 +234,15 @@ func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *
 		return os.Remove(fs.FilePath(fileDir, md.GetFileMetadata()))
 	default:
 		return nil
+	}
+}
+
+func (fs *fileStorer) FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool {
+	switch {
+	case md.GetFileMetadata() != nil:
+		exists, err := disk.FileExists(ctx, fs.FilePath(fileDir, md.GetFileMetadata()))
+		return exists && err == nil
+	default:
+		return true
 	}
 }

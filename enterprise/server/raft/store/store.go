@@ -365,6 +365,33 @@ func (s *Store) Sender() *sender.Sender {
 	return s.sender
 }
 
+func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
+	fileMetadataKey, err := s.fileStorer.FileMetadataKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	var rc io.ReadCloser
+	err = s.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		if h.GetReplica().GetClusterId() == except.GetClusterId() &&
+			h.GetReplica().GetNodeId() == except.GetNodeId() {
+			return status.OutOfRangeError("except node")
+		}
+		req := &rfpb.ReadRequest{
+			Header:     h,
+			FileRecord: fileRecord,
+			Offset:     0,
+			Limit:      0,
+		}
+		r, err := s.apiClient.RemoteReader(ctx, c, req)
+		if err != nil {
+			return err
+		}
+		rc = r
+		return nil
+	})
+	return rc, err
+}
+
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	// This code will be called by all replicas in a range when
 	// doing a split, so we do not check for range leases here.
