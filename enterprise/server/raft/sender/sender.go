@@ -146,7 +146,6 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 }
 
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
-type runAllFunc func(peerHeaders []*client.PeerHeader) error
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) (int, error) {
 	for i, replica := range rd.GetReplicas() {
@@ -215,6 +214,8 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 	return status.UnavailableError("sender.Run retries exceeded")
 }
 
+type runAllFunc func(peerHeaders []*client.PeerHeader) error
+
 // RunAll is similar to Run but instead of trying replicas one at a time,
 // fn will be passed information about all the replicas for performing
 // operations that span multiple replicas.
@@ -258,6 +259,93 @@ func (s *Sender) RunAll(ctx context.Context, key []byte, fn runAllFunc) error {
 		}
 	}
 	return status.UnavailableError("sender.RunAll retries exceeded")
+}
+
+// KeyMeta contains a key with arbitrary data attached.
+type KeyMeta struct {
+	Key  []byte
+	Meta interface{}
+}
+
+type rangeKeys struct {
+	keys []*KeyMeta
+	rd   *rfpb.RangeDescriptor
+}
+
+type runMultiKeyFunc func(c rfspb.ApiClient, h *rfpb.Header, keys []*KeyMeta) (interface{}, error)
+
+func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skipRangeCache bool) (map[uint64]*rangeKeys, error) {
+	keysByRange := make(map[uint64]*rangeKeys)
+	for _, keyMeta := range keys {
+		rd, err := s.LookupRangeDescriptor(ctx, keyMeta.Key, skipRangeCache)
+		if err != nil {
+			return nil, err
+		}
+		if v, ok := keysByRange[rd.GetRangeId()]; ok {
+			// Uncommon, but means range information changed while we were
+			// partitioning.
+			if !proto.Equal(v.rd, rd) {
+				return s.partitionKeysByRange(ctx, keys, skipRangeCache)
+			}
+		} else {
+			keysByRange[rd.GetRangeId()] = &rangeKeys{rd: rd}
+		}
+		keysByRange[rd.GetRangeId()].keys = append(keysByRange[rd.GetRangeId()].keys, keyMeta)
+	}
+	return keysByRange, nil
+}
+
+// RunMultiKey is similar to Run but works on multiple keys to support batch
+// operations.
+//
+// This method takes care of partitioning the keys into different
+// ranges and passing appropriate replica information to the user provided
+// function.
+//
+// RunMultiKey returns a combined slice of the values returned from successful
+// fn calls.
+func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc) ([]interface{}, error) {
+	retrier := retry.DefaultWithContext(ctx)
+	skipRangeCache := false
+	var rsps []interface{}
+	remainingKeys := keys
+	for retrier.Next() {
+		keysByRange, err := s.partitionKeysByRange(ctx, remainingKeys, skipRangeCache)
+		if err != nil {
+			return nil, err
+		}
+
+		// We'll repopulate remaining keys below.
+		remainingKeys = nil
+
+		for _, rk := range keysByRange {
+			var rangeRsp interface{}
+			_, err = s.tryReplicas(ctx, rk.rd, func(c rfspb.ApiClient, h *rfpb.Header) error {
+				rsp, err := fn(c, h, rk.keys)
+				if err != nil {
+					return err
+				}
+				rangeRsp = rsp
+				return nil
+			})
+			if err != nil {
+				if !status.IsOutOfRangeError(err) {
+					return nil, err
+				}
+				skipRangeCache = true
+				// No luck for the keys in the range on this try, let's try them
+				// on the next attempt.
+				remainingKeys = append(remainingKeys, rk.keys...)
+			} else {
+				rsps = append(rsps, rangeRsp)
+			}
+		}
+
+		if len(remainingKeys) == 0 {
+			return rsps, nil
+		}
+	}
+	return nil, status.UnavailableError("sender.RunMultiKey retries exceeded")
 }
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {

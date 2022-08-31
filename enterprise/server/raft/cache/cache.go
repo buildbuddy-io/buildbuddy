@@ -422,7 +422,8 @@ func (rc *RaftCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.
 }
 
 func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	reqs := make(map[uint64]*rfpb.FindMissingRequest)
+	var keys []*sender.KeyMeta
+
 	for _, d := range digests {
 		fileRecord, err := rc.makeFileRecord(ctx, d)
 		if err != nil {
@@ -432,38 +433,35 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 		if err != nil {
 			return nil, err
 		}
-		rangeDescriptor, err := rc.sender.LookupRangeDescriptor(ctx, fileMetadataKey, false /*skipCache*/)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := reqs[rangeDescriptor.GetRangeId()]; !ok {
-			reqs[rangeDescriptor.GetRangeId()] = &rfpb.FindMissingRequest{}
-		}
-		req := reqs[rangeDescriptor.GetRangeId()]
-		req.FileRecord = append(req.FileRecord, fileRecord)
+		keys = append(keys, &sender.KeyMeta{Key: fileMetadataKey, Meta: fileRecord})
 	}
 
-	missingDigests := make([]*repb.Digest, 0)
-	for _, req := range reqs {
-		fileMetadataKey, err := rc.fileStorer.FileMetadataKey(req.GetFileRecord()[0])
-		if err != nil {
-			return nil, err
+	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+		req := &rfpb.FindMissingRequest{Header: h}
+		for _, k := range keys {
+			fr, ok := k.Meta.(*rfpb.FileRecord)
+			if !ok {
+				return nil, status.InternalError("type is not *rfpb.FileRecord")
+			}
+			req.FileRecord = append(req.FileRecord, fr)
 		}
-		err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-			req.Header = h
-			rsp, err := c.FindMissing(ctx, req)
-			if err != nil {
-				return err
-			}
-			for _, fr := range rsp.GetFileRecord() {
-				missingDigests = append(missingDigests, fr.GetDigest())
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, err
+		return c.FindMissing(ctx, req)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var missingDigests []*repb.Digest
+	for _, rsp := range rsps {
+		fmr, ok := rsp.(*rfpb.FindMissingResponse)
+		if !ok {
+			return nil, status.InternalError("response not of type *rfpb.FindMissingResponse")
+		}
+		for _, fr := range fmr.GetFileRecord() {
+			missingDigests = append(missingDigests, fr.GetDigest())
 		}
 	}
+
 	return missingDigests, nil
 }
 
