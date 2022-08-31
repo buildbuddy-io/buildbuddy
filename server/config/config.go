@@ -20,16 +20,10 @@ var (
 	// If you wish to extract a section of the config to the Config struct as opposed to parsing into flags:
 	// 1. Set the section name in configKeysToExtract so the flag parser will know to ignore it
 	// 2. Define the section in the Config struct using `yaml` tags
-	configKeysToExtract = []string{"migration"}
+	configKeysToExtract []string
 )
 
-type Config struct {
-	CacheBlock *CacheBlock `yaml:"cache"`
-}
-
-type CacheBlock struct {
-	MigrationConfig *MigrationConfig `yaml:"migration"`
-}
+type Config struct{}
 
 func init() {
 	// As this flag determines the YAML file we read the config from, it can't
