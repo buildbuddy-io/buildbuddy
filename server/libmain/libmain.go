@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/slack"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
@@ -182,6 +183,11 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	}
 	if err := disk_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
+	}
+	if cfg.CacheBlock != nil && cfg.CacheBlock.MigrationConfig != nil {
+		if err := migration_cache.Register(realEnv, *cfg.CacheBlock.MigrationConfig); err != nil {
+			log.Fatal(err.Error())
+		}
 	}
 	if realEnv.GetCache() != nil {
 		log.Printf("Cache: BuildBuddy cache API enabled!")
