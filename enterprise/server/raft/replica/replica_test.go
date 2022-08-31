@@ -1,6 +1,7 @@
 package replica_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -22,11 +23,18 @@ import (
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
-type fakeStore struct{}
+type fileReadFn func(fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
+
+type fakeStore struct {
+	fileReadFn fileReadFn
+}
 
 func (fs *fakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
 func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
 func (fs *fakeStore) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
+	if fs.fileReadFn != nil {
+		return fs.fileReadFn(fileRecord)
+	}
 	return nil, nil
 }
 func (fs *fakeStore) GetReplica(rangeID uint64) (*replica.Replica, error) {
@@ -34,6 +42,10 @@ func (fs *fakeStore) GetReplica(rangeID uint64) (*replica.Replica, error) {
 }
 func (fs *fakeStore) Sender() *sender.Sender {
 	return nil
+}
+func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
+	fs.fileReadFn = fn
+	return fs
 }
 
 func TestOpenCloseReplica(t *testing.T) {
@@ -436,6 +448,14 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	// Write a file to the replica's data dir.
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+
+	store = store.WithFileReadFn(func(fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
+		if fileRecord.GetDigest().GetHash() == d.GetHash() {
+			return io.NopCloser(bytes.NewReader(buf)), nil
+		}
+		return nil, status.NotFoundError("File not found")
+	})
+
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
 			CacheType:   rfpb.Isolation_CAS_CACHE,
