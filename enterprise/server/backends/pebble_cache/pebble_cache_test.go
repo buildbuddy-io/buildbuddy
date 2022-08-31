@@ -54,12 +54,7 @@ func TestACIsolation(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := testfs.MakeTempDir(t)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,12 +82,7 @@ func TestIsolation(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := testfs.MakeTempDir(t)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,12 +171,7 @@ func TestGetSet(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := testfs.MakeTempDir(t)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,12 +208,7 @@ func TestMetadata(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := testfs.MakeTempDir(t)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,12 +279,7 @@ func TestMultiGetSet(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := testfs.MakeTempDir(t)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,12 +319,7 @@ func TestReadWrite(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	rootDir := testfs.MakeTempDir(t)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,13 +359,9 @@ func TestSizeLimit(t *testing.T) {
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
 
-	maxSizeBytes := int64(1_000_000_000) // 1GB
+	maxSizeBytes := int64(100_000_000)
 	rootDir := testfs.MakeTempDir(t)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,6 +398,11 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestNoEarlyEviction(t *testing.T) {
+	flags.Set(t, "cache.pebble.atime_update_threshold", 0) // update atime on every access
+	flags.Set(t, "cache.pebble.atime_write_batch_size", 1) // write atime updates synchronously
+	flags.Set(t, "cache.pebble.atime_buffer_size", 0)      // blocking channel of atime updates
+	flags.Set(t, "cache.pebble.min_eviction_age", 0)       // no min eviction age
+
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -443,20 +414,9 @@ func TestNoEarlyEviction(t *testing.T) {
 			float64(numDigests) *
 				float64(digestSize) *
 				(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
+
 	rootDir := testfs.MakeTempDir(t)
-	atimeUpdateThreshold := time.Duration(0) // update atime on every access
-	atimeWriteBatchSize := 1                 // write atime updates synchronously
-	atimeBufferSize := 0                     // blocking channel of atime updates
-	minEvictionAge := time.Duration(0)       // no min eviction age
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory:        &rootDir,
-		MaxSizeBytes:         &maxSizeBytes,
-		AtimeUpdateThreshold: &atimeUpdateThreshold,
-		AtimeWriteBatchSize:  &atimeWriteBatchSize,
-		AtimeBufferSize:      &atimeBufferSize,
-		MinEvictionAge:       &minEvictionAge,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,6 +445,11 @@ func TestNoEarlyEviction(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
+	flags.Set(t, "cache.pebble.atime_update_threshold", 0) // update atime on every access
+	flags.Set(t, "cache.pebble.atime_write_batch_size", 1) // write atime updates synchronously
+	flags.Set(t, "cache.pebble.atime_buffer_size", 0)      // blocking channel of atime updates
+	flags.Set(t, "cache.pebble.min_eviction_age", 0)       // no min eviction age
+
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -494,19 +459,7 @@ func TestLRU(t *testing.T) {
 	maxSizeBytes := int64(math.Ceil( // account for integer rounding
 		float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 	rootDir := testfs.MakeTempDir(t)
-	atimeUpdateThreshold := time.Duration(0) // update atime on every access
-	atimeWriteBatchSize := 1                 // write atime updates synchronously
-	atimeBufferSize := 0                     // blocking channel of atime updates
-	minEvictionAge := time.Duration(0)       // no min eviction age
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory:        &rootDir,
-		MaxSizeBytes:         &maxSizeBytes,
-		AtimeUpdateThreshold: &atimeUpdateThreshold,
-		AtimeWriteBatchSize:  &atimeWriteBatchSize,
-		AtimeBufferSize:      &atimeBufferSize,
-		MinEvictionAge:       &minEvictionAge,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,11 +563,7 @@ func TestMigrationFromDiskV1(t *testing.T) {
 	}
 
 	pebbleDir := testfs.MakeTempDir(t)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &pebbleDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: pebbleDir, MaxSizeBytes: maxSizeBytes})
 	require.Nil(t, err)
 	err = pc.MigrateFromDiskDir(diskDir)
 	require.Nil(t, err)
@@ -684,12 +633,12 @@ func TestMigrationFromDiskV2(t *testing.T) {
 	}
 
 	pebbleDir := testfs.MakeTempDir(t)
-	pebbleConfig := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory:     &pebbleDir,
-		MaxSizeBytes:      &maxSizeBytes,
+	pebbleConfig := &pebble_cache.Options{
+		RootDirectory:     pebbleDir,
+		MaxSizeBytes:      maxSizeBytes,
 		Partitions:        diskConfig.Partitions,
 		PartitionMappings: diskConfig.PartitionMappings,
-	})
+	}
 	pc, err := pebble_cache.NewPebbleCache(te, pebbleConfig)
 	require.Nil(t, err)
 	err = pc.MigrateFromDiskDir(diskDir)
@@ -715,10 +664,7 @@ func TestStartupScan(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	if err != nil {
 		t.Fatal(err)
@@ -778,10 +724,7 @@ func TestDeleteOrphans(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	if err != nil {
 		t.Fatal(err)
@@ -898,10 +841,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	if err != nil {
 		t.Fatal(err)
@@ -951,11 +891,7 @@ func BenchmarkGetMulti(b *testing.B) {
 
 	maxSizeBytes := int64(100_000_000)
 	rootDir := testfs.MakeTempDir(b)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -1004,11 +940,7 @@ func BenchmarkFindMissing(b *testing.B) {
 
 	maxSizeBytes := int64(100_000_000)
 	rootDir := testfs.MakeTempDir(b)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -1057,11 +989,7 @@ func BenchmarkContains1(b *testing.B) {
 
 	maxSizeBytes := int64(100_000_000)
 	rootDir := testfs.MakeTempDir(b)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -1099,11 +1027,7 @@ func BenchmarkSet(b *testing.B) {
 
 	maxSizeBytes := int64(100_000_000)
 	rootDir := testfs.MakeTempDir(b)
-	options := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
-		RootDirectory: &rootDir,
-		MaxSizeBytes:  &maxSizeBytes,
-	})
-	pc, err := pebble_cache.NewPebbleCache(te, options)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
 	if err != nil {
 		b.Fatal(err)
 	}
