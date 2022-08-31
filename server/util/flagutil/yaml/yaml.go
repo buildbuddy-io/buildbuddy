@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/file"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -24,7 +25,11 @@ const spacesPerYAMLIndentLevel = 4
 var (
 	// Flag names to ignore when generating a YAML map or populating flags (e. g.,
 	// the flag specifying the path to the config file)
-	ignoreSet = make(map[string]struct{})
+	flagIgnoreSet = make(map[string]struct{})
+
+	// Keys in the yaml file to ignore when populating flags
+	// We can use this if there are sections of the yaml we do not want to parse as a flag
+	keyIgnoreSet = make(map[string]struct{})
 
 	nilableKinds = map[reflect.Kind]struct{}{
 		reflect.Chan:      {},
@@ -51,14 +56,20 @@ func generateWordWrapRegexByIndentationLevel(targetLineLength, minWrapLength int
 // IgnoreFlagForYAML ignores the flag with this name when generating YAML and when
 // populating flags from YAML input.
 func IgnoreFlagForYAML(name string) {
-	ignoreSet[name] = struct{}{}
+	flagIgnoreSet[name] = struct{}{}
+}
+
+// IgnoreKeyForYAML ignores the key in the yaml file with this name when populating flags
+// We can use this if there are sections of the yaml we do not want to parse as flags
+func IgnoreKeyForYAML(name string) {
+	keyIgnoreSet[name] = struct{}{}
 }
 
 // IgnoreFilter is a filter that checks flags against IgnoreSet.
 func IgnoreFilter(flg *flag.Flag) bool {
 	keys := strings.Split(flg.Name, ".")
 	for i := range keys {
-		if _, ok := ignoreSet[strings.Join(keys[:i+1], ".")]; ok {
+		if _, ok := flagIgnoreSet[strings.Join(keys[:i+1], ".")]; ok {
 			return false
 		}
 	}
@@ -457,6 +468,11 @@ func RemoveEmptyMapsFromYAMLMap(m map[string]any) map[string]any {
 // flags.
 func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, prefix []string) error {
 	for k := range yamlMap {
+		if _, shouldIgnoreKey := keyIgnoreSet[k]; shouldIgnoreKey {
+			delete(yamlMap, k)
+			continue
+		}
+
 		label := append(prefix, k)
 		if _, ok := typeMap[k]; !ok {
 			// No flag corresponds to this, warn and delete.
@@ -543,39 +559,40 @@ func onSIGHUP(fn func() error) {
 	}()
 }
 
-// PopulateFlagsFromData takes the path to some YAML file, reads it, and
-// unmarshals it, then uses the umnarshaled data to populate the unset flags
-// with names corresponding to the keys.
+// PopulateFlagsFromFile populates unset flags with data from an input config file
 func PopulateFlagsFromFile(configFile string) error {
 	log.Infof("Reading buildbuddy config from '%s'", configFile)
-
-	_, err := os.Stat(configFile)
-
-	// If the file does not exist then skip it.
-	if os.IsNotExist(err) {
-		log.Warningf("No config file found at %s.", configFile)
-		return nil
-	}
-
-	fileBytes, err := os.ReadFile(configFile)
+	fileBytes, err := file.ReadFile(configFile)
 	if err != nil {
-		return fmt.Errorf("Error reading config file: %s", err)
-	}
-
-	if err := PopulateFlagsFromData(fileBytes); err != nil {
+		// If the file does not exist then skip it.
+		if status.IsNotFoundError(err) {
+			log.Warningf("No config file found at %s.", configFile)
+			return nil
+		}
 		return err
 	}
 
-	// Setup a listener to re-read the config file on SIGHUP.
-	onSIGHUP(func() error {
-		log.Infof("Re-reading buildbuddy config from '%s'", configFile)
-		fileBytes, err := os.ReadFile(configFile)
-		if err != nil {
-			return fmt.Errorf("Error reading config file: %s", err)
-		}
-		return PopulateFlagsFromData(fileBytes)
-	})
+	return PopulateFlagsFromData(fileBytes)
+}
+
+// PopulateFlagsFromFileWithReread calls PopulateFlagsFromFile, and ensures the flags are reset
+// if the connection is disconnected
+func PopulateFlagsFromFileWithReread(configFile string) error {
+	err := PopulateFlagsFromFile(configFile)
+	if err != nil {
+		return err
+	}
+
+	RereadFlagsOnDisconnect(configFile)
 	return nil
+}
+
+// RereadFlagsOnDisconnect sets up a listener to re-read a config file and reset flags on SIGHUP
+func RereadFlagsOnDisconnect(configFile string) {
+	onSIGHUP(func() error {
+		log.Infof("Re-reading buildbuddy config %s", configFile)
+		return PopulateFlagsFromFile(configFile)
+	})
 }
 
 // PopulateFlagsFromYAMLMap takes a map populated by YAML from some YAML input
@@ -609,7 +626,7 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 				}
 			}
 			p := append(prefix, k)
-			if _, ok := ignoreSet[strings.Join(p, ".")]; ok {
+			if _, ok := flagIgnoreSet[strings.Join(p, ".")]; ok {
 				return nil
 			}
 			if err := populateFlagsFromYAML(v, p, n, setFlags); err != nil {
@@ -619,7 +636,7 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 		return nil
 	}
 	name := strings.Join(prefix, ".")
-	if _, ok := ignoreSet[name]; ok {
+	if _, ok := flagIgnoreSet[name]; ok {
 		return nil
 	}
 

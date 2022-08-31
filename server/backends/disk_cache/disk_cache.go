@@ -52,10 +52,10 @@ const (
 )
 
 var (
-	rootDirectory     = flag.String("cache.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
-	partitions        = flagutil.New("cache.disk.partitions", []disk.Partition{}, "")
-	partitionMappings = flagutil.New("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
-	useV2Layout       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
+	rootDirectoryFlag     = flag.String("cache.disk.root_directory", "", "The root directory to store all blobs in, if using disk based storage.")
+	partitionsFlag        = flagutil.New("cache.disk.partitions", []disk.Partition{}, "")
+	partitionMappingsFlag = flagutil.New("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
+	useV2LayoutFlag       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
 	enableLiveUpdates           = flag.Bool("cache.disk.enable_live_updates", false, "If set, enable live updates of disk cache adds / removes")
@@ -162,17 +162,17 @@ type DiskCache struct {
 }
 
 func Register(env environment.Env) error {
-	if *rootDirectory == "" {
+	if *rootDirectoryFlag == "" {
 		return nil
 	}
 	if env.GetCache() != nil {
 		log.Warningf("Overriding configured cache with disk_cache.")
 	}
 	dc := &Options{
-		RootDirectory:     *rootDirectory,
-		Partitions:        *partitions,
-		PartitionMappings: *partitionMappings,
-		UseV2Layout:       *useV2Layout,
+		RootDirectory:     *rootDirectoryFlag,
+		Partitions:        *partitionsFlag,
+		PartitionMappings: *partitionMappingsFlag,
+		UseV2Layout:       *useV2LayoutFlag,
 	}
 	c, err := NewDiskCache(env, dc, cache_config.MaxSizeBytes())
 	if err != nil {
@@ -183,6 +183,10 @@ func Register(env environment.Env) error {
 }
 
 func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64) (*DiskCache, error) {
+	if opts.RootDirectory == "" {
+		return nil, status.FailedPreconditionError("Disk cache root directory must be set")
+	}
+
 	if *migrateDiskCacheToV2AndExit {
 		if err := MigrateToV2Layout(opts.RootDirectory); err != nil {
 			log.Errorf("Migration failed: %s", err)

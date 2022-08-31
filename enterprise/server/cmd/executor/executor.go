@@ -213,7 +213,7 @@ func main() {
 	rootContext := context.Background()
 
 	flag.Parse()
-	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
+	if err := flagyaml.PopulateFlagsFromFileWithReread(config.Path()); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
 
