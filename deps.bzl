@@ -466,8 +466,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_buildkite_terminal_to_html_v3",
         importpath = "github.com/buildkite/terminal-to-html/v3",
-        sum = "h1:chdLUSpiOj/A4v3dzxyOqixXI6aw7IDA6Dk77FXsvNU=",
-        version = "v3.7.0",
+        replace = "github.com/buildbuddy-io/terminal-to-html/v3",
+        sum = "h1:XMnC81zIjWBw5SRc/TqPOP4vHPftVhdNl5azJrOwz+Y=",
+        version = "v3.7.0-patched-1",
     )
 
     go_repository(

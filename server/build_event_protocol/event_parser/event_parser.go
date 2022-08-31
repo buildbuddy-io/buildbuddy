@@ -6,8 +6,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal_writer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
-	"github.com/buildkite/terminal-to-html/v3"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -41,7 +41,7 @@ func parseEnv(commandLine *command_line.CommandLine) map[string]string {
 }
 
 type StreamingEventParser struct {
-	screenWriter           *terminal.ScreenWriter
+	terminalWriter         *terminal_writer.Writer
 	command                string
 	buildMetadata          []map[string]string
 	events                 []*inpb.InvocationEvent
@@ -55,11 +55,11 @@ type StreamingEventParser struct {
 	success                bool
 }
 
-func NewStreamingEventParser(screenWriter *terminal.ScreenWriter) *StreamingEventParser {
+func NewStreamingEventParser(screenWriter *terminal_writer.Writer) *StreamingEventParser {
 	return &StreamingEventParser{
 		startTime:              nil,
 		endTime:                nil,
-		screenWriter:           screenWriter,
+		terminalWriter:         screenWriter,
 		structuredCommandLines: make([]*command_line.CommandLine, 0),
 		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
 		workflowConfigurations: make([]*build_event_stream.WorkflowConfigured, 0),
@@ -73,9 +73,9 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		{
-			if sep.screenWriter != nil {
-				sep.screenWriter.Write([]byte(p.Progress.Stderr))
-				sep.screenWriter.Write([]byte(p.Progress.Stdout))
+			if sep.terminalWriter != nil {
+				sep.terminalWriter.Write([]byte(p.Progress.Stderr))
+				sep.terminalWriter.Write([]byte(p.Progress.Stdout))
 			}
 			// Now that we've updated our screenwriter, zero out
 			// progress output in the event so they don't eat up
@@ -210,9 +210,9 @@ func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
 		buildDuration = sep.endTime.Sub(*sep.startTime)
 	}
 	invocation.DurationUsec = buildDuration.Microseconds()
-	if sep.screenWriter != nil {
+	if sep.terminalWriter != nil {
 		// TODO(siggisim): Do this rendering once on write, rather than on every read.
-		invocation.ConsoleBuffer = string(sep.screenWriter.RenderAsANSI())
+		invocation.ConsoleBuffer = string(sep.terminalWriter.Render())
 	}
 }
 

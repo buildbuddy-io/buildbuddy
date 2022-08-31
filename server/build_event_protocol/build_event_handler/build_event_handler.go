@@ -35,8 +35,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal_writer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"github.com/buildkite/terminal-to-html/v3"
 	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -587,11 +587,11 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	var screenWriter *terminal.ScreenWriter
+	var terminalWriter *terminal_writer.Writer
 	if !invocation.HasChunkedEventLogs {
-		screenWriter = terminal.NewScreenWriter()
+		terminalWriter = terminal_writer.NewWriter()
 	}
-	parser := event_parser.NewStreamingEventParser(screenWriter)
+	parser := event_parser.NewStreamingEventParser(terminalWriter)
 	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
@@ -1188,9 +1188,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	})
 
 	eg.Go(func() error {
-		var screenWriter *terminal.ScreenWriter
+		var screenWriter *terminal_writer.Writer
 		if !invocation.HasChunkedEventLogs {
-			screenWriter = terminal.NewScreenWriter()
+			screenWriter = terminal_writer.NewWriter()
 		}
 		var redactor *redact.StreamingRedactor
 		if ti.RedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
@@ -1247,7 +1247,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			invocation.Event = events
 			invocation.StructuredCommandLine = structuredCommandLines
 			if screenWriter != nil {
-				invocation.ConsoleBuffer = string(screenWriter.RenderAsANSI())
+				invocation.ConsoleBuffer = string(screenWriter.Render())
 			}
 		}
 		invocationMu.Unlock()
