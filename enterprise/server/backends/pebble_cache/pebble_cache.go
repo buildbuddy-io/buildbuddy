@@ -61,6 +61,14 @@ var (
 	atimeWriteBatchSizeFlag   = flag.Int("cache.pebble.atime_write_batch_size", defaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", defaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", defaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
+
+	// Default values for Options
+	defaultBlockCacheSizeBytes    = int64(1000 * megabyte)
+	defaultMaxInlineFileSizeBytes = int64(1024)
+	defaultAtimeUpdateThreshold   = 10 * time.Minute
+	defaultAtimeWriteBatchSize    = 1000
+	defaultAtimeBufferSize        = 100000
+	defaultMinEvictionAge         = 6 * time.Hour
 )
 
 const (
@@ -90,19 +98,11 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
-
-	// Default values for options
-	defaultBlockCacheSizeBytes    = int64(1000 * megabyte)
-	defaultMaxInlineFileSizeBytes = int64(1024)
-	defaultAtimeUpdateThreshold   = 10 * time.Minute
-	defaultAtimeWriteBatchSize    = 1000
-	defaultAtimeBufferSize        = 100000
-	defaultMinEvictionAge         = 6 * time.Hour
 )
 
-// options is a struct containing the pebble cache configuration options.
-// Once a cache is created, the options may not be changed.
-type options struct {
+// Options is a struct containing the pebble cache configuration Options.
+// Once a cache is created, the Options may not be changed.
+type Options struct {
 	RootDirectory     string
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
@@ -111,25 +111,8 @@ type options struct {
 	BlockCacheSizeBytes    int64
 	MaxInlineFileSizeBytes int64
 
-	AtimeUpdateThreshold time.Duration
-	AtimeWriteBatchSize  int
-	AtimeBufferSize      int
-	MinEvictionAge       time.Duration
-}
-
-// OptionsConstructor contains fields required to initialize an options struct
-// If a field is nil, the corresponding field in the options struct will be set to the default value
-type OptionsConstructor struct {
-	RootDirectory     *string
-	Partitions        []disk.Partition
-	PartitionMappings []disk.PartitionMapping
-
-	MaxSizeBytes           *int64
-	BlockCacheSizeBytes    *int64
-	MaxInlineFileSizeBytes *int64
-
 	AtimeUpdateThreshold *time.Duration
-	AtimeWriteBatchSize  *int
+	AtimeWriteBatchSize  int
 	AtimeBufferSize      *int
 	MinEvictionAge       *time.Duration
 }
@@ -147,7 +130,18 @@ type accessTimeUpdate struct {
 // PebbleCache implements the cache interface by storing metadata in a pebble
 // database and storing cache entry contents on disk.
 type PebbleCache struct {
-	opts *options
+	rootDirectory     string
+	partitions        []disk.Partition
+	partitionMappings []disk.PartitionMapping
+
+	maxSizeBytes           int64
+	blockCacheSizeBytes    int64
+	maxInlineFileSizeBytes int64
+
+	atimeUpdateThreshold time.Duration
+	atimeWriteBatchSize  int
+	atimeBufferSize      int
+	minEvictionAge       time.Duration
 
 	env       environment.Env
 	isolation *rfpb.Isolation
@@ -197,7 +191,18 @@ func Register(env environment.Env) error {
 			migrateDir = *migrateFromDiskDir
 		}
 	}
-	opts := OptionsFromFlags()
+	opts := &Options{
+		RootDirectory:          *rootDirectoryFlag,
+		Partitions:             *partitionsFlag,
+		PartitionMappings:      *partitionMappingsFlag,
+		BlockCacheSizeBytes:    *blockCacheSizeBytesFlag,
+		MaxSizeBytes:           cache_config.MaxSizeBytes(),
+		MaxInlineFileSizeBytes: *maxInlineFileSizeBytesFlag,
+		AtimeUpdateThreshold:   atimeUpdateThresholdFlag,
+		AtimeWriteBatchSize:    *atimeWriteBatchSizeFlag,
+		AtimeBufferSize:        atimeBufferSizeFlag,
+		MinEvictionAge:         minEvictionAgeFlag,
+	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
 		return status.InternalErrorf("Error configuring pebble cache: %s", err)
@@ -234,82 +239,9 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func OptionsFromFlags() *options {
-	return &options{
-		RootDirectory:          *rootDirectoryFlag,
-		Partitions:             *partitionsFlag,
-		PartitionMappings:      *partitionMappingsFlag,
-		BlockCacheSizeBytes:    *blockCacheSizeBytesFlag,
-		MaxSizeBytes:           cache_config.MaxSizeBytes(),
-		MaxInlineFileSizeBytes: *maxInlineFileSizeBytesFlag,
-		AtimeUpdateThreshold:   *atimeUpdateThresholdFlag,
-		AtimeWriteBatchSize:    *atimeWriteBatchSizeFlag,
-		AtimeBufferSize:        *atimeBufferSizeFlag,
-		MinEvictionAge:         *minEvictionAgeFlag,
-	}
-}
-
-func OptionsFromConstructor(c OptionsConstructor) *options {
-	rootDir := ""
-	if c.RootDirectory != nil {
-		rootDir = *c.RootDirectory
-	}
-
-	partitions := c.Partitions
-	partitionMappings := c.PartitionMappings
-
-	blockCacheSizeBytes := defaultBlockCacheSizeBytes
-	if c.BlockCacheSizeBytes != nil {
-		blockCacheSizeBytes = *c.BlockCacheSizeBytes
-	}
-
-	maxSizeBytes := cache_config.MaxSizeBytes()
-	if c.MaxSizeBytes != nil {
-		maxSizeBytes = *c.MaxSizeBytes
-	}
-
-	maxInlineFileSizeBytes := defaultMaxInlineFileSizeBytes
-	if c.MaxInlineFileSizeBytes != nil {
-		maxInlineFileSizeBytes = *c.MaxInlineFileSizeBytes
-	}
-
-	atimeUpdateThreshold := defaultAtimeUpdateThreshold
-	if c.AtimeUpdateThreshold != nil {
-		atimeUpdateThreshold = *c.AtimeUpdateThreshold
-	}
-
-	atimeWriteBatchSize := defaultAtimeWriteBatchSize
-	if c.AtimeWriteBatchSize != nil {
-		atimeWriteBatchSize = *c.AtimeWriteBatchSize
-	}
-
-	atimeBufferSize := defaultAtimeBufferSize
-	if c.AtimeBufferSize != nil {
-		atimeBufferSize = *c.AtimeBufferSize
-	}
-
-	minEvictionAge := defaultMinEvictionAge
-	if c.MinEvictionAge != nil {
-		minEvictionAge = *c.MinEvictionAge
-	}
-
-	return &options{
-		RootDirectory:          rootDir,
-		Partitions:             partitions,
-		PartitionMappings:      partitionMappings,
-		BlockCacheSizeBytes:    blockCacheSizeBytes,
-		MaxSizeBytes:           maxSizeBytes,
-		MaxInlineFileSizeBytes: maxInlineFileSizeBytes,
-		AtimeUpdateThreshold:   atimeUpdateThreshold,
-		AtimeWriteBatchSize:    atimeWriteBatchSize,
-		AtimeBufferSize:        atimeBufferSize,
-		MinEvictionAge:         minEvictionAge,
-	}
-}
-
 // validateOpts validates that each partition mapping references a partition
 // and that MaxSizeBytes is non-zero.
-func validateOpts(opts *options) error {
+func validateOpts(opts *Options) error {
 	if opts.RootDirectory == "" {
 		return status.FailedPreconditionError("Pebble cache root directory must be set")
 	}
@@ -332,7 +264,29 @@ func validateOpts(opts *options) error {
 	return nil
 }
 
-func ensureDefaultPartitionExists(opts *options) {
+// setOptionDefaults sets default values on the Options if they are not set
+func setOptionDefaults(opts *Options) {
+	if opts.BlockCacheSizeBytes == 0 {
+		opts.BlockCacheSizeBytes = defaultBlockCacheSizeBytes
+	}
+	if opts.MaxInlineFileSizeBytes == 0 {
+		opts.MaxInlineFileSizeBytes = defaultMaxInlineFileSizeBytes
+	}
+	if opts.AtimeUpdateThreshold == nil {
+		opts.AtimeUpdateThreshold = &defaultAtimeUpdateThreshold
+	}
+	if opts.AtimeWriteBatchSize == 0 {
+		opts.AtimeWriteBatchSize = defaultAtimeWriteBatchSize
+	}
+	if opts.AtimeBufferSize == nil {
+		opts.AtimeBufferSize = &defaultAtimeBufferSize
+	}
+	if opts.MinEvictionAge == nil {
+		opts.MinEvictionAge = &defaultMinEvictionAge
+	}
+}
+
+func ensureDefaultPartitionExists(opts *Options) {
 	foundDefaultPartition := false
 	for _, part := range opts.Partitions {
 		if part.ID == defaultPartitionID {
@@ -348,14 +302,15 @@ func ensureDefaultPartitionExists(opts *options) {
 	})
 }
 
-// defaultPebbleOptions returns default pebble config options.
+// defaultPebbleOptions returns default pebble config Options.
 func defaultPebbleOptions() *pebble.Options {
-	// TODO: tune options here.
+	// TODO: tune Options here.
 	return &pebble.Options{}
 }
 
 // NewPebbleCache creates a new cache from the provided env and opts.
-func NewPebbleCache(env environment.Env, opts *options) (*PebbleCache, error) {
+func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
+	setOptionDefaults(opts)
 	if err := validateOpts(opts); err != nil {
 		return nil, err
 	}
@@ -376,17 +331,26 @@ func NewPebbleCache(env environment.Env, opts *options) (*PebbleCache, error) {
 		return nil, err
 	}
 	pc := &PebbleCache{
-		opts:              opts,
-		env:               env,
-		db:                db,
-		leaser:            pebbleutil.NewDBLeaser(db),
-		brokenFilesDone:   make(chan struct{}),
-		orphanedFilesDone: make(chan struct{}),
-		eg:                &errgroup.Group{},
-		statusMu:          &sync.Mutex{},
-		edits:             make(chan *sizeUpdate, 1000),
-		accesses:          make(chan *accessTimeUpdate, opts.AtimeBufferSize),
-		evictors:          make([]*partitionEvictor, len(opts.Partitions)),
+		rootDirectory:          opts.RootDirectory,
+		partitions:             opts.Partitions,
+		partitionMappings:      opts.PartitionMappings,
+		maxSizeBytes:           opts.MaxSizeBytes,
+		blockCacheSizeBytes:    opts.BlockCacheSizeBytes,
+		maxInlineFileSizeBytes: opts.MaxInlineFileSizeBytes,
+		atimeUpdateThreshold:   *opts.AtimeUpdateThreshold,
+		atimeWriteBatchSize:    opts.AtimeWriteBatchSize,
+		atimeBufferSize:        *opts.AtimeBufferSize,
+		minEvictionAge:         *opts.MinEvictionAge,
+		env:                    env,
+		db:                     db,
+		leaser:                 pebbleutil.NewDBLeaser(db),
+		brokenFilesDone:        make(chan struct{}),
+		orphanedFilesDone:      make(chan struct{}),
+		eg:                     &errgroup.Group{},
+		statusMu:               &sync.Mutex{},
+		edits:                  make(chan *sizeUpdate, 1000),
+		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
+		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
 		isolation: &rfpb.Isolation{
 			CacheType:   rfpb.Isolation_CAS_CACHE,
 			PartitionId: defaultPartitionID,
@@ -405,7 +369,7 @@ func NewPebbleCache(env environment.Env, opts *options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, opts.AtimeBufferSize, opts.MinEvictionAge)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge)
 			if err != nil {
 				return err
 			}
@@ -441,7 +405,7 @@ func olderThanThreshold(t time.Time, threshold time.Duration) bool {
 
 func (p *PebbleCache) batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-	if !olderThanThreshold(atime, p.opts.AtimeUpdateThreshold) {
+	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
 	}
 	fileMetadata.LastAccessUsec = time.Now().UnixMicro()
@@ -449,7 +413,7 @@ func (p *PebbleCache) batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte
 	if err != nil {
 		return err
 	}
-	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write Options*/)
 }
 
 func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
@@ -493,7 +457,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 			if err := p.batchEditAtime(batch, accessTimeUpdate.fileMetadataKey, md); err != nil {
 				log.Warningf("Error updating atime: %s", err)
 			}
-			if int(batch.Count()) >= p.opts.AtimeWriteBatchSize {
+			if int(batch.Count()) >= p.atimeWriteBatchSize {
 				flush()
 			}
 		case <-time.After(time.Second):
@@ -547,7 +511,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 	defer iter.Close()
 
 	orphanCount := 0
-	for _, part := range p.opts.Partitions {
+	for _, part := range p.partitions {
 		blobDir := p.partitionBlobDir(part.ID)
 		walkFn := func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -673,7 +637,7 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 			return err
 		}
 		inserted += 1
-		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write Options*/)
 	})
 	if err != nil {
 		return err
@@ -730,7 +694,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 				if err != nil {
 					return err
 				}
-				return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
+				return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write Options*/)
 			})
 		})
 		p.eg.Go(func() error {
@@ -739,7 +703,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 				if err != nil {
 					return err
 				}
-				return batch.Delete(fileMetadataKey, nil /*ignored write options*/)
+				return batch.Delete(fileMetadataKey, nil /*ignored write Options*/)
 			})
 		})
 	}
@@ -790,7 +754,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 	if err != nil {
 		return interfaces.AuthAnonymousUser, defaultPartitionID, nil
 	}
-	for _, pm := range p.opts.PartitionMappings {
+	for _, pm := range p.partitionMappings {
 		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
 			return user.GetGroupID(), pm.PartitionID, nil
 		}
@@ -835,7 +799,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb
 
 func (p *PebbleCache) partitionBlobDir(partID string) string {
 	partDir := partitionDirectoryPrefix + partID
-	return filepath.Join(p.opts.RootDirectory, "blobs", partDir)
+	return filepath.Join(p.rootDirectory, "blobs", partDir)
 }
 
 // blobDir returns a directory path under the root directory, specific to the
@@ -1024,7 +988,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 			continue
 		}
-		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.opts.AtimeUpdateThreshold, p.opts.AtimeBufferSize)
+		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
 
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
@@ -1186,7 +1150,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 
 	rc, err := p.fileStorer.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
-		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.opts.AtimeUpdateThreshold, p.opts.AtimeBufferSize)
+		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
 		p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 	}
@@ -1240,7 +1204,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	}
 
 	var wcm filestore.WriteCloserMetadata
-	if d.GetSizeBytes() < p.opts.MaxInlineFileSizeBytes {
+	if d.GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, d.GetSizeBytes())
 	} else {
 		fw, err := p.fileStorer.FileWriter(ctx, p.blobDir(), fileRecord)
