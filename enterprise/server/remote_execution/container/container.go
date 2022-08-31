@@ -75,10 +75,10 @@ func NewContainerMetrics() *ContainerMetrics {
 // Start kicks off a goroutine that periodically updates the CPU gauge.
 func (m *ContainerMetrics) Start(ctx context.Context) {
 	go func() {
+		t := time.NewTicker(cpuUsageUpdateInterval)
+		defer t.Stop()
+		lastTick := time.Now()
 		for {
-			t := time.NewTicker(cpuUsageUpdateInterval)
-			defer t.Stop()
-			lastTick := time.Now()
 			select {
 			case <-ctx.Done():
 				return
