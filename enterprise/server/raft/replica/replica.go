@@ -1438,8 +1438,13 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 			if err := proto.Unmarshal(kv.GetValue(), fileMetadata); err != nil {
 				return err
 			}
-			if _, err := sm.fetchFileToLocalStorage(ctx, fileMetadata.GetFileRecord()); err != nil {
+			newMetadata, err := sm.fetchFileToLocalStorage(ctx, fileMetadata.GetFileRecord())
+			if err != nil {
 				return err
+			}
+			if !proto.Equal(newMetadata, fileMetadata.GetStorageMetadata()) {
+				log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), newMetadata)
+				return status.FailedPreconditionError("stored metadata changed when fetching file")
 			}
 		}
 	}
