@@ -1382,14 +1382,15 @@ func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileMetadata *rf
 		ClusterId: sm.clusterID,
 		NodeId:    sm.nodeID,
 	}
-	readCloser, err := sm.store.ReadFileFromPeer(ctx, rd, fileMetadata.GetFileRecord())
-	if err != nil {
-		return err
-	}
 	writeCloserMetadata, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, fileMetadata.GetFileRecord())
 	if err != nil {
 		return err
 	}
+	readCloser, err := sm.store.ReadFileFromPeer(ctx, rd, fileMetadata.GetFileRecord())
+	if err != nil {
+		return err
+	}
+	defer readCloser.Close()
 	n, err := io.Copy(writeCloserMetadata, readCloser)
 	if n != fileMetadata.GetSizeBytes() {
 		return status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
