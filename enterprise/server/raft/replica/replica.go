@@ -637,6 +637,73 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 	return nil
 }
 
+func (leftReplica *Replica) moveDataToReplica(rightReplica *Replica, start, end []byte) error {
+	ctx := context.TODO()
+	iter := leftReplica.db.NewIter(&pebble.IterOptions{
+		LowerBound: keys.Key(start),
+		UpperBound: keys.Key(end),
+	})
+	defer iter.Close()
+
+	deleteBatch := leftReplica.db.NewBatch()
+	defer deleteBatch.Close()
+
+	insertBatch := rightReplica.db.NewBatch()
+	defer insertBatch.Close()
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		err := insertBatch.Set(iter.Key(), iter.Value(), nil /*ignore write options*/)
+		if err != nil {
+			return err
+		}
+		if isLocalKey(iter.Key()) {
+			continue
+		}
+
+		fileMetadata := &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+			return err
+		}
+		writeCloserMetadata, err := rightReplica.storedFileWriter(ctx, fileMetadata.GetFileRecord())
+		if err != nil {
+			return err
+		}
+		readCloser, err := leftReplica.readerWithDB(ctx, leftReplica.db, fileMetadata.GetFileRecord(), 0, 0)
+		if err != nil {
+			return err
+		}
+		n, err := io.Copy(writeCloserMetadata, readCloser)
+		readCloser.Close()
+		if n != fileMetadata.GetSizeBytes() {
+			return status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
+		}
+		if err := writeCloserMetadata.Close(); err != nil {
+			return err
+		}
+		if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
+			log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
+			return status.FailedPreconditionError("stored metadata changed when fetching file")
+		}
+	}
+
+	if err := deleteBatch.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
+		return err
+	}
+
+	if err := insertBatch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+		return err
+	}
+
+	if err := deleteBatch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+		return err
+	}
+
+	if err := leftReplica.deleteStoredFiles(start, end); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitResponse, error) {
 	if req.GetLeft() == nil || req.GetProposedRight() == nil {
 		return nil, status.FailedPreconditionError("left and right ranges must be provided")
@@ -670,26 +737,13 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 		return nil, err
 	}
 	defer rightDB.Close()
-
-	if err := sm.populateReplicaFromSnapshot(rightSM); err != nil {
-		return nil, err
-	}
 	rwb := rightDB.NewIndexedBatch()
 	defer rwb.Close()
 
 	// Delete the keys (and data) from each side that are now owned by the other side.
 	// Right side delete should be a no-op if this is a freshly created replica.
 	sp := req.GetSplitPoint()
-	if err := rwb.DeleteRange(keys.Key{constants.MinByte}, sp.GetSplit(), nil /*ignored write options*/); err != nil {
-		return nil, err
-	}
-	if err := rightSM.deleteStoredFiles([]byte{constants.MinByte}, sp.GetSplit()); err != nil {
-		return nil, err
-	}
-	if err := wb.DeleteRange(sp.GetSplit(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
-		return nil, err
-	}
-	if err := sm.deleteStoredFiles(sp.GetSplit(), []byte{constants.MaxByte}); err != nil {
+	if err := sm.moveDataToReplica(rightSM, sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
 		return nil, err
 	}
 
@@ -926,6 +980,21 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 	return nil
 }
 
+func (sm *Replica) readerWithDB(ctx context.Context, db pebbleutil.IPebbleDB, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	iter.Close()
+	if err != nil {
+		return nil, err
+	}
+	return sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
+}
+
 func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
@@ -951,23 +1020,10 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 		return nil, err
 	}
 
-	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+	rc, err := sm.readerWithDB(ctx, db, fileRecord, offset, limit)
 	if err != nil {
 		return nil, err
 	}
-
-	iter := db.NewIter(nil /*default iterOptions*/)
-	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
-	iter.Close()
-	if err != nil {
-		return nil, err
-	}
-
-	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
-	if err != nil {
-		return nil, err
-	}
-
 	needCleanup = false
 	return &fnReadCloser{rc, func() error {
 		return db.Close()
@@ -1028,6 +1084,10 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+func (sm *Replica) storedFileWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (filestore.WriteCloserMetadata, error) {
+	return sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
+}
+
 func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (filestore.CommittedWriter, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
@@ -1056,7 +1116,8 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-	writeCloserMetadata, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
+
+	writeCloserMetadata, err := sm.storedFileWriter(ctx, fileRecord)
 	if err != nil {
 		return nil, err
 	}
