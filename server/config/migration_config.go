@@ -9,8 +9,6 @@ import (
 type MigrationConfig struct {
 	Src  CacheConfig `yaml:"src"`
 	Dest CacheConfig `yaml:"dest"`
-
-	ClearDestCacheBeforeMigration bool `yaml:"clear_dest_cache_before_migration"`
 }
 
 type CacheConfig struct {
