@@ -100,8 +100,8 @@ const (
 	atimeFlushPeriod = 10 * time.Second
 )
 
-// Options is a struct containing the pebble cache configuration Options.
-// Once a cache is created, the Options may not be changed.
+// Options is a struct containing the pebble cache configuration options.
+// Once a cache is created, the options may not be changed.
 type Options struct {
 	RootDirectory     string
 	Partitions        []disk.Partition
@@ -302,9 +302,9 @@ func ensureDefaultPartitionExists(opts *Options) {
 	})
 }
 
-// defaultPebbleOptions returns default pebble config Options.
+// defaultPebbleOptions returns default pebble config options.
 func defaultPebbleOptions() *pebble.Options {
-	// TODO: tune Options here.
+	// TODO: tune options here.
 	return &pebble.Options{}
 }
 
@@ -413,7 +413,7 @@ func (p *PebbleCache) batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte
 	if err != nil {
 		return err
 	}
-	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write Options*/)
+	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 }
 
 func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
@@ -637,7 +637,7 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 			return err
 		}
 		inserted += 1
-		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write Options*/)
+		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 	})
 	if err != nil {
 		return err
@@ -703,7 +703,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 				if err != nil {
 					return err
 				}
-				return batch.Delete(fileMetadataKey, nil /*ignored write Options*/)
+				return batch.Delete(fileMetadataKey, nil /*ignored write options*/)
 			})
 		})
 	}
