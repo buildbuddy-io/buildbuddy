@@ -154,8 +154,8 @@ func JSONStructVar[T any](value *T, name string, defaultValue T, usage string) {
 	if src.Kind() != reflect.Struct {
 		log.Fatalf("JSONStructVar called for flag %s with non-struct value %v of type %T.", name, defaultValue, defaultValue)
 	}
-	v := reflect.ValueOf(value).Elem()
-	v.Set(reflect.ValueOf(defaultValue))
+	v := reflect.ValueOf(value)
+	v.Elem().Set(reflect.ValueOf(defaultValue))
 	common.DefaultFlagSet.Var((*JSONStructFlag[T])(&v), name, usage)
 }
 
