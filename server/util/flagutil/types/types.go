@@ -185,6 +185,10 @@ func (f *JSONStructFlag[T]) AliasedType() reflect.Type {
 	return reflect.TypeOf((*T)(nil))
 }
 
+func (f *JSONStructFlag[T]) Struct() T {
+	return *(reflect.Value)(*f).Interface().(*T)
+}
+
 type StringSliceFlag []string
 
 func NewStringSliceFlag(slice *[]string) *StringSliceFlag {
