@@ -46,7 +46,7 @@ var (
 	rootDirectoryFlag          = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
 	blockCacheSizeBytesFlag    = flag.Int64("cache.pebble.block_cache_size_bytes", defaultBlockCacheSizeBytes, "How much ram to give the block cache")
 	maxInlineFileSizeBytesFlag = flag.Int64("cache.pebble.max_inline_file_size_bytes", defaultMaxInlineFileSizeBytes, "Files smaller than this may be inlined directly into pebble")
-	partitionsFlag             = flagutil.New("cache.pebble.partitionsFlag", []disk.Partition{}, "")
+	partitionsFlag             = flagutil.New("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappingsFlag      = flagutil.New("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
 	// TODO(tylerw): remove most of these flags post-migration.
@@ -694,7 +694,7 @@ func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata
 				if err != nil {
 					return err
 				}
-				return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write Options*/)
+				return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 			})
 		})
 		p.eg.Go(func() error {
