@@ -35,7 +35,7 @@ func (fs *fakeStore) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaD
 	if fs.fileReadFn != nil {
 		return fs.fileReadFn(fileRecord)
 	}
-	return nil, nil
+	return nil, status.NotFoundErrorf("file not found")
 }
 func (fs *fakeStore) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	return nil, nil
