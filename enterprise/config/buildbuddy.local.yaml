@@ -5,6 +5,8 @@ app:
   code_editor_enabled: true
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
+  enable_read_from_olap_db: false
+  enable_write_to_olap_db: false
 database:
   data_source: "mysql://buildbuddy-prod:2lu5p3vF4J6O@tcp(35.233.240.225)/buildbuddy_prod"
 olap_database:
