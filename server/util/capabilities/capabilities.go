@@ -57,3 +57,19 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	}
 	return user.HasCapability(cap), nil
 }
+
+func GetFromContext(ctx context.Context, env environment.Env) ([]akpb.ApiKey_Capability, error) {
+	var caps []akpb.ApiKey_Capability
+	if auth := env.GetAuthenticator(); auth != nil {
+		u, err := auth.AuthenticatedUser(ctx)
+		if err == nil {
+			caps = u.GetCapabilities()
+		} else {
+			if perms.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+				caps = DefaultAuthenticatedUserCapabilities
+			}
+		}
+	}
+
+	return caps, nil
+}

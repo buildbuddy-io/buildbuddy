@@ -290,3 +290,23 @@ func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, err
 func IsAnonymousUserError(err error) bool {
 	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
 }
+
+func GetFromContext(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
+	var permissions *UserGroupPerm
+	if auth := env.GetAuthenticator(); auth != nil {
+		u, err := auth.AuthenticatedUser(ctx)
+		if err == nil {
+			if u.GetGroupID() != "" {
+				permissions = GroupAuthPermissions(u.GetGroupID())
+			}
+		}
+	}
+
+	if permissions == nil && env.GetAuthenticator().AnonymousUsageEnabled() {
+		permissions = AnonymousUserPermissions()
+	} else if permissions == nil {
+		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	}
+
+	return permissions, nil
+}
