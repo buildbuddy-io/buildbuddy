@@ -6,20 +6,21 @@ app:
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
 database:
-  data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
-#olap_database:
-#data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
+  data_source: "mysql://buildbuddy-prod:2lu5p3vF4J6O@tcp(35.233.240.225)/buildbuddy_prod"
+olap_database:
+  data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
 storage:
-  ttl_seconds: 86400 # One day in seconds.
+  ttl_seconds: 0 # Disable janitor
   disk:
-    root_directory: /tmp/buildbuddy_enterprise
+    root_directory: /tmp/buildbuddy_enterprise_lulu
   enable_chunked_event_logs: true
 cache:
   disk:
-    root_directory: /tmp/buildbuddy-enterprise-cache
+    root_directory: /tmp/buildbuddy-enterprise-cache-lulu
 auth:
   enable_anonymous_usage: false
   enable_self_auth: false
+  admin_group_id: "GR2285257076483062166"
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
       client_id: "${BB_DEV_OAUTH_CLIENT_ID}"
