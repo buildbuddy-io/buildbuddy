@@ -48,6 +48,69 @@ func getAnonContext(t testing.TB, env environment.Env) context.Context {
 	return ctx
 }
 
+func TestSetOptionDefaults(t *testing.T) {
+	// Test sets all fields for empty Options
+	opts := &pebble_cache.Options{}
+	pebble_cache.SetOptionDefaults(opts)
+	require.Equal(t, pebble_cache.DefaultMaxSizeBytes, opts.MaxSizeBytes)
+	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
+	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
+	require.Equal(t, &pebble_cache.DefaultAtimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, pebble_cache.DefaultAtimeWriteBatchSize, opts.AtimeWriteBatchSize)
+	require.Equal(t, &pebble_cache.DefaultAtimeBufferSize, opts.AtimeBufferSize)
+	require.Equal(t, &pebble_cache.DefaultMinEvictionAge, opts.MinEvictionAge)
+
+	// Test does not overwrite fields that are explicitly set
+	atimeUpdateThreshold := time.Duration(10)
+	atimeBufferSize := 20
+	minEvictionAge := time.Duration(30)
+	opts = &pebble_cache.Options{
+		MaxSizeBytes:           1,
+		BlockCacheSizeBytes:    2,
+		MaxInlineFileSizeBytes: 3,
+		AtimeWriteBatchSize:    4,
+		AtimeUpdateThreshold:   &atimeUpdateThreshold,
+		AtimeBufferSize:        &atimeBufferSize,
+		MinEvictionAge:         &minEvictionAge,
+	}
+	pebble_cache.SetOptionDefaults(opts)
+	require.Equal(t, int64(1), opts.MaxSizeBytes)
+	require.Equal(t, int64(2), opts.BlockCacheSizeBytes)
+	require.Equal(t, int64(3), opts.MaxInlineFileSizeBytes)
+	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, 4, opts.AtimeWriteBatchSize)
+	require.Equal(t, &atimeBufferSize, opts.AtimeBufferSize)
+	require.Equal(t, &minEvictionAge, opts.MinEvictionAge)
+
+	// Test mix of set and unset fields
+	opts = &pebble_cache.Options{
+		MaxSizeBytes:         1,
+		AtimeUpdateThreshold: &atimeUpdateThreshold,
+	}
+	pebble_cache.SetOptionDefaults(opts)
+	require.Equal(t, int64(1), opts.MaxSizeBytes)
+	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
+	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
+	require.Equal(t, pebble_cache.DefaultAtimeWriteBatchSize, opts.AtimeWriteBatchSize)
+	require.Equal(t, &pebble_cache.DefaultAtimeBufferSize, opts.AtimeBufferSize)
+	require.Equal(t, &pebble_cache.DefaultMinEvictionAge, opts.MinEvictionAge)
+
+	// Test does not overwrite fields that are explicitly and validly set to 0
+	atimeUpdateThreshold = time.Duration(0)
+	atimeBufferSize = 0
+	minEvictionAge = time.Duration(0)
+	opts = &pebble_cache.Options{
+		AtimeUpdateThreshold: &atimeUpdateThreshold,
+		AtimeBufferSize:      &atimeBufferSize,
+		MinEvictionAge:       &minEvictionAge,
+	}
+	pebble_cache.SetOptionDefaults(opts)
+	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, &atimeBufferSize, opts.AtimeBufferSize)
+	require.Equal(t, &minEvictionAge, opts.MinEvictionAge)
+}
+
 func TestACIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
@@ -398,11 +461,6 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestNoEarlyEviction(t *testing.T) {
-	flags.Set(t, "cache.pebble.atime_update_threshold", 0) // update atime on every access
-	flags.Set(t, "cache.pebble.atime_write_batch_size", 1) // write atime updates synchronously
-	flags.Set(t, "cache.pebble.atime_buffer_size", 0)      // blocking channel of atime updates
-	flags.Set(t, "cache.pebble.min_eviction_age", 0)       // no min eviction age
-
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -416,7 +474,18 @@ func TestNoEarlyEviction(t *testing.T) {
 				(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 
 	rootDir := testfs.MakeTempDir(t)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	atimeUpdateThreshold := time.Duration(0) // update atime on every access
+	atimeWriteBatchSize := 1                 // write atime updates synchronously
+	atimeBufferSize := 0                     // blocking channel of atime updates
+	minEvictionAge := time.Duration(0)       // no min eviction age
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory:        rootDir,
+		MaxSizeBytes:         maxSizeBytes,
+		AtimeUpdateThreshold: &atimeUpdateThreshold,
+		AtimeWriteBatchSize:  atimeWriteBatchSize,
+		AtimeBufferSize:      &atimeBufferSize,
+		MinEvictionAge:       &minEvictionAge,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,11 +514,6 @@ func TestNoEarlyEviction(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
-	flags.Set(t, "cache.pebble.atime_update_threshold", 0) // update atime on every access
-	flags.Set(t, "cache.pebble.atime_write_batch_size", 1) // write atime updates synchronously
-	flags.Set(t, "cache.pebble.atime_buffer_size", 0)      // blocking channel of atime updates
-	flags.Set(t, "cache.pebble.min_eviction_age", 0)       // no min eviction age
-
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
@@ -459,7 +523,18 @@ func TestLRU(t *testing.T) {
 	maxSizeBytes := int64(math.Ceil( // account for integer rounding
 		float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 	rootDir := testfs.MakeTempDir(t)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	atimeUpdateThreshold := time.Duration(0) // update atime on every access
+	atimeWriteBatchSize := 1                 // write atime updates synchronously
+	atimeBufferSize := 0                     // blocking channel of atime updates
+	minEvictionAge := time.Duration(0)       // no min eviction age
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory:        rootDir,
+		MaxSizeBytes:         maxSizeBytes,
+		AtimeUpdateThreshold: &atimeUpdateThreshold,
+		AtimeWriteBatchSize:  atimeWriteBatchSize,
+		AtimeBufferSize:      &atimeBufferSize,
+		MinEvictionAge:       &minEvictionAge,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -834,14 +909,17 @@ func TestDeleteOrphans(t *testing.T) {
 }
 
 func TestDeleteEmptyDirs(t *testing.T) {
-	flags.Set(t, "cache.pebble.max_inline_file_size_bytes", 0)
 	flags.Set(t, "cache.pebble.dir_deletion_delay", time.Nanosecond)
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 	ctx := getAnonContext(t, te)
 	rootDir := testfs.MakeTempDir(t)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+	options := &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 0,
+	}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	if err != nil {
 		t.Fatal(err)
