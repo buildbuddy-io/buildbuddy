@@ -24,6 +24,7 @@ service Api {
   // Data API.
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
+  rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
 
   // Write semantics:
   //

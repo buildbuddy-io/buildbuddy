@@ -421,9 +421,8 @@ func (rc *RaftCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (rc *RaftCache) digestsToKeyMetas(ctx context.Context, digests []*repb.Digest) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
-
 	for _, d := range digests {
 		fileRecord, err := rc.makeFileRecord(ctx, d)
 		if err != nil {
@@ -434,6 +433,14 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 			return nil, err
 		}
 		keys = append(keys, &sender.KeyMeta{Key: fileMetadataKey, Meta: fileRecord})
+	}
+	return keys, nil
+}
+
+func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	keys, err := rc.digestsToKeyMetas(ctx, digests)
+	if err != nil {
+		return nil, err
 	}
 
 	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
@@ -475,7 +482,38 @@ func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	return nil, nil
+	keys, err := rc.digestsToKeyMetas(ctx, digests)
+	if err != nil {
+		return nil, err
+	}
+
+	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+		req := &rfpb.GetMultiRequest{Header: h}
+		for _, k := range keys {
+			fr, ok := k.Meta.(*rfpb.FileRecord)
+			if !ok {
+				return nil, status.InternalError("type is not *rfpb.FileRecord")
+			}
+			req.FileRecord = append(req.FileRecord, fr)
+		}
+		return c.GetMulti(ctx, req)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	dataMap := make(map[*repb.Digest][]byte)
+	for _, rsp := range rsps {
+		fmr, ok := rsp.(*rfpb.GetMultiResponse)
+		if !ok {
+			return nil, status.InternalError("response not of type *rfpb.FindMissingResponse")
+		}
+		for _, frd := range fmr.GetData() {
+			dataMap[frd.GetFileRecord().GetDigest()] = frd.GetData()
+		}
+	}
+
+	return dataMap, nil
 }
 
 func (rc *RaftCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

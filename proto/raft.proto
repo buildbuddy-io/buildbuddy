@@ -461,3 +461,17 @@ message FindMissingRequest {
 message FindMissingResponse {
   repeated FileRecord file_record = 1;
 }
+
+message GetMultiRequest {
+  Header header = 1;
+  Isolation isolation = 2;
+  repeated FileRecord file_record = 3;
+}
+
+message GetMultiResponse {
+  message Data {
+    FileRecord file_record = 1;
+    bytes data = 2;
+  }
+  repeated Data data = 1;
+}
