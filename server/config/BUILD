@@ -2,14 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "config",
-    srcs = [
-        "config.go",
-        "migration_config.go",
-    ],
+    srcs = ["config.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/config",
     visibility = ["//visibility:public"],
-    deps = [
-        "//server/util/disk",
-        "//server/util/flagutil/yaml",
-    ],
+    deps = ["//server/util/flagutil/yaml"],
 )

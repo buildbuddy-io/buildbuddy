@@ -7,9 +7,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -17,19 +17,26 @@ import (
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
+var (
+	cacheMigrationConfig = flagutil.New("cache.migration", MigrationConfig{}, "Config to specify the details of a cache migration")
+)
+
 type MigrationCache struct {
 	Src  interfaces.Cache
 	Dest interfaces.Cache
 }
 
-func Register(env environment.Env, cfg config.MigrationConfig) error {
+func Register(env environment.Env) error {
+	if cacheMigrationConfig.Src == nil || cacheMigrationConfig.Dest == nil {
+		return nil
+	}
 	log.Infof("Registering Migration Cache")
 
-	srcCache, err := getCacheFromConfig(env, cfg.Src)
+	srcCache, err := getCacheFromConfig(env, *cacheMigrationConfig.Src)
 	if err != nil {
 		return err
 	}
-	destCache, err := getCacheFromConfig(env, cfg.Dest)
+	destCache, err := getCacheFromConfig(env, *cacheMigrationConfig.Dest)
 	if err != nil {
 		return err
 	}
@@ -47,7 +54,7 @@ func Register(env environment.Env, cfg config.MigrationConfig) error {
 	return nil
 }
 
-func validateCacheConfig(config config.CacheConfig) error {
+func validateCacheConfig(config CacheConfig) error {
 	numConfigs := 0
 	v := reflect.ValueOf(config)
 	for i := 0; i < v.NumField(); i++ {
@@ -63,7 +70,7 @@ func validateCacheConfig(config config.CacheConfig) error {
 	return nil
 }
 
-func getCacheFromConfig(env environment.Env, cfg config.CacheConfig) (interfaces.Cache, error) {
+func getCacheFromConfig(env environment.Env, cfg CacheConfig) (interfaces.Cache, error) {
 	err := validateCacheConfig(cfg)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
@@ -86,7 +93,7 @@ func getCacheFromConfig(env environment.Env, cfg config.CacheConfig) (interfaces
 	return nil, status.FailedPreconditionErrorf("error getting cache from migration config: no valid cache types")
 }
 
-func diskCacheFromConfig(env environment.Env, cfg *config.DiskCacheConfig) (*disk_cache.DiskCache, error) {
+func diskCacheFromConfig(env environment.Env, cfg *DiskCacheConfig) (*disk_cache.DiskCache, error) {
 	opts := &disk_cache.Options{
 		RootDirectory:     cfg.RootDirectory,
 		Partitions:        cfg.Partitions,
@@ -96,8 +103,8 @@ func diskCacheFromConfig(env environment.Env, cfg *config.DiskCacheConfig) (*dis
 	return disk_cache.NewDiskCache(env, opts, cache_config.MaxSizeBytes())
 }
 
-func pebbleCacheFromConfig(env environment.Env, cfg *config.PebbleCacheConfig) (*pebble_cache.PebbleCache, error) {
-	opts := pebble_cache.OptionsFromConstructor(pebble_cache.OptionsConstructor{
+func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble_cache.PebbleCache, error) {
+	opts := &pebble_cache.Options{
 		RootDirectory:          cfg.RootDirectory,
 		Partitions:             cfg.Partitions,
 		PartitionMappings:      cfg.PartitionMappings,
@@ -108,7 +115,7 @@ func pebbleCacheFromConfig(env environment.Env, cfg *config.PebbleCacheConfig) (
 		AtimeWriteBatchSize:    cfg.AtimeWriteBatchSize,
 		AtimeBufferSize:        cfg.AtimeBufferSize,
 		MinEvictionAge:         cfg.MinEvictionAge,
-	})
+	}
 	c, err := pebble_cache.NewPebbleCache(env, opts)
 	if err != nil {
 		return nil, err

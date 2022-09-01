@@ -184,10 +184,8 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	if err := disk_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
-	if cfg.CacheBlock != nil && cfg.CacheBlock.MigrationConfig != nil {
-		if err := migration_cache.Register(realEnv, *cfg.CacheBlock.MigrationConfig); err != nil {
-			log.Fatal(err.Error())
-		}
+	if err := migration_cache.Register(realEnv); err != nil {
+		log.Fatal(err.Error())
 	}
 	if realEnv.GetCache() != nil {
 		log.Printf("Cache: BuildBuddy cache API enabled!")
