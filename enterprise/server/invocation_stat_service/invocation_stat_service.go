@@ -63,12 +63,12 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 
 func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) string {
 	q := ""
-	if !i.isOLAPDBEnabled() {
-		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
-	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
-	} else {
+	if i.isOLAPDBEnabled() {
 		q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 	    SUM(duration_usec) as total_build_time_usec,`
+	} else {
+		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
+	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	}
 
 	q = q + `
@@ -167,10 +167,10 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	qStr, qArgs := q.Build()
 	var rows *sql.Rows
 	var err error
-	if !i.isOLAPDBEnabled() {
-		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
-	} else {
+	if i.isOLAPDBEnabled() {
 		rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
+	} else {
+		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 	}
 	if err != nil {
 		return nil, err
@@ -182,8 +182,8 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	for rows.Next() {
 		stat := &inpb.TrendStat{}
-		if !i.isOLAPDBEnabled() {
-			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+		if i.isOLAPDBEnabled() {
+			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
 		} else {
@@ -203,12 +203,12 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) string {
 	q := fmt.Sprintf("SELECT %s as name,", aggColumn)
-	if !i.isOLAPDBEnabled() {
-		q = q + `
-	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
-	} else {
+	if i.isOLAPDBEnabled() {
 		q = q + `
 	    SUM(duration_usec) as total_build_time_usec,`
+	} else {
+		q = q + `
+	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	}
 	q = q + `
 	    MAX(updated_at_usec) as latest_build_time_usec,
@@ -300,10 +300,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	qStr, qArgs := q.Build()
 	var rows *sql.Rows
 	var err error
-	if !i.isOLAPDBEnabled() {
-		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
-	} else {
+	if i.isOLAPDBEnabled() {
 		rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
+	} else {
+		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
 	}
 	if err != nil {
 		return nil, err
@@ -315,12 +315,12 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	for rows.Next() {
 		stat := &inpb.InvocationStat{}
-		if !i.isOLAPDBEnabled() {
-			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+		if i.isOLAPDBEnabled() {
+			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
 		} else {
-			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
 		}
