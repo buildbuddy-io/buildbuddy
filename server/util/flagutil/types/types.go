@@ -136,6 +136,59 @@ func (f *JSONSliceFlag[T]) Slice() T {
 	return *(reflect.Value)(*f).Interface().(*T)
 }
 
+type JSONStructFlag[T any] reflect.Value
+
+func NewJSONStructFlag[T any](value *T) *JSONStructFlag[T] {
+	v := (JSONStructFlag[T])(reflect.ValueOf(value))
+	return &v
+}
+
+func JSONStruct[T any](name string, defaultValue T, usage string) *T {
+	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	JSONStructVar(value, name, defaultValue, usage)
+	return value
+}
+
+func JSONStructVar[T any](value *T, name string, defaultValue T, usage string) {
+	src := reflect.ValueOf(defaultValue)
+	if src.Kind() != reflect.Struct {
+		log.Fatalf("JSONStructVar called for flag %s with non-struct value %v of type %T.", name, defaultValue, defaultValue)
+	}
+	v := reflect.ValueOf(value)
+	v.Elem().Set(reflect.ValueOf(defaultValue))
+	common.DefaultFlagSet.Var((*JSONStructFlag[T])(&v), name, usage)
+}
+
+func (f *JSONStructFlag[T]) String() string {
+	if !(*reflect.Value)(f).IsValid() || (*reflect.Value)(f).IsNil() {
+		return "{}"
+	}
+	b, err := json.Marshal((*reflect.Value)(f).Interface())
+	if err != nil {
+		alert.UnexpectedEvent("config_cannot_marshal_struct", "err: %s", err)
+		return "{}"
+	}
+	return string(b)
+}
+
+func (f *JSONStructFlag[T]) Set(values string) error {
+	v := (reflect.Value)(*f).Elem()
+	dst := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	if err := json.Unmarshal([]byte(values), dst); err != nil {
+		return err
+	}
+	v.Set(reflect.ValueOf(*dst))
+	return nil
+}
+
+func (f *JSONStructFlag[T]) AliasedType() reflect.Type {
+	return reflect.TypeOf((*T)(nil))
+}
+
+func (f *JSONStructFlag[T]) Struct() T {
+	return *(reflect.Value)(*f).Interface().(*T)
+}
+
 type StringSliceFlag []string
 
 func NewStringSliceFlag(slice *[]string) *StringSliceFlag {

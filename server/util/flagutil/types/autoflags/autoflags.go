@@ -49,6 +49,10 @@ func Var[T any](value *T, name string, defaultValue T, usage string) {
 			flagtypes.JSONSliceVar(value, name, defaultValue, usage)
 			return
 		}
+		if reflect.TypeOf(value).Elem().Kind() == reflect.Struct {
+			flagtypes.JSONStructVar(value, name, defaultValue, usage)
+			return
+		}
 		log.Fatalf("Var was called from flag registry for flag %s with value %v of unrecognized type %T.", name, defaultValue, defaultValue)
 	}
 }

@@ -168,6 +168,29 @@ func TestProtoSliceFlag(t *testing.T) {
 	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*JSONSliceFlag[[]*timestamppb.Timestamp])(nil)).Elem()).Interface().(flag.Value).String())
 }
 
+func TestJSONStructFlag(t *testing.T) {
+	var err error
+	flags := replaceFlagsForTesting(t)
+	flagName := "foo"
+
+	f := JSONStruct(flagName, testStruct{}, "A flag that should contain a testStruct")
+	assert.Equal(t, testStruct{}, *f)
+	assert.Equal(t, testStruct{}, (flags.Lookup(flagName).Value.(*JSONStructFlag[testStruct]).Struct()))
+
+	err = flags.Set(flagName, `{"field":3,"meadow":"watership down"}`)
+	assert.NoError(t, err)
+	assert.Equal(t, testStruct{Field: 3, Meadow: "watership down"}, *f)
+	assert.Equal(t, testStruct{Field: 3, Meadow: "watership down"}, (flags.Lookup(flagName).Value.(*JSONStructFlag[testStruct]).Struct()))
+
+	err = flags.Set(flagName, `{"field":5,"meadow":"runnymede"}`)
+	assert.NoError(t, err)
+	assert.Equal(t, testStruct{Field: 5, Meadow: "runnymede"}, *f)
+	assert.Equal(t, testStruct{Field: 5, Meadow: "runnymede"}, (flags.Lookup(flagName).Value.(*JSONStructFlag[testStruct]).Struct()))
+
+	// `String` should not panic on zero-constructed flag
+	assert.Equal(t, "{}", reflect.New(reflect.TypeOf((*JSONStructFlag[testStruct])(nil)).Elem()).Interface().(flag.Value).String())
+}
+
 func TestFlagAlias(t *testing.T) {
 	flags := replaceFlagsForTesting(t)
 	s := flags.String("string", "test", "")
