@@ -3,6 +3,7 @@ package invocation_stat_service
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 	"sort"
 	"time"
@@ -18,6 +19,10 @@ import (
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+)
+
+var (
+	readFromOLAPDBEnabled = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
 )
 
 type InvocationStatService struct {
@@ -58,7 +63,7 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 
 func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) string {
 	q := ""
-	if i.olapdbh == nil {
+	if i.isOLAPDBEnabled() {
 		q = fmt.Sprintf("SELECT %s as name,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	} else {
@@ -162,7 +167,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	qStr, qArgs := q.Build()
 	var rows *sql.Rows
 	var err error
-	if i.olapdbh == nil {
+	if i.isOLAPDBEnabled() {
 		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 	} else {
 		rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
@@ -177,7 +182,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	for rows.Next() {
 		stat := &inpb.TrendStat{}
-		if i.olapdbh == nil {
+		if i.isOLAPDBEnabled() {
 			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
@@ -198,7 +203,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) string {
 	q := fmt.Sprintf("SELECT %s as name,", aggColumn)
-	if i.olapdbh == nil {
+	if i.isOLAPDBEnabled() {
 		q = q + `
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	} else {
@@ -295,7 +300,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	qStr, qArgs := q.Build()
 	var rows *sql.Rows
 	var err error
-	if i.olapdbh == nil {
+	if i.isOLAPDBEnabled() {
 		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
 	} else {
 		rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
@@ -310,7 +315,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	for rows.Next() {
 		stat := &inpb.InvocationStat{}
-		if i.olapdbh == nil {
+		if i.isOLAPDBEnabled() {
 			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
 			}
@@ -343,4 +348,8 @@ func toStatusClauses(statuses []inpb.OverallStatus) *query_builder.OrClauses {
 		}
 	}
 	return statusClauses
+}
+
+func (i *InvocationStatService) isOLAPDBEnabled() bool {
+	return i.olapdbh != nil && *readFromOLAPDBEnabled
 }

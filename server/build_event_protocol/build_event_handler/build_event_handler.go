@@ -82,6 +82,7 @@ var (
 	chunkFileSizeBytes                = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
 	enableChunkedEventLogs            = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
 	requireInvocationEventParseOnRead = flag.Bool("app.require_invocation_event_parse_on_read", false, "If true, invocation responses will be filled from database values and then by parsing the events on read.")
+	writeToOLAPDBEnabled              = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
 
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
@@ -252,7 +253,7 @@ func (r *statsRecorder) lookupInvocation(ctx context.Context, ij *invocationJWT)
 }
 
 func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *invocationJWT, ti *tables.Invocation) error {
-	if r.env.GetOLAPDBHandle() == nil {
+	if r.env.GetOLAPDBHandle() == nil || !*writeToOLAPDBEnabled {
 		return nil
 	}
 	inv, err := r.lookupInvocation(ctx, ij)
