@@ -48,6 +48,69 @@ func getAnonContext(t testing.TB, env environment.Env) context.Context {
 	return ctx
 }
 
+func TestSetOptionDefaults(t *testing.T) {
+	// Test sets all fields for empty Options
+	opts := &pebble_cache.Options{}
+	pebble_cache.SetOptionDefaults(opts)
+	require.Equal(t, pebble_cache.DefaultMaxSizeBytes, opts.MaxSizeBytes)
+	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
+	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
+	require.Equal(t, &pebble_cache.DefaultAtimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, pebble_cache.DefaultAtimeWriteBatchSize, opts.AtimeWriteBatchSize)
+	require.Equal(t, &pebble_cache.DefaultAtimeBufferSize, opts.AtimeBufferSize)
+	require.Equal(t, &pebble_cache.DefaultMinEvictionAge, opts.MinEvictionAge)
+
+	// Test does not overwrite fields that are explicitly set
+	atimeUpdateThreshold := time.Duration(10)
+	atimeBufferSize := 20
+	minEvictionAge := time.Duration(30)
+	opts = &pebble_cache.Options{
+		MaxSizeBytes:           1,
+		BlockCacheSizeBytes:    2,
+		MaxInlineFileSizeBytes: 3,
+		AtimeWriteBatchSize:    4,
+		AtimeUpdateThreshold:   &atimeUpdateThreshold,
+		AtimeBufferSize:        &atimeBufferSize,
+		MinEvictionAge:         &minEvictionAge,
+	}
+	pebble_cache.SetOptionDefaults(opts)
+	require.Equal(t, int64(1), opts.MaxSizeBytes)
+	require.Equal(t, int64(2), opts.BlockCacheSizeBytes)
+	require.Equal(t, int64(3), opts.MaxInlineFileSizeBytes)
+	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, 4, opts.AtimeWriteBatchSize)
+	require.Equal(t, &atimeBufferSize, opts.AtimeBufferSize)
+	require.Equal(t, &minEvictionAge, opts.MinEvictionAge)
+
+	// Test mix of set and unset fields
+	opts = &pebble_cache.Options{
+		MaxSizeBytes:         1,
+		AtimeUpdateThreshold: &atimeUpdateThreshold,
+	}
+	pebble_cache.SetOptionDefaults(opts)
+	require.Equal(t, int64(1), opts.MaxSizeBytes)
+	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
+	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
+	require.Equal(t, pebble_cache.DefaultAtimeWriteBatchSize, opts.AtimeWriteBatchSize)
+	require.Equal(t, &pebble_cache.DefaultAtimeBufferSize, opts.AtimeBufferSize)
+	require.Equal(t, &pebble_cache.DefaultMinEvictionAge, opts.MinEvictionAge)
+
+	// Test does not overwrite fields that are explicitly and validly set to 0
+	atimeUpdateThreshold = time.Duration(0)
+	atimeBufferSize = 0
+	minEvictionAge = time.Duration(0)
+	opts = &pebble_cache.Options{
+		AtimeUpdateThreshold: &atimeUpdateThreshold,
+		AtimeBufferSize:      &atimeBufferSize,
+		MinEvictionAge:       &minEvictionAge,
+	}
+	pebble_cache.SetOptionDefaults(opts)
+	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, &atimeBufferSize, opts.AtimeBufferSize)
+	require.Equal(t, &minEvictionAge, opts.MinEvictionAge)
+}
+
 func TestACIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))

@@ -43,6 +43,7 @@ go_test(
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
+        "//server/cache/config",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
