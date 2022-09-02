@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -30,7 +29,6 @@ var (
 
 func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticator, context.Context) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "auth.enable_anonymous_usage", true)
 	ta := testauth.NewTestAuthenticator(userMap)
 	te.SetAuthenticator(ta)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
@@ -41,7 +39,7 @@ func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticat
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
-	reader, err := c.Reader(ctx, d, 0)
+	reader, err := c.Reader(ctx, d, 0, 0)
 	if err != nil {
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
@@ -70,8 +68,8 @@ func getCacheConfig(t *testing.T, listenAddr string, join []string) *raft_cache.
 		RootDir:       testfs.MakeTempDir(t),
 		ListenAddress: listenAddr,
 		Join:          join,
-		HTTPPort:      testport.FindFree(t),
-		GRPCPort:      testport.FindFree(t),
+		HTTPAddr:      localAddr(t),
+		GRPCAddr:      localAddr(t),
 	}
 }
 
@@ -293,7 +291,6 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	t.Skip()
 	numNodes := 5
 	addrs := make([]string, 0, numNodes)
 	for i := 0; i < numNodes; i++ {
