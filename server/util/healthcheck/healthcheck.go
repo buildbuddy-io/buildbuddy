@@ -128,7 +128,9 @@ func (h *HealthChecker) handleShutdownFuncs() {
 }
 
 func (h *HealthChecker) RegisterShutdownFunction(f interfaces.CheckerFunc) {
+	h.mu.Lock()
 	h.shutdownFuncs = append(h.shutdownFuncs, f)
+	h.mu.Unlock()
 }
 
 func (h *HealthChecker) AddHealthCheck(name string, f interfaces.Checker) {

@@ -56,13 +56,15 @@ func New(nodeHost *dragonboat.NodeHost, grpcAddr string, createStateMachineFn db
 		createStateMachineFn: createStateMachineFn,
 		grpcAddr:             grpcAddr,
 		listenAddr:           gossipMan.ListenAddr,
-		join:                 gossipMan.Join,
 		gossipManager:        gossipMan,
 		apiClient:            apiClient,
 		bootstrapped:         false,
 		doneOnce:             sync.Once{},
 		doneSetup:            make(chan struct{}),
 		log:                  log.NamedSubLogger(nodeHost.ID()),
+	}
+	for _, joinNode := range gossipMan.Join {
+		cs.join = append(cs.join, joinNode)
 	}
 	sort.Strings(cs.join)
 
