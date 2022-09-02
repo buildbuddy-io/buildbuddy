@@ -224,10 +224,12 @@ func (l *Lease) renewLease() error {
 		// This means another lease was active -- we should save it, so that
 		// we can correctly set the expected value with our next CAS request,
 		// and witness its epoch so that our next set request has a higher one.
-		err := proto.Unmarshal(kv.GetValue(), l.leaseRecord)
+		activeLease := &rfpb.RangeLeaseRecord{}
+		err := proto.Unmarshal(kv.GetValue(), activeLease)
 		if err != nil {
 			return err
 		}
+		l.leaseRecord = activeLease
 	} else {
 		return err
 	}
