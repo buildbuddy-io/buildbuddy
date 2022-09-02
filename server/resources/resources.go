@@ -56,7 +56,13 @@ func setSysRAMBytes() {
 	}
 	mem := gosigar.Mem{}
 	mem.Get()
-	allocatedRAMBytes = int64(mem.ActualFree)
+	if runtime.GOOS == "darwin" {
+		// macOS is more greedy about RAM consumption since it can always swap
+		// mem pages to disk, so use total memory rather than free memory.
+		allocatedRAMBytes = int64(mem.Total)
+	} else {
+		allocatedRAMBytes = int64(mem.ActualFree)
+	}
 }
 
 func setSysMilliCPUCapacity() {
