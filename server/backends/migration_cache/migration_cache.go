@@ -174,6 +174,7 @@ type getResult struct {
 	err          error
 }
 
+// TODO(Maggie): Add copying logic
 func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	resultChan := make(chan getResult)
 	mc.mu.Lock()
@@ -224,8 +225,14 @@ func compareDoubleReads(r1 getResult, r2 getResult) getResult {
 		destResult = r1
 	}
 
-	if srcResult.err != nil || destResult.err != nil {
-		log.Errorf("Migration double read err: src err: %v, dest err: %v", srcResult.err, destResult.err)
+	if srcResult.err != nil {
+		// Skip comparison if source get failed
+		return srcResult
+	} else if destResult.err != nil {
+		// Don't log if data not found in dest cache, bc it may not have been copied yet
+		if !status.IsNotFoundError(destResult.err) {
+			log.Errorf("Migration double read err: dest err: %v", destResult.err)
+		}
 	} else if !bytes.Equal(srcResult.data, destResult.data) {
 		log.Infof("Migration double read err: src data is %v, dest data is %v", string(srcResult.data), string(destResult.data))
 	}
