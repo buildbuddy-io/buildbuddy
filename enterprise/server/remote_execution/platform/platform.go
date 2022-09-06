@@ -85,6 +85,14 @@ const (
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
 	dockerNetworkPropertyName = "dockerNetwork"
+	// dockerSiblingContainers specifies whether to mount the Docker socket
+	// into the container, enabling Docker-out-of-Docker (DooD). This property
+	// has no effect unless the executor is explicitly configured with
+	// `executor.docker_sibling_containers=true`. When this config flag is
+	// enabled, the property defaults to "true" but can be opted out by
+	// explicitly setting it to "false".
+	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/27f2db256e54e5748ee1cd9485ccd0d5444bf1c6/rules/exec_properties/exec_properties.bzl#L176
+	dockerSiblingContainersPropertyName = "dockerSiblingContainers"
 
 	// A BuildBuddy Compute Unit is defined as 1 cpu and 2.5GB of memory.
 	EstimatedComputeUnitsPropertyName = "EstimatedComputeUnits"
@@ -105,18 +113,22 @@ const (
 
 // Properties represents the platform properties parsed from a command.
 type Properties struct {
-	OS                         string
-	Arch                       string
-	Pool                       string
-	EstimatedComputeUnits      int64
-	EstimatedFreeDiskBytes     int64
-	ContainerImage             string
-	ContainerRegistryUsername  string
-	ContainerRegistryPassword  string
-	WorkloadIsolationType      string
-	DockerForceRoot            bool
-	DockerUser                 string
-	DockerNetwork              string
+	OS                        string
+	Arch                      string
+	Pool                      string
+	EstimatedComputeUnits     int64
+	EstimatedFreeDiskBytes    int64
+	ContainerImage            string
+	ContainerRegistryUsername string
+	ContainerRegistryPassword string
+	WorkloadIsolationType     string
+	DockerForceRoot           bool
+	DockerUser                string
+	DockerNetwork             string
+	// note: using a nillable bool prop rather than a bool prop that defaults to
+	// true, as extra protection against exposing a value of `true` if it is
+	// not explicitly enabled on the executor.
+	dockerSiblingContainers    *bool
 	RecycleRunner              bool
 	EnableVFS                  bool
 	EnablePodmanImageStreaming bool
@@ -204,6 +216,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		DockerForceRoot:            boolProp(m, dockerRunAsRootPropertyName, false),
 		DockerUser:                 stringProp(m, dockerUserPropertyName, ""),
 		DockerNetwork:              stringProp(m, dockerNetworkPropertyName, ""),
+		dockerSiblingContainers:    nillableBoolProp(m, dockerSiblingContainersPropertyName),
 		RecycleRunner:              boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                  vfsEnabled,
 		EnablePodmanImageStreaming: boolProp(m, podmanImageStreamingPropertyName, false),
@@ -220,6 +233,18 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		ExtraArgs:                  stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:               stringListProp(m, envOverridesPropertyName),
 	}
+}
+
+func (p *Properties) DockerSiblingContainers(enabled bool) bool {
+	if !enabled {
+		return false
+	}
+	// If enabled at the executor level and not explicitly disabled via platform
+	// prop, then enable by default.
+	if enabled && p.dockerSiblingContainers == nil {
+		return true
+	}
+	return *p.dockerSiblingContainers
 }
 
 // RemoteHeaderOverrides returns the platform properties that should override
@@ -414,6 +439,15 @@ func boolProp(props map[string]string, name string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return strings.EqualFold(val, "true")
+}
+
+func nillableBoolProp(props map[string]string, name string) *bool {
+	val, ok := props[strings.ToLower(name)]
+	if !ok {
+		return nil
+	}
+	parsed := strings.EqualFold(val, "true")
+	return &parsed
 }
 
 func int64Prop(props map[string]string, name string, defaultValue int64) int64 {

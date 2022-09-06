@@ -746,10 +746,10 @@ func (p *pool) hostBuildRoot() string {
 	return fmt.Sprintf("/var/lib/kubelet/pods/%s/volumes/kubernetes.io~empty-dir/executor-data/remotebuilds", p.podID)
 }
 
-func (p *pool) dockerOptions() *docker.DockerOptions {
+func (p *pool) dockerOptions(props *platform.Properties) *docker.DockerOptions {
 	return &docker.DockerOptions{
 		Socket:                  platform.DockerSocket(),
-		EnableSiblingContainers: *dockerSiblingContainers,
+		EnableSiblingContainers: props.DockerSiblingContainers( /*enabled=*/ *dockerSiblingContainers),
 		UseHostNetwork:          *dockerNetHost,
 		DockerMountMode:         *dockerMountMode,
 		DockerCapAdd:            *dockerCapAdd,
@@ -968,7 +968,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
-		opts := p.dockerOptions()
+		opts := p.dockerOptions(props)
 		opts.ForceRoot = props.DockerForceRoot
 		opts.DockerUser = props.DockerUser
 		opts.DockerNetwork = props.DockerNetwork
