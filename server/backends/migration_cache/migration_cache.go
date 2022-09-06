@@ -211,7 +211,7 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	return srcResult.data, srcResult.err
 }
 
-// compareDoubleReads compares read results from two caches and logs if there are errors are discrepancies
+// compareDoubleReads compares read results from two caches and logs if there are errors or discrepancies
 // Returns data from the source cache
 func compareDoubleReads(r1 getResult, r2 getResult) getResult {
 	var srcResult getResult

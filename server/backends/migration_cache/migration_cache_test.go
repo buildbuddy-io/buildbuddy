@@ -212,7 +212,7 @@ func TestGet_DoubleRead(t *testing.T) {
 	require.True(t, bytes.Equal(buf, data))
 }
 
-func TestGet_DoubleReadErr(t *testing.T) {
+func TestGet_DoubleReadDiff(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	maxSizeBytes := int64(1000)
