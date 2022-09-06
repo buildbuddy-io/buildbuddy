@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "migration_cache",
@@ -19,5 +19,24 @@ go_library(
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
+    ],
+)
+
+go_test(
+    name = "migration_cache_test",
+    srcs = ["migration_cache_test.go"],
+    deps = [
+        ":migration_cache",
+        "//server/backends/disk_cache",
+        "//server/environment",
+        "//server/interfaces",
+        "//server/testutil/errorcache",
+        "//server/testutil/testauth",
+        "//server/testutil/testdigest",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/prefix",
+        "//server/util/status",
+        "@com_github_stretchr_testify//require",
     ],
 )

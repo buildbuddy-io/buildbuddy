@@ -1,6 +1,7 @@
 package migration_cache
 
 import (
+	"bytes"
 	"context"
 	"io"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"math/rand"
+	"sync"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
@@ -21,8 +24,11 @@ var (
 )
 
 type MigrationCache struct {
-	Src  interfaces.Cache
-	Dest interfaces.Cache
+	Src                  interfaces.Cache
+	Dest                 interfaces.Cache
+	DoubleReadPercentage float64
+
+	mu sync.RWMutex
 }
 
 func Register(env environment.Env) error {
@@ -39,10 +45,7 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return err
 	}
-	mc := &MigrationCache{
-		Src:  srcCache,
-		Dest: destCache,
-	}
+	mc := NewMigrationCache(srcCache, destCache, cacheMigrationConfig.DoubleReadPercentage)
 
 	if env.GetCache() != nil {
 		log.Warningf("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
@@ -51,6 +54,14 @@ func Register(env environment.Env) error {
 	env.SetCache(mc)
 
 	return nil
+}
+
+func NewMigrationCache(srcCache interfaces.Cache, destCache interfaces.Cache, doubleReadPercentage float64) *MigrationCache {
+	return &MigrationCache{
+		Src:                  srcCache,
+		Dest:                 destCache,
+		DoubleReadPercentage: doubleReadPercentage,
+	}
 }
 
 func validateCacheConfig(config CacheConfig) error {
@@ -137,16 +148,8 @@ func (mc MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return nil, status.UnimplementedError("not yet implemented")
-}
-
 func (mc MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	return nil, status.UnimplementedError("not yet implemented")
-}
-
-func (mc MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	return status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -163,4 +166,119 @@ func (mc MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, lim
 
 func (mc MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
 	return nil, status.UnimplementedError("not yet implemented")
+}
+
+type getResult struct {
+	fromSrcCache bool
+	data         []byte
+	err          error
+}
+
+func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	resultChan := make(chan getResult)
+	mc.mu.Lock()
+	go func() {
+		data, err := mc.Src.Get(ctx, d)
+		resultChan <- getResult{
+			fromSrcCache: true,
+			data:         data,
+			err:          err,
+		}
+	}()
+
+	// Double read some proportion to guarantee that data is consistent between caches
+	shouldDoubleRead := rand.Float64() <= mc.DoubleReadPercentage
+	var srcResult getResult
+	if shouldDoubleRead {
+		go func() {
+			data, err := mc.Dest.Get(ctx, d)
+			resultChan <- getResult{
+				fromSrcCache: false,
+				data:         data,
+				err:          err,
+			}
+		}()
+
+		r1, r2 := <-resultChan, <-resultChan
+		mc.mu.Unlock()
+		srcResult = compareDoubleReads(r1, r2)
+	} else {
+		srcResult = <-resultChan
+		mc.mu.Unlock()
+	}
+
+	// Return data from source cache
+	return srcResult.data, srcResult.err
+}
+
+// compareDoubleReads compares read results from two caches and logs if there are errors are discrepancies
+// Returns data from the source cache
+func compareDoubleReads(r1 getResult, r2 getResult) getResult {
+	var srcResult getResult
+	var destResult getResult
+	if r1.fromSrcCache {
+		srcResult = r1
+		destResult = r2
+	} else {
+		srcResult = r2
+		destResult = r1
+	}
+
+	if srcResult.err != nil || destResult.err != nil {
+		log.Infof("Migration double read err: src err %v, dest err is %v", srcResult.err, destResult.err)
+	} else if !bytes.Equal(srcResult.data, destResult.data) {
+		log.Infof("Migration double read err: src data is %v, dest data is %v", srcResult.data, destResult.data)
+	}
+
+	return srcResult
+}
+
+type setResult struct {
+	fromSrcCache bool
+	err          error
+}
+
+func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+	// Double write data to both caches
+	resultChan := make(chan setResult)
+	mc.mu.Lock()
+	go func() {
+		err := mc.Src.Set(ctx, d, data)
+		resultChan <- setResult{
+			fromSrcCache: true,
+			err:          err,
+		}
+	}()
+	go func() {
+		err := mc.Dest.Set(ctx, d, data)
+		resultChan <- setResult{
+			fromSrcCache: false,
+			err:          err,
+		}
+	}()
+
+	r1, r2 := <-resultChan, <-resultChan
+	mc.mu.Unlock()
+
+	var srcResult setResult
+	var destResult setResult
+	if r1.fromSrcCache {
+		srcResult = r1
+		destResult = r2
+	} else {
+		srcResult = r2
+		destResult = r1
+	}
+
+	if srcResult.err != nil && destResult.err == nil {
+		// If error during write to source cache (source of truth), must delete from destination cache
+		deleteErr := mc.Dest.Delete(ctx, d)
+		if deleteErr != nil {
+			log.Errorf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
+		}
+	} else if destResult.err != nil {
+		log.Errorf("Migration double write err: failure writing digest %v to dest cache: %s", d, destResult.err)
+	}
+
+	return srcResult.err
 }

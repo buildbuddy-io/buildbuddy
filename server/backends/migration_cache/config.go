@@ -7,8 +7,9 @@ import (
 )
 
 type MigrationConfig struct {
-	Src  *CacheConfig `yaml:"src"`
-	Dest *CacheConfig `yaml:"dest"`
+	Src                  *CacheConfig `yaml:"src"`
+	Dest                 *CacheConfig `yaml:"dest"`
+	DoubleReadPercentage float64      `yaml:"double_read_percentage"`
 }
 
 type CacheConfig struct {
