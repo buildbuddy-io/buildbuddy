@@ -21,6 +21,7 @@ go_library(
         "//server/backends/memory_cache",
         "//server/backends/memory_kvstore",
         "//server/backends/memory_metrics_collector",
+        "//server/backends/migration_cache",
         "//server/backends/repo_downloader",
         "//server/backends/slack",
         "//server/build_event_protocol/build_event_handler",
