@@ -27,10 +27,11 @@ go_test(
     srcs = ["migration_cache_test.go"],
     deps = [
         ":migration_cache",
+        "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/environment",
         "//server/interfaces",
-        "//server/testutil/errorcache",
+        "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math/rand"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -12,8 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"math/rand"
-	"sync"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
@@ -132,39 +132,39 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	return c, nil
 }
 
-func (mc MigrationCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (mc *MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	return false, status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	return status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
-func (mc MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
@@ -225,9 +225,9 @@ func compareDoubleReads(r1 getResult, r2 getResult) getResult {
 	}
 
 	if srcResult.err != nil || destResult.err != nil {
-		log.Infof("Migration double read err: src err %v, dest err is %v", srcResult.err, destResult.err)
+		log.Errorf("Migration double read err: src err: %v, dest err: %v", srcResult.err, destResult.err)
 	} else if !bytes.Equal(srcResult.data, destResult.data) {
-		log.Infof("Migration double read err: src data is %v, dest data is %v", srcResult.data, destResult.data)
+		log.Infof("Migration double read err: src data is %v, dest data is %v", string(srcResult.data), string(destResult.data))
 	}
 
 	return srcResult
