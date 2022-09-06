@@ -9,6 +9,7 @@ import (
 	"io"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -635,19 +636,13 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 	return nil
 }
 
-func (leftReplica *Replica) moveDataToReplica(rightReplica *Replica, start, end []byte) error {
+func (leftReplica *Replica) copyDataToReplica(rightReplica *Replica, insertBatch *pebble.Batch, start, end []byte) error {
 	ctx := context.TODO()
 	iter := leftReplica.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(start),
 		UpperBound: keys.Key(end),
 	})
 	defer iter.Close()
-
-	deleteBatch := leftReplica.db.NewBatch()
-	defer deleteBatch.Close()
-
-	insertBatch := rightReplica.db.NewBatch()
-	defer insertBatch.Close()
 
 	for iter.First(); iter.Valid(); iter.Next() {
 		err := insertBatch.Set(iter.Key(), iter.Value(), nil /*ignore write options*/)
@@ -679,30 +674,29 @@ func (leftReplica *Replica) moveDataToReplica(rightReplica *Replica, start, end 
 			return err
 		}
 		if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
-			log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
+			leftReplica.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
 			return status.FailedPreconditionError("stored metadata changed when fetching file")
 		}
 	}
 
-	if err := deleteBatch.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
-		return err
-	}
-
-	if err := insertBatch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
-		return err
-	}
-
-	if err := deleteBatch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
-		return err
-	}
-
-	if err := leftReplica.deleteStoredFiles(start, end); err != nil {
-		return err
-	}
 	return nil
 }
 
+func (sm *Replica) splitAppliesToThisReplica(req *rfpb.SplitRequest) bool {
+	for _, replica := range req.GetLeft().GetReplicas() {
+		if replica.GetClusterId() == sm.clusterID &&
+			replica.GetNodeId() == sm.nodeID {
+			return true
+		}
+	}
+	return false
+}
+
 func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitResponse, error) {
+	startTime := time.Now()
+	defer func() {
+		sm.log.Infof("split() took %s", time.Since(startTime))
+	}()
 	if req.GetLeft() == nil || req.GetProposedRight() == nil {
 		return nil, status.FailedPreconditionError("left and right ranges must be provided")
 	}
@@ -718,35 +712,17 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 	rd := sm.rangeDescriptor
 	sm.rangeMu.Unlock()
 
+	// Safety check: ensure that this range's current RangeDescriptor
+	// matches the one in the split. This will be true when replicas are
+	// split for the first time as well as when they are replayed.
 	if !proto.Equal(rd, req.GetLeft()) {
 		rdText, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(rd)
 		leftText, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(req.GetLeft())
 		return nil, status.OutOfRangeErrorf("split %q (current) != %q (req)", string(rdText), string(leftText))
 	}
 
-	rightSM, err := sm.store.GetReplica(req.GetProposedRight().GetRangeId())
-	if err != nil {
-		return nil, err
-	}
-
-	// Populate the new replica.
-	rightDB, err := rightSM.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer rightDB.Close()
-	rwb := rightDB.NewIndexedBatch()
-	defer rwb.Close()
-
-	// Delete the keys (and data) from each side that are now owned by the other side.
-	// Right side delete should be a no-op if this is a freshly created replica.
+	// Compute the new left and right range descriptor values.
 	sp := req.GetSplitPoint()
-	if err := sm.moveDataToReplica(rightSM, sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
-		return nil, err
-	}
-
-	// Write the updated local range keys to both places
-	// Update the metarange and return any errors.
 	leftRD := proto.Clone(req.GetLeft()).(*rfpb.RangeDescriptor)
 	rightRD := proto.Clone(req.GetProposedRight()).(*rfpb.RangeDescriptor)
 	leftRD.Generation += 1                     // increment rd generation upon split
@@ -763,18 +739,68 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 		return nil, err
 	}
 
+	splitRequiresExternalChanges := sm.splitAppliesToThisReplica(req)
+	if splitRequiresExternalChanges {
+		sm.log.Debugf("Split %+v applies to this replica c%dn%d: making external changes!", req, sm.clusterID, sm.nodeID)
+		// If this split already happened and we're just replaying the
+		// log, then we don't want to copy data to neighbor replicas or
+		// update the metarange. We do still want to ensure that data on
+		// this node past the split point is deleted, and ensure the
+		// local range descriptor is updated appropriately.
+		//
+		// Basically, we *want* to apply any changes that happen locally
+		// but *do not* want to apply any remote changes.
+		//
+		// Note that splits cmds are only run through the "left" side
+		// that is being split, so the logs from a specific split are
+		// not present in the "right" side replica created by that
+		// split.
+		rightSM, err := sm.store.GetReplica(req.GetProposedRight().GetRangeId())
+		if err != nil {
+			return nil, err
+		}
+
+		// Populate the new replica.
+		rightDB, err := rightSM.leaser.DB()
+		if err != nil {
+			return nil, err
+		}
+		defer rightDB.Close()
+		rwb := rightDB.NewIndexedBatch()
+		defer rwb.Close()
+
+		// Delete the keys (and data) from each side that are now owned by the other side.
+		// Right side delete should be a no-op if this is a freshly created replica.
+
+		if err := sm.copyDataToReplica(rightSM, rwb, sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
+			return nil, err
+		}
+
+		// update the right local range: this will make it active, but no
+		// traffic will be sent yet because the metarange has not been updated.
+		if err := rightSM.rangeCheckedSet(rwb, constants.LocalRangeKey, rightRDBuf); err != nil {
+			return nil, err
+		}
+
+		if err := rightDB.Apply(rwb, &pebble.WriteOptions{Sync: true}); err != nil {
+			return nil, err
+		}
+	} else {
+		sm.log.Debugf("Split %+v doe not apply to this replica c%dn%d: skipping external changes!", req, sm.clusterID, sm.nodeID)
+	}
+
+	// ensure that any data past the split point is deleted from this range.
+	// TODO(tylerw): would be nice to only apply this if the wb commits successfully?
+	if err := wb.DeleteRange(sp.GetSplit(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+		return nil, err
+	}
+
+	if err := sm.deleteStoredFiles(sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
+		return nil, err
+	}
+
 	// update the left local range (when this batch is committed).
 	if err := sm.rangeCheckedSet(wb, constants.LocalRangeKey, leftRDBuf); err != nil {
-		return nil, err
-	}
-
-	// update the right local range: this will make it active, but no
-	// traffic will be sent yet because the metarange has not been updated.
-	if err := rightSM.rangeCheckedSet(rwb, constants.LocalRangeKey, rightRDBuf); err != nil {
-		return nil, err
-	}
-
-	if err := rightDB.Apply(rwb, &pebble.WriteOptions{Sync: true}); err != nil {
 		return nil, err
 	}
 
@@ -790,10 +816,11 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 			return nil, err
 		}
 	} else {
-		// use sender to remotely update the metarange, and return any
-		// errors.
-		if err := sm.updateMetarange(rd, leftRD, rightRD); err != nil {
-			return nil, err
+		if splitRequiresExternalChanges {
+			// use sender to remotely update the metarange.
+			if err := sm.updateMetarange(rd, leftRD, rightRD); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return &rfpb.SplitResponse{
@@ -1443,7 +1470,7 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 				return err
 			}
 			if !proto.Equal(newMetadata, fileMetadata.GetStorageMetadata()) {
-				log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), newMetadata)
+				sm.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), newMetadata)
 				return status.FailedPreconditionError("stored metadata changed when fetching file")
 			}
 		}
