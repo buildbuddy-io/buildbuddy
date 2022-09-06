@@ -283,12 +283,11 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		args = append(args, "--user="+c.options.User)
 	}
 	networkMode := c.options.DefaultNetworkMode
-	networkProp := strings.ToLower(c.options.Network)
 	// Translate network platform prop to the equivalent Podman network mode, to
 	// allow overriding the default configured mode. The property values ("off",
 	// "standard") come from the original exec property defined here:
 	// https://github.com/bazelbuild/bazel-toolchains/blob/27f2db256e54e5748ee1cd9485ccd0d5444bf1c6/rules/exec_properties/exec_properties.bzl#L122
-	switch networkProp {
+	switch strings.ToLower(c.options.Network) {
 	case "off":
 		networkMode = "none"
 	case "standard": // use Podman default (bridge)

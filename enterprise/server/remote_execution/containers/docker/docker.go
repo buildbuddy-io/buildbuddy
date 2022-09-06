@@ -248,8 +248,7 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	// allow overriding the default configured mode. The property values ("off",
 	// "standard") come from the original exec property defined here:
 	// https://github.com/bazelbuild/bazel-toolchains/blob/27f2db256e54e5748ee1cd9485ccd0d5444bf1c6/rules/exec_properties/exec_properties.bzl#L122
-	networkProp := strings.ToLower(r.options.DockerNetwork)
-	switch networkProp {
+	switch strings.ToLower(r.options.DockerNetwork) {
 	case "off":
 		networkMode = dockercontainer.NetworkMode("none")
 	case "standard": // use Docker default (bridge)
