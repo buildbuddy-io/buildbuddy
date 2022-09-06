@@ -297,3 +297,31 @@ func TestGet_SrcReadErr(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, data)
 }
+
+func TestGetSet_EmptyData(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	doubleReadPercentage := 1.0
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage)
+
+	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+	err = mc.Set(ctx, d, []byte{})
+	require.NoError(t, err)
+
+	data, err := mc.Get(ctx, d)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal([]byte{}, data))
+}
