@@ -739,39 +739,34 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 		return nil, err
 	}
 
+	// If this split already happened and we're just replaying the log, then
+	// we don't want to copy data to neighbor replicas or update the
+	// metarange. We do still want to ensure that data on this node past the
+	// split point is deleted, and ensure the local range descriptor is
+	// updated appropriately.
+	//
+	// Basically, we *want* to apply any changes that happen locally but
+	// *do not* want to apply any remote changes.
+	//
+	// Note that splits cmds are only run through the "left" side that is
+	// being split, so the logs from a specific split are not present in the
+	// "right" side replica created by that split.
 	splitRequiresExternalChanges := sm.splitAppliesToThisReplica(req)
 	if splitRequiresExternalChanges {
 		sm.log.Debugf("Split %+v applies to this replica c%dn%d: making external changes!", req, sm.clusterID, sm.nodeID)
-		// If this split already happened and we're just replaying the
-		// log, then we don't want to copy data to neighbor replicas or
-		// update the metarange. We do still want to ensure that data on
-		// this node past the split point is deleted, and ensure the
-		// local range descriptor is updated appropriately.
-		//
-		// Basically, we *want* to apply any changes that happen locally
-		// but *do not* want to apply any remote changes.
-		//
-		// Note that splits cmds are only run through the "left" side
-		// that is being split, so the logs from a specific split are
-		// not present in the "right" side replica created by that
-		// split.
 		rightSM, err := sm.store.GetReplica(req.GetProposedRight().GetRangeId())
 		if err != nil {
 			return nil, err
 		}
 
-		// Populate the new replica.
 		rightDB, err := rightSM.leaser.DB()
 		if err != nil {
 			return nil, err
 		}
 		defer rightDB.Close()
+
 		rwb := rightDB.NewIndexedBatch()
 		defer rwb.Close()
-
-		// Delete the keys (and data) from each side that are now owned by the other side.
-		// Right side delete should be a no-op if this is a freshly created replica.
-
 		if err := sm.copyDataToReplica(rightSM, rwb, sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
 			return nil, err
 		}
