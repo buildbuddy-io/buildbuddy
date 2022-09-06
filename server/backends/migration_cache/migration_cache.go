@@ -3,7 +3,6 @@ package migration_cache
 import (
 	"context"
 	"io"
-	"reflect"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -55,16 +54,10 @@ func Register(env environment.Env) error {
 }
 
 func validateCacheConfig(config CacheConfig) error {
-	numConfigs := 0
-	v := reflect.ValueOf(config)
-	for i := 0; i < v.NumField(); i++ {
-		if !v.Field(i).IsNil() {
-			numConfigs++
-		}
-	}
-
-	if numConfigs != 1 {
-		return status.FailedPreconditionError("exactly one config must be set")
+	if config.PebbleConfig != nil && config.DiskConfig != nil {
+		return status.FailedPreconditionError("only one cache config can be set")
+	} else if config.PebbleConfig == nil && config.DiskConfig == nil {
+		return status.FailedPreconditionError("a cache config must be set")
 	}
 
 	return nil
@@ -129,56 +122,45 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 }
 
 func (mc MigrationCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	//TODO implement me
-	panic("implement me")
+	return false, status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	//TODO implement me
-	panic("implement me")
+	return status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	//TODO implement me
-	panic("implement me")
+	return status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
-	//TODO implement me
-	panic("implement me")
+	return status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, status.UnimplementedError("not yet implemented")
 }
 
 func (mc MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, status.UnimplementedError("not yet implemented")
 }
