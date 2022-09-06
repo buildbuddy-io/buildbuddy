@@ -64,7 +64,8 @@ var (
 	rootDirectory           = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
 	hostRootDirectory       = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
 	dockerMountMode         = flag.String("executor.docker_mount_mode", "", "Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/")
-	dockerNetHost           = flag.Bool("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.")
+	dockerNetHost           = flagutil.Deprecated("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.", "Use --executor.docker_network=host instead.")
+	dockerNetwork           = flag.String("executor.docker_network", "", "If set, set docker/podman --network to this value by default. Can be overridden per-action with the `dockerNetwork` exec property, which accepts values 'off' (--network=none) or 'standard' (--network=<default>).")
 	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
 	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
 	dockerDevices           = flagutil.New("executor.docker_devices", []container.DockerDeviceMapping{}, `Configure (docker) devices that will be available inside the sandbox container. Format is --executor.docker_devices='[{"PathOnHost":"/dev/foo","PathInContainer":"/some/dest","CgroupPermissions":"see,docker,docs"}]'`)
@@ -754,6 +755,7 @@ func (p *pool) dockerOptions() *docker.DockerOptions {
 		DockerMountMode:         *dockerMountMode,
 		DockerCapAdd:            *dockerCapAdd,
 		DockerDevices:           *dockerDevices,
+		DefaultNetworkMode:      *dockerNetwork,
 		Volumes:                 *dockerVolumes,
 		InheritUserIDs:          *dockerInheritUserIDs,
 	}
@@ -981,6 +983,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 			ForceRoot:            props.DockerForceRoot,
 			User:                 props.DockerUser,
 			Network:              props.DockerNetwork,
+			DefaultNetworkMode:   *dockerNetwork,
 			CapAdd:               *dockerCapAdd,
 			Devices:              *dockerDevices,
 			Volumes:              *dockerVolumes,

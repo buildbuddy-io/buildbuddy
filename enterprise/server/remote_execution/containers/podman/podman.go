@@ -201,13 +201,14 @@ func (p *Provider) NewContainer(image string, options *PodmanOptions) container.
 }
 
 type PodmanOptions struct {
-	ForceRoot bool
-	User      string
-	Network   string
-	CapAdd    string
-	Devices   []container.DockerDeviceMapping
-	Volumes   []string
-	Runtime   string
+	ForceRoot          bool
+	User               string
+	DefaultNetworkMode string
+	Network            string
+	CapAdd             string
+	Devices            []container.DockerDeviceMapping
+	Volumes            []string
+	Runtime            string
 	// EnableStats determines whether to enable the stats API. This also enables
 	// resource monitoring while tasks are in progress.
 	EnableStats          bool
@@ -281,8 +282,20 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	} else if c.options.User != "" && userRegex.MatchString(c.options.User) {
 		args = append(args, "--user="+c.options.User)
 	}
-	if strings.ToLower(c.options.Network) == "off" {
-		args = append(args, "--network=none")
+	networkMode := c.options.DefaultNetworkMode
+	// Translate network platform prop to the equivalent Podman network mode, to
+	// allow overriding the default configured mode. The property values ("off",
+	// "standard") come from the original exec property defined here:
+	// https://github.com/bazelbuild/bazel-toolchains/blob/27f2db256e54e5748ee1cd9485ccd0d5444bf1c6/rules/exec_properties/exec_properties.bzl#L122
+	switch strings.ToLower(c.options.Network) {
+	case "off":
+		networkMode = "none"
+	case "standard": // use Podman default (bridge)
+		networkMode = ""
+	default: // ignore other values for now, sticking to the configured default.
+	}
+	if networkMode != "" {
+		args = append(args, "--network="+networkMode)
 	}
 	if c.options.CapAdd != "" {
 		args = append(args, "--cap-add="+c.options.CapAdd)
