@@ -6,12 +6,25 @@ package api.v1;
 message GetFileRequest {
   // This corresponds to the uri field in the File message.
   string uri = 1;
+
+  // Compression formats supported by the client. The server treats this list as
+  // though IDENTITY is implicitly appended, so it does not need to be
+  // explicitly specified by clients here. The server may return the response
+  // payload in one of these compression formats, if supported. Clients should
+  // list this in their preferred order, and the server will use the first
+  // value that is supported.
+  repeated Compressor.Value acceptable_compressors = 2;
 }
 
 // Response object for GetFile
 message GetFileResponse {
   // The file data.
   bytes data = 1;
+
+  // The compression format of `data`. This will be one of the
+  // `acceptable_compressors` specified in the request, or the IDENTITY
+  // compressor for uncompressed payloads.
+  Compressor.Value compressor = 2;
 }
 
 // A file associated with a BuildBuddy build.
@@ -48,3 +61,17 @@ message DeleteFileRequest {
 
 // Response object for DeleteFile
 message DeleteFileResponse {}
+
+// Compression formats which may be supported.
+//
+// Note: this matches the Compressor proto from Bazel's remote APIs
+// (proto/remote_execution.proto).
+message Compressor {
+  enum Value {
+    // No compression.
+    IDENTITY = 0;
+
+    // Zstandard compression.
+    ZSTD = 1;
+  }
+}
