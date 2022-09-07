@@ -15,8 +15,15 @@ storage:
     root_directory: /tmp/buildbuddy_enterprise
   enable_chunked_event_logs: true
 cache:
-  disk:
-    root_directory: /tmp/buildbuddy-enterprise-cache
+#  disk:
+#    root_directory: /tmp/buildbuddy-enterprise-cache
+  migration:
+    src:
+      disk:
+        root_directory: /tmp/buildbuddy-enterprise-cache
+    dest:
+      pebble:
+        root_directory: /tmp/buildbuddy-enterprise-cache
 auth:
   enable_anonymous_usage: true
   enable_self_auth: true
