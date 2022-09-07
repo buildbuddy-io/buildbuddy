@@ -1,11 +1,15 @@
 package store_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -24,7 +28,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/cockroachdb/pebble"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 	"github.com/stretchr/testify/require"
@@ -703,4 +709,157 @@ func TestListCluster(t *testing.T) {
 	list, err := s1.ListCluster(ctx, &rfpb.ListClusterRequest{})
 	require.Nil(t, err)
 	require.Equal(t, 1, len(list.GetRangeReplicas()))
+}
+
+func bytesToUint64(buf []byte) uint64 {
+	return binary.LittleEndian.Uint64(buf)
+}
+
+func TestPostFactoSplit(t *testing.T) {
+	sf := newStoreFactory(t)
+	s1, nh1 := sf.NewStore(t)
+	s2, nh2 := sf.NewStore(t)
+	s3, nh3 := sf.NewStore(t)
+	s4, nh4 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*TestingStore{s1, s2, s3}
+	initialMembers := map[uint64]string{
+		1: nh1.ID(),
+		2: nh2.ID(),
+		3: nh3.ID(),
+	}
+
+	rd := &rfpb.RangeDescriptor{
+		Left:       []byte{constants.MinByte},
+		Right:      []byte{constants.MaxByte},
+		RangeId:    1,
+		Generation: 1,
+		Replicas: []*rfpb.ReplicaDescriptor{
+			{ClusterId: 1, NodeId: 1},
+			{ClusterId: 1, NodeId: 2},
+			{ClusterId: 1, NodeId: 3},
+		},
+	}
+	rdBuf, err := proto.Marshal(rd)
+	require.Nil(t, err)
+	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: rdBuf,
+		},
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastClusterIDKey,
+		Delta: uint64(1),
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastNodeIDKey,
+		Delta: uint64(3),
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastRangeIDKey,
+		Delta: uint64(1),
+	}).Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(rd.GetRight()),
+			Value: rdBuf,
+		},
+	}).ToProto()
+	require.Nil(t, err)
+
+	for i, s := range stores {
+		req := &rfpb.StartClusterRequest{
+			ClusterId:     uint64(1),
+			NodeId:        uint64(i + 1),
+			InitialMember: initialMembers,
+			Batch:         batchProto,
+		}
+		_, err := s.StartCluster(ctx, req)
+		require.Nil(t, err)
+	}
+
+	// Attempting to Split an empty range will always fail. So write a
+	// a small number of records before trying to Split.
+	written := writeNRecords(ctx, t, stores[0], 10)
+
+	splitResponse, err := s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+		Range: rd,
+	})
+	require.Nil(t, err, err)
+
+	// Expect that a new cluster was added with clusterID = 2
+	// having 3 replicas.
+	replicas, err := s1.GetClusterMembership(ctx, 2)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(replicas))
+
+	// Check that all files are found.
+	for _, fr := range written {
+		readRecord(ctx, t, s3, fr)
+	}
+
+	// Now bring up a new replica in the original cluster.
+	_, err = s3.AddClusterNode(ctx, &rfpb.AddClusterNodeRequest{
+		Range: s1.GetRange(1),
+		Node: &rfpb.NodeDescriptor{
+			Nhid:        nh4.ID(),
+			RaftAddress: s4.RaftAddress,
+			GrpcAddress: s4.GRPCAddress,
+		},
+	})
+	require.Nil(t, err)
+
+	r1, err := s1.GetReplica(1)
+	require.Nil(t, err)
+	r1DB, err := r1.TestingDB()
+	require.Nil(t, err)
+
+	r4, err := s4.GetReplica(1)
+	require.Nil(t, err)
+	r4DB, err := r4.TestingDB()
+	require.Nil(t, err)
+
+	lastIndexBytes, closer, err := r1DB.Get([]byte(constants.LastAppliedIndexKey))
+	require.Nil(t, err)
+	latestIndex := bytesToUint64(lastIndexBytes)
+	closer.Close()
+
+	// Wait for raft replication to finish bringing the new node up to date.
+	waitStart := time.Now()
+	for {
+		lastIndexBytes, closer, err := r4DB.Get([]byte(constants.LastAppliedIndexKey))
+		require.Nil(t, err)
+		currentIndex := bytesToUint64(lastIndexBytes)
+		closer.Close()
+		if currentIndex == latestIndex {
+			log.Infof("Replica caught up in %s", time.Since(waitStart))
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Now verify that all keys that should be on the new node are present.
+	iter := r4DB.NewIter(&pebble.IterOptions{
+		LowerBound: keys.Key([]byte{constants.MinByte}),
+		UpperBound: keys.Key([]byte{constants.MaxByte}),
+	})
+	defer iter.Close()
+
+	var fileMetadataKeys [][]byte
+	for _, fr := range written {
+		fmk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
+		require.Nil(t, err)
+		fileMetadataKeys = append(fileMetadataKeys, fmk)
+	}
+
+	sort.Slice(fileMetadataKeys, func(i, j int) bool {
+		return bytes.Compare(fileMetadataKeys[i], fileMetadataKeys[j]) < 0
+	})
+
+	for _, fmk := range fileMetadataKeys {
+		if bytes.Compare(fmk, splitResponse.GetLeft().GetRight()) >= 0 {
+			break
+		}
+		found := iter.SeekGE(fmk)
+		require.True(t, found)
+		require.Equal(t, string(fmk), string(iter.Key()))
+	}
 }
