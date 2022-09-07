@@ -895,7 +895,9 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		}
 		nodeGrpcAddrs[nhid] = grpcAddr
 	}
-	bootStrapInfo := bringup.MakeBootstrapInfo(newIDs.clusterID, newIDs.maxNodeID, nodeGrpcAddrs)
+
+	firstNodeID := newIDs.maxNodeID - uint64(len(existingMembers))
+	bootStrapInfo := bringup.MakeBootstrapInfo(newIDs.clusterID, firstNodeID, nodeGrpcAddrs)
 	stubRange := &rfpb.RangeDescriptor{
 		RangeId: newIDs.rangeID,
 	}
@@ -1226,6 +1228,7 @@ func (s *Store) reserveIDsForNewCluster(ctx context.Context, numNodes int) (*new
 		rangeID:   rangeIDIncrRsp.GetValue(),
 		maxNodeID: nodeIDsIncrRsp.GetValue(),
 	}
+
 	return ids, nil
 }
 
