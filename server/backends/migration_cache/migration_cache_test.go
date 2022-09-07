@@ -216,41 +216,6 @@ func TestGet_DoubleRead(t *testing.T) {
 	require.True(t, bytes.Equal(buf, data))
 }
 
-func TestGet_DoubleReadDiff(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
-	rootDirSrc := testfs.MakeTempDir(t)
-	rootDirDest := testfs.MakeTempDir(t)
-
-	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage)
-
-	// Set different data in each cache
-	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
-	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	require.NotEqual(t, d1, d2)
-
-	err = srcCache.Set(ctx, d1, buf1)
-	require.NoError(t, err)
-	err = destCache.Set(ctx, d1, buf2)
-	require.NoError(t, err)
-
-	// Should return data saved to src cache
-	data, err := mc.Get(ctx, d1)
-	require.NoError(t, err)
-	require.True(t, bytes.Equal(buf1, data))
-}
-
 func TestGet_DestReadErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
