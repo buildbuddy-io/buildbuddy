@@ -1,11 +1,9 @@
 package migration_cache
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"math/rand"
-	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -14,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
@@ -24,11 +23,9 @@ var (
 )
 
 type MigrationCache struct {
-	Src                  interfaces.Cache
-	Dest                 interfaces.Cache
-	DoubleReadPercentage float64
-
-	mu sync.RWMutex
+	src                  interfaces.Cache
+	dest                 interfaces.Cache
+	doubleReadPercentage float64
 }
 
 func Register(env environment.Env) error {
@@ -58,9 +55,9 @@ func Register(env environment.Env) error {
 
 func NewMigrationCache(srcCache interfaces.Cache, destCache interfaces.Cache, doubleReadPercentage float64) *MigrationCache {
 	return &MigrationCache{
-		Src:                  srcCache,
-		Dest:                 destCache,
-		DoubleReadPercentage: doubleReadPercentage,
+		src:                  srcCache,
+		dest:                 destCache,
+		doubleReadPercentage: doubleReadPercentage,
 	}
 }
 
@@ -168,124 +165,70 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteC
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
-type getResult struct {
-	fromSrcCache bool
-	data         []byte
-	err          error
-}
-
 // TODO(Maggie): Add copying logic
 func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	resultChan := make(chan getResult)
-	mc.mu.Lock()
-	go func() {
-		data, err := mc.Src.Get(ctx, d)
-		resultChan <- getResult{
-			fromSrcCache: true,
-			data:         data,
-			err:          err,
-		}
-	}()
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+	var srcBuf []byte
+
+	eg.Go(func() error {
+		srcBuf, srcErr = mc.src.Get(gctx, d)
+		return srcErr
+	})
 
 	// Double read some proportion to guarantee that data is consistent between caches
-	shouldDoubleRead := rand.Float64() <= mc.DoubleReadPercentage
-	var srcResult getResult
-	if shouldDoubleRead {
-		go func() {
-			data, err := mc.Dest.Get(ctx, d)
-			resultChan <- getResult{
-				fromSrcCache: false,
-				data:         data,
-				err:          err,
-			}
-		}()
+	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+	if doubleRead {
+		eg.Go(func() error {
+			_, dstErr = mc.dest.Get(gctx, d)
+			return nil // we don't care about the return error from this cache
+		})
+	}
 
-		r1, r2 := <-resultChan, <-resultChan
-		mc.mu.Unlock()
-		srcResult = compareDoubleReads(r1, r2)
-	} else {
-		srcResult = <-resultChan
-		mc.mu.Unlock()
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	if doubleRead {
+		if srcErr != dstErr {
+			// Don't log if data not found in dest cache, bc it may not have been copied yet
+			if !status.IsNotFoundError(dstErr) {
+				log.Warningf("Double read of %q failed. src err %s, dest err %s", d, srcErr, dstErr)
+			}
+		}
 	}
 
 	// Return data from source cache
-	return srcResult.data, srcResult.err
-}
-
-// compareDoubleReads compares read results from two caches and logs if there are errors or discrepancies
-// Returns data from the source cache
-func compareDoubleReads(r1 getResult, r2 getResult) getResult {
-	var srcResult getResult
-	var destResult getResult
-	if r1.fromSrcCache {
-		srcResult = r1
-		destResult = r2
-	} else {
-		srcResult = r2
-		destResult = r1
-	}
-
-	if srcResult.err != nil {
-		// Skip comparison if source get failed
-		return srcResult
-	} else if destResult.err != nil {
-		// Don't log if data not found in dest cache, bc it may not have been copied yet
-		if !status.IsNotFoundError(destResult.err) {
-			log.Errorf("Migration double read err: dest err: %v", destResult.err)
-		}
-	} else if !bytes.Equal(srcResult.data, destResult.data) {
-		log.Infof("Migration double read err: src data is %v, dest data is %v", string(srcResult.data), string(destResult.data))
-	}
-
-	return srcResult
-}
-
-type setResult struct {
-	fromSrcCache bool
-	err          error
+	return srcBuf, srcErr
 }
 
 func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+
 	// Double write data to both caches
-	resultChan := make(chan setResult)
-	mc.mu.Lock()
-	go func() {
-		err := mc.Src.Set(ctx, d, data)
-		resultChan <- setResult{
-			fromSrcCache: true,
-			err:          err,
-		}
-	}()
-	go func() {
-		err := mc.Dest.Set(ctx, d, data)
-		resultChan <- setResult{
-			fromSrcCache: false,
-			err:          err,
-		}
-	}()
+	eg.Go(func() error {
+		srcErr = mc.src.Set(gctx, d, data)
+		return srcErr
+	})
 
-	r1, r2 := <-resultChan, <-resultChan
-	mc.mu.Unlock()
+	eg.Go(func() error {
+		dstErr = mc.dest.Set(gctx, d, data)
+		return nil // don't fail if there's an error from this cache
+	})
 
-	var srcResult setResult
-	var destResult setResult
-	if r1.fromSrcCache {
-		srcResult = r1
-		destResult = r2
-	} else {
-		srcResult = r2
-		destResult = r1
-	}
-
-	if srcResult.err != nil && destResult.err == nil {
+	if err := eg.Wait(); err != nil {
 		// If error during write to source cache (source of truth), must delete from destination cache
-		deleteErr := mc.Dest.Delete(ctx, d)
-		if deleteErr != nil {
-			log.Errorf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
+		deleteErr := mc.dest.Delete(ctx, d)
+		if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
+			log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
 		}
-	} else if destResult.err != nil {
-		log.Errorf("Migration double write err: failure writing digest %v to dest cache: %s", d, destResult.err)
+		return err
 	}
 
-	return srcResult.err
+	if dstErr != nil {
+		log.Warningf("Migration double write err: failure writing digest %v to dest cache: %s", d, dstErr)
+	}
+
+	return srcErr
 }

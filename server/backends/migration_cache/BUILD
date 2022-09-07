@@ -19,6 +19,7 @@ go_library(
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
