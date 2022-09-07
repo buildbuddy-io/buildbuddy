@@ -9,6 +9,7 @@ go_library(
         "//proto:api_key_go_proto",
         "//server/environment",
         "//server/util/perms",
+        "//server/util/status",
     ],
 )
 
