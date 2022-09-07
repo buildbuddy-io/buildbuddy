@@ -26,6 +26,11 @@ type MigrationCache struct {
 	src                  interfaces.Cache
 	dest                 interfaces.Cache
 	doubleReadPercentage float64
+
+	eg       *errgroup.Group
+	quitChan chan struct{}
+
+	copyChan chan *repb.Digest
 }
 
 func Register(env environment.Env) error {
@@ -42,7 +47,7 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return err
 	}
-	mc := NewMigrationCache(srcCache, destCache, cacheMigrationConfig.DoubleReadPercentage)
+	mc := NewMigrationCache(cacheMigrationConfig, srcCache, destCache)
 
 	if env.GetCache() != nil {
 		log.Warningf("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
@@ -50,14 +55,20 @@ func Register(env environment.Env) error {
 	}
 	env.SetCache(mc)
 
+	mc.Start(env.GetServerContext())
+	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		return mc.Stop()
+	})
+
 	return nil
 }
 
-func NewMigrationCache(srcCache interfaces.Cache, destCache interfaces.Cache, doubleReadPercentage float64) *MigrationCache {
+func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
 	return &MigrationCache{
-		src:                  srcCache,
-		dest:                 destCache,
-		doubleReadPercentage: doubleReadPercentage,
+		src:      srcCache,
+		dest:     destCache,
+		copyChan: make(chan *repb.Digest, migrationConfig.CopyChanBufferSize),
+		eg:       &errgroup.Group{},
 	}
 }
 
@@ -187,6 +198,7 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
+
 	}
 
 	if doubleRead {
@@ -196,6 +208,13 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 				log.Warningf("Double read of %q failed. src err %s, dest err %s", d, srcErr, dstErr)
 			}
 		}
+	}
+
+	// Enqueue non-blocking copying
+	select {
+	case mc.copyChan <- d:
+	default:
+		log.Warningf("Migration copy chan is full. We may need to increase the buffer size. Dropping attempt to copy digest %v", d)
 	}
 
 	// Return data from source cache
@@ -231,4 +250,50 @@ func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) 
 	}
 
 	return srcErr
+}
+
+func (mc *MigrationCache) CopyDataInBackground(ctx context.Context) {
+	for {
+		select {
+		case <-mc.quitChan:
+			return
+		case digestToCopy := <-mc.copyChan:
+			alreadyCopied, err := mc.dest.Contains(ctx, digestToCopy)
+			if err != nil {
+				log.Warningf("Migration copy err: Could not call Contains on dest cache: %s", err)
+				continue
+			}
+
+			if !alreadyCopied {
+				srcData, err := mc.src.Get(ctx, digestToCopy)
+				if err != nil {
+					log.Warningf("Migration copy err: Could not fetch digest %v from src cache: %s", digestToCopy, err)
+					continue
+				}
+
+				err = mc.dest.Set(ctx, digestToCopy, srcData)
+				if err != nil {
+					log.Warningf("Migration copy err: Could not write data for digest %v to dest cache: %s", digestToCopy, err)
+				}
+			}
+		}
+	}
+}
+
+func (mc *MigrationCache) Start(ctx context.Context) error {
+	mc.quitChan = make(chan struct{}, 0)
+	mc.eg.Go(func() error {
+		mc.CopyDataInBackground(ctx)
+		return nil
+	})
+	return nil
+}
+
+func (mc *MigrationCache) Stop() error {
+	log.Info("Migration cache beginning shut down")
+	close(mc.quitChan)
+	if err := mc.eg.Wait(); err != nil {
+		return err
+	}
+	return nil
 }

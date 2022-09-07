@@ -10,6 +10,7 @@ type MigrationConfig struct {
 	Src                  *CacheConfig `yaml:"src"`
 	Dest                 *CacheConfig `yaml:"dest"`
 	DoubleReadPercentage float64      `yaml:"double_read_percentage"`
+	CopyChanBufferSize   int          `yaml:"copy_chan_buffer_size"`
 }
 
 type CacheConfig struct {
@@ -35,4 +36,10 @@ type PebbleCacheConfig struct {
 	AtimeWriteBatchSize    int                     `yaml:"atime_write_batch_size"`
 	AtimeBufferSize        *int                    `yaml:"atime_buffer_size"`
 	MinEvictionAge         *time.Duration          `yaml:"min_eviction_age"`
+}
+
+func (cfg *MigrationConfig) SetConfigDefaults() {
+	if cfg.CopyChanBufferSize == 0 {
+		cfg.CopyChanBufferSize = 50000
+	}
 }
