@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -342,10 +341,9 @@ func TestCopyDataInBackground(t *testing.T) {
 	mc.Start(ctx) // Starts copying in background
 	defer mc.Stop()
 
-	wg := &sync.WaitGroup{}
+	eg, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < numTests; i++ {
-		wg.Add(1)
-		go func() {
+		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
 			err = srcCache.Set(ctx, d, buf)
 			require.NoError(t, err)
@@ -357,10 +355,10 @@ func TestCopyDataInBackground(t *testing.T) {
 
 			// Expect copy
 			waitForCopy(t, ctx, destCache, d)
-			wg.Done()
-		}()
+			return nil
+		})
 	}
-	wg.Wait()
+	eg.Wait()
 }
 
 func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
