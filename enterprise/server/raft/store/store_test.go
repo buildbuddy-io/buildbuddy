@@ -419,6 +419,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
 		FileRecord: fr,
 	}).ToProto()
+	require.Nil(t, err)
 
 	_, err = ts.Sender.SyncPropose(ctx, fileMetadataKey, writeReq)
 	require.Nil(t, err)
