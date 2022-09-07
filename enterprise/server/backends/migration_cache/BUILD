@@ -25,6 +25,7 @@ go_library(
 
 go_test(
     name = "migration_cache_test",
+    size = "small",
     srcs = ["migration_cache_test.go"],
     deps = [
         ":migration_cache",
@@ -40,5 +41,6 @@ go_test(
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
