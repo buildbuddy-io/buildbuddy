@@ -202,7 +202,6 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
-
 	}
 
 	if dstErr != nil {
