@@ -1077,6 +1077,38 @@ func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRec
 	return missing, nil
 }
 
+func (sm *Replica) GetMulti(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.GetMultiResponse_Data, error) {
+	reader, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	if err := sm.validateRange(header); err != nil {
+		return nil, err
+	}
+
+	var rsp []*rfpb.GetMultiResponse_Data
+	var buf bytes.Buffer
+	for _, fileRecord := range fileRecords {
+		rc, err := sm.Reader(ctx, header, fileRecord, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		_, err = io.Copy(&buf, rc)
+		rc.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		data := make([]byte, buf.Len())
+		copy(data, buf.Bytes())
+		rsp = append(rsp, &rfpb.GetMultiResponse_Data{FileRecord: fileRecord, Data: data})
+		buf.Reset()
+	}
+	return rsp, nil
+}
+
 type writeCloser struct {
 	filestore.WriteCloserMetadata
 	commitFn     func(n int64) error
