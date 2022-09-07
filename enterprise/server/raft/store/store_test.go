@@ -1,10 +1,8 @@
 package store_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -388,7 +386,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	require.Equal(t, 3, len(replicas))
 }
 
-func writeRecord(ctx context.Context, t *testing.T, stores []*TestingStore, groupID string, sizeBytes int64) *rfpb.FileRecord {
+func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID string, sizeBytes int64) *rfpb.FileRecord {
 	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
 	fr := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
@@ -397,22 +395,34 @@ func writeRecord(ctx context.Context, t *testing.T, stores []*TestingStore, grou
 		},
 		Digest: d,
 	}
-	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
+	fileMetadataKey, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
 	require.Nil(t, err)
 
-	for _, ts := range stores {
-		rd, err := ts.Sender.LookupRangeDescriptor(ctx, fk, true /*skipCache*/)
-		require.Nil(t, err, err)
-		rangeID := rd.GetRangeId()
+	_, err = ts.APIClient.Get(ctx, ts.GRPCAddress)
+	require.Nil(t, err)
 
-		c, err := ts.APIClient.Get(ctx, ts.GRPCAddress)
-		require.Nil(t, err)
-		wc, err := client.RemoteWriter(ctx, c, &rfpb.Header{RangeId: rangeID, Generation: rd.GetGeneration()}, fr)
-		require.Nil(t, err)
-		_, err = io.Copy(wc, bytes.NewReader(buf))
-		require.Nil(t, err, err)
-		require.Nil(t, wc.Close())
-	}
+	err = ts.Sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
+		mwc, err := ts.APIClient.MultiWriter(ctx, peers, fr)
+		if err != nil {
+			return err
+		}
+		if _, err := mwc.Write(buf); err != nil {
+			return err
+		}
+		if err := mwc.Close(); err != nil {
+			return err
+		}
+		return nil
+	})
+	require.Nil(t, err)
+
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+		FileRecord: fr,
+	}).ToProto()
+	require.Nil(t, err)
+
+	_, err = ts.Sender.SyncPropose(ctx, fileMetadataKey, writeReq)
+	require.Nil(t, err)
 
 	return fr
 }
@@ -436,7 +446,7 @@ func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.Fi
 	require.Nil(t, err, err)
 }
 
-func writeNRecords(ctx context.Context, t *testing.T, stores []*TestingStore, n int) []*rfpb.FileRecord {
+func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int) []*rfpb.FileRecord {
 	var groupID string
 	out := make([]*rfpb.FileRecord, 0, n)
 	for i := 0; i < n; i++ {
@@ -445,7 +455,7 @@ func writeNRecords(ctx context.Context, t *testing.T, stores []*TestingStore, n 
 			require.Nil(t, err)
 			groupID = strings.ToLower(g)
 		}
-		out = append(out, writeRecord(ctx, t, stores, groupID, 1000))
+		out = append(out, writeRecord(ctx, t, store, groupID, 1000))
 	}
 	return out
 }
@@ -512,7 +522,7 @@ func TestSplitMetaRange(t *testing.T) {
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	written := writeNRecords(ctx, t, stores, 10)
+	written := writeNRecords(ctx, t, stores[0], 10)
 
 	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
 		Range: rd,
@@ -593,7 +603,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	written := writeNRecords(ctx, t, stores, 50)
+	written := writeNRecords(ctx, t, stores[0], 50)
 
 	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
 		Range: rd,
@@ -612,7 +622,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	}
 
 	// Write some more records to the new right range.
-	written = append(written, writeNRecords(ctx, t, stores, 50)...)
+	written = append(written, writeNRecords(ctx, t, stores[0], 50)...)
 
 	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
 		Range: s1.GetRange(2),
