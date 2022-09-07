@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 )
@@ -58,18 +59,17 @@ func IsGranted(ctx context.Context, env environment.Env, cap akpb.ApiKey_Capabil
 	return user.HasCapability(cap), nil
 }
 
-func GetFromContext(ctx context.Context, env environment.Env) ([]akpb.ApiKey_Capability, error) {
-	var caps []akpb.ApiKey_Capability
-	if auth := env.GetAuthenticator(); auth != nil {
-		u, err := auth.AuthenticatedUser(ctx)
-		if err == nil {
-			caps = u.GetCapabilities()
-		} else {
-			if perms.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
-				caps = DefaultAuthenticatedUserCapabilities
-			}
-		}
+func ForAuthenticatedUser(ctx context.Context, env environment.Env) ([]akpb.ApiKey_Capability, error) {
+	auth := env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Auth is not configured")
 	}
-
-	return caps, nil
+	u, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		if perms.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+			return DefaultAuthenticatedUserCapabilities, nil
+		}
+		return nil, err
+	}
+	return u.GetCapabilities(), nil
 }

@@ -1253,11 +1253,13 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
 
-	userGroupPerms, err := perms.GetFromContext(e.ctx, e.env)
+	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
-		return nil, err
+		// TODO(Maggie): Return the error here once we're confident this is stable
+		log.Warningf("Error fetching group perms for invocation %v", p.InvocationId)
+	} else {
+		i.Perms = userGroupPerms.Perms
 	}
-	i.Perms = userGroupPerms.Perms
 	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
 		i.Perms |= perms.OTHERS_READ
 	}

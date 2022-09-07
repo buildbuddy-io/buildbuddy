@@ -291,22 +291,21 @@ func IsAnonymousUserError(err error) bool {
 	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
 }
 
-func GetFromContext(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
-	var permissions *UserGroupPerm
-	if auth := env.GetAuthenticator(); auth != nil {
-		u, err := auth.AuthenticatedUser(ctx)
-		if err == nil {
-			if u.GetGroupID() != "" {
-				permissions = GroupAuthPermissions(u.GetGroupID())
-			}
-		}
+// ForAuthenticatedGroup returns GROUP_READ|GROUP_WRITE permissions for authenticated groups,
+// or OTHERS_READ for anonymous users.
+func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
+	auth := env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Auth is not configured")
 	}
 
-	if permissions == nil && env.GetAuthenticator().AnonymousUsageEnabled() {
-		permissions = AnonymousUserPermissions()
-	} else if permissions == nil {
+	u, err := auth.AuthenticatedUser(ctx)
+	if err != nil || u.GetGroupID() == "" {
+		if IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+			return AnonymousUserPermissions(), nil
+		}
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
 	}
 
-	return permissions, nil
+	return GroupAuthPermissions(u.GetGroupID()), nil
 }
