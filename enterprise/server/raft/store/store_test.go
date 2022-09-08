@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
-	"github.com/cockroachdb/pebble"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 	"github.com/stretchr/testify/require"
@@ -837,29 +835,19 @@ func TestPostFactoSplit(t *testing.T) {
 	}
 
 	// Now verify that all keys that should be on the new node are present.
-	iter := r4DB.NewIter(&pebble.IterOptions{
-		LowerBound: keys.Key([]byte{constants.MinByte}),
-		UpperBound: keys.Key([]byte{constants.MaxByte}),
-	})
-	defer iter.Close()
-
-	var fileMetadataKeys [][]byte
 	for _, fr := range written {
 		fmk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
-		require.Nil(t, err)
-		fileMetadataKeys = append(fileMetadataKeys, fmk)
-	}
-
-	sort.Slice(fileMetadataKeys, func(i, j int) bool {
-		return bytes.Compare(fileMetadataKeys[i], fileMetadataKeys[j]) < 0
-	})
-
-	for _, fmk := range fileMetadataKeys {
+		require.NoError(t, err)
 		if bytes.Compare(fmk, splitResponse.GetLeft().GetRight()) >= 0 {
-			break
+			continue
 		}
-		found := iter.SeekGE(fmk)
-		require.True(t, found)
-		require.Equal(t, string(fmk), string(iter.Key()))
+		rd := s4.GetRange(1)
+		rc, err := r4.Reader(ctx, &rfpb.Header{
+			RangeId:    rd.GetRangeId(),
+			Generation: rd.GetGeneration(),
+		}, fr, 0, 0)
+		require.NoError(t, err)
+		d := testdigest.ReadDigestAndClose(t, rc)
+		require.True(t, proto.Equal(d, fr.GetDigest()))
 	}
 }
