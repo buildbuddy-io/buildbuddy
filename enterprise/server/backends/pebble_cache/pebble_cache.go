@@ -61,6 +61,7 @@ var (
 	atimeWriteBatchSizeFlag   = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
+	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
@@ -212,6 +213,15 @@ func Register(env environment.Env) error {
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
 		return status.InternalErrorf("Error configuring pebble cache: %s", err)
+	}
+	if *forceCompaction {
+		log.Infof("Pebble Cache: starting manual compaction...")
+		start := time.Now()
+		err := c.db.Compact([]byte{constants.MinByte}, []byte{constants.MaxByte}, true /*=parallelize*/)
+		log.Infof("Pebble Cache: manual compaction finished in %s", time.Since(start))
+		if err != nil {
+			log.Errorf("Error during compaction: %s", err)
+		}
 	}
 	if migrateDir != "" {
 		if err := c.MigrateFromDiskDir(migrateDir); err != nil {
