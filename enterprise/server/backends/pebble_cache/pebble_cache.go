@@ -1115,11 +1115,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	if err != nil {
 		return nil, err
 	}
-
-	// The deferred function will close the db in the case where an error
-	// is encountered before returning the reader below.
-	closeFn := db.SingletonCloseFunc()
-	defer closeFn()
+	defer db.Close()
 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
@@ -1150,11 +1146,13 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 		return nil, err
 	}
 
-	// This function will be called when the reader is closed. Because only
-	// one close function is active at a time, the previously deferred
-	// function will be a no-op.
-	readerLeaseClose := db.SingletonCloseFunc()
-	return pebbleutil.ReadCloserWithFunc(rc, readerLeaseClose), nil
+	// Grab another lease and pass the Close function to the reader
+	// so it will be closed when the reader is.
+	db, err = p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
 }
 
 type writeCloser struct {
@@ -1213,9 +1211,15 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		}
 		wcm = fw
 	}
-	writerLeaseClose := db.SingletonCloseFunc()
+
+	// Grab another lease and pass the Close function to the writer
+	// so it will be closed when the writer is.
+	db, err = p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
 	dc := &writeCloser{MetadataWriteCloser: wcm, closeFn: func(bytesWritten int64) error {
-		defer writerLeaseClose()
+		defer db.Close()
 		now := time.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,

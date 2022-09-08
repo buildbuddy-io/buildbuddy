@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"runtime"
 	"sync"
 
@@ -34,7 +33,6 @@ type IPebbleDB interface {
 	NewBatch() *pebble.Batch
 	NewIndexedBatch() *pebble.Batch
 	NewSnapshot() *pebble.Snapshot
-	SingletonCloseFunc() func()
 }
 
 // Leaser is an interface implemented by the leaser that allows clients to get
@@ -127,9 +125,8 @@ func (l *leaser) DB() (IPebbleDB, error) {
 }
 
 type refCounter struct {
-	wg                *sync.WaitGroup
-	closed            bool
-	singletonCloseTag int64
+	wg     *sync.WaitGroup
+	closed bool
 }
 
 func newRefCounter(wg *sync.WaitGroup) *refCounter {
@@ -158,29 +155,21 @@ func (r *refCountedDB) Close() error {
 	return r.refCounter.Close()
 }
 
-func (r *refCountedDB) SingletonCloseFunc() func() {
-	tag := rand.Int63()
-	r.singletonCloseTag = tag
-
-	closeFunc := func() {
-		if r.singletonCloseTag == tag {
-			r.Close()
-		}
-	}
-	return closeFunc
-}
-
 type fnReadCloser struct {
 	io.ReadCloser
-	closeFn func()
+	closeFn func() error
 }
 
-func ReadCloserWithFunc(rc io.ReadCloser, closeFn func()) io.ReadCloser {
+func ReadCloserWithFunc(rc io.ReadCloser, closeFn func() error) io.ReadCloser {
 	return &fnReadCloser{rc, closeFn}
 }
 func (f fnReadCloser) Close() error {
 	err := f.ReadCloser.Close()
-	f.closeFn()
+	closeFnErr := f.closeFn()
+
+	if err == nil && closeFnErr != nil {
+		return closeFnErr
+	}
 	return err
 }
 
@@ -188,10 +177,10 @@ type writeCloser struct {
 	interfaces.MetadataWriteCloser
 	commitFn     func(n int64) error
 	bytesWritten int64
-	closeFn      func()
+	closeFn      func() error
 }
 
-func CommittedWriterWithFunc(wcm interfaces.MetadataWriteCloser, commitFn func(n int64) error, closeFn func()) interfaces.CommittedMetadataWriteCloser {
+func CommittedWriterWithFunc(wcm interfaces.MetadataWriteCloser, commitFn func(n int64) error, closeFn func() error) interfaces.CommittedMetadataWriteCloser {
 	return &writeCloser{wcm, commitFn, 0, closeFn}
 }
 
@@ -203,8 +192,7 @@ func (dc *writeCloser) Commit() error {
 }
 
 func (dc *writeCloser) Close() error {
-	dc.closeFn()
-	return nil
+	return dc.closeFn()
 }
 
 func (dc *writeCloser) Write(p []byte) (int, error) {

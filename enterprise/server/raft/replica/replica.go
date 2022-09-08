@@ -979,11 +979,7 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-
-	// The deferred function will close the db in the case where an error
-	// is encountered before returning the reader below.
-	closeFn := db.SingletonCloseFunc()
-	defer closeFn()
+	defer db.Close()
 
 	if err := sm.validateRange(header); err != nil {
 		return nil, err
@@ -994,11 +990,13 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 		return nil, err
 	}
 
-	// This function will be called when the reader is closed. Because only
-	// one close function is active at a time, the previously deferred
-	// function will be a no-op.
-	readerLeaseClose := db.SingletonCloseFunc()
-	return pebbleutil.ReadCloserWithFunc(rc, readerLeaseClose), nil
+	// Grab another lease and pass the Close function to the reader
+	// so it will be closed when the reader is.
+	db, err = sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
 }
 
 func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
@@ -1069,11 +1067,7 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-
-	// The deferred function will close the db in the case where an error
-	// is encountered before returning the writer below.
-	closeFn := db.SingletonCloseFunc()
-	defer closeFn()
+	defer db.Close()
 
 	if err := sm.validateRange(header); err != nil {
 		return nil, err
@@ -1085,6 +1079,13 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 	}
 
 	writeCloserMetadata, err := sm.storedFileWriter(ctx, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	// Grab another lease and pass the Close function to the writer
+	// (below) so it will be closed when the writer is.
+	db, err = sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1104,12 +1105,7 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 		}
 		return batch.Commit(&pebble.WriteOptions{Sync: true})
 	}
-
-	// This function will be called when the writer is closed. Because only
-	// one close function is active at a time, the previously deferred
-	// function will be a no-op.
-	writerLeaseClose := db.SingletonCloseFunc()
-	return pebbleutil.CommittedWriterWithFunc(writeCloserMetadata, commitFn, writerLeaseClose), nil
+	return pebbleutil.CommittedWriterWithFunc(writeCloserMetadata, commitFn, db.Close), nil
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
