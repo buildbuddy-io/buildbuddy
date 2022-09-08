@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"flag"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,7 +145,7 @@ func getAppVersion() string {
 		log.Debugf("Error reading getting version file path: %s", err)
 		return unknownFieldValue
 	}
-	versionBytes, err := ioutil.ReadFile(filepath.Join(rfp, versionFilename))
+	versionBytes, err := os.ReadFile(filepath.Join(rfp, versionFilename))
 	if err != nil {
 		log.Debugf("Error reading version file: %s", err)
 		return unknownFieldValue

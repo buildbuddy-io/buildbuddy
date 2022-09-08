@@ -84,7 +84,7 @@ func Test_Filecache(t *testing.T) {
 }
 
 func assertFileContents(t *testing.T, path, contents string) {
-	bytes, err := ioutil.ReadFile(path)
+	bytes, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

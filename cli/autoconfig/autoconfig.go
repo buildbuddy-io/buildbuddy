@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -148,7 +147,7 @@ func Configure(ctx context.Context, bazelFlags *commandline.BazelFlags) (*BazelO
 }
 
 func addToolchainsToWorkspaceIfNotPresent(workspaceFilePath string) {
-	workspaceBytes, err := ioutil.ReadFile(workspaceFilePath)
+	workspaceBytes, err := os.ReadFile(workspaceFilePath)
 	if err != nil {
 		log.Println(err)
 		return
