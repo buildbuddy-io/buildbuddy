@@ -24,6 +24,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -855,4 +856,32 @@ type QuotaManager interface {
 	RemoveNamespace(ctx context.Context, req *qpb.RemoveNamespaceRequest) (*qpb.RemoveNamespaceResponse, error)
 	ApplyBucket(ctx context.Context, req *qpb.ApplyBucketRequest) (*qpb.ApplyBucketResponse, error)
 	ModifyNamespace(ctx context.Context, req *qpb.ModifyNamespaceRequest) (*qpb.ModifyNamespaceResponse, error)
+}
+
+// A Metadater implements the Metadata() method and returns a StorageMetadata
+// proto representing the stored data. The result is only valid if Close has
+// already been called. This is only used with MetadataWriteCloser.
+type Metadater interface {
+	Metadata() *rfpb.StorageMetadata
+}
+
+// A Committer implements the Commit method, to finalize a write.
+// If this returns successfully, the caller is assured that the data has
+// been successfully written to disk and any metadata stores.
+// This is only used with CommittedMetadataWriteCloser.
+type Committer interface {
+	Commit() error
+}
+
+type MetadataWriteCloser interface {
+	io.Writer
+	io.Closer
+	Metadater
+}
+
+type CommittedMetadataWriteCloser interface {
+	io.Writer
+	io.Closer
+	Metadater
+	Committer
 }
