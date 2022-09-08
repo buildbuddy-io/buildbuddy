@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,7 +26,7 @@ import (
 
 func writeFile(t *testing.T, parentDir, fileName, content string) {
 	path := filepath.Join(parentDir, fileName)
-	if err := ioutil.WriteFile(path, []byte(content), 0660); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0660); err != nil {
 		t.Fatal(err)
 	}
 }

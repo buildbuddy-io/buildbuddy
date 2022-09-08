@@ -10,9 +10,9 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"flag"
-	"io/ioutil"
 	"math/big"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -318,12 +318,12 @@ func (s *SSLService) GenerateCerts(apiKey string) (string, string, error) {
 }
 
 func loadX509KeyPair(certFile, keyFile string) (*x509.Certificate, *rsa.PrivateKey, error) {
-	cf, err := ioutil.ReadFile(certFile)
+	cf, err := os.ReadFile(certFile)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	kf, err := ioutil.ReadFile(keyFile)
+	kf, err := os.ReadFile(keyFile)
 	if err != nil {
 		return nil, nil, err
 	}

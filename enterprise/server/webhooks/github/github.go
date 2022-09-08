@@ -3,7 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -237,13 +237,13 @@ func webhookJSONPayload(r *http.Request) ([]byte, error) {
 	}
 	switch contentType {
 	case "application/json":
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			return nil, status.InternalErrorf("failed to read request body: %s", err)
 		}
 		return body, nil
 	case "application/x-www-form-urlencoded":
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			return nil, status.InternalErrorf("failed to read request body: %s", err)
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -115,7 +114,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
-	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
 	cmd := &repb.Command{
@@ -160,7 +159,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
-	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
 	cmd := &repb.Command{
@@ -224,7 +223,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
-	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
 	opts := firecracker.ContainerOpts{
@@ -301,7 +300,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		}
 		d, buf := testdigest.NewRandomDigestBuf(t, fileSizeBytes)
 		fullPath := filepath.Join(parentDir, d.GetHash()+".txt")
-		if err := ioutil.WriteFile(fullPath, buf, 0660); err != nil {
+		if err := os.WriteFile(fullPath, buf, 0660); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -355,7 +354,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, rootDir, "work1")
 
 	path := filepath.Join(workDir, "world.txt")
-	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
 	cmd := &repb.Command{
@@ -402,7 +401,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	opts.ActionWorkingDirectory = workDir
 
 	path = filepath.Join(workDir, "mars.txt")
-	if err := ioutil.WriteFile(path, []byte("mars"), 0660); err != nil {
+	if err := os.WriteFile(path, []byte("mars"), 0660); err != nil {
 		t.Fatal(err)
 	}
 	cmd = &repb.Command{
@@ -445,7 +444,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
-	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
 	// Make sure the container can at least send packets via the default route.
@@ -519,7 +518,7 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	path := filepath.Join(workDir, "world.txt")
-	if err := ioutil.WriteFile(path, []byte("world"), 0660); err != nil {
+	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
 		t.Fatal(err)
 	}
 	cmd := &repb.Command{

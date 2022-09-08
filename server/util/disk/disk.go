@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -71,7 +70,7 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 	// still remove the tmp file.
 	defer DeleteLocalFileIfExists(tmpFileName)
 
-	if err := ioutil.WriteFile(tmpFileName, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFileName, data, 0644); err != nil {
 		return 0, err
 	}
 	return len(data), os.Rename(tmpFileName, fullPath)
@@ -80,7 +79,7 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 func ReadFile(ctx context.Context, fullPath string) ([]byte, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	data, err := ioutil.ReadFile(fullPath)
+	data, err := os.ReadFile(fullPath)
 	if os.IsNotExist(err) {
 		return nil, status.NotFoundError(err.Error())
 	}

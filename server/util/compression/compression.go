@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/flate"
 	"io"
-	"io/ioutil"
 	"runtime"
 	"sync"
 
@@ -227,7 +226,7 @@ func DecompressFlate(data []byte) ([]byte, error) {
 	dataReader := bytes.NewReader(data)
 	rc := flate.NewReader(dataReader)
 
-	buf, err := ioutil.ReadAll(rc)
+	buf, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, err
 	}

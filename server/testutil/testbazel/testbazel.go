@@ -2,7 +2,6 @@ package testbazel
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,7 +63,7 @@ func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
 		fullPath := filepath.Join(workspaceDir, path)
 		err := os.MkdirAll(filepath.Dir(fullPath), 0777)
 		require.NoError(t, err, "failed to create bazel workspace contents")
-		err = ioutil.WriteFile(fullPath, []byte(fileContents), 0777)
+		err = os.WriteFile(fullPath, []byte(fileContents), 0777)
 		require.NoError(t, err, "failed to create bazel workspace contents")
 	}
 	return workspaceDir

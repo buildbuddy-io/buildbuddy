@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"flag"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -59,7 +58,7 @@ func RedirectIfNotForwardedHTTPS(env environment.Env, next http.Handler) http.Ha
 // gzip, courtesy of https://gist.github.com/CJEnright/bc2d8b8dc0c1389a9feeddb110f822d7
 var gzPool = sync.Pool{
 	New: func() interface{} {
-		w := gzip.NewWriter(ioutil.Discard)
+		w := gzip.NewWriter(io.Discard)
 		return w
 	},
 }
