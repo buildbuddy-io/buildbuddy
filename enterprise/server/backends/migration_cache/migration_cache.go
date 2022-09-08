@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -146,31 +148,97 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 }
 
 func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	return nil, status.UnimplementedError("not yet implemented")
+	srcCache, err := mc.src.WithIsolation(ctx, cacheType, remoteInstanceName)
+	if err != nil {
+		return nil, errors.WithMessage(err, "cannot get src cache with isolation")
+	}
+	destCache, err := mc.dest.WithIsolation(ctx, cacheType, remoteInstanceName)
+	if err != nil {
+		return nil, errors.WithMessage(err, "cannot get dest cache with isolation")
+	}
+
+	clone := *mc
+	clone.src = srcCache
+	clone.dest = destCache
+
+	return &clone, nil
 }
 
 func (mc *MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	return false, status.UnimplementedError("not yet implemented")
+	return mc.src.Contains(ctx, d)
 }
 
 func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return nil, status.UnimplementedError("not yet implemented")
+	return mc.src.Metadata(ctx, d)
 }
 
 func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	return nil, status.UnimplementedError("not yet implemented")
+	return mc.src.FindMissing(ctx, digests)
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	return nil, status.UnimplementedError("not yet implemented")
+	lock := sync.RWMutex{} // protects(foundMap)
+	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	eg, ctx := errgroup.WithContext(ctx)
+
+	for _, d := range digests {
+		fetchFn := func(d *repb.Digest) {
+			eg.Go(func() error {
+				data, err := mc.Get(ctx, d)
+				if status.IsNotFoundError(err) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				lock.Lock()
+				foundMap[d] = data
+				lock.Unlock()
+				return nil
+			})
+		}
+		fetchFn(d)
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	return foundMap, nil
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	return status.UnimplementedError("not yet implemented")
+	for d, data := range kvs {
+		if err := mc.Set(ctx, d, data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
-	return status.UnimplementedError("not yet implemented")
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+
+	eg.Go(func() error {
+		srcErr = mc.src.Delete(gctx, d)
+		return srcErr
+	})
+
+	eg.Go(func() error {
+		dstErr = mc.dest.Delete(gctx, d)
+		return nil // don't fail if there's an error from this cache
+	})
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	if dstErr != nil {
+		log.Warningf("Migration delete err: could not delete %v from dest cache: %s", d, dstErr)
+	}
+
+	return srcErr
 }
 
 func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
