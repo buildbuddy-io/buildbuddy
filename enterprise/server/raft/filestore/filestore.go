@@ -11,26 +11,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
-
-type MetadataWriter interface {
-	Metadata() *rfpb.StorageMetadata
-}
-
-type WriteCloserMetadata interface {
-	io.Writer
-	io.Closer
-	MetadataWriter
-}
-
-type CommittedWriter interface {
-	WriteCloserMetadata
-	Commit() error
-}
 
 // returns partitionID, groupID, isolation, remote_instance_name, hash
 // callers may choose to use all or some of these elements when constructing
@@ -69,13 +55,13 @@ type Store interface {
 	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
 
 	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
-	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error)
+	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error)
 
 	InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
-	InlineWriter(ctx context.Context, sizeBytes int64) WriteCloserMetadata
+	InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser
 
 	FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error)
-	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error)
+	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error)
 
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
@@ -143,7 +129,7 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	}
 }
 
-func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
+func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error) {
 	// New files are written using this method. Existing files will be read
 	// from wherever they were originally written according to their stored
 	// StorageMetadata.
@@ -191,7 +177,7 @@ func (iw *inlineWriter) Metadata() *rfpb.StorageMetadata {
 	}
 }
 
-func (fs *fileStorer) InlineWriter(ctx context.Context, sizeBytes int64) WriteCloserMetadata {
+func (fs *fileStorer) InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser {
 	return &inlineWriter{bytes.NewBuffer(make([]byte, 0, sizeBytes))}
 }
 
@@ -213,7 +199,7 @@ func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *rfpb.St
 	return disk.FileReader(ctx, fp, offset, limit)
 }
 
-func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (WriteCloserMetadata, error) {
+func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error) {
 	file, err := fs.FileKey(fileRecord)
 	if err != nil {
 		return nil, err
