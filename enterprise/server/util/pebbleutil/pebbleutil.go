@@ -1,15 +1,19 @@
 package pebbleutil
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
+	"math/rand"
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -30,6 +34,7 @@ type IPebbleDB interface {
 	NewBatch() *pebble.Batch
 	NewIndexedBatch() *pebble.Batch
 	NewSnapshot() *pebble.Snapshot
+	SingletonCloseFunc() func()
 }
 
 // Leaser is an interface implemented by the leaser that allows clients to get
@@ -122,8 +127,9 @@ func (l *leaser) DB() (IPebbleDB, error) {
 }
 
 type refCounter struct {
-	wg     *sync.WaitGroup
-	closed bool
+	wg                *sync.WaitGroup
+	closed            bool
+	singletonCloseTag int64
 }
 
 func newRefCounter(wg *sync.WaitGroup) *refCounter {
@@ -150,4 +156,100 @@ type refCountedDB struct {
 func (r *refCountedDB) Close() error {
 	// Just close the refcounter, not the DB.
 	return r.refCounter.Close()
+}
+
+func (r *refCountedDB) SingletonCloseFunc() func() {
+	tag := rand.Int63()
+	r.singletonCloseTag = tag
+
+	closeFunc := func() {
+		if r.singletonCloseTag == tag {
+			r.Close()
+		}
+	}
+	return closeFunc
+}
+
+type fnReadCloser struct {
+	io.ReadCloser
+	closeFn func()
+}
+
+func ReadCloserWithFunc(rc io.ReadCloser, closeFn func()) io.ReadCloser {
+	return &fnReadCloser{rc, closeFn}
+}
+func (f fnReadCloser) Close() error {
+	err := f.ReadCloser.Close()
+	f.closeFn()
+	return err
+}
+
+type writeCloser struct {
+	interfaces.MetadataWriteCloser
+	commitFn     func(n int64) error
+	bytesWritten int64
+	closeFn      func()
+}
+
+func CommittedWriterWithFunc(wcm interfaces.MetadataWriteCloser, commitFn func(n int64) error, closeFn func()) interfaces.CommittedMetadataWriteCloser {
+	return &writeCloser{wcm, commitFn, 0, closeFn}
+}
+
+func (dc *writeCloser) Commit() error {
+	if err := dc.MetadataWriteCloser.Close(); err != nil {
+		return err
+	}
+	return dc.commitFn(dc.bytesWritten)
+}
+
+func (dc *writeCloser) Close() error {
+	dc.closeFn()
+	return nil
+}
+
+func (dc *writeCloser) Write(p []byte) (int, error) {
+	n, err := dc.MetadataWriteCloser.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	dc.bytesWritten += int64(n)
+	return n, nil
+}
+
+func GetCopy(b pebble.Reader, key []byte) ([]byte, error) {
+	buf, closer, err := b.Get(key)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, status.NotFoundErrorf("key %q not found", key)
+		}
+		return nil, err
+	}
+	defer closer.Close()
+	if len(buf) == 0 {
+		return nil, status.NotFoundErrorf("key %q not found (empty value)", key)
+	}
+
+	// We need to copy the value before closer is closed.
+	val := make([]byte, len(buf))
+	copy(val, buf)
+	return val, nil
+}
+
+// IterHasKey returns a bool indicating if the provided iterator has the
+// exact key specified.
+func IterHasKey(iter *pebble.Iterator, key []byte) bool {
+	if iter.SeekGE(key) && bytes.Compare(iter.Key(), key) == 0 {
+		return true
+	}
+	return false
+}
+
+func LookupProto(iter *pebble.Iterator, key []byte, pb proto.Message) error {
+	if !IterHasKey(iter, key) {
+		return status.NotFoundErrorf("key %q not found", key)
+	}
+	if err := proto.Unmarshal(iter.Value(), pb); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
+	}
+	return nil
 }
