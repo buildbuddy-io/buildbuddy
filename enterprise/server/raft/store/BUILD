@@ -66,7 +66,6 @@ go_test(
         "//server/util/disk",
         "//server/util/log",
         "//server/util/random",
-        "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//config",
         "@com_github_lni_dragonboat_v3//raftio",
