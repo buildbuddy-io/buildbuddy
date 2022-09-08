@@ -15,6 +15,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:quota_go_proto",
+        "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",

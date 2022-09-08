@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -584,7 +585,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 
 func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 	var bytesWritten int64
-	var writeCloser filestore.CommittedWriter
+	var writeCloser interfaces.CommittedMetadataWriteCloser
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
