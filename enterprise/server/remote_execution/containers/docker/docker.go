@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -579,7 +578,7 @@ func (r *dockerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 			log.Printf("error closing docker stats response body: %s", err)
 		}
 	}()
-	body, err := ioutil.ReadAll(stats.Body)
+	body, err := io.ReadAll(stats.Body)
 	if err != nil {
 		return nil, err
 	}

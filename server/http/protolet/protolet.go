@@ -3,7 +3,7 @@ package protolet
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"reflect"
 
@@ -44,7 +44,7 @@ func isRPCMethod(m reflect.Method) bool {
 }
 
 func ReadRequestToProto(r *http.Request, req proto.Message) error {
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err
 	}
