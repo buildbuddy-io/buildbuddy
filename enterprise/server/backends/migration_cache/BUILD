@@ -20,6 +20,7 @@ go_library(
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_pkg_errors//:errors",
         "@org_golang_x_sync//errgroup",
     ],
 )

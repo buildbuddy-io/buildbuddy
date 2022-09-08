@@ -79,6 +79,72 @@ func (c *errorCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return errors.New("error cache delete err")
 }
 
+func TestACIsolation(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	c1, err := mc.WithIsolation(ctx, interfaces.ActionCacheType, "")
+	require.Nil(t, err)
+
+	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
+	require.Nil(t, c1.Set(ctx, d1, buf1))
+
+	got1, err := c1.Get(ctx, d1)
+	require.Nil(t, err)
+	require.Equal(t, buf1, got1)
+
+	// Data should not be in CAS cache
+	gotCAS, err := mc.Get(ctx, d1)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, gotCAS)
+}
+
+func TestACIsolation_RemoteInstanceName(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	c1, err := mc.WithIsolation(ctx, interfaces.ActionCacheType, "remote")
+	require.Nil(t, err)
+
+	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
+	require.Nil(t, c1.Set(ctx, d1, buf1))
+
+	got1, err := c1.Get(ctx, d1)
+	require.Nil(t, err)
+	require.Equal(t, buf1, got1)
+
+	// Data should not be in CAS cache
+	gotCAS, err := mc.Get(ctx, d1)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, gotCAS)
+}
+
 func TestSet_DoubleWrite(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
@@ -406,4 +472,242 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 		})
 	}
 	eg.Wait()
+}
+
+func TestContains(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	contains, err := mc.Contains(ctx, d)
+	require.NoError(t, err)
+	require.True(t, contains)
+
+	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
+	contains, err = mc.Contains(ctx, notWrittenDigest)
+	require.NoError(t, err)
+	require.False(t, contains)
+}
+
+func TestMetadata(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	md, err := mc.Metadata(ctx, d)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), md.SizeBytes)
+
+	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
+	md, err = mc.Metadata(ctx, notWrittenDigest)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, md)
+}
+
+func TestFindMissing(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	missing, err := mc.FindMissing(ctx, []*repb.Digest{d, notSetD1, notSetD2})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
+
+	missing, err = mc.FindMissing(ctx, []*repb.Digest{d})
+	require.NoError(t, err)
+	require.Empty(t, missing)
+}
+
+func TestGetMultiWithCopying(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(10000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start(ctx) // Starts copying in background
+	defer mc.Stop()
+
+	eg, ctx := errgroup.WithContext(ctx)
+	digests := make([]*repb.Digest, 50)
+	expected := make(map[*repb.Digest][]byte, 50)
+	for i := 0; i < 50; i++ {
+		idx := i
+		eg.Go(func() error {
+			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			err = srcCache.Set(ctx, d, buf)
+			require.NoError(t, err)
+
+			digests[idx] = d
+			expected[d] = buf
+			return nil
+		})
+	}
+	eg.Wait()
+
+	r, err := mc.GetMulti(ctx, digests)
+	require.NoError(t, err)
+	require.Equal(t, expected, r)
+
+	for _, digest := range digests {
+		waitForCopy(t, ctx, destCache, digest)
+	}
+}
+
+func TestSetMulti(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(10000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := &migration_cache.MigrationConfig{}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+
+	eg, ctx := errgroup.WithContext(ctx)
+	dataToSet := make(map[*repb.Digest][]byte, 50)
+	for i := 0; i < 50; i++ {
+		eg.Go(func() error {
+			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			dataToSet[d] = buf
+			return nil
+		})
+	}
+	eg.Wait()
+
+	err = mc.SetMulti(ctx, dataToSet)
+	require.NoError(t, err)
+
+	for d, expected := range dataToSet {
+		data, err := mc.Get(ctx, d)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(expected, data))
+
+		data, err = srcCache.Get(ctx, d)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(expected, data))
+
+		data, err = destCache.Get(ctx, d)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(expected, data))
+	}
+
+}
+
+func TestDelete(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	// Check data exists before delete
+	data, err := mc.Get(ctx, d)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data))
+
+	data, err = srcCache.Get(ctx, d)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data))
+
+	data, err = destCache.Get(ctx, d)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data))
+
+	err = mc.Delete(ctx, d)
+	require.NoError(t, err)
+
+	data, err = mc.Get(ctx, d)
+	require.True(t, status.IsNotFoundError(err))
+
+	data, err = srcCache.Get(ctx, d)
+	require.True(t, status.IsNotFoundError(err))
+
+	data, err = destCache.Get(ctx, d)
+	require.True(t, status.IsNotFoundError(err))
 }
