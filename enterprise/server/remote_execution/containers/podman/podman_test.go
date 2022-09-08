@@ -3,7 +3,6 @@ package podman_test
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -26,7 +25,7 @@ import (
 
 func writeFile(t *testing.T, parentDir, fileName, content string) {
 	path := filepath.Join(parentDir, fileName)
-	if err := ioutil.WriteFile(path, []byte(content), 0660); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0660); err != nil {
 		t.Fatal(err)
 	}
 }

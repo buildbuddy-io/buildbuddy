@@ -2,7 +2,6 @@ package filecache_test
 
 import (
 	"io/fs"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -28,7 +27,7 @@ func writeFile(t *testing.T, base string, path string, executable bool) {
 		t.Fatal(err)
 	}
 	log.Printf("Writing file %q", fullPath)
-	if err := ioutil.WriteFile(fullPath, []byte(path+suffix), mod); err != nil {
+	if err := os.WriteFile(fullPath, []byte(path+suffix), mod); err != nil {
 		t.Fatal(err)
 	}
 }

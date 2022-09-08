@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -71,7 +70,7 @@ func WriteFile(ctx context.Context, fullPath string, data []byte) (int, error) {
 	// still remove the tmp file.
 	defer DeleteLocalFileIfExists(tmpFileName)
 
-	if err := ioutil.WriteFile(tmpFileName, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFileName, data, 0644); err != nil {
 		return 0, err
 	}
 	return len(data), os.Rename(tmpFileName, fullPath)

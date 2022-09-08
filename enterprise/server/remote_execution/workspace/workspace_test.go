@@ -2,7 +2,6 @@ package workspace_test
 
 import (
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +32,7 @@ func writeEmptyFiles(t *testing.T, ws *workspace.Workspace, paths []string) {
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0777); err != nil {
 			t.Fatal(err)
 		}
-		if err := ioutil.WriteFile(fullPath, []byte{}, 0777); err != nil {
+		if err := os.WriteFile(fullPath, []byte{}, 0777); err != nil {
 			t.Fatal(err)
 		}
 	}
