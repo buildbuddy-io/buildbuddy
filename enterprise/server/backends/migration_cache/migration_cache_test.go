@@ -44,26 +44,21 @@ func getAnonContext(t *testing.T, env environment.Env) context.Context {
 
 // waitForCopy keeps checking the destination cache to see whether the background process has
 // copied the given digest over
-// Returns the data from the destination cache
-func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, digest *repb.Digest) []byte {
+func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, digest *repb.Digest) {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
-		destData, err := destCache.Get(ctx, digest)
-		if destData != nil {
-			return destData
+		contains, err := destCache.Contains(ctx, digest)
+		if err != nil {
+			require.FailNowf(t, "get err", "Failed calling contains on dest cache %s", err)
+		}
+		if contains {
+			return
 		}
 
-		if err != nil {
-			if status.IsNotFoundError(err) {
-				// Data has not been copied yet... Keep waiting
-				time.Sleep(delay)
-				continue
-			}
-			require.FailNowf(t, "get err", "Failed reading data from the destination cache %s", err)
-		}
+		// Data has not been copied yet... Keep waiting
+		time.Sleep(delay)
 	}
 
 	require.FailNowf(t, "timeout", "Timed out waiting for data to be copied to dest cache")
-	return nil
 }
 
 // errorCache lets us mock errors to test error handling

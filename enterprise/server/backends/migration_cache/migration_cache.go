@@ -254,11 +254,11 @@ func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) 
 	return srcErr
 }
 
-func (mc *MigrationCache) CopyDataInBackground(ctx context.Context) {
+func (mc *MigrationCache) copyDataInBackground(ctx context.Context) error {
 	for {
 		select {
 		case <-mc.quitChan:
-			return
+			return nil
 		case digestToCopy := <-mc.copyChan:
 			alreadyCopied, err := mc.dest.Contains(ctx, digestToCopy)
 			if err != nil {
@@ -267,15 +267,20 @@ func (mc *MigrationCache) CopyDataInBackground(ctx context.Context) {
 			}
 
 			if !alreadyCopied {
-				srcData, err := mc.src.Get(ctx, digestToCopy)
+				srcReader, err := mc.src.Reader(ctx, digestToCopy, 0, 0)
 				if err != nil {
-					log.Warningf("Migration copy err: Could not fetch digest %v from src cache: %s", digestToCopy, err)
+					if !status.IsNotFoundError(err) {
+						log.Warningf("Migration copy err: Could not create reader for digest %v from src cache: %s", digestToCopy, err)
+					}
 					continue
 				}
 
-				err = mc.dest.Set(ctx, digestToCopy, srcData)
-				if err != nil {
-					log.Warningf("Migration copy err: Could not write data for digest %v to dest cache: %s", digestToCopy, err)
+				destWriter, err := mc.dest.Writer(ctx, digestToCopy)
+				if _, err = io.Copy(destWriter, srcReader); err != nil {
+					log.Warningf("Migration copy err: Could not create writer for digest %v to dest cache: %s", digestToCopy, err)
+				}
+				if err := destWriter.Close(); err != nil {
+					return err
 				}
 			}
 		}
@@ -285,7 +290,7 @@ func (mc *MigrationCache) CopyDataInBackground(ctx context.Context) {
 func (mc *MigrationCache) Start(ctx context.Context) error {
 	mc.quitChan = make(chan struct{}, 0)
 	mc.eg.Go(func() error {
-		mc.CopyDataInBackground(ctx)
+		mc.copyDataInBackground(ctx)
 		return nil
 	})
 	return nil
