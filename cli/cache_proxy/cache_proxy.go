@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -196,7 +195,7 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 
 	var localFile *os.File
 	if *readThrough {
-		tmpFile, err := ioutil.TempFile(os.TempDir(), fmt.Sprintf("%s%s-", instanceName, d.GetHash()))
+		tmpFile, err := os.CreateTemp("", fmt.Sprintf("%s%s-", instanceName, d.GetHash()))
 		if err == nil {
 			localFile = tmpFile
 			defer os.Remove(tmpFile.Name())
@@ -307,7 +306,7 @@ func (qw *queueWorker) handleWriteRequest(qreq queueReq) error {
 	}
 	d := resourceName.GetDigest()
 	instanceName := resourceName.GetInstanceName()
-	tmpFile, err := ioutil.TempFile(os.TempDir(), fmt.Sprintf("%s%s-", instanceName, d.GetHash()))
+	tmpFile, err := os.CreateTemp("", fmt.Sprintf("%s%s-", instanceName, d.GetHash()))
 	if err != nil {
 		return err
 	}

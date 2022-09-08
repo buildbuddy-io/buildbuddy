@@ -2,7 +2,6 @@ package devnull
 
 import (
 	"io"
-	"io/ioutil"
 )
 
 // A writer that drops anything written to it.
@@ -16,7 +15,7 @@ type discardWriteCloser struct {
 // dropping any bytes written to it and returning nil on Close.
 func NewWriteCloser() io.WriteCloser {
 	return &discardWriteCloser{
-		ioutil.Discard,
+		io.Discard,
 	}
 }
 
