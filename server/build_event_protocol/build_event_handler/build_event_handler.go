@@ -664,7 +664,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
-	ti, err := tableInvocationFromProto(invocation, iid)
+	ti, err := e.tableInvocationFromProto(invocation, iid)
 	if err != nil {
 		return err
 	}
@@ -1063,7 +1063,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	if e.logWriter != nil {
 		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
-	ti, err = tableInvocationFromProto(invocationProto, ti.BlobID)
+	ti, err = e.tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err != nil {
 		return err
 	}
@@ -1260,7 +1260,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	return invocation, nil
 }
 
-func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
+func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
 	uuid, err := uuid.StringToBytes(p.InvocationId)
 	if err != nil {
 		return nil, err
@@ -1287,13 +1287,21 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invoca
 	i.ActionCount = p.ActionCount
 	i.BlobID = blobID
 	i.InvocationStatus = int64(p.InvocationStatus)
-	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
-		i.Perms = perms.OTHERS_READ
-	}
 	i.LastChunkId = p.LastChunkId
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
+
+	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
+	if err != nil {
+		// TODO(Maggie): Return the error here once we're confident this is stable
+		log.Warningf("Error fetching group perms for invocation %v", p.InvocationId)
+	} else {
+		i.Perms = userGroupPerms.Perms
+	}
+	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
+		i.Perms |= perms.OTHERS_READ
+	}
 	return i, nil
 }
 

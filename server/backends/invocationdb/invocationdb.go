@@ -89,26 +89,15 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 }
 
 func (d *InvocationDB) CreateInvocation(ctx context.Context, ti *tables.Invocation) (bool, error) {
-	var permissions *perms.UserGroupPerm
-	var caps []akpb.ApiKey_Capability
-	if auth := d.env.GetAuthenticator(); auth != nil {
-		u, err := auth.AuthenticatedUser(ctx)
-		if err == nil {
-			if u.GetGroupID() != "" {
-				permissions = perms.GroupAuthPermissions(u.GetGroupID())
-			}
-			caps = u.GetCapabilities()
-		} else {
-			if perms.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
-				caps = capabilities.DefaultAuthenticatedUserCapabilities
-			}
-		}
+	permissions, err := perms.ForAuthenticatedGroup(ctx, d.env)
+	if err != nil {
+		return false, err
 	}
 
-	if permissions == nil && d.env.GetAuthenticator().AnonymousUsageEnabled() {
-		permissions = perms.AnonymousUserPermissions()
-	} else if permissions == nil {
-		return false, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	caps, err := capabilities.ForAuthenticatedUser(ctx, d.env)
+	if err != nil {
+		// Set empty capabilities by default
+		caps = []akpb.ApiKey_Capability{}
 	}
 
 	ti.UserID = permissions.UserID
