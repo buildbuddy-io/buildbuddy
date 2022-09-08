@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -96,25 +97,6 @@ func uint64ToBytes(i uint64) []byte {
 
 func bytesToUint64(buf []byte) uint64 {
 	return binary.LittleEndian.Uint64(buf)
-}
-
-func batchLookup(wb *pebble.Batch, query []byte) ([]byte, error) {
-	buf, closer, err := wb.Get(query)
-	if err != nil {
-		if err == pebble.ErrNotFound {
-			return nil, status.NotFoundErrorf("Key not found: %s", err)
-		}
-		return nil, err
-	}
-	defer closer.Close()
-	if len(buf) == 0 {
-		return nil, status.NotFoundError("Key not found (empty)")
-	}
-
-	// We need to copy the value from pebble before closer is closed.
-	val := make([]byte, len(buf))
-	copy(val, buf)
-	return val, nil
 }
 
 func isLocalKey(key []byte) bool {
@@ -391,7 +373,7 @@ func (sm *Replica) increment(wb *pebble.Batch, req *rfpb.IncrementRequest) (*rfp
 	if len(req.GetKey()) == 0 {
 		return nil, status.InvalidArgumentError("Increment requires a valid key.")
 	}
-	buf, err := batchLookup(wb, req.GetKey())
+	buf, err := pebbleutil.GetCopy(wb, req.GetKey())
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			return nil, err
@@ -949,35 +931,12 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 	return rsp
 }
 
-func lookupAndSetFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
-	found := iter.SeekGE(fileMetadataKey)
-	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return status.NotFoundErrorf("record %q not found", fileMetadataKey)
-	}
-	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return status.InternalErrorf("error reading record %q metadata", fileMetadataKey)
-	}
-	return nil
-}
-
 func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
-	if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+	if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 		return nil, err
 	}
 	return fileMetadata, nil
-}
-
-type fnReadCloser struct {
-	io.ReadCloser
-	fn func() error
-}
-
-func (f fnReadCloser) Close() error {
-	if err := f.ReadCloser.Close(); err != nil {
-		return err
-	}
-	return f.fn()
 }
 
 // validateRange checks that the requested range generation matches our range
@@ -1000,7 +959,7 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 	return nil
 }
 
-func (sm *Replica) readerWithDB(ctx context.Context, db pebbleutil.IPebbleDB, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
+func (sm *Replica) readerWithDB(ctx context.Context, db pebble.Reader, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
@@ -1021,20 +980,10 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 		return nil, err
 	}
 
-	// The DB lease should stay open as long as the returned ReadCloser is
-	// being used. This prevents splits and other operations from happening
-	// while a file is mid-read. But to prevent leaks, a cleanup call is
-	// deferred. If a reader is returned below, needCleanup will be set to
-	// false and the defer not run.
-	needCleanup := true
-	cleanup := func() error {
-		if needCleanup {
-			needCleanup = false
-			return db.Close()
-		}
-		return nil
-	}
-	defer cleanup()
+	// The deferred function will close the db in the case where an error
+	// is encountered before returning the reader below.
+	closeFn := db.SingletonCloseFunc()
+	defer closeFn()
 
 	if err := sm.validateRange(header); err != nil {
 		return nil, err
@@ -1044,10 +993,12 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-	needCleanup = false
-	return &fnReadCloser{rc, func() error {
-		return db.Close()
-	}}, nil
+
+	// This function will be called when the reader is closed. Because only
+	// one close function is active at a time, the previously deferred
+	// function will be a no-op.
+	readerLeaseClose := db.SingletonCloseFunc()
+	return pebbleutil.ReadCloserWithFunc(rc, readerLeaseClose), nil
 }
 
 func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
@@ -1109,56 +1060,20 @@ func (sm *Replica) GetMulti(ctx context.Context, header *rfpb.Header, fileRecord
 	return rsp, nil
 }
 
-type writeCloser struct {
-	filestore.WriteCloserMetadata
-	commitFn     func(n int64) error
-	bytesWritten int64
-	closeFn      func() error
-}
-
-func (dc *writeCloser) Commit() error {
-	if err := dc.WriteCloserMetadata.Close(); err != nil {
-		return err
-	}
-	return dc.commitFn(dc.bytesWritten)
-}
-
-func (dc *writeCloser) Close() error {
-	return dc.closeFn()
-}
-
-func (dc *writeCloser) Write(p []byte) (int, error) {
-	n, err := dc.WriteCloserMetadata.Write(p)
-	if err != nil {
-		return 0, err
-	}
-	dc.bytesWritten += int64(n)
-	return n, nil
-}
-
-func (sm *Replica) storedFileWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (filestore.WriteCloserMetadata, error) {
+func (sm *Replica) storedFileWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error) {
 	return sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
 }
 
-func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (filestore.CommittedWriter, error) {
+func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 
-	// The DB lease should stay open as long as the returned WriteCloser is
-	// being used. This prevents splits and other operations from happening
-	// while a file is mid-write. But to prevent leaks, a cleanup call is
-	// deferred. If a writer is returned below, needCleanup will be set to
-	// false and the defer not run.
-	needCleanup := true
-	cleanup := func() error {
-		if needCleanup {
-			return db.Close()
-		}
-		return nil
-	}
-	defer cleanup()
+	// The deferred function will close the db in the case where an error
+	// is encountered before returning the writer below.
+	closeFn := db.SingletonCloseFunc()
+	defer closeFn()
 
 	if err := sm.validateRange(header); err != nil {
 		return nil, err
@@ -1190,12 +1105,11 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 		return batch.Commit(&pebble.WriteOptions{Sync: true})
 	}
 
-	needCleanup = false
-	return &writeCloser{
-		WriteCloserMetadata: writeCloserMetadata,
-		commitFn:            commitFn,
-		closeFn:             db.Close,
-	}, nil
+	// This function will be called when the writer is closed. Because only
+	// one close function is active at a time, the previously deferred
+	// function will be a no-op.
+	writerLeaseClose := db.SingletonCloseFunc()
+	return pebbleutil.CommittedWriterWithFunc(writeCloserMetadata, commitFn, writerLeaseClose), nil
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice

@@ -817,29 +817,9 @@ func (p *PebbleCache) blobDir() string {
 	return p.partitionBlobDir(p.isolation.GetPartitionId())
 }
 
-// hasFileMetadata returns a bool indicating if the provided iterator has the
-// key specified by fileMetadataKey.
-func hasFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) bool {
-	if iter.SeekGE(fileMetadataKey) && bytes.Compare(iter.Key(), fileMetadataKey) == 0 {
-		return true
-	}
-	return false
-}
-
-func lookupAndSetFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
-	found := iter.SeekGE(fileMetadataKey)
-	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		return status.NotFoundErrorf("record %q not found", fileMetadataKey)
-	}
-	if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-		return status.InternalErrorf("error reading record %q metadata", fileMetadataKey)
-	}
-	return nil
-}
-
 func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
-	if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+	if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 		return nil, err
 	}
 	return fileMetadata, nil
@@ -847,14 +827,12 @@ func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.Fi
 
 func readFileMetadata(reader pebble.Reader, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
-	buf, closer, err := reader.Get(fileMetadataKey)
-	if err == pebble.ErrNotFound {
-		return nil, status.NotFoundErrorf("record %q not found", fileMetadataKey)
-	}
-	err = proto.Unmarshal(buf, fileMetadata)
-	closer.Close()
+	buf, err := pebbleutil.GetCopy(reader, fileMetadataKey)
 	if err != nil {
-		return nil, status.InternalErrorf("error reading record %q metadata", fileMetadataKey)
+		return nil, err
+	}
+	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
+		return nil, err
 	}
 	return fileMetadata, nil
 }
@@ -889,7 +867,7 @@ func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error
 	if err != nil {
 		return false, err
 	}
-	found := hasFileMetadata(iter, fileMetadataKey)
+	found := pebbleutil.IterHasKey(iter, fileMetadataKey)
 	return found, nil
 }
 
@@ -946,7 +924,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 		if err != nil {
 			return nil, err
 		}
-		if !hasFileMetadata(iter, fileMetadataKey) {
+		if !pebbleutil.IterHasKey(iter, fileMetadataKey) {
 			missing = append(missing, d)
 		}
 	}
@@ -989,7 +967,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 			return nil, err
 		}
 		fileMetadata := &rfpb.FileMetadata{}
-		if err := lookupAndSetFileMetadata(iter, fileMetadataKey, fileMetadata); err != nil {
+		if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 			continue
 		}
 		rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
@@ -1137,7 +1115,11 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+
+	// The deferred function will close the db in the case where an error
+	// is encountered before returning the reader below.
+	closeFn := db.SingletonCloseFunc()
+	defer closeFn()
 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
@@ -1163,24 +1145,33 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
 		p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 	}
-	return rc, err
+
+	if err != nil {
+		return nil, err
+	}
+
+	// This function will be called when the reader is closed. Because only
+	// one close function is active at a time, the previously deferred
+	// function will be a no-op.
+	readerLeaseClose := db.SingletonCloseFunc()
+	return pebbleutil.ReadCloserWithFunc(rc, readerLeaseClose), nil
 }
 
 type writeCloser struct {
-	filestore.WriteCloserMetadata
+	interfaces.MetadataWriteCloser
 	closeFn      func(n int64) error
 	bytesWritten int64
 }
 
 func (dc *writeCloser) Close() error {
-	if err := dc.WriteCloserMetadata.Close(); err != nil {
+	if err := dc.MetadataWriteCloser.Close(); err != nil {
 		return err
 	}
 	return dc.closeFn(dc.bytesWritten)
 }
 
 func (dc *writeCloser) Write(p []byte) (int, error) {
-	n, err := dc.WriteCloserMetadata.Write(p)
+	n, err := dc.MetadataWriteCloser.Write(p)
 	if err != nil {
 		return 0, err
 	}
@@ -1206,13 +1197,13 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
-	alreadyExists := hasFileMetadata(iter, fileMetadataKey)
+	alreadyExists := pebbleutil.IterHasKey(iter, fileMetadataKey)
 	if alreadyExists {
 		metrics.DiskCacheDuplicateWrites.Inc()
 		metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
 	}
 
-	var wcm filestore.WriteCloserMetadata
+	var wcm interfaces.MetadataWriteCloser
 	if d.GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, d.GetSizeBytes())
 	} else {
@@ -1222,7 +1213,9 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		}
 		wcm = fw
 	}
-	dc := &writeCloser{WriteCloserMetadata: wcm, closeFn: func(bytesWritten int64) error {
+	writerLeaseClose := db.SingletonCloseFunc()
+	dc := &writeCloser{MetadataWriteCloser: wcm, closeFn: func(bytesWritten int64) error {
+		defer writerLeaseClose()
 		now := time.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
@@ -1243,6 +1236,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		return err
 	}}
 	return dc, nil
+
 }
 
 func (p *PebbleCache) DoneScanning() bool {
