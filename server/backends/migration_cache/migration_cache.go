@@ -218,10 +218,12 @@ func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) 
 	})
 
 	if err := eg.Wait(); err != nil {
-		// If error during write to source cache (source of truth), must delete from destination cache
-		deleteErr := mc.dest.Delete(ctx, d)
-		if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-			log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
+		if dstErr == nil {
+			// If error during write to source cache (source of truth), must delete from destination cache
+			deleteErr := mc.dest.Delete(ctx, d)
+			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
+				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
+			}
 		}
 		return err
 	}
