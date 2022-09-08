@@ -332,12 +332,17 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	found := iter.SeekGE(fileMetadataKey)
 	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
 		ctx := context.TODO()
-		md, err := sm.fetchFileToLocalStorage(ctx, req.GetFileRecord())
+		storageMD, sizeBytes, err := sm.fetchFileToLocalStorage(ctx, req.GetFileRecord())
 		if err != nil {
 			return nil, err
 		}
 		d := req.GetFileRecord().GetDigest()
 		sm.log.Debugf("fileWrite: fetched file %q/%d to local storage", d.GetHash(), d.GetSizeBytes())
+		md := &rfpb.FileMetadata{
+			FileRecord:      req.GetFileRecord(),
+			StorageMetadata: storageMD,
+			SizeBytes:       sizeBytes,
+		}
 		protoBytes, err := proto.Marshal(md)
 		if err != nil {
 			return nil, err
@@ -1338,28 +1343,28 @@ func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) erro
 	return nil
 }
 
-func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb.FileRecord) (*rfpb.StorageMetadata, error) {
+func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb.FileRecord) (*rfpb.StorageMetadata, int64, error) {
 	rd := &rfpb.ReplicaDescriptor{
 		ClusterId: sm.clusterID,
 		NodeId:    sm.nodeID,
 	}
 	writeCloserMetadata, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	readCloser, err := sm.store.ReadFileFromPeer(ctx, rd, fileRecord)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer readCloser.Close()
 	n, err := io.Copy(writeCloserMetadata, readCloser)
-	if n != fileRecord.GetDigest().GetSizeBytes() {
-		return nil, status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileRecord.GetDigest().GetSizeBytes())
+	if err != nil {
+		return nil, 0, err
 	}
 	if err := writeCloserMetadata.Close(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return writeCloserMetadata.Metadata(), nil
+	return writeCloserMetadata.Metadata(), n, nil
 }
 
 func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
@@ -1401,7 +1406,7 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 			if err := proto.Unmarshal(kv.GetValue(), fileMetadata); err != nil {
 				return err
 			}
-			newMetadata, err := sm.fetchFileToLocalStorage(ctx, fileMetadata.GetFileRecord())
+			newMetadata, _, err := sm.fetchFileToLocalStorage(ctx, fileMetadata.GetFileRecord())
 			if err != nil {
 				return err
 			}
