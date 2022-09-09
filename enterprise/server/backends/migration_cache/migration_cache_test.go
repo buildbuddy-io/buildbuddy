@@ -334,7 +334,7 @@ func TestCopyDataInBackground(t *testing.T) {
 	}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
-	mc.Start(ctx) // Starts copying in background
+	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
 	eg, ctx := errgroup.WithContext(ctx)
@@ -378,7 +378,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 	}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
-	mc.Start(ctx) // Starts copying in background
+	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
 	eg, ctx := errgroup.WithContext(ctx)

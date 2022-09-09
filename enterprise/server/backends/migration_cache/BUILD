@@ -15,6 +15,7 @@ go_library(
         "//server/cache/config",
         "//server/environment",
         "//server/interfaces",
+        "//server/util/background",
         "//server/util/disk",
         "//server/util/flagutil",
         "//server/util/log",

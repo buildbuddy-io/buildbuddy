@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -31,7 +33,7 @@ type MigrationCache struct {
 	eg       *errgroup.Group
 	quitChan chan struct{}
 
-	copyChan chan *repb.Digest
+	copyChan chan *copyData
 }
 
 func Register(env environment.Env) error {
@@ -56,7 +58,7 @@ func Register(env environment.Env) error {
 	}
 	env.SetCache(mc)
 
-	mc.Start(env.GetServerContext())
+	mc.Start()
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return mc.Stop()
 	})
@@ -70,7 +72,7 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		dest:                 destCache,
 		doubleReadPercentage: migrationConfig.DoubleReadPercentage,
 		logNotFoundErrors:    migrationConfig.LogNotFoundErrors,
-		copyChan:             make(chan *repb.Digest, migrationConfig.CopyChanBufferSize),
+		copyChan:             make(chan *copyData, migrationConfig.CopyChanBufferSize),
 		eg:                   &errgroup.Group{},
 	}
 }
@@ -211,8 +213,13 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	}
 
 	// Enqueue non-blocking copying
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
-	case mc.copyChan <- d:
+	case mc.copyChan <- &copyData{
+		d:         d,
+		ctx:       ctx,
+		ctxCancel: cancel,
+	}:
 	default:
 		log.Warningf("Migration copy chan is full. We may need to increase the buffer size. Dropping attempt to copy digest %v", d)
 	}
@@ -254,43 +261,57 @@ func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) 
 	return srcErr
 }
 
-func (mc *MigrationCache) copyDataInBackground(ctx context.Context) error {
+type copyData struct {
+	d         *repb.Digest
+	ctx       context.Context
+	ctxCancel context.CancelFunc
+}
+
+func (mc *MigrationCache) copyDataInBackground() error {
 	for {
 		select {
 		case <-mc.quitChan:
 			return nil
-		case digestToCopy := <-mc.copyChan:
-			alreadyCopied, err := mc.dest.Contains(ctx, digestToCopy)
-			if err != nil {
-				log.Warningf("Migration copy err: Could not call Contains on dest cache: %s", err)
-				continue
-			}
-
-			if !alreadyCopied {
-				srcReader, err := mc.src.Reader(ctx, digestToCopy, 0, 0)
-				if err != nil {
-					if !status.IsNotFoundError(err) {
-						log.Warningf("Migration copy err: Could not create reader for digest %v from src cache: %s", digestToCopy, err)
-					}
-					continue
-				}
-
-				destWriter, err := mc.dest.Writer(ctx, digestToCopy)
-				if _, err = io.Copy(destWriter, srcReader); err != nil {
-					log.Warningf("Migration copy err: Could not create writer for digest %v to dest cache: %s", digestToCopy, err)
-				}
-				if err := destWriter.Close(); err != nil {
-					return err
-				}
-			}
+		case c := <-mc.copyChan:
+			mc.copy(c)
 		}
 	}
 }
 
-func (mc *MigrationCache) Start(ctx context.Context) error {
+func (mc *MigrationCache) copy(c *copyData) {
+	defer c.ctxCancel()
+
+	alreadyCopied, err := mc.dest.Contains(c.ctx, c.d)
+	if err != nil {
+		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
+		return
+	}
+
+	if !alreadyCopied {
+		srcReader, err := mc.src.Reader(c.ctx, c.d, 0, 0)
+		if err != nil {
+			if !status.IsNotFoundError(err) {
+				log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
+			}
+			return
+		}
+
+		destWriter, err := mc.dest.Writer(c.ctx, c.d)
+		if _, err = io.Copy(destWriter, srcReader); err != nil {
+			log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
+			return
+		}
+
+		if err := destWriter.Close(); err != nil {
+			log.Warningf("Migration copy err: Could not close %v writer to dest cache: %s", c.d, err)
+		}
+	}
+}
+
+func (mc *MigrationCache) Start() error {
 	mc.quitChan = make(chan struct{}, 0)
 	mc.eg.Go(func() error {
-		mc.copyDataInBackground(ctx)
+		mc.copyDataInBackground()
 		return nil
 	})
 	return nil
