@@ -79,6 +79,18 @@ func (c *errorCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return errors.New("error cache delete err")
 }
 
+func (c *errorCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+	return false, errors.New("error cache contains err")
+}
+
+func (c *errorCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return nil, errors.New("error cache metadata err")
+}
+
+func (c *errorCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	return nil, errors.New("error cache findmissing err")
+}
+
 func TestACIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
@@ -505,6 +517,29 @@ func TestContains(t *testing.T) {
 	require.False(t, contains)
 }
 
+func TestContains_DestErr(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache := &errorCache{}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	// Should return data from src cache without error
+	contains, err := mc.Contains(ctx, d)
+	require.NoError(t, err)
+	require.True(t, contains)
+}
+
 func TestMetadata(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
@@ -534,6 +569,29 @@ func TestMetadata(t *testing.T) {
 	md, err = mc.Metadata(ctx, notWrittenDigest)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, md)
+}
+
+func TestMetadata_DestErr(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache := &errorCache{}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	// Should return data from src cache without error
+	md, err := mc.Metadata(ctx, d)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), md.SizeBytes)
 }
 
 func TestFindMissing(t *testing.T) {
@@ -567,6 +625,32 @@ func TestFindMissing(t *testing.T) {
 	missing, err = mc.FindMissing(ctx, []*repb.Digest{d})
 	require.NoError(t, err)
 	require.Empty(t, missing)
+}
+
+func TestFindMissing_DestErr(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache := &errorCache{}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	// Should return data from src cache without error
+	missing, err := mc.FindMissing(ctx, []*repb.Digest{d, notSetD1, notSetD2})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
 }
 
 func TestGetMultiWithCopying(t *testing.T) {
@@ -699,6 +783,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
+	// After delete, data should no longer exist
 	err = mc.Delete(ctx, d)
 	require.NoError(t, err)
 
