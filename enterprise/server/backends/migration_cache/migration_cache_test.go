@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -725,4 +726,48 @@ func TestDelete(t *testing.T) {
 
 	data, err = destCache.Get(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestReadWrite(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+
+	testSizes := []int64{
+		1, 10, 100, 1000, 10000, 1000000, 10000000,
+	}
+	for _, testSize := range testSizes {
+		d, r := testdigest.NewRandomDigestReader(t, testSize)
+		w, err := mc.Writer(ctx, d)
+		if err != nil {
+			t.Fatalf("Error getting %v writer: %s", d.GetHash(), err.Error())
+		}
+		if _, err := io.Copy(w, r); err != nil {
+			t.Fatalf("Error copying bytes to cache: %s", err.Error())
+		}
+		if err := w.Close(); err != nil {
+			t.Fatalf("Error closing writer: %s", err.Error())
+		}
+
+		reader, err := mc.Reader(ctx, d, 0, 0)
+		if err != nil {
+			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
+		}
+		d2 := testdigest.ReadDigestAndClose(t, reader)
+		if d.GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		}
+	}
 }
