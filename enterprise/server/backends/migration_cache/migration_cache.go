@@ -443,7 +443,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	if dstErr != nil {
+	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
 		log.Warningf("%v reader failed for dest cache: %s", d, dstErr)
 	}
 
@@ -471,20 +471,23 @@ func (d *doubleWriter) Write(data []byte) (int, error) {
 		return srcErr
 	})
 
-	eg.Go(func() error {
-		_, dstErr = d.dest.Write(data)
-		return nil // don't fail if there's an error from this cache
-	})
+	if d.dest != nil {
+		eg.Go(func() error {
+			_, dstErr = d.dest.Write(data)
+			return nil // don't fail if there's an error from this cache
+		})
+	}
 
 	if err := eg.Wait(); err != nil {
 		if dstErr == nil {
+			// If error during write to source cache (source of truth), must delete from destination cache
 			d.destDeleteFn()
 		}
 		return 0, err
 	}
 
 	if dstErr != nil {
-		log.Warningf("Migration double write err: failure writing digest %v to dest cache: %s", d, dstErr)
+		log.Warningf("Migration failure writing digest %v to dest cache: %s", d, dstErr)
 	}
 
 	return srcN, srcErr
@@ -499,10 +502,12 @@ func (d *doubleWriter) Close() error {
 		return srcErr
 	})
 
-	eg.Go(func() error {
-		dstErr = d.dest.Close()
-		return nil // don't fail if there's an error from this cache
-	})
+	if d.dest != nil {
+		eg.Go(func() error {
+			dstErr = d.dest.Close()
+			return nil // don't fail if there's an error from this cache
+		})
+	}
 
 	if err := eg.Wait(); err != nil {
 		return err
@@ -516,13 +521,26 @@ func (d *doubleWriter) Close() error {
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	srcWriter, err := mc.src.Writer(ctx, d)
-	if err != nil {
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+	var srcWriter, destWriter io.WriteCloser
+
+	eg.Go(func() error {
+		srcWriter, srcErr = mc.src.Writer(gctx, d)
+		return srcErr
+	})
+
+	eg.Go(func() error {
+		destWriter, dstErr = mc.dest.Writer(gctx, d)
+		return nil // don't fail if there's an error from this cache
+	})
+
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	destWriter, err := mc.dest.Writer(ctx, d)
-	if err != nil {
-		return nil, err
+
+	if dstErr != nil {
+		log.Warningf("Migration failure creating dest %v writer: %s", d, dstErr)
 	}
 
 	dw := &doubleWriter{
@@ -531,7 +549,7 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteC
 		destDeleteFn: func() {
 			deleteErr := mc.dest.Delete(ctx, d)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration double write err, src write of %v failed, but could not delete from dest cache: %s", d, deleteErr)
+				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", d, deleteErr)
 			}
 		},
 	}
