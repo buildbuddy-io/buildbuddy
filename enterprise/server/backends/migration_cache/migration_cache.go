@@ -221,6 +221,7 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 		ctxCancel: cancel,
 	}:
 	default:
+		cancel()
 		log.Warningf("Migration copy chan is full. We may need to increase the buffer size. Dropping attempt to copy digest %v", d)
 	}
 
@@ -287,24 +288,26 @@ func (mc *MigrationCache) copy(c *copyData) {
 		return
 	}
 
-	if !alreadyCopied {
-		srcReader, err := mc.src.Reader(c.ctx, c.d, 0, 0)
-		if err != nil {
-			if !status.IsNotFoundError(err) {
-				log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
-			}
-			return
-		}
+	if alreadyCopied {
+		return
+	}
 
-		destWriter, err := mc.dest.Writer(c.ctx, c.d)
-		if _, err = io.Copy(destWriter, srcReader); err != nil {
-			log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
-			return
+	srcReader, err := mc.src.Reader(c.ctx, c.d, 0, 0)
+	if err != nil {
+		if !status.IsNotFoundError(err) {
+			log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
 		}
+		return
+	}
 
-		if err := destWriter.Close(); err != nil {
-			log.Warningf("Migration copy err: Could not close %v writer to dest cache: %s", c.d, err)
-		}
+	destWriter, err := mc.dest.Writer(c.ctx, c.d)
+	if _, err = io.Copy(destWriter, srcReader); err != nil {
+		log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
+		return
+	}
+
+	if err := destWriter.Close(); err != nil {
+		log.Warningf("Migration copy err: Could not close %v writer to dest cache: %s", c.d, err)
 	}
 }
 
