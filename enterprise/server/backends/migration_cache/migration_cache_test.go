@@ -671,7 +671,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 	config := &migration_cache.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
-	mc.Start(ctx) // Starts copying in background
+	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
 	eg, ctx := errgroup.WithContext(ctx)

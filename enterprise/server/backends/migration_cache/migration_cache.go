@@ -215,7 +215,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interf
 		return nil, err
 	}
 
-	if dstErr != nil {
+	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
 		log.Warningf("Double read of %q failed for Metadata. dest err %s", d, dstErr)
 	}
 
@@ -309,8 +309,8 @@ func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
 		return err
 	}
 
-	if dstErr != nil {
-		log.Warningf("Migration delete err: could not delete %v from dest cache: %s", d, dstErr)
+	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
+		log.Warningf("Migration could not delete %v from dest cache: %s", d, dstErr)
 	}
 
 	return srcErr
