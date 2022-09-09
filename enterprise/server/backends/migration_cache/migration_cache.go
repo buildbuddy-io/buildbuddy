@@ -195,7 +195,6 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	// Double read some proportion to guarantee that data is consistent between caches
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
-		log.Errorf("Double reading")
 		eg.Go(func() error {
 			_, dstErr = mc.dest.Get(gctx, d)
 			return nil // we don't care about the return error from this cache
