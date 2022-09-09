@@ -10,6 +10,7 @@ There are several configuration options that are not in the BuildBuddy configura
 - `--listen` The interface that BuildBuddy will listen on. Defaults to 0.0.0.0 (all interfaces)
 - `--port` The port to listen for HTTP traffic on. Defaults to 8080.
 - `--grpc_port` The port to listen for gRPC traffic on. Defaults to 1985.
+- `--monitoring_port` The port to listen for Prometheus metrics requests on. Defaults to 9090.
 
 ## Configuration options as flags
 
