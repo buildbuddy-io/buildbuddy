@@ -232,7 +232,6 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 						return err
 					}
 					replacedExample := string(StartOfLine.ReplaceAll(example, []byte("    ")))
-					// log.Infof("example:\n%s\n\nreplacedExample:\n%s", string(example), string(replacedExample))
 					n.FootComment = fmt.Sprintf("For example:\n%s", string(replacedExample))
 				}
 				return DocumentNode(reflect.New(t.Elem()).Elem().Interface(), n, opts...)
