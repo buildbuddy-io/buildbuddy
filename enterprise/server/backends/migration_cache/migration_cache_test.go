@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/migration_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"

@@ -6,7 +6,7 @@ go_library(
         "config.go",
         "migration_cache.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/migration_cache",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/backends/pebble_cache",
