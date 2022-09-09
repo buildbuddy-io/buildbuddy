@@ -7,8 +7,13 @@ import (
 )
 
 type MigrationConfig struct {
-	Src  *CacheConfig `yaml:"src"`
-	Dest *CacheConfig `yaml:"dest"`
+	Src                  *CacheConfig `yaml:"src"`
+	Dest                 *CacheConfig `yaml:"dest"`
+	DoubleReadPercentage float64      `yaml:"double_read_percentage"`
+	// LogNotFoundErrors controls whether to log not found errors in the dest cache when double reading
+	// At the beginning of the migration, we may want this to be false, or it may clog the logs
+	// if a lot of data has not been copied over yet
+	LogNotFoundErrors bool `yaml:"log_not_found_errors"`
 }
 
 type CacheConfig struct {
