@@ -361,10 +361,71 @@ func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return srcErr
 }
 
+type doubleReader struct {
+	src  io.ReadCloser
+	dest io.ReadCloser
+}
+
+func (d doubleReader) Read(p []byte) (n int, err error) {
+	eg := &errgroup.Group{}
+	var srcErr, dstErr error
+	var srcN int
+
+	eg.Go(func() error {
+		srcN, srcErr = d.src.Read(p)
+		return srcErr
+	})
+
+	if d.dest != nil {
+		eg.Go(func() error {
+			pCopy := make([]byte, len(p))
+			_, dstErr = d.dest.Read(pCopy)
+			return nil // we don't care about the return error from this cache
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return 0, err
+	}
+
+	if dstErr != nil {
+		log.Warningf("Migration dest reader read err: %s", dstErr)
+	}
+
+	return srcN, srcErr
+}
+
+func (d doubleReader) Close() error {
+	eg := &errgroup.Group{}
+	var srcErr, dstErr error
+
+	eg.Go(func() error {
+		srcErr = d.src.Close()
+		return srcErr
+	})
+
+	if d.dest != nil {
+		eg.Go(func() error {
+			dstErr = d.dest.Close()
+			return nil // don't fail if there's an error from this cache
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	if dstErr != nil {
+		log.Warningf("Migration dest reader close err: %s", dstErr)
+	}
+
+	return srcErr
+}
+
 func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
-	var srcReader io.ReadCloser
+	var srcReader, destReader io.ReadCloser
 
 	eg.Go(func() error {
 		srcReader, srcErr = mc.src.Reader(gctx, d, offset, limit)
@@ -374,7 +435,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.Reader(gctx, d, offset, limit)
+			destReader, dstErr = mc.dest.Reader(gctx, d, offset, limit)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -382,19 +443,16 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-
-	if doubleRead {
-		if srcErr != dstErr {
-			// Don't log if data not found in dest cache, bc it may not have been copied yet
-			if !status.IsNotFoundError(dstErr) {
-				log.Warningf("Double read of %q failed in Reader. src err %s, dest err %s", d, srcErr, dstErr)
-			}
-		}
+	if dstErr != nil {
+		log.Warningf("%v reader failed for dest cache: %s", d, dstErr)
 	}
 
 	mc.sendNonBlockingCopy(ctx, d)
 
-	return srcReader, srcErr
+	return doubleReader{
+		src:  srcReader,
+		dest: destReader,
+	}, nil
 }
 
 type doubleWriter struct {
@@ -458,7 +516,26 @@ func (d *doubleWriter) Close() error {
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	return nil, status.UnimplementedError("not yet implemented")
+	srcWriter, err := mc.src.Writer(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	destWriter, err := mc.dest.Writer(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+
+	dw := &doubleWriter{
+		src:  srcWriter,
+		dest: destWriter,
+		destDeleteFn: func() {
+			deleteErr := mc.dest.Delete(ctx, d)
+			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
+				log.Warningf("Migration double write err, src write of %v failed, but could not delete from dest cache: %s", d, deleteErr)
+			}
+		},
+	}
+	return dw, nil
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
