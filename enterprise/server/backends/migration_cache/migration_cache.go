@@ -165,15 +165,90 @@ func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interface
 }
 
 func (mc *MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	return mc.src.Contains(ctx, d)
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+	var srcContains bool
+
+	eg.Go(func() error {
+		srcContains, srcErr = mc.src.Contains(gctx, d)
+		return srcErr
+	})
+
+	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+	if doubleRead {
+		eg.Go(func() error {
+			_, dstErr = mc.dest.Contains(gctx, d)
+			return nil // we don't care about the return error from this cache
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return false, err
+	}
+
+	if dstErr != nil {
+		log.Warningf("Double read of %q failed for Contain. dest err %s", d, dstErr)
+	}
+
+	return srcContains, srcErr
 }
 
 func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return mc.src.Metadata(ctx, d)
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+	var srcMetadata *interfaces.CacheMetadata
+
+	eg.Go(func() error {
+		srcMetadata, srcErr = mc.src.Metadata(gctx, d)
+		return srcErr
+	})
+
+	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+	if doubleRead {
+		eg.Go(func() error {
+			_, dstErr = mc.dest.Metadata(gctx, d)
+			return nil // we don't care about the return error from this cache
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	if dstErr != nil {
+		log.Warningf("Double read of %q failed for Metadata. dest err %s", d, dstErr)
+	}
+
+	return srcMetadata, srcErr
 }
 
 func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	return mc.src.FindMissing(ctx, digests)
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+	var srcMissing []*repb.Digest
+
+	eg.Go(func() error {
+		srcMissing, srcErr = mc.src.FindMissing(gctx, digests)
+		return srcErr
+	})
+
+	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+	if doubleRead {
+		eg.Go(func() error {
+			_, dstErr = mc.dest.FindMissing(gctx, digests)
+			return nil // we don't care about the return error from this cache
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	if dstErr != nil {
+		log.Warningf("Double read of %v failed for FindMissing. dest err %s", digests, dstErr)
+	}
+
+	return srcMissing, srcErr
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
