@@ -189,12 +189,10 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 		return nil, err
 	}
 
-	if doubleRead {
-		if srcErr != dstErr {
-			// Don't log if data not found in dest cache, bc it may not have been copied yet
-			if !status.IsNotFoundError(dstErr) {
-				log.Warningf("Double read of %q failed. src err %s, dest err %s", d, srcErr, dstErr)
-			}
+	if dstErr != nil {
+		// Don't log if data not found in dest cache, bc it may not have been copied yet
+		if !status.IsNotFoundError(dstErr) {
+			log.Warningf("Double read of %q failed. src err %s, dest err %s", d, srcErr, dstErr)
 		}
 	}
 
