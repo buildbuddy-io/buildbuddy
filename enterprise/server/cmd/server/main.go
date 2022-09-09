@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
@@ -180,7 +181,9 @@ func main() {
 	if err := pebble_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
-
+	if err := migration_cache.Register(realEnv); err != nil {
+		log.Fatal(err.Error())
+	}
 	if err := redis_client.RegisterDefault(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
