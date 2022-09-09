@@ -72,7 +72,7 @@ func TestSet_DoubleWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -100,7 +100,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 		t.Fatal(err)
 	}
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -122,7 +122,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -141,7 +141,7 @@ func TestSet_SrcAndDestWriteErr(t *testing.T) {
 
 	srcCache := &errorCache{}
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err := mc.Set(ctx, d, buf)
@@ -163,7 +163,7 @@ func TestGetSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
 
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
@@ -205,7 +205,7 @@ func TestGet_DoubleRead(t *testing.T) {
 	}
 
 	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage, false)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -229,7 +229,7 @@ func TestGet_DestReadErr(t *testing.T) {
 	destCache := &errorCache{}
 
 	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage, false)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -254,7 +254,7 @@ func TestGet_SrcReadErr(t *testing.T) {
 	}
 
 	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage, false)
 
 	// Write data to dest cache only
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -284,7 +284,7 @@ func TestGetSet_EmptyData(t *testing.T) {
 	}
 
 	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage)
+	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage, false)
 
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, []byte{})

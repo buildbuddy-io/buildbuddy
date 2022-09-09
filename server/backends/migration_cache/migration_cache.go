@@ -26,6 +26,7 @@ type MigrationCache struct {
 	src                  interfaces.Cache
 	dest                 interfaces.Cache
 	doubleReadPercentage float64
+	logNotFoundErrors    bool
 }
 
 func Register(env environment.Env) error {
@@ -42,7 +43,7 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return err
 	}
-	mc := NewMigrationCache(srcCache, destCache, cacheMigrationConfig.DoubleReadPercentage)
+	mc := NewMigrationCache(srcCache, destCache, cacheMigrationConfig.DoubleReadPercentage, cacheMigrationConfig.LogNotFoundErrors)
 
 	if env.GetCache() != nil {
 		log.Warningf("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
@@ -53,11 +54,12 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewMigrationCache(srcCache interfaces.Cache, destCache interfaces.Cache, doubleReadPercentage float64) *MigrationCache {
+func NewMigrationCache(srcCache interfaces.Cache, destCache interfaces.Cache, doubleReadPercentage float64, logNotFoundErrs bool) *MigrationCache {
 	return &MigrationCache{
 		src:                  srcCache,
 		dest:                 destCache,
 		doubleReadPercentage: doubleReadPercentage,
+		logNotFoundErrors:    logNotFoundErrs,
 	}
 }
 
@@ -190,8 +192,7 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	}
 
 	if dstErr != nil {
-		// Don't log if data not found in dest cache, bc it may not have been copied yet
-		if !status.IsNotFoundError(dstErr) {
+		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
 			log.Warningf("Double read of %q failed. src err %s, dest err %s", d, srcErr, dstErr)
 		}
 	}
