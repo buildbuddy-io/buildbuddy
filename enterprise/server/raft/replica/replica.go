@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -623,7 +624,7 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 	return nil
 }
 
-func (leftReplica *Replica) copyDataToReplica(rightReplica *Replica, insertBatch *pebble.Batch, start, end []byte) error {
+func (leftReplica *Replica) copyDataToReplica(rightReplica *Replica, rightRD *rfpb.RangeDescriptor, start, end []byte) error {
 	ctx := context.TODO()
 	iter := leftReplica.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(start),
@@ -631,12 +632,24 @@ func (leftReplica *Replica) copyDataToReplica(rightReplica *Replica, insertBatch
 	})
 	defer iter.Close()
 
+	rightRDBuf, err := proto.Marshal(rightRD)
+	if err != nil {
+		return err
+	}
+	remoteInsertBatch := rbuilder.NewBatchBuilder()
+	remoteInsertBatch.Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: constants.LocalRangeKey, Value: rightRDBuf},
+	})
+
 	for iter.First(); iter.Valid(); iter.Next() {
-		err := insertBatch.Set(iter.Key(), iter.Value(), nil /*ignore write options*/)
-		if err != nil {
-			return err
-		}
 		if isLocalKey(iter.Key()) {
+			k := make([]byte, len(iter.Key()))
+			copy(k, iter.Key())
+			v := make([]byte, len(iter.Value()))
+			copy(v, iter.Value())
+			remoteInsertBatch.Add(&rfpb.DirectWriteRequest{
+				Kv: &rfpb.KV{Key: k, Value: v},
+			})
 			continue
 		}
 
@@ -644,6 +657,9 @@ func (leftReplica *Replica) copyDataToReplica(rightReplica *Replica, insertBatch
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return err
 		}
+		remoteInsertBatch.Add(&rfpb.FileWriteRequest{
+			FileRecord: fileMetadata.GetFileRecord(),
+		})
 		writeCloserMetadata, err := rightReplica.storedFileWriter(ctx, fileMetadata.GetFileRecord())
 		if err != nil {
 			return err
@@ -666,7 +682,21 @@ func (leftReplica *Replica) copyDataToReplica(rightReplica *Replica, insertBatch
 		}
 	}
 
-	return nil
+	req, err := remoteInsertBatch.ToProto()
+	if err != nil {
+		return err
+	}
+
+	rightRDInit := proto.Clone(rightRD).(*rfpb.RangeDescriptor)
+	rightRDInit.Generation = 0
+
+	return rightReplica.store.Sender().RunRange(ctx, rightRDInit, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+			Header: h,
+			Batch:  req,
+		})
+		return err
+	})
 }
 
 func (sm *Replica) splitAppliesToThisReplica(req *rfpb.SplitRequest) bool {
@@ -754,7 +784,7 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 
 		rwb := rightDB.NewIndexedBatch()
 		defer rwb.Close()
-		if err := sm.copyDataToReplica(rightSM, rwb, sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
+		if err := sm.copyDataToReplica(rightSM, rightRD, sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
 			return nil, err
 		}
 

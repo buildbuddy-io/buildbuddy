@@ -214,6 +214,20 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 	return status.UnavailableError("sender.Run retries exceeded")
 }
 
+func (s *Sender) RunRange(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) error {
+	i, err := s.tryReplicas(ctx, rd, fn)
+	if err != nil {
+		return err
+	}
+	replica := rd.GetReplicas()[i]
+	if err := s.rangeCache.UpdateRange(rd); err == nil {
+		s.rangeCache.SetPreferredReplica(replica, rd)
+	} else {
+		log.Errorf("Error updating rangecache: %s", err)
+	}
+	return nil
+}
+
 type runAllFunc func(peerHeaders []*client.PeerHeader) error
 
 // RunAll is similar to Run but instead of trying replicas one at a time,
