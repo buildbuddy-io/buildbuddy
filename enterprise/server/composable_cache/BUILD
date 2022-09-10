@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/util/ioutil",
         "//server/util/status",
     ],
 )

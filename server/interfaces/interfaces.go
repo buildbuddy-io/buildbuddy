@@ -247,7 +247,7 @@ type Cache interface {
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
-	Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error)
+	Writer(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
 }
 
 type TxRunner func(tx *gorm.DB) error
@@ -871,6 +871,12 @@ type Metadater interface {
 // This is only used with CommittedMetadataWriteCloser.
 type Committer interface {
 	Commit() error
+}
+
+type CommittedWriteCloser interface {
+	io.Writer
+	io.Closer
+	Committer
 }
 
 type MetadataWriteCloser interface {

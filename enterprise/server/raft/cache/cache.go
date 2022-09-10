@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -375,7 +376,7 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit i
 	return readCloser, err
 }
 
-func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, d)
 	if err != nil {
 		return nil, err
@@ -394,7 +395,7 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 		writeCloser = wc
 		return nil
 	})
-	return writeCloser, err
+	return ioutil.AutoUpgradeCloser(writeCloser), err
 }
 
 func (rc *RaftCache) Stop() error {

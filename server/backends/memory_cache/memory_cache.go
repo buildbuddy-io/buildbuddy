@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -232,25 +233,14 @@ func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	return io.NopCloser(r), nil
 }
 
-type closeFn func(b *bytes.Buffer) error
-type setOnClose struct {
-	*bytes.Buffer
-	c closeFn
-}
-
-func (d *setOnClose) Close() error {
-	return d.c(d.Buffer)
-}
-
-func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
-	return &setOnClose{
-		Buffer: &buffer,
-		c: func(b *bytes.Buffer) error {
-			// Locking and key prefixing are handled in Set.
-			return m.Set(ctx, d, b.Bytes())
-		},
-	}, nil
+	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
+	wc.CommitFn = func(int64) error {
+		// Locking and key prefixing are handled in Set.
+		return m.Set(ctx, d, buffer.Bytes())
+	}
+	return wc, nil
 }
 
 func (m *MemoryCache) Start() error {

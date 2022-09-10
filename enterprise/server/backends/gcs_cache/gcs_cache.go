@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -488,7 +489,7 @@ func setChunkSize(d *repb.Digest, w *storage.Writer) {
 	}
 }
 
-func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	k, err := g.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -497,11 +498,12 @@ func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, 
 	writer := obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 	setChunkSize(d, writer)
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	return &gcsDedupingWriteCloser{
+	dwc := &gcsDedupingWriteCloser{
 		WriteCloser: writer,
 		timer:       timer,
 		size:        d.GetSizeBytes(),
-	}, nil
+	}
+	return ioutil.AutoUpgradeCloser(dwc), nil
 }
 
 func (g *GCSCache) Start() error {

@@ -147,7 +147,7 @@ func (s *snitchCache) WithIsolation(ctx context.Context, cacheType interfaces.Ca
 		s.writeCount,
 	}, nil
 }
-func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	wc, err := s.Cache.Writer(ctx, d)
 	if err != nil {
 		return nil, err

@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -547,7 +548,7 @@ func (w *waitForUploadWriteCloser) Close() error {
 	return nil
 }
 
-func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	k, err := s3c.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -573,7 +574,7 @@ func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 		}
 		close(closer.finishedWrite)
 	}()
-	return closer, nil
+	return ioutil.AutoUpgradeCloser(closer), nil
 }
 
 func (s3c *S3Cache) Start() error {

@@ -7,9 +7,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -191,7 +191,7 @@ func (w *writeMover) Write(p []byte) (int, error) {
 	return w.File.Write(p)
 }
 
-func (w *writeMover) Close() error {
+func (w *writeMover) Commit() error {
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {
 		return err
@@ -199,7 +199,12 @@ func (w *writeMover) Close() error {
 	return os.Rename(tmpName, w.finalPath)
 }
 
-func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
+func (w *writeMover) Close() error {
+	DeleteLocalFileIfExists(w.File.Name())
+	return nil
+}
+
+func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWriteCloser, error) {
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return nil, err
 	}
@@ -218,10 +223,6 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 		ctx:       ctx,
 		finalPath: fullPath,
 	}
-	// Ensure that the temp file is cleaned up here too!
-	runtime.SetFinalizer(wm, func(m *writeMover) {
-		DeleteLocalFileIfExists(tmpFileName)
-	})
 	return wm, nil
 }
 

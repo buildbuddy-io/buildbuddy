@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
-	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -261,7 +261,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 	ws.checksum = NewChecksum()
 	ws.writer = ws.checksum
-	cacheWriteCloser := devnull.NewWriteCloser()
+	cacheWriteCloser := ioutil.DiscardWriteCloser()
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
 		cacheWriteCloser, err = cache.Writer(ctx, r.GetDigest())
 		if err != nil {

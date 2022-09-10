@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -346,20 +347,7 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64)
 	return io.NopCloser(timer.NewInstrumentedReader(r, length)), nil
 }
 
-type closeFn func(b *bytes.Buffer) error
-type setOnClose struct {
-	*bytes.Buffer
-	timer *cache_metrics.CacheTimer
-	c     closeFn
-}
-
-func (d *setOnClose) Close() error {
-	err := d.c(d.Buffer)
-	d.timer.ObserveWrite(int64(d.Buffer.Len()), err)
-	return err
-}
-
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	if !c.eligibleForCache(d) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for redis", d)
 	}
@@ -367,15 +355,16 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, err
 	if err != nil {
 		return nil, err
 	}
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	var buffer bytes.Buffer
-	return &setOnClose{
-		Buffer: &buffer,
-		timer:  cache_metrics.NewCacheTimer(cacheLabels),
-		c: func(b *bytes.Buffer) error {
-			// Locking and key prefixing are handled in Set.
-			return c.rdbSet(ctx, k, b.Bytes())
-		},
-	}, nil
+	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
+	wc.CommitFn = func(int64) error {
+		err := c.rdbSet(ctx, k, buffer.Bytes())
+		timer.ObserveWrite(int64(buffer.Len()), err)
+		// Locking and key prefixing are handled in Set.
+		return err
+	}
+	return wc, nil
 }
 
 func (c *Cache) Start() error {

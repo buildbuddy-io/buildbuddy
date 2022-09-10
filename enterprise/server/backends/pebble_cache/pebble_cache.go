@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -1187,7 +1188,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1228,8 +1229,9 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 	if err != nil {
 		return nil, err
 	}
-	dc := &writeCloser{MetadataWriteCloser: wcm, closeFn: func(bytesWritten int64) error {
-		defer db.Close()
+	wc := ioutil.NewCustomCommitWriteCloser(wcm)
+	wc.CloseFn = db.Close
+	wc.CommitFn = func(bytesWritten int64) error {
 		now := time.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
@@ -1248,8 +1250,8 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
 		}
 		return err
-	}}
-	return dc, nil
+	}
+	return wc, nil
 
 }
 

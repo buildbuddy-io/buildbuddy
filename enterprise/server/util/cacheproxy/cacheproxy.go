@@ -14,9 +14,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
-	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -597,7 +597,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	if isolation.GetCacheType() == dcpb.Isolation_CAS_CACHE {
 		if alreadyExists, err := c.RemoteContains(ctx, peer, isolation, d); err == nil && alreadyExists {
 			log.Debugf("Skipping duplicate CAS write of %q", d.GetHash())
-			return devnull.NewWriteCloser(), nil
+			return ioutil.DiscardWriteCloser(), nil
 		}
 	}
 	client, err := c.getClient(ctx, peer)

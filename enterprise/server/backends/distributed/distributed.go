@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -995,6 +996,10 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64)
 	return c.distributedReader(ctx, d, offset, limit)
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	return c.multiWriter(ctx, d)
+func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	mwc, err := c.multiWriter(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	return ioutil.AutoUpgradeCloser(mwc), nil
 }

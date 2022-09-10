@@ -163,7 +163,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	return nil, status.UnimplementedError("not yet implemented")
 }
 
-func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	return nil, status.UnimplementedError("not yet implemented")
 }
 

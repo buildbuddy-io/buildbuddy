@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -372,7 +373,7 @@ func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset, limit in
 	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset, limit)
 }
 
-func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	return c.partition.writer(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
@@ -1151,7 +1152,7 @@ func (d *dbWriteOnClose) Close() error {
 	return d.closeFn(d.bytesWritten)
 }
 
-func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (io.WriteCloser, error) {
+func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
@@ -1166,19 +1167,17 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 		metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
 	}
 
-	writeCloser, err := disk.FileWriter(ctx, k.FullPath())
+	fw, err := disk.FileWriter(ctx, k.FullPath())
 	if err != nil {
 		return nil, err
 	}
-	return &dbWriteOnClose{
-		WriteCloser: writeCloser,
-		closeFn: func(totalBytesWritten int64) error {
-			record := makeRecord(k, totalBytesWritten)
-
-			p.mu.Lock()
-			defer p.mu.Unlock()
-			p.lruAdd(record)
-			return nil
-		},
-	}, nil
+	cwc := ioutil.NewCustomCommitWriteCloser(fw)
+	cwc.CommitFn = func(totalBytesWritten int64) error {
+		record := makeRecord(k, totalBytesWritten)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.lruAdd(record)
+		return nil
+	}
+	return cwc, nil
 }

@@ -15,6 +15,7 @@ go_library(
         "//proto:raft_go_proto",
         "//server/interfaces",
         "//server/util/disk",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",

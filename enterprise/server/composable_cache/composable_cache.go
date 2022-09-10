@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -225,7 +226,7 @@ func (d *doubleWriter) Close() error {
 	return err
 }
 
-func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	innerWriter, err := c.inner.Writer(ctx, d)
 	if err != nil {
 		return nil, err
@@ -242,9 +243,9 @@ func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteC
 					}
 				},
 			}
-			return dw, nil
+			return ioutil.AutoUpgradeCloser(dw), nil
 		}
 	}
 
-	return innerWriter, nil
+	return ioutil.AutoUpgradeCloser(innerWriter), nil
 }
