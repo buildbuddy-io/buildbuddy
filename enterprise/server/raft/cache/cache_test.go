@@ -55,10 +55,10 @@ func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
 	n, err := writeCloser.Write(buf)
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 	require.Equal(t, n, len(buf))
 	err = writeCloser.Close()
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 }
 
 func localAddr(t *testing.T) string {
@@ -165,7 +165,7 @@ func TestAutoBringup(t *testing.T) {
 		return err
 	})
 	err := eg.Wait()
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
@@ -205,7 +205,7 @@ func TestReaderAndWriter(t *testing.T) {
 	waitForHealthy(t, rc1, rc2, rc3)
 
 	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -247,13 +247,13 @@ func TestCacheShutdown(t *testing.T) {
 		return err
 	})
 	err := eg.Wait()
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
 
 	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	cacheRPCTimeout := 5 * time.Second
 	digestsWritten := make([]*repb.Digest, 0)
@@ -277,11 +277,11 @@ func TestCacheShutdown(t *testing.T) {
 	}
 
 	rc3, err = raft_cache.NewRaftCache(env, rc3Config)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	waitForHealthy(t, rc3)
 
 	cache, err = rc3.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	for _, d := range digestsWritten {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
@@ -328,7 +328,7 @@ func TestDistributedRanges(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		rc := raftCaches[rand.Intn(len(raftCaches))]
 		cache, err := rc.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
@@ -339,7 +339,7 @@ func TestDistributedRanges(t *testing.T) {
 	for _, d := range digests {
 		rc := raftCaches[rand.Intn(len(raftCaches))]
 		cache, err := rc.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
@@ -382,7 +382,7 @@ func TestFindMissingBlobs(t *testing.T) {
 	waitForHealthy(t, rc1, rc2, rc3)
 
 	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	digestsWritten := make([]*repb.Digest, 0)
 	for i := 0; i < 10; i++ {
@@ -402,7 +402,7 @@ func TestFindMissingBlobs(t *testing.T) {
 	}
 
 	missing, err := cache.FindMissing(ctx, append(digestsWritten, missingDigests...))
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	missingHashes := make([]string, 0)
 	for _, d := range missing {
