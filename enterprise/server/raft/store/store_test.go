@@ -851,3 +851,105 @@ func TestPostFactoSplit(t *testing.T) {
 		require.True(t, proto.Equal(d, fr.GetDigest()))
 	}
 }
+
+func TestManySplits(t *testing.T) {
+	t.Skip()
+	sf := newStoreFactory(t)
+	s1, nh1 := sf.NewStore(t)
+	s2, nh2 := sf.NewStore(t)
+	s3, nh3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*TestingStore{s1, s2, s3}
+	initialMembers := map[uint64]string{
+		1: nh1.ID(),
+		2: nh2.ID(),
+		3: nh3.ID(),
+	}
+
+	rd := &rfpb.RangeDescriptor{
+		Left:       []byte{constants.MinByte},
+		Right:      []byte{constants.MaxByte},
+		RangeId:    1,
+		Generation: 1,
+		Replicas: []*rfpb.ReplicaDescriptor{
+			{ClusterId: 1, NodeId: 1},
+			{ClusterId: 1, NodeId: 2},
+			{ClusterId: 1, NodeId: 3},
+		},
+	}
+	rdBuf, err := proto.Marshal(rd)
+	require.Nil(t, err)
+	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: rdBuf,
+		},
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastClusterIDKey,
+		Delta: uint64(1),
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastNodeIDKey,
+		Delta: uint64(3),
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastRangeIDKey,
+		Delta: uint64(1),
+	}).Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   keys.RangeMetaKey(rd.GetRight()),
+			Value: rdBuf,
+		},
+	}).ToProto()
+	require.Nil(t, err)
+
+	for i, s := range stores {
+		req := &rfpb.StartClusterRequest{
+			ClusterId:     uint64(1),
+			NodeId:        uint64(i + 1),
+			InitialMember: initialMembers,
+			Batch:         batchProto,
+		}
+		_, err := s.StartCluster(ctx, req)
+		require.Nil(t, err)
+	}
+
+	var written []*rfpb.FileRecord
+	for i := 0; i < 6; i++ {
+		written = append(written, writeNRecords(ctx, t, stores[0], 100)...)
+
+		var clusters []uint64
+		var seen = make(map[uint64]struct{})
+		list, err := s1.ListCluster(ctx, &rfpb.ListClusterRequest{})
+		require.Nil(t, err)
+
+		for _, rangeReplica := range list.GetRangeReplicas() {
+			for _, replica := range rangeReplica.GetRange().GetReplicas() {
+				clusterID := replica.GetClusterId()
+				if _, ok := seen[clusterID]; !ok {
+					clusters = append(clusters, clusterID)
+					seen[clusterID] = struct{}{}
+				}
+			}
+		}
+
+		for _, clusterID := range clusters {
+			rd := s1.GetRange(clusterID)
+
+			_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+				Range: rd,
+			})
+			require.Nil(t, err, err)
+
+			// Expect that a new cluster was added with the new
+			// clusterID and 3 replicas.
+			replicas, err := s1.GetClusterMembership(ctx, clusterID)
+			require.Nil(t, err)
+			require.Equal(t, 3, len(replicas))
+		}
+
+		// Check that all files are found.
+		for _, fr := range written {
+			readRecord(ctx, t, s3, fr)
+		}
+	}
+}
