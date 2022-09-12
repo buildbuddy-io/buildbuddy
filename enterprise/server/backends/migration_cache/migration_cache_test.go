@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -18,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -38,6 +41,25 @@ func getAnonContext(t *testing.T, env environment.Env) context.Context {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
 	return ctx
+}
+
+// waitForCopy keeps checking the destination cache to see whether the background process has
+// copied the given digest over
+func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, digest *repb.Digest) {
+	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
+		contains, err := destCache.Contains(ctx, digest)
+		if err != nil {
+			require.FailNowf(t, "get err", "Failed calling contains on dest cache %s", err)
+		}
+		if contains {
+			return
+		}
+
+		// Data has not been copied yet... Keep waiting
+		time.Sleep(delay)
+	}
+
+	require.FailNowf(t, "timeout", "Timed out waiting for data to be copied to dest cache")
 }
 
 // errorCache lets us mock errors to test error handling
@@ -72,7 +94,7 @@ func TestSet_DoubleWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -100,7 +122,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 		t.Fatal(err)
 	}
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -122,7 +144,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -141,7 +163,7 @@ func TestSet_SrcAndDestWriteErr(t *testing.T) {
 
 	srcCache := &errorCache{}
 	destCache := &errorCache{}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err := mc.Set(ctx, d, buf)
@@ -163,7 +185,7 @@ func TestGetSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, 0, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
@@ -204,8 +226,7 @@ func TestGet_DoubleRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -228,8 +249,7 @@ func TestGet_DestReadErr(t *testing.T) {
 	}
 	destCache := &errorCache{}
 
-	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, buf)
@@ -253,8 +273,7 @@ func TestGet_SrcReadErr(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	// Write data to dest cache only
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -283,8 +302,7 @@ func TestGetSet_EmptyData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	doubleReadPercentage := 1.0
-	mc := migration_cache.NewMigrationCache(srcCache, destCache, doubleReadPercentage, false)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
 	err = mc.Set(ctx, d, []byte{})
@@ -293,4 +311,99 @@ func TestGetSet_EmptyData(t *testing.T) {
 	data, err := mc.Get(ctx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal([]byte{}, data))
+}
+
+func TestCopyDataInBackground(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	numTests := 1000
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize: numTests + 1,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	eg, ctx := errgroup.WithContext(ctx)
+	lock := sync.RWMutex{}
+	for i := 0; i < numTests; i++ {
+		eg.Go(func() error {
+			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			lock.Lock()
+			defer lock.Unlock()
+
+			err = srcCache.Set(ctx, d, buf)
+			require.NoError(t, err)
+
+			// Get should queue copy in background
+			data, err := mc.Get(ctx, d)
+			require.NoError(t, err)
+			require.True(t, bytes.Equal(buf, data))
+
+			// Expect copy
+			waitForCopy(t, ctx, destCache, d)
+			return nil
+		})
+	}
+	eg.Wait()
+}
+
+func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize: 1,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	eg, ctx := errgroup.WithContext(ctx)
+	lock := sync.RWMutex{}
+	for i := 0; i < 100; i++ {
+		eg.Go(func() error {
+			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			lock.Lock()
+			defer lock.Unlock()
+
+			err = srcCache.Set(ctx, d, buf)
+			require.NoError(t, err)
+
+			// We should exceed the copy channel size, but should not prevent us from continuing
+			// to read from the cache
+			data, err := mc.Get(ctx, d)
+			require.NoError(t, err)
+			require.True(t, bytes.Equal(buf, data))
+			return nil
+		})
+	}
+	eg.Wait()
 }
