@@ -283,20 +283,8 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) 
 		}
 	}
 
-	// Enqueue non-blocking copying
-	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	for _, d := range digests {
-		select {
-		case mc.copyChan <- &copyData{
-			d:         d,
-			ctx:       ctx,
-			ctxCancel: cancel,
-		}:
-		default:
-			cancel()
-			log.Warningf("Migration copy chan is full. We may need to increase the buffer size. Dropping attempt to copy digest %v", d)
-			break
-		}
+		mc.sendNonBlockingCopy(ctx, d)
 	}
 
 	// Return data from source cache
@@ -412,6 +400,13 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	}
 
 	// Enqueue non-blocking copying
+	mc.sendNonBlockingCopy(ctx, d)
+
+	// Return data from source cache
+	return srcBuf, srcErr
+}
+
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Digest) {
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
@@ -423,9 +418,6 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 		cancel()
 		log.Warningf("Migration copy chan is full. We may need to increase the buffer size. Dropping attempt to copy digest %v", d)
 	}
-
-	// Return data from source cache
-	return srcBuf, srcErr
 }
 
 func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
