@@ -89,6 +89,14 @@ func (c *errorCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 	return nil, errors.New("error cache findmissing err")
 }
 
+func (c *errorCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+	return nil, errors.New("error cache writer err")
+}
+
+func (c *errorCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	return nil, errors.New("error cache reader err")
+}
+
 func TestACIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
@@ -743,19 +751,25 @@ func TestReadWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	config := &migration_cache.MigrationConfig{
+		DoubleReadPercentage: 1.0,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
 
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		d, r := testdigest.NewRandomDigestReader(t, testSize)
+		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		w, err := mc.Writer(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %v writer: %s", d.GetHash(), err.Error())
 		}
-		if _, err := io.Copy(w, r); err != nil {
-			t.Fatalf("Error copying bytes to cache: %s", err.Error())
+		if _, err = w.Write(buf); err != nil {
+			t.Fatalf("Error writing bytes to cache: %s", err.Error())
 		}
 		if err := w.Close(); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
@@ -765,9 +779,76 @@ func TestReadWrite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
-		d2 := testdigest.ReadDigestAndClose(t, reader)
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		actualBuf := make([]byte, len(buf))
+		n, err := reader.Read(actualBuf)
+		require.NoError(t, err)
+		require.Equal(t, int(testSize), n)
+		require.True(t, bytes.Equal(buf, actualBuf))
+
+		// Verify data was written to both caches
+		srcReader, err := srcCache.Reader(ctx, d, 0, 0)
+		if err != nil {
+			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
+		actualBuf = make([]byte, len(buf))
+		n, err = srcReader.Read(actualBuf)
+		require.NoError(t, err)
+		require.Equal(t, int(testSize), n)
+		require.True(t, bytes.Equal(buf, actualBuf))
+
+		destReader, err := destCache.Reader(ctx, d, 0, 0)
+		if err != nil {
+			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
+		}
+		actualBuf = make([]byte, len(buf))
+		n, err = destReader.Read(actualBuf)
+		require.NoError(t, err)
+		require.Equal(t, int(testSize), n)
+		require.True(t, bytes.Equal(buf, actualBuf))
 	}
+}
+
+func TestReaderWriter_DestFails(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCache := &errorCache{}
+	config := &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, errCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	// Will fail to set a dest writer
+	w, err := mc.Writer(ctx, d)
+	if err != nil {
+		t.Fatalf("Error getting %v writer: %s", d.GetHash(), err.Error())
+	}
+
+	// Should still write data to src cache without error
+	if _, err = w.Write(buf); err != nil {
+		t.Fatalf("Error writing bytes to cache: %s", err.Error())
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Error closing writer: %s", err.Error())
+	}
+
+	// Will fail to set a dest reader
+	reader, err := mc.Reader(ctx, d, 0, 0)
+	if err != nil {
+		t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
+	}
+	// Should still read from src cache without error
+	actualBuf := make([]byte, len(buf))
+	n, err := reader.Read(actualBuf)
+	require.NoError(t, err)
+	require.Equal(t, 100, n)
+	require.True(t, bytes.Equal(buf, actualBuf))
 }
