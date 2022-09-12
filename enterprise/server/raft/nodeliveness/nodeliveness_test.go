@@ -85,7 +85,7 @@ func TestAcquireAndRelease(t *testing.T) {
 
 	// Should be able to lease a liveness record.
 	err := liveness.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Liveness record should be valid.
 	valid := liveness.Valid()
@@ -93,7 +93,7 @@ func TestAcquireAndRelease(t *testing.T) {
 
 	// Should be able to release a liveness record.
 	err = liveness.Release()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Liveness record should not be valid.
 	valid = liveness.Valid()
@@ -108,7 +108,7 @@ func TestKeepalive(t *testing.T) {
 
 	// Should be able to lease a liveness record.
 	err := liveness.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Liveness record should be valid.
 	valid := liveness.Valid()
@@ -128,7 +128,7 @@ func TestEpochChangeOnLease(t *testing.T) {
 
 	// Should be able to lease a liveness record.
 	err := liveness.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Liveness record should be valid.
 	valid := liveness.Valid()
@@ -136,25 +136,25 @@ func TestEpochChangeOnLease(t *testing.T) {
 
 	// Get the epoch of the liveness record.
 	nl, err := liveness.BlockingGetCurrentNodeLiveness()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, int64(0), nl.GetEpoch())
 
 	// Release the liveness record.
 	err = liveness.Release()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Re-acquire it, using a new nodeliveness object, but
 	// the same stored data.
 	liveness2 := nodeliveness.New("nodeID-3", proposer)
 
 	err = liveness2.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	valid = liveness2.Valid()
 	require.True(t, valid)
 
 	// Ensure that epoch has been incremented.
 	nl, err = liveness2.BlockingGetCurrentNodeLiveness()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, int64(1), nl.GetEpoch())
 }

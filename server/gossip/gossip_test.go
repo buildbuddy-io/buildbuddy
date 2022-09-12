@@ -30,7 +30,7 @@ func localAddr(t *testing.T) string {
 
 func newGossipManager(t *testing.T, addr string, seeds []string, broker gossip.Listener) *gossip.GossipManager {
 	node, err := gossip.NewGossipManager("name-"+addr, addr, seeds)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.NotNil(t, node)
 	node.AddListener(broker)
 	return node
@@ -91,7 +91,7 @@ func TestSendTag(t *testing.T) {
 	defer node2.Shutdown()
 
 	err := node1.SetTags(map[string]string{"testTagName": "testTagValue"})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	select {
 	case <-time.After(10 * time.Second):
@@ -134,7 +134,7 @@ func TestUserQuery(t *testing.T) {
 				if query, ok := event.(*serf.Query); ok {
 					if query.Name == "letters" {
 						err := query.Respond([]byte(strings.Join(data[nodeAddr], ",")))
-						require.Nil(t, err)
+						require.NoError(t, err)
 					}
 				}
 			},
@@ -150,7 +150,7 @@ func TestUserQuery(t *testing.T) {
 	defer n.Shutdown()
 	go func() {
 		rsp, err := n.Query("letters", nil, nil)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		for nodeResponse := range rsp.ResponseCh() {
 			mu.Lock()
 			letters := strings.Split(string(nodeResponse.Payload), ",")

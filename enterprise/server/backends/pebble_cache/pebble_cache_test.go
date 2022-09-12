@@ -125,9 +125,9 @@ func TestACIsolation(t *testing.T) {
 	defer pc.Stop()
 
 	c1, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, "foo")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	c2, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, "bar")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 
@@ -135,7 +135,7 @@ func TestACIsolation(t *testing.T) {
 	require.Nil(t, c2.Set(ctx, d1, []byte("evilbuf")))
 
 	got1, err := c1.Get(ctx, d1)
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 }
 
@@ -456,7 +456,7 @@ func TestSizeLimit(t *testing.T) {
 	// Expect the on disk directory size be less than or equal to max size
 	// bytes.
 	dirSize, err := disk.DirSize(rootDir)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.LessOrEqual(t, dirSize, maxSizeBytes)
 }
 
@@ -623,35 +623,35 @@ func TestMigrationFromDiskV1(t *testing.T) {
 	maxSizeBytes := int64(1e9)
 	diskDir := testfs.MakeTempDir(t)
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: diskDir}, maxSizeBytes)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	setKeys := make(map[*digest.ResourceName][]byte, 0)
 	for i := 0; i < 1000; i++ {
 		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 		c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, remoteInstanceName)
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		err = c.Set(ctx, d, buf)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		setKeys[digest.NewResourceName(d, remoteInstanceName)] = buf
 	}
 
 	pebbleDir := testfs.MakeTempDir(t)
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: pebbleDir, MaxSizeBytes: maxSizeBytes})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = pc.MigrateFromDiskDir(diskDir)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	pc.Start()
 	defer pc.Stop()
 
 	for rn, buf := range setKeys {
 		c, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, rn.GetInstanceName())
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		gotBuf, err := c.Get(ctx, rn.GetDigest())
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		require.Equal(t, buf, gotBuf)
 	}
@@ -690,7 +690,7 @@ func TestMigrationFromDiskV2(t *testing.T) {
 	}
 
 	dc, err := disk_cache.NewDiskCache(te, diskConfig, maxSizeBytes)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
@@ -699,11 +699,11 @@ func TestMigrationFromDiskV2(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 		c, err := dc.WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		err = c.Set(ctx, d, buf)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		setKeys[digest.NewResourceName(d, remoteInstanceName)] = buf
 	}
 
@@ -715,19 +715,19 @@ func TestMigrationFromDiskV2(t *testing.T) {
 		PartitionMappings: diskConfig.PartitionMappings,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, pebbleConfig)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = pc.MigrateFromDiskDir(diskDir)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	pc.Start()
 	defer pc.Stop()
 
 	for rn, buf := range setKeys {
 		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, rn.GetInstanceName())
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		gotBuf, err := c.Get(ctx, rn.GetDigest())
-		require.Nil(t, err, err)
+		require.NoError(t, err)
 
 		require.Equal(t, buf, gotBuf)
 	}
@@ -749,14 +749,14 @@ func TestStartupScan(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 		c, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, remoteInstanceName)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 		err = c.Set(ctx, d, buf)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		digests = append(digests, d)
 
 		err = pc.Set(ctx, d, buf)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 	log.Printf("Wrote %d digests", len(digests))
 
@@ -765,14 +765,14 @@ func TestStartupScan(t *testing.T) {
 	pc.Stop()
 
 	pc2, err := pebble_cache.NewPebbleCache(te, options)
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 
 	pc2.Start()
 	defer pc2.Stop()
 	for i, d := range digests {
 		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 		c, err := pc2.WithIsolation(ctx, interfaces.ActionCacheType, remoteInstanceName)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		rbuf, err := c.Get(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
@@ -808,18 +808,18 @@ func TestDeleteOrphans(t *testing.T) {
 	digests := make(map[string]*digestAndType, 0)
 	for i := 0; i < 1000; i++ {
 		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, "remoteInstanceName")
-		require.Nil(t, err)
+		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
 		err = c.Set(ctx, d, buf)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		digests[d.GetHash()] = &digestAndType{interfaces.CASCacheType, d}
 	}
 	for i := 0; i < 1000; i++ {
 		c, err := pc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
-		require.Nil(t, err)
+		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
 		err = c.Set(ctx, d, buf)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		digests[d.GetHash()] = &digestAndType{interfaces.ActionCacheType, d}
 	}
 
@@ -832,7 +832,7 @@ func TestDeleteOrphans(t *testing.T) {
 	// When we next start up the pebble cache, we'll expect it to
 	// delete the files for the records we manually deleted from the db.
 	db, err := pebble.Open(rootDir, &pebble.Options{})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	deletedDigests := make(map[string]*digestAndType, 0)
 
 	iter := db.NewIter(&pebble.IterOptions{
@@ -846,13 +846,13 @@ func TestDeleteOrphans(t *testing.T) {
 			continue
 		}
 		err := db.Delete(iter.Key(), &pebble.WriteOptions{Sync: false})
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			require.Nil(t, err)
+			require.NoError(t, err)
 		}
-		require.Nil(t, err)
+		require.NoError(t, err)
 		fr := fileMetadata.GetFileRecord()
 		ct := interfaces.CASCacheType
 		if fr.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
@@ -863,12 +863,12 @@ func TestDeleteOrphans(t *testing.T) {
 	}
 
 	err = iter.Close()
-	require.Nil(t, err)
+	require.NoError(t, err)
 	err = db.Close()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	pc2, err := pebble_cache.NewPebbleCache(te, options)
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 	pc2.Start()
 	for !pc2.DoneScanning() {
 		time.Sleep(10 * time.Millisecond)
@@ -894,15 +894,15 @@ func TestDeleteOrphans(t *testing.T) {
 		}
 		return nil
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Check that all of the non-deleted items are still fetchable.
 	for _, dt := range digests {
 		c, err := pc2.WithIsolation(ctx, dt.cacheType, "remoteInstanceName")
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		_, err = c.Get(ctx, dt.digest)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	pc2.Stop()
@@ -928,17 +928,17 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	digests := make(map[string]*repb.Digest, 0)
 	for i := 0; i < 1000; i++ {
 		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, "remoteInstanceName")
-		require.Nil(t, err)
+		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
 		err = c.Set(ctx, d, buf)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		digests[d.GetHash()] = d
 	}
 	for _, d := range digests {
 		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, "remoteInstanceName")
-		require.Nil(t, err)
+		require.NoError(t, err)
 		err = c.Delete(ctx, d)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	log.Printf("Wrote and deleted %d digests", len(digests))
@@ -955,7 +955,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 		}
 		return nil
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func BenchmarkGetMulti(b *testing.B) {

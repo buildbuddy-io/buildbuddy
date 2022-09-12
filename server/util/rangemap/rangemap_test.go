@@ -12,7 +12,7 @@ func TestAddOrdering(t *testing.T) {
 
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	addRange("c", "d", 2)
@@ -42,14 +42,14 @@ func TestAddOverlapError(t *testing.T) {
 
 	var err error
 	_, err = r.Add([]byte("a"), []byte("c"), 1)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	_, err = r.Add([]byte("b"), []byte("f"), 2)
 	require.Equal(t, rangemap.RangeOverlapError, err)
 	r.Clear()
 
 	_, err = r.Add([]byte("a"), []byte("z"), 1)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	_, err = r.Add([]byte("bbbb"), []byte("cccc"), 2)
 	require.Equal(t, rangemap.RangeOverlapError, err)
@@ -60,7 +60,7 @@ func TestAddDuplicateError(t *testing.T) {
 
 	var err error
 	_, err = r.Add([]byte("a"), []byte("c"), 1)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	_, err = r.Add([]byte("a"), []byte("c"), 1)
 	require.Equal(t, rangemap.RangeOverlapError, err)
@@ -70,7 +70,7 @@ func TestLookupSingleRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	// Single range
@@ -82,7 +82,7 @@ func TestLookupMultiRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	// Lots of small ranges
@@ -111,7 +111,7 @@ func TestLookupSparseRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	// Sparse ranges
@@ -131,7 +131,7 @@ func TestLookupNarrowRange(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	addRange("aaaa", "aaac", 1)
@@ -147,7 +147,7 @@ func TestGet(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	addRange("aaaa", "aaac", 1)
@@ -164,7 +164,7 @@ func TestGetOverlapping(t *testing.T) {
 	rm := rangemap.New()
 	addRange := func(left, right string, id int) {
 		_, err := rm.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	addRange("b", "e", 1)
@@ -191,7 +191,7 @@ func TestRemove(t *testing.T) {
 	r := rangemap.New()
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	// Sparse ranges
@@ -200,7 +200,7 @@ func TestRemove(t *testing.T) {
 	require.Equal(t, 1, r.Lookup([]byte("d")))
 
 	err := r.Remove([]byte("a"), []byte("z"))
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	err = r.Remove([]byte("a"), []byte("z"))
 	require.NotNil(t, err)
@@ -213,7 +213,7 @@ func TestClear(t *testing.T) {
 
 	var err error
 	_, err = r.Add([]byte("a"), []byte("c"), 1)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, 1, len(r.Ranges()))
 
 	r.Clear()
@@ -225,7 +225,7 @@ func TestGetOverlappingNPE(t *testing.T) {
 
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	addRange("e", "z", 1)
@@ -238,7 +238,7 @@ func TestGetOverlappingMulti(t *testing.T) {
 
 	addRange := func(left, right string, id int) {
 		_, err := r.Add([]byte(left), []byte(right), id)
-		require.Nil(t, err)
+		require.NoError(t, err)
 	}
 
 	addRange("a", "c", 1)

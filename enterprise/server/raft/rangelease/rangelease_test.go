@@ -98,7 +98,7 @@ func TestAcquireAndRelease(t *testing.T) {
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be valid.
 	valid := l.Valid()
@@ -108,7 +108,7 @@ func TestAcquireAndRelease(t *testing.T) {
 
 	// Should be able to release a rangelease.
 	err = l.Release()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
 	valid = l.Valid()
@@ -133,7 +133,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be valid.
 	valid := l.Valid()
@@ -143,7 +143,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 
 	// Should be able to release a rangelease.
 	err = l.Release()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
 	valid = l.Valid()
@@ -170,7 +170,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be valid.
 	valid := l.Valid()
@@ -186,7 +186,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 
 	// Should be able to release a rangelease.
 	err = l.Release()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be invalid after release.
 	valid = l.Valid()
@@ -211,7 +211,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 
 	// Should be able to get a rangelease.
 	err := l.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be valid.
 	valid := l.Valid()
@@ -220,7 +220,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 	log.Printf("RangeLease: %s", l)
 
 	err = liveness.Release()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be invalid after the nodeliveness record it's
 	// dependent on is released.
@@ -229,7 +229,7 @@ func TestNodeEpochInvalidation(t *testing.T) {
 
 	// Should be able to re-lease it again.
 	err = l.Lease()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Rangelease should be valid again.
 	valid = l.Valid()
