@@ -779,7 +779,7 @@ func (c *podmanCommandContainer) readRawStats(ctx context.Context) (*repb.UsageS
 
 func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	if !c.options.EnableStats {
-		return &repb.UsageStats{}, nil
+		return nil, nil
 	}
 
 	current, err := c.readRawStats(ctx)

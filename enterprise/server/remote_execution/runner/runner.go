@@ -627,7 +627,8 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 	}
 	// If memory usage stats are not implemented, fall back to the default task
 	// size estimate.
-	if stats.MemoryBytes == 0 {
+	if stats == nil {
+		stats = &repb.UsageStats{}
 		stats.MemoryBytes = int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 	}
 

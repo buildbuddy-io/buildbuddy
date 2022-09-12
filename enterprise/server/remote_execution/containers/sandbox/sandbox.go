@@ -325,5 +325,5 @@ func (c *sandbox) Remove(ctx context.Context) error                             
 func (c *sandbox) Pause(ctx context.Context) error                                      { return nil }
 func (c *sandbox) Unpause(ctx context.Context) error                                    { return nil }
 func (c *sandbox) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	return &repb.UsageStats{}, nil
+	return nil, nil
 }
