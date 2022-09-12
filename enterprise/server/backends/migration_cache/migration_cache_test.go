@@ -339,9 +339,13 @@ func TestCopyDataInBackground(t *testing.T) {
 	defer mc.Stop()
 
 	eg, ctx := errgroup.WithContext(ctx)
+	lock := sync.RWMutex{}
 	for i := 0; i < numTests; i++ {
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			lock.Lock()
+			defer lock.Unlock()
+
 			err = srcCache.Set(ctx, d, buf)
 			require.NoError(t, err)
 
