@@ -4,13 +4,13 @@ import (
 	"context"
 	"io"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -227,7 +227,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interf
 func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
-	var srcMissing []*repb.Digest
+	var srcMissing, dstMissing []*repb.Digest
 
 	eg.Go(func() error {
 		srcMissing, srcErr = mc.src.FindMissing(gctx, digests)
@@ -237,7 +237,7 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Diges
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.FindMissing(gctx, digests)
+			dstMissing, dstErr = mc.dest.FindMissing(gctx, digests)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -248,49 +248,104 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Diges
 
 	if dstErr != nil {
 		log.Warningf("Migration dest FindMissing %v failed: %s", digests, dstErr)
+	} else if mc.logNotFoundErrors && !digest.ElementsMatch(srcMissing, dstMissing) {
+		log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", digests, srcMissing, dstMissing)
 	}
 
 	return srcMissing, srcErr
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+	var srcData map[*repb.Digest][]byte
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
-			eg.Go(func() error {
-				data, err := mc.Get(ctx, d)
-				if status.IsNotFoundError(err) {
-					return nil
-				}
-				if err != nil {
-					return err
-				}
-				lock.Lock()
-				foundMap[d] = data
-				lock.Unlock()
-				return nil
-			})
-		}
-		fetchFn(d)
+	eg.Go(func() error {
+		srcData, srcErr = mc.src.GetMulti(gctx, digests)
+		return srcErr
+	})
+
+	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+	if doubleRead {
+		eg.Go(func() error {
+			_, dstErr = mc.dest.GetMulti(gctx, digests)
+			return nil
+		})
 	}
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	return foundMap, nil
+	if dstErr != nil {
+		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
+			log.Warningf("Migration dest GetMulti of %v failed: %s", digests, dstErr)
+		}
+	}
+
+	// Enqueue non-blocking copying
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+	for _, d := range digests {
+		select {
+		case mc.copyChan <- &copyData{
+			d:         d,
+			ctx:       ctx,
+			ctxCancel: cancel,
+		}:
+		default:
+			cancel()
+			log.Warningf("Migration copy chan is full. We may need to increase the buffer size. Dropping attempt to copy digest %v", d)
+			break
+		}
+	}
+
+	// Return data from source cache
+	return srcData, srcErr
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	for d, data := range kvs {
-		if err := mc.Set(ctx, d, data); err != nil {
-			return err
+	eg, gctx := errgroup.WithContext(ctx)
+	var srcErr, dstErr error
+
+	// Double write data to both caches
+	eg.Go(func() error {
+		srcErr = mc.src.SetMulti(gctx, kvs)
+		return srcErr
+	})
+
+	eg.Go(func() error {
+		dstErr = mc.dest.SetMulti(gctx, kvs)
+		return nil // don't fail if there's an error from this cache
+	})
+
+	if err := eg.Wait(); err != nil {
+		if dstErr == nil {
+			// If error during write to source cache (source of truth), must delete from destination cache
+			mc.deleteMulti(ctx, kvs)
 		}
+		return err
 	}
-	return nil
+
+	if dstErr != nil {
+		log.Warningf("Migration dest SetMulti of %v err: %s", kvs, dstErr)
+	}
+
+	return srcErr
+}
+
+func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*repb.Digest][]byte) {
+	eg, gctx := errgroup.WithContext(ctx)
+	for d, _ := range kvs {
+		dCopy := d
+		eg.Go(func() error {
+			deleteErr := mc.dest.Delete(gctx, dCopy)
+			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
+				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", dCopy, deleteErr)
+			}
+			return nil
+		})
+	}
+	eg.Wait()
 }
 
 func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {

@@ -675,12 +675,15 @@ func TestGetMultiWithCopying(t *testing.T) {
 	defer mc.Stop()
 
 	eg, ctx := errgroup.WithContext(ctx)
+	lock := sync.RWMutex{}
 	digests := make([]*repb.Digest, 50)
 	expected := make(map[*repb.Digest][]byte, 50)
 	for i := 0; i < 50; i++ {
 		idx := i
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			lock.Lock()
+			defer lock.Unlock()
 			err = srcCache.Set(ctx, d, buf)
 			require.NoError(t, err)
 
@@ -720,10 +723,13 @@ func TestSetMulti(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
 
 	eg, ctx := errgroup.WithContext(ctx)
+	lock := sync.RWMutex{}
 	dataToSet := make(map[*repb.Digest][]byte, 50)
 	for i := 0; i < 50; i++ {
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			lock.Lock()
+			defer lock.Unlock()
 			dataToSet[d] = buf
 			return nil
 		})
