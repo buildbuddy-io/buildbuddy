@@ -124,15 +124,6 @@ const (
 )
 
 var (
-	// RunnerMaxMemoryExceeded is returned from Pool.Add if a runner cannot be
-	// added to the pool because its current memory consumption exceeds the max
-	// configured limit.
-	RunnerMaxMemoryExceeded = status.ResourceExhaustedError("runner memory limit exceeded")
-	// RunnerMaxDiskSizeExceeded is returned from Pool.Add if a runner cannot be
-	// added to the pool because its current disk usage exceeds the max configured
-	// limit.
-	RunnerMaxDiskSizeExceeded = status.ResourceExhaustedError("runner disk size limit exceeded")
-
 	podIDFromCpusetRegexp = regexp.MustCompile("/kubepods(/.*?)?/pod([a-z0-9\\-]{36})/")
 
 	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
@@ -642,7 +633,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 
 	if stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
 		return &labeledError{
-			RunnerMaxMemoryExceeded,
+			status.ResourceExhaustedErrorf("runner memory usage of %d bytes exceeds limit of %d bytes", stats.MemoryBytes, p.maxRunnerMemoryUsageBytes),
 			"max_memory_exceeded",
 		}
 	}
@@ -655,7 +646,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 	}
 	if du > p.maxRunnerDiskUsageBytes {
 		return &labeledError{
-			RunnerMaxDiskSizeExceeded,
+			status.ResourceExhaustedErrorf("runner disk usage of %d bytes exceeds limit of %d bytes", du, p.maxRunnerDiskUsageBytes),
 			"max_disk_usage_exceeded",
 		}
 	}
@@ -677,8 +668,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 		}
 	}
 
-	for p.pausedRunnerCount() >= p.maxRunnerCount ||
-		p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
+	for p.pausedRunnerCount() >= p.maxRunnerCount {
 		// Evict the oldest (first) paused runner to make room for the new one.
 		evictIndex := -1
 		for i, r := range p.runners {
