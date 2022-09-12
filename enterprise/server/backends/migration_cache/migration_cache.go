@@ -167,7 +167,7 @@ func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interface
 func (mc *MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
-	var srcContains bool
+	var srcContains, dstContains bool
 
 	eg.Go(func() error {
 		srcContains, srcErr = mc.src.Contains(gctx, d)
@@ -177,7 +177,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, e
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.Contains(gctx, d)
+			dstContains, dstErr = mc.dest.Contains(gctx, d)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -187,7 +187,9 @@ func (mc *MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, e
 	}
 
 	if dstErr != nil {
-		log.Warningf("Double read of %q failed for Contain. dest err %s", d, dstErr)
+		log.Warningf("Migration dest %v contains failed: %s", d, dstErr)
+	} else if mc.logNotFoundErrors && srcContains != dstContains {
+		log.Warningf("Migration digest %v src contains %v, dest contains %v", d, srcContains, dstContains)
 	}
 
 	return srcContains, srcErr
@@ -216,7 +218,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interf
 	}
 
 	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
-		log.Warningf("Double read of %q failed for Metadata. dest err %s", d, dstErr)
+		log.Warningf("Migration dest %v metadata failed: %s", d, dstErr)
 	}
 
 	return srcMetadata, srcErr
@@ -245,7 +247,7 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Diges
 	}
 
 	if dstErr != nil {
-		log.Warningf("Double read of %v failed for FindMissing. dest err %s", digests, dstErr)
+		log.Warningf("Migration dest FindMissing %v failed: %s", digests, dstErr)
 	}
 
 	return srcMissing, srcErr
