@@ -5,7 +5,6 @@ go 1.18
 replace (
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
 	github.com/lni/dragonboat/v3 => github.com/tylerwilliams/dragonboat/v3 v3.3.4-rc5
-	github.com/tensorflow/tensorflow => github.com/bduffany/go-tensorflow v0.0.0-20220829154158-35855b13822d
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
 )
 
@@ -23,6 +22,7 @@ require (
 	github.com/bazelbuild/rules_webtesting v0.2.0
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
+	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/cockroachdb/pebble v0.0.0-20220408210401-5591b6b889f9
@@ -72,7 +72,6 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.8.0
 	github.com/tebeka/selenium v0.9.9
-	github.com/tensorflow/tensorflow v2.9.0+incompatible
 	github.com/throttled/throttled/v2 v2.0.0-00010101000000-000000000000
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
 	go.opentelemetry.io/contrib/detectors/gcp v1.2.0

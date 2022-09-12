@@ -1,12 +1,8 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "tasksize_model",
-    srcs = [
-        "tasksize_model.go",
-        "tasksize_model_darwin.go",
-        "tasksize_model_linux.go",
-    ],
+    srcs = ["tasksize_model.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize_model",
     visibility = [
         "//enterprise:__subpackages__",
@@ -16,12 +12,28 @@ go_library(
         "//enterprise/server/remote_execution/platform",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
-    ] + select({
-        "@io_bazel_rules_go//go/platform:linux": [
-            "//server/util/log",
-            "//server/util/status",
-            "@com_github_tensorflow_tensorflow//tensorflow/go",
-        ],
-        "//conditions:default": [],
-    }),
+        "//server/environment",
+        "//server/util/grpc_client",
+        "//server/util/log",
+        "//server/util/status",
+        "@com_github_buildbuddy_io_tensorflow_proto//tensorflow/core/framework",
+        "@com_github_buildbuddy_io_tensorflow_proto//tensorflow_serving/apis",
+        "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "tasksize_model_test",
+    srcs = ["tasksize_model_test.go"],
+    embed = [":tasksize_model"],
+    tags = [
+        "manual",
+        "no-sandbox",
+    ],
+    deps = [
+        "//proto:remote_execution_go_proto",
+        "//server/testutil/testenv",
+        "//server/util/log",
+        "@com_github_stretchr_testify//require",
+    ],
 )

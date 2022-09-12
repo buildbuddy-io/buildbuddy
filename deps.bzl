@@ -457,6 +457,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:nvj0OLI3YqYXer/kZD8Ri1aaunCxIEsOst1BVJswV0o=",
         version = "v0.0.0-20151223152923-e2c28503fcd0",
     )
+    go_repository(
+        name = "com_github_buildbuddy_io_tensorflow_proto",
+        build_file_proto_mode = "disable",
+        importpath = "github.com/buildbuddy-io/tensorflow-proto",
+        sum = "h1:LcKnQdAYrT3LOZt0mTgw6uiEi7QVkH75cCxPj+AbkLA=",
+        version = "v0.0.0-20220908151343-929b41ab4dc6",
+    )
 
     go_repository(
         name = "com_github_burntsushi_toml",
@@ -4230,14 +4237,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:f+jULpRQGxTSkNYKJ51yaw6ChIqO+Je8UqsTKN/cDag=",
         version = "v0.0.0-20200319021203-7eef512accb3",
     )
-    go_repository(
-        name = "com_github_tensorflow_tensorflow",
-        build_file_proto_mode = "disable",
-        importpath = "github.com/tensorflow/tensorflow",
-        replace = "github.com/bduffany/go-tensorflow",
-        sum = "h1:3WU8fhrz/8ucFejgXUdGwo08YgIB1NHFfySLLKJrNZ0=",
-        version = "v0.0.0-20220829154158-35855b13822d",
-    )
+
     go_repository(
         name = "com_github_tetafro_godot",
         importpath = "github.com/tetafro/godot",
