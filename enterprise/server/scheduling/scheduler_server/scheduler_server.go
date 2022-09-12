@@ -325,7 +325,7 @@ func (h *executorHandle) handleTaskReservationResponse(response *scpb.EnqueueTas
 func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	// EnqueueTaskReservation may be called multiple times and OpenTelemetry doesn't have clear documentation as to
 	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
-	// We also clone to avoid mutating the proto in applyMeasuredTaskSize below.
+	// We also clone to avoid mutating the proto in adjustTaskSize below.
 	req, ok := proto.Clone(req).(*scpb.EnqueueTaskReservationRequest)
 	if !ok {
 		log.CtxErrorf(ctx, "could not clone reservation request")
@@ -333,12 +333,13 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	}
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
 
-	// Just before enqueueing, resize the task to match the measured task size,
-	// up to the executor's limits. This late-resizing approach ensures that we
-	// assign tasks to executors independently of any measured task sizes, to
-	// avoid issues where a task can't be rescheduled due to its measured size
-	// exceeding executor limits.
-	h.applyMeasuredTaskSize(req)
+	// Just before enqueueing, resize the task to match the measured or
+	// predicted task size, up to the executor's limits. This late-resizing
+	// approach ensures that we always determine schedulability using the
+	// "default" estimate, which is stable. This way, tasks can't suddenly
+	// become unschedulable due to a change in measurements or an adjustment to
+	// the prediction model.
+	h.adjustTaskSize(req)
 
 	timeout := time.NewTimer(executorEnqueueTaskReservationTimeout)
 	rspCh := make(chan *scpb.EnqueueTaskReservationResponse, 1)
@@ -362,23 +363,33 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	}
 }
 
-func (h *executorHandle) applyMeasuredTaskSize(req *scpb.EnqueueTaskReservationRequest) {
+func (h *executorHandle) adjustTaskSize(req *scpb.EnqueueTaskReservationRequest) {
 	registration := h.getRegistration()
 	if registration == nil {
 		return
 	}
 
+	adjustedSize := req.GetSchedulingMetadata().GetMeasuredTaskSize()
+	if adjustedSize == nil {
+		// If a size measurement is not available, fall back to model-predicted
+		// size.
+		adjustedSize = req.GetSchedulingMetadata().GetPredictedTaskSize()
+	}
+	if adjustedSize == nil {
+		// If neither a measured size nor model-predicted size is available,
+		// then there's nothing to do.
+		return
+	}
 	size := req.GetTaskSize()
-	measuredSize := req.GetSchedulingMetadata().GetMeasuredTaskSize()
-	if measuredSize.GetEstimatedMemoryBytes() != 0 {
-		size.EstimatedMemoryBytes = measuredSize.GetEstimatedMemoryBytes()
+	if adjustedSize.GetEstimatedMemoryBytes() != 0 {
+		size.EstimatedMemoryBytes = adjustedSize.GetEstimatedMemoryBytes()
 		executorMem := int64(float64(registration.GetAssignableMemoryBytes()) * tasksize.MaxResourceCapacityRatio)
 		if size.EstimatedMemoryBytes > executorMem {
 			size.EstimatedMemoryBytes = executorMem
 		}
 	}
-	if measuredSize.GetEstimatedMilliCpu() != 0 {
-		size.EstimatedMilliCpu = measuredSize.GetEstimatedMilliCpu()
+	if adjustedSize.GetEstimatedMilliCpu() != 0 {
+		size.EstimatedMilliCpu = adjustedSize.GetEstimatedMilliCpu()
 		executorMilliCPU := int64(float64(registration.GetAssignableMilliCpu()) * tasksize.MaxResourceCapacityRatio)
 		if size.EstimatedMilliCpu > executorMilliCPU {
 			size.EstimatedMilliCpu = executorMilliCPU
