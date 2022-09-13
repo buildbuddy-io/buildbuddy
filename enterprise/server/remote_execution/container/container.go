@@ -118,8 +118,13 @@ func (m *ContainerMetrics) Observe(c CommandContainer, s *repb.UsageStats) {
 			cpuNanos += stats.CpuNanos
 		}
 		diffCPUNanos := cpuNanos - prevCPUNanos
-		metrics.RemoteExecutionUsedMilliCPU.Add(float64(diffCPUNanos) / 1e6)
-		m.intervalCPUNanos += diffCPUNanos
+		// Note: This > 0 check is here to avoid panicking in case there are
+		// issues with process stats returning non-monotonically-increasing
+		// values for CPU usage.
+		if diffCPUNanos > 0 {
+			metrics.RemoteExecutionUsedMilliCPU.Add(float64(diffCPUNanos) / 1e6)
+			m.intervalCPUNanos += diffCPUNanos
+		}
 	}
 	var totalMemBytes, totalPeakMemBytes int64
 	for _, stats := range m.latest {
