@@ -42,6 +42,7 @@ type IStore interface {
 	Sender() *sender.Sender
 	ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
 	GetReplica(rangeID uint64) (*Replica, error)
+	IsLeader(clusterID uint64) bool
 }
 
 // IOnDiskStateMachine is the interface to be implemented by application's
@@ -798,7 +799,7 @@ func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitR
 			return nil, err
 		}
 	} else {
-		if splitRequiresExternalChanges {
+		if splitRequiresExternalChanges && sm.store.IsLeader(sm.clusterID) {
 			// use sender to remotely update the metarange.
 			if err := sm.updateMetarange(rd, leftRD, rightRD); err != nil {
 				return nil, err

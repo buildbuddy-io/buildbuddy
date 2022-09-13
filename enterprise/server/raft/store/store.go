@@ -408,6 +408,10 @@ func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	return r, nil
 }
 
+func (s *Store) IsLeader(clusterID uint64) bool {
+	return s.isLeader(clusterID)
+}
+
 func (s *Store) isLeader(clusterID uint64) bool {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,

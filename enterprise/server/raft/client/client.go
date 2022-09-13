@@ -296,7 +296,7 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		}
 		return nil
 	}
-	return status.DeadlineExceededErrorf("exceeded retry limit for node host function")
+	return status.DeadlineExceededErrorf("exceeded retries [ran %d/%d] for node host function", retrier.AttemptNumber(), retrier.MaxAttempts())
 }
 
 func getRequestState(ctx context.Context, rs *dragonboat.RequestState) (dbsm.Result, error) {
@@ -334,7 +334,7 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 	}
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		rs, err := nodehost.Propose(sesh, buf, time.Second)
+		rs, err := nodehost.Propose(sesh, buf, 1*time.Second)
 		if err != nil {
 			return err
 		}
