@@ -536,6 +536,12 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteC
 	})
 
 	if err := eg.Wait(); err != nil {
+		if destWriter != nil {
+			err = destWriter.Close()
+			if err != nil {
+				log.Warningf("Migration dest writer close err: %s", err)
+			}
+		}
 		return nil, err
 	}
 
