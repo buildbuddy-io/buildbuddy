@@ -15,11 +15,13 @@ go_library(
         "//server/cache/config",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/digest",
         "//server/util/background",
         "//server/util/disk",
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_pkg_errors//:errors",
         "@org_golang_x_sync//errgroup",
     ],
 )
