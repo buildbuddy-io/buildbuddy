@@ -37,9 +37,7 @@ func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.Tes
 
 func getAnonContext(t *testing.T, env environment.Env) context.Context {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
+	require.NoError(t, err, "error ataching user prefix")
 	return ctx
 }
 
@@ -48,9 +46,8 @@ func getAnonContext(t *testing.T, env environment.Env) context.Context {
 func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, digest *repb.Digest) {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		contains, err := destCache.Contains(ctx, digest)
-		if err != nil {
-			require.FailNowf(t, "get err", "Failed calling contains on dest cache %s", err)
-		}
+		require.NoError(t, err, "error calling contains on dest cache")
+
 		if contains {
 			return
 		}
@@ -99,23 +96,21 @@ func TestACIsolation(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	c1, err := mc.WithIsolation(ctx, interfaces.ActionCacheType, "")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
-	require.Nil(t, c1.Set(ctx, d1, buf1))
+	require.NoError(t, c1.Set(ctx, d1, buf1))
 
 	got1, err := c1.Get(ctx, d1)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
@@ -132,23 +127,19 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	c1, err := mc.WithIsolation(ctx, interfaces.ActionCacheType, "remote")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
-	require.Nil(t, c1.Set(ctx, d1, buf1))
+	require.NoError(t, c1.Set(ctx, d1, buf1))
 
 	got1, err := c1.Get(ctx, d1)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
@@ -165,13 +156,9 @@ func TestSet_DoubleWrite(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -196,9 +183,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(1000))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache := &errorCache{}
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
@@ -219,9 +204,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 
 	srcCache := &errorCache{}
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(1000))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -256,13 +239,9 @@ func TestGetSet(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	testSizes := []int64{
@@ -271,20 +250,15 @@ func TestGetSet(t *testing.T) {
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		err = mc.Set(ctx, d, buf)
-		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err, "error setting digest in cache")
+
 		// Get() the bytes from the cache.
 		rbuf, err := mc.Get(ctx, d)
-		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err, "error getting from cache")
 
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
-		}
+		require.True(t, d.GetHash() == d2.GetHash())
 	}
 }
 
@@ -296,13 +270,9 @@ func TestGet_DoubleRead(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
@@ -322,9 +292,7 @@ func TestGet_DestReadErr(t *testing.T) {
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache := &errorCache{}
 
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
@@ -347,9 +315,7 @@ func TestGet_SrcReadErr(t *testing.T) {
 
 	srcCache := &errorCache{}
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
@@ -372,13 +338,9 @@ func TestGetSet_EmptyData(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
@@ -399,13 +361,9 @@ func TestCopyDataInBackground(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	numTests := 1000
 	config := &migration_cache.MigrationConfig{
@@ -448,13 +406,9 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	config := &migration_cache.MigrationConfig{
 		CopyChanBufferSize: 1,
@@ -494,13 +448,9 @@ func TestContains(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -524,9 +474,7 @@ func TestContains_DestErr(t *testing.T) {
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache := &errorCache{}
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
@@ -548,13 +496,9 @@ func TestMetadata(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -578,9 +522,7 @@ func TestMetadata_DestErr(t *testing.T) {
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache := &errorCache{}
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
@@ -602,13 +544,9 @@ func TestFindMissing(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -634,9 +572,7 @@ func TestFindMissing_DestErr(t *testing.T) {
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache := &errorCache{}
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
@@ -661,13 +597,9 @@ func TestGetMultiWithCopying(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	config := &migration_cache.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
@@ -711,13 +643,9 @@ func TestSetMulti(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	config := &migration_cache.MigrationConfig{}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
@@ -763,13 +691,9 @@ func TestDelete(t *testing.T) {
 	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
