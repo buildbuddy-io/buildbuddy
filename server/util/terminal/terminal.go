@@ -1,19 +1,19 @@
-package terminal_writer
+package terminal
 
 import (
-	"github.com/buildkite/terminal-to-html/v3"
+	bkterminal "github.com/buildkite/terminal-to-html/v3"
 )
 
 type Writer struct {
-	screen *terminal.Screen
+	screen *bkterminal.Screen
 }
 
 func NewWriter() *Writer {
-	return &Writer{screen: terminal.NewScreen()}
+	return &Writer{screen: bkterminal.NewScreen()}
 }
 
 func (w *Writer) Write(p []byte) (int, error) {
-	terminal.ParseANSIToScreen(w.screen, p)
+	bkterminal.ParseANSIToScreen(w.screen, p)
 	return len(p), nil
 }
 

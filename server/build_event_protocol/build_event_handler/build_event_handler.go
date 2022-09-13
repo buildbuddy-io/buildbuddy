@@ -35,7 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/terminal_writer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
@@ -587,9 +587,9 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	var terminalWriter *terminal_writer.Writer
+	var terminalWriter *terminal.Writer
 	if !invocation.HasChunkedEventLogs {
-		terminalWriter = terminal_writer.NewWriter()
+		terminalWriter = terminal.NewWriter()
 	}
 	parser := event_parser.NewStreamingEventParser(terminalWriter)
 	parser.FillInvocation(invocation)
@@ -1188,9 +1188,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	})
 
 	eg.Go(func() error {
-		var screenWriter *terminal_writer.Writer
+		var screenWriter *terminal.Writer
 		if !invocation.HasChunkedEventLogs {
-			screenWriter = terminal_writer.NewWriter()
+			screenWriter = terminal.NewWriter()
 		}
 		var redactor *redact.StreamingRedactor
 		if ti.RedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {

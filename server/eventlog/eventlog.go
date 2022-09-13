@@ -14,7 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/terminal_writer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"google.golang.org/protobuf/proto"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -296,7 +296,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
 		WriteWithTailCloser:           cw,
-		terminalWriter:                terminal_writer.NewWriter(),
+		terminalWriter:                terminal.NewWriter(),
 		numLinesToRetainForANSICursor: numLinesToRetain,
 	}
 	eventLogWriter.chunkstoreWriter = cw
@@ -358,7 +358,7 @@ type WriteWithTailCloser interface {
 // N lines.
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
-	terminalWriter *terminal_writer.Writer
+	terminalWriter *terminal.Writer
 
 	// Number of lines to keep in the screen buffer so that they may be modified
 	// by ANSI Cursor control codes.

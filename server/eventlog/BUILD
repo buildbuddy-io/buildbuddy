@@ -13,7 +13,7 @@ go_library(
         "//server/interfaces",
         "//server/util/keyval",
         "//server/util/status",
-        "//server/util/terminal_writer",
+        "//server/util/terminal",
         "@org_golang_google_protobuf//proto",
     ],
 )

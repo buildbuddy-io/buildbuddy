@@ -6,7 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/server/util/terminal_writer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -41,7 +41,7 @@ func parseEnv(commandLine *command_line.CommandLine) map[string]string {
 }
 
 type StreamingEventParser struct {
-	terminalWriter         *terminal_writer.Writer
+	terminalWriter         *terminal.Writer
 	command                string
 	buildMetadata          []map[string]string
 	events                 []*inpb.InvocationEvent
@@ -55,7 +55,7 @@ type StreamingEventParser struct {
 	success                bool
 }
 
-func NewStreamingEventParser(screenWriter *terminal_writer.Writer) *StreamingEventParser {
+func NewStreamingEventParser(screenWriter *terminal.Writer) *StreamingEventParser {
 	return &StreamingEventParser{
 		startTime:              nil,
 		endTime:                nil,
