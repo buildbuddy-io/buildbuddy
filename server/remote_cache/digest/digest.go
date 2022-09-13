@@ -314,7 +314,7 @@ func ElementsMatch(s1 []*repb.Digest, s2 []*repb.Digest) bool {
 		}
 	}
 
-	return len(foundS1) == 0
+	return true
 }
 
 type randomDataMaker struct {
