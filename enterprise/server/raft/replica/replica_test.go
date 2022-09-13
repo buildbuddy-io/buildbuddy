@@ -47,6 +47,9 @@ func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	fs.fileReadFn = fn
 	return fs
 }
+func (fs *fakeStore) IsLeader(clusterID uint64) bool {
+	return false
+}
 
 func TestOpenCloseReplica(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
