@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -741,16 +742,13 @@ func TestReadWrite(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDirSrc := testfs.MakeTempDir(t)
-	rootDirDest := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	destCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	require.NoError(t, err)
+	destCache.Start()
+	defer destCache.Stop()
 	config := &migration_cache.MigrationConfig{
 		DoubleReadPercentage: 1.0,
 	}
@@ -765,20 +763,17 @@ func TestReadWrite(t *testing.T) {
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		w, err := mc.Writer(ctx, d)
-		if err != nil {
-			t.Fatalf("Error getting %v writer: %s", d.GetHash(), err.Error())
-		}
-		if _, err = w.Write(buf); err != nil {
-			t.Fatalf("Error writing bytes to cache: %s", err.Error())
-		}
-		if err := w.Close(); err != nil {
-			t.Fatalf("Error closing writer: %s", err.Error())
-		}
+		require.NoError(t, err)
+
+		_, err = w.Write(buf)
+		require.NoError(t, err)
+
+		err = w.Close()
+		require.NoError(t, err)
 
 		reader, err := mc.Reader(ctx, d, 0, 0)
-		if err != nil {
-			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err)
+
 		actualBuf := make([]byte, len(buf))
 		n, err := reader.Read(actualBuf)
 		require.NoError(t, err)
@@ -787,9 +782,8 @@ func TestReadWrite(t *testing.T) {
 
 		// Verify data was written to both caches
 		srcReader, err := srcCache.Reader(ctx, d, 0, 0)
-		if err != nil {
-			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err)
+
 		actualBuf = make([]byte, len(buf))
 		n, err = srcReader.Read(actualBuf)
 		require.NoError(t, err)
@@ -797,9 +791,8 @@ func TestReadWrite(t *testing.T) {
 		require.True(t, bytes.Equal(buf, actualBuf))
 
 		destReader, err := destCache.Reader(ctx, d, 0, 0)
-		if err != nil {
-			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err)
+
 		actualBuf = make([]byte, len(buf))
 		n, err = destReader.Read(actualBuf)
 		require.NoError(t, err)
@@ -815,9 +808,7 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	errCache := &errorCache{}
 	config := &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}
 	config.SetConfigDefaults()
@@ -828,23 +819,18 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
 	// Will fail to set a dest writer
 	w, err := mc.Writer(ctx, d)
-	if err != nil {
-		t.Fatalf("Error getting %v writer: %s", d.GetHash(), err.Error())
-	}
+	require.NoError(t, err)
 
 	// Should still write data to src cache without error
-	if _, err = w.Write(buf); err != nil {
-		t.Fatalf("Error writing bytes to cache: %s", err.Error())
-	}
-	if err := w.Close(); err != nil {
-		t.Fatalf("Error closing writer: %s", err.Error())
-	}
+	_, err = w.Write(buf)
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
 
 	// Will fail to set a dest reader
 	reader, err := mc.Reader(ctx, d, 0, 0)
-	if err != nil {
-		t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
-	}
+	require.NoError(t, err)
+
 	// Should still read from src cache without error
 	actualBuf := make([]byte, len(buf))
 	n, err := reader.Read(actualBuf)

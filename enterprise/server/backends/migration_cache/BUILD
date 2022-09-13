@@ -28,10 +28,11 @@ go_library(
 
 go_test(
     name = "migration_cache_test",
-    size = "small",
+    size = "medium",
     srcs = ["migration_cache_test.go"],
     deps = [
         ":migration_cache",
+        "//enterprise/server/backends/pebble_cache",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/environment",

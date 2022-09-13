@@ -366,7 +366,7 @@ type doubleReader struct {
 	dest io.ReadCloser
 }
 
-func (d doubleReader) Read(p []byte) (n int, err error) {
+func (d *doubleReader) Read(p []byte) (n int, err error) {
 	eg := &errgroup.Group{}
 	var srcErr, dstErr error
 	var srcN int
@@ -395,7 +395,7 @@ func (d doubleReader) Read(p []byte) (n int, err error) {
 	return srcN, srcErr
 }
 
-func (d doubleReader) Close() error {
+func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	var srcErr, dstErr error
 
@@ -449,7 +449,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 
 	mc.sendNonBlockingCopy(ctx, d)
 
-	return doubleReader{
+	return &doubleReader{
 		src:  srcReader,
 		dest: destReader,
 	}, nil
