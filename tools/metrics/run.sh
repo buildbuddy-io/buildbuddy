@@ -20,21 +20,6 @@ GRAFANA_DASHBOARD_FILE_PATH="./grafana/dashboards/buildbuddy.json"
 : ${KUBE_PROM_SERVER_RESOURCE:="deployment/prometheus-global-server"}
 : ${KUBE_PROM_SERVER_PORT:=9090}
 
-# Open Grafana dashboard when the server is up and running
-(
-  open=$(which open &>/dev/null && echo "open" || echo "xdg-open")
-  tries=100
-  while ! (curl "$GRAFANA_STARTUP_URL" &>/dev/null && curl "http://localhost:9100/metrics" &>/dev/null); do
-    sleep 0.5
-    tries=$((tries - 1))
-    if [[ $tries == 0 ]]; then
-      exit 1
-    fi
-  done
-  echo "Opening $GRAFANA_STARTUP_URL"
-  "$open" "$GRAFANA_STARTUP_URL"
-) &
-
 function sync() {
   local json
   json=$(curl "$GRAFANA_DASHBOARD_URL" 2>/dev/null)
@@ -60,6 +45,26 @@ function sync() {
   echo "$0: Detected change in Grafana dashboard. Saving to $GRAFANA_DASHBOARD_FILE_PATH"
   echo "$json" >"$GRAFANA_DASHBOARD_FILE_PATH"
 }
+
+if [[ "$1" == "sync" ]]; then
+  sync
+  exit
+fi
+
+# Open Grafana dashboard when the server is up and running
+(
+  open=$(which open &>/dev/null && echo "open" || echo "xdg-open")
+  tries=100
+  while ! (curl "$GRAFANA_STARTUP_URL" &>/dev/null && curl "http://localhost:9100/metrics" &>/dev/null); do
+    sleep 0.5
+    tries=$((tries - 1))
+    if [[ $tries == 0 ]]; then
+      exit 1
+    fi
+  done
+  echo "Opening $GRAFANA_STARTUP_URL"
+  "$open" "$GRAFANA_STARTUP_URL"
+) &
 
 # Poll for dashboard changes and update the local JSON files.
 (
