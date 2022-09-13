@@ -22,7 +22,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 1,
-  "iteration": 1658280707313,
+  "iteration": 1663168571049,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -3741,8 +3741,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -3826,8 +3825,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -4007,8 +4005,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -4128,8 +4125,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -4599,8 +4595,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -4774,8 +4769,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -4899,8 +4893,7 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
-                    "value": null
+                    "color": "green"
                   },
                   {
                     "color": "red",
@@ -8012,7 +8005,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 15
       },
       "id": 71,
       "panels": [
@@ -8219,7 +8212,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 16
       },
       "id": 1088,
       "panels": [
@@ -8279,7 +8272,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 21
+            "y": 17
           },
           "id": 1127,
           "options": {
@@ -8365,7 +8358,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 21
+            "y": 17
           },
           "id": 1166,
           "options": {
@@ -8462,7 +8455,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 29
+            "y": 25
           },
           "id": 1168,
           "options": {
@@ -8514,7 +8507,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 17
       },
       "id": 962,
       "panels": [
@@ -8558,7 +8551,8 @@
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green"
+                    "color": "green",
+                    "value": null
                   },
                   {
                     "color": "red",
@@ -8600,9 +8594,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 6,
+            "w": 12,
             "x": 0,
-            "y": 21
+            "y": 18
           },
           "id": 992,
           "options": {
@@ -8680,6 +8674,221 @@
           ],
           "title": "${kubenode} disk and network IO",
           "type": "timeseries"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 100,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Compressed memory"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "dark-orange",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Wired memory"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "dark-purple",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Free memory"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "light-green",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Active memory"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "yellow",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Inactive memory"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "semi-dark-green",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 26
+          },
+          "id": 1257,
+          "maxPerRow": 2,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "sortBy": "Last *",
+              "sortDesc": true
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "repeat": "kubenode",
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "node_memory_wired_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Wired memory",
+              "refId": "B"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "node_memory_compressed_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Compressed memory",
+              "refId": "D"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "node_memory_active_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "interval": "",
+              "legendFormat": "Active memory",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "node_memory_inactive_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Inactive memory",
+              "refId": "E"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "node_memory_free_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Free memory",
+              "refId": "C"
+            }
+          ],
+          "title": "${kubenode} memory usage",
+          "type": "timeseries"
         }
       ],
       "title": "Kubernetes Nodes",
@@ -8691,7 +8900,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 18
       },
       "id": 8,
       "panels": [
@@ -9201,7 +9410,7 @@
         "definition": "label_values(node_uname_info{region=\"$region\"}, nodename)",
         "hide": 0,
         "includeAll": true,
-        "multi": false,
+        "multi": true,
         "name": "kubenode",
         "options": [],
         "query": {
