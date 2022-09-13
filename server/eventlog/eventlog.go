@@ -296,7 +296,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
 		WriteWithTailCloser:           cw,
-		terminalWriter:                terminal.NewWriter(),
+		terminalWriter:                terminal.NewScreenWriter(),
 		numLinesToRetainForANSICursor: numLinesToRetain,
 	}
 	eventLogWriter.chunkstoreWriter = cw
@@ -358,7 +358,7 @@ type WriteWithTailCloser interface {
 // N lines.
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
-	terminalWriter *terminal.Writer
+	terminalWriter *terminal.ScreenWriter
 
 	// Number of lines to keep in the screen buffer so that they may be modified
 	// by ANSI Cursor control codes.

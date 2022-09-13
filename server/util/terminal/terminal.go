@@ -4,23 +4,23 @@ import (
 	bkterminal "github.com/buildkite/terminal-to-html/v3"
 )
 
-type Writer struct {
+type ScreenWriter struct {
 	screen *bkterminal.Screen
 }
 
-func NewWriter() *Writer {
-	return &Writer{screen: bkterminal.NewScreen()}
+func NewScreenWriter() *ScreenWriter {
+	return &ScreenWriter{screen: bkterminal.NewScreen()}
 }
 
-func (w *Writer) Write(p []byte) (int, error) {
+func (w *ScreenWriter) Write(p []byte) (int, error) {
 	bkterminal.ParseANSIToScreen(w.screen, p)
 	return len(p), nil
 }
 
-func (w *Writer) Render() []byte {
+func (w *ScreenWriter) Render() []byte {
 	return w.screen.AsANSI()
 }
 
-func (w *Writer) PopExtraLines(numLinesToRetain int) []byte {
+func (w *ScreenWriter) PopExtraLines(numLinesToRetain int) []byte {
 	return w.screen.FlushLinesFromTop(numLinesToRetain)
 }

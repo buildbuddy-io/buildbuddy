@@ -41,7 +41,7 @@ func parseEnv(commandLine *command_line.CommandLine) map[string]string {
 }
 
 type StreamingEventParser struct {
-	terminalWriter         *terminal.Writer
+	terminalWriter         *terminal.ScreenWriter
 	command                string
 	buildMetadata          []map[string]string
 	events                 []*inpb.InvocationEvent
@@ -55,7 +55,7 @@ type StreamingEventParser struct {
 	success                bool
 }
 
-func NewStreamingEventParser(screenWriter *terminal.Writer) *StreamingEventParser {
+func NewStreamingEventParser(screenWriter *terminal.ScreenWriter) *StreamingEventParser {
 	return &StreamingEventParser{
 		startTime:              nil,
 		endTime:                nil,

@@ -587,9 +587,9 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	var terminalWriter *terminal.Writer
+	var terminalWriter *terminal.ScreenWriter
 	if !invocation.HasChunkedEventLogs {
-		terminalWriter = terminal.NewWriter()
+		terminalWriter = terminal.NewScreenWriter()
 	}
 	parser := event_parser.NewStreamingEventParser(terminalWriter)
 	parser.FillInvocation(invocation)
@@ -1188,9 +1188,9 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	})
 
 	eg.Go(func() error {
-		var screenWriter *terminal.Writer
+		var screenWriter *terminal.ScreenWriter
 		if !invocation.HasChunkedEventLogs {
-			screenWriter = terminal.NewWriter()
+			screenWriter = terminal.NewScreenWriter()
 		}
 		var redactor *redact.StreamingRedactor
 		if ti.RedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
