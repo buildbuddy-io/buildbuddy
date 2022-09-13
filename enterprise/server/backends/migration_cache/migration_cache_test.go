@@ -780,6 +780,9 @@ func TestReadWrite(t *testing.T) {
 		require.Equal(t, int(testSize), n)
 		require.True(t, bytes.Equal(buf, actualBuf))
 
+		err = reader.Close()
+		require.NoError(t, err)
+
 		// Verify data was written to both caches
 		srcReader, err := srcCache.Reader(ctx, d, 0, 0)
 		require.NoError(t, err)
@@ -790,6 +793,9 @@ func TestReadWrite(t *testing.T) {
 		require.Equal(t, int(testSize), n)
 		require.True(t, bytes.Equal(buf, actualBuf))
 
+		err = srcReader.Close()
+		require.NoError(t, err)
+
 		destReader, err := destCache.Reader(ctx, d, 0, 0)
 		require.NoError(t, err)
 
@@ -798,6 +804,9 @@ func TestReadWrite(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int(testSize), n)
 		require.True(t, bytes.Equal(buf, actualBuf))
+
+		err = destReader.Close()
+		require.NoError(t, err)
 	}
 }
 
