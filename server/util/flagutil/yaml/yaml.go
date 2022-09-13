@@ -38,6 +38,8 @@ var (
 	AppendTypeToLineComment = &appendTypeToLineComment{}
 
 	WordWrapForIndentationLevel = generateWordWrapRegexByIndentationLevel(76, 3)
+
+	StartOfLine = regexp.MustCompile("(?m)^")
 )
 
 func generateWordWrapRegexByIndentationLevel(targetLineLength, minWrapLength int) []*regexp.Regexp {
@@ -154,7 +156,7 @@ func (f *appendTypeToLineComment) Transform(in any, n *yaml.Node) {
 	n.LineComment += "(type: " + typeString + ")"
 }
 
-func (f *appendTypeToLineComment) Passthrough() bool { return true }
+func (f *appendTypeToLineComment) Passthrough() bool { return false }
 
 func filterPassthrough(opts []common.DocumentNodeOption) []common.DocumentNodeOption {
 	ptOpts := []common.DocumentNodeOption{}
@@ -220,7 +222,19 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 			if !v.IsNil() {
 				return DocumentNode(v.Elem().Interface(), n, opts...)
 			} else {
-				return DocumentNode(reflect.New(reflect.TypeOf(t).Elem()).Elem().Interface(), n, opts...)
+				exampleNode, err := DocumentedNode(reflect.Indirect(reflect.New(t.Elem())).Interface(), append(filterPassthrough(opts), AppendTypeToLineComment)...)
+				if err != nil {
+					return err
+				}
+				if exampleNode.Kind != yaml.ScalarNode {
+					example, err := yaml.Marshal(exampleNode)
+					if err != nil {
+						return err
+					}
+					replacedExample := string(StartOfLine.ReplaceAll(example, []byte("    ")))
+					n.FootComment = fmt.Sprintf("For example:\n%s", string(replacedExample))
+				}
+				return DocumentNode(reflect.New(t.Elem()).Elem().Interface(), n, opts...)
 			}
 		case reflect.Struct:
 			// yaml.Node stores mappings in Content as [key1, value1, key2, value2...]
@@ -243,7 +257,10 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 					v.FieldByIndex([]int{i}).Interface(),
 					n.Content[idx],
 					append(
-						[]common.DocumentNodeOption{NewLineComment(ft.Tag.Get("usage"))},
+						append(
+							[]common.DocumentNodeOption{NewLineComment(ft.Tag.Get("usage"))},
+							AppendTypeToLineComment,
+						),
 						filterPassthrough(opts)...,
 					)...,
 				); err != nil {
