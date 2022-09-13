@@ -298,11 +298,7 @@ func ElementsMatch(s1 []*repb.Digest, s2 []*repb.Digest) bool {
 
 	foundS1 := make(map[*repb.Digest]int, len(s1))
 	for _, d := range s1 {
-		if _, ok := foundS1[d]; !ok {
-			foundS1[d] = 1
-		} else {
-			foundS1[d]++
-		}
+		foundS1[d]++
 	}
 
 	for _, d := range s2 {
@@ -318,7 +314,7 @@ func ElementsMatch(s1 []*repb.Digest, s2 []*repb.Digest) bool {
 		}
 	}
 
-	return true
+	return len(foundS1) == 0
 }
 
 type randomDataMaker struct {
