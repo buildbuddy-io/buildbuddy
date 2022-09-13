@@ -1161,9 +1161,15 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		}
 		runnersToRemove = pausedRunners
 		p.runners = activeRunners
+		if len(runnersToRemove) > 0 {
+			log.Infof("Runner pool: removing %d paused runners", len(runnersToRemove))
+		}
 	} else {
 		runnersToRemove = p.runners
 		p.runners = nil
+		if len(runnersToRemove) > 0 {
+			log.Infof("Runner pool: removing %d runners", len(runnersToRemove))
+		}
 	}
 	p.mu.Unlock()
 
