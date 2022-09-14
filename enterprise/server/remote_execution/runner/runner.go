@@ -497,6 +497,14 @@ func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
 	return perms.ToACLProto(userID, groupID, permBits)
 }
 
+type ContainerProvider func(context.Context, *platform.Properties, *repb.ScheduledTask) (*container.TracedCommandContainer, error)
+
+type PoolOptions struct {
+	// ContainerProvider is an optional implementation overriding
+	// newContainerImpl.
+	ContainerProvider ContainerProvider
+}
+
 type pool struct {
 	env            environment.Env
 	imageCacheAuth *container.ImageCacheAuthenticator
@@ -504,6 +512,7 @@ type pool struct {
 	buildRoot      string
 	dockerClient   *dockerclient.Client
 	podmanProvider *podman.Provider
+	newContainer   ContainerProvider
 
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
@@ -518,7 +527,7 @@ type pool struct {
 	runners []*commandRunner
 }
 
-func NewPool(env environment.Env) (*pool, error) {
+func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 	hc := env.GetHealthChecker()
 	if hc == nil {
 		return nil, status.FailedPreconditionError("Missing health checker")
@@ -560,6 +569,10 @@ func NewPool(env environment.Env) (*pool, error) {
 		buildRoot:      *rootDirectory,
 		imageCacheAuth: imageCacheAuth,
 		runners:        []*commandRunner{},
+	}
+	p.newContainer = p.newContainerImpl
+	if opts.ContainerProvider != nil {
+		p.newContainer = opts.ContainerProvider
 	}
 	p.setLimits()
 	hc.RegisterShutdownFunction(p.Shutdown)
@@ -627,7 +640,8 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 	}
 	// If memory usage stats are not implemented, fall back to the default task
 	// size estimate.
-	if stats.MemoryBytes == 0 {
+	if stats == nil {
+		stats = &repb.UsageStats{}
 		stats.MemoryBytes = int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 	}
 
@@ -956,7 +970,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	return r, nil
 }
 
-func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
+func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:

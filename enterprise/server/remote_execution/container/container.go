@@ -190,6 +190,12 @@ type CommandContainer interface {
 	Remove(ctx context.Context) error
 
 	// Stats returns the current resource usage of this container.
+	//
+	// A `nil` value may be returned if the resource usage is unknown.
+	//
+	// Implementations may assume that this will only be called when the
+	// container is paused, for the purposes of computing resources used for
+	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 

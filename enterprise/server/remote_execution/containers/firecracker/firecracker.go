@@ -1588,6 +1588,9 @@ func (c *FirecrackerContainer) Wait(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
+	// Note: We return a non-nil value here since paused Firecracker containers
+	// only exist on disk and legitimately consume 0 memory / CPU resources when
+	// paused.
 	return &repb.UsageStats{}, nil
 }
 
