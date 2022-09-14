@@ -88,11 +88,11 @@ func (e *endpoint) GetFlagz(ctx context.Context, env interfaces.Environment, req
 		return nil, status.UnavailableError("The flagz endpoint is not curently enabled.")
 	}
 	/*
-	if u, err := perms.AuthenticatedUser(ctx, env); err != nil {
-		return nil, err
-	} else if !u.IsAdmin() {
-		return nil, status.PermissionDeniedError("The flagz endpoint requires admin privileges.")
-	}
+		if u, err := perms.AuthenticatedUser(ctx, env); err != nil {
+			return nil, err
+		} else if !u.IsAdmin() {
+			return nil, status.PermissionDeniedError("The flagz endpoint requires admin privileges.")
+		}
 	*/
 	b, err := flagyaml.SplitDocumentedYAMLFromFlags(yaml.TaggedStyle, yaml.LiteralStyle)
 	if err != nil {
@@ -106,11 +106,11 @@ func (e *endpoint) SetFlagz(ctx context.Context, env interfaces.Environment, req
 		return nil, status.UnavailableError("The flagz endpoint is not currently enabled.")
 	}
 	/*
-	if u, err := perms.AuthenticatedUser(ctx, env); err != nil {
-		return nil, err
-	} else if !u.IsAdmin() {
-		return nil, status.PermissionDeniedError("The flagz endpoint requires admin privileges.")
-	}
+		if u, err := perms.AuthenticatedUser(ctx, env); err != nil {
+			return nil, err
+		} else if !u.IsAdmin() {
+			return nil, status.PermissionDeniedError("The flagz endpoint requires admin privileges.")
+		}
 	*/
 	if err := flagyaml.OverrideFlagsFromData(req.YamlUpdate); err != nil {
 		return nil, err

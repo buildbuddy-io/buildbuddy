@@ -4,7 +4,7 @@ import rpcService from "../../../../app/service/rpc_service";
 import { flagz } from "../../../../proto/flagz_ts_proto";
 import { BuildBuddyError } from "../../../../app/util/errors";
 import authService from "../../../../app/auth/auth_service";
-import { User } from  "../../../../app/auth/auth_service";
+import { User } from "../../../../app/auth/auth_service";
 
 /*
 import * as monaco from "monaco-editor";
@@ -35,16 +35,16 @@ interface Props {
 
 class Editor extends React.Component<Props, State> {
   state: State = {
-		user: null,
+    user: null,
     loading: true,
     error: null,
   };
 
-	props: Props = {
+  props: Props = {
     flags: "",
   };
   private rootRef = React.createRef<HTMLDivElement>();
-	private textAreaRef = React.createRef<HTMLTextAreaElement>();
+  private textAreaRef = React.createRef<HTMLTextAreaElement>();
   // private editor: monaco.editor.ICodeEditor;
 
   fetchFlags() {
@@ -53,16 +53,16 @@ class Editor extends React.Component<Props, State> {
       .getFlagz(request)
       .then((response: flagz.GetFlagzResponse) => {
         console.log(response);
-				this.props.flags = new TextDecoder().decode(response.yamlConfig)
+        this.props.flags = new TextDecoder().decode(response.yamlConfig);
         this.setState({
           loading: false,
           error: null,
         });
-				this.textAreaRef.current.value = this.props.flags
+        this.textAreaRef.current.value = this.props.flags;
       })
       .catch((error: any) => {
         console.error(error);
-				this.props.flags = ""
+        this.props.flags = "";
         this.setState({
           error: BuildBuddyError.parse(error),
           loading: false,
@@ -70,10 +70,10 @@ class Editor extends React.Component<Props, State> {
       });
   }
 
-	pushFlags() {
+  pushFlags() {
     let request = new flagz.SetFlagzRequest();
-		this.props.flags = this.textAreaRef.current.value
-		request.yamlUpdate = new TextEncoder().encode(this.props.flags)
+    this.props.flags = this.textAreaRef.current.value;
+    request.yamlUpdate = new TextEncoder().encode(this.props.flags);
     rpcService.service
       .setFlagz(request)
       .then((response: flagz.SetFlagzResponse) => {
@@ -86,15 +86,15 @@ class Editor extends React.Component<Props, State> {
           loading: false,
         });
       });
-	}
+  }
 
   componentWillMount() {
     // authService.register();
     // authService.userStream.subscribe({
-      // next: (user: User) => this.setState({ ...this.state, user }),
+    // next: (user: User) => this.setState({ ...this.state, user }),
     // });
-		this.fetchFlags()
-	}
+    this.fetchFlags();
+  }
 
   componentDidMount() {
     // this.editor = monaco.editor.create(this.rootRef.current, {});
@@ -102,7 +102,12 @@ class Editor extends React.Component<Props, State> {
 
   render() {
     // return <div ref={this.rootRef} className="editor-root" />;
-    return <div><textarea ref={this.textAreaRef} className="editor-root" cols={120} rows={40}/> <br/> <button onClick={this.pushFlags.bind(this)}>Push</button></div>;
+    return (
+      <div>
+        <textarea ref={this.textAreaRef} className="editor-root" cols={120} rows={40} /> <br />{" "}
+        <button onClick={this.pushFlags.bind(this)}>Push</button>
+      </div>
+    );
   }
 }
 
