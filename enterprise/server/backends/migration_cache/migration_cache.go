@@ -681,15 +681,18 @@ func (mc *MigrationCache) copy(c *copyData) {
 		}
 		return
 	}
+	defer srcReader.Close()
 
 	destWriter, err := mc.dest.Writer(c.ctx, c.d)
+	if err != nil {
+		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
+		return
+	}
+	defer destWriter.Close()
+
 	if _, err = io.Copy(destWriter, srcReader); err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
 		return
-	}
-
-	if err := destWriter.Close(); err != nil {
-		log.Warningf("Migration copy err: Could not close %v writer to dest cache: %s", c.d, err)
 	}
 }
 
