@@ -3,6 +3,7 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.18
 
 replace (
+	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.7.0-patched-1
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
 	github.com/lni/dragonboat/v3 => github.com/tylerwilliams/dragonboat/v3 v3.3.4-rc5
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
@@ -23,6 +24,7 @@ require (
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
+	github.com/buildkite/terminal-to-html/v3 v3.0.0-00010101000000-000000000000
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/cockroachdb/pebble v0.0.0-20220408210401-5591b6b889f9

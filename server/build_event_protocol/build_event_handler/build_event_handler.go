@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -36,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
@@ -587,11 +587,11 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	var screenWriter *terminal.ScreenWriter
+	var terminalWriter *terminal.ScreenWriter
 	if !invocation.HasChunkedEventLogs {
-		screenWriter = terminal.NewScreenWriter()
+		terminalWriter = terminal.NewScreenWriter()
 	}
-	parser := event_parser.NewStreamingEventParser(screenWriter)
+	parser := event_parser.NewStreamingEventParser(terminalWriter)
 	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
@@ -1247,7 +1247,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			invocation.Event = events
 			invocation.StructuredCommandLine = structuredCommandLines
 			if screenWriter != nil {
-				invocation.ConsoleBuffer = string(screenWriter.RenderAsANSI())
+				invocation.ConsoleBuffer = string(screenWriter.Render())
 			}
 		}
 		invocationMu.Unlock()

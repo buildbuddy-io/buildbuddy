@@ -459,10 +459,16 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_buildbuddy_io_tensorflow_proto",
-        build_file_proto_mode = "disable",
         importpath = "github.com/buildbuddy-io/tensorflow-proto",
         sum = "h1:LcKnQdAYrT3LOZt0mTgw6uiEi7QVkH75cCxPj+AbkLA=",
         version = "v0.0.0-20220908151343-929b41ab4dc6",
+    )
+    go_repository(
+        name = "com_github_buildkite_terminal_to_html_v3",
+        importpath = "github.com/buildkite/terminal-to-html/v3",
+        replace = "github.com/buildbuddy-io/terminal-to-html/v3",
+        sum = "h1:XMnC81zIjWBw5SRc/TqPOP4vHPftVhdNl5azJrOwz+Y=",
+        version = "v3.7.0-patched-1",
     )
 
     go_repository(
@@ -4341,6 +4347,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:u7tSpNPPswAFymm8IehJhy4uJMlUuU/GmqSkvJ1InXA=",
         version = "v1.22.4",
     )
+    go_repository(
+        name = "com_github_urfave_cli_v2",
+        importpath = "github.com/urfave/cli/v2",
+        sum = "h1:JTTnM6wKzdA0Jqodd966MVj4vWbbquZykeX1sKbe2C4=",
+        version = "v2.2.0",
+    )
+
     go_repository(
         name = "com_github_urfave_negroni",
         importpath = "github.com/urfave/negroni",
