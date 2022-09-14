@@ -226,3 +226,18 @@ func FromContextError(ctx context.Context) error {
 	s := status.FromContextError(ctx.Err())
 	return status.ErrorProto(s.Proto())
 }
+
+// MetricsLabel returns an appropriate value for StatusHumanReadableLabel given
+// an error from a gRPC request (which may be `nil`). See
+// `StatusHumanReadableLabel` in server/metrics/metrics.go
+func MetricsLabel(err error) string {
+	// Check for client context errors first (context canceled, deadline
+	// exceeded).
+	s := status.FromContextError(err)
+	if s.Code() != codes.Unknown {
+		return s.Code().String()
+	}
+	// Return response error code (or network-level/framework-internal etc.
+	// errors).
+	return status.Code(err).String()
+}

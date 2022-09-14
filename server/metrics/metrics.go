@@ -124,13 +124,13 @@ const (
 	/// Status of the task size write request: `ok`, `missing_stats` or `error`.
 	TaskSizeWriteStatusLabel = "status"
 
-	// The full name of the grpc method: /<service>/<method>
+	/// The full name of the grpc method: `/<service>/<method>`
 	GRPCFullMethodLabel = "grpc_full_method"
 
-	// The key used for quota accounting. It's either a group ID or an ip address.
+	/// The key used for quota accounting, either a group ID or an IP address.
 	QuotaKey = "quota_key"
 
-	// Whether this request is allowed by quota manager.
+	/// Whether the request was allowed by quota manager.
 	QuotaAllowed = "quota_allowed"
 )
 
@@ -481,6 +481,16 @@ var (
 		OS,
 		Arch,
 		GroupID,
+	})
+
+	RemoteExecutionTaskSizePredictionDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "task_size_prediction_duration_usec",
+		Help:      "Task size prediction model request duration in **microseconds**.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 2),
+	}, []string{
+		StatusHumanReadableLabel,
 	})
 
 	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{

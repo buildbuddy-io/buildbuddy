@@ -14,9 +14,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -133,10 +135,10 @@ func (m *Model) makeTestPrediction(ctx context.Context) error {
 	defer cancel()
 
 	x := m.featureVector(&repb.ExecutionTask{})
-	if _, err := m.predict(ctx, memModelName, x); err != nil {
+	if _, err := m.callModel(ctx, memModelName, x); err != nil {
 		return status.InternalErrorf("saved memory model test prediction failed: %s", err)
 	}
-	if _, err := m.predict(ctx, cpuModelName, x); err != nil {
+	if _, err := m.callModel(ctx, cpuModelName, x); err != nil {
 		return status.InternalErrorf("saved CPU model test prediction failed: %s", err)
 	}
 	return nil
@@ -148,7 +150,7 @@ func (m *Model) isReady() bool {
 	return m.ready
 }
 
-func (m *Model) predict(ctx context.Context, model string, x []float32) (float32, error) {
+func (m *Model) callModel(ctx context.Context, model string, x []float32) (float32, error) {
 	req := &tf.PredictRequest{
 		ModelSpec: &tf.ModelSpec{Name: model},
 		Inputs: map[string]*tf_framework.TensorProto{
@@ -205,12 +207,25 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		return nil
 	}
 
+	start := time.Now()
+	s, err := m.predict(ctx, task)
+	metrics.RemoteExecutionTaskSizePredictionDurationUsec.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Observe(float64(time.Since(start).Microseconds()))
+	if err != nil {
+		log.Warningf("Failed to predict task size: %s", err)
+		return nil
+	}
+	return s
+}
+
+func (m *Model) predict(ctx context.Context, task *repb.ExecutionTask) (*scpb.TaskSize, error) {
 	x := m.featureVector(task)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	var mem, cpu int64
 	eg.Go(func() error {
-		y, err := m.predict(ctx, memModelName, x)
+		y, err := m.callModel(ctx, memModelName, x)
 		if err != nil {
 			return err
 		}
@@ -218,7 +233,7 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		return nil
 	})
 	eg.Go(func() error {
-		y, err := m.predict(ctx, cpuModelName, x)
+		y, err := m.callModel(ctx, cpuModelName, x)
 		if err != nil {
 			return err
 		}
@@ -226,8 +241,7 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
-		log.Warningf("Failed to predict task size: %s", err)
-		return nil
+		return nil, err
 	}
 
 	size := &scpb.TaskSize{
@@ -245,7 +259,7 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 	if size.EstimatedMilliCpu < minMilliCPUPrediction {
 		size.EstimatedMilliCpu = minMilliCPUPrediction
 	}
-	return size
+	return size, nil
 }
 
 // featureVector converts a command to a fixed-length numeric feature vector.
