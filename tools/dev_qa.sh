@@ -48,7 +48,6 @@ run_test \
         --remote_cache=remote.buildbuddy.dev \
         --bes_backend=remote.buildbuddy.dev \
         --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-        --bes_timeout=10m \
         --remote_timeout=10m \
         --invocation_id="$gazelle_iid"
 
