@@ -67,6 +67,20 @@ func IgnoreFilter(flg *flag.Flag) bool {
 	return true
 }
 
+// StructuredFilter is a filter that checks that flags contain dots (in other
+// words, it checks that they are not top-level values in the YAML
+// representation).
+func StructuredFilter(flg *flag.Flag) bool {
+	return strings.Contains(flg.Name, ".")
+}
+
+// UnstructuredFilter is a filter that checks that flags do not contain dots (in
+// other words, it checks that they are top-level values in the YAML
+// representation).
+func UnstructuredFilter(flg *flag.Flag) bool {
+	return !StructuredFilter(flg)
+}
+
 type YAMLTypeAliasable interface {
 	// YAMLTypeAlias returns the type alias we use in YAML for this flag.Value.
 	// Only necessary if the type used for YAML is not the type returned by
@@ -167,6 +181,16 @@ func filterPassthrough(opts []common.DocumentNodeOption) []common.DocumentNodeOp
 	}
 	return ptOpts
 }
+
+type Style yaml.Style
+
+func (f *Style) Transform(in any, n *yaml.Node) {
+	if reflect.ValueOf(in).Kind() != reflect.Map {
+		n.Style = yaml.TaggedStyle | yaml.LiteralStyle
+	}
+}
+
+func (f *Style) Passthrough() bool { return true }
 
 // NewDocumentedMarshalerWithOptions wraps a value such that it can be encoded
 // by YAML, documented with DocumentNode (applying the passed
@@ -342,7 +366,11 @@ func GenerateDocumentedMarshalerFromFlag(flg *flag.Flag) (*DocumentedMarshalerWi
 // SplitDocumentedYAMLFromFlags produces marshaled YAML representing the flags,
 // partitioned into two groups: structured (flags containing dots), and
 // unstructured (flags not containing dots).
-func SplitDocumentedYAMLFromFlags() ([]byte, error) {
+func SplitDocumentedYAMLFromFlags(styles ...yaml.Style) ([]byte, error) {
+	style := (Style)(0)
+	for s := range styles {
+		style |= Style(s)
+	}
 	b := bytes.NewBuffer([]byte{})
 
 	if _, err := b.Write([]byte("# Unstructured settings\n\n")); err != nil {
@@ -350,13 +378,13 @@ func SplitDocumentedYAMLFromFlags() ([]byte, error) {
 	}
 	um, err := GenerateYAMLMapWithValuesFromFlags(
 		GenerateDocumentedMarshalerFromFlag,
-		func(flg *flag.Flag) bool { return !strings.Contains(flg.Name, ".") },
+		UnstructuredFilter,
 		IgnoreFilter,
 	)
 	if err != nil {
 		return nil, err
 	}
-	un, err := DocumentedNode(um)
+	un, err := DocumentedNode(um, &style)
 	if err != nil {
 		return nil, err
 	}
@@ -373,13 +401,13 @@ func SplitDocumentedYAMLFromFlags() ([]byte, error) {
 	}
 	sm, err := GenerateYAMLMapWithValuesFromFlags(
 		GenerateDocumentedMarshalerFromFlag,
-		func(flg *flag.Flag) bool { return strings.Contains(flg.Name, ".") },
+		StructuredFilter,
 		IgnoreFilter,
 	)
 	if err != nil {
 		return nil, err
 	}
-	sn, err := DocumentedNode(sm)
+	sn, err := DocumentedNode(sm, &style)
 	if err != nil {
 		return nil, err
 	}
@@ -515,20 +543,41 @@ func RetypeAndFilterYAMLMap(yamlMap map[string]any, typeMap map[string]any, pref
 	return nil
 }
 
+// OverrideFlagsFromData takes some YAML input and marshals it, then uses the
+// unmarshaled data to override the flags with names corresponding to the keys.
+func OverrideFlagsFromData(data []byte) error {
+	// expand environment variables
+	expandedData := []byte(os.ExpandEnv(string(data)))
+
+	yamlMap, node, err := getYAMLMapAndNodeFromData(expandedData)
+	if err != nil {
+		return err
+	}
+	return populateFlagsFromYAML(yamlMap, []string{}, node, nil, false)
+}
+
 // PopulateFlagsFromData takes some YAML input and unmarshals it, then uses the
-// umnarshaled data to populate the unset flags with names corresponding to the
+// unmarshaled data to populate the unset flags with names corresponding to the
 // keys.
 func PopulateFlagsFromData(data []byte) error {
 	// expand environment variables
 	expandedData := []byte(os.ExpandEnv(string(data)))
 
+	yamlMap, node, err := getYAMLMapAndNodeFromData(expandedData)
+	if err != nil {
+		return err
+	}
+	return PopulateFlagsFromYAMLMap(yamlMap, node)
+}
+
+func getYAMLMapAndNodeFromData(data []byte) (map[string]any, *yaml.Node, error) {
 	yamlMap := make(map[string]any)
-	if err := yaml.Unmarshal([]byte(expandedData), yamlMap); err != nil {
-		return status.InternalErrorf("Error parsing config file: %s", err)
+	if err := yaml.Unmarshal([]byte(data), yamlMap); err != nil {
+		return nil, nil, status.InternalErrorf("Error parsing config file: %s", err)
 	}
 	node := &yaml.Node{}
-	if err := yaml.Unmarshal([]byte(expandedData), node); err != nil {
-		return status.InternalErrorf("Error parsing config file: %s", err)
+	if err := yaml.Unmarshal([]byte(data), node); err != nil {
+		return nil, nil, status.InternalErrorf("Error parsing config file: %s", err)
 	}
 	if len(node.Content) > 0 {
 		node = node.Content[0]
@@ -540,12 +589,12 @@ func PopulateFlagsFromData(data []byte) error {
 		IgnoreFilter,
 	)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	if err := RetypeAndFilterYAMLMap(yamlMap, typeMap, []string{}); err != nil {
-		return status.InternalErrorf("Error encountered retyping YAML map: %s", err)
+		return nil, nil, status.InternalErrorf("Error encountered retyping YAML map: %s", err)
 	}
-	return PopulateFlagsFromYAMLMap(yamlMap, node)
+	return yamlMap, node, nil
 }
 
 func onSIGHUP(fn func() error) {
@@ -608,10 +657,10 @@ func PopulateFlagsFromYAMLMap(m map[string]any, node *yaml.Node) error {
 		setFlags[flg.Name] = struct{}{}
 	})
 
-	return populateFlagsFromYAML(m, []string{}, node, setFlags)
+	return populateFlagsFromYAML(m, []string{}, node, setFlags, true)
 }
 
-func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map[string]struct{}) error {
+func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map[string]struct{}, appendSlice bool) error {
 	if m, ok := a.(map[string]any); ok {
 		i := 0
 		for k, v := range m {
@@ -629,7 +678,7 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 			if _, ok := ignoreSet[strings.Join(p, ".")]; ok {
 				return nil
 			}
-			if err := populateFlagsFromYAML(v, p, n, setFlags); err != nil {
+			if err := populateFlagsFromYAML(v, p, n, setFlags, appendSlice); err != nil {
 				return err
 			}
 		}
@@ -644,7 +693,7 @@ func populateFlagsFromYAML(a any, prefix []string, node *yaml.Node, setFlags map
 	if flg == nil {
 		return nil
 	}
-	return setValueForYAML(flg.Value, name, a, setFlags, true)
+	return setValueForYAML(flg.Value, name, a, setFlags, appendSlice)
 }
 
 func setValueForYAML(flagValue flag.Value, name string, newValue any, setFlags map[string]struct{}, appendSlice bool, setHooks ...func()) error {
