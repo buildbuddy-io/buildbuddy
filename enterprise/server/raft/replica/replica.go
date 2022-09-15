@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -27,9 +28,23 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
+)
+
+const (
+	// atimeFlushPeriod is the time interval that we will wait before
+	// flushing any atime updates in an incomplete batch (that have not
+	// already been flushed due to throughput)
+	atimeFlushPeriod = 10 * time.Second
+)
+
+var (
+	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
+	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
+	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 )
 
 // Replicas need a reference back to the Store that holds them in order to
@@ -87,6 +102,9 @@ type Replica struct {
 	mappedRange     *rangemap.Range
 
 	fileStorer filestore.Store
+
+	quitChan chan struct{}
+	accesses chan *accessTimeUpdate
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -314,6 +332,36 @@ func (sm *Replica) fileDelete(wb *pebble.Batch, req *rfpb.FileDeleteRequest) (*r
 		return nil, err
 	}
 	return &rfpb.FileDeleteResponse{}, nil
+}
+
+func (sm *Replica) fileUpdateMetadata(wb *pebble.Batch, req *rfpb.FileUpdateMetadataRequest) (*rfpb.FileUpdateMetadataResponse, error) {
+	iter := wb.NewIter(nil /*default iter options*/)
+	defer iter.Close()
+
+	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
+	if err != nil {
+		return nil, err
+	}
+
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.GetLastAccessUsec() != 0 {
+		fileMetadata.LastAccessUsec = req.GetLastAccessUsec()
+	}
+
+	d, err := proto.Marshal(fileMetadata)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := wb.Set(fileMetadataKey, d, nil); err != nil {
+		return nil, err
+	}
+
+	return &rfpb.FileUpdateMetadataResponse{}, nil
 }
 
 func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
@@ -648,7 +696,7 @@ func (leftReplica *Replica) copyDataToReplica(rightReplica *Replica, insertBatch
 		if err != nil {
 			return err
 		}
-		readCloser, err := leftReplica.readerWithDB(ctx, leftReplica.db, fileMetadata.GetFileRecord(), 0, 0)
+		readCloser, err := leftReplica.fileStorer.NewReader(ctx, leftReplica.fileDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			return err
 		}
@@ -908,6 +956,12 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 			FileDelete: r,
 		}
 		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FileUpdateMetadata:
+		r, err := sm.fileUpdateMetadata(wb, value.FileUpdateMetadata)
+		rsp.Value = &rfpb.ResponseUnion_FileUpdateMetadata{
+			FileUpdateMetadata: r,
+		}
+		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
@@ -964,7 +1018,7 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 	return nil
 }
 
-func (sm *Replica) readerWithDB(ctx context.Context, db pebble.Reader, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
+func (sm *Replica) metadataForRecord(db pebble.Reader, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
@@ -976,7 +1030,107 @@ func (sm *Replica) readerWithDB(ctx context.Context, db pebble.Reader, fileRecor
 	if err != nil {
 		return nil, err
 	}
-	return sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	return fileMetadata, nil
+}
+
+type accessTimeUpdate struct {
+	record *rfpb.FileRecord
+}
+
+func olderThanThreshold(t time.Time, threshold time.Duration) bool {
+	return time.Since(t) >= threshold
+}
+
+func (sm *Replica) processAccessTimeUpdates() {
+	batch := rbuilder.NewBatchBuilder()
+
+	ctx := context.TODO()
+
+	var lastWrite time.Time
+	flush := func() {
+		if batch.Size() == 0 {
+			return
+		}
+
+		batchProto, err := batch.ToProto()
+		if err != nil {
+			log.Warningf("could not generate atime update batch: %s", err)
+			return
+		}
+
+		err = sm.store.Sender().Run(ctx, nil, func(c rfspb.ApiClient, h *rfpb.Header) error {
+			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+				Header: h,
+				Batch:  batchProto,
+			})
+			return err
+		})
+		if err != nil {
+			log.Warningf("could not update atimes: %s", err)
+			return
+		}
+
+		batch = rbuilder.NewBatchBuilder()
+		lastWrite = time.Now()
+	}
+
+	exitMu := sync.Mutex{}
+	exiting := false
+	go func() {
+		<-sm.quitChan
+		exitMu.Lock()
+		exiting = true
+		exitMu.Unlock()
+	}()
+
+	for {
+		select {
+		case accessTimeUpdate := <-sm.accesses:
+			batch.Add(&rfpb.FileUpdateMetadataRequest{
+				FileRecord:     accessTimeUpdate.record,
+				LastAccessUsec: time.Now().UnixMicro(),
+			})
+			if batch.Size() >= *atimeWriteBatchSize {
+				flush()
+			}
+		case <-time.After(time.Second):
+			if time.Since(lastWrite) > atimeFlushPeriod {
+				flush()
+			}
+
+			exitMu.Lock()
+			done := exiting
+			exitMu.Unlock()
+
+			if done {
+				flush()
+				return
+			}
+		}
+	}
+}
+
+func (sm *Replica) sendAccessTimeUpdate(fileMetadata *rfpb.FileMetadata) {
+	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+	if !olderThanThreshold(atime, *atimeUpdateThreshold) {
+		return
+	}
+
+	up := &accessTimeUpdate{fileMetadata.GetFileRecord()}
+
+	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
+	// so in that case just do a regular channel send. Otherwise; use a non-
+	// blocking channel send.
+	if *atimeBufferSize == 0 {
+		sm.accesses <- up
+	} else {
+		select {
+		case sm.accesses <- up:
+			return
+		default:
+			log.Warningf("Dropping atime update for %+v", fileMetadata.GetFileRecord())
+		}
+	}
 }
 
 func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
@@ -990,10 +1144,15 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 		return nil, err
 	}
 
-	rc, err := sm.readerWithDB(ctx, db, fileRecord, offset, limit)
+	fileMetadata, err := sm.metadataForRecord(db, fileRecord)
 	if err != nil {
 		return nil, err
 	}
+	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	if err != nil {
+		return nil, err
+	}
+	sm.sendAccessTimeUpdate(fileMetadata)
 
 	// Grab another lease and pass the Close function to the reader
 	// so it will be closed when the reader is.
@@ -1096,10 +1255,13 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 	}
 	commitFn := func(bytesWritten int64) error {
 		batch := db.NewBatch()
+		now := time.Now()
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: writeCloserMetadata.Metadata(),
 			SizeBytes:       bytesWritten,
+			LastModifyUsec:  now.UnixMicro(),
+			LastAccessUsec:  now.UnixMicro(),
 		}
 		protoBytes, err := proto.Marshal(md)
 		if err != nil {
@@ -1541,6 +1703,8 @@ func (sm *Replica) Close() error {
 		return nil
 	}
 
+	close(sm.quitChan)
+
 	sm.leaser.Close()
 
 	sm.rangeMu.Lock()
@@ -1559,7 +1723,7 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
 		log.Errorf("Error creating fileDir %q for replica: %s", fileDir, err)
 	}
-	return &Replica{
+	r := &Replica{
 		leaser:     nil,
 		rootDir:    rootDir,
 		fileDir:    fileDir,
@@ -1568,5 +1732,9 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 		store:      store,
 		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 		fileStorer: filestore.New(true /*=isolateByGroupIDs*/),
+		quitChan:   make(chan struct{}),
+		accesses:   make(chan *accessTimeUpdate, *atimeBufferSize),
 	}
+	go r.processAccessTimeUpdates()
+	return r
 }
