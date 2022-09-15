@@ -15,6 +15,7 @@ type MigrationConfig struct {
 	// if a lot of data has not been copied over yet
 	LogNotFoundErrors  bool `yaml:"log_not_found_errors"`
 	CopyChanBufferSize int  `yaml:"copy_chan_buffer_size"`
+	MaxCopiesPerSec    int  `yaml:"max_copies_per_sec"`
 }
 
 type CacheConfig struct {
@@ -45,5 +46,8 @@ type PebbleCacheConfig struct {
 func (cfg *MigrationConfig) SetConfigDefaults() {
 	if cfg.CopyChanBufferSize == 0 {
 		cfg.CopyChanBufferSize = 50000
+	}
+	if cfg.MaxCopiesPerSec == 0 {
+		cfg.MaxCopiesPerSec = 5000
 	}
 }

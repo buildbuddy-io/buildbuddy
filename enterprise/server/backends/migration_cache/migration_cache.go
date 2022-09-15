@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
@@ -35,7 +36,8 @@ type MigrationCache struct {
 	eg       *errgroup.Group
 	quitChan chan struct{}
 
-	copyChan chan *copyData
+	maxCopiesPerSec int
+	copyChan        chan *copyData
 }
 
 func Register(env environment.Env) error {
@@ -52,6 +54,7 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return err
 	}
+	cacheMigrationConfig.SetConfigDefaults()
 	mc := NewMigrationCache(cacheMigrationConfig, srcCache, destCache)
 
 	if env.GetCache() != nil {
@@ -75,6 +78,7 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		doubleReadPercentage: migrationConfig.DoubleReadPercentage,
 		logNotFoundErrors:    migrationConfig.LogNotFoundErrors,
 		copyChan:             make(chan *copyData, migrationConfig.CopyChanBufferSize),
+		maxCopiesPerSec:      migrationConfig.MaxCopiesPerSec,
 		eg:                   &errgroup.Group{},
 	}
 }
@@ -616,7 +620,12 @@ type copyData struct {
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
+	rateLimiter := rate.NewLimiter(rate.Every(time.Second), mc.maxCopiesPerSec)
 	for {
+		if err := rateLimiter.Wait(context.Background()); err != nil {
+			return err
+		}
+
 		select {
 		case <-mc.quitChan:
 			return nil
