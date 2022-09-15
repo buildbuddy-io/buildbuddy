@@ -489,12 +489,12 @@ func (d *doubleWriter) Close() error {
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	eg, gctx := errgroup.WithContext(ctx)
+	eg := &errgroup.Group{}
 	var dstErr error
 	var destWriter io.WriteCloser
 
 	eg.Go(func() error {
-		destWriter, dstErr = mc.dest.Writer(gctx, d)
+		destWriter, dstErr = mc.dest.Writer(ctx, d)
 		return nil
 	})
 
@@ -657,7 +657,6 @@ func (mc *MigrationCache) copy(c *copyData) {
 
 	if _, err = io.Copy(destWriter, srcReader); err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
-		return
 	}
 }
 

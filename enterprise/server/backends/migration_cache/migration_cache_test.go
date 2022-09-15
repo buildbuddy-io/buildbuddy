@@ -818,10 +818,10 @@ func TestReaderWriter_DestFails(t *testing.T) {
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
-	errCache := &errorCache{}
+	destCache := &errorCache{}
 	config := &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}
 	config.SetConfigDefaults()
-	mc := migration_cache.NewMigrationCache(config, srcCache, errCache)
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
 	mc.Start() // Starts copying in background
 	defer mc.Stop()
 
