@@ -1177,6 +1177,9 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		for _, union := range batchCmdReq.GetUnion() {
 			// sm.log.Debugf("Update: request union: %+v", union)
 			rsp := sm.handlePropose(wb, union)
+			if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
+				log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
+			}
 			// sm.log.Debugf("Update: response union: %+v", rsp)
 			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
