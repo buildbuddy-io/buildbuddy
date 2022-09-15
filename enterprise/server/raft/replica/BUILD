@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/raft/sender",
         "//enterprise/server/util/pebbleutil",
         "//proto:raft_go_proto",
+        "//proto:raft_service_go_proto",
         "//server/interfaces",
         "//server/util/disk",
         "//server/util/log",

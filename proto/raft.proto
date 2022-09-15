@@ -90,6 +90,13 @@ message FileDeleteRequest {
 
 message FileDeleteResponse {}
 
+message FileUpdateMetadataRequest {
+  FileRecord file_record = 1;
+  int64 last_access_usec = 2;
+}
+
+message FileUpdateMetadataResponse {}
+
 message DirectWriteRequest {
   KV kv = 1;
 }
@@ -184,6 +191,7 @@ message RequestUnion {
     FindSplitPointRequest find_split_point = 7;
     SplitRequest split = 8;
     FileDeleteRequest file_delete = 9;
+    FileUpdateMetadataRequest file_update_metadata = 10;
   }
 }
 
@@ -204,6 +212,7 @@ message ResponseUnion {
     FindSplitPointResponse find_split_point = 8;
     SplitResponse split = 9;
     FileDeleteResponse file_delete = 10;
+    FileUpdateMetadataResponse file_update_metadata = 11;
   }
 }
 

@@ -78,6 +78,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_FileDelete{
 			FileDelete: value,
 		}
+	case *rfpb.FileUpdateMetadataRequest:
+		req.Value = &rfpb.RequestUnion_FileUpdateMetadata{
+			FileUpdateMetadata: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -99,6 +103,13 @@ func (bb *BatchBuilder) ToBuf() ([]byte, error) {
 		return nil, bb.err
 	}
 	return proto.Marshal(bb.cmd)
+}
+
+func (bb *BatchBuilder) Size() int {
+	if bb.cmd == nil {
+		return 0
+	}
+	return len(bb.cmd.Union)
 }
 
 func (bb *BatchBuilder) String() string {
