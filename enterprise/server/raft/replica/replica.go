@@ -343,8 +343,8 @@ func (sm *Replica) fileUpdateMetadata(wb *pebble.Batch, req *rfpb.FileUpdateMeta
 		return nil, err
 	}
 
-	fileMetadata := &rfpb.FileMetadata{}
-	if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err != nil {
 		return nil, err
 	}
 
