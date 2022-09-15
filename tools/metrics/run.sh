@@ -1,8 +1,7 @@
 #!/bin/bash
 
-set -e -o pipefail
-__file__=$(realpath "$0")
-__dir__=$(dirname "$__file__")
+set -eo pipefail
+__dir__=$(dirname "$0")
 
 cd "$__dir__"
 
@@ -43,8 +42,9 @@ function sync() {
     return
   fi
 
-  json=$(echo "$json" | jq -M -r '.dashboard | del(.version)')
-  current=$(cat "$GRAFANA_DASHBOARD_FILE_PATH" | jq -M -r 'del(.version)')
+  json=$(echo "$json" | ./process_dashboard.py)
+  if [[ -z "$json" ]]; then return 1; fi
+  current=$(cat "$GRAFANA_DASHBOARD_FILE_PATH")
   # If the dashboard hasn't changed, don't write a new JSON file, to avoid
   # updating the file timestamp (causing Grafana to show "someone else updated
   # this dashboard")
@@ -65,7 +65,7 @@ function sync() {
 (
   while true; do
     sleep 3
-    sync
+    sync || true
   done
 ) &
 
