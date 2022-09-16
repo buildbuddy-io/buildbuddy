@@ -475,7 +475,7 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 	lock := sync.RWMutex{}
 	start := time.Now()
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 2; i++ {
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
 			lock.Lock()
@@ -496,9 +496,8 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 	}
 	eg.Wait()
 
-	// Should take at least 4 seconds for all rate limited copies to complete at 1 copy/sec
-	// 4 (number of copies - 1), because the first copy can occur at Time=0
-	require.True(t, time.Since(start) >= 4*time.Second)
+	// Should wait at least 1 second before the second digest is copied
+	require.True(t, time.Since(start) >= 1*time.Second)
 }
 
 func TestContains(t *testing.T) {
