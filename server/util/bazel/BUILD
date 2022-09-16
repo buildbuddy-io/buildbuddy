@@ -24,12 +24,12 @@ genrule(
 )
 
 genrule(
-    name = "bazel-5.0.0rc3_crossplatform",
+    name = "bazel-5.3.0_crossplatform",
     srcs = select({
-        "@bazel_tools//src/conditions:darwin": ["@io_bazel_bazel-5.0.0rc3-darwin-x86_64//file:downloaded"],
-        "//conditions:default": ["@io_bazel_bazel-5.0.0rc3-linux-x86_64//file:downloaded"],
+        "@bazel_tools//src/conditions:darwin": ["@io_bazel_bazel-5.3.0-darwin-x86_64//file:downloaded"],
+        "//conditions:default": ["@io_bazel_bazel-5.3.0-linux-x86_64//file:downloaded"],
     }),
-    outs = ["bazel-5.0.0rc3"],
+    outs = ["bazel-5.3.0"],
     cmd_bash = "cp $(SRCS) $@",
     visibility = ["//visibility:public"],
 )
