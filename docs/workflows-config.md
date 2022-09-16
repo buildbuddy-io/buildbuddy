@@ -134,24 +134,24 @@ executors.
    [Example config](#example-config) for a starting point.
 
 3. Set `os: "darwin"` on the workflow action that you would like to build
-   on macOS. For M1 Macs, add `arch: "arm64"` as well. Note: if you
-   copy another action as a starting point, be sure to give the new action
-   a unique name:
+   on macOS. For Apple silicon (ARM-based) Macs, add `arch: "arm64"` as
+   well. Note: if you copy another action as a starting point, be sure to
+   give the new action a unique name:
 
 ```yaml
 actions:
   - name: "Test all targets (Mac)"
     os: "darwin" # <-- add this line
-    arch: "arm64" # <-- add this line for M1 Macs only
+    arch: "arm64" # <-- add this line for Apple silicon (ARM-based) Macs only
     triggers:
       push:
         branches:
           - "main"
       pull_request:
         branches:
-          - "main"
+          - "*"
     bazel_commands:
-      - "test //... --build_metadata=ROLE=CI --bes_backend=grpcs://remote.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
+      - "test //... --bes_backend=remote.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
 ```
 
 That's it! Whenever any of the configured triggers are matched, one of
@@ -187,8 +187,8 @@ A named group of Bazel commands that run when triggered.
   `workflows` pool.
 - **`arch`** (`string`): The CPU architecture of the workflow runner.
   Defaults to `"amd64"`. `"arm64"` is also supported when running under
-  `os: "darwin"`, but requires using self-hosted M1 Mac executors running
-  on a dedicated `workflows` pool.
+  `os: "darwin"`, but requires using self-hosted Apple silicon (ARM-based)
+  Mac executors running on a dedicated `workflows` pool.
 - **`bazel_commands`** (`string` list): Bazel commands to be run in order.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
