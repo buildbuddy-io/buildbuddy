@@ -1294,8 +1294,7 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
-		// TODO(Maggie): Return the error here once we're confident this is stable
-		log.Warningf("Error fetching group perms for invocation %v", p.InvocationId)
+		return nil, err
 	} else {
 		i.Perms = userGroupPerms.Perms
 	}
