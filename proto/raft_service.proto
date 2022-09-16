@@ -20,6 +20,8 @@ service Api {
       returns (raft.SplitClusterResponse);
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
+  rpc CreateSnapshot(CreateSnapshotRequest) returns (CreateSnapshotResponse);
+  rpc LoadSnapshot(LoadSnapshotRequest) returns (LoadSnapshotResponse);
 
   // Data API.
   rpc Read(ReadRequest) returns (stream ReadResponse);

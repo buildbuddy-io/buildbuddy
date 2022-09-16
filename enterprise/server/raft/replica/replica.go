@@ -76,10 +76,11 @@ type Replica struct {
 	fileDir   string
 	clusterID uint64
 	nodeID    uint64
+	timer     *time.Timer
+	timerMu   *sync.Mutex
 
 	store            IStore
 	lastAppliedIndex uint64
-	splitMu          sync.RWMutex
 
 	log             log.Logger
 	rangeMu         sync.RWMutex
@@ -115,6 +116,13 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 		return 0, err
 	}
 	return fileMetadata.GetSizeBytes() + int64(len(val)), nil
+}
+
+func (sm *Replica) RD() *rfpb.ReplicaDescriptor {
+	return &rfpb.ReplicaDescriptor{
+		ClusterId: sm.clusterID,
+		NodeId:    sm.nodeID,
+	}
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
@@ -177,6 +185,7 @@ func (sm *Replica) setRange(key, val []byte) error {
 }
 
 func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
+	sm.log.Infof("RangeCheckedSet: Setting %q => %q", key, val)
 	sm.rangeMu.RLock()
 
 	if !keys.IsLocalKey(key) {
@@ -428,6 +437,71 @@ func (sm *Replica) cas(wb *pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASRespons
 	}, status.FailedPreconditionError(constants.CASErrorMessage)
 }
 
+func (sm *Replica) releaseAndClearTimer() {
+	sm.timerMu.Lock()
+	defer sm.timerMu.Unlock()
+	if sm.timer == nil {
+		log.Warningf("releaseAndClearTimer was called but no timer was active")
+		return
+	}
+
+	sm.leaser.ReleaseSplitLock()
+	sm.timer.Stop()
+	sm.timer = nil
+}
+
+func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResponse, error) {
+	sm.timerMu.Lock()
+	defer sm.timerMu.Unlock()
+
+	timeTilExpiry := time.Duration(req.GetDurationSeconds()) * time.Second
+	startNewTimer := func() {
+		sm.leaser.AcquireSplitLock()
+		sm.timer = time.AfterFunc(timeTilExpiry, sm.releaseAndClearTimer)
+	}
+
+	if sm.timer == nil {
+		startNewTimer()
+	} else {
+		if !sm.timer.Stop() {
+			startNewTimer()
+		}
+		sm.timer.Reset(timeTilExpiry)
+	}
+	return &rfpb.SplitLeaseResponse{}, nil
+}
+
+func (sm *Replica) splitRelease(req *rfpb.SplitReleaseRequest) (*rfpb.SplitReleaseResponse, error) {
+	wb := sm.db.NewIndexedBatch()
+	defer wb.Close()
+
+	defer func() {
+		sm.releaseAndClearTimer()
+	}()
+
+	sm.log.Infof("req.GetBatch(): %+v", req.GetBatch())
+	for _, union := range req.GetBatch().GetUnion() {
+		switch value := union.Value.(type) {
+		case *rfpb.RequestUnion_Cas:
+			sm.log.Infof("SplitRELEASE handling %+v", value.Cas)
+			if _, err := sm.cas(wb, value.Cas); err != nil {
+				log.Errorf("CAS FAILED BB: %s", err)
+				return nil, err
+			}
+		default:
+			log.Errorf("OTHER TYPED SHIT DUDE")
+			return nil, status.InvalidArgumentError("only CAS reqs are allowed in split release batch")
+		}
+	}
+
+	if wb.Count() > 0 {
+		if err := wb.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+			return nil, err
+		}
+	}
+	return &rfpb.SplitReleaseResponse{}, nil
+}
+
 type splitPoint struct {
 	left      []byte
 	right     []byte
@@ -435,13 +509,13 @@ type splitPoint struct {
 	rightSize int64
 }
 
-func (sm *Replica) findSplitPoint(wb *pebble.Batch, req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
+func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
 	iterOpts := &pebble.IterOptions{
 		LowerBound: keys.Key([]byte{constants.MinByte}),
 		UpperBound: keys.Key([]byte{constants.MaxByte}),
 	}
 
-	iter := wb.NewIter(iterOpts)
+	iter := sm.db.NewIter(iterOpts)
 	defer iter.Close()
 
 	totalSize := int64(0)
@@ -862,9 +936,7 @@ func statusProto(err error) *statuspb.Status {
 	return s.Proto()
 }
 
-func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
-	rsp := &rfpb.ResponseUnion{}
-
+func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion, rsp *rfpb.ResponseUnion) {
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_FileWrite:
 		r, err := sm.fileWrite(wb, value.FileWrite)
@@ -890,12 +962,6 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 			Cas: r,
 		}
 		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_FindSplitPoint:
-		r, err := sm.findSplitPoint(wb, value.FindSplitPoint)
-		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
-			FindSplitPoint: r,
-		}
-		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_Split:
 		r, err := sm.split(wb, value.Split)
 		rsp.Value = &rfpb.ResponseUnion_Split{
@@ -911,7 +977,6 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion) *rfpb
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
-	return rsp
 }
 
 func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.ResponseUnion {
@@ -1159,13 +1224,7 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	wb := sm.db.NewIndexedBatch()
-	defer wb.Close()
+	var wb *pebble.Batch
 
 	// Insert all of the data in the batch.
 	batchCmdReq := &rfpb.BatchCmdRequest{}
@@ -1175,8 +1234,55 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		}
 		batchCmdRsp := &rfpb.BatchCmdResponse{}
 		for _, union := range batchCmdReq.GetUnion() {
+			rsp := &rfpb.ResponseUnion{}
+			// Special Case: SplitLease and SplitRelease don't need
+			// access to the db in the stame way, and once it's
+			// locked, accessing it would block anyway. For that
+			// reason, they are handled separately here.
+			switch value := union.Value.(type) {
+			case *rfpb.RequestUnion_SplitLease:
+				r, err := sm.splitLease(value.SplitLease)
+				rsp.Value = &rfpb.ResponseUnion_SplitLease{
+					SplitLease: r,
+				}
+				rsp.Status = statusProto(err)
+				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
+				continue
+			case *rfpb.RequestUnion_SplitRelease:
+				r, err := sm.splitRelease(value.SplitRelease)
+				rsp.Value = &rfpb.ResponseUnion_SplitRelease{
+					SplitRelease: r,
+				}
+				rsp.Status = statusProto(err)
+				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
+				continue
+			case *rfpb.RequestUnion_FindSplitPoint:
+				r, err := sm.findSplitPoint(value.FindSplitPoint)
+				rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
+					FindSplitPoint: r,
+				}
+				rsp.Status = statusProto(err)
+				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
+				continue
+			}
+
+			// All other raft commands are handled normally via
+			// handlePropose below. If no write batch is currently
+			// open, open one now.
+			if wb == nil {
+				db, err := sm.leaser.DB()
+				if err != nil {
+					log.Warningf("Skipping %+v", union)
+					continue
+					//return nil, err
+				}
+				defer db.Close()
+				wb = db.NewIndexedBatch()
+				defer wb.Close()
+			}
+
 			// sm.log.Debugf("Update: request union: %+v", union)
-			rsp := sm.handlePropose(wb, union)
+			sm.handlePropose(wb, union, rsp)
 			// sm.log.Debugf("Update: response union: %+v", rsp)
 			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
@@ -1190,19 +1296,30 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			Data:  rspBuf,
 		}
 	}
-	// Also make sure to update the last applied index.
+
 	lastEntry := entries[len(entries)-1]
 	appliedIndex := uint64ToBytes(lastEntry.Index)
-	if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
-		return nil, err
-	}
+	syncWriteOptions := &pebble.WriteOptions{Sync: true}
 
-	if err := db.Apply(wb, &pebble.WriteOptions{Sync: true}); err != nil {
-		return nil, err
-	}
 	if sm.lastAppliedIndex >= lastEntry.Index {
 		return nil, status.FailedPreconditionError("lastApplied not moving forward")
 	}
+
+	// If we have an active batch, bundle the LastAppliedIndex change into it
+	// and commit it all at once. Otherwise just do a db set.
+	if wb != nil {
+		if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
+			return nil, err
+		}
+		if err := wb.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := sm.db.Set(constants.LastAppliedIndexKey, appliedIndex, syncWriteOptions); err != nil {
+			return nil, err
+		}
+	}
+
 	sm.lastAppliedIndex = lastEntry.Index
 	return entries, nil
 }
@@ -1283,12 +1400,7 @@ func (sm *Replica) Sync() error {
 // PrepareSnapshot returns an error when there is unrecoverable error for
 // preparing the snapshot.
 func (sm *Replica) PrepareSnapshot() (interface{}, error) {
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	snap := db.NewSnapshot()
+	snap := sm.db.NewSnapshot()
 	return snap, nil
 }
 
@@ -1420,6 +1532,44 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		return err
 	}
 	return nil
+}
+
+func (sm *Replica) ParseSnapshotToBatch(ctx context.Context, r io.Reader, split []byte) (*rfpb.BatchCmdRequest, error) {
+	batch := rbuilder.NewBatchBuilder()
+	readBuf := bufio.NewReader(r)
+	for {
+		r, count, err := readDataFromReader(readBuf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		protoBytes := make([]byte, count)
+		n, err := io.ReadFull(r, protoBytes)
+		if err != nil {
+			return nil, err
+		}
+		if int64(n) != count {
+			return nil, status.FailedPreconditionErrorf("Count %d != bytes read %d", count, n)
+		}
+		kv := &rfpb.KV{}
+		if err := proto.Unmarshal(protoBytes, kv); err != nil {
+			return nil, err
+		}
+		// Skip rows in the snapshot which are before the split point.
+		if bytes.Compare(kv.GetKey(), split) == -1 {
+			continue
+		}
+		fileMetadata := &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(kv.GetValue(), fileMetadata); err == nil && fileMetadata.GetFileRecord() != nil {
+			batch = batch.Add(&rfpb.FileWriteRequest{FileRecord: fileMetadata.GetFileRecord()})
+		} else {
+			batch = batch.Add(&rfpb.DirectWriteRequest{Kv: kv})
+		}
+	}
+
+	return batch.ToProto()
 }
 
 // SaveSnapshot saves the point in time state of the IOnDiskStateMachine
@@ -1561,6 +1711,7 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 		rootDir:    rootDir,
 		fileDir:    fileDir,
 		clusterID:  clusterID,
+		timerMu:    &sync.Mutex{},
 		nodeID:     nodeID,
 		store:      store,
 		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),

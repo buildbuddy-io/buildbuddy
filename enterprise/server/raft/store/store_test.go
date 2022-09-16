@@ -528,10 +528,22 @@ func TestSplitMetaRange(t *testing.T) {
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, stores[0], 10)
 
-	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-		Range: rd,
-	})
-	require.NoError(t, err)
+	split := false
+	for _, s := range stores {
+		rd := s.GetRange(1)
+		header := &rfpb.Header{RangeId: rd.GetRangeId(), Generation: rd.GetGeneration()}
+		if err := s.RangeIsActive(header); err != nil {
+			continue
+		}
+		_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+			Header: header,
+			Range:  rd,
+		})
+		require.NoError(t, err)
+		split = true
+		break
+	}
+	require.True(t, split)
 
 	// Expect that a new cluster was added with clusterID = 2
 	// having 3 replicas.
@@ -609,10 +621,22 @@ func TestSplitNonMetaRange(t *testing.T) {
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, stores[0], 50)
 
-	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-		Range: rd,
-	})
-	require.NoError(t, err)
+	split := false
+	for _, s := range stores {
+		rd := s.GetRange(1)
+		header := &rfpb.Header{RangeId: rd.GetRangeId(), Generation: rd.GetGeneration()}
+		if err := s.RangeIsActive(header); err != nil {
+			continue
+		}
+		_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+			Header: header,
+			Range:  rd,
+		})
+		require.NoError(t, err)
+		split = true
+		break
+	}
+	require.True(t, split)
 
 	// Expect that a new cluster was added with clusterID = 2
 	// having 3 replicas.
