@@ -45,6 +45,7 @@ go_test(
     shard_count = 8,
     deps = [
         ":store",
+        "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/filestore",
