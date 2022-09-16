@@ -424,7 +424,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	eg.Wait()
 
 	if srcErr != nil {
-		if dstErr == nil {
+		if destReader != nil {
 			err := destReader.Close()
 			if err != nil {
 				log.Warningf("Migration dest reader close err: %s", err)
