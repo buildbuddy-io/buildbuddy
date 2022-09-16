@@ -240,7 +240,7 @@ func (cs *ClusterStarter) attemptQueryAndBringupOnce() error {
 		if len(bootstrapInfo) == len(cs.join) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			return cs.sendStartClusterRequests(ctx, bootstrapInfo)
+			return SendStartClusterRequests(ctx, cs.nodeHost, cs.apiClient, bootstrapInfo)
 		}
 	}
 	return status.FailedPreconditionErrorf("Unable to find other join nodes: %+s", bootstrapInfo)
@@ -346,21 +346,16 @@ func StartCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInf
 	return eg.Wait()
 }
 
-func (cs *ClusterStarter) syncProposeLocal(ctx context.Context, clusterID uint64, batch *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
-	batchProto, err := batch.ToProto()
-	if err != nil {
-		return nil, err
-	}
-	rsp, err := client.SyncProposeLocal(ctx, cs.nodeHost, clusterID, batchProto)
-	return rbuilder.NewBatchResponseFromProto(rsp), nil
-}
-
 // This function is called to send RPCs to the other nodes listed in the Join
 // list requesting that they bring up initial cluster(s).
-func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpcAddrs map[string]string) error {
+func SendStartClusterRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
 			Left:  keys.Key{constants.MinByte},
+			Right: keys.Key{constants.UnsplittableMaxByte},
+		},
+		&rfpb.RangeDescriptor{
+			Left:  keys.Key{constants.UnsplittableMaxByte},
 			Right: keys.Key{constants.MaxByte},
 		},
 	}
@@ -413,14 +408,15 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 				},
 			})
 		}
-		cs.log.Debugf("Attempting to start cluster %d on: %+v", clusterID, bootstrapInfo)
-		if err := StartCluster(ctx, cs.apiClient, bootstrapInfo, batch); err != nil {
+		log.Debugf("Attempting to start cluster %d on: %+v", clusterID, bootstrapInfo)
+		if err := StartCluster(ctx, apiClient, bootstrapInfo, batch); err != nil {
 			return err
 		}
-		cs.log.Debugf("Cluster %d started on: %+v", clusterID, bootstrapInfo)
+		log.Debugf("Cluster %d started on: %+v", clusterID, bootstrapInfo)
 
 		// Increment clusterID, nodeID and rangeID before creating the next cluster.
-		metaRangeBatch := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
+		metaRangeBatch := rbuilder.NewBatchBuilder()
+		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
 			Key:   constants.LastClusterIDKey,
 			Delta: 1,
 		})
@@ -438,15 +434,23 @@ func (cs *ClusterStarter) sendStartClusterRequests(ctx context.Context, nodeGrpc
 				Value: rdBuf,
 			},
 		})
-		rsp, err := cs.syncProposeLocal(ctx, constants.InitialClusterID, metaRangeBatch)
+
+		batchProto, err := metaRangeBatch.ToProto()
 		if err != nil {
 			return err
 		}
+		batchRsp, err := client.SyncProposeLocal(ctx, nodeHost, constants.InitialClusterID, batchProto)
+		if err != nil {
+			return err
+		}
+		rsp := rbuilder.NewBatchResponseFromProto(batchRsp)
+
 		clusterIncrResponse, err := rsp.IncrementResponse(0)
 		if err != nil {
 			return err
 		}
 		clusterID = clusterIncrResponse.GetValue()
+		log.Printf("clusterID is now: %d", clusterID)
 		nodeIncrResponse, err := rsp.IncrementResponse(1)
 		if err != nil {
 			return err
