@@ -46,7 +46,7 @@ var (
 	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
 	httpsOnlyCookies     = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
-	forceApproval  		 = flag.Bool("auth.force_approval", false, "If true, when a user doesn't have a session (first time logging in, or manually logged out) force the auth provider to show the consent screen allowing the user to select an account if they have multiple. This isn't supported by all auth providers.")
+	forceApproval        = flag.Bool("auth.force_approval", false, "If true, when a user doesn't have a session (first time logging in, or manually logged out) force the auth provider to show the consent screen allowing the user to select an account if they have multiple. This isn't supported by all auth providers.")
 )
 
 type OauthProvider struct {
@@ -95,12 +95,12 @@ const (
 
 	// The name of the auth cookies used to authenticate the
 	// client.
-	jwtCookie        	   = "Authorization"
-	sessionIDCookie  	   = "Session-ID"
-	sessionDurationCookie  = "Session-Duration-Seconds"
-	authIssuerCookie 	   = "Authorization-Issuer"
-	stateCookie      	   = "State-Token"
-	redirCookie            = "Redirect-Url"
+	jwtCookie             = "Authorization"
+	sessionIDCookie       = "Session-ID"
+	sessionDurationCookie = "Session-Duration-Seconds"
+	authIssuerCookie      = "Authorization-Issuer"
+	stateCookie           = "State-Token"
+	redirCookie           = "Redirect-Url"
 
 	// How long certain cookies last
 	tempCookieDuration  = 24 * time.Hour
@@ -221,7 +221,7 @@ func setLoginCookie(env environment.Env, w http.ResponseWriter, jwt, issuer, ses
 	SetCookie(env, w, authIssuerCookie, issuer, expiry, true /* httpOnly= */)
 	SetCookie(env, w, sessionIDCookie, sessionID, expiry, true /* httpOnly= */)
 	// Don't make the session duration cookie httpOnly so the front end knows how frequently it needs to refresh tokens.
-	SetCookie(env, w, sessionDurationCookie, fmt.Sprintf("%d", sessionExpireTime - time.Now().Unix()), expiry, false /* httpOnly= */)
+	SetCookie(env, w, sessionDurationCookie, fmt.Sprintf("%d", sessionExpireTime-time.Now().Unix()), expiry, false /* httpOnly= */)
 }
 
 func clearLoginCookie(env environment.Env, w http.ResponseWriter) {
@@ -964,7 +964,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 
 	sesh.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
 	sesh.AccessToken = newToken.AccessToken
-	
+
 	// If token renewal returns a new refresh token, update it on the session
 	if refreshToken, ok := newToken.Extra("refresh_token").(string); ok {
 		sesh.RefreshToken = refreshToken
