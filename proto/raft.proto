@@ -165,6 +165,25 @@ message FindSplitPointResponse {
   uint64 range_generation = 5;
 }
 
+// A request to hold or renew the split lock, blocking all writes. The split
+// lock will be reverted if it is not renewed within the specified duration.
+message SplitLeaseRequest {
+  // How long the lease should be valid for. If the lease is already valid, it
+  // will be extended by this much.
+  int64 duration_seconds = 1;
+}
+
+message SplitLeaseResponse {}
+
+// A request to release the split lock, unblocking all writes.
+message SplitReleaseRequest {
+  // This batch will be executed *before* the lease is released.
+  // Because it's part of the splitRelease, it will ignore the
+  // fact that the lease is held.
+  BatchCmdRequest batch = 1;
+}
+message SplitReleaseResponse {}
+
 // Split a range.
 message SplitRequest {
   RangeDescriptor left = 1;
@@ -192,6 +211,8 @@ message RequestUnion {
     SplitRequest split = 8;
     FileDeleteRequest file_delete = 9;
     FileUpdateMetadataRequest file_update_metadata = 10;
+    SplitLeaseRequest split_lease = 11;
+    SplitReleaseRequest split_release = 12;
   }
 }
 
@@ -213,6 +234,8 @@ message ResponseUnion {
     SplitResponse split = 9;
     FileDeleteResponse file_delete = 10;
     FileUpdateMetadataResponse file_update_metadata = 11;
+    SplitLeaseResponse split_lease = 12;
+    SplitReleaseResponse split_release = 13;
   }
 }
 
@@ -411,7 +434,8 @@ message RemoveClusterNodeResponse {
 }
 
 message SplitClusterRequest {
-  RangeDescriptor range = 1;
+  Header header = 1;
+  RangeDescriptor range = 2;
 }
 message SplitClusterResponse {
   RangeDescriptor left = 1;
