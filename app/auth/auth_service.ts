@@ -50,24 +50,26 @@ export class AuthService {
         } else {
           this.onUserRpcError(error);
         }
-      }).finally(() => {
+      })
+      .finally(() => {
         setTimeout(() => {
-          this.startRefreshTimer()
+          this.startRefreshTimer();
         }, 1000); // Wait a second before starting the refresh timer so we can grab the session duration.
       });
   }
 
   getCookie(name: string) {
-    var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-    if (match) return match[2];  
+    var match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+    if (match) return match[2];
   }
 
   startRefreshTimer() {
-    let refreshFrequencySeconds = parseInt(this.getCookie("Session-Duration-Seconds")) / 2 || TOKEN_REFRESH_INTERVAL_SECONDS;
-    console.info(`Refreshing access token every ${refreshFrequencySeconds} seconds.`)
+    let refreshFrequencySeconds =
+      parseInt(this.getCookie("Session-Duration-Seconds")) / 2 || TOKEN_REFRESH_INTERVAL_SECONDS;
+    console.info(`Refreshing access token every ${refreshFrequencySeconds} seconds.`);
     setInterval(() => {
       if (this.user) this.refreshToken();
-    }, refreshFrequencySeconds * 1000);    
+    }, refreshFrequencySeconds * 1000);
   }
 
   refreshToken() {
