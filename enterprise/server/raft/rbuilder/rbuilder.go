@@ -82,6 +82,14 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_FileUpdateMetadata{
 			FileUpdateMetadata: value,
 		}
+	case *rfpb.SplitLeaseRequest:
+		req.Value = &rfpb.RequestUnion_SplitLease{
+			SplitLease: value,
+		}
+	case *rfpb.SplitReleaseRequest:
+		req.Value = &rfpb.RequestUnion_SplitRelease{
+			SplitRelease: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -163,6 +171,18 @@ func (br *BatchResponse) checkIndex(n int) {
 func (br *BatchResponse) unionError(u *rfpb.ResponseUnion) error {
 	s := gstatus.FromProto(u.GetStatus())
 	return s.Err()
+}
+
+func (br *BatchResponse) AnyError() error {
+	if br.err != nil {
+		return br.err
+	}
+	for _, u := range br.cmd.GetUnion() {
+		if err := br.unionError(u); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, error) {

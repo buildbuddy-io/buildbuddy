@@ -45,11 +45,12 @@ type Leaser interface {
 }
 
 type leaser struct {
-	db       *pebble.DB
-	waiters  sync.WaitGroup
-	closedMu sync.Mutex // PROTECTS(closed)
-	closed   bool
-	splitMu  sync.RWMutex
+	db        *pebble.DB
+	waiters   sync.WaitGroup
+	closedMu  sync.Mutex // PROTECTS(closed)
+	closed    bool
+	splitMu   sync.Mutex // PROTECTS(splitting)
+	splitting bool
 }
 
 // NewDBLeaser returns a new DB leaser that wraps db and serializes access to
@@ -67,11 +68,12 @@ type leaser struct {
 // leased until ReleaseSplitLock() is called.
 func NewDBLeaser(db *pebble.DB) Leaser {
 	return &leaser{
-		db:       db,
-		waiters:  sync.WaitGroup{},
-		closedMu: sync.Mutex{},
-		closed:   false,
-		splitMu:  sync.RWMutex{},
+		db:        db,
+		waiters:   sync.WaitGroup{},
+		closedMu:  sync.Mutex{},
+		closed:    false,
+		splitMu:   sync.Mutex{},
+		splitting: false,
 	}
 }
 
@@ -89,15 +91,22 @@ func (l *leaser) Close() {
 
 func (l *leaser) AcquireSplitLock() {
 	l.splitMu.Lock()
+	defer l.splitMu.Unlock()
+	l.splitting = true
 }
 
 func (l *leaser) ReleaseSplitLock() {
-	l.splitMu.Unlock()
+	l.splitMu.Lock()
+	defer l.splitMu.Unlock()
+	l.splitting = false
 }
 
 func (l *leaser) DB() (IPebbleDB, error) {
-	l.splitMu.RLock()
-	defer l.splitMu.RUnlock()
+	l.splitMu.Lock()
+	defer l.splitMu.Unlock()
+	if l.splitting {
+		return nil, status.OutOfRangeError("db is splitting")
+	}
 
 	l.closedMu.Lock()
 	defer l.closedMu.Unlock()

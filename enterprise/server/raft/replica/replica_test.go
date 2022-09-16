@@ -576,3 +576,98 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 		require.True(t, status.IsNotFoundError(err), err)
 	}
 }
+
+func TestReplicaSplitLease(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := replica.New(rootDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	// Acquire a split lease on a replica.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
+			DurationSeconds: 5,
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// Ensure that a direct write now fails.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("key-name"),
+				Value: []byte("key-value"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.Error(t, err)
+	}
+
+	// Reset the lease to 10 seconds from now.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
+			DurationSeconds: 10,
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// Release the split lease on a replica.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SplitReleaseRequest{}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// A direct write should now succeed again without error.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("key-name"),
+				Value: []byte("key-value"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// Acquire another split lease on the replica, but one that should
+	// expire immediately.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
+			DurationSeconds: 0,
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// A direct write should succeed immediately without error.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("key-name"),
+				Value: []byte("key-value"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	err = repl.Close()
+	require.NoError(t, err)
+}
