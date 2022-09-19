@@ -678,15 +678,15 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 		return &rfpb.CopyStoredFilesResponse{}, nil
 	}
 
-	localReplica, err := sm.store.GetReplica(req.GetTargetRangeId())
+	targetReplica, err := sm.store.GetReplica(req.GetTargetRangeId())
 	if err != nil {
 		return nil, err
 	}
-	if localReplica == sm {
+	if targetReplica == sm {
 		return nil, status.FailedPreconditionErrorf("cannot copy stored files from replica (range %d) to self", req.GetTargetRangeId())
 	}
 
-	sm.log.Debugf("Copying stored files from %+v to %+v", sm, localReplica)
+	sm.log.Debugf("Copying stored files from %+v to %+v", sm, targetReplica)
 	ctx := context.Background()
 	iter := sm.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(req.GetStart()),
@@ -706,7 +706,7 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 		if err != nil {
 			return nil, err
 		}
-		writeCloserMetadata, err := localReplica.storedFileWriter(ctx, fileMetadata.GetFileRecord())
+		writeCloserMetadata, err := targetReplica.storedFileWriter(ctx, fileMetadata.GetFileRecord())
 		if err != nil {
 			return nil, err
 		}
@@ -1535,20 +1535,24 @@ func (sm *Replica) ParseSnapshot(ctx context.Context, r io.Reader) <-chan Record
 					break
 				}
 				ch <- Record{Error: err}
+				break
 			}
 			protoBytes := make([]byte, count)
 			n, err := io.ReadFull(r, protoBytes)
 			if err != nil {
 				ch <- Record{Error: err}
+				break
 			}
 			if int64(n) != count {
 				ch <- Record{
 					Error: status.FailedPreconditionErrorf("Count %d != bytes read %d", count, n),
 				}
+				break
 			}
 			kv := &rfpb.KV{}
 			if err := proto.Unmarshal(protoBytes, kv); err != nil {
 				ch <- Record{Error: err}
+				break
 			}
 			ch <- Record{PB: &rfpb.DirectWriteRequest{Kv: kv}}
 
