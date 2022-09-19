@@ -669,10 +669,12 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 	return nil
 }
 
+// copyStoredFiles copies stored file data from this replica to another replica
+// which must be running locally on this nodehost and available in the store.
 func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.CopyStoredFilesResponse, error) {
 	appliesToThisReplica := sm.splitAppliesToThisReplica(req.GetSourceRange())
 	if !appliesToThisReplica {
-		sm.log.Debugf("Got copyStoredFiles cmd but it doesn't apply to this replica; skipping")
+		sm.log.Debugf("Received copyStoredFiles cmd but it doesn't apply to this replica. Not doing anything.")
 		return &rfpb.CopyStoredFilesResponse{}, nil
 	}
 
@@ -684,7 +686,7 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 		return nil, status.FailedPreconditionErrorf("cannot copy stored files from replica (range %d) to self", req.GetTargetRangeId())
 	}
 
-	sm.log.Infof("Copying stored files from %+v to %+v", sm, localReplica)
+	sm.log.Debugf("Copying stored files from %+v to %+v", sm, localReplica)
 	ctx := context.Background()
 	iter := sm.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(req.GetStart()),
@@ -717,13 +719,15 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 			return nil, err
 		}
 		if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
-			log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
+			sm.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
 			return nil, status.FailedPreconditionError("stored metadata changed when fetching file")
 		}
 	}
 	return &rfpb.CopyStoredFilesResponse{}, nil
 }
 
+// splitAppliesToThisReplica returns true if this replica is one of the replicas
+// found in the provided range descriptor.
 func (sm *Replica) splitAppliesToThisReplica(rd *rfpb.RangeDescriptor) bool {
 	for _, replica := range rd.GetReplicas() {
 		if replica.GetClusterId() == sm.ClusterID &&

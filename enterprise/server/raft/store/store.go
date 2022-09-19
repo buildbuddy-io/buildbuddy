@@ -859,6 +859,9 @@ func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*
 	return replicas, nil
 }
 
+// createSnapshot saves a snapshot of a replica's pebble database only to a
+// snapshot file on the local filesystem. Stored file data is not part of this
+// snapshot. An identifier for the snapshot is returned.
 func (s *Store) createSnapshot(ctx context.Context, req *rfpb.CreateSnapshotRequest) (*rfpb.CreateSnapshotResponse, error) {
 	r, err := s.GetReplica(req.GetHeader().GetRangeId())
 	if err != nil {
@@ -883,6 +886,11 @@ func (s *Store) createSnapshot(ctx context.Context, req *rfpb.CreateSnapshotRequ
 	}, nil
 }
 
+// loadSnapshot ingests an already created snapshot (see createSnapshot above)
+// into a range by sending all records in the snapshot over raft to the new
+// range. This may require copying stored file data -- that can be prevented by
+// first sending a CopyStoredFilesRequest RAFT command to pre-load the stored
+// data onto the replicas in the new range..
 func (s *Store) loadSnapshot(ctx context.Context, req *rfpb.LoadSnapshotRequest) (*rfpb.LoadSnapshotResponse, error) {
 	r, err := s.GetReplica(req.GetHeader().GetRangeId())
 	if err != nil {
@@ -939,6 +947,20 @@ func (s *Store) loadSnapshot(ctx context.Context, req *rfpb.LoadSnapshotRequest)
 	return &rfpb.LoadSnapshotResponse{}, nil
 }
 
+// SplitCluster splits a raft range into two roughly equal parts. For the time
+// being, splits are only supported for ranges active on this cluster.
+//
+// Splits happen in the following way:
+//
+// 1) The range to be split is locked for splitting. This prevents all
+//   further reads and writes.
+// 2) A new range is brought up on the same nodes as the range to be split.
+// 3) A split point is determined, and data is copied from the range to be split
+//   to the newly created range.
+// 4) The newly created range is activated (locally).
+// 5) The metarange is updated with the new range info, and the split range's
+//   new endpoints.
+// 6) The split range is unlocked.
 func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
 	if err := s.RangeIsActive(req.GetHeader()); err != nil {
 		return nil, err
