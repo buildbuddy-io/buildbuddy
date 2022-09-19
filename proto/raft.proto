@@ -184,6 +184,17 @@ message SplitReleaseRequest {
 }
 message SplitReleaseResponse {}
 
+// A request to hold or renew the split lock, blocking all writes. The split
+// lock will be reverted if it is not renewed within the specified duration.
+message CopyStoredFilesRequest {
+  RangeDescriptor source_range = 1;
+  uint64 target_range_id = 2;
+  bytes start = 3;
+  bytes end = 4;
+}
+
+message CopyStoredFilesResponse {}
+
 // Split a range.
 message SplitRequest {
   RangeDescriptor left = 1;
@@ -213,6 +224,7 @@ message RequestUnion {
     FileUpdateMetadataRequest file_update_metadata = 10;
     SplitLeaseRequest split_lease = 11;
     SplitReleaseRequest split_release = 12;
+    CopyStoredFilesRequest copy_stored_files = 13;
   }
 }
 
@@ -236,6 +248,7 @@ message ResponseUnion {
     FileUpdateMetadataResponse file_update_metadata = 11;
     SplitLeaseResponse split_lease = 12;
     SplitReleaseResponse split_release = 13;
+    CopyStoredFilesResponse copy_stored_files = 14;
   }
 }
 
@@ -456,6 +469,23 @@ message ListClusterResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
 }
+
+message CreateSnapshotRequest {
+  Header header = 1;
+  bytes start = 2;
+  bytes end = 3;
+}
+
+message CreateSnapshotResponse {
+  string snap_id = 1;
+}
+
+message LoadSnapshotRequest {
+  Header header = 1;
+  string snap_id = 2;
+}
+
+message LoadSnapshotResponse {}
 
 ////////////////////////////////////////////////////////////////////////////////
 //

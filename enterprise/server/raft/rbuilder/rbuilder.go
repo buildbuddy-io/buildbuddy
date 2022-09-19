@@ -90,6 +90,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_SplitRelease{
 			SplitRelease: value,
 		}
+	case *rfpb.CopyStoredFilesRequest:
+		req.Value = &rfpb.RequestUnion_CopyStoredFiles{
+			CopyStoredFiles: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb

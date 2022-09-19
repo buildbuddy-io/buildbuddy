@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -365,6 +364,20 @@ func TestSplitMetaRange(t *testing.T) {
 	require.Error(t, err)
 }
 
+func headerFromRangeDescriptor(rd *rfpb.RangeDescriptor) *rfpb.Header {
+	return &rfpb.Header{RangeId: rd.GetRangeId(), Generation: rd.GetGeneration()}
+}
+
+func getStoreWithRangeLease(t testing.TB, stores []*TestingStore, header *rfpb.Header) *TestingStore {
+	for _, s := range stores {
+		if err := s.RangeIsActive(header); err == nil {
+			return s
+		}
+	}
+	t.Fatalf("No store found holding rangelease for header %+v", header)
+	return nil
+}
+
 func TestSplitNonMetaRange(t *testing.T) {
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
@@ -372,6 +385,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	s3, nh3 := sf.NewStore(t)
 	ctx := context.Background()
 
+	stores := []*TestingStore{s1, s2, s3}
 	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
@@ -383,12 +397,16 @@ func TestSplitNonMetaRange(t *testing.T) {
 	// a small number of records before trying to Split.
 	written := writeNRecords(ctx, t, s1, 50)
 
-	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-		Range: s1.GetRange(2),
+	rd := s1.GetRange(2)
+	header := headerFromRangeDescriptor(rd)
+	s := getStoreWithRangeLease(t, stores, header)
+	_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+		Header: header,
+		Range:  rd,
 	})
 	require.NoError(t, err)
 
-	// Expect that a new cluster was added with clusterID = 3
+	// Expect that a new cluster was added with clusterID = 4
 	// having 3 replicas.
 	replicas, err := s1.GetClusterMembership(ctx, 4)
 	require.NoError(t, err)
@@ -399,11 +417,15 @@ func TestSplitNonMetaRange(t *testing.T) {
 		readRecord(ctx, t, s3, fr)
 	}
 
-	// Write some more records to the new right range.
+	// // Write some more records to the new right range.
 	written = append(written, writeNRecords(ctx, t, s1, 50)...)
 
-	_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-		Range: s1.GetRange(4),
+	rd = s1.GetRange(4)
+	header = headerFromRangeDescriptor(rd)
+	s = getStoreWithRangeLease(t, stores, header)
+	_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+		Header: header,
+		Range:  rd,
 	})
 	require.NoError(t, err)
 
@@ -443,7 +465,6 @@ func bytesToUint64(buf []byte) uint64 {
 }
 
 func TestPostFactoSplit(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -451,6 +472,7 @@ func TestPostFactoSplit(t *testing.T) {
 	s4, nh4 := sf.NewStore(t)
 	ctx := context.Background()
 
+	stores := []*TestingStore{s1, s2, s3, s4}
 	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
 		nh1.ID(): s1.GRPCAddress,
 		nh2.ID(): s2.GRPCAddress,
@@ -460,15 +482,18 @@ func TestPostFactoSplit(t *testing.T) {
 
 	// Attempting to Split an empty range will always fail. So write a
 	// a small number of records before trying to Split.
-	written := writeNRecords(ctx, t, s1, 10)
+	written := writeNRecords(ctx, t, s1, 50)
 
-	splitResponse, err := s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-		Range: s1.GetRange(2),
+	rd := s1.GetRange(2)
+	header := headerFromRangeDescriptor(rd)
+	s := getStoreWithRangeLease(t, stores, header)
+	splitResponse, err := s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+		Header: header,
+		Range:  rd,
 	})
 	require.NoError(t, err)
 
-	// Expect that a new cluster was added with clusterID = 2
-	// having 3 replicas.
+	// Expect that a new cluster was added with 3 replicas.
 	replicas, err := s1.GetClusterMembership(ctx, 4)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(replicas))
@@ -503,17 +528,17 @@ func TestPostFactoSplit(t *testing.T) {
 
 	lastIndexBytes, closer, err := r1DB.Get([]byte(constants.LastAppliedIndexKey))
 	require.NoError(t, err)
-	latestIndex := bytesToUint64(lastIndexBytes)
+	lastAppliedIndex := bytesToUint64(lastIndexBytes)
 	closer.Close()
 
 	// Wait for raft replication to finish bringing the new node up to date.
 	waitStart := time.Now()
 	for {
-		lastIndexBytes, closer, err := r4DB.Get([]byte(constants.LastAppliedIndexKey))
+		indexBytes, closer, err := r4DB.Get([]byte(constants.LastAppliedIndexKey))
 		require.NoError(t, err)
-		currentIndex := bytesToUint64(lastIndexBytes)
+		newReplicaIndex := bytesToUint64(indexBytes)
 		closer.Close()
-		if currentIndex == latestIndex {
+		if newReplicaIndex >= lastAppliedIndex {
 			log.Infof("Replica caught up in %s", time.Since(waitStart))
 			break
 		}
@@ -545,59 +570,14 @@ func TestManySplits(t *testing.T) {
 	s2, nh2 := sf.NewStore(t)
 	s3, nh3 := sf.NewStore(t)
 	ctx := context.Background()
-
 	stores := []*TestingStore{s1, s2, s3}
-	initialMembers := map[uint64]string{
-		1: nh1.ID(),
-		2: nh2.ID(),
-		3: nh3.ID(),
-	}
 
-	rd := &rfpb.RangeDescriptor{
-		Left:       []byte{constants.MinByte},
-		Right:      []byte{constants.MaxByte},
-		RangeId:    1,
-		Generation: 1,
-		Replicas: []*rfpb.ReplicaDescriptor{
-			{ClusterId: 1, NodeId: 1},
-			{ClusterId: 1, NodeId: 2},
-			{ClusterId: 1, NodeId: 3},
-		},
-	}
-	rdBuf, err := proto.Marshal(rd)
+	err := bringup.SendStartClusterRequests(ctx, s1.NodeHost, s1.APIClient, map[string]string{
+		nh1.ID(): s1.GRPCAddress,
+		nh2.ID(): s2.GRPCAddress,
+		nh3.ID(): s3.GRPCAddress,
+	})
 	require.NoError(t, err)
-	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: rdBuf,
-		},
-	}).Add(&rfpb.IncrementRequest{
-		Key:   constants.LastClusterIDKey,
-		Delta: uint64(1),
-	}).Add(&rfpb.IncrementRequest{
-		Key:   constants.LastNodeIDKey,
-		Delta: uint64(3),
-	}).Add(&rfpb.IncrementRequest{
-		Key:   constants.LastRangeIDKey,
-		Delta: uint64(1),
-	}).Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(rd.GetRight()),
-			Value: rdBuf,
-		},
-	}).ToProto()
-	require.NoError(t, err)
-
-	for i, s := range stores {
-		req := &rfpb.StartClusterRequest{
-			ClusterId:     uint64(1),
-			NodeId:        uint64(i + 1),
-			InitialMember: initialMembers,
-			Batch:         batchProto,
-		}
-		_, err := s.StartCluster(ctx, req)
-		require.NoError(t, err)
-	}
 
 	var written []*rfpb.FileRecord
 	for i := 0; i < 6; i++ {
@@ -619,16 +599,22 @@ func TestManySplits(t *testing.T) {
 		}
 
 		for _, clusterID := range clusters {
+			if clusterID == 1 {
+				continue
+			}
 			rd := s1.GetRange(clusterID)
-
-			_, err = s1.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-				Range: rd,
+			header := headerFromRangeDescriptor(rd)
+			s := getStoreWithRangeLease(t, stores, header)
+			_, err = s.SplitCluster(ctx, &rfpb.SplitClusterRequest{
+				Header: header,
+				Range:  rd,
 			})
+			require.NoError(t, err)
 			require.NoError(t, err)
 
 			// Expect that a new cluster was added with the new
 			// clusterID and 3 replicas.
-			replicas, err := s1.GetClusterMembership(ctx, clusterID)
+			replicas, err := s.GetClusterMembership(ctx, clusterID)
 			require.NoError(t, err)
 			require.Equal(t, 3, len(replicas))
 		}
