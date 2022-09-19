@@ -322,7 +322,7 @@ func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.Fi
 		require.True(t, proto.Equal(d, fr.GetDigest()))
 		return nil
 	})
-	require.NoError(t, err, fmt.Sprintf("fk: %s, lastHeader: %+v", fk, lastHeader))
+	require.NoError(t, err)
 }
 
 func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int) []*rfpb.FileRecord {
