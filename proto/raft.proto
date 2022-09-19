@@ -184,22 +184,23 @@ message SplitReleaseRequest {
 }
 message SplitReleaseResponse {}
 
-// Split a range.
-message SplitRequest {
-  RangeDescriptor left = 1;
-  RangeDescriptor proposed_right = 2;
-  FindSplitPointResponse split_point = 3;
+// A request to copy stored files from one replica to another
+// on the same nodehost. No copying will be done if the replica
+// processing this command is not present in source_range.
+message CopyStoredFilesRequest {
+  RangeDescriptor source_range = 1;
+  uint64 target_range_id = 2;
+  bytes start = 3;
+  bytes end = 4;
 }
 
-message SplitResponse {
-  RangeDescriptor left = 1;
-  RangeDescriptor right = 2;
-}
+message CopyStoredFilesResponse {}
 
 // Raft CMD API, used to encode raft commands that are replicated via raft and
 // written to a log. Everything written via SyncPropose must be a RequestUnion
 // wrapped in a BatchCmdRequest..
 message RequestUnion {
+  reserved 8;
   oneof value {
     FileWriteRequest file_write = 1;
     DirectWriteRequest direct_write = 2;
@@ -208,11 +209,11 @@ message RequestUnion {
     ScanRequest scan = 5;
     CASRequest cas = 6;
     FindSplitPointRequest find_split_point = 7;
-    SplitRequest split = 8;
     FileDeleteRequest file_delete = 9;
     FileUpdateMetadataRequest file_update_metadata = 10;
     SplitLeaseRequest split_lease = 11;
     SplitReleaseRequest split_release = 12;
+    CopyStoredFilesRequest copy_stored_files = 13;
   }
 }
 
@@ -221,6 +222,7 @@ message RequestUnion {
 // wrapped in a BatchCmdRequest and everything returned will be a
 // BatchCmdResponse.
 message ResponseUnion {
+  reserved 9;
   google.rpc.Status status = 1;
 
   oneof value {
@@ -231,11 +233,11 @@ message ResponseUnion {
     ScanResponse scan = 6;
     CASResponse cas = 7;
     FindSplitPointResponse find_split_point = 8;
-    SplitResponse split = 9;
     FileDeleteResponse file_delete = 10;
     FileUpdateMetadataResponse file_update_metadata = 11;
     SplitLeaseResponse split_lease = 12;
     SplitReleaseResponse split_release = 13;
+    CopyStoredFilesResponse copy_stored_files = 14;
   }
 }
 
@@ -456,6 +458,23 @@ message ListClusterResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
 }
+
+message CreateSnapshotRequest {
+  Header header = 1;
+  bytes start = 2;
+  bytes end = 3;
+}
+
+message CreateSnapshotResponse {
+  string snap_id = 1;
+}
+
+message LoadSnapshotRequest {
+  Header header = 1;
+  string snap_id = 2;
+}
+
+message LoadSnapshotResponse {}
 
 ////////////////////////////////////////////////////////////////////////////////
 //

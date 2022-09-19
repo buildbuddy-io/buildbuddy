@@ -23,7 +23,6 @@ go_library(
         "@com_github_lni_dragonboat_v3//statemachine",
         "@go_googleapis//google/rpc:status_go_proto",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//proto",
     ],
 )

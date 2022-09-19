@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
-	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -89,8 +88,8 @@ type Replica struct {
 
 	rootDir   string
 	fileDir   string
-	clusterID uint64
-	nodeID    uint64
+	ClusterID uint64
+	NodeID    uint64
 	timer     *time.Timer
 	timerMu   *sync.Mutex
 
@@ -136,18 +135,11 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 	return fileMetadata.GetSizeBytes() + int64(len(val)), nil
 }
 
-func (sm *Replica) RD() *rfpb.ReplicaDescriptor {
-	return &rfpb.ReplicaDescriptor{
-		ClusterId: sm.clusterID,
-		NodeId:    sm.nodeID,
-	}
-}
-
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
-			ClusterId: sm.clusterID,
-			NodeId:    sm.nodeID,
+			ClusterId: sm.ClusterID,
+			NodeId:    sm.NodeID,
 		},
 	}
 	db, err := sm.leaser.DB()
@@ -176,6 +168,21 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	return ru, nil
 }
 
+func (sm *Replica) String() string {
+	sm.rangeMu.Lock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
+	return fmt.Sprintf("Replica c%dn%d %s", sm.ClusterID, sm.NodeID, rdString(rd))
+}
+
+func rdString(rd *rfpb.RangeDescriptor) string {
+	if rd == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("Range(%d) [%q, %q)", rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
+}
+
 func (sm *Replica) setRange(key, val []byte) error {
 	if bytes.Compare(key, constants.LocalRangeKey) != 0 {
 		return status.FailedPreconditionErrorf("setRange called with non-range key: %s", key)
@@ -193,6 +200,7 @@ func (sm *Replica) setRange(key, val []byte) error {
 		sm.store.RemoveRange(sm.rangeDescriptor, sm)
 	}
 
+	sm.log.Debugf("Range descriptor is changing from %s to %s", rdString(sm.rangeDescriptor), rdString(rangeDescriptor))
 	sm.rangeDescriptor = rangeDescriptor
 	sm.mappedRange = &rangemap.Range{
 		Left:  rangeDescriptor.GetLeft(),
@@ -263,8 +271,8 @@ func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
 
 func (sm *Replica) getDBDir() string {
 	return filepath.Join(sm.rootDir,
-		fmt.Sprintf("cluster-%d", sm.clusterID),
-		fmt.Sprintf("node-%d", sm.nodeID))
+		fmt.Sprintf("cluster-%d", sm.ClusterID),
+		fmt.Sprintf("node-%d", sm.NodeID))
 }
 
 type ReplicaReader interface {
@@ -310,7 +318,7 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 func (sm *Replica) checkAndSetRangeDescriptor(db ReplicaReader) {
 	buf, err := sm.lookup(db, constants.LocalRangeKey)
 	if err != nil {
-		sm.log.Debugf("LocalRangeKey not found on replica")
+		sm.log.Debugf("Replica opened but range not yet set")
 		return
 	}
 	sm.setRange(constants.LocalRangeKey, buf)
@@ -380,34 +388,39 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
+	ctx := context.TODO()
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
 
-	found := iter.SeekGE(fileMetadataKey)
-	if !found || bytes.Compare(fileMetadataKey, iter.Key()) != 0 {
-		ctx := context.TODO()
-		storageMD, sizeBytes, err := sm.fetchFileToLocalStorage(ctx, req.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
-		d := req.GetFileRecord().GetDigest()
-		sm.log.Debugf("fileWrite: fetched file %q/%d to local storage", d.GetHash(), d.GetSizeBytes())
-		md := &rfpb.FileMetadata{
-			FileRecord:      req.GetFileRecord(),
-			StorageMetadata: storageMD,
-			SizeBytes:       sizeBytes,
-		}
-		protoBytes, err := proto.Marshal(md)
-		if err != nil {
-			return nil, err
-		}
-		if err := sm.rangeCheckedSet(wb, fileMetadataKey, protoBytes); err != nil {
-			return nil, err
-		}
+	fileExists := false
+	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
+	if err == nil {
+		fileExists = sm.fileStorer.FileExists(ctx, sm.fileDir, fileMetadata.GetStorageMetadata())
+	}
+	if fileExists {
+		return &rfpb.FileWriteResponse{}, nil
 	}
 
+	storageMD, sizeBytes, err := sm.fetchFileToLocalStorage(ctx, req.GetFileRecord())
+	if err != nil {
+		return nil, err
+	}
+	d := req.GetFileRecord().GetDigest()
+	sm.log.Debugf("fileWrite: fetched file %q/%d to local storage", d.GetHash(), d.GetSizeBytes())
+	md := &rfpb.FileMetadata{
+		FileRecord:      req.GetFileRecord(),
+		StorageMetadata: storageMD,
+		SizeBytes:       sizeBytes,
+	}
+	protoBytes, err := proto.Marshal(md)
+	if err != nil {
+		return nil, err
+	}
+	if err := sm.rangeCheckedSet(wb, fileMetadataKey, protoBytes); err != nil {
+		return nil, err
+	}
 	return &rfpb.FileWriteResponse{}, nil
 }
 
@@ -507,6 +520,7 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
 			log.Warning("Split lease expired!")
 			sm.releaseAndClearTimer()
+
 		})
 	}
 
@@ -623,94 +637,6 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	return true
 }
 
-func (sm *Replica) populateReplicaFromSnapshot(rightSM *Replica) error {
-	if sm == rightSM {
-		return status.FailedPreconditionError("cannot populate replica from self")
-	}
-
-	snap := sm.db.NewSnapshot()
-	defer snap.Close()
-
-	rightDB, err := rightSM.leaser.DB()
-	if err != nil {
-		return nil
-	}
-	defer rightDB.Close()
-
-	r, w := io.Pipe()
-	go func() {
-		if err := sm.SaveSnapshotToWriter(w, snap); err != nil {
-			w.CloseWithError(err)
-		}
-		w.Close()
-	}()
-	return rightSM.ApplySnapshotFromReader(r, rightDB)
-}
-
-func (sm *Replica) updateMetarange(oldLeft, left, right *rfpb.RangeDescriptor) error {
-	leftBuf, err := proto.Marshal(left)
-	if err != nil {
-		return err
-	}
-	oldLeftBuf, err := proto.Marshal(oldLeft)
-	if err != nil {
-		return err
-	}
-	rightBuf, err := proto.Marshal(right)
-	if err != nil {
-		return err
-	}
-
-	// Send a single request that:
-	//  - CAS sets the left value to leftRDBuf
-	//  - inserts the new rightBuf
-	//
-	// if the CAS fails, check the existing value
-	//  if it's generation is past ours, ignore the error, we're out of date
-	//  if the existing value already matches what we were trying to set, we're done.
-	//  else return an error
-	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(right.GetRight()),
-			Value: rightBuf,
-		},
-		ExpectedValue: oldLeftBuf,
-	}).Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(left.GetRight()),
-			Value: leftBuf,
-		},
-	}).ToProto()
-	if err != nil {
-		return err
-	}
-	rsp, err := sm.store.Sender().SyncPropose(context.TODO(), keys.RangeMetaKey(right.GetRight()), batchProto)
-	if err != nil {
-		return err
-	}
-	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
-	casRsp, err := batchRsp.CASResponse(0)
-	if err != nil {
-		if casRsp == nil {
-			return err // shouldn't happen.
-		}
-		if bytes.Compare(casRsp.GetKv().GetValue(), rightBuf) == 0 {
-			// another replica already applied the change.
-			return nil
-		}
-		existingRange := &rfpb.RangeDescriptor{}
-		if err := proto.Unmarshal(casRsp.GetKv().GetValue(), existingRange); err != nil {
-			return err
-		}
-		if existingRange.GetGeneration() > right.GetGeneration() {
-			// this replica is behind; don't need to update mr.
-			return nil
-		}
-		return err // shouldn't happen.
-	}
-	return nil
-}
-
 func printRange(wb *pebble.Batch, tag string) {
 	iter := wb.NewIter(&pebble.IterOptions{})
 	for iter.First(); iter.Valid(); iter.Next() {
@@ -743,192 +669,73 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 	return nil
 }
 
-func (leftReplica *Replica) copyDataToReplica(rightReplica *Replica, insertBatch *pebble.Batch, start, end []byte) error {
-	ctx := context.TODO()
-	iter := leftReplica.db.NewIter(&pebble.IterOptions{
-		LowerBound: keys.Key(start),
-		UpperBound: keys.Key(end),
+// copyStoredFiles copies stored file data from this replica to another replica
+// which must be running locally on this nodehost and available in the store.
+func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.CopyStoredFilesResponse, error) {
+	appliesToThisReplica := sm.splitAppliesToThisReplica(req.GetSourceRange())
+	if !appliesToThisReplica {
+		sm.log.Debugf("Received copyStoredFiles cmd but it doesn't apply to this replica. Not doing anything.")
+		return &rfpb.CopyStoredFilesResponse{}, nil
+	}
+
+	targetReplica, err := sm.store.GetReplica(req.GetTargetRangeId())
+	if err != nil {
+		return nil, err
+	}
+	if targetReplica == sm {
+		return nil, status.FailedPreconditionErrorf("cannot copy stored files from replica (range %d) to self", req.GetTargetRangeId())
+	}
+
+	sm.log.Debugf("Copying stored files from %+v to %+v", sm, targetReplica)
+	ctx := context.Background()
+	iter := sm.db.NewIter(&pebble.IterOptions{
+		LowerBound: keys.Key(req.GetStart()),
+		UpperBound: keys.Key(req.GetEnd()),
 	})
 	defer iter.Close()
 
 	for iter.First(); iter.Valid(); iter.Next() {
-		err := insertBatch.Set(iter.Key(), iter.Value(), nil /*ignore write options*/)
-		if err != nil {
-			return err
-		}
-		if isLocalKey(iter.Key()) {
-			continue
-		}
-
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			return err
+			continue
 		}
-		writeCloserMetadata, err := rightReplica.storedFileWriter(ctx, fileMetadata.GetFileRecord())
-		if err != nil {
-			return err
+		if fileMetadata.GetStorageMetadata() == nil {
+			continue
 		}
-		readCloser, err := leftReplica.fileStorer.NewReader(ctx, leftReplica.fileDir, fileMetadata.GetStorageMetadata(), 0, 0)
+		readCloser, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
-			return err
+			return nil, err
+		}
+		writeCloserMetadata, err := targetReplica.storedFileWriter(ctx, fileMetadata.GetFileRecord())
+		if err != nil {
+			return nil, err
 		}
 		n, err := io.Copy(writeCloserMetadata, readCloser)
 		readCloser.Close()
 		if n != fileMetadata.GetSizeBytes() {
-			return status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
+			return nil, status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
 		}
 		if err := writeCloserMetadata.Close(); err != nil {
-			return err
+			return nil, err
 		}
 		if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
-			leftReplica.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
-			return status.FailedPreconditionError("stored metadata changed when fetching file")
+			sm.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
+			return nil, status.FailedPreconditionError("stored metadata changed when fetching file")
 		}
 	}
-
-	return nil
+	return &rfpb.CopyStoredFilesResponse{}, nil
 }
 
-func (sm *Replica) splitAppliesToThisReplica(req *rfpb.SplitRequest) bool {
-	for _, replica := range req.GetLeft().GetReplicas() {
-		if replica.GetClusterId() == sm.clusterID &&
-			replica.GetNodeId() == sm.nodeID {
+// splitAppliesToThisReplica returns true if this replica is one of the replicas
+// found in the provided range descriptor.
+func (sm *Replica) splitAppliesToThisReplica(rd *rfpb.RangeDescriptor) bool {
+	for _, replica := range rd.GetReplicas() {
+		if replica.GetClusterId() == sm.ClusterID &&
+			replica.GetNodeId() == sm.NodeID {
 			return true
 		}
 	}
 	return false
-}
-
-func (sm *Replica) split(wb *pebble.Batch, req *rfpb.SplitRequest) (*rfpb.SplitResponse, error) {
-	startTime := time.Now()
-	defer func() {
-		sm.log.Infof("split() took %s", time.Since(startTime))
-	}()
-	if req.GetLeft() == nil || req.GetProposedRight() == nil {
-		return nil, status.FailedPreconditionError("left and right ranges must be provided")
-	}
-	if req.GetSplitPoint() == nil {
-		return nil, status.FailedPreconditionError("unable to split range: couldn't find split point")
-	}
-
-	// Lock the range to external writes.
-	sm.leaser.AcquireSplitLock()
-	defer sm.leaser.ReleaseSplitLock()
-
-	sm.rangeMu.Lock()
-	rd := sm.rangeDescriptor
-	sm.rangeMu.Unlock()
-
-	// Safety check: ensure that this range's current RangeDescriptor
-	// matches the one in the split. This will be true when replicas are
-	// split for the first time as well as when they are replayed.
-	if !proto.Equal(rd, req.GetLeft()) {
-		rdText, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(rd)
-		leftText, _ := (&prototext.MarshalOptions{Multiline: false}).Marshal(req.GetLeft())
-		return nil, status.OutOfRangeErrorf("split %q (current) != %q (req)", string(rdText), string(leftText))
-	}
-
-	// Compute the new left and right range descriptor values.
-	sp := req.GetSplitPoint()
-	leftRD := proto.Clone(req.GetLeft()).(*rfpb.RangeDescriptor)
-	rightRD := proto.Clone(req.GetProposedRight()).(*rfpb.RangeDescriptor)
-	leftRD.Generation += 1                     // increment rd generation upon split
-	rightRD.Generation = leftRD.Generation + 1 // increment rd generation upon split
-	rightRD.Right = req.GetLeft().GetRight()   // new range's end is the prev range's end
-	rightRD.Left = sp.GetSplit()               // new range's beginning is split point right side
-	leftRD.Right = sp.GetSplit()               // old range's end is now split point left side
-	rightRDBuf, err := proto.Marshal(rightRD)
-	if err != nil {
-		return nil, err
-	}
-	leftRDBuf, err := proto.Marshal(leftRD)
-	if err != nil {
-		return nil, err
-	}
-
-	// If this split already happened and we're just replaying the log, then
-	// we don't want to copy data to neighbor replicas or update the
-	// metarange. We do still want to ensure that data on this node past the
-	// split point is deleted, and ensure the local range descriptor is
-	// updated appropriately.
-	//
-	// Basically, we *want* to apply any changes that happen locally but
-	// *do not* want to apply any remote changes.
-	//
-	// Note that splits cmds are only run through the "left" side that is
-	// being split, so the logs from a specific split are not present in the
-	// "right" side replica created by that split.
-	splitRequiresExternalChanges := sm.splitAppliesToThisReplica(req)
-	if splitRequiresExternalChanges {
-		sm.log.Debugf("Split %+v applies to this replica c%dn%d: making external changes!", req, sm.clusterID, sm.nodeID)
-		rightSM, err := sm.store.GetReplica(req.GetProposedRight().GetRangeId())
-		if err != nil {
-			return nil, err
-		}
-
-		rightDB, err := rightSM.leaser.DB()
-		if err != nil {
-			return nil, err
-		}
-		defer rightDB.Close()
-
-		rwb := rightDB.NewIndexedBatch()
-		defer rwb.Close()
-		if err := sm.copyDataToReplica(rightSM, rwb, sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
-			return nil, err
-		}
-
-		// update the right local range: this will make it active, but no
-		// traffic will be sent yet because the metarange has not been updated.
-		if err := rightSM.rangeCheckedSet(rwb, constants.LocalRangeKey, rightRDBuf); err != nil {
-			return nil, err
-		}
-
-		if err := rightDB.Apply(rwb, &pebble.WriteOptions{Sync: true}); err != nil {
-			return nil, err
-		}
-	} else {
-		sm.log.Debugf("Split %+v does not apply to this replica c%dn%d: skipping external changes!", req, sm.clusterID, sm.nodeID)
-	}
-
-	// ensure that any data past the split point is deleted from this range.
-	// TODO(tylerw): would be nice to only apply this if the wb commits successfully?
-	if err := wb.DeleteRange(sp.GetSplit(), keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
-		return nil, err
-	}
-
-	if err := sm.deleteStoredFiles(sp.GetSplit(), keys.Key{constants.MaxByte}); err != nil {
-		return nil, err
-	}
-
-	// update the left local range (when this batch is committed).
-	if err := sm.rangeCheckedSet(wb, constants.LocalRangeKey, leftRDBuf); err != nil {
-		return nil, err
-	}
-
-	// if left limit is < constants.UnsplittableMaxByte, then we own the
-	// metarange, so update it here.
-	unsplittable := []byte{constants.UnsplittableMaxByte}
-	if bytes.Compare(rd.GetLeft(), unsplittable) == -1 {
-		// we own the metarange, so update it here.
-		if err := sm.rangeCheckedSet(wb, keys.RangeMetaKey(rightRD.Right), rightRDBuf); err != nil {
-			return nil, err
-		}
-		if err := sm.rangeCheckedSet(wb, keys.RangeMetaKey(leftRD.Right), leftRDBuf); err != nil {
-			return nil, err
-		}
-	} else {
-		if splitRequiresExternalChanges {
-			// use sender to remotely update the metarange.
-			if err := sm.updateMetarange(rd, leftRD, rightRD); err != nil {
-				return nil, err
-			}
-		}
-	}
-	return &rfpb.SplitResponse{
-		Left:  leftRD,
-		Right: rightRD,
-	}, nil
 }
 
 func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
@@ -1006,12 +813,6 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion, rsp *
 		r, err := sm.cas(wb, value.Cas)
 		rsp.Value = &rfpb.ResponseUnion_Cas{
 			Cas: r,
-		}
-		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_Split:
-		r, err := sm.split(wb, value.Split)
-		rsp.Value = &rfpb.ResponseUnion_Split{
-			Split: r,
 		}
 		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_FileDelete:
@@ -1424,6 +1225,14 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 				rsp.Status = statusProto(err)
 				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 				continue
+			case *rfpb.RequestUnion_CopyStoredFiles:
+				r, err := sm.copyStoredFiles(value.CopyStoredFiles)
+				rsp.Value = &rfpb.ResponseUnion_CopyStoredFiles{
+					CopyStoredFiles: r,
+				}
+				rsp.Status = statusProto(err)
+				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
+				continue
 			}
 
 			// All other raft commands are handled normally via
@@ -1432,6 +1241,15 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			if wb == nil {
 				db, err := sm.leaser.DB()
 				if err != nil {
+					// This should really be an error. The
+					// reason it's not yet is because range
+					// lease requests sometimes come in
+					// during a split, and they are safe
+					// to ignore.
+					if bytes.Compare(union.GetCas().GetKv().GetKey(), constants.LocalRangeLeaseKey) == 0 {
+						log.Warningf("mid-split, dropping rangelease cmd: %+v", union)
+						continue
+					}
 					return nil, err
 				}
 				defer db.Close()
@@ -1444,6 +1262,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
 				log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
 			}
+
 			// sm.log.Debugf("Update: response union: %+v", rsp)
 			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
@@ -1595,8 +1414,11 @@ func readDataFromReader(r *bufio.Reader) (io.Reader, int64, error) {
 	return io.LimitReader(r, count), count, nil
 }
 
-func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) error {
-	iter := snap.NewIter(&pebble.IterOptions{})
+func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot, start, end []byte) error {
+	iter := snap.NewIter(&pebble.IterOptions{
+		LowerBound: keys.Key(start),
+		UpperBound: keys.Key(end),
+	})
 	defer iter.Close()
 	for iter.First(); iter.Valid(); iter.Next() {
 		kv := &rfpb.KV{
@@ -1618,8 +1440,8 @@ func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot) erro
 
 func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb.FileRecord) (*rfpb.StorageMetadata, int64, error) {
 	rd := &rfpb.ReplicaDescriptor{
-		ClusterId: sm.clusterID,
-		NodeId:    sm.nodeID,
+		ClusterId: sm.ClusterID,
+		NodeId:    sm.NodeID,
 	}
 	writeCloserMetadata, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
 	if err != nil {
@@ -1695,6 +1517,56 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 	return nil
 }
 
+type Record struct {
+	PB    proto.Message
+	Error error
+}
+
+func (sm *Replica) ParseSnapshot(ctx context.Context, r io.Reader) <-chan Record {
+	ch := make(chan Record, 10)
+
+	readBuf := bufio.NewReader(r)
+	go func() {
+		defer close(ch)
+		for {
+			r, count, err := readDataFromReader(readBuf)
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				ch <- Record{Error: err}
+				break
+			}
+			protoBytes := make([]byte, count)
+			n, err := io.ReadFull(r, protoBytes)
+			if err != nil {
+				ch <- Record{Error: err}
+				break
+			}
+			if int64(n) != count {
+				ch <- Record{
+					Error: status.FailedPreconditionErrorf("Count %d != bytes read %d", count, n),
+				}
+				break
+			}
+			kv := &rfpb.KV{}
+			if err := proto.Unmarshal(protoBytes, kv); err != nil {
+				ch <- Record{Error: err}
+				break
+			}
+			ch <- Record{PB: &rfpb.DirectWriteRequest{Kv: kv}}
+
+			fileMetadata := &rfpb.FileMetadata{}
+			if err := proto.Unmarshal(kv.GetValue(), fileMetadata); err == nil {
+				if fileMetadata.GetStorageMetadata() != nil {
+					ch <- Record{PB: &rfpb.FileWriteRequest{FileRecord: fileMetadata.GetFileRecord()}}
+				}
+			}
+		}
+	}()
+	return ch
+}
+
 // SaveSnapshot saves the point in time state of the IOnDiskStateMachine
 // instance identified by the input state identifier, which is usually not
 // the latest state of the IOnDiskStateMachine instance, to the provided
@@ -1737,7 +1609,16 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
 	}
 	defer snap.Close()
-	return sm.SaveSnapshotToWriter(w, snap)
+	return sm.SaveSnapshotToWriter(w, snap, []byte{constants.MinByte}, []byte{constants.MaxByte})
+}
+
+func (sm *Replica) SaveSnapshotRange(preparedSnap interface{}, w io.Writer, start, end []byte) error {
+	snap, ok := preparedSnap.(*pebble.Snapshot)
+	if !ok {
+		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
+	}
+	defer snap.Close()
+	return sm.SaveSnapshotToWriter(w, snap, start, end)
 }
 
 // RecoverFromSnapshot recovers the state of the IOnDiskStateMachine instance
@@ -1835,9 +1716,9 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 		leaser:     nil,
 		rootDir:    rootDir,
 		fileDir:    fileDir,
-		clusterID:  clusterID,
+		ClusterID:  clusterID,
+		NodeID:     nodeID,
 		timerMu:    &sync.Mutex{},
-		nodeID:     nodeID,
 		store:      store,
 		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 		fileStorer: filestore.New(true /*=isolateByGroupIDs*/),

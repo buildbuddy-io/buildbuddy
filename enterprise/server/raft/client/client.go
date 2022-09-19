@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -197,7 +198,8 @@ type multiWriteCloser struct {
 }
 
 func fileRecordLogString(f *rfpb.FileRecord) string {
-	return fmt.Sprintf("%s/%s/%d", f.GetIsolation().GetCacheType(), f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes())
+	fmk, _ := filestore.New(false).FileMetadataKey(f)
+	return string(fmk)
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
