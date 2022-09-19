@@ -564,7 +564,6 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -580,7 +579,7 @@ func TestManySplits(t *testing.T) {
 	require.NoError(t, err)
 
 	var written []*rfpb.FileRecord
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 4; i++ {
 		written = append(written, writeNRecords(ctx, t, stores[0], 100)...)
 
 		var clusters []uint64
@@ -621,7 +620,7 @@ func TestManySplits(t *testing.T) {
 
 		// Check that all files are found.
 		for _, fr := range written {
-			readRecord(ctx, t, s3, fr)
+			readRecord(ctx, t, s1, fr)
 		}
 	}
 }

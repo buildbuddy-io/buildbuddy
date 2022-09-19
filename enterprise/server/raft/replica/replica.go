@@ -350,6 +350,30 @@ func (sm *Replica) fileDelete(wb *pebble.Batch, req *rfpb.FileDeleteRequest) (*r
 	return &rfpb.FileDeleteResponse{}, nil
 }
 
+func (sm *Replica) deleteRange(wb *pebble.Batch, req *rfpb.DeleteRangeRequest) (*rfpb.DeleteRangeResponse, error) {
+	iter := wb.NewIter(&pebble.IterOptions{
+		LowerBound: keys.Key(req.GetStart()),
+		UpperBound: keys.Key(req.GetEnd()),
+	})
+	defer iter.Close()
+
+	for iter.First(); iter.Valid(); iter.Next() {
+		if err := wb.Delete(iter.Key(), nil /*ignored write options*/); err != nil {
+			return nil, err
+		}
+		fileMetadata := &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err == nil {
+			if fileMetadata.GetFileRecord() != nil {
+				if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
+					log.Errorf("Error deleting stored file: %s", err)
+				}
+			}
+		}
+	}
+
+	return &rfpb.DeleteRangeResponse{}, nil
+}
+
 func (sm *Replica) fileUpdateMetadata(wb *pebble.Batch, req *rfpb.FileUpdateMetadataRequest) (*rfpb.FileUpdateMetadataResponse, error) {
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
@@ -819,6 +843,12 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion, rsp *
 		r, err := sm.fileDelete(wb, value.FileDelete)
 		rsp.Value = &rfpb.ResponseUnion_FileDelete{
 			FileDelete: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_DeleteRange:
+		r, err := sm.deleteRange(wb, value.DeleteRange)
+		rsp.Value = &rfpb.ResponseUnion_DeleteRange{
+			DeleteRange: r,
 		}
 		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_FileUpdateMetadata:

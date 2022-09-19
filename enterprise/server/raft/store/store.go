@@ -1155,6 +1155,23 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := rbuilder.NewBatchResponseFromProto(releaseRsp).AnyError(); err != nil {
 		return nil, err
 	}
+
+	// Delete old data from left range
+	deleteReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRangeRequest{
+		Start: newLeft.Right,
+		End:   oldLeft.Right,
+	}).ToProto()
+	if err != nil {
+		return nil, err
+	}
+	deleteRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, deleteReq)
+	if err != nil {
+		return nil, err
+	}
+	if err := rbuilder.NewBatchResponseFromProto(deleteRsp).AnyError(); err != nil {
+		return nil, err
+	}
+
 	splitRsp := &rfpb.SplitClusterResponse{
 		Left:  newLeft,
 		Right: newRight,

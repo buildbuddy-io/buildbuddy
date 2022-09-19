@@ -94,6 +94,12 @@ message FileDeleteRequest {
   FileRecord file_record = 1;
 }
 
+message DeleteRangeRequest {
+  bytes start = 1;
+  bytes end = 2;
+}
+message DeleteRangeResponse {}
+
 message FileDeleteResponse {}
 
 message FileUpdateMetadataRequest {
@@ -220,6 +226,7 @@ message RequestUnion {
     SplitLeaseRequest split_lease = 11;
     SplitReleaseRequest split_release = 12;
     CopyStoredFilesRequest copy_stored_files = 13;
+    DeleteRangeRequest delete_range = 14;
   }
 }
 
@@ -244,6 +251,7 @@ message ResponseUnion {
     SplitLeaseResponse split_lease = 12;
     SplitReleaseResponse split_release = 13;
     CopyStoredFilesResponse copy_stored_files = 14;
+    DeleteRangeResponse delete_range = 15;
   }
 }
 
