@@ -308,9 +308,7 @@ func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.Fi
 	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
 	require.NoError(t, err)
 
-	var lastHeader *rfpb.Header
 	err = ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		lastHeader = h
 		rc, err := client.RemoteReader(ctx, c, &rfpb.ReadRequest{
 			Header:     h,
 			FileRecord: fr,
