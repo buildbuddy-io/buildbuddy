@@ -308,7 +308,9 @@ func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.Fi
 	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
 	require.NoError(t, err)
 
+	var lastHeader *rfpb.Header
 	err = ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		lastHeader = h
 		rc, err := client.RemoteReader(ctx, c, &rfpb.ReadRequest{
 			Header:     h,
 			FileRecord: fr,
@@ -320,7 +322,7 @@ func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.Fi
 		require.True(t, proto.Equal(d, fr.GetDigest()))
 		return nil
 	})
-	require.NoError(t, err)
+	require.NoError(t, err, fmt.Sprintf("fk: %s, lastHeader: %+v", fk, lastHeader))
 }
 
 func writeNRecords(ctx context.Context, t *testing.T, store *TestingStore, n int) []*rfpb.FileRecord {
@@ -564,7 +566,6 @@ func TestPostFactoSplit(t *testing.T) {
 }
 
 func TestManySplits(t *testing.T) {
-	t.Skip()
 	sf := newStoreFactory(t)
 	s1, nh1 := sf.NewStore(t)
 	s2, nh2 := sf.NewStore(t)
@@ -580,7 +581,7 @@ func TestManySplits(t *testing.T) {
 	require.NoError(t, err)
 
 	var written []*rfpb.FileRecord
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 4; i++ {
 		written = append(written, writeNRecords(ctx, t, stores[0], 100)...)
 
 		var clusters []uint64
@@ -621,7 +622,7 @@ func TestManySplits(t *testing.T) {
 
 		// Check that all files are found.
 		for _, fr := range written {
-			readRecord(ctx, t, s3, fr)
+			readRecord(ctx, t, s1, fr)
 		}
 	}
 }
