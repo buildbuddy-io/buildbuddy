@@ -373,3 +373,52 @@ func TestBadPopulateFlagsFromYAML(t *testing.T) {
 	err = flagyaml.PopulateFlagsFromYAMLMap(input, node)
 	require.Error(t, err)
 }
+
+func TestOverrideFlagsFromData(t *testing.T) {
+	flags := replaceFlagsForTesting(t)
+
+	flagBool := flags.Bool("bool", true, "")
+	flagOneTwoInt := flags.Int("one.two.int", 10, "")
+	flagOneTwoStringSlice := flagtypes.StringSlice("one.two.string_slice", []string{"hi", "hello"}, "")
+	flagOneTwoTwoAndAHalfFloat := flags.Float64("one.two.two_and_a_half.float64", 5.2, "")
+	flagOneTwoThreeStructSlice := []testStruct{{Field: 4, Meadow: "Great"}}
+	flagtypes.JSONSliceVar(&flagOneTwoThreeStructSlice, "one.two.three.struct_slice", flagOneTwoThreeStructSlice, "")
+	flagABString := flags.String("a.b.string", "xxx", "")
+	flagABStructSlice := []testStruct{{Field: 7, Meadow: "Chimney"}}
+	flagtypes.JSONSliceVar(&flagABStructSlice, "a.b.struct_slice", flagABStructSlice, "")
+	flagABURL := flagtypes.URLFromString("a.b.url", "https://www.example.com", "")
+	yamlData := `
+bool: true
+one:
+  two:
+    int: 1
+    string_slice:
+      - "string1"
+      - "string2"
+    two_and_a_half:
+      float64: 9.4
+    three:
+      struct_slice:
+        - field: 9
+          meadow: "Eternal"
+        - field: 5
+a:
+  b:
+    url: "http://www.example.com:8080"
+foo: 7
+first:
+  second:
+    unknown: 9009
+    no: "definitely not"
+`
+	err := flagyaml.OverrideFlagsFromData([]byte(yamlData))
+	require.NoError(t, err)
+	assert.Equal(t, true, *flagBool)
+	assert.Equal(t, int(1), *flagOneTwoInt)
+	assert.Equal(t, []string{"string1", "string2"}, *flagOneTwoStringSlice)
+	assert.Equal(t, float64(9.4), *flagOneTwoTwoAndAHalfFloat)
+	assert.Equal(t, []testStruct{{Field: 9, Meadow: "Eternal"}, {Field: 5}}, flagOneTwoThreeStructSlice)
+	assert.Equal(t, "xxx", *flagABString)
+	assert.Equal(t, []testStruct{{Field: 7, Meadow: "Chimney"}}, flagABStructSlice)
+	assert.Equal(t, url.URL{Scheme: "http", Host: "www.example.com:8080"}, *flagABURL)
+}
