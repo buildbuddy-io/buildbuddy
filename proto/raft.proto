@@ -78,6 +78,12 @@ message FileMetadata {
   int64 last_modify_usec = 5;
 }
 
+message PartitionMetadata {
+  int64 size_bytes = 1;
+  int64 cas_count = 2;
+  int64 ac_count = 3;
+}
+
 message FileWriteRequest {
   FileRecord file_record = 1;
 }
