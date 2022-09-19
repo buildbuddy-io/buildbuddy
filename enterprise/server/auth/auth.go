@@ -46,6 +46,7 @@ var (
 	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
 	httpsOnlyCookies     = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
+	forceApproval        = flag.Bool("auth.force_approval", false, "If true, when a user doesn't have a session (first time logging in, or manually logged out) force the auth provider to show the consent screen allowing the user to select an account if they have multiple. This isn't supported by all auth providers.")
 )
 
 type OauthProvider struct {
@@ -79,6 +80,9 @@ const (
 	authorityHeader          = ":authority"
 	basicAuthHeader          = "authorization"
 
+	// The key that the current access token expiration time is stored under in the context.
+	contextTokenExpiryKey = "auth.tokenExpiry"
+
 	contextAPIKeyKey = "api.key"
 	APIKeyHeader     = "x-buildbuddy-api-key"
 
@@ -91,11 +95,12 @@ const (
 
 	// The name of the auth cookies used to authenticate the
 	// client.
-	jwtCookie        = "Authorization"
-	sessionIDCookie  = "Session-ID"
-	authIssuerCookie = "Authorization-Issuer"
-	stateCookie      = "State-Token"
-	redirCookie      = "Redirect-Url"
+	jwtCookie             = "Authorization"
+	sessionIDCookie       = "Session-ID"
+	sessionDurationCookie = "Session-Duration-Seconds"
+	authIssuerCookie      = "Authorization-Issuer"
+	stateCookie           = "State-Token"
+	redirCookie           = "Redirect-Url"
 
 	// How long certain cookies last
 	tempCookieDuration  = 24 * time.Hour
@@ -187,12 +192,12 @@ func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
 	return tokenString, err
 }
 
-func SetCookie(env environment.Env, w http.ResponseWriter, name, value string, expiry time.Time) {
+func SetCookie(env environment.Env, w http.ResponseWriter, name, value string, expiry time.Time, httpOnly bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Expires:  expiry,
-		HttpOnly: true,
+		HttpOnly: httpOnly,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/",
 		Secure:   *httpsOnlyCookies,
@@ -200,7 +205,7 @@ func SetCookie(env environment.Env, w http.ResponseWriter, name, value string, e
 }
 
 func ClearCookie(env environment.Env, w http.ResponseWriter, name string) {
-	SetCookie(env, w, name, "", time.Now())
+	SetCookie(env, w, name, "", time.Now(), true /* httpOnly= */)
 }
 
 func GetCookie(r *http.Request, name string) string {
@@ -210,11 +215,13 @@ func GetCookie(r *http.Request, name string) string {
 	return ""
 }
 
-func setLoginCookie(env environment.Env, w http.ResponseWriter, jwt, issuer, sessionID string) {
+func setLoginCookie(env environment.Env, w http.ResponseWriter, jwt, issuer, sessionID string, sessionExpireTime int64) {
 	expiry := time.Now().Add(loginCookieDuration)
-	SetCookie(env, w, jwtCookie, jwt, expiry)
-	SetCookie(env, w, authIssuerCookie, issuer, expiry)
-	SetCookie(env, w, sessionIDCookie, sessionID, expiry)
+	SetCookie(env, w, jwtCookie, jwt, expiry, true /* httpOnly= */)
+	SetCookie(env, w, authIssuerCookie, issuer, expiry, true /* httpOnly= */)
+	SetCookie(env, w, sessionIDCookie, sessionID, expiry, true /* httpOnly= */)
+	// Don't make the session duration cookie httpOnly so the front end knows how frequently it needs to refresh tokens.
+	SetCookie(env, w, sessionDurationCookie, fmt.Sprintf("%d", sessionExpireTime-time.Now().Unix()), expiry, false /* httpOnly= */)
 }
 
 func clearLoginCookie(env environment.Env, w http.ResponseWriter) {
@@ -626,8 +633,8 @@ func (a *OpenIDAuthenticator) getAuthCodeOptions(r *http.Request) []oauth2.AuthC
 		options = append(options, oauth2.AccessTypeOffline)
 	}
 	sessionID := GetCookie(r, sessionIDCookie)
-	// If a session doesn't already exist, force a consent screen.
-	if sessionID == "" {
+	// If a session doesn't already exist, force a consent screen (so the user can select between multiple accounts) if enabled.
+	if sessionID == "" && *forceApproval {
 		options = append(options, oauth2.ApprovalForce)
 	}
 	return options
@@ -958,15 +965,22 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	sesh.ExpiryUsec = time.Unix(0, newToken.Expiry.UnixNano()).UnixMicro()
 	sesh.AccessToken = newToken.AccessToken
 
+	// If token renewal returns a new refresh token, update it on the session
+	if refreshToken, ok := newToken.Extra("refresh_token").(string); ok {
+		sesh.RefreshToken = refreshToken
+	}
+
 	if err := authDB.InsertOrUpdateUserSession(ctx, sessionID, sesh); err != nil {
 		return nil, nil, err
 	}
-	if jwt, ok := newToken.Extra("id_token").(string); ok {
-		setLoginCookie(a.env, w, jwt, issuer, sessionID)
-		claims, err := ClaimsFromSubID(a.env, ctx, a, ut.GetSubID())
-		return claims, ut, err
+	// If token renewal returns a new id token, update it on the login cookie
+	if newJWT, ok := newToken.Extra("id_token").(string); ok {
+		jwt = newJWT
 	}
-	return nil, nil, status.PermissionDeniedErrorf("%s: could not refresh token", loggedOutMsg)
+
+	setLoginCookie(a.env, w, jwt, issuer, sessionID, newToken.Expiry.Unix())
+	claims, err := ClaimsFromSubID(a.env, ctx, a, ut.GetSubID())
+	return claims, ut, err
 }
 
 func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, error) {
@@ -1065,7 +1079,7 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 	// Set the "state" cookie which will be returned to us by tha authentication
 	// provider in the URL. We verify that it matches.
 	state := fmt.Sprintf("%d", random.RandUint64())
-	SetCookie(a.env, w, stateCookie, state, time.Now().Add(tempCookieDuration))
+	SetCookie(a.env, w, stateCookie, state, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
 
 	redirectURL := r.URL.Query().Get(authRedirectParam)
 	if err := a.validateRedirectURL(redirectURL); err != nil {
@@ -1082,11 +1096,11 @@ func (a *OpenIDAuthenticator) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Set the redirection URL in a cookie so we can use it after validating
 	// the user in our /auth callback.
-	SetCookie(a.env, w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration))
+	SetCookie(a.env, w, redirCookie, redirectURL, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
 
 	// Set the issuer cookie so we remember which issuer to use when exchanging
 	// a token later in our /auth callback.
-	SetCookie(a.env, w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration))
+	SetCookie(a.env, w, authIssuerCookie, issuer, time.Now().Add(tempCookieDuration), true /* httpOnly= */)
 
 	http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 }
@@ -1178,7 +1192,7 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 
 	// OK, the token is valid so we will: store the token in our DB for
 	// later & set the login cookie so we know this user is logged in.
-	setLoginCookie(a.env, w, jwt, issuer, sessionID)
+	setLoginCookie(a.env, w, jwt, issuer, sessionID, oauth2Token.Expiry.Unix())
 
 	expireTime := time.Unix(0, oauth2Token.Expiry.UnixNano())
 	sesh := &tables.Session{
