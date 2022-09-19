@@ -62,6 +62,7 @@ var (
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
+	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
@@ -71,6 +72,9 @@ var (
 	DefaultMinEvictionAge       = 6 * time.Hour
 
 	DefaultMaxSizeBytes = cache_config.MaxSizeBytes()
+
+	// Prefix used to store non-record data.
+	SystemKeyPrefix = []byte{'\x01'}
 )
 
 const (
@@ -83,8 +87,9 @@ const (
 	JanitorCheckPeriod = 1 * time.Second
 	megabyte           = 1e6
 
-	defaultPartitionID       = "default"
-	partitionDirectoryPrefix = "PT"
+	defaultPartitionID           = "default"
+	partitionDirectoryPrefix     = "PT"
+	partitionMetadataFlushPeriod = 5 * time.Second
 
 	// sampleN is the number of random files to sample when adding a new
 	// deletion candidate to the sample pool. Increasing this number
@@ -158,8 +163,9 @@ type PebbleCache struct {
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
 
-	quitChan chan struct{}
-	eg       *errgroup.Group
+	quitChan      chan struct{}
+	eg            *errgroup.Group
+	egSizeUpdates *errgroup.Group
 
 	statusMu *sync.Mutex // PROTECTS(evictors)
 	evictors []*partitionEvictor
@@ -366,6 +372,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		brokenFilesDone:        make(chan struct{}),
 		orphanedFilesDone:      make(chan struct{}),
 		eg:                     &errgroup.Group{},
+		egSizeUpdates:          &errgroup.Group{},
 		statusMu:               &sync.Mutex{},
 		edits:                  make(chan *sizeUpdate, 1000),
 		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
@@ -496,7 +503,7 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 	}
 }
 
-func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
+func (p *PebbleCache) processSizeUpdates() {
 	evictors := make(map[string]*partitionEvictor, 0)
 	p.statusMu.Lock()
 	for _, pe := range p.evictors {
@@ -504,14 +511,9 @@ func (p *PebbleCache) processSizeUpdates(quitChan chan struct{}) {
 	}
 	p.statusMu.Unlock()
 
-	for {
-		select {
-		case <-quitChan:
-			return
-		case edit := <-p.edits:
-			e := evictors[edit.partID]
-			e.updateSize(edit.key, edit.delta)
-		}
+	for edit := range p.edits {
+		e := evictors[edit.partID]
+		e.updateSize(edit.key, edit.delta)
 	}
 }
 
@@ -616,6 +618,10 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 		case <-quitChan:
 			return nil
 		default:
+		}
+
+		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
+			continue
 		}
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
@@ -1341,7 +1347,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		minEvictionAge:  minEvictionAge,
 	}
 	start := time.Now()
-	log.Printf("Pebble Cache: Initializing cache partition %q...", part.ID)
+	log.Infof("Pebble Cache: Initializing cache partition %q...", part.ID)
 	sizeBytes, casCount, acCount, err := pe.computeSize()
 	if err != nil {
 		return nil, err
@@ -1350,7 +1356,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	pe.casCount = casCount
 	pe.acCount = acCount
 
-	log.Printf("Pebble Cache: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
+	log.Infof("Pebble Cache: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
 	return pe, nil
 }
 
@@ -1434,7 +1440,61 @@ func splitRange(left, right []byte, count int) ([][]byte, error) {
 	return ranges, nil
 }
 
+func (e *partitionEvictor) partitionMetadataKey() []byte {
+	var key []byte
+	key = append(key, SystemKeyPrefix...)
+	key = append(key, []byte(e.part.ID)...)
+	key = append(key, []byte("/metadata")...)
+	return key
+}
+
+func (e *partitionEvictor) lookupPartitionMetadata() (*rfpb.PartitionMetadata, error) {
+	db, err := e.dbGetter.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	partitionMDBuf, err := pebbleutil.GetCopy(db, e.partitionMetadataKey())
+	if err != nil {
+		return nil, err
+	}
+
+	partitionMD := &rfpb.PartitionMetadata{}
+	if err := proto.Unmarshal(partitionMDBuf, partitionMD); err != nil {
+		return nil, err
+	}
+	return partitionMD, nil
+}
+
+func (e *partitionEvictor) writePartitionMetadata(db pebbleutil.IPebbleDB, md *rfpb.PartitionMetadata) error {
+	bs, err := proto.Marshal(md)
+	if err != nil {
+		return err
+	}
+	return db.Set(e.partitionMetadataKey(), bs, &pebble.WriteOptions{Sync: true})
+}
+
+func (e *partitionEvictor) flushPartitionMetadata(db pebbleutil.IPebbleDB) error {
+	sizeBytes, casCount, acCount := e.Counts()
+	return e.writePartitionMetadata(db, &rfpb.PartitionMetadata{
+		SizeBytes: sizeBytes,
+		CasCount:  casCount,
+		AcCount:   acCount,
+	})
+}
+
 func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
+	if !*forceCalculateMetadata {
+		partitionMD, err := e.lookupPartitionMetadata()
+		if err == nil {
+			log.Infof("Loaded partition %q metadata from cache: %+v", e.part.ID, partitionMD)
+			return partitionMD.GetSizeBytes(), partitionMD.GetCasCount(), partitionMD.GetAcCount(), nil
+		} else if !status.IsNotFoundError(err) {
+			return 0, 0, 0, err
+		}
+	}
+
 	mu := sync.Mutex{}
 	eg := errgroup.Group{}
 
@@ -1494,6 +1554,22 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	if err := eg.Wait(); err != nil {
 		return 0, 0, 0, err
 	}
+
+	partitionMD := &rfpb.PartitionMetadata{
+		SizeBytes: totalSizeBytes,
+		CasCount:  totalCasCount,
+		AcCount:   totalAcCount,
+	}
+
+	db, err := e.dbGetter.DB()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer db.Close()
+	if err := e.writePartitionMetadata(db, partitionMD); err != nil {
+		return 0, 0, 0, err
+	}
+
 	return totalSizeBytes, totalCasCount, totalAcCount, nil
 }
 
@@ -1819,6 +1895,25 @@ func (e *partitionEvictor) run(quitChan chan struct{}) error {
 	}
 }
 
+func (p *PebbleCache) flushPartitionMetadata() {
+	for _, e := range p.evictors {
+		if err := e.flushPartitionMetadata(p.db); err != nil {
+			log.Warningf("could not flush partition metadata: %s", err)
+		}
+	}
+}
+
+func (p *PebbleCache) periodicFlushPartitionMetadata(quitChan chan struct{}) {
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-time.After(partitionMetadataFlushPeriod):
+			p.flushPartitionMetadata()
+		}
+	}
+}
+
 func (p *PebbleCache) Start() error {
 	p.quitChan = make(chan struct{}, 0)
 	for _, evictor := range p.evictors {
@@ -1828,7 +1923,11 @@ func (p *PebbleCache) Start() error {
 		})
 	}
 	p.eg.Go(func() error {
-		p.processSizeUpdates(p.quitChan)
+		p.periodicFlushPartitionMetadata(p.quitChan)
+		return nil
+	})
+	p.egSizeUpdates.Go(func() error {
+		p.processSizeUpdates()
 		return nil
 	})
 	p.eg.Go(func() error {
@@ -1846,19 +1945,33 @@ func (p *PebbleCache) Start() error {
 }
 
 func (p *PebbleCache) Stop() error {
-	log.Printf("Pebble Cache: beginning shutdown")
+	log.Info("Pebble Cache: beginning shutdown")
 	close(p.quitChan)
 	if err := p.eg.Wait(); err != nil {
 		return err
 	}
-	log.Printf("Pebble Cache: waitgroups finished")
+	log.Info("Pebble Cache: waitgroups finished")
+
+	// Wait for all active requests to be finished.
+	p.leaser.Close()
+
+	log.Infof("Pebble Cache: finished serving requests")
+
+	// Wait for all enqueued size updates to be processed.
+	close(p.edits)
+	if err := p.egSizeUpdates.Wait(); err != nil {
+		return err
+	}
+
+	log.Infof("Pebble Cache: finished processing size updates")
+
+	// Write out the final partition metadata.
+	p.flushPartitionMetadata()
+
 	if err := p.db.Flush(); err != nil {
 		return err
 	}
-	log.Printf("Pebble Cache: db flushed")
-
-	p.leaser.Close()
-	log.Printf("Pebble Cache: db leases returned")
+	log.Infof("Pebble Cache: db flushed")
 
 	return p.db.Close()
 }

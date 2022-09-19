@@ -805,6 +805,9 @@ func TestDeleteOrphans(t *testing.T) {
 		t.Fatal(err)
 	}
 	pc.Start()
+	for !pc.DoneScanning() {
+		time.Sleep(10 * time.Millisecond)
+	}
 	digests := make(map[string]*digestAndType, 0)
 	for i := 0; i < 1000; i++ {
 		c, err := pc.WithIsolation(ctx, interfaces.CASCacheType, "remoteInstanceName")
@@ -845,6 +848,9 @@ func TestDeleteOrphans(t *testing.T) {
 		if rand.Intn(2) == 0 {
 			continue
 		}
+		if bytes.HasPrefix(iter.Key(), pebble_cache.SystemKeyPrefix) {
+			continue
+		}
 		err := db.Delete(iter.Key(), &pebble.WriteOptions{Sync: false})
 		require.NoError(t, err)
 
@@ -878,7 +884,7 @@ func TestDeleteOrphans(t *testing.T) {
 	for _, dt := range deletedDigests {
 		if c, err := pc2.WithIsolation(ctx, dt.cacheType, "remoteInstanceName"); err == nil {
 			_, err := c.Get(ctx, dt.digest)
-			require.True(t, status.IsNotFoundError(err))
+			require.True(t, status.IsNotFoundError(err), "digest %q should not be in the cache", dt.digest.GetHash())
 		}
 	}
 
