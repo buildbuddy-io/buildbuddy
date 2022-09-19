@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
+	"github.com/elastic/gosigar"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
@@ -90,6 +91,7 @@ const (
 	defaultPartitionID           = "default"
 	partitionDirectoryPrefix     = "PT"
 	partitionMetadataFlushPeriod = 5 * time.Second
+	metricsRefreshPeriod         = 30 * time.Second
 
 	// sampleN is the number of random files to sample when adding a new
 	// deletion candidate to the sample pool. Increasing this number
@@ -1256,7 +1258,6 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteClose
 		return err
 	}}
 	return dc, nil
-
 }
 
 func (p *PebbleCache) DoneScanning() bool {
@@ -1914,6 +1915,23 @@ func (p *PebbleCache) periodicFlushPartitionMetadata(quitChan chan struct{}) {
 	}
 }
 
+func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-time.After(metricsRefreshPeriod):
+			fsu := gosigar.FileSystemUsage{}
+			if err := fsu.Get(p.rootDirectory); err != nil {
+				log.Warningf("could not retrieve filesystem stats: %s", err)
+			} else {
+				metrics.DiskCacheFilesystemTotalBytes.Set(float64(fsu.Total))
+				metrics.DiskCacheFilesystemAvailBytes.Set(float64(fsu.Avail))
+			}
+		}
+	}
+}
+
 func (p *PebbleCache) Start() error {
 	p.quitChan = make(chan struct{}, 0)
 	for _, evictor := range p.evictors {
@@ -1941,6 +1959,10 @@ func (p *PebbleCache) Start() error {
 			return p.deleteOrphanedFiles(p.quitChan)
 		})
 	}
+	p.eg.Go(func() error {
+		p.refreshMetrics(p.quitChan)
+		return nil
+	})
 	return nil
 }
 

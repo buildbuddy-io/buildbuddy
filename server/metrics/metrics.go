@@ -382,6 +382,20 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 40),
 	})
 
+	DiskCacheFilesystemTotalBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_filesystem_total_bytes",
+		Help:      "Total size of the underlying filesystem.",
+	})
+
+	DiskCacheFilesystemAvailBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_filesystem_avail_bytes",
+		Help:      "Available bytes in the underlying filesystem.",
+	})
+
 	/// #### Examples
 	///
 	/// ```promql
