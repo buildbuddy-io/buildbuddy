@@ -518,29 +518,31 @@ func TestPostFactoSplit(t *testing.T) {
 	require.NoError(t, err)
 	r1DB, err := r1.TestingDB()
 	require.NoError(t, err)
-	defer r1DB.Close()
-
-	r4, err := s4.GetReplica(2)
-	require.NoError(t, err)
-	r4DB, err := r4.TestingDB()
-	require.NoError(t, err)
-	defer r4DB.Close()
 
 	lastIndexBytes, closer, err := r1DB.Get([]byte(constants.LastAppliedIndexKey))
 	require.NoError(t, err)
 	lastAppliedIndex := bytesToUint64(lastIndexBytes)
 	closer.Close()
+	r1DB.Close()
+
+	r4, err := s4.GetReplica(2)
+	require.NoError(t, err)
 
 	// Wait for raft replication to finish bringing the new node up to date.
 	waitStart := time.Now()
 	for {
-		indexBytes, closer, err := r4DB.Get([]byte(constants.LastAppliedIndexKey))
-		require.NoError(t, err)
-		newReplicaIndex := bytesToUint64(indexBytes)
-		closer.Close()
-		if newReplicaIndex >= lastAppliedIndex {
-			log.Infof("Replica caught up in %s", time.Since(waitStart))
-			break
+		r4DB, err := r4.TestingDB()
+		if err == nil {
+			indexBytes, closer, err := r4DB.Get([]byte(constants.LastAppliedIndexKey))
+			require.NoError(t, err)
+			newReplicaIndex := bytesToUint64(indexBytes)
+			closer.Close()
+			r4DB.Close()
+
+			if newReplicaIndex >= lastAppliedIndex {
+				log.Infof("Replica caught up in %s", time.Since(waitStart))
+				break
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
