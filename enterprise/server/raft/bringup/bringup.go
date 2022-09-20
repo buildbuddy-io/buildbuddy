@@ -450,7 +450,6 @@ func SendStartClusterRequests(ctx context.Context, nodeHost *dragonboat.NodeHost
 			return err
 		}
 		clusterID = clusterIncrResponse.GetValue()
-		log.Printf("clusterID is now: %d", clusterID)
 		nodeIncrResponse, err := rsp.IncrementResponse(1)
 		if err != nil {
 			return err

@@ -708,8 +708,11 @@ func (s *Store) SyncWriter(stream rfspb.Api_SyncWriterServer) error {
 					return err
 				}
 				clusterID := req.GetHeader().GetReplica().GetClusterId()
-				_, err = client.SyncProposeLocal(ctx, s.nodeHost, clusterID, writeReq)
-				return err
+				writeRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, writeReq)
+				if err != nil {
+					return err
+				}
+				return rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 			}}
 			writeCloser = rwc
 		} else {

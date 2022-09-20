@@ -1280,6 +1280,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 						log.Warningf("mid-split, dropping rangelease cmd: %+v", union)
 						continue
 					}
+					log.Errorf("Range locked but got request: %+v", union)
 					return nil, err
 				}
 				defer db.Close()
