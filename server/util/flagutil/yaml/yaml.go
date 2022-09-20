@@ -186,7 +186,7 @@ type Style yaml.Style
 
 func (f *Style) Transform(in any, n *yaml.Node) {
 	if reflect.ValueOf(in).Kind() != reflect.Map {
-		n.Style = yaml.TaggedStyle | yaml.LiteralStyle
+		n.Style |= *(*yaml.Style)(f)
 	}
 }
 
