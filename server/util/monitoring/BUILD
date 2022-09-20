@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/util/basicauth",
+        "//server/util/flagz",
         "//server/util/log",
         "//server/util/statusz",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
