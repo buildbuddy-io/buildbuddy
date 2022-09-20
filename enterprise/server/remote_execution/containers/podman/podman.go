@@ -48,6 +48,7 @@ var (
 	imageStreamingEnabled            = flag.Bool("executor.podman.image_streaming.enabled", false, "Whether container image streaming is enabled by default")
 	imageStreamingRegistryGRPCTarget = flag.String("executor.podman.image_streaming.registry_grpc_target", "", "gRPC endpoint of BuildBuddy registry")
 	imageStreamingRegistryHTTPTarget = flag.String("executor.podman.image_streaming.registry_http_target", "", "HTTP endpoint of the BuildBuddy registry")
+	pullTimeout                      = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -709,7 +710,9 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 	// Use server context instead of ctx to make sure that "podman pull" is not killed when the context
 	// is cancelled. If "podman pull" is killed when copying a parent layer, it will result in
 	// corrupted storage.  More details see https://github.com/containers/storage/issues/1136.
-	pullResult := runPodman(c.env.GetServerContext(), "pull", &container.Stdio{}, podmanArgs...)
+	pullCtx, cancel := context.WithTimeout(c.env.GetServerContext(), *pullTimeout)
+	defer cancel()
+	pullResult := runPodman(pullCtx, "pull", &container.Stdio{}, podmanArgs...)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
