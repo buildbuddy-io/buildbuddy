@@ -373,7 +373,7 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 		eg.Go(func() error {
 			pCopy := make([]byte, len(p))
 			_, dstErr := d.dest.Read(pCopy)
-			if dstErr != nil {
+			if dstErr != nil && dstErr != io.EOF {
 				log.Warningf("Migration dest reader read err: %s", dstErr)
 			}
 			return nil
