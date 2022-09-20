@@ -10,8 +10,6 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	// "github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v3"
 
@@ -26,29 +24,24 @@ func Register(env environment.Env) error {
 	subMux := http.NewServeMux()
 	subMux.Handle("/flagz/", serveRunfileHandler(
 		"enterprise/server/flagz/web/index.html",
-		func(d []byte) []byte { return d },
 	))
 	subMux.Handle("/flagz/editor.js", serveRunfileHandler(
 		"enterprise/server/flagz/web/app_bundle/editor.js",
-		func(d []byte) []byte { return d },
 	))
 	subMux.Handle("/flagz/style.css", serveRunfileHandler(
 		"enterprise/server/flagz/web/style.css",
-		func(d []byte) []byte { return d },
 	))
 	env.GetMux().Handle("/flagz/", subMux)
 	return nil
 }
 
-func serveRunfileHandler(path string, transform func([]byte) []byte) http.HandlerFunc {
+func serveRunfileHandler(path string) http.HandlerFunc {
 	var once sync.Once
 	var data []byte
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
 		once.Do(func() {
-			if data, err = readRunfile(path); err == nil {
-				data = transform(data)
-			}
+			data, err = readRunfile(path)
 		})
 		if err != nil {
 			// retry read on error
@@ -83,17 +76,10 @@ func readRunfile(path string) ([]byte, error) {
 
 type endpoint struct{}
 
-func (e *endpoint) GetFlagz(ctx context.Context, env interfaces.Environment, req *fzpb.GetFlagzRequest) (*fzpb.GetFlagzResponse, error) {
+func (e *endpoint) GetFlagz(ctx context.Context, req *fzpb.GetFlagzRequest) (*fzpb.GetFlagzResponse, error) {
 	if !*enableFlagz {
 		return nil, status.UnavailableError("The flagz endpoint is not curently enabled.")
 	}
-	/*
-		if u, err := perms.AuthenticatedUser(ctx, env); err != nil {
-			return nil, err
-		} else if !u.IsAdmin() {
-			return nil, status.PermissionDeniedError("The flagz endpoint requires admin privileges.")
-		}
-	*/
 	b, err := flagyaml.SplitDocumentedYAMLFromFlags(yaml.TaggedStyle, yaml.LiteralStyle)
 	if err != nil {
 		return nil, err
@@ -101,17 +87,10 @@ func (e *endpoint) GetFlagz(ctx context.Context, env interfaces.Environment, req
 	return &fzpb.GetFlagzResponse{YamlConfig: b}, nil
 }
 
-func (e *endpoint) SetFlagz(ctx context.Context, env interfaces.Environment, req *fzpb.SetFlagzRequest) (*fzpb.SetFlagzResponse, error) {
+func (e *endpoint) SetFlagz(ctx context.Context, req *fzpb.SetFlagzRequest) (*fzpb.SetFlagzResponse, error) {
 	if !*enableFlagz {
 		return nil, status.UnavailableError("The flagz endpoint is not currently enabled.")
 	}
-	/*
-		if u, err := perms.AuthenticatedUser(ctx, env); err != nil {
-			return nil, err
-		} else if !u.IsAdmin() {
-			return nil, status.PermissionDeniedError("The flagz endpoint requires admin privileges.")
-		}
-	*/
 	if err := flagyaml.OverrideFlagsFromData(req.YamlUpdate); err != nil {
 		return nil, err
 	}

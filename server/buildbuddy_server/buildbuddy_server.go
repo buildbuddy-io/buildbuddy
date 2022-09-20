@@ -967,14 +967,14 @@ func (s *BuildBuddyServer) GetFlagz(ctx context.Context, req *fzpb.GetFlagzReque
 	if s.env.GetFlagzEndpoint() == nil {
 		return nil, status.UnimplementedError("The flagz endpoint is unsupported on this server.")
 	}
-	return s.env.GetFlagzEndpoint().GetFlagz(ctx, s.env, req)
+	return s.env.GetFlagzEndpoint().GetFlagz(ctx, req)
 }
 
 func (s *BuildBuddyServer) SetFlagz(ctx context.Context, req *fzpb.SetFlagzRequest) (*fzpb.SetFlagzResponse, error) {
 	if s.env.GetFlagzEndpoint() == nil {
 		return nil, status.UnimplementedError("The flagz endpoint is unsupported on this server.")
 	}
-	return s.env.GetFlagzEndpoint().SetFlagz(ctx, s.env, req)
+	return s.env.GetFlagzEndpoint().SetFlagz(ctx, req)
 }
 
 type bsLookup struct {

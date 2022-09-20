@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"time"
@@ -12,8 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
-	"github.com/go-redis/redis/v8"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -29,133 +26,13 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
-	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
-
-// An interface defining the environment.
-type Environment interface {
-	// The following dependencies are required.
-	GetServerContext() context.Context
-
-	// Optional dependencies below here. For example: enterprise-only things,
-	// or services that may not always be configured, like webhooks.
-	GetDBHandle() DBHandle
-	// GetStaticFilesystem returns the FS that is used to serve from the /static
-	// directory.
-	GetStaticFilesystem() fs.FS
-	// GetAppFilesystem returns the FS used to serve JS and CSS resources needed
-	// by the app, including the app bundle and any lazily loaded JS chunks.
-	GetAppFilesystem() fs.FS
-	GetBlobstore() Blobstore
-	GetInvocationDB() InvocationDB
-	GetHealthChecker() HealthChecker
-	GetAuthenticator() Authenticator
-	SetAuthenticator(a Authenticator)
-	GetWebhooks() []Webhook
-	SetWebhooks([]Webhook)
-	GetBuildEventHandler() BuildEventHandler
-	GetBuildEventProxyClients() []pepb.PublishBuildEventClient
-	SetBuildEventProxyClients([]pepb.PublishBuildEventClient)
-	GetCache() Cache
-	SetCache(Cache)
-	GetUserDB() UserDB
-	GetAuthDB() AuthDB
-	GetInvocationStatService() InvocationStatService
-	GetExecutionService() ExecutionService
-	GetInvocationSearchService() InvocationSearchService
-	GetSplashPrinter() SplashPrinter
-	GetActionCacheClient() repb.ActionCacheClient
-	GetByteStreamClient() bspb.ByteStreamClient
-	GetSchedulerClient() scpb.SchedulerClient
-	GetCapabilitiesClient() repb.CapabilitiesClient
-	GetRemoteExecutionClient() repb.ExecutionClient
-	SetRemoteExecutionClient(repb.ExecutionClient)
-	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
-	GetAPIService() ApiService
-	SetAPIService(ApiService)
-	GetFileCache() FileCache
-	GetRemoteExecutionService() RemoteExecutionService
-	SetRemoteExecutionService(RemoteExecutionService)
-	GetSchedulerService() SchedulerService
-	SetSchedulerService(SchedulerService)
-	GetTaskRouter() TaskRouter
-	SetTaskRouter(TaskRouter)
-	GetTaskSizer() TaskSizer
-	SetTaskSizer(TaskSizer)
-	GetDefaultRedisClient() redis.UniversalClient
-	SetDefaultRedisClient(redis.UniversalClient)
-	GetRemoteExecutionRedisClient() redis.UniversalClient
-	SetRemoteExecutionRedisClient(redis.UniversalClient)
-	GetRemoteExecutionRedisPubSubClient() redis.UniversalClient
-	SetRemoteExecutionRedisPubSubClient(redis.UniversalClient)
-	GetMetricsCollector() MetricsCollector
-	SetMetricsCollector(MetricsCollector)
-	GetKeyValStore() KeyValStore
-	SetKeyValStore(KeyValStore)
-	GetRepoDownloader() RepoDownloader
-	GetWorkflowService() WorkflowService
-	GetRunnerService() RunnerService
-	GetGitProviders() GitProviders
-	GetUsageService() UsageService
-	SetUsageService(UsageService)
-	GetUsageTracker() UsageTracker
-	SetUsageTracker(UsageTracker)
-	GetXcodeLocator() XcodeLocator
-	SetQuotaManager(QuotaManager)
-	GetQuotaManager() QuotaManager
-	// GetFileResolver returns an FS that can be used to read server-side
-	// resources that aren't intended to be directly served to end users. It first
-	// consults the bundle and falls back to runfiles.
-	//
-	// See server/util/fileresolver/fileresolver.go
-	GetFileResolver() fs.FS
-	GetMux() HttpServeMux
-	SetMux(HttpServeMux)
-	GetInternalHTTPMux() HttpServeMux
-	SetInternalHTTPMux(mux HttpServeMux)
-	GetListenAddr() string
-	SetListenAddr(string)
-	GetBuildBuddyServer() BuildBuddyServer
-	SetBuildBuddyServer(BuildBuddyServer)
-	GetSSLService() SSLService
-	SetSSLService(SSLService)
-	GetBuildEventServer() pepb.PublishBuildEventServer
-	SetBuildEventServer(pepb.PublishBuildEventServer)
-	GetCASServer() repb.ContentAddressableStorageServer
-	SetCASServer(repb.ContentAddressableStorageServer)
-	GetByteStreamServer() bspb.ByteStreamServer
-	SetByteStreamServer(bspb.ByteStreamServer)
-	GetActionCacheServer() repb.ActionCacheServer
-	SetActionCacheServer(repb.ActionCacheServer)
-	GetPushServer() rapb.PushServer
-	SetPushServer(rapb.PushServer)
-	GetFetchServer() rapb.FetchServer
-	SetFetchServer(rapb.FetchServer)
-	GetCapabilitiesServer() repb.CapabilitiesServer
-	SetCapabilitiesServer(repb.CapabilitiesServer)
-	GetGRPCServer() *grpc.Server
-	SetGRPCServer(*grpc.Server)
-	GetGRPCSServer() *grpc.Server
-	GetInternalGRPCServer() *grpc.Server
-	SetInternalGRPCServer(*grpc.Server)
-	GetInternalGRPCSServer() *grpc.Server
-	SetInternalGRPCSServer(*grpc.Server)
-	SetGRPCSServer(*grpc.Server)
-	GetRegistryServer() rgpb.RegistryServer
-	SetRegistryServer(r rgpb.RegistryServer)
-	GetFlagzEndpoint() FlagzEndpoint
-	SetFlagzEndpoint(FlagzEndpoint)
-	GetOLAPDBHandle() OLAPDBHandle
-	SetOLAPDBHandle(dbh OLAPDBHandle)
-}
 
 //An interface representing a mux for handling/serving http requests.
 type HttpServeMux interface {
@@ -1016,6 +893,6 @@ type CommittedMetadataWriteCloser interface {
 
 // An interface representing a flagz endpoint.
 type FlagzEndpoint interface {
-	GetFlagz(ctx context.Context, env Environment, req *fzpb.GetFlagzRequest) (*fzpb.GetFlagzResponse, error)
-	SetFlagz(ctx context.Context, env Environment, req *fzpb.SetFlagzRequest) (*fzpb.SetFlagzResponse, error)
+	GetFlagz(ctx context.Context, req *fzpb.GetFlagzRequest) (*fzpb.GetFlagzResponse, error)
+	SetFlagz(ctx context.Context, req *fzpb.SetFlagzRequest) (*fzpb.SetFlagzResponse, error)
 }

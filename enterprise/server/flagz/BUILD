@@ -13,7 +13,6 @@ go_library(
     deps = [
         "//proto:flagz_go_proto",
         "//server/environment",
-        "//server/interfaces",
         "//server/util/flagutil/yaml",
         "//server/util/status",
         "@in_gopkg_yaml_v3//:yaml_v3",
