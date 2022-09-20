@@ -92,6 +92,7 @@ func (l *leaser) Close() {
 func (l *leaser) AcquireSplitLock() {
 	l.splitMu.Lock()
 	defer l.splitMu.Unlock()
+	l.waiters.Wait()
 	l.splitting = true
 }
 
