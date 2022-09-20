@@ -538,7 +538,7 @@ func TestPostFactoSplit(t *testing.T) {
 			newReplicaIndex := bytesToUint64(indexBytes)
 			closer.Close()
 			r4DB.Close()
-			
+
 			if newReplicaIndex >= lastAppliedIndex {
 				log.Infof("Replica caught up in %s", time.Since(waitStart))
 				break
