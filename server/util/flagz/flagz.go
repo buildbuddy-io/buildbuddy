@@ -25,8 +25,8 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for key, values := range r.URL.Query() {
 		if len(values) > 1 {
 			// Flagz endpoint does not support setting flag to multiple values.
-			log.Errorf("Attempted to set flag %s to multiple values via flagz interface.", key)
-			http.Error(w, "Flag "+key+" specifies more than one value.", http.StatusBadRequest)
+			errorText := fmt.Sprintf("Flag %s specifies more than one value.", key)
+			http.Error(w, errorText, http.StatusBadRequest)
 			return
 		}
 		flg := flag.Lookup(key)
