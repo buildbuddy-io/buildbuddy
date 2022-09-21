@@ -39,7 +39,7 @@ type MigrationCache struct {
 	maxCopiesPerSec             int
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
-	numCopiesDropped            int64
+	numCopiesDropped            *int64
 }
 
 func Register(env environment.Env) error {
@@ -74,6 +74,7 @@ func Register(env environment.Env) error {
 }
 
 func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
+	zero := int64(0)
 	return &MigrationCache{
 		src:                         srcCache,
 		dest:                        destCache,
@@ -83,6 +84,7 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		maxCopiesPerSec:             migrationConfig.MaxCopiesPerSec,
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
+		numCopiesDropped:            &zero,
 	}
 }
 
@@ -572,16 +574,16 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 }
 
 func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Digest) {
-	//alreadyCopied, err := mc.dest.Contains(ctx, d)
-	//if err != nil {
-	//	log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
-	//	return
-	//}
-	//
-	//if alreadyCopied {
-	//	return
-	//}
-	//
+	alreadyCopied, err := mc.dest.Contains(ctx, d)
+	if err != nil {
+		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
+		return
+	}
+
+	if alreadyCopied {
+		return
+	}
+
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
@@ -591,7 +593,7 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Diges
 	}:
 	default:
 		cancel()
-		mc.numCopiesDropped++
+		*mc.numCopiesDropped++
 	}
 }
 
@@ -660,9 +662,10 @@ func (mc *MigrationCache) logCopyChanFullInBackground() error {
 		case <-mc.quitChan:
 			return nil
 		case <-ticker.C:
-			if mc.numCopiesDropped != 0 {
-				log.Warningf("Migration copy chan was full and dropped %d copies in %d min. May need to increase buffer size", mc.numCopiesDropped, mc.copyChanFullWarningInterval)
-				mc.numCopiesDropped = 0
+			if *mc.numCopiesDropped != 0 {
+				log.Warningf("Migration copy chan was full and dropped %d copies in %v. May need to increase buffer size", *mc.numCopiesDropped, mc.copyChanFullWarningInterval)
+				zero := int64(0)
+				mc.numCopiesDropped = &zero
 			}
 		}
 	}
