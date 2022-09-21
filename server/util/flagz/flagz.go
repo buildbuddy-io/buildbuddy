@@ -7,7 +7,6 @@ import (
 	"reflect"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
@@ -48,7 +47,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		blankValue := reflect.New(addr.Type().Elem()).Interface().(flag.Value)
 		if len(values) > 0 {
 			if err := blankValue.Set(values[0]); err != nil {
-				errorText := fmt.Sprintf("Encountered error setting flag %s to %s via flagz interface: %s", key, values[0], err)
+				errorText := fmt.Sprintf("Encountered error setting flag %s to %s: %s", key, values[0], err)
 				http.Error(w, errorText, http.StatusInternalServerError)
 				return
 			}
@@ -58,7 +57,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// (the type which would be returned when defining the flag initially).
 		newValue, err := flagtypes.ConvertFlagValue(blankValue)
 		if err != nil {
-			errorText := fmt.Sprintf("Error converting flag %s when setting flag via flagz interface: %s", key, err)
+			errorText := fmt.Sprintf("Error converting flag %s when setting flag: %s", key, err)
 			http.Error(w, errorText, http.StatusInternalServerError)
 			return
 		}
@@ -68,7 +67,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			appendSlice = true
 		}
 		if err := flagutil.SetValueForFlagName(key, reflect.ValueOf(newValue).Elem().Interface(), map[string]struct{}{}, appendSlice); err != nil {
-			errorText := fmt.Sprintf("Error setting flag %s when setting flag via flagz interface: %s", key, err)
+			errorText := fmt.Sprintf("Error setting flag %s: %s", key, err)
 			http.Error(w, errorText, http.StatusInternalServerError)
 			return
 		}
@@ -76,8 +75,8 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	b, err := flagyaml.SplitDocumentedYAMLFromFlags()
 	if err != nil {
-		log.Errorf("Encountered error when attempting to generate YAML for flagz endpoint: %s", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		errorText := fmt.Sprintf("Encountered error when attempting to generate YAML: %s", err)
+		http.Error(w, errorText, http.StatusInternalServerError)
 		return
 	}
 	w.Write(b)
