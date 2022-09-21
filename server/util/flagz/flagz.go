@@ -22,10 +22,16 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// times in the query via, for example, FlagAlias.
 	set := make(map[flag.Value]struct{})
 	for key, values := range r.URL.Query() {
+		if len(values) > 1 {
+			// Flagz endpoint does not support setting flag to multiple values.
+			log.Errorf("Attempted to set flag %s to multiple values via flagz interface.", key)
+			http.Error(w, "Flag "+key+" specifies more than one value.", http.StatusBadRequest)
+			return
+		}
 		flg := flag.Lookup(key)
 		if flg == nil {
 			log.Errorf("Attempted to change non-existent flag %s via flagz interface.", key)
-			http.Error(w, "Flag " + key + " does not exist.", http.StatusBadRequest)
+			http.Error(w, "Flag "+key+" does not exist.", http.StatusBadRequest)
 			return
 		}
 
@@ -39,16 +45,12 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// flag.Value interface's Set method, so it can be set with a string like we
 		// would use on the command line.
 		blankValue := reflect.New(addr.Type().Elem()).Interface().(flag.Value)
-		var err error
-		for _, value := range values {
-			if err = blankValue.Set(value); err != nil {
-				log.Errorf("Encountered error setting flag %s to %s via flagz interface: %v", key, value, err)
+		if len(values) > 0 {
+			if err := blankValue.Set(values[0]); err != nil {
+				log.Errorf("Encountered error setting flag %s to %s via flagz interface: %v", key, values[0], err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-		}
-		if err != nil {
-			continue
 		}
 
 		// Take the previously blank value and convert it to the underlying type
