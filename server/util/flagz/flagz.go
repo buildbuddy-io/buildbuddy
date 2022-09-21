@@ -2,6 +2,7 @@ package flagz
 
 import (
 	"flag"
+	"fmt"
 	"net/http"
 	"reflect"
 
@@ -30,8 +31,8 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		flg := flag.Lookup(key)
 		if flg == nil {
-			log.Errorf("Attempted to change non-existent flag %s via flagz interface.", key)
-			http.Error(w, "Flag "+key+" does not exist.", http.StatusBadRequest)
+			errorText := fmt.Sprintf("Flag %s does not exist.", key)
+			http.Error(w, errorText, http.StatusBadRequest)
 			return
 		}
 
@@ -47,8 +48,8 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		blankValue := reflect.New(addr.Type().Elem()).Interface().(flag.Value)
 		if len(values) > 0 {
 			if err := blankValue.Set(values[0]); err != nil {
-				log.Errorf("Encountered error setting flag %s to %s via flagz interface: %v", key, values[0], err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				errorText := fmt.Sprintf("Encountered error setting flag %s to %s via flagz interface: %s", key, values[0], err)
+				http.Error(w, errorText, http.StatusInternalServerError)
 				return
 			}
 		}
@@ -57,8 +58,8 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// (the type which would be returned when defining the flag initially).
 		newValue, err := flagtypes.ConvertFlagValue(blankValue)
 		if err != nil {
-			log.Errorf("Error converting flag %s when setting flag via flagz interface: %v", key, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			errorText := fmt.Sprintf("Error converting flag %s when setting flag via flagz interface: %s", key, err)
+			http.Error(w, errorText, http.StatusInternalServerError)
 			return
 		}
 		appendSlice := false
@@ -67,15 +68,15 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			appendSlice = true
 		}
 		if err := flagutil.SetValueForFlagName(key, reflect.ValueOf(newValue).Elem().Interface(), map[string]struct{}{}, appendSlice); err != nil {
-			log.Errorf("Error setting flag %s when setting flag via flagz interface: %v", key, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			errorText := fmt.Sprintf("Error setting flag %s when setting flag via flagz interface: %s", key, err)
+			http.Error(w, errorText, http.StatusInternalServerError)
 			return
 		}
 		set[unwrappedValue] = struct{}{}
 	}
 	b, err := flagyaml.SplitDocumentedYAMLFromFlags()
 	if err != nil {
-		log.Errorf("Encountered error when attempting to generate YAML for flagz endpoint: %v", err)
+		log.Errorf("Encountered error when attempting to generate YAML for flagz endpoint: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
