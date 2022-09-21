@@ -6,6 +6,7 @@ import (
 	"net/http/pprof"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/basicauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -39,6 +40,9 @@ func RegisterMonitoringHandlers(mux *http.ServeMux) {
 
 	// Statusz page
 	handle("/statusz", statusz.Server())
+
+	// Flagz page
+	handle("/flagz", http.HandlerFunc(flagz.ServeHTTP))
 }
 
 // StartMonitoringHandler enables the prometheus and pprof monitoring handlers
