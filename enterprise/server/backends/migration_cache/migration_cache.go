@@ -36,8 +36,10 @@ type MigrationCache struct {
 	eg       *errgroup.Group
 	quitChan chan struct{}
 
-	maxCopiesPerSec int
-	copyChan        chan *copyData
+	maxCopiesPerSec             int
+	copyChan                    chan *copyData
+	copyChanFullWarningInterval time.Duration
+	numCopiesDropped            int64
 }
 
 func Register(env environment.Env) error {
@@ -73,13 +75,14 @@ func Register(env environment.Env) error {
 
 func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
 	return &MigrationCache{
-		src:                  srcCache,
-		dest:                 destCache,
-		doubleReadPercentage: migrationConfig.DoubleReadPercentage,
-		logNotFoundErrors:    migrationConfig.LogNotFoundErrors,
-		copyChan:             make(chan *copyData, migrationConfig.CopyChanBufferSize),
-		maxCopiesPerSec:      migrationConfig.MaxCopiesPerSec,
-		eg:                   &errgroup.Group{},
+		src:                         srcCache,
+		dest:                        destCache,
+		doubleReadPercentage:        migrationConfig.DoubleReadPercentage,
+		logNotFoundErrors:           migrationConfig.LogNotFoundErrors,
+		copyChan:                    make(chan *copyData, migrationConfig.CopyChanBufferSize),
+		maxCopiesPerSec:             migrationConfig.MaxCopiesPerSec,
+		eg:                          &errgroup.Group{},
+		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 	}
 }
 
@@ -385,7 +388,7 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 	srcN, srcErr := d.src.Read(p)
 
 	eg.Wait()
-	if dstErr != srcErr {
+	if dstErr != nil && dstErr != srcErr {
 		log.Warningf("Migration read err, src err: %s, dest err: %s", srcErr, dstErr)
 	}
 
@@ -569,6 +572,16 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 }
 
 func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Digest) {
+	//alreadyCopied, err := mc.dest.Contains(ctx, d)
+	//if err != nil {
+	//	log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
+	//	return
+	//}
+	//
+	//if alreadyCopied {
+	//	return
+	//}
+	//
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
@@ -578,7 +591,7 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Diges
 	}:
 	default:
 		cancel()
-		log.Warningf("Migration copy chan is full. We may need to increase the buffer size. Dropping attempt to copy digest %v", d)
+		mc.numCopiesDropped++
 	}
 }
 
@@ -623,6 +636,7 @@ type copyData struct {
 
 func (mc *MigrationCache) copyDataInBackground() error {
 	rateLimiter := rate.NewLimiter(rate.Every(time.Second), mc.maxCopiesPerSec)
+
 	for {
 		if err := rateLimiter.Wait(context.Background()); err != nil {
 			return err
@@ -637,18 +651,25 @@ func (mc *MigrationCache) copyDataInBackground() error {
 	}
 }
 
+func (mc *MigrationCache) logCopyChanFullInBackground() error {
+	ticker := time.NewTicker(mc.copyChanFullWarningInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-mc.quitChan:
+			return nil
+		case <-ticker.C:
+			if mc.numCopiesDropped != 0 {
+				log.Warningf("Migration copy chan was full and dropped %d copies in %d min. May need to increase buffer size", mc.numCopiesDropped, mc.copyChanFullWarningInterval)
+				mc.numCopiesDropped = 0
+			}
+		}
+	}
+}
+
 func (mc *MigrationCache) copy(c *copyData) {
 	defer c.ctxCancel()
-
-	alreadyCopied, err := mc.dest.Contains(c.ctx, c.d)
-	if err != nil {
-		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
-		return
-	}
-
-	if alreadyCopied {
-		return
-	}
 
 	srcReader, err := mc.src.Reader(c.ctx, c.d, 0, 0)
 	if err != nil {
@@ -677,6 +698,12 @@ func (mc *MigrationCache) Start() error {
 		mc.copyDataInBackground()
 		return nil
 	})
+	if mc.copyChanFullWarningInterval > 0 {
+		mc.eg.Go(func() error {
+			mc.logCopyChanFullInBackground()
+			return nil
+		})
+	}
 	return nil
 }
 
