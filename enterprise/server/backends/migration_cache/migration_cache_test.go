@@ -450,6 +450,56 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 	eg.Wait()
 }
 
+func TestCopyDataInBackground_RateLimit(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize: 10,
+		MaxCopiesPerSec:    1,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	eg, ctx := errgroup.WithContext(ctx)
+	lock := sync.RWMutex{}
+	start := time.Now()
+
+	for i := 0; i < 2; i++ {
+		eg.Go(func() error {
+			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			lock.Lock()
+			defer lock.Unlock()
+
+			err = srcCache.Set(ctx, d, buf)
+			require.NoError(t, err)
+
+			// Get should queue copy in background
+			data, err := mc.Get(ctx, d)
+			require.NoError(t, err)
+			require.True(t, bytes.Equal(buf, data))
+
+			// Expect copy
+			waitForCopy(t, ctx, destCache, d)
+			return nil
+		})
+	}
+	eg.Wait()
+
+	// Should wait at least 1 second before the second digest is copied
+	require.True(t, time.Since(start) >= 1*time.Second)
+}
+
 func TestContains(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)

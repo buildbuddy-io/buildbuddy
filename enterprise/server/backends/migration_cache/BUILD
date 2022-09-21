@@ -23,6 +23,7 @@ go_library(
         "//server/util/status",
         "@com_github_pkg_errors//:errors",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_time//rate",
     ],
 )
 
