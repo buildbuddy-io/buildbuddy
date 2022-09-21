@@ -33,6 +33,7 @@ go_library(
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/resources",
+        "//server/ssl",
         "//server/util/fileresolver",
         "//server/util/flagutil/yaml",
         "//server/util/grpc_client",

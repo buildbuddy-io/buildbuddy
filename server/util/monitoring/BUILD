@@ -6,8 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/monitoring",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/environment",
         "//server/util/basicauth",
         "//server/util/log",
+        "//server/util/status",
         "//server/util/statusz",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
     ],

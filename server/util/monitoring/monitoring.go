@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"net/http/pprof"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/basicauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -58,4 +60,25 @@ func StartMonitoringHandler(hostPort string) {
 			log.Fatal(err.Error())
 		}
 	}()
+}
+
+func StartSSLMonitoringHandler(env environment.Env, hostPort string) error {
+	ssl := env.GetSSLService()
+	if !ssl.IsEnabled() {
+		return status.InvalidArgumentError("ssl must be enabled in config to use SSL monitoring")
+	}
+	mux := http.NewServeMux()
+	RegisterMonitoringHandlers(mux)
+	tlsConfig, _ := ssl.ConfigureTLS(mux)
+	s := &http.Server{
+		Addr:      hostPort,
+		Handler:   mux,
+		TLSConfig: tlsConfig,
+	}
+
+	go func() {
+		log.Infof("Enabling monitoring (pprof/prometheus) interface with SSL on https://%s", hostPort)
+		s.ListenAndServeTLS("", "")
+	}()
+	return nil
 }
