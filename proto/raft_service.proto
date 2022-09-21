@@ -40,5 +40,4 @@ service Api {
   // to true at which point it will indicate how many bytes were written on the
   // server.
   rpc Write(stream WriteRequest) returns (stream WriteResponse);
-  rpc SyncWriter(stream WriteRequest) returns (stream WriteResponse);
 }
