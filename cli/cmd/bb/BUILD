@@ -6,6 +6,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "bb_lib",
     srcs = ["bb.go"],
+    data = [
+        "//cli/cmd/sidecar",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/bb",
     visibility = ["//visibility:private"],
     deps = [

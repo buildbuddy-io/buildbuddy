@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//cli/download",
         "//cli/logging",
+        "//cli/sidecar_bundle",
         "@org_golang_x_mod//semver",
     ],
 )
