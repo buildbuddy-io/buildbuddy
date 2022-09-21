@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -86,6 +88,14 @@ func (c *errorCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.
 
 func (c *errorCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	return nil, errors.New("error cache findmissing err")
+}
+
+func (c *errorCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+	return nil, errors.New("error cache writer err")
+}
+
+func (c *errorCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	return nil, errors.New("error cache reader err")
 }
 
 func TestACIsolation(t *testing.T) {
@@ -725,4 +735,115 @@ func TestDelete(t *testing.T) {
 
 	data, err = destCache.Get(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestReadWrite(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	require.NoError(t, err)
+	destCache.Start()
+	defer destCache.Stop()
+	config := &migration_cache.MigrationConfig{
+		DoubleReadPercentage: 1.0,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	testSizes := []int64{
+		1, 10, 100, 1000, 10000, 1000000, 10000000,
+	}
+	for _, testSize := range testSizes {
+		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
+		w, err := mc.Writer(ctx, d)
+		require.NoError(t, err)
+
+		_, err = w.Write(buf)
+		require.NoError(t, err)
+
+		err = w.Close()
+		require.NoError(t, err)
+
+		reader, err := mc.Reader(ctx, d, 0, 0)
+		require.NoError(t, err)
+
+		actualBuf := make([]byte, len(buf))
+		n, err := reader.Read(actualBuf)
+		require.NoError(t, err)
+		require.Equal(t, int(testSize), n)
+		require.True(t, bytes.Equal(buf, actualBuf))
+
+		err = reader.Close()
+		require.NoError(t, err)
+
+		// Verify data was written to both caches
+		srcReader, err := srcCache.Reader(ctx, d, 0, 0)
+		require.NoError(t, err)
+
+		actualBuf = make([]byte, len(buf))
+		n, err = srcReader.Read(actualBuf)
+		require.NoError(t, err)
+		require.Equal(t, int(testSize), n)
+		require.True(t, bytes.Equal(buf, actualBuf))
+
+		err = srcReader.Close()
+		require.NoError(t, err)
+
+		destReader, err := destCache.Reader(ctx, d, 0, 0)
+		require.NoError(t, err)
+
+		actualBuf = make([]byte, len(buf))
+		n, err = destReader.Read(actualBuf)
+		require.NoError(t, err)
+		require.Equal(t, int(testSize), n)
+		require.True(t, bytes.Equal(buf, actualBuf))
+
+		err = destReader.Close()
+		require.NoError(t, err)
+	}
+}
+
+func TestReaderWriter_DestFails(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache := &errorCache{}
+	config := &migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	// Will fail to set a dest writer
+	w, err := mc.Writer(ctx, d)
+	require.NoError(t, err)
+
+	// Should still write data to src cache without error
+	_, err = w.Write(buf)
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
+
+	// Will fail to set a dest reader
+	reader, err := mc.Reader(ctx, d, 0, 0)
+	require.NoError(t, err)
+
+	// Should still read from src cache without error
+	actualBuf := make([]byte, len(buf))
+	n, err := reader.Read(actualBuf)
+	require.NoError(t, err)
+	require.Equal(t, 100, n)
+	require.True(t, bytes.Equal(buf, actualBuf))
 }

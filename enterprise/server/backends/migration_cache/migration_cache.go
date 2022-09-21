@@ -361,15 +361,174 @@ func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return srcErr
 }
 
+type doubleReader struct {
+	src  io.ReadCloser
+	dest io.ReadCloser
+}
+
+func (d *doubleReader) Read(p []byte) (n int, err error) {
+	var dstErr error
+	eg := &errgroup.Group{}
+
+	if d.dest != nil {
+		eg.Go(func() error {
+			pCopy := make([]byte, len(p))
+			_, dstErr = d.dest.Read(pCopy)
+			return nil
+		})
+	}
+
+	srcN, srcErr := d.src.Read(p)
+
+	eg.Wait()
+	if dstErr != srcErr {
+		log.Warningf("Migration read err, src err: %s, dest err: %s", srcErr, dstErr)
+	}
+
+	return srcN, srcErr
+}
+
+func (d *doubleReader) Close() error {
+	eg := &errgroup.Group{}
+	if d.dest != nil {
+		eg.Go(func() error {
+			dstErr := d.dest.Close()
+			if dstErr != nil {
+				log.Warningf("Migration dest reader close err: %s", dstErr)
+			}
+			return nil
+		})
+	}
+
+	srcErr := d.src.Close()
+	eg.Wait()
+
+	return srcErr
+}
+
 func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	return nil, status.UnimplementedError("not yet implemented")
+	eg := &errgroup.Group{}
+	var dstErr error
+	var destReader io.ReadCloser
+
+	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+	if doubleRead {
+		eg.Go(func() error {
+			destReader, dstErr = mc.dest.Reader(ctx, d, offset, limit)
+			if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
+				log.Warningf("%v reader failed for dest cache: %s", d, dstErr)
+			}
+			return nil
+		})
+	}
+
+	srcReader, srcErr := mc.src.Reader(ctx, d, offset, limit)
+	eg.Wait()
+
+	if srcErr != nil {
+		if destReader != nil {
+			err := destReader.Close()
+			if err != nil {
+				log.Warningf("Migration dest reader close err: %s", err)
+			}
+		}
+		return nil, srcErr
+	}
+
+	mc.sendNonBlockingCopy(ctx, d)
+
+	return &doubleReader{
+		src:  srcReader,
+		dest: destReader,
+	}, nil
+}
+
+type doubleWriter struct {
+	src          io.WriteCloser
+	dest         io.WriteCloser
+	destDeleteFn func()
+}
+
+func (d *doubleWriter) Write(data []byte) (int, error) {
+	eg := &errgroup.Group{}
+	if d.dest != nil {
+		eg.Go(func() error {
+			_, dstErr := d.dest.Write(data)
+			if dstErr != nil {
+				log.Warningf("Migration failure writing digest %v to dest cache: %s", d, dstErr)
+			}
+			return dstErr
+		})
+	}
+
+	srcN, srcErr := d.src.Write(data)
+
+	destErr := eg.Wait()
+	if srcErr != nil && destErr == nil {
+		// If error during write to source cache (source of truth), must delete from destination cache
+		d.destDeleteFn()
+	}
+
+	return srcN, srcErr
+}
+
+func (d *doubleWriter) Close() error {
+	eg := &errgroup.Group{}
+	if d.dest != nil {
+		eg.Go(func() error {
+			dstErr := d.dest.Close()
+			if dstErr != nil {
+				log.Warningf("Migration writer close err: %s", dstErr)
+			}
+			return nil
+		})
+	}
+
+	srcErr := d.src.Close()
+	eg.Wait()
+
+	return srcErr
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
-	return nil, status.UnimplementedError("not yet implemented")
+	eg := &errgroup.Group{}
+	var dstErr error
+	var destWriter io.WriteCloser
+
+	eg.Go(func() error {
+		destWriter, dstErr = mc.dest.Writer(ctx, d)
+		return nil
+	})
+
+	srcWriter, srcErr := mc.src.Writer(ctx, d)
+	eg.Wait()
+
+	if srcErr != nil {
+		if destWriter == nil {
+			err := destWriter.Close()
+			if err != nil {
+				log.Warningf("Migration dest writer close err: %s", err)
+			}
+		}
+		return nil, srcErr
+	}
+	if dstErr != nil {
+		log.Warningf("Migration failure creating dest %v writer: %s", d, dstErr)
+	}
+
+	dw := &doubleWriter{
+		src:  srcWriter,
+		dest: destWriter,
+		destDeleteFn: func() {
+			deleteErr := mc.dest.Delete(ctx, d)
+			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
+				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", d, deleteErr)
+			}
+		},
+	}
+	return dw, nil
 }
 
-// TODO(Maggie): Add copying logic
 func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
@@ -399,7 +558,6 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 		}
 	}
 
-	// Enqueue non-blocking copying
 	mc.sendNonBlockingCopy(ctx, d)
 
 	// Return data from source cache
@@ -490,15 +648,17 @@ func (mc *MigrationCache) copy(c *copyData) {
 		}
 		return
 	}
+	defer srcReader.Close()
 
 	destWriter, err := mc.dest.Writer(c.ctx, c.d)
-	if _, err = io.Copy(destWriter, srcReader); err != nil {
-		log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
+	if err != nil {
+		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return
 	}
+	defer destWriter.Close()
 
-	if err := destWriter.Close(); err != nil {
-		log.Warningf("Migration copy err: Could not close %v writer to dest cache: %s", c.d, err)
+	if _, err = io.Copy(destWriter, srcReader); err != nil {
+		log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
 	}
 }
 
