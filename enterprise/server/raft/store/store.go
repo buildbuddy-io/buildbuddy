@@ -63,6 +63,7 @@ type Store struct {
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
+	log           log.Logger
 
 	rangeMu    sync.RWMutex
 	openRanges map[uint64]*rfpb.RangeDescriptor
@@ -85,6 +86,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		registry:      registry,
 		apiClient:     apiClient,
 		liveness:      nodeliveness.New(nodeHost.ID(), sender),
+		log:           log.NamedSubLogger(nodeHost.ID()),
 
 		rangeMu:    sync.RWMutex{},
 		openRanges: make(map[uint64]*rfpb.RangeDescriptor),
@@ -195,7 +197,7 @@ func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 
 func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 	if len(rd.GetReplicas()) == 0 {
-		log.Debugf("Not acquiring range %d lease: no replicas", rd.GetRangeId())
+		s.log.Debugf("Not acquiring range %d lease: no replicas", rd.GetRangeId())
 		return
 	}
 
@@ -223,7 +225,7 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 		if err == nil {
 			break
 		}
-		log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
+		s.log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
 	}
 }
 
@@ -251,10 +253,10 @@ func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
 func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	log.Debugf("%q adding range: %d: [%q, %q)", s.nodeHost.ID(), rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
+	s.log.Debugf("%q adding range: %d: [%q, %q)", s.nodeHost.ID(), rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
 	_, loaded := s.replicas.LoadOrStore(rd.GetRangeId(), r)
 	if loaded {
-		log.Warningf("AddRange stomped on another range. Did you forget to call RemoveRange?")
+		s.log.Warningf("AddRange stomped on another range. Did you forget to call RemoveRange?")
 	}
 
 	s.rangeMu.Lock()
@@ -262,12 +264,12 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.rangeMu.Unlock()
 
 	if len(rd.GetReplicas()) == 0 {
-		log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
+		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
 		return
 	}
 
 	if rd.GetLeft() == nil && rd.GetRight() == nil {
-		log.Debugf("range %d has no bounds (yet?)", rd.GetRangeId())
+		s.log.Debugf("range %d has no bounds (yet?)", rd.GetRangeId())
 		return
 	}
 
@@ -276,7 +278,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		// of that fact.
 		buf, err := proto.Marshal(rd)
 		if err != nil {
-			log.Errorf("Error marshaling metarange descriptor: %s", err)
+			s.log.Errorf("Error marshaling metarange descriptor: %s", err)
 			return
 		}
 		go s.gossipManager.SetTags(map[string]string{constants.MetaRangeTag: string(buf)})
@@ -287,7 +289,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
-	log.Debugf("%q remove range: %d: [%q, %q)", s.nodeHost.ID(), rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
+	s.log.Debugf("%q remove range: %d: [%q, %q)", s.nodeHost.ID(), rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
 	s.replicas.Delete(rd.GetRangeId())
 
 	s.rangeMu.Lock()
@@ -295,7 +297,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.rangeMu.Unlock()
 
 	if len(rd.GetReplicas()) == 0 {
-		log.Debugf("range descriptor had no replicas yet")
+		s.log.Debugf("range descriptor had no replicas yet")
 		return
 	}
 
@@ -452,7 +454,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 
 	err, ok := <-waitErr
 	if ok && err != nil {
-		log.Errorf("Got a WaitForClusterReady error: %s", err)
+		s.log.Errorf("Got a WaitForClusterReady error: %s", err)
 		return nil, err
 	}
 
@@ -492,7 +494,21 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
+	r, err := s.GetReplica(req.GetHeader().GetRangeId())
+	if err != nil {
+		return nil, err
+	}
 	clusterID := req.GetHeader().GetReplica().GetClusterId()
+	// Normal Read or Write RPCs to the replica will acquire a lease on the
+	// DB which will fail during splitting. SyncPropose, however, proposes
+	// a cmd to the raft statemachine, which (with some exceptions), cannot
+	// apply during a split. To avoid SyncProposing anything into the raft
+	// log during a range split, we check here if the replica is splitting
+	// before doing the syncPropose.
+	if r.IsSplitting() {
+		return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, clusterID)
+	}
+
 	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, req.GetBatch())
 	if err != nil {
 		if err == dragonboat.ErrClusterNotFound {
@@ -686,7 +702,7 @@ func (s *Store) renewNodeLiveness() {
 		if err == nil {
 			return
 		}
-		log.Errorf("Error leasing node liveness record: %s", err)
+		s.log.Errorf("Error leasing node liveness record: %s", err)
 		time.Sleep(time.Second)
 	}
 }
@@ -700,7 +716,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	if nodeHostInfo != nil {
 		for _, logInfo := range nodeHostInfo.LogInfo {
 			if pq.GetTargetClusterId() == logInfo.ClusterID {
-				log.Debugf("%q ignoring placement query: already have cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
+				s.log.Debugf("%q ignoring placement query: already have cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
 				return
 			}
 		}
@@ -710,7 +726,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	member := s.gossipManager.LocalMember()
 	usageBuf, ok := member.Tags[constants.NodeUsageTag]
 	if !ok {
-		log.Errorf("Ignoring placement query: couldn't determine node usage")
+		s.log.Errorf("Ignoring placement query: couldn't determine node usage")
 		return
 	}
 	usage := &rfpb.NodeUsage{}
@@ -719,7 +735,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	}
 	myDiskUsage := float64(usage.GetDiskBytesUsed()) / float64(usage.GetDiskBytesTotal())
 	if myDiskUsage > maximumDiskCapacity {
-		log.Debugf("Ignoring placement query: node is over capacity")
+		s.log.Debugf("Ignoring placement query: node is over capacity")
 		return
 	}
 
@@ -728,7 +744,7 @@ func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 		return
 	}
 	if err := query.Respond(nodeBuf); err != nil {
-		log.Errorf("Error responding to gossip query: %s", err)
+		s.log.Errorf("Error responding to gossip query: %s", err)
 	}
 }
 
@@ -1086,7 +1102,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		Left:  newLeft,
 		Right: newRight,
 	}
-	log.Infof("SplitResponse: %+v", splitRsp)
+	s.log.Infof("SplitResponse: %+v", splitRsp)
 	return splitRsp, nil
 }
 
@@ -1240,13 +1256,13 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 
 	grpcAddr, _, err := s.registry.ResolveGRPC(clusterID, nodeID)
 	if err != nil {
-		log.Errorf("error resolving grpc addr for c%dn%d: %s", clusterID, nodeID, err)
+		s.log.Errorf("error resolving grpc addr for c%dn%d: %s", clusterID, nodeID, err)
 		return nil, err
 	}
 	// Remove the data from the now stopped node.
 	c, err := s.apiClient.Get(ctx, grpcAddr)
 	if err != nil {
-		log.Errorf("err getting api client: %s", err)
+		s.log.Errorf("err getting api client: %s", err)
 		return nil, err
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
@@ -1254,7 +1270,7 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 		NodeId:    nodeID,
 	})
 	if err != nil {
-		log.Errorf("remove data err: %s", err)
+		s.log.Errorf("remove data err: %s", err)
 		return nil, err
 	}
 
