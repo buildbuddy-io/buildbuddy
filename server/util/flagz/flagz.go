@@ -41,7 +41,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, value := range values {
 			if err = blankValue.Set(value); err != nil {
 				log.Errorf("Encountered error setting flag %s to %s via flagz interface: %v", key, value, err)
-				http.Error(w, err.String(), http.StatusInternalError)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 		}
@@ -54,7 +54,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		newValue, err := flagtypes.ConvertFlagValue(blankValue)
 		if err != nil {
 			log.Errorf("Error converting flag %s when setting flag via flagz interface: %v", key, err)
-			http.Error(w, err.String(), http.StatusInternalError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		appendSlice := false
@@ -64,7 +64,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := flagutil.SetValueForFlagName(key, reflect.ValueOf(newValue).Elem().Interface(), map[string]struct{}{}, appendSlice); err != nil {
 			log.Errorf("Error setting flag %s when setting flag via flagz interface: %v", key, err)
-			http.Error(w, err.String(), http.StatusInternalError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		set[unwrappedValue] = struct{}{}
@@ -72,7 +72,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b, err := flagyaml.SplitDocumentedYAMLFromFlags()
 	if err != nil {
 		log.Errorf("Encountered error when attempting to generate YAML for flagz endpoint: %v", err)
-		http.Error(w, err.String(), http.StatusInternalError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
