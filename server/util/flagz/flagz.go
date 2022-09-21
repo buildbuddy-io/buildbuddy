@@ -6,9 +6,10 @@ import (
 	"reflect"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 // ServeHTTP takes an http.Request, sets flags based on the query parameters,
