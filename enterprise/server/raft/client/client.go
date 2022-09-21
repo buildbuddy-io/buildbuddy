@@ -175,19 +175,6 @@ func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Head
 	return wc, nil
 }
 
-func RemoteSyncWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Header, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
-	stream, err := client.SyncWriter(ctx)
-	if err != nil {
-		return nil, err
-	}
-	wc := &streamWriteCloser{
-		header:     header,
-		fileRecord: fileRecord,
-		stream:     stream,
-	}
-	return wc, nil
-}
-
 type multiWriteCloser struct {
 	ctx           context.Context
 	fileRecord    *rfpb.FileRecord

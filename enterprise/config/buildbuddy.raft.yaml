@@ -6,7 +6,7 @@ app:
   default_redis_target: "localhost:6379"
   log_level: debug
 database:
-  data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
+  data_source: "sqlite3:///tmp/buildbuddy-enterprise_%{USER}.db"
 storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:

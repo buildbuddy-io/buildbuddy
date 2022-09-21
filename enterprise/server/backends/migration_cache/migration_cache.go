@@ -371,21 +371,23 @@ type doubleReader struct {
 }
 
 func (d *doubleReader) Read(p []byte) (n int, err error) {
+	var dstErr error
 	eg := &errgroup.Group{}
 
 	if d.dest != nil {
 		eg.Go(func() error {
 			pCopy := make([]byte, len(p))
-			_, dstErr := d.dest.Read(pCopy)
-			if dstErr != nil && dstErr != io.EOF {
-				log.Warningf("Migration dest reader read err: %s", dstErr)
-			}
+			_, dstErr = d.dest.Read(pCopy)
 			return nil
 		})
 	}
 
 	srcN, srcErr := d.src.Read(p)
+
 	eg.Wait()
+	if dstErr != srcErr {
+		log.Warningf("Migration read err, src err: %s, dest err: %s", srcErr, dstErr)
+	}
 
 	return srcN, srcErr
 }
