@@ -521,6 +521,12 @@ func (sm *Replica) cas(wb *pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASRespons
 	}, status.FailedPreconditionError(constants.CASErrorMessage)
 }
 
+func (sm *Replica) IsSplitting() bool {
+	sm.timerMu.Lock()
+	defer sm.timerMu.Unlock()
+	return sm.timer != nil
+}
+
 func (sm *Replica) releaseAndClearTimer() {
 	sm.timerMu.Lock()
 	defer sm.timerMu.Unlock()
