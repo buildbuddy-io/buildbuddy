@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
+	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_bundle"
 )
 
 const (
@@ -98,6 +100,30 @@ func shouldForceUpdateCheck() bool {
 	return os.Getenv("BB_ALWAYS_CHECK_FOR_UPDATES") != "" || *forceUpdateCheck
 }
 
+func ExtractBundledSidecar(ctx context.Context, bbHomeDir string) error {
+	// Figure out appropriate os/arch for this machine.
+	sidecarName := getSidecarBinaryName()
+	sidecarPath := filepath.Join(bbHomeDir, sidecarName)
+
+	if _, err := os.Stat(sidecarPath); err == nil {
+		return nil
+	}
+	f, err := sidecar_bundle.Open()
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	dst, err := os.OpenFile(sidecarPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, f); err != nil {
+		return err
+	}
+	return nil
+}
+
 func MaybeUpdateSidecar(ctx context.Context, bbHomeDir string) (bool, error) {
 	sidecarDir := filepath.Join(bbHomeDir, sidecarsSubdir)
 	if err := os.MkdirAll(sidecarDir, 0755); err != nil {
@@ -172,9 +198,7 @@ func startBackgroundProcess(cmd string, args []string) error {
 
 func RestartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []string) (string, error) {
 	sidecarName := getSidecarBinaryName()
-	sidecarDir := filepath.Join(bbHomeDir, sidecarsSubdir)
-	latestInstalledVersion := getLatestInstalledSidecarVersion(sidecarDir, sidecarName)
-	cmd := filepath.Join(sidecarDir, latestInstalledVersion, sidecarName)
+	cmd := filepath.Join(bbHomeDir, sidecarName)
 
 	sockName := sockPrefix + hashStrings(append(args, cmd)) + ".sock"
 	sockPath := filepath.Join(os.TempDir(), sockName)
