@@ -16,6 +16,8 @@ import (
 // if any, renders the current flag state to YAML, and writes that YAML output
 // to the http.ResponseWriter.
 func ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+
 	// Keep track of which flag.Values have been set in case one is set multiple
 	// times in the query via, for example, FlagAlias.
 	set := make(map[flag.Value]struct{})
@@ -75,6 +77,5 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain")
 	w.Write(b)
 }
