@@ -26,10 +26,12 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Flag " + key + " does not exist.", http.StatusBadRequest)
 			return
 		}
+
 		// Unwrap the value to ensure we have the real flag.Value, not a wrapper
 		// like, for example, DeprecatedFlag or FlagAlias.
 		unwrappedValue := flagtypes.UnwrapFlagValue(flg.Value)
 		addr := reflect.ValueOf(unwrappedValue)
+
 		// Make a new empty flag.value of the appropriate type so it can be set
 		// fresh. This allows us to override the flag while still using the standard
 		// flag.Value interface's Set method, so it can be set with a string like we
@@ -46,6 +48,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
+
 		// Take the previously blank value and convert it to the underlying type
 		// (the type which would be returned when defining the flag initially).
 		newValue, err := flagtypes.ConvertFlagValue(blankValue)
