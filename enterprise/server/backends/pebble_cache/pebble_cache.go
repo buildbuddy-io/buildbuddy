@@ -64,6 +64,7 @@ var (
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
+	isolateByGroupIDsFlag     = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys will include groupIDs")
 
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
@@ -120,6 +121,7 @@ type Options struct {
 	RootDirectory     string
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
+	IsolateByGroupIDs bool
 
 	MaxSizeBytes           int64
 	BlockCacheSizeBytes    int64
@@ -210,6 +212,7 @@ func Register(env environment.Env) error {
 		RootDirectory:          *rootDirectoryFlag,
 		Partitions:             *partitionsFlag,
 		PartitionMappings:      *partitionMappingsFlag,
+		IsolateByGroupIDs:      *isolateByGroupIDsFlag,
 		BlockCacheSizeBytes:    *blockCacheSizeBytesFlag,
 		MaxSizeBytes:           cache_config.MaxSizeBytes(),
 		MaxInlineFileSizeBytes: *maxInlineFileSizeBytesFlag,
@@ -384,7 +387,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			PartitionId: defaultPartitionID,
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		fileStorer: filestore.New(false /*gid filepaths*/),
+		fileStorer: filestore.New(opts.IsolateByGroupIDs),
 	}
 
 	peMu := sync.Mutex{}
