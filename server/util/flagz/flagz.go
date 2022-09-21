@@ -22,8 +22,9 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for key, values := range r.URL.Query() {
 		flg := flag.Lookup(key)
 		if flg == nil {
-			log.Warningf("Attempted to change non-existent flag %s via flagz interface.", key)
-			continue
+			log.Errorf("Attempted to change non-existent flag %s via flagz interface.", key)
+			http.Error(w, "Flag " + key + " does not exist.", http.StatusBadRequest)
+			return
 		}
 		// Unwrap the value to ensure we have the real flag.Value, not a wrapper
 		// like, for example, DeprecatedFlag or FlagAlias.
@@ -38,6 +39,8 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, value := range values {
 			if err = blankValue.Set(value); err != nil {
 				log.Errorf("Encountered error setting flag %s to %s via flagz interface: %v", key, value, err)
+				http.Error(w, err.String(), http.StatusInternalError)
+				return
 			}
 		}
 		if err != nil {
@@ -48,7 +51,8 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		newValue, err := flagtypes.ConvertFlagValue(blankValue)
 		if err != nil {
 			log.Errorf("Error converting flag %s when setting flag via flagz interface: %v", key, err)
-			continue
+			http.Error(w, err.String(), http.StatusInternalError)
+			return
 		}
 		appendSlice := false
 		if _, ok := set[unwrappedValue]; ok {
@@ -57,14 +61,16 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := flagutil.SetValueForFlagName(key, reflect.ValueOf(newValue).Elem().Interface(), map[string]struct{}{}, appendSlice); err != nil {
 			log.Errorf("Error setting flag %s when setting flag via flagz interface: %v", key, err)
-			continue
+			http.Error(w, err.String(), http.StatusInternalError)
+			return
 		}
 		set[unwrappedValue] = struct{}{}
 	}
 	b, err := flagyaml.SplitDocumentedYAMLFromFlags()
 	if err != nil {
 		log.Errorf("Encountered error when attempting to generate YAML for flagz endpoint: %v", err)
-		w.WriteHeader(500)
+		http.Error(w, err.String(), http.StatusInternalError)
+		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(b)
