@@ -544,8 +544,11 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
 		}
 		dockerSocket := platform.DockerSocket()
+		if !strings.Contains(dockerSocket, "://") {
+			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
+		}
 		dockerClient, err = dockerclient.NewClientWithOpts(
-			dockerclient.WithHost(fmt.Sprintf("unix://%s", dockerSocket)),
+			dockerclient.WithHost(dockerSocket),
 			dockerclient.WithAPIVersionNegotiation(),
 		)
 		if err != nil {
