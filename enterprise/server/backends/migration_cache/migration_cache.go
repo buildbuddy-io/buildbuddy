@@ -83,7 +83,7 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		copyChan:                    make(chan *copyData, migrationConfig.CopyChanBufferSize),
 		maxCopiesPerSec:             migrationConfig.MaxCopiesPerSec,
 		eg:                          &errgroup.Group{},
-		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
+		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Second,
 		numCopiesDropped:            &zero,
 	}
 }
@@ -654,6 +654,7 @@ func (mc *MigrationCache) copyDataInBackground() error {
 }
 
 func (mc *MigrationCache) logCopyChanFullInBackground() error {
+	log.Warningf("Maggie address in log is %p", mc)
 	ticker := time.NewTicker(mc.copyChanFullWarningInterval)
 	defer ticker.Stop()
 
@@ -701,8 +702,10 @@ func (mc *MigrationCache) Start() error {
 		mc.copyDataInBackground()
 		return nil
 	})
+	log.Warningf("Maggie address out here is %p", mc)
 	if mc.copyChanFullWarningInterval > 0 {
 		mc.eg.Go(func() error {
+			log.Warningf("Maggie address in start is %p", mc)
 			mc.logCopyChanFullInBackground()
 			return nil
 		})

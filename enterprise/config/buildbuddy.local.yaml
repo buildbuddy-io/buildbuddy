@@ -15,8 +15,15 @@ storage:
     root_directory: /tmp/buildbuddy_enterprise
   enable_chunked_event_logs: true
 cache:
-  disk:
-    root_directory: /tmp/buildbuddy-enterprise-cache
+  migration:
+    copy_chan_buffer_size: 5
+    copy_chan_full_warning_interval_min: 30
+    src:
+      disk:
+        root_directory: /tmp/buildbuddy-enterprise-cache
+    dest:
+      disk:
+        root_directory: /tmp/buildbuddy-enterprise-cache2
 auth:
   enable_anonymous_usage: true
   enable_self_auth: true
