@@ -589,6 +589,21 @@ func (cs *clusterState) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
 	return cs.managedRanges[clusterID]
 }
 
+func (cs *clusterState) GetHeader(clusterID uint64) *rfpb.Header {
+	rd := cs.GetRange(clusterID)
+	header := &rfpb.Header{
+		RangeId:    rd.GetRangeId(),
+		Generation: rd.GetGeneration(),
+	}
+	for _, replica := range rd.GetReplicas() {
+		if cs.myNodes.Contains(replica.GetNodeId()) {
+			header.Replica = replica
+			break
+		}
+	}
+	return header
+}
+
 func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 	rsp, err := d.store.ListCluster(ctx, &rfpb.ListClusterRequest{
 		LeasedOnly: true,
@@ -714,7 +729,8 @@ func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes
 				continue
 			}
 			_, err := d.store.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-				Range: rd,
+				Header: state.GetHeader(clusterID),
+				Range:  rd,
 			})
 			if err != nil {
 				log.Warningf("Error splitting cluster: %s", err)

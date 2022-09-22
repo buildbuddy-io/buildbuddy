@@ -641,7 +641,18 @@ PASS
 ```protobuf
 // Request object for GetFile
 message GetFileRequest {
-  // This corresponds to the uri field in the File message.
+  // File URI corresponding to the `uri` field in the File message.
+  //
+  // If the BuildBuddy instance supports ZSTD transcoding, the literal string
+  // "/blobs/" in the URI (third-to-last path segment) may be replaced with
+  // "/compressed-blobs/zstd/", and the server will return a compressed payload.
+  //
+  // Examples:
+  // * Uncompressed blob with remote instance name of "ci":
+  //   bytestream://remote.buildbuddy.io/ci/blobs/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216
+  //
+  // * zstd-compressed blob with no remote instance name:
+  //   bytestream://remote.buildbuddy.io/compressed-blobs/zstd/09e6fe6e1fd8c8734339a0a84c3c7a0eb121b57a45d21cfeb1f265bffe4c4888/216
   string uri = 1;
 }
 ```

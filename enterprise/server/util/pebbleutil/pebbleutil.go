@@ -1,15 +1,18 @@
 package pebbleutil
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -42,11 +45,12 @@ type Leaser interface {
 }
 
 type leaser struct {
-	db       *pebble.DB
-	waiters  sync.WaitGroup
-	closedMu sync.Mutex // PROTECTS(closed)
-	closed   bool
-	splitMu  sync.RWMutex
+	db        *pebble.DB
+	waiters   sync.WaitGroup
+	closedMu  sync.Mutex // PROTECTS(closed)
+	closed    bool
+	splitMu   sync.Mutex // PROTECTS(splitting)
+	splitting bool
 }
 
 // NewDBLeaser returns a new DB leaser that wraps db and serializes access to
@@ -64,11 +68,12 @@ type leaser struct {
 // leased until ReleaseSplitLock() is called.
 func NewDBLeaser(db *pebble.DB) Leaser {
 	return &leaser{
-		db:       db,
-		waiters:  sync.WaitGroup{},
-		closedMu: sync.Mutex{},
-		closed:   false,
-		splitMu:  sync.RWMutex{},
+		db:        db,
+		waiters:   sync.WaitGroup{},
+		closedMu:  sync.Mutex{},
+		closed:    false,
+		splitMu:   sync.Mutex{},
+		splitting: false,
 	}
 }
 
@@ -86,15 +91,23 @@ func (l *leaser) Close() {
 
 func (l *leaser) AcquireSplitLock() {
 	l.splitMu.Lock()
+	defer l.splitMu.Unlock()
+	l.waiters.Wait()
+	l.splitting = true
 }
 
 func (l *leaser) ReleaseSplitLock() {
-	l.splitMu.Unlock()
+	l.splitMu.Lock()
+	defer l.splitMu.Unlock()
+	l.splitting = false
 }
 
 func (l *leaser) DB() (IPebbleDB, error) {
-	l.splitMu.RLock()
-	defer l.splitMu.RUnlock()
+	l.splitMu.Lock()
+	defer l.splitMu.Unlock()
+	if l.splitting {
+		return nil, status.OutOfRangeError("db is splitting")
+	}
 
 	l.closedMu.Lock()
 	defer l.closedMu.Unlock()
@@ -150,4 +163,91 @@ type refCountedDB struct {
 func (r *refCountedDB) Close() error {
 	// Just close the refcounter, not the DB.
 	return r.refCounter.Close()
+}
+
+type fnReadCloser struct {
+	io.ReadCloser
+	closeFn func() error
+}
+
+func ReadCloserWithFunc(rc io.ReadCloser, closeFn func() error) io.ReadCloser {
+	return &fnReadCloser{rc, closeFn}
+}
+func (f fnReadCloser) Close() error {
+	err := f.ReadCloser.Close()
+	closeFnErr := f.closeFn()
+
+	if err == nil && closeFnErr != nil {
+		return closeFnErr
+	}
+	return err
+}
+
+type writeCloser struct {
+	interfaces.MetadataWriteCloser
+	commitFn     func(n int64) error
+	bytesWritten int64
+	closeFn      func() error
+}
+
+func CommittedWriterWithFunc(wcm interfaces.MetadataWriteCloser, commitFn func(n int64) error, closeFn func() error) interfaces.CommittedMetadataWriteCloser {
+	return &writeCloser{wcm, commitFn, 0, closeFn}
+}
+
+func (dc *writeCloser) Commit() error {
+	if err := dc.MetadataWriteCloser.Close(); err != nil {
+		return err
+	}
+	return dc.commitFn(dc.bytesWritten)
+}
+
+func (dc *writeCloser) Close() error {
+	return dc.closeFn()
+}
+
+func (dc *writeCloser) Write(p []byte) (int, error) {
+	n, err := dc.MetadataWriteCloser.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	dc.bytesWritten += int64(n)
+	return n, nil
+}
+
+func GetCopy(b pebble.Reader, key []byte) ([]byte, error) {
+	buf, closer, err := b.Get(key)
+	if err != nil {
+		if err == pebble.ErrNotFound {
+			return nil, status.NotFoundErrorf("key %q not found", key)
+		}
+		return nil, err
+	}
+	defer closer.Close()
+	if len(buf) == 0 {
+		return nil, status.NotFoundErrorf("key %q not found (empty value)", key)
+	}
+
+	// We need to copy the value before closer is closed.
+	val := make([]byte, len(buf))
+	copy(val, buf)
+	return val, nil
+}
+
+// IterHasKey returns a bool indicating if the provided iterator has the
+// exact key specified.
+func IterHasKey(iter *pebble.Iterator, key []byte) bool {
+	if iter.SeekGE(key) && bytes.Compare(iter.Key(), key) == 0 {
+		return true
+	}
+	return false
+}
+
+func LookupProto(iter *pebble.Iterator, key []byte, pb proto.Message) error {
+	if !IterHasKey(iter, key) {
+		return status.NotFoundErrorf("key %q not found", key)
+	}
+	if err := proto.Unmarshal(iter.Value(), pb); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
+	}
+	return nil
 }

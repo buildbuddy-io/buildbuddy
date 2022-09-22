@@ -290,3 +290,22 @@ func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, err
 func IsAnonymousUserError(err error) bool {
 	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
 }
+
+// ForAuthenticatedGroup returns GROUP_READ|GROUP_WRITE permissions for authenticated groups,
+// or OTHERS_READ for anonymous users.
+func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
+	auth := env.GetAuthenticator()
+	if auth == nil {
+		return nil, status.UnimplementedError("Auth is not configured")
+	}
+
+	u, err := auth.AuthenticatedUser(ctx)
+	if err != nil || u.GetGroupID() == "" {
+		if IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+			return AnonymousUserPermissions(), nil
+		}
+		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+	}
+
+	return GroupAuthPermissions(u.GetGroupID()), nil
+}

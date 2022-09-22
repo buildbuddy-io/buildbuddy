@@ -1262,7 +1262,7 @@ type testRunnerPool struct {
 }
 
 func NewTestRunnerPool(t testing.TB, env environment.Env, runInterceptor RunInterceptor) interfaces.RunnerPool {
-	realPool, err := runner.NewPool(env)
+	realPool, err := runner.NewPool(env, &runner.PoolOptions{})
 	require.NoError(t, err)
 	return &testRunnerPool{realPool, runInterceptor}
 }

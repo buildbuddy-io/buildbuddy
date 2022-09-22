@@ -21,7 +21,8 @@ import (
 )
 
 var (
-	maxShutdownDuration = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
+	maxShutdownDuration      = flag.Duration("max_shutdown_duration", 25*time.Second, "Time to wait for shutdown")
+	shutdownLameduckDuration = flag.Duration("shutdown_lameduck_duration", 0, "If set, the server will be marked unready but not run shutdown functions until this period passes.")
 )
 
 const (
@@ -107,6 +108,8 @@ func (h *HealthChecker) handleShutdownFuncs() {
 	fmt.Printf("Caught interrupt signal; shutting down...\n")
 	ctx, cancel := context.WithTimeout(context.Background(), *maxShutdownDuration)
 	defer cancel()
+
+	time.Sleep(*shutdownLameduckDuration)
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	for _, fn := range h.shutdownFuncs {

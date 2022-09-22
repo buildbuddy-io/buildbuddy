@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gstatus "google.golang.org/grpc/status"
@@ -87,4 +88,51 @@ func newZstdResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	r := NewResourceName(d, instanceName)
 	r.SetCompressor(repb.Compressor_ZSTD)
 	return r
+}
+
+func TestElementsMatch(t *testing.T) {
+	d1 := &repb.Digest{Hash: "1234", SizeBytes: 100}
+	d2 := &repb.Digest{Hash: "1111", SizeBytes: 10}
+	d3 := &repb.Digest{Hash: "1234", SizeBytes: 1}
+
+	cases := []struct {
+		s1   []*repb.Digest
+		s2   []*repb.Digest
+		want bool
+	}{
+		{
+			s1:   []*repb.Digest{},
+			s2:   []*repb.Digest{},
+			want: true,
+		},
+		{
+			s1:   []*repb.Digest{d1, d2},
+			s2:   []*repb.Digest{d1, d2},
+			want: true,
+		},
+		{
+			s1:   []*repb.Digest{d1, d2},
+			s2:   []*repb.Digest{d2, d1},
+			want: true,
+		},
+		{
+			s1:   []*repb.Digest{d1, d2, d3},
+			s2:   []*repb.Digest{d2, d1},
+			want: false,
+		},
+		{
+			s1:   []*repb.Digest{d1, d2},
+			s2:   []*repb.Digest{d2, d1, d3},
+			want: false,
+		},
+		{
+			s1:   []*repb.Digest{d1, d2, d1},
+			s2:   []*repb.Digest{d2, d1, d1},
+			want: true,
+		},
+	}
+	for _, tc := range cases {
+		got := ElementsMatch(tc.s1, tc.s2)
+		require.Equal(t, tc.want, got)
+	}
 }

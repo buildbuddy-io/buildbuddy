@@ -179,15 +179,9 @@ func main() {
 	bblog.Printf("--remote_cache was %q", remoteCacheFlag)
 	bblog.Printf("--remote_executor was %q", remoteExecFlag)
 
-	// Maybe update the sidecar? If we haven't recently.
-	updated, err := sidecar.MaybeUpdateSidecar(ctx, bbHome)
-	if err != nil {
-		bblog.Printf("Error updating sidecar: %s", err.Error())
+	if err := sidecar.ExtractBundledSidecar(ctx, bbHome); err != nil {
+		bblog.Printf("Error extracting sidecar: %s", err)
 	}
-	if updated {
-		bblog.Printf("Updated sidecar: %t", updated)
-	}
-
 	// Re(Start) the sidecar if the flags set don't match.
 	sidecarArgs := make([]string, 0)
 	if besBackendFlag != "" {

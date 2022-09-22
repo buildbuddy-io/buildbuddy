@@ -6,9 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

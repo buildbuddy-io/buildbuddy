@@ -58,7 +58,7 @@ message TaskSize {
   int64 estimated_free_disk_bytes = 3;
 }
 
-// Next ID: 8
+// Next ID: 9
 message SchedulingMetadata {
   // Task size used for scheduling purposes, when the scheduler is deciding
   // which executors (if any) may execute a task, and also when an executor is
@@ -74,6 +74,14 @@ message SchedulingMetadata {
   // before enqueueing a task onto an executor, but the adjusted size should not
   // exceed the executor's limits.
   TaskSize measured_task_size = 7;
+
+  // Task size computed via prediction model. This is only necessary when we
+  // a measured task size is not available.
+  //
+  // The scheduler may use this size to compute an adjusted `task_size` just
+  // before enqueueing a task onto an executor, but the adjusted size should not
+  // exceed the executor's limits.
+  TaskSize predicted_task_size = 8;
 
   string os = 2;
   string arch = 3;

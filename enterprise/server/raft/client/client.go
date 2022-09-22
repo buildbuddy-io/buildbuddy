@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -174,19 +175,6 @@ func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Head
 	return wc, nil
 }
 
-func RemoteSyncWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Header, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
-	stream, err := client.SyncWriter(ctx)
-	if err != nil {
-		return nil, err
-	}
-	wc := &streamWriteCloser{
-		header:     header,
-		fileRecord: fileRecord,
-		stream:     stream,
-	}
-	return wc, nil
-}
-
 type multiWriteCloser struct {
 	ctx           context.Context
 	fileRecord    *rfpb.FileRecord
@@ -197,7 +185,8 @@ type multiWriteCloser struct {
 }
 
 func fileRecordLogString(f *rfpb.FileRecord) string {
-	return fmt.Sprintf("%s/%s/%d", f.GetIsolation().GetCacheType(), f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes())
+	fmk, _ := filestore.New(false).FileMetadataKey(f)
+	return string(fmk)
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {

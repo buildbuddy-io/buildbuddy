@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -53,6 +52,7 @@ type DockerOptions struct {
 	DockerMountMode         string
 	InheritUserIDs          bool
 	DockerNetwork           string
+	DefaultNetworkMode      string
 	DockerCapAdd            string
 	DockerDevices           []container.DockerDeviceMapping
 	Volumes                 []string
@@ -238,12 +238,19 @@ func (r *dockerCommandContainer) containerConfig(args, env []string, workDir str
 }
 
 func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.HostConfig {
-	networkMode := dockercontainer.NetworkMode("")
+	networkMode := dockercontainer.NetworkMode(r.options.DefaultNetworkMode)
+	// Support the legacy `executor.docker_net_host` config option.
 	if r.options.UseHostNetwork {
 		networkMode = dockercontainer.NetworkMode("host")
 	}
-	if strings.ToLower(r.options.DockerNetwork) == "off" {
+	// Translate network platform prop to the equivalent Docker network mode, to
+	// allow overriding the default configured mode.
+	switch strings.ToLower(r.options.DockerNetwork) {
+	case "off":
 		networkMode = dockercontainer.NetworkMode("none")
+	case "bridge": // use Docker default (bridge)
+		networkMode = dockercontainer.NetworkMode("")
+	default: // ignore other values for now, sticking to the configured default.
 	}
 	capAdd := make([]string, 0)
 	if r.options.DockerCapAdd != "" {
@@ -571,7 +578,7 @@ func (r *dockerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 			log.Printf("error closing docker stats response body: %s", err)
 		}
 	}()
-	body, err := ioutil.ReadAll(stats.Body)
+	body, err := io.ReadAll(stats.Body)
 	if err != nil {
 		return nil, err
 	}

@@ -25,6 +25,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var UnwrapFlagValue = common.UnwrapFlagValue
+var ConvertFlagValue = common.ConvertFlagValue
+
 // NewPrimitiveFlagVar returns a flag.Value derived from the given primitive pointer.
 func NewPrimitiveFlagVar[T bool | time.Duration | float64 | int | int64 | uint | uint64 | string](value *T) flag.Value {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)

@@ -289,6 +289,34 @@ func Parse(str string) (*repb.Digest, error) {
 	}, nil
 }
 
+// ElementsMatch returns whether two slices contain the same digests, ignoring the order of the elements.
+// If there are duplicate elements, the number of appearances of each of them in both lists should match.
+func ElementsMatch(s1 []*repb.Digest, s2 []*repb.Digest) bool {
+	if len(s1) != len(s2) {
+		return false
+	}
+
+	foundS1 := make(map[*repb.Digest]int, len(s1))
+	for _, d := range s1 {
+		foundS1[d]++
+	}
+
+	for _, d := range s2 {
+		var numOccur int
+		var inS1 bool
+		if numOccur, inS1 = foundS1[d]; !inS1 {
+			return false
+		}
+		if numOccur == 1 {
+			delete(foundS1, d)
+		} else {
+			foundS1[d]--
+		}
+	}
+
+	return true
+}
+
 type randomDataMaker struct {
 	src rand.Source
 }

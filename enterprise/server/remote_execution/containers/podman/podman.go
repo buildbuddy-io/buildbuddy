@@ -48,6 +48,7 @@ var (
 	imageStreamingEnabled            = flag.Bool("executor.podman.image_streaming.enabled", false, "Whether container image streaming is enabled by default")
 	imageStreamingRegistryGRPCTarget = flag.String("executor.podman.image_streaming.registry_grpc_target", "", "gRPC endpoint of BuildBuddy registry")
 	imageStreamingRegistryHTTPTarget = flag.String("executor.podman.image_streaming.registry_http_target", "", "HTTP endpoint of the BuildBuddy registry")
+	pullTimeout                      = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -201,13 +202,14 @@ func (p *Provider) NewContainer(image string, options *PodmanOptions) container.
 }
 
 type PodmanOptions struct {
-	ForceRoot bool
-	User      string
-	Network   string
-	CapAdd    string
-	Devices   []container.DockerDeviceMapping
-	Volumes   []string
-	Runtime   string
+	ForceRoot          bool
+	User               string
+	DefaultNetworkMode string
+	Network            string
+	CapAdd             string
+	Devices            []container.DockerDeviceMapping
+	Volumes            []string
+	Runtime            string
 	// EnableStats determines whether to enable the stats API. This also enables
 	// resource monitoring while tasks are in progress.
 	EnableStats          bool
@@ -281,8 +283,18 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	} else if c.options.User != "" && userRegex.MatchString(c.options.User) {
 		args = append(args, "--user="+c.options.User)
 	}
-	if strings.ToLower(c.options.Network) == "off" {
-		args = append(args, "--network=none")
+	networkMode := c.options.DefaultNetworkMode
+	// Translate network platform prop to the equivalent Podman network mode, to
+	// allow overriding the default configured mode.
+	switch strings.ToLower(c.options.Network) {
+	case "off":
+		networkMode = "none"
+	case "bridge": // use Podman default (bridge)
+		networkMode = ""
+	default: // ignore other values for now, sticking to the configured default.
+	}
+	if networkMode != "" {
+		args = append(args, "--network="+networkMode)
 	}
 	if c.options.CapAdd != "" {
 		args = append(args, "--cap-add="+c.options.CapAdd)
@@ -698,7 +710,9 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 	// Use server context instead of ctx to make sure that "podman pull" is not killed when the context
 	// is cancelled. If "podman pull" is killed when copying a parent layer, it will result in
 	// corrupted storage.  More details see https://github.com/containers/storage/issues/1136.
-	pullResult := runPodman(c.env.GetServerContext(), "pull", &container.Stdio{}, podmanArgs...)
+	pullCtx, cancel := context.WithTimeout(c.env.GetServerContext(), *pullTimeout)
+	defer cancel()
+	pullResult := runPodman(pullCtx, "pull", &container.Stdio{}, podmanArgs...)
 	if pullResult.Error != nil {
 		return pullResult.Error
 	}
@@ -768,7 +782,7 @@ func (c *podmanCommandContainer) readRawStats(ctx context.Context) (*repb.UsageS
 
 func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	if !c.options.EnableStats {
-		return &repb.UsageStats{}, nil
+		return nil, nil
 	}
 
 	current, err := c.readRawStats(ctx)

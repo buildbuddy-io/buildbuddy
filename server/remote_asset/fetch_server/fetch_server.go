@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -135,7 +135,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		if err != nil {
 			return nil, status.AbortedErrorf("Error fetching URI  %q: %s", uri, err.Error())
 		}
-		data, err := ioutil.ReadAll(rsp.Body)
+		data, err := io.ReadAll(rsp.Body)
 		if err != nil {
 			log.Warningf("Error reading object bytes: %s", err.Error())
 			continue

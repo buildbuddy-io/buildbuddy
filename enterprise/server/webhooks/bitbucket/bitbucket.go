@@ -3,7 +3,7 @@ package bitbucket
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -115,7 +115,7 @@ func (*bitbucketGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL
 }
 
 func unmarshalBody(r *http.Request, payload interface{}) error {
-	b, err := ioutil.ReadAll(r.Body)
+	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err
 	}

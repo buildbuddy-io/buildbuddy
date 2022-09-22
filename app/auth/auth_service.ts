@@ -14,7 +14,7 @@ export { User };
 const SELECTED_GROUP_ID_LOCAL_STORAGE_KEY = "selected_group_id";
 const IMPERSONATING_GROUP_ID_SESSION_STORAGE_KEY = "impersonating_group_id";
 const AUTO_LOGIN_ATTEMPTED_STORAGE_KEY = "auto_login_attempted";
-const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const TOKEN_REFRESH_INTERVAL_SECONDS = 30 * 60; // 30 minutes
 
 export class AuthService {
   user: User = null;
@@ -50,11 +50,26 @@ export class AuthService {
         } else {
           this.onUserRpcError(error);
         }
+      })
+      .finally(() => {
+        setTimeout(() => {
+          this.startRefreshTimer();
+        }, 1000); // Wait a second before starting the refresh timer so we can grab the session duration.
       });
+  }
 
+  getCookie(name: string) {
+    let match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+    if (match) return match[2];
+  }
+
+  startRefreshTimer() {
+    let refreshFrequencySeconds =
+      parseInt(this.getCookie("Session-Duration-Seconds")) / 2 || TOKEN_REFRESH_INTERVAL_SECONDS;
+    console.info(`Refreshing access token every ${refreshFrequencySeconds} seconds.`);
     setInterval(() => {
       if (this.user) this.refreshToken();
-    }, TOKEN_REFRESH_INTERVAL_MS);
+    }, refreshFrequencySeconds * 1000);
   }
 
   refreshToken() {

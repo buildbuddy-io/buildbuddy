@@ -457,6 +457,19 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:nvj0OLI3YqYXer/kZD8Ri1aaunCxIEsOst1BVJswV0o=",
         version = "v0.0.0-20151223152923-e2c28503fcd0",
     )
+    go_repository(
+        name = "com_github_buildbuddy_io_tensorflow_proto",
+        importpath = "github.com/buildbuddy-io/tensorflow-proto",
+        sum = "h1:LcKnQdAYrT3LOZt0mTgw6uiEi7QVkH75cCxPj+AbkLA=",
+        version = "v0.0.0-20220908151343-929b41ab4dc6",
+    )
+    go_repository(
+        name = "com_github_buildkite_terminal_to_html_v3",
+        importpath = "github.com/buildkite/terminal-to-html/v3",
+        replace = "github.com/buildbuddy-io/terminal-to-html/v3",
+        sum = "h1:XMnC81zIjWBw5SRc/TqPOP4vHPftVhdNl5azJrOwz+Y=",
+        version = "v3.7.0-patched-1",
+    )
 
     go_repository(
         name = "com_github_burntsushi_toml",
@@ -4230,14 +4243,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:f+jULpRQGxTSkNYKJ51yaw6ChIqO+Je8UqsTKN/cDag=",
         version = "v0.0.0-20200319021203-7eef512accb3",
     )
-    go_repository(
-        name = "com_github_tensorflow_tensorflow",
-        build_file_proto_mode = "disable",
-        importpath = "github.com/tensorflow/tensorflow",
-        replace = "github.com/bduffany/go-tensorflow",
-        sum = "h1:3WU8fhrz/8ucFejgXUdGwo08YgIB1NHFfySLLKJrNZ0=",
-        version = "v0.0.0-20220829154158-35855b13822d",
-    )
+
     go_repository(
         name = "com_github_tetafro_godot",
         importpath = "github.com/tetafro/godot",
@@ -4341,6 +4347,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:u7tSpNPPswAFymm8IehJhy4uJMlUuU/GmqSkvJ1InXA=",
         version = "v1.22.4",
     )
+    go_repository(
+        name = "com_github_urfave_cli_v2",
+        importpath = "github.com/urfave/cli/v2",
+        sum = "h1:JTTnM6wKzdA0Jqodd966MVj4vWbbquZykeX1sKbe2C4=",
+        version = "v2.2.0",
+    )
+
     go_repository(
         name = "com_github_urfave_negroni",
         importpath = "github.com/urfave/negroni",
@@ -4838,15 +4851,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-5.0.0rc3-darwin-x86_64",
-        sha256 = "450064319e6835610b8d9bbe0ae710286f450995b3190059cc2a43cfa0b49a72",
-        urls = ["https://releases.bazel.build/5.0.0/rc3/bazel-5.0.0rc3-darwin-x86_64"],
+        name = "io_bazel_bazel-5.3.0-darwin-x86_64",
+        sha256 = "483ed97c2f3c31c5b1c800f0e9dd8519a466c7afb847c56aef52dfaaf31d5fbc",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-darwin-x86_64"],
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-5.0.0rc3-linux-x86_64",
-        sha256 = "125b5d1d53f18f27b9bcd062c3b7fa7fce50c1beeb16664f7ae82e1ffece4cb2",
-        urls = ["https://releases.bazel.build/5.0.0/rc3/bazel-5.0.0rc3-linux-x86_64"],
+        name = "io_bazel_bazel-5.3.0-linux-x86_64",
+        sha256 = "3d144b890b85d95fb13df941bfd010fc3628e9afaa4c85e7d1a002e4fd02b249",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-linux-x86_64"],
         executable = True,
     )
     http_file(

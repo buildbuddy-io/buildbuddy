@@ -6,7 +6,6 @@ import (
 	"flag"
 	"io"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -301,11 +300,15 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		if err != nil {
 			return nil, err
 		}
-		files, err := ioutil.ReadDir(fullPath)
+		entries, err := os.ReadDir(fullPath)
 		if err != nil {
 			return nil, err
 		}
-		for _, info := range files {
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				return nil, err
+			}
 			fqfn := filepath.Join(fullPath, info.Name())
 			if info.Mode().IsDir() {
 				// Don't recurse on non-uploadable directories.

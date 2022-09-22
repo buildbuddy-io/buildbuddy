@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -18,6 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
+	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_bundle"
 )
 
 const (
@@ -53,15 +54,15 @@ func getSidecarBinaryName() string {
 }
 
 func getLatestInstalledSidecarVersion(sidecarDir, sidecarName string) string {
-	files, err := ioutil.ReadDir(sidecarDir)
+	entries, err := os.ReadDir(sidecarDir)
 	if err != nil {
 		return ""
 	}
 	latestVersion := ""
-	for _, f := range files {
-		version := f.Name()
+	for _, entry := range entries {
+		version := entry.Name()
 		binPath := filepath.Join(sidecarDir, version, sidecarName)
-		if _, err := os.Stat(binPath); !os.IsNotExist(err) && f.IsDir() {
+		if _, err := os.Stat(binPath); !os.IsNotExist(err) && entry.IsDir() {
 			if semver.Compare(version, latestVersion) > 0 {
 				latestVersion = version
 			}
@@ -72,7 +73,7 @@ func getLatestInstalledSidecarVersion(sidecarDir, sidecarName string) string {
 
 func getlastUpdateCheck(bbHomeDir string) (time.Time, error) {
 	lastCheckedForUpdateFilePath := filepath.Join(bbHomeDir, lastCheckedForUpdateFileName)
-	content, err := ioutil.ReadFile(lastCheckedForUpdateFilePath)
+	content, err := os.ReadFile(lastCheckedForUpdateFilePath)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -97,6 +98,30 @@ func setLastUpdateCheck(bbHomeDir string) error {
 
 func shouldForceUpdateCheck() bool {
 	return os.Getenv("BB_ALWAYS_CHECK_FOR_UPDATES") != "" || *forceUpdateCheck
+}
+
+func ExtractBundledSidecar(ctx context.Context, bbHomeDir string) error {
+	// Figure out appropriate os/arch for this machine.
+	sidecarName := getSidecarBinaryName()
+	sidecarPath := filepath.Join(bbHomeDir, sidecarName)
+
+	if _, err := os.Stat(sidecarPath); err == nil {
+		return nil
+	}
+	f, err := sidecar_bundle.Open()
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	dst, err := os.OpenFile(sidecarPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, f); err != nil {
+		return err
+	}
+	return nil
 }
 
 func MaybeUpdateSidecar(ctx context.Context, bbHomeDir string) (bool, error) {
@@ -173,9 +198,7 @@ func startBackgroundProcess(cmd string, args []string) error {
 
 func RestartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []string) (string, error) {
 	sidecarName := getSidecarBinaryName()
-	sidecarDir := filepath.Join(bbHomeDir, sidecarsSubdir)
-	latestInstalledVersion := getLatestInstalledSidecarVersion(sidecarDir, sidecarName)
-	cmd := filepath.Join(sidecarDir, latestInstalledVersion, sidecarName)
+	cmd := filepath.Join(bbHomeDir, sidecarName)
 
 	sockName := sockPrefix + hashStrings(append(args, cmd)) + ".sock"
 	sockPath := filepath.Join(os.TempDir(), sockName)

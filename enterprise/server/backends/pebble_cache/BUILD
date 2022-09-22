@@ -4,7 +4,10 @@ go_library(
     name = "pebble_cache",
     srcs = ["pebble_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/filestore",
@@ -26,6 +29,7 @@ go_library(
         "//server/util/statusz",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_cockroachdb_pebble//vfs",
+        "@com_github_elastic_gosigar//:gosigar",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",

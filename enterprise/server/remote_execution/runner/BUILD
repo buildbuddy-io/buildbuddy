@@ -56,6 +56,8 @@ go_test(
     data = ["//enterprise/server/remote_execution/runner/testworker"],
     embed = [":runner"],
     deps = [
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/containers/bare",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",

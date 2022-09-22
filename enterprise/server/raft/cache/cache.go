@@ -375,6 +375,18 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit i
 	return readCloser, err
 }
 
+type raftWriteCloser struct {
+	io.WriteCloser
+	closeFn func() error
+}
+
+func (rwc *raftWriteCloser) Close() error {
+	if err := rwc.WriteCloser.Close(); err != nil {
+		return err
+	}
+	return rwc.closeFn()
+}
+
 func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, d)
 	if err != nil {
@@ -384,17 +396,41 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser
 	if err != nil {
 		return nil, err
 	}
-	var writeCloser io.WriteCloser
-	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		wc, err := client.RemoteSyncWriter(ctx, c, h, fileRecord)
+
+	var mwc io.WriteCloser
+	err = rc.sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
+		w, err := rc.apiClient.MultiWriter(ctx, peers, fileRecord)
 		if err != nil {
-			log.Printf("RemoteSyncWriter err: %s", err)
 			return err
 		}
-		writeCloser = wc
+		// Attempt the first write to see if all the peers will accept
+		// it. If the range information is stale, the write will fail
+		// here and the entire operation will be retried via RunAll.
+		_, err = w.Write([]byte{})
+		if err != nil {
+			return err
+		}
+		mwc = w
 		return nil
 	})
-	return writeCloser, err
+	if err != nil {
+		return nil, err
+	}
+
+	rwc := &raftWriteCloser{mwc, func() error {
+		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+			FileRecord: fileRecord,
+		}).ToProto()
+		if err != nil {
+			return err
+		}
+		writeRsp, err := rc.sender.SyncPropose(ctx, fileMetadataKey, writeReq)
+		if err != nil {
+			return err
+		}
+		return rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	}}
+	return rwc, nil
 }
 
 func (rc *RaftCache) Stop() error {
@@ -421,9 +457,8 @@ func (rc *RaftCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (rc *RaftCache) digestsToKeyMetas(ctx context.Context, digests []*repb.Digest) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
-
 	for _, d := range digests {
 		fileRecord, err := rc.makeFileRecord(ctx, d)
 		if err != nil {
@@ -434,6 +469,14 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 			return nil, err
 		}
 		keys = append(keys, &sender.KeyMeta{Key: fileMetadataKey, Meta: fileRecord})
+	}
+	return keys, nil
+}
+
+func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	keys, err := rc.digestsToKeyMetas(ctx, digests)
+	if err != nil {
+		return nil, err
 	}
 
 	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
@@ -475,7 +518,38 @@ func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	return nil, nil
+	keys, err := rc.digestsToKeyMetas(ctx, digests)
+	if err != nil {
+		return nil, err
+	}
+
+	rsps, err := rc.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+		req := &rfpb.GetMultiRequest{Header: h}
+		for _, k := range keys {
+			fr, ok := k.Meta.(*rfpb.FileRecord)
+			if !ok {
+				return nil, status.InternalError("type is not *rfpb.FileRecord")
+			}
+			req.FileRecord = append(req.FileRecord, fr)
+		}
+		return c.GetMulti(ctx, req)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	dataMap := make(map[*repb.Digest][]byte)
+	for _, rsp := range rsps {
+		fmr, ok := rsp.(*rfpb.GetMultiResponse)
+		if !ok {
+			return nil, status.InternalError("response not of type *rfpb.FindMissingResponse")
+		}
+		for _, frd := range fmr.GetData() {
+			dataMap[frd.GetFileRecord().GetDigest()] = frd.GetData()
+		}
+	}
+
+	return dataMap, nil
 }
 
 func (rc *RaftCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

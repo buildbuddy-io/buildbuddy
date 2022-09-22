@@ -84,13 +84,20 @@ func GetTypeForFlagValue(value flag.Value) (reflect.Type, error) {
 	return nil, status.UnimplementedErrorf("Unsupported flag type : %T", value)
 }
 
+// UnwrapFlagValue resolves the given flag.Value to its underlying flag.Value
+// type, iteratively unwrapping wrapper types like DeprecatedFlag or FlagAlias
+// if they are present.
+func UnwrapFlagValue(value flag.Value) flag.Value {
+	for v, ok := value.(WrappingValue); ok; v, ok = v.WrappedValue().(WrappingValue) {
+		value = v.WrappedValue()
+	}
+	return value
+}
+
 // ConvertFlagValue returns the data this flag Value contains, converted to the
 // same type as is returned when defining the flag initially.
 func ConvertFlagValue(value flag.Value) (any, error) {
-	addr := reflect.ValueOf(value)
-	for v, ok := value.(WrappingValue); ok; v, ok = v.WrappedValue().(WrappingValue) {
-		addr = reflect.ValueOf(v.WrappedValue())
-	}
+	addr := reflect.ValueOf(UnwrapFlagValue(value))
 	t, err := GetTypeForFlagValue(value)
 	if err != nil {
 		return nil, err

@@ -6,7 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -195,7 +195,7 @@ func decompress(in []byte, err error) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := ioutil.ReadAll(zr)
+	rsp, err := io.ReadAll(zr)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func compress(in []byte) ([]byte, error) {
 	if err := zr.Close(); err != nil {
 		return nil, err
 	}
-	return ioutil.ReadAll(&buf)
+	return io.ReadAll(&buf)
 }
 
 func (d *DiskBlobStore) blobPath(blobName string) (string, error) {
@@ -334,7 +334,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	}
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
-	b, err := ioutil.ReadAll(reader)
+	b, err := io.ReadAll(reader)
 	spn.End()
 	recordReadMetrics(gcsLabel, start, b, err)
 	return decompress(b, err)
@@ -666,7 +666,7 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 	readCloser := response.Body(azblob.RetryReaderOptions{})
 	defer readCloser.Close()
 	ctx, spn := tracing.StartSpan(ctx)
-	b, err := ioutil.ReadAll(readCloser)
+	b, err := io.ReadAll(readCloser)
 	spn.End()
 	if err != nil {
 		return nil, err

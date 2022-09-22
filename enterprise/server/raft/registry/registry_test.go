@@ -23,7 +23,7 @@ func localAddr(t *testing.T) string {
 
 func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.GossipManager {
 	node, err := gossip.NewGossipManager("name-"+nodeAddr, nodeAddr, seeds)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	t.Cleanup(func() {
 		node.Shutdown()
 	})
@@ -32,12 +32,12 @@ func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.Gos
 
 func requireResolves(t testing.TB, dnr registry.NodeRegistry, clusterID, nodeID uint64, raftAddr, grpcAddr string) {
 	addr, key, err := dnr.Resolve(clusterID, nodeID)
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 	require.Equal(t, raftAddr, addr, dnr.String())
 	require.NotNil(t, key)
 
 	addr, key, err = dnr.ResolveGRPC(clusterID, nodeID)
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 	require.Equal(t, grpcAddr, addr, dnr.String())
 	require.NotNil(t, key)
 }

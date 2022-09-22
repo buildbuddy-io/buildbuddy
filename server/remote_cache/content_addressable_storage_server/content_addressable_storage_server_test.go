@@ -325,7 +325,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 			if d == depth {
 				d, buf := testdigest.NewRandomDigestBuf(t, 100)
 				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, bytes.NewReader(buf))
-				require.Nil(t, err)
+				require.NoError(t, err)
 				fileName := fmt.Sprintf("leaf-file-%s-%d", d.GetHash(), n)
 				fileNames = append(fileNames, fileName)
 				subdir.Files = append(subdir.Files, &repb.FileNode{
@@ -339,7 +339,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 			}
 
 			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, subdir)
-			require.Nil(t, err)
+			require.NoError(t, err)
 			dirName := fmt.Sprintf("node-%s-depth-%d-node-%d", subdirDigest.GetHash(), d, n)
 			fileNames = append(fileNames, dirName)
 			nextLeafNodes = append(nextLeafNodes, &repb.DirectoryNode{
@@ -354,7 +354,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 		Directories: leafNodes,
 	}
 	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, parentDir)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	return rootDigest, fileNames
 }
 

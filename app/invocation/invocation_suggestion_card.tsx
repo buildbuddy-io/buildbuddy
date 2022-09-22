@@ -103,11 +103,12 @@ const matchers: SuggestionMatcher[] = [
     if (!model.isComplete() || model.invocations[0]?.success) return null;
 
     return {
-      level: SuggestionLevel.INFO,
+      level: SuggestionLevel.ERROR,
       message: (
         <>
-          If this build uploads or downloads large artifacts, Bazel may have timed out. If you see this often, consider
-          setting a higher value of <BazelFlag>--remote_timeout</BazelFlag>. We recommend a value of 600 (10 minutes).
+          A "deadline exceeded" error was encountered, possibly due to large artifacts being downloaded or uploaded. If
+          you see this often, consider setting a higher value of <BazelFlag>--remote_timeout</BazelFlag>. We recommend a
+          value of 600 (10 minutes).
         </>
       ),
       reason: (

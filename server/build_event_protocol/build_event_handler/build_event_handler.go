@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -36,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
@@ -587,11 +587,11 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	var screenWriter *terminal.ScreenWriter
+	var terminalWriter *terminal.ScreenWriter
 	if !invocation.HasChunkedEventLogs {
-		screenWriter = terminal.NewScreenWriter()
+		terminalWriter = terminal.NewScreenWriter()
 	}
-	parser := event_parser.NewStreamingEventParser(screenWriter)
+	parser := event_parser.NewStreamingEventParser(terminalWriter)
 	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
@@ -664,7 +664,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
-	ti, err := tableInvocationFromProto(invocation, iid)
+	ti, err := e.tableInvocationFromProto(invocation, iid)
 	if err != nil {
 		return err
 	}
@@ -1063,7 +1063,7 @@ func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID stri
 	if e.logWriter != nil {
 		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
-	ti, err = tableInvocationFromProto(invocationProto, ti.BlobID)
+	ti, err = e.tableInvocationFromProto(invocationProto, ti.BlobID)
 	if err != nil {
 		return err
 	}
@@ -1247,7 +1247,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			invocation.Event = events
 			invocation.StructuredCommandLine = structuredCommandLines
 			if screenWriter != nil {
-				invocation.ConsoleBuffer = string(screenWriter.RenderAsANSI())
+				invocation.ConsoleBuffer = string(screenWriter.Render())
 			}
 		}
 		invocationMu.Unlock()
@@ -1260,7 +1260,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	return invocation, nil
 }
 
-func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
+func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
 	uuid, err := uuid.StringToBytes(p.InvocationId)
 	if err != nil {
 		return nil, err
@@ -1287,13 +1287,20 @@ func tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invoca
 	i.ActionCount = p.ActionCount
 	i.BlobID = blobID
 	i.InvocationStatus = int64(p.InvocationStatus)
-	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
-		i.Perms = perms.OTHERS_READ
-	}
 	i.LastChunkId = p.LastChunkId
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
+
+	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
+	if err != nil {
+		return nil, err
+	} else {
+		i.Perms = userGroupPerms.Perms
+	}
+	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
+		i.Perms |= perms.OTHERS_READ
+	}
 	return i, nil
 }
 

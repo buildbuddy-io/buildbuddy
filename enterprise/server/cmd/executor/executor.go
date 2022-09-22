@@ -253,7 +253,7 @@ func main() {
 	}
 	executorID := executorUUID.String()
 
-	runnerPool, err := runner.NewPool(env)
+	runnerPool, err := runner.NewPool(env, &runner.PoolOptions{})
 	if err != nil {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
 	}

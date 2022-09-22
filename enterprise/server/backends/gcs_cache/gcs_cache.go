@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -184,7 +183,7 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	_, spn := tracing.StartSpan(ctx)
-	b, err := ioutil.ReadAll(reader)
+	b, err := io.ReadAll(reader)
 	spn.End()
 	timer.ObserveGet(len(b), err)
 	// Note, if we decide to retry reads in the future, be sure to

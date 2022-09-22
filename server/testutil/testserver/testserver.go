@@ -2,7 +2,7 @@ package testserver
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -77,7 +77,7 @@ func Run(t *testing.T, opts *Opts) *Server {
 
 func isOK(resp *http.Response) (bool, error) {
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return false, err
 	}

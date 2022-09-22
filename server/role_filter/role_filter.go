@@ -126,8 +126,11 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 		return nil
 	}
 
-	serverAdminGID := env.GetAuthenticator().AdminGroupID()
-	if serverAdminGID != "" && stringSliceContains(ServerAdminOnlyRPCs, rpcName) {
+	if stringSliceContains(ServerAdminOnlyRPCs, rpcName) {
+		serverAdminGID := env.GetAuthenticator().AdminGroupID()
+		if serverAdminGID == "" {
+			return status.PermissionDeniedError("Permission Denied.")
+		}
 		for _, m := range u.GetGroupMemberships() {
 			if m.GroupID == serverAdminGID && m.Role == role.Admin {
 				return nil

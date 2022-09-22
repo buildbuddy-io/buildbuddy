@@ -2,7 +2,6 @@ package config
 
 import (
 	"io"
-	"io/ioutil"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"gopkg.in/yaml.v2"
@@ -46,7 +45,7 @@ type PullRequestTrigger struct {
 }
 
 func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
-	byt, err := ioutil.ReadAll(r)
+	byt, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
