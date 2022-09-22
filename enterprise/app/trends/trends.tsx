@@ -92,6 +92,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.query.repoUrl = filterParams.repo;
       request.query.branchName = filterParams.branch;
       request.query.commitSha = filterParams.commit;
+      request.query.command = filterParams.command;
 
       request.query.updatedBefore = filterParams.updatedBefore;
       request.query.updatedAfter = filterParams.updatedAfter;
@@ -124,6 +125,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
     if (this.props.search.get("repo")) {
       request.query.repoUrl = this.props.search.get("repo");
+    }
+
+    if (this.props.search.get("command")) {
+      request.query.command = this.props.search.get("command");
     }
 
     this.setState({ ...this.state, loading: true });
