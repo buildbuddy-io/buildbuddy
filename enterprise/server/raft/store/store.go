@@ -407,7 +407,7 @@ func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	// doing a split, so we do not check for range leases here.
 	rIface, ok := s.replicas.Load(rangeID)
 	if !ok {
-		return nil, status.NotFoundErrorf("Replica %d not found", rangeID)
+		return nil, status.OutOfRangeErrorf("%s: replica for range %d not found", constants.RangeNotFoundMsg, rangeID)
 	}
 	r, ok := rIface.(*replica.Replica)
 	if !ok {
