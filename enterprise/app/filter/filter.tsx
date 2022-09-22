@@ -3,7 +3,7 @@ import React from "react";
 import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
-import { Filter, X, Calendar, User, Github, GitBranch, GitCommit, HardDrive } from "lucide-react";
+import { Filter, X, Calendar, User, Github, GitBranch, GitCommit, HardDrive, Wrench } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import { formatDateRange } from "../../../app/format/format";
 import router, {
@@ -17,6 +17,7 @@ import router, {
   BRANCH_PARAM_NAME,
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
+  COMMAND_PARAM_NAME,
 } from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import {
@@ -47,6 +48,7 @@ interface State {
   branch?: string;
   commit?: string;
   host?: string;
+  command?: string;
 }
 
 type PresetRange = {
@@ -84,13 +86,15 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(REPO_PARAM_NAME) ||
           search.get(BRANCH_PARAM_NAME) ||
           search.get(COMMIT_PARAM_NAME) ||
-          search.get(HOST_PARAM_NAME)
+          search.get(HOST_PARAM_NAME) ||
+          search.get(COMMAND_PARAM_NAME)
       ),
       user: search.get(USER_PARAM_NAME),
       repo: search.get(REPO_PARAM_NAME),
       branch: search.get(BRANCH_PARAM_NAME),
       commit: search.get(COMMIT_PARAM_NAME),
       host: search.get(HOST_PARAM_NAME),
+      command: search.get(COMMAND_PARAM_NAME),
     };
   }
 
@@ -135,6 +139,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [BRANCH_PARAM_NAME]: "",
       [COMMIT_PARAM_NAME]: "",
       [HOST_PARAM_NAME]: "",
+      [COMMAND_PARAM_NAME]: "",
     });
   }
 
@@ -195,6 +200,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [BRANCH_PARAM_NAME]: this.state.branch,
       [COMMIT_PARAM_NAME]: this.state.commit,
       [HOST_PARAM_NAME]: this.state.host,
+      [COMMAND_PARAM_NAME]: this.state.command,
     });
   }
 
@@ -215,9 +221,10 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const branchValue = this.props.search.get(BRANCH_PARAM_NAME) || "";
     const commitValue = this.props.search.get(COMMIT_PARAM_NAME) || "";
     const hostValue = this.props.search.get(HOST_PARAM_NAME) || "";
+    const commandValue = this.props.search.get(COMMAND_PARAM_NAME) || "";
 
     const isFiltering = Boolean(
-      roleValue || statusValue || userValue || repoValue || branchValue || commitValue || hostValue
+      roleValue || statusValue || userValue || repoValue || branchValue || commitValue || hostValue || commandValue
     );
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
@@ -292,6 +299,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 <HardDrive /> {hostValue}
               </span>
             )}
+            {commandValue && (
+              <span className="advanced-badge">
+                <Wrench /> {commandValue}
+              </span>
+            )}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isFilterMenuOpen}
@@ -362,6 +374,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                       placeholder={"e.g. lunchbox"}
                       value={this.state.host}
                       onChange={(e) => this.setState({ host: e.target.value })}
+                    />
+                  </div>
+                  <div className="option-group-title">Command</div>
+                  <div className="option-group-input">
+                    <TextInput
+                      placeholder={"e.g. test"}
+                      value={this.state.command}
+                      onChange={(e) => this.setState({ command: e.target.value })}
                     />
                   </div>
                   <div className="option-group-input">

@@ -16,6 +16,7 @@ export const REPO_PARAM_NAME = "repo";
 export const BRANCH_PARAM_NAME = "branch";
 export const COMMIT_PARAM_NAME = "commit";
 export const HOST_PARAM_NAME = "host";
+export const COMMAND_PARAM_NAME = "command";
 
 const GLOBAL_FILTER_PARAM_NAMES = [
   ROLE_PARAM_NAME,
@@ -29,6 +30,7 @@ const GLOBAL_FILTER_PARAM_NAMES = [
   BRANCH_PARAM_NAME,
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
+  COMMAND_PARAM_NAME,
 ];
 
 class Router {
