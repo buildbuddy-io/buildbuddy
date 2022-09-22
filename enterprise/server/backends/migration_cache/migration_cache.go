@@ -653,14 +653,14 @@ func (mc *MigrationCache) copyDataInBackground() error {
 	}
 }
 
-func (mc *MigrationCache) logCopyChanFullInBackground() error {
+func (mc *MigrationCache) logCopyChanFullInBackground() {
 	ticker := time.NewTicker(mc.copyChanFullWarningInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-mc.quitChan:
-			return nil
+			return
 		case <-ticker.C:
 			if *mc.numCopiesDropped != 0 {
 				log.Warningf("Migration copy chan was full and dropped %d copies in %v. May need to increase buffer size", *mc.numCopiesDropped, mc.copyChanFullWarningInterval)
