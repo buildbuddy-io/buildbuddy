@@ -8,12 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -54,6 +56,11 @@ const (
 var (
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
+
+func init() {
+	// Set umask to match the executor process.
+	syscall.Umask(0)
+}
 
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
@@ -481,13 +488,29 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-	cmd := &repb.Command{Arguments: []string{"id"}}
+	ws, err := workspace.New(env, rootDir, &workspace.Opts{NonrootWritable: true})
+	require.NoError(t, err)
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			# print out the uid/gid
+			id
+
+			# make sure the workspace root dir is writable
+			touch foo || exit 1
+			# make sure output directories are writable too
+			touch outputs/bar || exit 1
+			touch nested/outputs/baz || exit 1
+		`},
+		OutputDirectories: []string{"outputs", "nested/outputs"},
+	}
+	ws.SetTask(&repb.ExecutionTask{Command: cmd})
+	err = ws.CreateOutputDirs()
+	require.NoError(t, err)
 
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		User:                   "nobody",
-		ActionWorkingDirectory: workDir,
+		ActionWorkingDirectory: ws.Path(),
 		NumCPUs:                1,
 		MemSizeMB:              1000,
 		EnableNetworking:       false,
@@ -504,7 +527,9 @@ func TestFirecrackerNonRoot(t *testing.T) {
 		t.Fatal(res.Error)
 	}
 	require.NoError(t, res.Error)
-	assert.Equal(t, "uid=65534(nobody) gid=65534(nobody)\n", string(res.Stdout))
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, "uid=65534(nobody) gid=65534(nobody)\n", string(res.Stdout))
 }
 
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
