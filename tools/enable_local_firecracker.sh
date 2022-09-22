@@ -41,9 +41,9 @@ mkdir -p "$CGROUP2_PATH"/firecracker
 chown -R "$SUDO_USER":cgroups "$CGROUP2_PATH"/firecracker
 chmod -R g+rw "$CGROUP2_PATH"/firecracker
 
-chown -R root:cgroups "$CGROUP2_PATH"/cgroup.subtree_control
+chown -R "$SUDO_USER":cgroups "$CGROUP2_PATH"/cgroup.subtree_control
 chmod -R g+rw "$CGROUP2_PATH"/cgroup.subtree_control
-chown -R root:cgroups "$CGROUP2_PATH"/cgroup.procs
+chown -R "$SUDO_USER":cgroups "$CGROUP2_PATH"/cgroup.procs
 chmod -R g+rw "$CGROUP2_PATH"/cgroup.procs
 
 setfacl -m u:"${SUDO_USER}":rw /dev/kvm
