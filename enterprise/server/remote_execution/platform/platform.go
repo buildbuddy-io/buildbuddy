@@ -81,7 +81,7 @@ const (
 	CPUArchitecturePropertyName = "Arch"
 	defaultCPUArchitecture      = "amd64"
 
-	dockerUserPropertyName = "dockerUser"
+	DockerUserPropertyName = "dockerUser"
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
@@ -207,7 +207,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		WorkloadIsolationType:      stringProp(m, workloadIsolationPropertyName, ""),
 		InitDockerd:                boolProp(m, initDockerdPropertyName, false),
 		DockerForceRoot:            boolProp(m, dockerRunAsRootPropertyName, false),
-		DockerUser:                 stringProp(m, dockerUserPropertyName, ""),
+		DockerUser:                 stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:              stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:              boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                  vfsEnabled,
