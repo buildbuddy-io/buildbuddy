@@ -272,6 +272,7 @@ type FirecrackerContainer struct {
 	workspaceGeneration int    // the number of times the workspace has been re-mounted into the guest VM
 	containerFSPath     string // the path to the container ext4 image
 	tempDir             string // path for writing disk images before the chroot is created
+	user                string // user to execute all commands as
 
 	rmOnce *sync.Once
 	rmErr  error
@@ -362,6 +363,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		jailerRoot:         opts.JailerRoot,
 		dockerClient:       opts.DockerClient,
 		containerImage:     opts.ContainerImage,
+		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		env:                env,
 		vmLog:              vmLog,
@@ -1302,7 +1304,7 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, cmd *
 	statsListener := func(stats *repb.UsageStats) {
 		container.Metrics.Observe(c, stats)
 	}
-	return vmexec_client.Execute(ctx, client, cmd, workDir, statsListener, stdio)
+	return vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {

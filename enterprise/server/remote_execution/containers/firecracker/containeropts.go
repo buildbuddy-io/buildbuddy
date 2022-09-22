@@ -8,6 +8,9 @@ type ContainerOpts struct {
 	// The OCI container image. ex "alpine:latest".
 	ContainerImage string
 
+	// The "USER[:GROUP]" spec to run commands as (optional).
+	User string
+
 	// DockerClient can optionally be specified to pull container images via
 	// Docker. This is useful for de-duping in-flight image pull operations and
 	// making use of the local Docker cache for images. If not specified, images

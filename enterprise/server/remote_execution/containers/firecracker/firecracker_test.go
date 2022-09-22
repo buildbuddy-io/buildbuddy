@@ -477,6 +477,36 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+defaultRouteIP)
 }
 
+func TestFirecrackerNonRoot(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	cmd := &repb.Command{Arguments: []string{"id"}}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		User:                   "nobody",
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              1000,
+		EnableNetworking:       false,
+		ScratchDiskSizeMB:      100,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+	require.NoError(t, res.Error)
+	assert.Equal(t, "uid=65534(nobody) gid=65534(nobody)\n", string(res.Stdout))
+}
+
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)

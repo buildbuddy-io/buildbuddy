@@ -883,6 +883,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		r, err := p.take(ctx, &query{
 			User:                   user,
 			ContainerImage:         props.ContainerImage,
+			CommandUser:            props.DockerUser,
 			WorkflowID:             props.WorkflowID,
 			WorkloadIsolationType:  platform.ContainerType(props.WorkloadIsolationType),
 			InitDockerd:            props.InitDockerd,
@@ -1000,6 +1001,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
+			User:                   props.DockerUser,
 			DockerClient:           p.dockerClient,
 			ActionWorkingDirectory: p.hostBuildRoot(),
 			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
@@ -1041,6 +1043,8 @@ type query struct {
 	// container.
 	// Required; the zero-value "" matches bare runners.
 	ContainerImage string
+	// CommandUser is the username or ID to run commands as.
+	CommandUser string
 	// WorkflowID is the BuildBuddy workflow ID, if applicable.
 	// Required; the zero-value "" matches non-workflow runners.
 	WorkflowID string
@@ -1074,6 +1078,7 @@ func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 		r := p.runners[i]
 		if r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
+			r.PlatformProperties.DockerUser != q.CommandUser ||
 			platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != q.WorkloadIsolationType ||
 			r.PlatformProperties.InitDockerd != q.InitDockerd ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||

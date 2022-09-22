@@ -63,6 +63,9 @@ message ExecRequest {
   // the command, because commands can behave differently depending on whether
   // or not stdin is attached.
   bool open_stdin = 8;
+
+  // Optional user to run the command as.
+  string user = 9;
 }
 
 message ExecResponse {
