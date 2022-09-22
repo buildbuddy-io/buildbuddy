@@ -296,14 +296,14 @@ func main() {
 		repb.RegisterActionCacheServer(localServer, actionCacheServer)
 	}
 
-	// Setup SSL for monitoring endpoints (optional).
-	if err := ssl.Register(env); err != nil {
-		log.Fatal(err.Error())
-	}
-
 	container.Metrics.Start(rootContext)
 	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+
+	// Setup SSL for monitoring endpoints (optional).
 	if *monitoringSSLPort >= 0 {
+		if err := ssl.Register(env); err != nil {
+			log.Fatal(err.Error())
+		}
 		if err := monitoring.StartSSLMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringSSLPort)); err != nil {
 			log.Fatal(err.Error())
 		}
