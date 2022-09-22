@@ -15,7 +15,9 @@ type MigrationConfig struct {
 	// if a lot of data has not been copied over yet
 	LogNotFoundErrors  bool `yaml:"log_not_found_errors"`
 	CopyChanBufferSize int  `yaml:"copy_chan_buffer_size"`
-	MaxCopiesPerSec    int  `yaml:"max_copies_per_sec"`
+	// CopyChanFullWarningIntervalMin controls how often we should log when the copy chan is full
+	CopyChanFullWarningIntervalMin int64 `yaml:"copy_chan_full_warning_interval_min"`
+	MaxCopiesPerSec                int   `yaml:"max_copies_per_sec"`
 }
 
 type CacheConfig struct {

@@ -421,7 +421,8 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 	require.NoError(t, err)
 
 	config := &migration_cache.MigrationConfig{
-		CopyChanBufferSize: 1,
+		CopyChanBufferSize:             1,
+		CopyChanFullWarningIntervalMin: 1,
 	}
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
