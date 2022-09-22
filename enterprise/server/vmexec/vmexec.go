@@ -263,6 +263,14 @@ func newCommand(start *vmxpb.ExecRequest, reapMutex *sync.RWMutex) (*command, er
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if start.GetUser() != "" {
+		cred, err := commandutil.LookupCredential(start.GetUser())
+		if err != nil {
+			return nil, err
+		}
+		cmd.SysProcAttr.Credential = cred
+	}
+
 	stdoutReader, stdoutWriter := io.Pipe()
 	cmd.Stdout = stdoutWriter
 	stderrReader, stderrWriter := io.Pipe()
