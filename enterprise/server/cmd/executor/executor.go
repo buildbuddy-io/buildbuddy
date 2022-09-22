@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -64,10 +65,11 @@ var (
 	localCacheSizeBytes      = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
 	startupWarmupMaxWaitSecs = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
 
-	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	port           = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
-	monitoringPort = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
-	serverType     = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
+	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
+	monitoringPort    = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	monitoringSSLPort = flag.Int("monitoring.ssl_port", -1, "If non-negative, the SSL port to listen for monitoring traffic on. `ssl` config must have `ssl_enabled: true` and be properly configured.")
+	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
 )
 
 var localListener *bufconn.Listener
@@ -296,6 +298,16 @@ func main() {
 
 	container.Metrics.Start(rootContext)
 	monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+
+	// Setup SSL for monitoring endpoints (optional).
+	if *monitoringSSLPort >= 0 {
+		if err := ssl.Register(env); err != nil {
+			log.Fatal(err.Error())
+		}
+		if err := monitoring.StartSSLMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringSSLPort)); err != nil {
+			log.Fatal(err.Error())
+		}
+	}
 
 	http.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
