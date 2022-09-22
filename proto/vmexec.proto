@@ -64,7 +64,8 @@ message ExecRequest {
   // or not stdin is attached.
   bool open_stdin = 8;
 
-  // Optional user to run the command as.
+  // Optional user to run the command as. If unset, the command will run as
+  // root.
   string user = 9;
 }
 
