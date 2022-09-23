@@ -133,8 +133,8 @@ const (
 	/// Whether the request was allowed by quota manager.
 	QuotaAllowed = "quota_allowed"
 
-	// The type of request a not found error was initiated from
-	NotFoundErrorType = "type"
+	// Describes the type of cache request
+	CacheRequestType = "type"
 )
 
 const (
@@ -426,7 +426,7 @@ var (
 		Name:      "migration_not_found_error_count",
 		Help:      "Number of not found errors from the destination cache during a cache migration.",
 	}, []string{
-		NotFoundErrorType,
+		CacheRequestType,
 	})
 
 	/// ## Remote execution metrics

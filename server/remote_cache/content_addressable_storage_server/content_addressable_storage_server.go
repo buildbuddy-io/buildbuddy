@@ -661,8 +661,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			} else {
 				log.Warningf("Not caching incomplete tree cache")
 				if _, migration := cache.(*migration_cache.MigrationCache); migration {
-					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.NotFoundErrorType: "incompleteTreeCache"}).Inc()
-					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.NotFoundErrorType: "all"}).Inc()
+					metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "incompleteTreeCache"}).Inc()
 				}
 			}
 		}
