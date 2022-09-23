@@ -843,15 +843,7 @@ func (s *Store) loadSnapshot(ctx context.Context, req *rfpb.LoadSnapshotRequest)
 		if batch.Size() == 0 {
 			return nil
 		}
-		batchProto, err := batch.ToProto()
-		if err != nil {
-			return err
-		}
-		batchRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, r.ClusterID, batchProto)
-		if err != nil {
-			return err
-		}
-		if err := rbuilder.NewBatchResponseFromProto(batchRsp).AnyError(); err != nil {
+		if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, r.ClusterID, batch); err != nil {
 			return err
 		}
 		batch = rbuilder.NewBatchBuilder()
@@ -944,44 +936,27 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := addLocalRangeEdits(oldLeft, oldLeftNewGen, b); err != nil {
 		return nil, err
 	}
-	newLeftGenBatch, err := b.ToProto()
-	if err != nil {
-		return nil, err
-	}
-	newLeftGenRspBatch, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, newLeftGenBatch)
-	if err != nil {
-		return nil, err
-	}
-	if err := rbuilder.NewBatchResponseFromProto(newLeftGenRspBatch).AnyError(); err != nil {
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, b); err != nil {
 		return nil, err
 	}
 
 	// Lock the cluster that is to be split.
 	// TODO(tylerw): add lease renewal goroutine instead of using such a long
 	// lease.
-	leaseReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
+	leaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
 		DurationSeconds: 10,
-	}).ToProto()
-	if err != nil {
+	})
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, leaseReq); err != nil {
 		return nil, err
 	}
-	leaseBatchRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, leaseReq)
-	if err != nil {
-		return nil, err
-	}
-	if err := rbuilder.NewBatchResponseFromProto(leaseBatchRsp).AnyError(); err != nil {
-		return nil, err
-	}
+
 	// Find an appropriate split point.
-	findSplitReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}).ToProto()
+	findSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
+	findSplitBatchRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
 	if err != nil {
 		return nil, err
 	}
-	findSplitBatchRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, findSplitReq)
-	if err != nil {
-		return nil, err
-	}
-	findSplitRsp, err := rbuilder.NewBatchResponseFromProto(findSplitBatchRsp).FindSplitPointResponse(0)
+	findSplitRsp, err := findSplitBatchRsp.FindSplitPointResponse(0)
 	if err != nil {
 		return nil, err
 	}
@@ -1028,22 +1003,16 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err != nil {
 		return nil, err
 	}
-	copyStoredFiles, err := rbuilder.NewBatchBuilder().Add(&rfpb.CopyStoredFilesRequest{
+	copyStoredFiles := rbuilder.NewBatchBuilder().Add(&rfpb.CopyStoredFilesRequest{
 		SourceRange:   oldLeft,
 		TargetRangeId: newIDs.rangeID,
 		Start:         findSplitRsp.GetSplit(),
 		End:           oldLeft.GetRight(),
-	}).ToProto()
-	if err != nil {
+	})
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, copyStoredFiles); err != nil {
 		return nil, err
 	}
-	copyStoredFilesBatch, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, copyStoredFiles)
-	if err != nil {
-		return nil, err
-	}
-	if err := rbuilder.NewBatchResponseFromProto(copyStoredFilesBatch).AnyError(); err != nil {
-		return nil, err
-	}
+
 	loadSnapReq := &rfpb.LoadSnapshotRequest{
 		Header: &rfpb.Header{
 			RangeId:    newIDs.rangeID,
@@ -1063,15 +1032,8 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := addLocalRangeEdits(oldRight, newRight, b); err != nil {
 		return nil, err
 	}
-	newRightReplicasBatch, err := b.ToProto()
-	if err != nil {
-		return nil, err
-	}
-	rightReplicasRspBatch, err := client.SyncProposeLocal(ctx, s.nodeHost, newIDs.clusterID, newRightReplicasBatch)
-	if err != nil {
-		return nil, err
-	}
-	if err := rbuilder.NewBatchResponseFromProto(rightReplicasRspBatch).AnyError(); err != nil {
+
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, newIDs.clusterID, b); err != nil {
 		return nil, err
 	}
 
@@ -1090,33 +1052,20 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err != nil {
 		return nil, err
 	}
-	releaseReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.SplitReleaseRequest{
+	releaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitReleaseRequest{
 		Batch: batchProto,
-	}).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	releaseRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, releaseReq)
-	if err != nil {
-		return nil, err
-	}
-	if err := rbuilder.NewBatchResponseFromProto(releaseRsp).AnyError(); err != nil {
+	})
+
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, releaseReq); err != nil {
 		return nil, err
 	}
 
 	// Delete old data from left range
-	deleteReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRangeRequest{
+	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRangeRequest{
 		Start: newLeft.Right,
 		End:   oldLeft.Right,
-	}).ToProto()
-	if err != nil {
-		return nil, err
-	}
-	deleteRsp, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, deleteReq)
-	if err != nil {
-		return nil, err
-	}
-	if err := rbuilder.NewBatchResponseFromProto(deleteRsp).AnyError(); err != nil {
+	})
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, deleteReq); err != nil {
 		return nil, err
 	}
 

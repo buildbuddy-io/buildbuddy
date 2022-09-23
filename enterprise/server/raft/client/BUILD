@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/filestore",
+        "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/environment",
