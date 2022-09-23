@@ -132,6 +132,9 @@ const (
 
 	/// Whether the request was allowed by quota manager.
 	QuotaAllowed = "quota_allowed"
+
+	// Describes the type of cache request
+	CacheRequestType = "type"
 )
 
 const (
@@ -416,6 +419,15 @@ var (
 	/// # Total number of duplicate write bytes.
 	/// sum(buildbuddy_remote_cache_duplicate_writes_bytes)
 	/// ```
+
+	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "migration_not_found_error_count",
+		Help:      "Number of not found errors from the destination cache during a cache migration.",
+	}, []string{
+		CacheRequestType,
+	})
 
 	/// ## Remote execution metrics
 
