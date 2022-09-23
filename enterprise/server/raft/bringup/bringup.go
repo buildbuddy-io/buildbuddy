@@ -351,12 +351,14 @@ func StartCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInf
 func SendStartClusterRequests(ctx context.Context, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
-			Left:  keys.Key{constants.MinByte},
-			Right: keys.Key{constants.UnsplittableMaxByte},
+			Left:       keys.Key{constants.MinByte},
+			Right:      keys.Key{constants.UnsplittableMaxByte},
+			Generation: 1,
 		},
 		&rfpb.RangeDescriptor{
-			Left:  keys.Key{constants.UnsplittableMaxByte},
-			Right: keys.Key{constants.MaxByte},
+			Left:       keys.Key{constants.UnsplittableMaxByte},
+			Right:      keys.Key{constants.MaxByte},
+			Generation: 1,
 		},
 	}
 
