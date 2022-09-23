@@ -57,6 +57,7 @@ type Invocation struct {
 	CommitSHA                        string
 	BranchName                       string
 	Command                          string
+	BazelExitCode                    string
 	ActionCount                      int64
 	InvocationStatus                 int64
 	RepoURL                          string
@@ -120,6 +121,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		CommitSHA:                        ti.CommitSHA,
 		BranchName:                       ti.BranchName,
 		Command:                          ti.Command,
+		BazelExitCode:                    ti.BazelExitCode,
 		ActionCount:                      ti.ActionCount,
 		InvocationStatus:                 ti.InvocationStatus,
 		RepoURL:                          ti.RepoURL,
