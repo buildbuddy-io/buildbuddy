@@ -211,7 +211,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 			return err
 		}
 	}
-	return status.UnavailableError("sender.Run retries exceeded")
+	return status.UnavailableErrorf("sender.Run retries exceeded for key: %q", key)
 }
 
 type runAllFunc func(peerHeaders []*client.PeerHeader) error
