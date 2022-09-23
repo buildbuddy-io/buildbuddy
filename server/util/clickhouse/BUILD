@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "clickhouse",
@@ -13,5 +13,17 @@ go_library(
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@io_gorm_driver_clickhouse//:clickhouse",
         "@io_gorm_gorm//:gorm",
+    ],
+)
+
+go_test(
+    name = "clickhouse_test",
+    srcs = ["clickhouse_test.go"],
+    deps = [
+        ":clickhouse",
+        "//server/tables",
+        "@com_github_go_faker_faker_v4//:faker",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
