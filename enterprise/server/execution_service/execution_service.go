@@ -71,41 +71,14 @@ func (es *ExecutionService) queryExecutions(ctx context.Context, baseQuery *quer
 	return executions, nil
 }
 
-func (es *ExecutionService) getLinkedInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
+func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
 	q := query_builder.NewQuery(`
 		SELECT e.* FROM InvocationExecutions ie
 		JOIN Executions e ON e.execution_id = ie.execution_id
 		JOIN Invocations i ON i.invocation_id = e.invocation_id
 	`)
 	q.AddWhereClause(`ie.invocation_id = ?`, invocationID)
-	q.AddWhereClause(`e.invocation_id = ?`, invocationID)
 	return es.queryExecutions(ctx, q)
-}
-
-func (es *ExecutionService) getUnlinkedInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
-	q := query_builder.NewQuery(`
-		SELECT e.* FROM Executions e
-		JOIN Invocations i ON i.invocation_id = e.invocation_id
-		LEFT JOIN InvocationExecutions ie 
-			ON ie.execution_id = e.execution_id AND ie.invocation_id = e.invocation_id`)
-	q.AddWhereClause(`ie.invocation_id IS NULL`)
-	q.AddWhereClause(`e.invocation_id = ?`, invocationID)
-	return es.queryExecutions(ctx, q)
-}
-
-func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocationID string) ([]tables.Execution, error) {
-	le, err := es.getLinkedInvocationExecutions(ctx, invocationID)
-	if err != nil {
-		return nil, err
-	}
-	ue, err := es.getUnlinkedInvocationExecutions(ctx, invocationID)
-	if err != nil {
-		return nil, err
-	}
-	e := make([]tables.Execution, 0, len(le)+len(ue))
-	e = append(e, le...)
-	e = append(e, ue...)
-	return e, nil
 }
 
 func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
