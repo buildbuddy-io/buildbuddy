@@ -702,6 +702,10 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 // copyStoredFiles copies stored file data from this replica to another replica
 // which must be running locally on this nodehost and available in the store.
 func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.CopyStoredFilesResponse, error) {
+	start := time.Now()
+	defer func() {
+		sm.log.Infof("Took %s to copy stored files between ranges", time.Since(start))
+	}()
 	appliesToThisReplica := sm.splitAppliesToThisReplica(req.GetSourceRange())
 	if !appliesToThisReplica {
 		sm.log.Debugf("Received copyStoredFiles cmd but it doesn't apply to this replica. Not doing anything.")
