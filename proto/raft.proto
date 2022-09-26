@@ -180,9 +180,13 @@ message FindSplitPointResponse {
 // A request to hold or renew the split lock, blocking all writes. The split
 // lock will be reverted if it is not renewed within the specified duration.
 message SplitLeaseRequest {
+  // This CAS will be executed if the lease *expires*. If SplitRelease is called
+  // before expiry, this request will not be applied.
+  CASRequest cas_on_expiry = 1;
+
   // How long the lease should be valid for. If the lease is already valid, it
   // will be extended by this much.
-  int64 duration_seconds = 1;
+  int64 duration_seconds = 2;
 }
 
 message SplitLeaseResponse {}

@@ -540,6 +540,20 @@ func (sm *Replica) releaseAndClearTimer() {
 	sm.timer = nil
 }
 
+func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
+	if cas == nil {
+		return nil
+	}
+	wb := sm.db.NewIndexedBatch()
+	defer wb.Close()
+
+	if _, err := sm.cas(wb, cas); err != nil {
+		return err
+	}
+
+	return wb.Commit(&pebble.WriteOptions{Sync: true})
+}
+
 func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResponse, error) {
 	sm.timerMu.Lock()
 	defer sm.timerMu.Unlock()
@@ -550,7 +564,9 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
 			log.Warning("Split lease expired!")
 			sm.releaseAndClearTimer()
-
+			if err := sm.oneshotCAS(req.GetCasOnExpiry()); err != nil {
+				log.Errorf("Error reverting lease: %s", err)
+			}
 		})
 	}
 
