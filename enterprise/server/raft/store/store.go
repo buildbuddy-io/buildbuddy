@@ -938,7 +938,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	findSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
 	findSplitBatchRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
 	if err != nil {
-		return nil, status.UnavailableErrorf("find split failed: %s", err)
+		return nil, err
 	}
 	findSplitRsp, err := findSplitBatchRsp.FindSplitPointResponse(0)
 	if err != nil {
@@ -1023,7 +1023,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 
 	// Update the metarange to add the new right range.
 	if err := s.updateMetarange(ctx, oldLeft, newLeft, newRight); err != nil {
-		return nil, status.UnavailableErrorf("could not update meta range: %s", err)
+		return nil, err
 	}
 
 	// Finally, update this ranges RangeDescriptor to reflect the fact that
@@ -1041,7 +1041,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	})
 
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, releaseReq); err != nil {
-		return nil, status.UnavailableErrorf("could not update left descriptor: %s", err)
+		return nil, err
 	}
 
 	// Delete old data from left range
