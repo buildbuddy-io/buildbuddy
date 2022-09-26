@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"sort"
 
@@ -23,6 +24,19 @@ import (
 const (
 	diskImageFileName = "containerfs.ext4"
 )
+
+var (
+	isRoot bool
+)
+
+func init() {
+	u, err := user.Current()
+	if err != nil {
+		log.Warningf("could not determine current user: %s", err)
+	} else {
+		isRoot = u.Uid == "0"
+	}
+}
 
 func hashString(input string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(input)))
@@ -214,7 +228,29 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 	if err := disk.EnsureDirectoryExists(rootFSDir); err != nil {
 		return "", err
 	}
-	if out, err := exec.CommandContext(ctx, "umoci", "raw", "unpack", "--rootless", "--image", ociImageDir, rootFSDir).CombinedOutput(); err != nil {
+	// Note, the "--rootless" flag causes all unpacked files to be owned by the
+	// current uid, regardless of their original owner in the source OCI image.
+	// This lets us avoid "permission denied" errors when unpacking, but
+	// unfortunately since we're messing with the owner uid, it can cause
+	// permissions errors when the image is actually used. For example,
+	// "/home/foo" will be owned by uid 0 if the executor is root, and non-root
+	// users in the resulting VM won't even be able to write to their own home
+	// dir.
+	//
+	// So, we only set --rootless here if we have to, in order to avoid
+	// permissions errors when unpacking. But do note that this messes with file
+	// permissions in the resulting image, e.g. "/" could be owned by a non-root
+	// user which is typically not correct and may cause unexpected issues.
+	//
+	// TODO: Find another way to convert OCI -> ext4 so that we don't get
+	// incorrect permissions when the executor is not running as root.
+	cmd := exec.CommandContext(
+		ctx,
+		"umoci", "raw", "unpack",
+		fmt.Sprintf("--rootless=%v", !isRoot),
+		"--image", ociImageDir,
+		rootFSDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return "", status.InternalErrorf("umoci unpack error: %q: %s", string(out), err)
 	}
 
