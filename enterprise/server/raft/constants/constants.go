@@ -89,4 +89,5 @@ var (
 	RangeNotLeasedMsg    = "Range not leased"    // continue
 	RangeNotCurrentMsg   = "Range not current"   // break
 	RangeLeaseInvalidMsg = "Range lease invalid" // continue
+	RangeSplittingMsg    = "Range splitting"
 )
