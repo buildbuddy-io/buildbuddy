@@ -541,6 +541,9 @@ func (sm *Replica) releaseAndClearTimer() {
 }
 
 func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
+	if cas == nil {
+		return nil
+	}
 	wb := sm.db.NewIndexedBatch()
 	defer wb.Close()
 
