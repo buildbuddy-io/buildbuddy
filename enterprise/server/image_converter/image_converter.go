@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
@@ -24,12 +23,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/dsingleflight"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/signalutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/containerd/stargz-snapshotter/estargz"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -45,7 +42,6 @@ import (
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
