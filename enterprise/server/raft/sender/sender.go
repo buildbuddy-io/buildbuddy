@@ -190,6 +190,7 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
+	var lastError error
 	for retrier.Next() {
 		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
 		if err != nil {
@@ -210,8 +211,9 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 		if !status.IsOutOfRangeError(err) {
 			return err
 		}
+		lastError = err
 	}
-	return status.UnavailableErrorf("sender.Run retries exceeded for key: %q", key)
+	return status.UnavailableErrorf("sender.Run retries exceeded for key: %q err: %s", key, lastError)
 }
 
 type runAllFunc func(peerHeaders []*client.PeerHeader) error
@@ -228,6 +230,7 @@ type runAllFunc func(peerHeaders []*client.PeerHeader) error
 func (s *Sender) RunAll(ctx context.Context, key []byte, fn runAllFunc) error {
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
+	var lastError error
 	for retrier.Next() {
 		rd, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
 		if err != nil {
@@ -257,8 +260,9 @@ func (s *Sender) RunAll(ctx context.Context, key []byte, fn runAllFunc) error {
 		if !status.IsOutOfRangeError(err) {
 			return err
 		}
+		lastError = err
 	}
-	return status.UnavailableError("sender.RunAll retries exceeded")
+	return status.UnavailableErrorf("sender.RunAll retries exceeded for key: %q err: %s", key, lastError)
 }
 
 // KeyMeta contains a key with arbitrary data attached.
@@ -309,6 +313,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 	skipRangeCache := false
 	var rsps []interface{}
 	remainingKeys := keys
+	var lastError error
 	for retrier.Next() {
 		keysByRange, err := s.partitionKeysByRange(ctx, remainingKeys, skipRangeCache)
 		if err != nil {
@@ -339,13 +344,14 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 			} else {
 				rsps = append(rsps, rangeRsp)
 			}
+			lastError = err
 		}
 
 		if len(remainingKeys) == 0 {
 			return rsps, nil
 		}
 	}
-	return nil, status.UnavailableError("sender.RunMultiKey retries exceeded")
+	return nil, status.UnavailableErrorf("sender.RunMultiKey retries exceeded, err: %s", lastError)
 }
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
