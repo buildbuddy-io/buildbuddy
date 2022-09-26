@@ -930,20 +930,18 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	bootStrapInfo := bringup.MakeBootstrapInfo(newIDs.clusterID, firstNodeID, nodeGrpcAddrs)
 
 	// Bump the local range descriptor so that outstanding reqeusts are rejected.
-	b := rbuilder.NewBatchBuilder()
 	oldLeftNewGen := proto.Clone(oldLeft).(*rfpb.RangeDescriptor)
 	oldLeftNewGen.Generation += 1
-	if err := addLocalRangeEdits(oldLeft, oldLeftNewGen, b); err != nil {
-		return nil, err
-	}
-	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, b); err != nil {
-		return nil, err
-	}
 
+	cas, err := casRangeEdit(constants.LocalRangeKey, oldLeft, oldLeftNewGen)
+	if err != nil {
+		return nil, err
+	}
 	// Lock the cluster that is to be split.
 	// TODO(tylerw): add lease renewal goroutine instead of using such a long
 	// lease.
 	leaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
+		Cas:             cas,
 		DurationSeconds: 10,
 	})
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, leaseReq); err != nil {
@@ -1028,7 +1026,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	// about to be activated.
 	oldRight := proto.Clone(newRight).(*rfpb.RangeDescriptor)
 	newRight.Replicas = bootStrapInfo.Replicas
-	b = rbuilder.NewBatchBuilder()
+	b := rbuilder.NewBatchBuilder()
 	if err := addLocalRangeEdits(oldRight, newRight, b); err != nil {
 		return nil, err
 	}
@@ -1348,22 +1346,30 @@ func (s *Store) reserveIDsForNewCluster(ctx context.Context, numNodes int) (*new
 	return ids, nil
 }
 
-func addLocalRangeEdits(oldLeft, newLeft *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
-	newLeftBuf, err := proto.Marshal(newLeft)
+func casRangeEdit(key []byte, old, new *rfpb.RangeDescriptor) (*rfpb.CASRequest, error) {
+	newBuf, err := proto.Marshal(new)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	oldLeftBuf, err := proto.Marshal(oldLeft)
+	oldBuf, err := proto.Marshal(old)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	b = b.Add(&rfpb.CASRequest{
+	return &rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: newLeftBuf,
+			Key:   key,
+			Value: newBuf,
 		},
-		ExpectedValue: oldLeftBuf,
-	})
+		ExpectedValue: oldBuf,
+	}, nil
+}
+
+func addLocalRangeEdits(oldLeft, newLeft *rfpb.RangeDescriptor, b *rbuilder.BatchBuilder) error {
+	cas, err := casRangeEdit(constants.LocalRangeKey, oldLeft, newLeft)
+	if err != nil {
+		return err
+	}
+	b = b.Add(cas)
 	return nil
 }
 
