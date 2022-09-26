@@ -35,7 +35,6 @@ go_library(
         "//server/resources",
         "//server/ssl",
         "//server/util/fileresolver",
-        "//server/util/flagutil/yaml",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
