@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
@@ -23,10 +24,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/dsingleflight"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/signalutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/containerd/stargz-snapshotter/estargz"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -485,11 +488,11 @@ func (c *imageConverter) Start(hc interfaces.HealthChecker, env environment.Env)
 }
 
 func main() {
-	flag.Parse()
-
-	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
+	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
+
+	config.ReloadOnSIGHUP()
 
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)

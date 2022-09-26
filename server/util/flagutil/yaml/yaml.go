@@ -5,12 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
@@ -597,20 +595,8 @@ func getYAMLMapAndNodeFromData(data []byte) (map[string]any, *yaml.Node, error) 
 	return yamlMap, node, nil
 }
 
-func onSIGHUP(fn func() error) {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, syscall.SIGHUP)
-	go func() {
-		for range c {
-			if err := fn(); err != nil {
-				log.Warningf("SIGHUP handler err: %s", err)
-			}
-		}
-	}()
-}
-
-// PopulateFlagsFromData takes the path to some YAML file, reads it, and
-// unmarshals it, then uses the umnarshaled data to populate the unset flags
+// PopulateFlagsFromFile takes the path to some YAML file, reads it, and
+// unmarshals it, then uses the unmarshaled data to populate the unset flags
 // with names corresponding to the keys.
 func PopulateFlagsFromFile(configFile string) error {
 	log.Infof("Reading buildbuddy config from '%s'", configFile)
@@ -632,15 +618,6 @@ func PopulateFlagsFromFile(configFile string) error {
 		return err
 	}
 
-	// Setup a listener to re-read the config file on SIGHUP.
-	onSIGHUP(func() error {
-		log.Infof("Re-reading buildbuddy config from '%s'", configFile)
-		fileBytes, err := os.ReadFile(configFile)
-		if err != nil {
-			return fmt.Errorf("Error reading config file: %s", err)
-		}
-		return PopulateFlagsFromData(fileBytes)
-	})
 	return nil
 }
 
