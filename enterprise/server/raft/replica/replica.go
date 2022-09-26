@@ -574,10 +574,10 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 		sm.leaser.AcquireSplitLock()
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
 			log.Warning("Split lease expired!")
+			sm.releaseAndClearTimer()
 			if err := sm.revertCASRequest(req.GetCas()); err != nil {
 				log.Errorf("Error reverting lease: %s", err)
 			}
-			sm.releaseAndClearTimer()
 		})
 	}
 
