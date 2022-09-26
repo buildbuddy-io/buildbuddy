@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -52,7 +53,7 @@ import (
 )
 
 const (
-	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.8"
+	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.9"
 )
 
 var (
@@ -659,7 +660,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			// When using Firecracker, write all outputs to the scratch disk, which
 			// has more space than the workspace disk and doesn't need to be extracted
 			// to the executor between action runs.
-			envVars = append(envVars, &repb.Command_EnvironmentVariable{Name: "WORKDIR_OVERRIDE", Value: "/root/workspace"})
+			wd := filepath.Join(workflowHomeDir(workflowAction.User), "workspace")
+			envVars = append(envVars, &repb.Command_EnvironmentVariable{Name: "WORKDIR_OVERRIDE", Value: wd})
 		}
 	}
 	if os == platform.DarwinOperatingSystemName && !isTrusted {
@@ -700,6 +702,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: "Pool", Value: ws.WorkflowsPoolName()},
 				{Name: "OSFamily", Value: os},
 				{Name: "Arch", Value: workflowAction.Arch},
+				{Name: platform.DockerUserPropertyName, Value: workflowAction.User},
 				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: "container-image", Value: containerImage},
 				// Reuse the container/VM for the CI runner across executions if
@@ -963,6 +966,13 @@ func isGitHubURL(s string) bool {
 		return false
 	}
 	return u.Host == "github.com"
+}
+
+func workflowHomeDir(user string) string {
+	if user == "buildbuddy" {
+		return "/home/buildbuddy"
+	}
+	return "/root"
 }
 
 func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
