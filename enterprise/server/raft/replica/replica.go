@@ -551,20 +551,6 @@ func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
 	return wb.Commit(&pebble.WriteOptions{Sync: true})
 }
 
-func (sm *Replica) revertCASRequest(cas *rfpb.CASRequest) error {
-	if cas == nil {
-		return nil
-	}
-	revert := &rfpb.CASRequest{
-		Kv: &rfpb.KV{
-			Key:   cas.GetKv().GetKey(),
-			Value: cas.GetExpectedValue(),
-		},
-		ExpectedValue: cas.GetKv().GetValue(),
-	}
-	return sm.oneshotCAS(revert)
-}
-
 func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResponse, error) {
 	sm.timerMu.Lock()
 	defer sm.timerMu.Unlock()
@@ -575,20 +561,10 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
 			log.Warning("Split lease expired!")
 			sm.releaseAndClearTimer()
-			if err := sm.revertCASRequest(req.GetCas()); err != nil {
+			if err := sm.oneshotCAS(req.GetCasOnExpiry()); err != nil {
 				log.Errorf("Error reverting lease: %s", err)
 			}
 		})
-	}
-
-	if req.GetCas() != nil {
-		if sm.timer != nil {
-			return nil, status.InvalidArgumentError("Batch cannot be set on split lease extend requests")
-		}
-
-		if err := sm.oneshotCAS(req.GetCas()); err != nil {
-			return nil, err
-		}
 	}
 
 	if sm.timer == nil {

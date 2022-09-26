@@ -852,6 +852,16 @@ func (s *Store) loadSnapshot(ctx context.Context, req *rfpb.LoadSnapshotRequest)
 	return &rfpb.LoadSnapshotResponse{}, nil
 }
 
+func casRevert(cas *rfpb.CASRequest) *rfpb.CASRequest {
+	return &rfpb.CASRequest{
+		Kv: &rfpb.KV{
+			Key:   cas.GetKv().GetKey(),
+			Value: cas.GetExpectedValue(),
+		},
+		ExpectedValue: cas.GetKv().GetValue(),
+	}
+}
+
 // SplitCluster splits a raft range into two roughly equal parts. For the time
 // being, splits are only supported for ranges active on this cluster.
 //
@@ -921,11 +931,14 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err != nil {
 		return nil, err
 	}
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, rbuilder.NewBatchBuilder().Add(cas)); err != nil {
+		return nil, err
+	}
 	// Lock the cluster that is to be split.
 	// TODO(tylerw): add lease renewal goroutine instead of using such a long
 	// lease.
 	leaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
-		Cas:             cas,
+		CasOnExpiry:     casRevert(cas),
 		DurationSeconds: 10,
 	})
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, leaseReq); err != nil {
