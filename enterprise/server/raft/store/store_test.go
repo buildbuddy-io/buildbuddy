@@ -370,7 +370,7 @@ func headerFromRangeDescriptor(rd *rfpb.RangeDescriptor) *rfpb.Header {
 
 func getStoreWithRangeLease(t testing.TB, stores []*TestingStore, header *rfpb.Header) *TestingStore {
 	for _, s := range stores {
-		if err := s.RangeIsActive(header); err == nil {
+		if _, err := s.LeasedRange(header); err == nil {
 			return s
 		}
 	}

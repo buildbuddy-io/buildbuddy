@@ -37,6 +37,10 @@ usermod -a -G cgroups root
 usermod -a -G cgroups "$SUDO_USER"
 
 # jailer will create stuff here; ensure the dir exists and owner is user.
+mkdir -p /sys/fs/cgroup/cpuset/firecracker
+chown -R "$SUDO_USER":cgroups /sys/fs/cgroup/cpuset/firecracker
+chmod -R g+rw /sys/fs/cgroup/cpuset/firecracker
+
 mkdir -p "$CGROUP2_PATH"/firecracker
 chown -R "$SUDO_USER":cgroups "$CGROUP2_PATH"/firecracker
 chmod -R g+rw "$CGROUP2_PATH"/firecracker

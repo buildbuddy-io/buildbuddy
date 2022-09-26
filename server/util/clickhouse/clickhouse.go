@@ -44,38 +44,59 @@ func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 type Table interface {
 	TableName() string
 	TableOptions() string
+	// Fields that are in the primary DB Table schema; but not in the clickhouse schema.
+	ExcludedFields() []string
 }
 
 // Invocation constains a subset of tables.Invocations.
 type Invocation struct {
-	GroupID                          string `gorm:"primaryKey;"`
-	UpdatedAtUsec                    int64  `gorm:"primaryKey;"`
-	InvocationUUID                   string
-	Role                             string
-	User                             string
-	Host                             string
-	CommitSHA                        string
-	BranchName                       string
-	Command                          string
-	BazelExitCode                    string
-	ActionCount                      int64
-	InvocationStatus                 int64
-	RepoURL                          string
-	DurationUsec                     int64
-	Success                          bool
-	ActionCacheHits                  int64
-	ActionCacheMisses                int64
-	ActionCacheUploads               int64
-	CasCacheHits                     int64
-	CasCacheMisses                   int64
-	CasCacheUploads                  int64
-	TotalDownloadSizeBytes           int64
-	TotalUploadSizeBytes             int64
-	TotalDownloadUsec                int64
-	TotalUploadUsec                  int64
-	TotalCachedActionExecUsec        int64
-	DownloadThroughputBytesPerSecond int64
-	UploadThroughputBytesPerSecond   int64
+	GroupID        string `gorm:"primaryKey;"`
+	UpdatedAtUsec  int64  `gorm:"primaryKey;"`
+	CreatedAtUsec  int64
+	InvocationUUID string
+	Role           string
+	User           string
+	Host           string
+	CommitSHA      string
+	BranchName     string
+	Command        string
+	BazelExitCode  string
+
+	UserID           string
+	Pattern          string
+	InvocationStatus int64
+	Attempt          uint64
+
+	ActionCount                       int64
+	RepoURL                           string
+	DurationUsec                      int64
+	Success                           bool
+	ActionCacheHits                   int64
+	ActionCacheMisses                 int64
+	ActionCacheUploads                int64
+	CasCacheHits                      int64
+	CasCacheMisses                    int64
+	CasCacheUploads                   int64
+	TotalDownloadSizeBytes            int64
+	TotalUploadSizeBytes              int64
+	TotalDownloadTransferredSizeBytes int64
+	TotalUploadTransferredSizeBytes   int64
+	TotalDownloadUsec                 int64
+	TotalUploadUsec                   int64
+	TotalCachedActionExecUsec         int64
+	DownloadThroughputBytesPerSecond  int64
+	UploadThroughputBytesPerSecond    int64
+}
+
+func (i *Invocation) ExcludedFields() []string {
+	return []string{
+		"InvocationID",
+		"BlobID",
+		"LastChunkId",
+		"RedactionFlags",
+		"CreatedWithCapabilities",
+		"Perms",
+	}
 }
 
 func (i *Invocation) TableName() string {
@@ -112,34 +133,40 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	return &Invocation{
-		GroupID:                          ti.GroupID,
-		UpdatedAtUsec:                    ti.UpdatedAtUsec,
-		InvocationUUID:                   hex.EncodeToString(ti.InvocationUUID),
-		Role:                             ti.Role,
-		User:                             ti.User,
-		Host:                             ti.Host,
-		CommitSHA:                        ti.CommitSHA,
-		BranchName:                       ti.BranchName,
-		Command:                          ti.Command,
-		BazelExitCode:                    ti.BazelExitCode,
-		ActionCount:                      ti.ActionCount,
-		InvocationStatus:                 ti.InvocationStatus,
-		RepoURL:                          ti.RepoURL,
-		DurationUsec:                     ti.DurationUsec,
-		Success:                          ti.Success,
-		ActionCacheHits:                  ti.ActionCacheHits,
-		ActionCacheMisses:                ti.ActionCacheMisses,
-		ActionCacheUploads:               ti.ActionCacheUploads,
-		CasCacheHits:                     ti.CasCacheHits,
-		CasCacheMisses:                   ti.CasCacheMisses,
-		CasCacheUploads:                  ti.CasCacheUploads,
-		TotalDownloadSizeBytes:           ti.TotalDownloadSizeBytes,
-		TotalUploadSizeBytes:             ti.TotalUploadSizeBytes,
-		TotalDownloadUsec:                ti.TotalDownloadUsec,
-		TotalUploadUsec:                  ti.TotalUploadUsec,
-		TotalCachedActionExecUsec:        ti.TotalCachedActionExecUsec,
-		DownloadThroughputBytesPerSecond: ti.DownloadThroughputBytesPerSecond,
-		UploadThroughputBytesPerSecond:   ti.UploadThroughputBytesPerSecond,
+		GroupID:                           ti.GroupID,
+		UpdatedAtUsec:                     ti.UpdatedAtUsec,
+		CreatedAtUsec:                     ti.CreatedAtUsec,
+		InvocationUUID:                    hex.EncodeToString(ti.InvocationUUID),
+		Role:                              ti.Role,
+		User:                              ti.User,
+		UserID:                            ti.UserID,
+		Host:                              ti.Host,
+		CommitSHA:                         ti.CommitSHA,
+		BranchName:                        ti.BranchName,
+		Command:                           ti.Command,
+		BazelExitCode:                     ti.BazelExitCode,
+		Pattern:                           ti.Pattern,
+		Attempt:                           ti.Attempt,
+		ActionCount:                       ti.ActionCount,
+		InvocationStatus:                  ti.InvocationStatus,
+		RepoURL:                           ti.RepoURL,
+		DurationUsec:                      ti.DurationUsec,
+		Success:                           ti.Success,
+		ActionCacheHits:                   ti.ActionCacheHits,
+		ActionCacheMisses:                 ti.ActionCacheMisses,
+		ActionCacheUploads:                ti.ActionCacheUploads,
+		CasCacheHits:                      ti.CasCacheHits,
+		CasCacheMisses:                    ti.CasCacheMisses,
+		CasCacheUploads:                   ti.CasCacheUploads,
+		TotalDownloadSizeBytes:            ti.TotalDownloadSizeBytes,
+		TotalUploadSizeBytes:              ti.TotalUploadSizeBytes,
+		TotalDownloadUsec:                 ti.TotalDownloadUsec,
+		TotalUploadUsec:                   ti.TotalUploadUsec,
+		TotalDownloadTransferredSizeBytes: ti.TotalDownloadTransferredSizeBytes,
+		TotalUploadTransferredSizeBytes:   ti.TotalUploadTransferredSizeBytes,
+		TotalCachedActionExecUsec:         ti.TotalCachedActionExecUsec,
+		DownloadThroughputBytesPerSecond:  ti.DownloadThroughputBytesPerSecond,
+		UploadThroughputBytesPerSecond:    ti.UploadThroughputBytesPerSecond,
 	}
 }
 
