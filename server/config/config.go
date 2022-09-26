@@ -47,9 +47,7 @@ func ReloadOnSIGHUP() {
 		syscall.SIGHUP,
 		func() error {
 			log.Infof("Re-reading buildbuddy config from '%s'", Path())
-			flagutil.ResetFlags()
-			flag.Parse()
-			return flagyaml.PopulateFlagsFromFile(Path())
+			return Reload()
 		},
 		func(err error) { log.Warningf("SIGHUP handler err: %s", err) },
 	)
