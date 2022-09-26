@@ -1362,6 +1362,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:LUHzmkK3GUKUrL/1gfBUxAHzcev3apQlezX/+O7ma6w=",
         version = "v1.0.1",
     )
+    go_repository(
+        name = "com_github_go_faker_faker_v4",
+        importpath = "github.com/go-faker/faker/v4",
+        sum = "h1:zjTxJMHn7Po7OCPKY+VjO6mNQ4ZzE7PoBjb2sUNHVPs=",
+        version = "v4.0.0-beta.3",
+    )
 
     go_repository(
         name = "com_github_go_git_gcfg",
