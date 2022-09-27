@@ -219,6 +219,9 @@ func (f *StringSliceFlag) String() string {
 }
 
 func (f *StringSliceFlag) Set(values string) error {
+	if values == "" {
+		return nil
+	}
 	for _, val := range strings.Split(values, ",") {
 		*f = append(*f, val)
 	}

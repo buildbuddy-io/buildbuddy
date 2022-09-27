@@ -1,11 +1,13 @@
 package common_test
 
 import (
+	"encoding/json"
 	"flag"
 	"net/url"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types/autoflags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -253,4 +255,81 @@ func TestBadDereferencedValueFromFlagName(t *testing.T) {
 	_ = replaceFlagsForTesting(t)
 	_, err := common.GetDereferencedValue[any]("unknown_flag")
 	require.Error(t, err)
+}
+
+func SetWithOverride(t *testing.T) {
+	_ = replaceFlagsForTesting(t)
+
+	defaultBool := false
+	defaultInt := 37
+	defaultEmptyStringSlice := []string{}
+	defaultStringSlice := []string{"ert+", "y76p", "olu8"}
+	defaultEmptyStructSlice := []testStruct{}
+	defaultStructSlice := []testStruct{{Field: 0, Meadow: "ert+"}, {Field: 1, Meadow: "y76p"}, {Field: 2, Meadow: "olu8"}}
+
+	boolFromFlag := autoflags.New("bool_flag", defaultBool, "")
+	intFromFlag := autoflags.New("int_flag", defaultInt, "")
+	emptyStringSliceFromFlag := autoflags.New("empty_string_slice_flag", defaultEmptyStringSlice, "")
+	stringSliceFromFlag := autoflags.New("string_slice_flag", defaultStringSlice, "")
+	emptyStructSliceFromFlag := autoflags.New("empty_struct_slice_flag", defaultEmptyStructSlice, "")
+	structSliceFromFlag := autoflags.New("struct_slice_flag", defaultStructSlice, "")
+
+	common.SetWithOverride("bool_flag", "true")
+	assert.Equal(t, true, *boolFromFlag)
+
+	common.SetWithOverride("int_flag", "20")
+	assert.Equal(t, 20, *intFromFlag)
+
+	common.SetWithOverride("empty_string_slice_flag", "yo,what up,hey")
+	assert.Equal(t, []string{"yo", "what up", "hey"}, *emptyStringSliceFromFlag)
+
+	common.SetWithOverride("string_slice_flag", "flour,cornmeal,baking powder,sugar")
+	assert.Equal(t, []string{"flour", "corn meal", "baking powder", "sugar"}, *stringSliceFromFlag)
+
+	newEmptyStructSliceFlag := []testStruct{{Field: 5, Meadow: "halibut"}, {Field: 9, Meadow: "sheep's cheese"}, {Field: 11, Meadow: "tamahtoes"}}
+	jsonForEmptyStructSliceFlag, err := json.Marshal(newEmptyStructSliceFlag)
+	require.NoError(t, err)
+	common.SetWithOverride("empty_struct_slice_flag", string(jsonForEmptyStructSliceFlag))
+	assert.Equal(t, newEmptyStructSliceFlag, *emptyStructSliceFromFlag)
+
+	newStructSliceFlag := []testStruct{{Field: 207, Meadow: "PURPLE PEOPLE"}}
+	jsonForStructSliceFlag, err := json.Marshal(newStructSliceFlag)
+	require.NoError(t, err)
+	common.SetWithOverride("struct_slice_flag", string(jsonForStructSliceFlag))
+	assert.Equal(t, newStructSliceFlag, *structSliceFromFlag)
+}
+
+func TestResetFlags(t *testing.T) {
+	_ = replaceFlagsForTesting(t)
+
+	defaultBool := false
+	defaultInt := 37
+	defaultEmptyStringSlice := []string{}
+	defaultStringSlice := []string{"ert+", "y76p", "olu8"}
+	defaultEmptyStructSlice := []testStruct{}
+	defaultStructSlice := []testStruct{{Field: 0, Meadow: "ert+"}, {Field: 1, Meadow: "y76p"}, {Field: 2, Meadow: "olu8"}}
+
+	boolFromFlag := autoflags.New("bool_flag", defaultBool, "")
+	intFromFlag := autoflags.New("int_flag", defaultInt, "")
+	emptyStringSliceFromFlag := autoflags.New("empty_string_slice_flag", defaultEmptyStringSlice, "")
+	stringSliceFromFlag := autoflags.New("string_slice_flag", defaultStringSlice, "")
+	emptyStructSliceFromFlag := autoflags.New("empty_struct_slice_flag", defaultEmptyStructSlice, "")
+	structSliceFromFlag := autoflags.New("struct_slice_flag", defaultStructSlice, "")
+
+	*boolFromFlag = true
+	*intFromFlag = 20
+	*emptyStringSliceFromFlag = append(*emptyStringSliceFromFlag, "hi")
+	*stringSliceFromFlag = append(*stringSliceFromFlag, "hi")
+	*emptyStructSliceFromFlag = append(*emptyStructSliceFromFlag, testStruct{Field: 3, Meadow: "hi"})
+	*structSliceFromFlag = append(*structSliceFromFlag, testStruct{Field: 3, Meadow: "hi"})
+
+	err := common.ResetFlags()
+	require.NoError(t, err)
+
+	assert.Equal(t, defaultBool, *boolFromFlag)
+	assert.Equal(t, defaultInt, *intFromFlag)
+	assert.Equal(t, 0, len(*emptyStringSliceFromFlag))
+	assert.Equal(t, defaultStringSlice, *stringSliceFromFlag)
+	assert.Equal(t, 0, len(*emptyStructSliceFromFlag))
+	assert.Equal(t, defaultStructSlice, *structSliceFromFlag)
 }
