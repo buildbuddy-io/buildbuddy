@@ -24,7 +24,8 @@ import {
 import React from "react";
 import authService, { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
-import router from "../../../app/router/router";
+import Link, { LinkProps } from "../../../app/components/link/link";
+import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 
 interface Props {
@@ -100,7 +101,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
     return this.props.path === "/code/";
   }
 
-  isSettingsSelected() {
+  isSetupSelected() {
     return this.props.path.startsWith("/docs/setup/");
   }
 
@@ -112,58 +113,6 @@ export default class SidebarComponent extends React.Component<Props, State> {
     rpcService.events.next("refresh");
   }
 
-  navigateToAllBuilds() {
-    this.isHomeSelected() ? this.refreshCurrentPage() : router.navigateHome();
-  }
-
-  navigateToTrends() {
-    this.isTrendsSelected() && this.props.search.toString().length == 0
-      ? this.refreshCurrentPage()
-      : router.navigateToTrends();
-  }
-
-  navigateToUsage() {
-    this.isUsageSelected() ? this.refreshCurrentPage() : router.navigateToUsage();
-  }
-
-  navigateToExecutors() {
-    this.isExecutorsSelected() && this.props.search.toString().length == 0
-      ? this.refreshCurrentPage()
-      : router.navigateToExecutors();
-  }
-
-  navigateToTap() {
-    this.isTapSelected() ? this.refreshCurrentPage() : router.navigateToTap();
-  }
-
-  navigateToUsers() {
-    this.isUsersSelected() ? this.refreshCurrentPage() : router.navigateHome("#users");
-  }
-
-  navigateToRepos() {
-    this.isReposSelected() ? this.refreshCurrentPage() : router.navigateHome("#repos");
-  }
-
-  navigateToBranches() {
-    this.isBranchesSelected() ? this.refreshCurrentPage() : router.navigateHome("#branches");
-  }
-
-  navigateToCommits() {
-    this.isCommitsSelected() ? this.refreshCurrentPage() : router.navigateHome("#commits");
-  }
-
-  navigateToHosts() {
-    this.isHostsSelected() ? this.refreshCurrentPage() : router.navigateHome("#hosts");
-  }
-
-  navigateToWorkflows() {
-    this.isWorkflowsSelected() ? this.refreshCurrentPage() : router.navigateToWorkflows();
-  }
-
-  navigateToCode() {
-    this.isCodeSelected() ? this.refreshCurrentPage() : router.navigateToCode();
-  }
-
   render() {
     return (
       <div className="sidebar">
@@ -173,80 +122,54 @@ export default class SidebarComponent extends React.Component<Props, State> {
           </a>
         </div>
         <div className="sidebar-body">
-          <div
-            className={`sidebar-item ${this.isHomeSelected() ? "selected" : ""}`}
-            onClick={this.navigateToAllBuilds.bind(this)}>
+          <SidebarLink selected={this.isHomeSelected()} href={Path.home}>
             <List className="icon" /> All builds
-          </div>
-          <div
-            className={`sidebar-item ${this.isTrendsSelected() ? "selected" : ""}`}
-            onClick={this.navigateToTrends.bind(this)}>
+          </SidebarLink>
+          <SidebarLink selected={this.isTrendsSelected()} href={Path.trendsPath}>
             <BarChart2 className="icon" /> Trends
-          </div>
+          </SidebarLink>
           {capabilities.test && (
-            <div
-              className={`sidebar-item ${this.isTapSelected() ? "selected" : ""}`}
-              onClick={this.navigateToTap.bind(this)}>
+            <SidebarLink selected={this.isTapSelected()} href={Path.tapPath}>
               <LayoutGrid className="icon" /> Tests
-            </div>
+            </SidebarLink>
           )}
-          <div
-            className={`sidebar-item ${this.isUsersSelected() ? "selected" : ""}`}
-            onClick={this.navigateToUsers.bind(this)}>
+          <SidebarLink selected={this.isUsersSelected()} href={Path.userHistoryPath}>
             <Users className="icon" /> Users
-          </div>
-          <div
-            className={`sidebar-item ${this.isReposSelected() ? "selected" : ""}`}
-            onClick={this.navigateToRepos.bind(this)}>
+          </SidebarLink>
+          <SidebarLink selected={this.isReposSelected()} href={Path.repoHistoryPath}>
             <Github className="icon" /> Repos
-          </div>
-          <div
-            className={`sidebar-item ${this.isBranchesSelected() ? "selected" : ""}`}
-            onClick={this.navigateToBranches.bind(this)}>
+          </SidebarLink>
+          <SidebarLink selected={this.isBranchesSelected()} href={Path.branchHistoryPath}>
             <GitBranch className="icon" /> Branches
-          </div>
-          <div
-            className={`sidebar-item ${this.isCommitsSelected() ? "selected" : ""}`}
-            onClick={this.navigateToCommits.bind(this)}>
+          </SidebarLink>
+          <SidebarLink selected={this.isCommitsSelected()} href={Path.commitHistoryPath}>
             <GitCommit className="icon" /> Commits
-          </div>
-          <div
-            className={`sidebar-item ${this.isHostsSelected() ? "selected" : ""}`}
-            onClick={this.navigateToHosts.bind(this)}>
+          </SidebarLink>
+          <SidebarLink selected={this.isHostsSelected()} href={Path.hostHistoryPath}>
             <HardDrive className="icon" /> Hosts
-          </div>
+          </SidebarLink>
           {router.canAccessExecutorsPage(this.props.user) && (
-            <div
-              className={`sidebar-item ${this.isExecutorsSelected() ? "selected" : ""}`}
-              onClick={this.navigateToExecutors.bind(this)}>
+            <SidebarLink selected={this.isExecutorsSelected()} href={Path.executorsPath}>
               <Cloud className="icon" /> Executors
-            </div>
+            </SidebarLink>
           )}
           {router.canAccessWorkflowsPage(this.props.user) && (
-            <div
-              className={`sidebar-item ${this.isWorkflowsSelected() ? "selected" : ""}`}
-              onClick={this.navigateToWorkflows.bind(this)}>
+            <SidebarLink selected={this.isWorkflowsSelected()} href={Path.workflowsPath}>
               <PlayCircle className="icon" /> Workflows
-            </div>
+            </SidebarLink>
           )}
           {capabilities.code && (
-            <div
-              className={`sidebar-item ${this.isCodeSelected() ? "selected" : ""}`}
-              onClick={this.navigateToCode.bind(this)}>
+            <SidebarLink selected={this.isCodeSelected()} href={Path.codePath}>
               <Code className="icon" /> Code
-            </div>
+            </SidebarLink>
           )}
-          <div
-            className={`sidebar-item ${this.isSettingsSelected() ? "selected" : ""}`}
-            onClick={() => router.navigateToSetup()}>
+          <SidebarLink selected={this.isSetupSelected()} href={Path.setupPath}>
             <Settings className="icon" /> Setup
-          </div>
+          </SidebarLink>
           {router.canAccessUsagePage(this.props.user) && (
-            <div
-              className={`sidebar-item ${this.isUsageSelected() ? "selected" : ""}`}
-              onClick={this.navigateToUsage.bind(this)}>
+            <SidebarLink selected={this.isUsageSelected()} href={Path.usagePath}>
               <Gauge className="icon" /> Usage
-            </div>
+            </SidebarLink>
           )}
           <a className="sidebar-item" href="https://www.buildbuddy.io/docs/" target="_blank">
             <BookOpen className="icon" /> Docs
@@ -316,5 +239,17 @@ export default class SidebarComponent extends React.Component<Props, State> {
         </div>
       </div>
     );
+  }
+}
+
+type SidebarLinkProps = LinkProps & {
+  selected: boolean;
+};
+
+class SidebarLink extends React.Component<SidebarLinkProps> {
+  render() {
+    const { selected, ...rest } = this.props;
+
+    return <Link className={`sidebar-item ${selected ? "selected" : ""}`} {...rest} />;
   }
 }
