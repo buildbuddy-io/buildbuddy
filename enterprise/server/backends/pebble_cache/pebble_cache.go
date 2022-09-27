@@ -77,6 +77,9 @@ var (
 
 	// Prefix used to store non-record data.
 	SystemKeyPrefix = []byte{'\x01'}
+
+	acDir  = []byte("/ac/")
+	casDir = []byte("/cas/")
 )
 
 const (
@@ -1323,8 +1326,6 @@ type partitionEvictor struct {
 	dbGetter   pebbleutil.Leaser
 	accesses   chan<- *accessTimeUpdate
 
-	casPrefix   []byte
-	acPrefix    []byte
 	samplePool  []*evictionPoolEntry
 	sizeBytes   int64
 	casCount    int64
@@ -1342,8 +1343,6 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		part:            part,
 		fileStorer:      fileStorer,
 		blobDir:         blobDir,
-		casPrefix:       []byte(part.ID + "/cas/"),
-		acPrefix:        []byte(part.ID + "/ac/"),
 		samplePool:      make([]*evictionPoolEntry, 0, samplePoolSize),
 		dbGetter:        dbg,
 		accesses:        accesses,
@@ -1373,9 +1372,9 @@ func (e *partitionEvictor) updateSize(fileMetadataKey []byte, deltaSize int64) {
 		deltaCount = -1
 	}
 
-	if bytes.Contains(fileMetadataKey, e.casPrefix) {
+	if bytes.Contains(fileMetadataKey, casDir) {
 		e.casCount += deltaCount
-	} else if bytes.Contains(fileMetadataKey, e.acPrefix) {
+	} else if bytes.Contains(fileMetadataKey, acDir) {
 		e.acCount += deltaCount
 	} else {
 		log.Warningf("Unidentified file (not CAS or AC): %q", fileMetadataKey)
@@ -1410,9 +1409,9 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		metadataSizeBytes += int64(len(iter.Value()))
 
 		// identify and count CAS vs AC files.
-		if bytes.Contains(iter.Key(), e.casPrefix) {
+		if bytes.Contains(iter.Key(), casDir) {
 			casCount += 1
-		} else if bytes.Contains(iter.Key(), e.acPrefix) {
+		} else if bytes.Contains(iter.Key(), acDir) {
 			acCount += 1
 		} else {
 			log.Warningf("Unidentified file (not CAS or AC): %q", iter.Key())
@@ -1499,65 +1498,9 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		}
 	}
 
-	mu := sync.Mutex{}
-	eg := errgroup.Group{}
-
-	totalSizeBytes := int64(0)
-	totalCasCount := int64(0)
-	totalAcCount := int64(0)
-
-	goScanRange := func(start, end []byte) {
-		eg.Go(func() error {
-			sizeBytes, casCount, acCount, err := e.computeSizeInRange(start, end)
-			if err != nil {
-				return err
-			}
-
-			mu.Lock()
-			totalSizeBytes += sizeBytes
-			totalCasCount += casCount
-			totalAcCount += acCount
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	// Start scanning the AC.
-	// AC keys look like /partitionID/ac/12312312313(crc-32)/digesthash
-	// Start scanning at 10 because crc32s do not begin with 0.
-	ranges, err := splitRange(keyPrefix(e.acPrefix, []byte("10")), keyPrefix(e.acPrefix, []byte("99")), 100)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	for i, left := range ranges {
-		goScanRange(left, ranges[i+1])
-		if i == len(ranges)-2 {
-			break
-		}
-	}
-	// Additionally scan from 99-> max byte to ensure we cover the full
-	// range.
-	goScanRange(keyPrefix(e.acPrefix, []byte("99")), keyPrefix(e.acPrefix, []byte{constants.MaxByte}))
-
-	// Start scanning the CAS.
-	// CAS keys look like /partitionID/cas/digesthash(sha-256)
-	ranges, err = splitRange(keyPrefix(e.casPrefix, []byte("00")), keyPrefix(e.casPrefix, []byte("ff")), 160)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	for i, left := range ranges {
-		goScanRange(left, ranges[i+1])
-		if i == len(ranges)-2 {
-			break
-		}
-	}
-	// Additionally scan from 99-> max byte to ensure we cover the full
-	// range.
-	goScanRange(keyPrefix(e.casPrefix, []byte("ff")), keyPrefix(e.casPrefix, []byte{constants.MaxByte}))
-
-	if err := eg.Wait(); err != nil {
-		return 0, 0, 0, err
-	}
+	start := append([]byte(e.part.ID+"/"), constants.MinByte)
+	end := append([]byte(e.part.ID+"/"), constants.MaxByte)
+	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
 
 	partitionMD := &rfpb.PartitionMetadata{
 		SizeBytes: totalSizeBytes,
