@@ -19,7 +19,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - build //enterprise/server/cmd/executor //enterprise/server //server --config=mac-workflows
+      - build //enterprise/server/cmd/executor //enterprise/server //server //cli/cmd/bb --config=mac-workflows
   - name: Benchmark
     triggers:
       push:
