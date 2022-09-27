@@ -1498,8 +1498,8 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		}
 	}
 
-	start := []byte(e.part.ID + "/")
-	end := keyPrefix([]byte(e.part.ID), []byte{constants.MaxByte})
+	start := append([]byte(e.part.ID+"/"), constants.MinByte)
+	end := append([]byte(e.part.ID+"/"), constants.MaxByte)
 	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
 
 	partitionMD := &rfpb.PartitionMetadata{
