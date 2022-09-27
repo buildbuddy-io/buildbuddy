@@ -403,29 +403,18 @@ function getUnavailableMessage(href: string) {
 
   switch (path) {
     case Path.workflowsPath:
-      return `Workflows are not available in ${capabilities.name}`;
     case Path.codePath:
-      return `Code is not available in ${capabilities.name}`;
     case Path.settingsPath:
-      return `Settings are not available in ${capabilities.name}`;
     case Path.trendsPath:
-      return `Trends are not available in ${capabilities.name}`;
     case Path.executorsPath:
-      return `Executors are not available in ${capabilities.name}`;
     case Path.tapPath:
-      return `The test dashboard is not available in ${capabilities.name}`;
     case Path.userHistoryPath:
-      return `User history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`;
     case Path.hostHistoryPath:
-      return `Host history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`;
     case Path.repoHistoryPath:
-      return `Repo history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`;
     case Path.branchHistoryPath:
-      return `Branch history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`;
     case Path.commitHistoryPath:
-      return `Commit history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`;
     case Path.invocationPath:
-      return `Invocations are not available in ${capabilities.name}`;
+      return `This feature is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`;
     default:
       return "";
   }
