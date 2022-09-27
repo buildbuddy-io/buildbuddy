@@ -2,11 +2,12 @@ package config
 
 import (
 	"flag"
+	"os"
+	"os/signal"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/signalutil"
 
 	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
@@ -38,17 +39,22 @@ func Reload() error {
 	return Load()
 }
 
-// ReloadOnSIGHUP registers a signal handler for syscall.SIGHUP that resets the
-// flags to their default values, re-parses the flags and loads the config file
-// specified by config.Path().
+// ReloadOnSIGHUP registers a signal handler (as a goroutine) for syscall.SIGHUP
+// that resets the flags to their default values, re-parses the flags and loads
+// the config file specified by config.Path(). This function is only intended to
+// be called once per process (probably near the top of main), as it otherwise
+// could leak goroutines.
 func ReloadOnSIGHUP() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGHUP)
+
 	// Setup a listener to re-read the config file on SIGHUP.
-	signalutil.OnSignal(
-		syscall.SIGHUP,
-		func() error {
+	go func() {
+		for range c {
 			log.Infof("Re-reading buildbuddy config from '%s'", Path())
-			return Reload()
-		},
-		func(err error) { log.Warningf("SIGHUP handler err: %s", err) },
-	)
+			if err := Reload(); err != nil {
+				log.Warningf("SIGHUP handler err: %s", err)
+			}
+		}
+	}()
 }

@@ -9,6 +9,5 @@ go_library(
         "//server/util/flagutil",
         "//server/util/flagutil/yaml",
         "//server/util/log",
-        "//server/util/signalutil",
     ],
 )
