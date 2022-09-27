@@ -5,6 +5,7 @@ go_library(
     srcs = ["retry.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/retry",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/log"],
 )
 
 go_test(
@@ -14,5 +15,6 @@ go_test(
     deps = [
         ":retry",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
