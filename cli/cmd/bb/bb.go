@@ -10,9 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/bazelbuild/bazelisk/core"
-	"github.com/bazelbuild/bazelisk/repositories"
 	"github.com/buildbuddy-io/buildbuddy/cli/autoconfig"
+	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
@@ -55,13 +54,7 @@ func runBazelAndDie(ctx context.Context, bazelArgs *commandline.BazelArgs, opts 
 		die(exitCode, nil)
 	}
 
-	gcs := &repositories.GCSRepo{}
-	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
-	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
-
-	exitCode, err := core.RunBazelisk(bazelArgs.ExecArgs(), repos)
-	die(exitCode, err)
+	bazelisk.Run(bazelArgs.ExecArgs())
 }
 
 func parseBazelRCs(bazelFlags *commandline.BazelFlags) []*parser.BazelOption {
