@@ -1,24 +1,25 @@
 package arg
 
 import (
+	"fmt"
 	"strings"
 )
 
-// Returns true if the list of args contains an arg with the prefix desiredArg
-func HasArg(args []string, desiredArg string) bool {
-	arg, _ := getArg(args, desiredArg, true)
+// Returns true if the list of args contains desiredArg
+func Has(args []string, desiredArg string) bool {
+	arg, _ := find(args, desiredArg)
 	return arg != ""
 }
 
-// If the list of args contains an arg with the prefix desiredArg, returns the arg with the prefix trimmed
-func GetArg(args []string, desiredArg string) string {
-	arg, _ := getArg(args, desiredArg, true)
+// Returns the value of the given desiredArg if contained in args
+func Get(args []string, desiredArg string) string {
+	arg, _ := find(args, desiredArg)
 	return arg
 }
 
-// If the list containes an arg with the prefix desiredArg, return the arg without the prefix and a slice with that arg removed
-func PopArg(args []string, desiredArg string) (string, []string) {
-	arg, i := getArg(args, desiredArg, true)
+// Returns the value of the given desiredArg and a slice with that arg removed
+func Pop(args []string, desiredArg string) (string, []string) {
+	arg, i := find(args, desiredArg)
 	if i < 0 {
 		return "", args
 	}
@@ -26,16 +27,17 @@ func PopArg(args []string, desiredArg string) (string, []string) {
 }
 
 // Returns a list with argToRemove removed (if it exists)
-func RemoveArg(args []string, argToRemove string) []string {
-	_, remaining := PopArg(args, argToRemove)
+func Remove(args []string, argToRemove string) []string {
+	_, remaining := Pop(args, argToRemove)
 	return remaining
 }
 
-// Helper method for finding arguments within a list of arguments
-func getArg(args []string, desiredArg string, prefix bool) (string, int) {
+// Helper method for finding arguments by prefix within a list of arguments
+func find(args []string, desiredArg string) (string, int) {
+	prefix := fmt.Sprintf("--%s=", desiredArg)
 	for i, arg := range args {
-		if (prefix && strings.HasPrefix(arg, desiredArg)) || (!prefix && desiredArg == arg) {
-			return strings.TrimPrefix(arg, desiredArg), i
+		if strings.HasPrefix(arg, prefix) {
+			return strings.TrimPrefix(arg, prefix), i
 		}
 	}
 	return "", -1
@@ -60,20 +62,22 @@ func GetCommandAndIndex(args []string) (string, int) {
 
 // Returns any "passthrough" arugments in args (those to the right of the first " -- ", if any)
 func GetPassthroughArgs(args []string) []string {
-	_, i := getArg(args, "--", false)
-	if i < 0 {
-		return []string{}
+	for i, arg := range args {
+		if arg == "--" {
+			return args[i+1:]
+		}
 	}
-	return args[i+1:]
+	return []string{}
 }
 
 // Returns any non "passthrough" arugments in args (those to the left of the first " -- ", if any)
 func GetNonPassthroughArgs(args []string) []string {
-	_, i := getArg(args, "--", false)
-	if i < 0 {
-		return args
+	for i, arg := range args {
+		if arg == "--" {
+			return args[:i]
+		}
 	}
-	return args[:i]
+	return []string{}
 }
 
 // Returns args with any arguments also found in existingArgs removed
