@@ -1130,8 +1130,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_elastic_gosigar",
         importpath = "github.com/elastic/gosigar",
-        sum = "h1:L8Stala75cAVQo+HLJebmtaOr1032y357R0CjbKSrZc=",
-        version = "v0.11.0",
+        sum = "h1:5w470Q8AagzVY8U48ab8rVkQrOXiIK1NHBYWrAxi9kI=",
+        version = "v0.14.0",
     )
     go_repository(
         name = "com_github_elazarl_goproxy",

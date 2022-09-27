@@ -35,7 +35,7 @@ require (
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/docker/docker v20.10.16+incompatible
 	github.com/docker/go-units v0.4.0
-	github.com/elastic/gosigar v0.11.0
+	github.com/elastic/gosigar v0.14.0
 	github.com/firecracker-microvm/firecracker-go-sdk v0.22.1-0.20220812215434-490e3369bc97
 	github.com/go-faker/faker/v4 v4.0.0-beta.3
 	github.com/go-git/go-git/v5 v5.2.0
