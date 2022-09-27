@@ -1,0 +1,128 @@
+name: "release-cli"
+
+on:
+  push:
+    tags:
+      - "cli-v*"
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'release skip')"
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: Get CLI version from tag
+        id: version
+        # Strip "cli-v" prefix from the tag to get the CLI version.
+        # e.g. cli-v1.2.3 sets VERSION to 1.2.3
+        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\/cli-v/}
+
+      - name: Checkout buildbuddy-io/bazel
+        uses: actions/checkout@v3
+        with:
+          repository: buildbuddy-io/bazel
+          path: bazel-fork
+          token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+
+      - name: Create draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+        run: |
+          set -x  # print executed commands
+          if gh release view ${{ steps.version.outputs.VERSION }} --repo=buildbuddy-io/bazel; then
+            echo "buildbuddy-io/bazel release ${{ steps.version.outputs.VERSION }} already exists."
+
+            # It's OK if the release already exists; the build-artifacts job will just overwrite
+            # any existing artifacts.
+            exit 0
+          fi
+
+          TAG=${{ steps.version.outputs.VERSION }}
+
+          cd "${GITHUB_WORKSPACE}/bazel-fork"
+          git fetch --all --tags
+          if [[ "$(git tag -l "$TAG")" ]]; then
+            echo "Tag $TAG already exists."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+          gh release create "$TAG" \
+            --repo=buildbuddy-io/bazel --title="$TAG" --draft --notes="Release version $TAG"
+
+  build-artifacts:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: bash
+          - os: macos-latest
+            shell: bash
+          - os: m1
+            # TODO: Can we remove this if we upgrade our m1 runner to native arm64?
+            shell: /usr/bin/arch -arch arm64e bash --noprofile --norc -eo pipefail {0}
+    runs-on: ${{ matrix.os }}
+    needs: create-release
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          path: buildbuddy
+
+      - name: Install bazelisk
+        run: |
+          set -x  # print executed commands
+          if [[ "$OSTYPE" == darwin* ]]; then
+            OS=darwin
+          else
+            OS=linux
+          fi
+          ARCH=$(uname -m)
+          if [[ "$ARCH" == x86_64 ]]; then
+            ARCH=amd64
+          fi
+
+          curl -L "https://github.com/bazelbuild/bazelisk/releases/download/v1.14.0/bazelisk-${OS}-${ARCH}" --output bazelisk
+          mkdir -p "${GITHUB_WORKSPACE}/bin/"
+          mv bazelisk "${GITHUB_WORKSPACE}/bin/bazel"
+          chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
+
+      - name: Build artifacts
+        id: build
+        run: |
+          set -x  # print executed commands
+          if [[ "$OSTYPE" == darwin* ]]; then
+            OS=darwin
+          else
+            OS=linux
+          fi
+          ARCH=$(uname -m)  # note: bazel naming convention is "x86_64", not "amd64"
+          VERSION=${{ needs.create-release.outputs.VERSION }}
+
+          export DEVELOPER_DIR=/Applications/Xcode_12.4.app/Contents/Developer
+          cd "${GITHUB_WORKSPACE}/buildbuddy"
+          "${GITHUB_WORKSPACE}/bin/bazel" build //cli/cmd/bb \
+              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              --define version=${{ steps.tag.outputs.TAG }}
+
+          BINARY="bazel-${VERSION}-${OS}-${ARCH}"
+          cp bazel-bin/cli/cmd/bb/bb_/bb "$BINARY"
+          shasum -a 256 "$BINARY" > "${BINARY}.sha256"
+          echo ::set-output name=BINARY::"${BINARY}"
+
+      - name: Upload artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+        run: |
+          set -x  # print executed commands
+          cd "${GITHUB_WORKSPACE}/buildbuddy"
+          gh release upload \
+            --repo buildbuddy-io/bazel \
+            --clobber \
+            "${{ needs.create-release.outputs.VERSION }}" \
+            "${{ steps.build.outputs.BINARY }}" \
+            "${{ steps.build.outputs.BINARY }}.sha256"
