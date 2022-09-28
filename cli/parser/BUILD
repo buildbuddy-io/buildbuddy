@@ -5,5 +5,8 @@ go_library(
     srcs = ["parser.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser",
     visibility = ["//visibility:public"],
-    deps = ["//cli/logging"],
+    deps = [
+        "//cli/arg",
+        "//cli/logging",
+    ],
 )

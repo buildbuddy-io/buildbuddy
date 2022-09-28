@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 )
@@ -115,4 +118,54 @@ func GetFlagValue(options []*BazelOption, phase, config, flagName, commandLineOv
 		}
 	}
 	return ""
+}
+
+func GetArgsFromRCFiles(commandLineArgs []string) []string {
+	rcFiles := make([]string, 0)
+	if arg.Get(commandLineArgs, "system_rc") != "true" {
+		rcFiles = append(rcFiles, "/etc/bazel.bazelrc")
+		rcFiles = append(rcFiles, "%ProgramData%\bazel.bazelrc")
+	}
+	if arg.Get(commandLineArgs, "workspace_rc") != "true" {
+		rcFiles = append(rcFiles, ".bazelrc")
+	}
+	if arg.Get(commandLineArgs, "home_rc") != "true" {
+		usr, err := user.Current()
+		if err == nil {
+			rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
+		}
+	}
+	// TODO(siggisim): Handle multiple bazlerc params.
+	if b := arg.Get(commandLineArgs, "bazelrc"); b != "" {
+		rcFiles = append(rcFiles, b)
+	}
+	opts, err := ParseRCFiles(rcFiles...)
+	if err != nil {
+		bblog.Printf("Error parsing .bazelrc file: %s", err.Error())
+		return nil
+	}
+
+	config := arg.Get(commandLineArgs, "config")
+	command := arg.GetCommand(commandLineArgs)
+
+	rcFileArgs := make([]string, 0)
+	rcFileArgs = appendArgsForConfig(opts, rcFileArgs, command, config)
+
+	bblog.Printf("rcFileArgs: %+v", rcFileArgs)
+
+	return rcFileArgs
+}
+
+func appendArgsForConfig(opts []*BazelOption, args []string, command, config string) []string {
+	for _, o := range opts {
+		if o.Phase != command || o.Config != config {
+			continue
+		}
+		if strings.HasPrefix(o.Option, "--config=") {
+			args = appendArgsForConfig(opts, args, command, strings.TrimPrefix(o.Option, "--config="))
+		} else {
+			args = append(args, o.Option)
+		}
+	}
+	return args
 }
