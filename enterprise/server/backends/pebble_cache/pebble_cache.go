@@ -35,6 +35,7 @@ import (
 	"github.com/elastic/gosigar"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -57,6 +58,7 @@ var (
 	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.disk.enable_live_updates", "cache.pebble.mirror_active_disk_cache")
 	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
+	orphanDeletesPerSecond    = flag.Int("cache.pebble.orphan_deletes_per_second", 10000, "No more than this many orphaned files will be deleted per second")
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
 	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
 	atimeWriteBatchSizeFlag   = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
@@ -522,7 +524,7 @@ func (p *PebbleCache) processSizeUpdates() {
 	}
 }
 
-func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
+func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}, deleteQPS int) error {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -535,6 +537,8 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 		UpperBound: []byte{constants.MaxByte},
 	})
 	defer iter.Close()
+
+	rateLimiter := rate.NewLimiter(rate.Every(time.Second), deleteQPS)
 
 	orphanCount := 0
 	for _, part := range p.partitions {
@@ -552,6 +556,10 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 			case <-quitChan:
 				return status.CanceledErrorf("cache shutting down")
 			default:
+			}
+
+			if err := rateLimiter.Wait(context.Background()); err != nil {
+				return err
 			}
 
 			relPath, err := filepath.Rel(blobDir, path)
@@ -1959,7 +1967,7 @@ func (p *PebbleCache) Start() error {
 	})
 	if *scanForOrphanedFiles {
 		p.eg.Go(func() error {
-			return p.deleteOrphanedFiles(p.quitChan)
+			return p.deleteOrphanedFiles(p.quitChan, *orphanDeletesPerSecond)
 		})
 	}
 	p.eg.Go(func() error {
