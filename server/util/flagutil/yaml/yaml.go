@@ -34,6 +34,7 @@ var (
 	}
 
 	AppendTypeToLineComment = &appendTypeToLineComment{}
+	RedactSecrets           = &redactSecrets{}
 
 	WordWrapForIndentationLevel = generateWordWrapRegexByIndentationLevel(76, 3)
 
@@ -99,7 +100,7 @@ type YAMLSetValueHooked interface {
 
 type DocumentedMarshaler interface {
 	// DocumentNode documents the yaml.Node representing this value.
-	DocumentNode(n *yaml.Node, opts ...common.DocumentNodeOption) error
+	DocumentNode(n *yaml.Node, opts ...common.DocumentNodeOption) (*yaml.Node, error)
 }
 
 // GetYAMLTypeForFlagValue returns the type alias to use in YAML contexts for the flag.
@@ -136,36 +137,46 @@ func GetYAMLTypeString(yamlValue any) string {
 
 type HeadComment string
 
-func (h *HeadComment) Transform(in any, n *yaml.Node) { n.HeadComment = string(*h) }
-func (h *HeadComment) Passthrough() bool              { return false }
+func (h *HeadComment) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error) {
+	n.HeadComment = string(*h)
+	return n, nil
+}
+func (h *HeadComment) Passthrough() bool { return false }
 
 // NewHeadComment returns a HeadComment for the specified string.
 func NewHeadComment(s string) *HeadComment { return (*HeadComment)(&s) }
 
 type LineComment string
 
-func (l *LineComment) Transform(in any, n *yaml.Node) { n.LineComment = string(*l) }
-func (l *LineComment) Passthrough() bool              { return false }
+func (l *LineComment) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error) {
+	n.LineComment = string(*l)
+	return n, nil
+}
+func (l *LineComment) Passthrough() bool { return false }
 
 // NewLineComment returns a LineComment for the specified string.
 func NewLineComment(s string) *LineComment { return (*LineComment)(&s) }
 
 type FootComment string
 
-func (f *FootComment) Transform(in any, n *yaml.Node) { n.FootComment = string(*f) }
-func (f *FootComment) Passthrough() bool              { return false }
+func (f *FootComment) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error) {
+	n.FootComment = string(*f)
+	return n, nil
+}
+func (f *FootComment) Passthrough() bool { return false }
 
 // NewFootComment returns a FootComment for the specified string.
 func NewFootComment(s string) *FootComment { return (*FootComment)(&s) }
 
 type appendTypeToLineComment struct{}
 
-func (f *appendTypeToLineComment) Transform(in any, n *yaml.Node) {
+func (f *appendTypeToLineComment) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error) {
 	typeString := GetYAMLTypeString(in)
 	if n.LineComment != "" {
 		n.LineComment += " "
 	}
 	n.LineComment += "(type: " + typeString + ")"
+	return n, nil
 }
 
 func (f *appendTypeToLineComment) Passthrough() bool { return false }
@@ -182,37 +193,97 @@ func filterPassthrough(opts []common.DocumentNodeOption) []common.DocumentNodeOp
 
 type Style yaml.Style
 
-func (f *Style) Transform(in any, n *yaml.Node) {
+func NewStyle(styles ...yaml.Style) *Style {
+	style := (Style)(0)
+	for s := range styles {
+		style |= Style(s)
+	}
+	return &style
+}
+
+func (f *Style) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error) {
 	if reflect.ValueOf(in).Kind() != reflect.Map {
 		n.Style |= *(*yaml.Style)(f)
 	}
+	return n, nil
 }
 
 func (f *Style) Passthrough() bool { return true }
 
+type redactSecrets struct{}
+
+func (r *redactSecrets) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error) {
+	if flg != nil {
+		flagValue := flg.Value
+		for v, ok := flagValue.(common.WrappingValue); ok; v, ok = flagValue.(common.WrappingValue) {
+			if secretable, ok := flagValue.(common.Secretable); ok && secretable.IsSecret() {
+				return nil, nil
+			}
+			flagValue = v.WrappedValue()
+		}
+	}
+
+	t := reflect.TypeOf(in)
+	if t.Kind() == reflect.Struct {
+		// yaml.Node stores mappings in Content as [key1, value1, key2, value2...]
+		contentIndex := make(map[string]int, len(n.Content)/2)
+		for i := 0; i < len(n.Content)/2; i++ {
+			contentIndex[n.Content[2*i].Value] = 2*i + 1
+		}
+		for i := 0; i < t.NumField(); i++ {
+			ft := t.Field(i)
+			name := strings.Split(ft.Tag.Get("yaml"), ",")[0]
+			if name == "" {
+				name = strings.ToLower(ft.Name)
+			}
+			idx, ok := contentIndex[name]
+			if !ok {
+				// field is not encoded by yaml
+				continue
+			}
+			for _, s := range strings.Split(ft.Tag.Get("config"), ",") {
+				if s == "secret" {
+					n.Content[idx] = nil
+					break
+				}
+			}
+		}
+		for i := len(n.Content)/2 - 1; i >= 0; i-- {
+			if n.Content[2*i+1] == nil {
+				// Remove nil nodes and their keys
+				n.Content = append(n.Content[:2*i], n.Content[2*i+2:]...)
+			}
+		}
+	}
+	return n, nil
+}
+
+func (r *redactSecrets) Passthrough() bool { return true }
+
 // NewDocumentedMarshalerWithOptions wraps a value such that it can be encoded
 // by YAML, documented with DocumentNode (applying the passed
 // DocumentNodeOptions), and then marshaled into documented  YAML.
-func NewDocumentedMarshalerWithOptions(in any, opts ...common.DocumentNodeOption) *DocumentedMarshalerWithOptions {
-	return &DocumentedMarshalerWithOptions{in: in, opts: opts}
+func NewDocumentedFlagMarshalerWithOptions(in any, flg *flag.Flag, opts ...common.DocumentNodeOption) *DocumentedFlagMarshalerWithOptions {
+	return &DocumentedFlagMarshalerWithOptions{in: in, flag: flg, opts: opts}
 }
 
 // DocumentedMarshalerWithOptions produces a documented node with predefined
 // options `opts` from `in` when marshaled to YAML.
-type DocumentedMarshalerWithOptions struct {
+type DocumentedFlagMarshalerWithOptions struct {
 	in   any
+	flag *flag.Flag
 	opts []common.DocumentNodeOption
 }
 
-func (d *DocumentedMarshalerWithOptions) MarshalYAML() (any, error) {
+func (d *DocumentedFlagMarshalerWithOptions) MarshalYAML() (any, error) {
 	return d.in, nil
 }
 
-func (d *DocumentedMarshalerWithOptions) DocumentNode(n *yaml.Node, opts ...common.DocumentNodeOption) error {
+func (d *DocumentedFlagMarshalerWithOptions) DocumentNode(n *yaml.Node, opts ...common.DocumentNodeOption) (*yaml.Node, error) {
 	concatOpts := []common.DocumentNodeOption{}
 	concatOpts = append(concatOpts, d.opts...)
 	concatOpts = append(concatOpts, opts...)
-	return DocumentNode(d.in, n, concatOpts...)
+	return DocumentNode(d.in, n, d.flag, concatOpts...)
 }
 
 // DocumentedNode returns a yaml.Node representing the input value with
@@ -222,14 +293,15 @@ func DocumentedNode(in any, opts ...common.DocumentNodeOption) (*yaml.Node, erro
 	if err := n.Encode(in); err != nil {
 		return nil, err
 	}
-	if err := DocumentNode(in, n, opts...); err != nil {
+	n, err := DocumentNode(in, n, nil, opts...)
+	if err != nil {
 		return nil, err
 	}
 	return n, nil
 }
 
 // DocumentNode fills the comments of a yaml.Node with documentation.
-func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error {
+func DocumentNode(in any, n *yaml.Node, flg *flag.Flag, opts ...common.DocumentNodeOption) (*yaml.Node, error) {
 	switch m := in.(type) {
 	case DocumentedMarshaler:
 		return m.DocumentNode(n, opts...)
@@ -242,21 +314,27 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 		case reflect.Ptr:
 			// document based on the value pointed to
 			if !v.IsNil() {
-				return DocumentNode(v.Elem().Interface(), n, opts...)
+				return DocumentNode(v.Elem().Interface(), n, flg, opts...)
 			} else {
-				exampleNode, err := DocumentedNode(reflect.Indirect(reflect.New(t.Elem())).Interface(), append(filterPassthrough(opts), AppendTypeToLineComment)...)
+				exampleOpts := append(filterPassthrough(opts), AppendTypeToLineComment)
+				for i := len(exampleOpts) - 1; i >= 0; i-- {
+					if exampleOpts[i] == RedactSecrets {
+						exampleOpts = append(exampleOpts[:i], exampleOpts[i+1:]...)
+					}
+				}
+				exampleNode, err := DocumentedNode(reflect.Indirect(reflect.New(t.Elem())).Interface(), exampleOpts...)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				if exampleNode.Kind != yaml.ScalarNode {
 					example, err := yaml.Marshal(exampleNode)
 					if err != nil {
-						return err
+						return nil, err
 					}
 					replacedExample := string(StartOfLine.ReplaceAll(example, []byte("    ")))
 					n.FootComment = fmt.Sprintf("For example:\n%s", string(replacedExample))
 				}
-				return DocumentNode(reflect.New(t.Elem()).Elem().Interface(), n, opts...)
+				return DocumentNode(reflect.New(t.Elem()).Elem().Interface(), n, flg, opts...)
 			}
 		case reflect.Struct:
 			// yaml.Node stores mappings in Content as [key1, value1, key2, value2...]
@@ -265,7 +343,7 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 				contentIndex[n.Content[2*i].Value] = 2*i + 1
 			}
 			for i := 0; i < t.NumField(); i++ {
-				ft := t.FieldByIndex([]int{i})
+				ft := t.Field(i)
 				name := strings.Split(ft.Tag.Get("yaml"), ",")[0]
 				if name == "" {
 					name = strings.ToLower(ft.Name)
@@ -275,9 +353,11 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 					// field is not encoded by yaml
 					continue
 				}
-				if err := DocumentNode(
-					v.FieldByIndex([]int{i}).Interface(),
+				var err error
+				if n.Content[idx], err = DocumentNode(
+					v.Field(i).Interface(),
 					n.Content[idx],
+					nil,
 					append(
 						append(
 							[]common.DocumentNodeOption{NewLineComment(ft.Tag.Get("usage"))},
@@ -286,40 +366,63 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 						filterPassthrough(opts)...,
 					)...,
 				); err != nil {
-					return err
+					return nil, err
+				}
+			}
+			for i := len(n.Content)/2 - 1; i >= 0; i-- {
+				if n.Content[2*i+1] == nil {
+					// Remove nil nodes and their keys
+					n.Content = append(n.Content[:2*i], n.Content[2*i+2:]...)
 				}
 			}
 		case reflect.Slice:
 			// yaml.Node stores sequences in Content as [element1, element2...]
-			for i := range n.Content {
+			for i := len(n.Content) - 1; i >= 0; i-- {
 				var err error
-				if err = DocumentNode(v.Index(i).Interface(), n.Content[i], filterPassthrough(opts)...); err != nil {
-					return err
+				if n.Content[i], err = DocumentNode(v.Index(i).Interface(), n.Content[i], nil, filterPassthrough(opts)...); err != nil {
+					return nil, err
+				}
+				if n.Content[i] == nil {
+					// Remove nil nodes and their keys
+					n.Content = append(n.Content[:i], n.Content[i+1:]...)
 				}
 			}
 			if len(n.Content) == 0 {
-				exampleNode, err := DocumentedNode(reflect.MakeSlice(t, 1, 1).Interface(), append(filterPassthrough(opts), AppendTypeToLineComment)...)
-				if err != nil {
-					return err
+				exampleOpts := append(filterPassthrough(opts), AppendTypeToLineComment)
+				for i := len(exampleOpts) - 1; i >= 0; i-- {
+					if exampleOpts[i] == RedactSecrets {
+						exampleOpts = append(exampleOpts[:i], exampleOpts[i+1:]...)
+					}
 				}
-				if exampleNode.Content[0].Kind != yaml.ScalarNode {
+				exampleNode, err := DocumentedNode(reflect.MakeSlice(t, 1, 1).Interface(), exampleOpts...)
+				if err != nil {
+					return nil, err
+				}
+				if exampleNode != nil && exampleNode.Content[0].Kind != yaml.ScalarNode {
 					example, err := yaml.Marshal(exampleNode)
 					if err != nil {
-						return err
+						return nil, err
 					}
 					n.FootComment = fmt.Sprintf("For example:\n%s", string(example))
 				}
 			}
 		case reflect.Map:
 			// yaml.Node stores mappings in Content as [key1, value1, key2, value2...]
-			for i := 0; i < len(n.Content)/2; i++ {
+			for i := len(n.Content)/2 - 1; i >= 0; i-- {
 				k := reflect.ValueOf(n.Content[2*i].Value)
-				if err := DocumentNode(
+				var err error
+				if n.Content[2*i+1], err = DocumentNode(
 					v.MapIndex(k).Interface(),
 					n.Content[2*i+1],
+					nil,
 					filterPassthrough(opts)...,
 				); err != nil {
-					return err
+					return nil, err
+				}
+				if n.Content[2*i+1] == nil {
+					// Remove nil nodes and their keys
+					n.Content = append(n.Content[:2*i], n.Content[2*i+2:]...)
+					continue
 				}
 				// TODO: For now, YAML v3 value Node Head Comments are placed below Foot
 				// Comments, so we transfer them to the key Node. When this is fixed, we
@@ -330,15 +433,21 @@ func DocumentNode(in any, n *yaml.Node, opts ...common.DocumentNodeOption) error
 		}
 	}
 	for _, opt := range opts {
-		opt.Transform(in, n)
+		if n == nil {
+			break
+		}
+		var err error
+		if n, err = opt.Transform(in, n, flg); err != nil {
+			return nil, err
+		}
 	}
-	return nil
+	return n, nil
 }
 
 // GenerateDocumentedMarshalerFromFlag produces a DocumentedMarshalerWithOptions
 // that represents the value contained in the flag which documents its name,
 // type, and usage as a HeadComment.
-func GenerateDocumentedMarshalerFromFlag(flg *flag.Flag) (*DocumentedMarshalerWithOptions, error) {
+func GenerateDocumentedMarshalerFromFlag(flg *flag.Flag) (DocumentedMarshaler, error) {
 	t, err := GetYAMLTypeForFlagValue(flg.Value)
 	if err != nil {
 		return nil, status.InternalErrorf("Error encountered generating default YAML from flags when processing flag %s: %s", flg.Name, err)
@@ -358,17 +467,13 @@ func GenerateDocumentedMarshalerFromFlag(flg *flag.Flag) (*DocumentedMarshalerWi
 		headComment = headComment + ": " + flg.Usage
 	}
 	headComment = string(WordWrapForIndentationLevel[strings.Count(flg.Name, ".")].ReplaceAll([]byte(headComment), []byte("$1\n")))
-	return NewDocumentedMarshalerWithOptions(yamlValue, NewHeadComment(headComment)), nil
+	return NewDocumentedFlagMarshalerWithOptions(yamlValue, flg, NewHeadComment(headComment)), nil
 }
 
 // SplitDocumentedYAMLFromFlags produces marshaled YAML representing the flags,
 // partitioned into two groups: structured (flags containing dots), and
 // unstructured (flags not containing dots).
-func SplitDocumentedYAMLFromFlags(styles ...yaml.Style) ([]byte, error) {
-	style := (Style)(0)
-	for s := range styles {
-		style |= Style(s)
-	}
+func SplitDocumentedYAMLFromFlags(opts ...common.DocumentNodeOption) ([]byte, error) {
 	b := bytes.NewBuffer([]byte{})
 
 	if _, err := b.Write([]byte("# Unstructured settings\n\n")); err != nil {
@@ -382,7 +487,7 @@ func SplitDocumentedYAMLFromFlags(styles ...yaml.Style) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	un, err := DocumentedNode(um, &style)
+	un, err := DocumentedNode(um, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +510,7 @@ func SplitDocumentedYAMLFromFlags(styles ...yaml.Style) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sn, err := DocumentedNode(sm, &style)
+	sn, err := DocumentedNode(sm, opts...)
 	if err != nil {
 		return nil, err
 	}

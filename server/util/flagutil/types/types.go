@@ -430,3 +430,33 @@ func (d *DeprecatedFlag[T]) String() string {
 	}
 	return d.Value.String()
 }
+
+type SecretFlag[T any] struct {
+	flag.Value
+}
+
+func Secret[T any](name string) {
+	flg := common.DefaultFlagSet.Lookup(name)
+	converted, err := common.ConvertFlagValue(flg.Value)
+	if err != nil {
+		log.Fatalf("Error creating secret flag %s: %v", name, err)
+	} else if _, ok := converted.(*T); !ok {
+		log.Fatalf("Error creating secret flag %s: could not coerce flag of type %T to type %T.", name, converted, (*T)(nil))
+	}
+	flg.Value = &SecretFlag[T]{flg.Value}
+}
+
+func (s *SecretFlag[T]) WrappedValue() flag.Value {
+	return s.Value
+}
+
+func (s *SecretFlag[T]) IsSecret() bool {
+	return true
+}
+
+func (s *SecretFlag[T]) String() string {
+	if s.Value == nil {
+		return fmt.Sprint(common.Zero[T]())
+	}
+	return s.Value.String()
+}

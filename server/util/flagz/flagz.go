@@ -56,7 +56,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	b, err := flagyaml.SplitDocumentedYAMLFromFlags()
+	b, err := flagyaml.SplitDocumentedYAMLFromFlags(flagyaml.RedactSecrets)
 	if err != nil {
 		errorText := fmt.Sprintf("Encountered error when attempting to generate YAML: %s", err)
 		http.Error(w, errorText, http.StatusInternalServerError)
