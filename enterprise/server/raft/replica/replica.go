@@ -1297,6 +1297,15 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			if wb == nil {
 				db, err := sm.leaser.DB()
 				if err != nil {
+					// This should really be an error. The
+					// reason it's not yet is because range
+					// lease requests sometimes come in
+					// during a split, and they are safe
+					// to ignore.
+					if bytes.Compare(union.GetCas().GetKv().GetKey(), constants.LocalRangeLeaseKey) == 0 {
+						log.Warningf("mid-split, dropping rangelease cmd: %+v", union)
+						continue
+					}
 					log.Errorf("Range locked but got request: %+v", union)
 					return nil, err
 				}
