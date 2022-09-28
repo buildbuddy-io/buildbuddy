@@ -8,7 +8,6 @@ import (
 	"os"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -28,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/hashicorp/serf/serf"
@@ -681,7 +681,8 @@ func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 }
 
 func (s *Store) renewNodeLiveness() {
-	for {
+	retrier := retry.DefaultWithContext(context.Background())
+	for retrier.Next() {
 		if s.liveness.Valid() {
 			return
 		}
@@ -690,7 +691,6 @@ func (s *Store) renewNodeLiveness() {
 			return
 		}
 		s.log.Errorf("Error leasing node liveness record: %s", err)
-		time.Sleep(time.Second)
 	}
 }
 
