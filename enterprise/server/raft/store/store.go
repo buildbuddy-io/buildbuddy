@@ -927,6 +927,36 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	oldLeftNewGen := proto.Clone(oldLeft).(*rfpb.RangeDescriptor)
 	oldLeftNewGen.Generation += 1
 
+	// Create a new range descriptor for the left range. This will be inserted
+	// when the split lock is released, if the split succeeds successfully.
+	newLeft := proto.Clone(oldLeftNewGen).(*rfpb.RangeDescriptor)
+	newLeft.Generation += 1 // increment rd generation upon split
+
+	// Initially, insert a range descriptor that does not contain replicas.
+	// This will keep the range from being marked as "active" in the store
+	// or acquiring a range lease (which wouldn't work because the metarange
+	// is not yet updated). Just before unlocking the left range, we'll
+	// update this range descriptor to include the replicas.
+	newRight := &rfpb.RangeDescriptor{
+		RangeId:    newIDs.rangeID,
+		Generation: newLeft.Generation + 1,
+		Left:       oldLeft.GetLeft(),
+		Right:      oldLeft.GetRight(),
+	}
+	newRightBuf, err := proto.Marshal(newRight)
+	if err != nil {
+		return nil, err
+	}
+	newRightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: newRightBuf,
+		},
+	})
+	if err := bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, newRightBatch); err != nil {
+		return nil, err
+	}
+
 	cas, err := casRangeEdit(constants.LocalRangeKey, oldLeft, oldLeftNewGen)
 	if err != nil {
 		return nil, err
@@ -956,36 +986,8 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, err
 	}
 
-	// Create a new range descriptor for the left range. This will be inserted
-	// when the split lock is released, if the split succeeds successfully.
-	newLeft := proto.Clone(oldLeftNewGen).(*rfpb.RangeDescriptor)
-	newLeft.Generation += 1 // increment rd generation upon split
+	oldRight := proto.Clone(newRight).(*rfpb.RangeDescriptor)
 	newLeft.Right = findSplitRsp.GetSplit()
-
-	// Initially, insert a range descriptor that does not contain replicas.
-	// This will keep the range from being marked as "active" in the store
-	// or acquiring a range lease (which wouldn't work because the metarange
-	// is not yet updated). Just before unlocking the left range, we'll
-	// update this range descriptor to include the replicas.
-	newRight := &rfpb.RangeDescriptor{
-		RangeId:    newIDs.rangeID,
-		Generation: newLeft.Generation + 1,
-		Left:       findSplitRsp.GetSplit(),
-		Right:      oldLeft.GetRight(),
-	}
-	newRightBuf, err := proto.Marshal(newRight)
-	if err != nil {
-		return nil, err
-	}
-	newRightBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   constants.LocalRangeKey,
-			Value: newRightBuf,
-		},
-	})
-	if err := bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, newRightBatch); err != nil {
-		return nil, err
-	}
 
 	// Copy stored data from the old range -> new range by creating a
 	// snapshot of the db, copying stored files, then loading the snapshot
@@ -998,6 +1000,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err != nil {
 		return nil, err
 	}
+
 	copyStoredFiles := rbuilder.NewBatchBuilder().Add(&rfpb.CopyStoredFilesRequest{
 		SourceRange:   oldLeft,
 		TargetRangeId: newIDs.rangeID,
@@ -1020,8 +1023,9 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	}
 
 	// As mentioned above, add the replicas to right range now that it is
-	// about to be activated.
-	oldRight := proto.Clone(newRight).(*rfpb.RangeDescriptor)
+	// about to be activated, and set the Left/Right correctly.
+	newRight.Left = findSplitRsp.GetSplit()
+	newRight.Right = oldLeft.GetRight()
 	newRight.Replicas = bootStrapInfo.Replicas
 	b := rbuilder.NewBatchBuilder()
 	if err := addLocalRangeEdits(oldRight, newRight, b); err != nil {

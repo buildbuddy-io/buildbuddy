@@ -1297,15 +1297,6 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			if wb == nil {
 				db, err := sm.leaser.DB()
 				if err != nil {
-					// This should really be an error. The
-					// reason it's not yet is because range
-					// lease requests sometimes come in
-					// during a split, and they are safe
-					// to ignore.
-					if bytes.Compare(union.GetCas().GetKv().GetKey(), constants.LocalRangeLeaseKey) == 0 {
-						log.Warningf("mid-split, dropping rangelease cmd: %+v", union)
-						continue
-					}
 					log.Errorf("Range locked but got request: %+v", union)
 					return nil, err
 				}
@@ -1317,7 +1308,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			// sm.log.Debugf("Update: request union: %+v", union)
 			sm.handlePropose(wb, union, rsp)
 			if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
-				log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
+				sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
 			}
 
 			// sm.log.Debugf("Update: response union: %+v", rsp)
@@ -1472,6 +1463,10 @@ func readDataFromReader(r *bufio.Reader) (io.Reader, int64, error) {
 }
 
 func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot, start, end []byte) error {
+	tstart := time.Now()
+	defer func() {
+		sm.log.Infof("Took %s to save snapshot to writer", time.Since(tstart))
+	}()
 	iter := snap.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(start),
 		UpperBound: keys.Key(end),
