@@ -57,9 +57,14 @@ type Appendable interface {
 	AppendSlice(any) error
 }
 
+type Secretable interface {
+	IsSecret() bool
+}
+
 type DocumentNodeOption interface {
-	// Transform transforms the passed yaml.Node in place.
-	Transform(in any, n *yaml.Node)
+	// Transform transforms the passed yaml.Node. It returns nil if the node
+	// should not be included in the documented YAML.
+	Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.Node, error)
 	// Passthrough returns whether this option should be passed to child nodes.
 	Passthrough() bool
 }

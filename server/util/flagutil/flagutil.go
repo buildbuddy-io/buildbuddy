@@ -32,29 +32,26 @@ func GetDereferencedValue[T any](name string) (T, error) {
 
 // New declares a new flag named `name` with the specified value `defaultValue`
 // of type `T` and the help text `usage`. It returns a pointer to where the
-// value is stored.
-func New[T any](name string, defaultValue T, usage string) *T {
-	return autoflags.New(name, defaultValue, usage)
+// value is stored. Tags may be used to mark flags; for example, use
+// `SecretTag` to mark a flag that contains a secret that should be redacted in
+// output, or use `DeprecatedTag(migrationPlan)` to mark a flag that has been
+// deprecated and provide its migration plan.
+func New[T any](name string, defaultValue T, usage string, tags ...autoflags.Tag) *T {
+	return autoflags.New(name, defaultValue, usage, tags...)
 }
 
 // Var declares a new flag named `name` with the specified value `defaultValue`
-// of type `T` stored at the pointer `value` and the help text `usage`.
-func Var[T any](value *T, name string, defaultValue T, usage string) {
-	autoflags.Var(value, name, defaultValue, usage)
+// of type `T` stored at the pointer `value` and the help text `usage`. Tags may
+// be used to mark flags; for example, use `SecretTag` to mark a flag that
+// contains a secret that should be redacted in output, or use
+// `DeprecatedTag(migrationPlan)` to mark a flag that has been deprecated and
+// provide its migration plan.
+func Var[T any](value *T, name string, defaultValue T, usage string, tags ...autoflags.Tag) {
+	autoflags.Var(value, name, defaultValue, usage, tags...)
 }
 
-// Deprecated declares a new deprecated flag named `name` with the specified
-// value `defaultValue` of type `T`, the help text `usage`, and a
-// `migrationPlan` explaining to the user how to migrate from the deprecated
-// functionality. It returns a pointer to where the value is stored.
-func Deprecated[T any](name string, defaultValue T, usage string, migrationPlan string) *T {
-	return autoflags.Deprecated(name, defaultValue, usage, migrationPlan)
-}
+// Use to mark a flag secret.
+var SecretTag = autoflags.SecretTag
 
-// DeprecatedVar declares a new deprecated flag named `name` with the specified
-// value `defaultValue` of type `T` stored at the pointer `value`, the help text
-// `usage`, and a `migrationPlan` explaining to the user how to migrate from the
-// deprecated functionality.
-func DeprecatedVar[T any](value *T, name string, defaultValue T, usage string, migrationPlan string) {
-	autoflags.DeprecatedVar(value, name, defaultValue, usage, migrationPlan)
-}
+// Use to mark a flag deprecated.
+var DeprecatedTag = autoflags.DeprecatedTag
