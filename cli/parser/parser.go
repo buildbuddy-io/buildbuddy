@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 )
 
@@ -134,6 +135,7 @@ func GetArgsFromRCFiles(commandLineArgs []string) []string {
 			rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
 		}
 	}
+	// TODO(siggisim): Handle multiple bazlerc params.
 	if b := arg.Get(commandLineArgs, "bazelrc"); b != "" {
 		rcFiles = append(rcFiles, b)
 	}
