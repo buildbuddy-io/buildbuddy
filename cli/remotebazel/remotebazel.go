@@ -645,7 +645,7 @@ func handleRemoteBazel(args []string) []string {
 		log.Fatalf("error finding workspace: %s", err)
 	}
 	exitCode, err := Run(ctx, RunOpts{
-		Server:            "grpcs://"+defaultRemoteExecutionURL,
+		Server:            "grpcs://" + defaultRemoteExecutionURL,
 		APIKey:            arg.Get(args, "remote_header=x-buildbuddy-api-key"),
 		Args:              args,
 		WorkspaceFilePath: wsFilePath,
@@ -658,7 +658,6 @@ func handleRemoteBazel(args []string) []string {
 	os.Exit(exitCode)
 	return args
 }
-
 
 func HandleRemoteBazel(args []string) []string {
 	if c, i := arg.GetCommandAndIndex(args); c == "remote" {
