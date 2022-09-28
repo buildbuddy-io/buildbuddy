@@ -21,6 +21,7 @@ go_test(
     deps = [
         ":common",
         "//server/util/flagutil/types",
+        "//server/util/flagutil/types/autoflags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

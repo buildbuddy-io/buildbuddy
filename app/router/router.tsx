@@ -1,6 +1,7 @@
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
 import format from "../format/format";
+import rpc_service from "../service/rpc_service";
 
 // Query params for the global filter.
 // These should be preserved when navigating between pages in the app.
@@ -62,6 +63,12 @@ class Router {
    * - Preserves global filter params.
    */
   navigateTo(url: string) {
+    const unavailableMsg = getUnavailableMessage(url);
+    if (unavailableMsg && !capabilities.canNavigateToPath(url)) {
+      alert(unavailableMsg);
+      return;
+    }
+
     const oldUrl = new URL(window.location.href);
     const newUrl = new URL(url, window.location.href);
     // Preserve global filter params.
@@ -70,6 +77,12 @@ class Router {
         newUrl.searchParams.set(key, oldUrl.searchParams.get(key));
       }
     }
+
+    if (oldUrl.href === newUrl.href) {
+      rpc_service.events.next("refresh");
+      return;
+    }
+
     window.history.pushState({}, "", newUrl.href);
   }
 
@@ -113,34 +126,18 @@ class Router {
   }
 
   navigateToWorkflows() {
-    if (!capabilities.canNavigateToPath(Path.workflowsPath)) {
-      alert(`Workflows are not available in ${capabilities.name}`);
-      return;
-    }
     this.navigateTo(Path.workflowsPath);
   }
 
   navigateToCode() {
-    if (!capabilities.canNavigateToPath(Path.codePath)) {
-      alert(`Code is not available in ${capabilities.name}`);
-      return;
-    }
     this.navigateTo(Path.codePath);
   }
 
   navigateToSettings() {
-    if (!capabilities.canNavigateToPath(Path.settingsPath)) {
-      alert(`Settings are not available in ${capabilities.name}`);
-      return;
-    }
     this.navigateTo(Path.settingsPath);
   }
 
   navigateToTrends() {
-    if (!capabilities.canNavigateToPath(Path.trendsPath)) {
-      alert(`Trends are not available in ${capabilities.name}`);
-      return;
-    }
     this.navigateTo(Path.trendsPath);
   }
 
@@ -149,46 +146,22 @@ class Router {
   }
 
   navigateToExecutors() {
-    if (!capabilities.canNavigateToPath(Path.executorsPath)) {
-      alert(`Executors are not available in ${capabilities.name}`);
-      return;
-    }
     this.navigateTo(Path.executorsPath);
   }
 
   navigateToTap() {
-    if (!capabilities.canNavigateToPath(Path.tapPath)) {
-      alert(`The test dashboard is not available in ${capabilities.name}`);
-      return;
-    }
     this.navigateTo(Path.tapPath);
   }
 
   navigateToInvocation(invocationId: string) {
-    if (!capabilities.canNavigateToPath(Path.invocationPath)) {
-      alert(`Invocations are not available in ${capabilities.name}`);
-      return;
-    }
     this.navigateTo(Path.invocationPath + invocationId);
   }
 
   navigateToUserHistory(user: string) {
-    if (!capabilities.canNavigateToPath(Path.userHistoryPath)) {
-      alert(
-        `User history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
-      );
-      return;
-    }
     this.navigateTo(Path.userHistoryPath + user);
   }
 
   navigateToHostHistory(host: string) {
-    if (!capabilities.canNavigateToPath(Path.hostHistoryPath)) {
-      alert(
-        `Host history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
-      );
-      return;
-    }
     this.navigateTo(Path.hostHistoryPath + host);
   }
 
@@ -201,32 +174,14 @@ class Router {
   }
 
   navigateToRepoHistory(repo: string) {
-    if (!capabilities.canNavigateToPath(Path.repoHistoryPath)) {
-      alert(
-        `Repo history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
-      );
-      return;
-    }
     this.navigateTo(`${Path.repoHistoryPath}${getRepoUrlPathParam(repo)}`);
   }
 
   navigateToBranchHistory(branch: string) {
-    if (!capabilities.canNavigateToPath(Path.branchHistoryPath)) {
-      alert(
-        `Branch history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
-      );
-      return;
-    }
     this.navigateTo(Path.branchHistoryPath + branch);
   }
 
   navigateToCommitHistory(commit: string) {
-    if (!capabilities.canNavigateToPath(Path.commitHistoryPath)) {
-      alert(
-        `Commit history is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`
-      );
-      return;
-    }
     this.navigateTo(Path.commitHistoryPath + commit);
   }
 
@@ -440,6 +395,29 @@ export class Path {
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
   static codePath = "/code/";
+}
+
+function getUnavailableMessage(href: string) {
+  let path = new URL(href, window.location.href).pathname;
+  if (!path.endsWith("/")) path += "/";
+
+  switch (path) {
+    case Path.workflowsPath:
+    case Path.codePath:
+    case Path.settingsPath:
+    case Path.trendsPath:
+    case Path.executorsPath:
+    case Path.tapPath:
+    case Path.userHistoryPath:
+    case Path.hostHistoryPath:
+    case Path.repoHistoryPath:
+    case Path.branchHistoryPath:
+    case Path.commitHistoryPath:
+    case Path.invocationPath:
+      return `This feature is not available in ${capabilities.name}.\n\nClick 'Upgrade to Enterprise' in the menu to enable user build history, organization build history, SSO, and more!`;
+    default:
+      return "";
+  }
 }
 
 export default new Router();

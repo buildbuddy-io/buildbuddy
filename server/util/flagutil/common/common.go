@@ -225,6 +225,84 @@ func Zero[T any]() T {
 	return *reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
 }
 
+// ResetFlags resets all flags to their default values, as specified by
+// the string stored in the corresponding flag.DefValue.
+func ResetFlags() error {
+	errors := []error{}
+	DefaultFlagSet.VisitAll(func(flg *flag.Flag) {
+		if err := setWithOverride(flg.Value, flg.Name, flg.DefValue, true); err != nil {
+			errors = append(errors, status.InternalErrorf("Error resetting flag %s: %s", flg.Name, err))
+			return
+		}
+	})
+	if len(errors) > 0 {
+		return status.InternalErrorf("Errors encountered when resetting flags: %v", errors)
+	}
+	return nil
+}
+
+// SetWithOverride sets the flag's value by creating a new, empty flag.Value of
+// the same type as the flag Value specified by name, calling
+// `Set.(newValueString)` on the new flag.Value, and then explicitly setting the
+// data pointed to by flagValue to the data pointed to by the new flag value.
+func SetWithOverride(name, newValueString string) error {
+	flg := flag.Lookup(name)
+	if flg == nil {
+		return status.NotFoundErrorf("Error when attempting to override flag %s: Flag does not exist.", name)
+	}
+	flagValue := flg.Value
+
+	return setWithOverride(flagValue, name, newValueString, false)
+}
+
+func setWithOverride(flagValue flag.Value, name, newValueString string, skipWrappers bool) error {
+	// Unwrap the value to ensure we have the real flag.Value, not a wrapper like,
+	// for example, DeprecatedFlag or FlagAlias.
+	unwrapped := UnwrapFlagValue(flagValue)
+
+	// Make a new empty flag.value of the appropriate type so it can be set
+	// fresh. This allows us to override the flag while still using the standard
+	// flag.Value interface's Set method, so it can be set with newValueString.
+	blankFlagValue := reflect.New(reflect.TypeOf(unwrapped).Elem()).Interface().(flag.Value)
+
+	if reflect.ValueOf(blankFlagValue).CanConvert(reflect.TypeOf((*reflect.Value)(nil))) {
+		t, err := GetTypeForFlagValue(unwrapped)
+		if err != nil {
+			return status.InternalErrorf("Error getting type for copy of flag %s: %s", name, err)
+		}
+
+		// Set the blank flag value to the zero value for flag values which alias
+		// reflect.Value instead of aliasing their value directly (such as, for
+		// example, JSONSliceFlag and JSONStructFlag) in order to correctly
+		// initialize them.
+		blankValueAddr := reflect.ValueOf(blankFlagValue).Convert(reflect.TypeOf((*reflect.Value)(nil))).Interface().(*reflect.Value)
+		*blankValueAddr = reflect.New(t.Elem())
+	}
+
+	if err := blankFlagValue.Set(newValueString); err != nil {
+		return status.InternalErrorf("Error setting copy of flag %s to %s: %s", name, newValueString, err)
+	}
+	if blankFlagValue.String() == unwrapped.String() {
+		// The values are the same, no need to set the flag.
+		return nil
+	}
+
+	// Take the blank value and convert it to the underlying type
+	// (the type which would be returned when defining the flag initially).
+	newValue, err := ConvertFlagValue(blankFlagValue)
+	if err != nil {
+		return status.InternalErrorf("Error converting copy of flag %s: %s", name, err)
+	}
+	value := flagValue
+	if skipWrappers {
+		value = unwrapped
+	}
+	if err := setValueFromFlagName(value, name, reflect.Indirect(reflect.ValueOf(newValue)).Interface(), map[string]struct{}{}, false); err != nil {
+		return err
+	}
+	return nil
+}
+
 // AddTestFlagTypeForTesting adds a type correspondence to the internal
 // flagTypeMap.
 func AddTestFlagTypeForTesting(flagValue, value any) {

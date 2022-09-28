@@ -56,7 +56,6 @@ import (
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
@@ -159,10 +158,12 @@ func main() {
 	rootContext := context.Background()
 	version.Print()
 
-	flag.Parse()
-	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
+	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
+
+	config.ReloadOnSIGHUP()
+
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	realEnv := libmain.GetConfiguredEnvironmentOrDie(healthChecker)
 	if err := tracing.Configure(realEnv); err != nil {
