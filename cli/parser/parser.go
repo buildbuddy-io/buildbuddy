@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	
+
 	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 )
 
