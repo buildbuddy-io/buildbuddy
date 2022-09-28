@@ -433,12 +433,12 @@ func DocumentNode(in any, n *yaml.Node, flg *flag.Flag, opts ...common.DocumentN
 		}
 	}
 	for _, opt := range opts {
+		if n == nil {
+			break
+		}
 		var err error
 		if n, err = opt.Transform(in, n, flg); err != nil {
 			return nil, err
-		}
-		if n == nil {
-			return nil, nil
 		}
 	}
 	return n, nil
