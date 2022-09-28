@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
@@ -133,15 +134,8 @@ func main() {
 	}
 
 	// Make sure we have a home directory to work in.
-	bbHome := os.Getenv("BUILDBUDDY_HOME")
-	if len(bbHome) == 0 {
-		userCacheDir, err := os.UserCacheDir()
-		if err != nil {
-			die(-1, err)
-		}
-		bbHome = filepath.Join(userCacheDir, "buildbuddy")
-	}
-	if err := os.MkdirAll(bbHome, 0755); err != nil {
+	bbHome, err := storage.Dir()
+	if err != nil {
 		die(-1, err)
 	}
 

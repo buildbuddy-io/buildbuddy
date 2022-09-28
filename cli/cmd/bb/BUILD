@@ -16,6 +16,7 @@ go_library(
         "//cli/parser",
         "//cli/remotebazel",
         "//cli/sidecar",
+        "//cli/storage",
         "//proto:sidecar_go_proto",
         "//server/util/grpc_client",
         "//server/version",
