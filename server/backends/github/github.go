@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -29,8 +30,8 @@ import (
 
 var (
 	clientID     = flag.String("github.client_id", "", "The client ID of your GitHub Oauth App. ** Enterprise only **")
-	clientSecret = flag.String("github.client_secret", "", "The client secret of your GitHub Oauth App. ** Enterprise only **")
-	accessToken  = flag.String("github.access_token", "", "The GitHub access token used to post GitHub commit statuses. ** Enterprise only **")
+	clientSecret = flagutil.New("github.client_secret", "", "The client secret of your GitHub Oauth App. ** Enterprise only **", flagutil.SecretTag)
+	accessToken  = flagutil.New("github.access_token", "", "The GitHub access token used to post GitHub commit statuses. ** Enterprise only **", flagutil.SecretTag)
 )
 
 const (

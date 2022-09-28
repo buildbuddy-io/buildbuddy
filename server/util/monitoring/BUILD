@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/util/basicauth",
+        "//server/util/flagutil",
         "//server/util/flagz",
         "//server/util/log",
         "//server/util/status",

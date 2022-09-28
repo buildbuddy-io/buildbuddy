@@ -42,7 +42,7 @@ var (
 	adminGroupID         = flag.String("auth.admin_group_id", "", "ID of a group whose members can perform actions only accessible to server admins.")
 	enableAnonymousUsage = flag.Bool("auth.enable_anonymous_usage", false, "If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.")
 	oauthProviders       = flagutil.New("auth.oauth_providers", []OauthProvider{}, "The list of oauth providers to use to authenticate.")
-	jwtKey               = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.")
+	jwtKey               = flagutil.New("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flagutil.SecretTag)
 	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
 	httpsOnlyCookies     = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
@@ -52,7 +52,7 @@ var (
 type OauthProvider struct {
 	IssuerURL    string `yaml:"issuer_url" json:"issuer_url" usage:"The issuer URL of this OIDC Provider."`
 	ClientID     string `yaml:"client_id" json:"client_id" usage:"The oauth client ID."`
-	ClientSecret string `yaml:"client_secret" json:"client_secret" usage:"The oauth client secret."`
+	ClientSecret string `yaml:"client_secret" json:"client_secret" usage:"The oauth client secret." config:"secret"`
 	Slug         string `yaml:"slug" json:"slug" usage:"The slug of this OIDC Provider."`
 }
 

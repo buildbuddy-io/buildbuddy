@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -55,14 +56,14 @@ var (
 	awsS3RoleSessionName          = flag.String("storage.aws_s3.role_session_name", "", "The role session name to use for web identity auth.")
 	awsS3Endpoint                 = flag.String("storage.aws_s3.endpoint", "", "The AWS endpoint to use, useful for configuring the use of MinIO.")
 	awsS3StaticCredentialsID      = flag.String("storage.aws_s3.static_credentials_id", "", "Static credentials ID to use, useful for configuring the use of MinIO.")
-	awsS3StaticCredentialsSecret  = flag.String("storage.aws_s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.")
+	awsS3StaticCredentialsSecret  = flagutil.New("storage.aws_s3.static_credentials_secret", "", "Static credentials secret to use, useful for configuring the use of MinIO.", flagutil.SecretTag)
 	awsS3StaticCredentialsToken   = flag.String("storage.aws_s3.static_credentials_token", "", "Static credentials token to use, useful for configuring the use of MinIO.")
 	awsS3DisableSSL               = flag.Bool("storage.aws_s3.disable_ssl", false, "Disables the use of SSL, useful for configuring the use of MinIO.")
 	awsS3ForcePathStyle           = flag.Bool("storage.aws_s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
 
 	// Azure flags
 	azureAccountName   = flag.String("storage.azure.account_name", "", "The name of the Azure storage account")
-	azureAccountKey    = flag.String("storage.azure.account_key", "", "The key for the Azure storage account")
+	azureAccountKey    = flagutil.New("storage.azure.account_key", "", "The key for the Azure storage account", flagutil.SecretTag)
 	azureContainerName = flag.String("storage.azure.container_name", "", "The name of the Azure storage container")
 )
 
