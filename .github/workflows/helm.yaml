@@ -16,10 +16,11 @@ jobs:
           repository: "buildbuddy-io/buildbuddy-helm"
           ref: "master"
           token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
+          path: buildbuddy-helm
 
       - name: Bump OSS and Executor Versions
         run: |
-          cd ../buildbuddy-helm
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
 
           export APP_TAG_NAME="${{ github.event.release.tag_name }}"
           export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
@@ -36,7 +37,7 @@ jobs:
 
       - name: Commit
         run: |
-          cd ../buildbuddy-helm
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
           git config --local user.email "releasebot@buildbuddy.io"
           git config --local user.name "BuildBuddy Release Bot"
 
@@ -53,7 +54,7 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@v0.6.0
         with:
-          directory: ../buildbuddy-helm
+          directory: buildbuddy-helm
           repository: buildbuddy-io/buildbuddy-helm
           github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
           branch: master
@@ -64,7 +65,7 @@ jobs:
 
       - name: Bump Enterprise Version
         run: |
-          cd ../buildbuddy-helm
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
 
           export APP_TAG_NAME="${{ github.event.release.tag_name }}"
           export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
@@ -80,7 +81,7 @@ jobs:
 
       - name: Commit
         run: |
-          cd ../buildbuddy-helm
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
           git config --local user.email "releasebot@buildbuddy.io"
           git config --local user.name "BuildBuddy Release Bot"
 
@@ -94,7 +95,7 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@v0.6.0
         with:
-          directory: ../buildbuddy-helm
+          directory: buildbuddy-helm
           repository: buildbuddy-io/buildbuddy-helm
           github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
           branch: master
