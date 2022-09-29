@@ -615,11 +615,11 @@ type splitPoint struct {
 	rightSize int64
 }
 
-func absInt(a, b int64) int64 {
-	if a < b {
-		return b - a
+func absInt(i int64) int64 {
+	if i < 0 {
+		return -1 * i
 	}
-	return a - b
+	return i
 }
 
 func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
@@ -650,8 +650,8 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 
 	for iter.First(); iter.Valid(); iter.Next() {
 		if canSplitKeys(lastKey, iter.Key()) {
-			splitDistance := absInt(optimalSplitSize, leftSize)
-			bestSplitDistance := absInt(optimalSplitSize, splitSize)
+			splitDistance := absInt(optimalSplitSize - leftSize)
+			bestSplitDistance := absInt(optimalSplitSize - splitSize)
 			if splitDistance < bestSplitDistance {
 				if len(splitKey) != len(lastKey) {
 					splitKey = make([]byte, len(lastKey))
