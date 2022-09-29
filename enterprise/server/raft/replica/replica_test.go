@@ -82,14 +82,8 @@ func (em *entryMaker) makeEntry(batch *rbuilder.BatchBuilder) dbsm.Entry {
 	return dbsm.Entry{Cmd: buf, Index: em.index}
 }
 
-func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
-	// Do a direct write of the range local range.
-	rdBuf, err := proto.Marshal(&rfpb.RangeDescriptor{
-		Left:       []byte("a"),
-		Right:      []byte("z"),
-		RangeId:    1,
-		Generation: 1,
-	})
+func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
+	rdBuf, err := proto.Marshal(rd)
 	require.NoError(t, err)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -101,6 +95,15 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 	writeRsp, err := r.Update(entries)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
+}
+
+func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
+	writeLocalRangeDescriptor(t, em, r, &rfpb.RangeDescriptor{
+		Left:       []byte("a"),
+		Right:      []byte("z"),
+		RangeId:    1,
+		Generation: 1,
+	})
 }
 
 func TestReplicaDirectReadWrite(t *testing.T) {
@@ -266,7 +269,12 @@ func TestReplicaScan(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeLocalRangeDescriptor(t, em, repl, &rfpb.RangeDescriptor{
+		Left:       []byte{constants.MinByte},
+		Right:      []byte("z"),
+		RangeId:    1,
+		Generation: 1,
+	})
 
 	// Do a DirectWrite of some range descriptors.
 	batch := rbuilder.NewBatchBuilder()
