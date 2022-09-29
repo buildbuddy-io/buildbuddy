@@ -17,9 +17,6 @@ func Debugf(format string, v ...interface{}) {
 }
 
 func Printf(format string, v ...interface{}) {
-	if !*verbose {
-		return
-	}
 	log.Printf(format, v...)
 }
 
