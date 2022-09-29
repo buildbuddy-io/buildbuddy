@@ -16,12 +16,13 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -47,6 +48,7 @@ const (
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
+	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
 )
 
 var (
@@ -70,9 +72,8 @@ func consoleDeleteLines(n int) {
 type RunOpts struct {
 	Server            string
 	APIKey            string
-	Args              *commandline.BazelArgs
+	Args              []string
 	WorkspaceFilePath string
-	SidecarSocket     string
 }
 
 type RepoConfig struct {
@@ -502,9 +503,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	fetchOutputs := false
 	runOutput := false
-	var bazelArgs []string
-	bazelArgs = append(bazelArgs, opts.Args.Filtered...)
-	bazelArgs = append(bazelArgs, opts.Args.Added...)
+	bazelArgs := arg.GetNonPassthroughArgs(opts.Args)
 	if len(bazelArgs) > 0 && (bazelArgs[0] == "build" || bazelArgs[0] == "run") {
 		fetchOutputs = true
 		if bazelArgs[0] == "run" {
@@ -576,7 +575,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	if fetchOutputs && exitCode == 0 {
-		conn, err := grpc_client.DialTarget("unix://" + opts.SidecarSocket)
+		conn, err := grpc_client.DialTarget(opts.Server)
 		if err != nil {
 			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
 		}
@@ -603,7 +602,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			}
 			execArgs := defaultRunArgs
 			// Pass through extra arguments (-- --foo=bar) from the command line.
-			execArgs = append(execArgs, opts.Args.Passthrough...)
+			execArgs = append(execArgs, arg.GetPassthroughArgs(opts.Args)...)
 			bblog.Printf("Executing %q with arguments %s", binPath, execArgs)
 			cmd := exec.CommandContext(ctx, binPath, execArgs...)
 			cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
@@ -618,4 +617,49 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	return exitCode, nil
+}
+
+func handleRemoteBazel(args []string) []string {
+	args = arg.Remove(args, "bes_backend")
+	args = arg.Remove(args, "remote_cache")
+	args = arg.Remove(args, "remote_executor")
+	args = arg.Remove(args, "jobs")
+
+	args = append(args, "--bes_backend="+defaultRemoteExecutionURL)
+	args = append(args, "--remote_cache="+defaultRemoteExecutionURL)
+	args = append(args, "--remote_executor="+defaultRemoteExecutionURL)
+	args = append(args, "--jobs=100")
+
+	ctx := context.Background()
+	repoConfig, err := Config(".")
+	if err != nil {
+		bblog.Fatalf("config err: %s", err)
+	}
+
+	wsFilePath, err := bazel.FindWorkspaceFile(".")
+	if err != nil {
+		bblog.Fatalf("error finding workspace: %s", err)
+	}
+	exitCode, err := Run(ctx, RunOpts{
+		Server:            "grpcs://" + defaultRemoteExecutionURL,
+		APIKey:            arg.Get(args, "remote_header=x-buildbuddy-api-key"),
+		Args:              args,
+		WorkspaceFilePath: wsFilePath,
+	}, repoConfig)
+	if err != nil {
+		bblog.Fatalf("error running remote bazel: %s", err)
+	}
+
+	os.Exit(exitCode)
+	return args
+}
+
+func HandleRemoteBazel(args []string) []string {
+	if c, i := arg.GetCommandAndIndex(args); c == "remote" {
+		return handleRemoteBazel(args[i+1:])
+	}
+	if arg, rest := arg.Pop(args, "remote"); arg == "true" {
+		return handleRemoteBazel(rest)
+	}
+	return args
 }

@@ -9,17 +9,13 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/bb",
     visibility = ["//visibility:private"],
     deps = [
-        "//cli/autoconfig",
+        "//cli/arg",
         "//cli/bazelisk",
-        "//cli/commandline",
-        "//cli/logging",
         "//cli/parser",
         "//cli/remotebazel",
         "//cli/sidecar",
-        "//cli/storage",
-        "//proto:sidecar_go_proto",
-        "//server/util/grpc_client",
-        "//server/version",
+        "//cli/tooltag",
+        "//cli/version",
     ],
 )
 
