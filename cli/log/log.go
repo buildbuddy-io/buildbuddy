@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	verbose = flag.Bool("bb_verbose", false, "If true, enable verbose buildbuddy logging.")
+	verbose = flag.Bool("verbose", false, "If true, enable verbose buildbuddy logging.")
 )
 
 func Debugf(format string, v ...interface{}) {
