@@ -615,6 +615,13 @@ type splitPoint struct {
 	rightSize int64
 }
 
+func absInt(i int64) int64 {
+	if i < 0 {
+		return -1 * i
+	}
+	return i
+}
+
 func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
 	iterOpts := &pebble.IterOptions{
 		LowerBound: keys.Key([]byte{constants.MinByte}),
@@ -633,30 +640,46 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 		totalSize += sizeBytes
 	}
 
-	leftSplitSize := int64(0)
+	optimalSplitSize := totalSize / 2
+
+	leftSize := int64(0)
 	var lastKey []byte
+
+	splitSize := int64(0)
+	var splitKey []byte
+
 	for iter.First(); iter.Valid(); iter.Next() {
-		if leftSplitSize >= totalSize/2 && canSplitKeys(lastKey, iter.Key()) {
-			sp := &rfpb.FindSplitPointResponse{
-				Split:          make([]byte, len(iter.Key())),
-				LeftSizeBytes:  leftSplitSize,
-				RightSizeBytes: totalSize - leftSplitSize,
+		if canSplitKeys(lastKey, iter.Key()) {
+			splitDistance := absInt(optimalSplitSize - leftSize)
+			bestSplitDistance := absInt(optimalSplitSize - splitSize)
+			if splitDistance < bestSplitDistance {
+				if len(splitKey) != len(lastKey) {
+					splitKey = make([]byte, len(lastKey))
+				}
+				copy(splitKey, lastKey)
+				splitSize = leftSize
 			}
-			copy(sp.Split, iter.Key())
-			log.Debugf("Found split point: %+v", sp)
-			return sp, nil
 		}
 		size, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		leftSplitSize += size
+		leftSize += size
 		if len(lastKey) != len(iter.Key()) {
 			lastKey = make([]byte, len(iter.Key()))
 		}
 		copy(lastKey, iter.Key())
 	}
-	return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSplitSize)
+
+	if splitKey == nil {
+		sm.printRange(sm.db, "unsplittable range")
+		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
+	}
+	return &rfpb.FindSplitPointResponse{
+		Split:          splitKey,
+		LeftSizeBytes:  splitSize,
+		RightSizeBytes: totalSize - splitSize,
+	}, nil
 }
 
 func canSplitKeys(leftKey, rightKey []byte) bool {
@@ -683,12 +706,20 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	return true
 }
 
-func printRange(wb *pebble.Batch, tag string) {
-	iter := wb.NewIter(&pebble.IterOptions{})
-	for iter.First(); iter.Valid(); iter.Next() {
-		log.Printf("%q: key: %q", tag, iter.Key())
-	}
+func (sm *Replica) printRange(r pebble.Reader, tag string) {
+	iter := r.NewIter(&pebble.IterOptions{})
 	defer iter.Close()
+
+	totalSize := int64(0)
+	for iter.First(); iter.Valid(); iter.Next() {
+		size, err := sizeOf(iter.Key(), iter.Value())
+		if err != nil {
+			sm.log.Errorf("Error computing size of %s: %s", iter.Key(), err)
+			continue
+		}
+		totalSize += size
+		sm.log.Infof("%q: key: %q (%d)", tag, iter.Key(), totalSize)
+	}
 }
 
 func (sm *Replica) deleteStoredFiles(start, end []byte) error {

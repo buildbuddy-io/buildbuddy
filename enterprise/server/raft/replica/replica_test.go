@@ -82,14 +82,8 @@ func (em *entryMaker) makeEntry(batch *rbuilder.BatchBuilder) dbsm.Entry {
 	return dbsm.Entry{Cmd: buf, Index: em.index}
 }
 
-func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
-	// Do a direct write of the range local range.
-	rdBuf, err := proto.Marshal(&rfpb.RangeDescriptor{
-		Left:       []byte{constants.MinByte},
-		Right:      []byte("z"),
-		RangeId:    1,
-		Generation: 1,
-	})
+func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
+	rdBuf, err := proto.Marshal(rd)
 	require.NoError(t, err)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -101,6 +95,15 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 	writeRsp, err := r.Update(entries)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
+}
+
+func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
+	writeLocalRangeDescriptor(t, em, r, &rfpb.RangeDescriptor{
+		Left:       []byte("a"),
+		Right:      []byte("z"),
+		RangeId:    1,
+		Generation: 1,
+	})
 }
 
 func TestReplicaDirectReadWrite(t *testing.T) {
@@ -266,7 +269,12 @@ func TestReplicaScan(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeLocalRangeDescriptor(t, em, repl, &rfpb.RangeDescriptor{
+		Left:       []byte{constants.MinByte},
+		Right:      []byte("z"),
+		RangeId:    1,
+		Generation: 1,
+	})
 
 	// Do a DirectWrite of some range descriptors.
 	batch := rbuilder.NewBatchBuilder()
@@ -670,4 +678,87 @@ func TestReplicaSplitLease(t *testing.T) {
 
 	err = repl.Close()
 	require.NoError(t, err)
+}
+
+func TestFindSplitPoint(t *testing.T) {
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := replica.New(rootDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	writeFiles := func(partitionID string, count int, sizeBytes int64) {
+		for i := 0; i < count; i++ {
+			// Write a file to the replica's data dir.
+			d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
+			fileRecord := &rfpb.FileRecord{
+				Isolation: &rfpb.Isolation{
+					CacheType:   rfpb.Isolation_CAS_CACHE,
+					PartitionId: partitionID,
+					GroupId:     interfaces.AuthAnonymousUser,
+				},
+				Digest: d,
+			}
+			header := &rfpb.Header{RangeId: 1, Generation: 1}
+			writeCommitter, err := repl.Writer(ctx, header, fileRecord)
+			require.NoError(t, err)
+			_, err = writeCommitter.Write(buf)
+			require.NoError(t, err)
+			require.Nil(t, writeCommitter.Commit())
+			require.Nil(t, writeCommitter.Close())
+
+			entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+				FileRecord: fileRecord,
+			}))
+			entries := []dbsm.Entry{entry}
+			writeRsp, err := repl.Update(entries)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(writeRsp))
+		}
+	}
+
+	{
+		// No data: findSplitPoint should return error.
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
+		rsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+		require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	{
+		// 1000 digests of the same size, split point should be half way between
+		writeFiles("default", 10, 100000)
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
+		rsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+
+		splitRsp, err := rbuilder.NewBatchResponse(rsp[0].Result.Data).FindSplitPointResponse(0)
+		require.NoError(t, err)
+		require.NotNil(t, splitRsp)
+
+		// Left and right side of split should both be approximately 50%
+		require.Equal(t, splitRsp.GetLeftSizeBytes()/100000, int64(5))
+		require.Equal(t, splitRsp.GetRightSizeBytes()/100000, int64(5))
+	}
+	{
+		// Write one more big blob; expect split point to be right before it.
+		writeFiles("default2", 1, 1000000)
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
+		rsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+
+		splitRsp, err := rbuilder.NewBatchResponse(rsp[0].Result.Data).FindSplitPointResponse(0)
+		require.NoError(t, err)
+		require.NotNil(t, splitRsp)
+
+		// Left and right side of split should both be approximately 50%
+		require.Equal(t, splitRsp.GetLeftSizeBytes()/100000, int64(10))
+		require.Equal(t, splitRsp.GetRightSizeBytes()/100000, int64(10))
+	}
 }
