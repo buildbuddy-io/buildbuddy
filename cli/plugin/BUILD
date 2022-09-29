@@ -6,8 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/plugin",
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/log",
+        "//cli/storage",
         "//cli/workspace",
         "//server/util/disk",
+        "//server/util/git",
         "//server/util/status",
         "@in_gopkg_yaml_v2//:yaml_v2",
     ],
