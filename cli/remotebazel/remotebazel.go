@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"os/exec"
@@ -75,7 +74,6 @@ type RunOpts struct {
 	APIKey            string
 	Args              []string
 	WorkspaceFilePath string
-	SidecarSocket     string
 }
 
 type RepoConfig struct {
@@ -577,7 +575,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	if fetchOutputs && exitCode == 0 {
-		conn, err := grpc_client.DialTarget(opts.SidecarSocket)
+		conn, err := grpc_client.DialTarget(opts.Server)
 		if err != nil {
 			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
 		}
@@ -622,8 +620,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 }
 
 func handleRemoteBazel(args []string) []string {
-	sidecarSocket := arg.Get(args, "bes_backend")
-
 	args = arg.Remove(args, "bes_backend")
 	args = arg.Remove(args, "remote_cache")
 	args = arg.Remove(args, "remote_executor")
@@ -637,22 +633,21 @@ func handleRemoteBazel(args []string) []string {
 	ctx := context.Background()
 	repoConfig, err := Config(".")
 	if err != nil {
-		log.Fatalf("config err: %s", err)
+		bblog.Fatalf("config err: %s", err)
 	}
 
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
-		log.Fatalf("error finding workspace: %s", err)
+		bblog.Fatalf("error finding workspace: %s", err)
 	}
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            "grpcs://" + defaultRemoteExecutionURL,
 		APIKey:            arg.Get(args, "remote_header=x-buildbuddy-api-key"),
 		Args:              args,
 		WorkspaceFilePath: wsFilePath,
-		SidecarSocket:     sidecarSocket,
 	}, repoConfig)
 	if err != nil {
-		log.Fatalf("error running remote bazel: %s", err)
+		bblog.Fatalf("error running remote bazel: %s", err)
 	}
 
 	os.Exit(exitCode)
