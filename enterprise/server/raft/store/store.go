@@ -900,22 +900,22 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	// start a new cluster in parallel to the existing cluster
 	existingMembers, err := s.GetClusterMembership(ctx, clusterID)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not get cluster membership: %s", err)
 	}
 	newIDs, err := s.reserveIDsForNewCluster(ctx, len(existingMembers))
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not reserve IDs for new cluster: %s", err)
 	}
 
 	nodeGrpcAddrs := make(map[string]string)
 	for _, replica := range existingMembers {
 		nhid, _, err := s.registry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
 		if err != nil {
-			return nil, err
+			return nil, status.InternalErrorf("could not resolve node host ID: %s", err)
 		}
 		grpcAddr, _, err := s.registry.ResolveGRPC(replica.GetClusterId(), replica.GetNodeId())
 		if err != nil {
-			return nil, err
+			return nil, status.InternalErrorf("could not resolve GRPC address: %s", err)
 		}
 		nodeGrpcAddrs[nhid] = grpcAddr
 	}
@@ -954,7 +954,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		},
 	})
 	if err := bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, newRightBatch); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not start new cluster: %s", err)
 	}
 
 	cas, err := casRangeEdit(constants.LocalRangeKey, oldLeft, oldLeftNewGen)
@@ -962,7 +962,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, err
 	}
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, rbuilder.NewBatchBuilder().Add(cas)); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not update left range generation: %s", err)
 	}
 	// Lock the cluster that is to be split.
 	// TODO(tylerw): add lease renewal goroutine instead of using such a long
@@ -972,18 +972,18 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		DurationSeconds: 10,
 	})
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, leaseReq); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not obtain split lease: %s", err)
 	}
 
 	// Find an appropriate split point.
 	findSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
 	findSplitBatchRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not find split point: %s", err)
 	}
 	findSplitRsp, err := findSplitBatchRsp.FindSplitPointResponse(0)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not find split point: %s", err)
 	}
 
 	oldRight := proto.Clone(newRight).(*rfpb.RangeDescriptor)
@@ -998,7 +998,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		End:    oldLeft.GetRight(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not create snapshot: %s", err)
 	}
 
 	copyStoredFiles := rbuilder.NewBatchBuilder().Add(&rfpb.CopyStoredFilesRequest{
@@ -1008,7 +1008,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		End:           oldLeft.GetRight(),
 	})
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, copyStoredFiles); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not copy data to right side: %s", err)
 	}
 
 	loadSnapReq := &rfpb.LoadSnapshotRequest{
@@ -1019,7 +1019,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		SnapId: createSnapshotRsp.GetSnapId(),
 	}
 	if _, err := s.loadSnapshot(ctx, loadSnapReq); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not load snapshot: %s", err)
 	}
 
 	// As mentioned above, add the replicas to right range now that it is
@@ -1033,12 +1033,12 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	}
 
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, newIDs.clusterID, b); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not update right range descriptor: %s", err)
 	}
 
 	// Update the metarange to add the new right range.
 	if err := s.updateMetarange(ctx, oldLeft, newLeft, newRight); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not update meta range: %s", err)
 	}
 
 	// Finally, update this ranges RangeDescriptor to reflect the fact that
@@ -1056,7 +1056,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	})
 
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, releaseReq); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not release split lease: %s", err)
 	}
 
 	// Delete old data from left range
@@ -1065,7 +1065,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		End:   oldLeft.Right,
 	})
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, deleteReq); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("could not delete old data: %s", err)
 	}
 
 	splitRsp := &rfpb.SplitClusterResponse{
