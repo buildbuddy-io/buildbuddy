@@ -12,6 +12,5 @@ go_library(
         "//cli/storage",
         "//proto:sidecar_go_proto",
         "//server/util/grpc_client",
-        "@org_golang_x_mod//semver",
     ],
 )

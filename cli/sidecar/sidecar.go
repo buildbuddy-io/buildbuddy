@@ -24,7 +24,7 @@ import (
 const (
 	windowsOSName        = "windows"
 	windowsFileExtension = ".exe"
-	sockPrefix = "sidecar-"
+	sockPrefix 			 = "sidecar-"
 )
 
 func getSidecarBinaryName() string {
