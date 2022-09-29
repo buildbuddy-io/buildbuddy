@@ -55,6 +55,7 @@ func ConfigureAPIKey(args []string) []string {
 		return args
 	}
 
+	// TODO(siggisim): find a more graceful way of finding headers if we change the way we parse flags.
 	if !arg.Has(args, apiKeyHeader) {
 		return append(args, "--"+apiKeyHeader+"="+string(apiKeyBytes))
 	}
