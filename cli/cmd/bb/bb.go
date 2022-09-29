@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
@@ -17,7 +16,7 @@ func main() {
 	flag.Parse()
 
 	// Parse args
-	commandLineArgs := os.Args[1:]
+	commandLineArgs := flag.Args()
 	rcFileArgs := parser.GetArgsFromRCFiles(commandLineArgs)
 	args := append(commandLineArgs, rcFileArgs...)
 
