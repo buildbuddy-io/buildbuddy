@@ -1,4 +1,4 @@
-package logging
+package log
 
 import (
 	"flag"
@@ -8,6 +8,13 @@ import (
 var (
 	verbose = flag.Bool("bb_verbose", false, "If true, enable verbose buildbuddy logging.")
 )
+
+func Debugf(format string, v ...interface{}) {
+	if !*verbose {
+		return
+	}
+	log.Printf(format, v...)
+}
 
 func Printf(format string, v ...interface{}) {
 	if !*verbose {

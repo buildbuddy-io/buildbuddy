@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
@@ -23,7 +24,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
-	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/sidecar"
@@ -132,9 +132,9 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 		lis, err = net.Listen("tcp", *listenAddr)
 	}
 	if err != nil {
-		bblog.Fatalf("Failed to listen: %s", err.Error())
+		log.Fatalf("Failed to listen: %s", err.Error())
 	}
-	bblog.Printf("gRPC listening on %q", *listenAddr)
+	log.Debugf("gRPC listening on %q", *listenAddr)
 	grpcOptions := []grpc.ServerOption{
 		rpcfilters.GetUnaryInterceptor(env),
 		rpcfilters.GetStreamInterceptor(env),
@@ -151,13 +151,13 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	besTarget := normalizeGrpcTarget(*besBackend)
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget))
-	bblog.Printf("Proxy: forwarding build events to: %q", besTarget)
+	log.Debugf("Proxy: forwarding build events to: %q", besTarget)
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 
 	// Register to handle build event protocol messages.
 	buildEventServer, err := build_event_server.NewBuildEventProtocolServer(env)
 	if err != nil {
-		bblog.Fatalf("Error initializing BuildEventProtocolServer: %s", err.Error())
+		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err.Error())
 	}
 	pepb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
 }
@@ -166,11 +166,11 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 	cacheTarget := normalizeGrpcTarget(*remoteCache)
 	conn, err := grpc_client.DialTarget(cacheTarget)
 	if err != nil {
-		bblog.Fatalf("Error dialing remote cache: %s", err.Error())
+		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
 	cacheProxy, err := cache_proxy.NewCacheProxy(ctx, env, conn)
 	if err != nil {
-		bblog.Fatalf("Error initializing cache proxy: %s", err.Error())
+		log.Fatalf("Error initializing cache proxy: %s", err.Error())
 	}
 	bspb.RegisterByteStreamServer(grpcServer, cacheProxy)
 	repb.RegisterActionCacheServer(grpcServer, cacheProxy)
@@ -198,7 +198,7 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 	}
 	c, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: *cacheDir}, maxSizeBytes)
 	if err != nil {
-		bblog.Fatalf("Error configuring cache: %s", err)
+		log.Fatalf("Error configuring cache: %s", err)
 	}
 	env.SetCache(c)
 }
@@ -228,7 +228,7 @@ func main() {
 		registerCacheProxy(ctx, env, grpcServer)
 	}
 	if *besBackend == "" && *remoteCache == "" {
-		bblog.Fatal("No services configured. At least one of --bes_backend or --remote_cache must be provided!")
+		log.Fatal("No services configured. At least one of --bes_backend or --remote_cache must be provided!")
 	}
 
 	scpb.RegisterSidecarServer(grpcServer, &sidecarService{})

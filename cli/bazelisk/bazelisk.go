@@ -2,18 +2,16 @@ package bazelisk
 
 import (
 	"context"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-
-	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 )
 
 func Run(args []string) {
@@ -21,10 +19,10 @@ func Run(args []string) {
 	// the next version appearing in the .bazelversion file so that bazelisk
 	// doesn't just invoke us again (resulting in an infinite loop).
 	if err := setBazelVersion(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("failed to set bazel version: %s", err)
 	}
 
-	bblog.Printf("Calling bazelisk with %+v", args)
+	log.Debugf("Calling bazelisk with %+v", args)
 
 	gcs := &repositories.GCSRepo{}
 	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
@@ -33,7 +31,7 @@ func Run(args []string) {
 
 	exitCode, err := core.RunBazelisk(args, repos)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error running bazelisk: %s", err)
 	}
 
 	os.Exit(exitCode)

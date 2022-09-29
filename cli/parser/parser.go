@@ -10,8 +10,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-
-	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 )
 
 var (
@@ -73,7 +72,7 @@ func appendOptionsFromFile(in io.Reader, opts []*BazelOption) ([]*BazelOption, e
 			match := importMatcher.FindStringSubmatch(line)
 			opts, err = appendOptionsFromImport(match, opts)
 			if err != nil {
-				bblog.Printf("Error parsing import: %s", err.Error())
+				log.Debugf("Error parsing import: %s", err.Error())
 			}
 			continue
 		}
@@ -141,7 +140,7 @@ func GetArgsFromRCFiles(commandLineArgs []string) []string {
 	}
 	opts, err := ParseRCFiles(rcFiles...)
 	if err != nil {
-		bblog.Printf("Error parsing .bazelrc file: %s", err.Error())
+		log.Debugf("Error parsing .bazelrc file: %s", err.Error())
 		return nil
 	}
 
@@ -151,7 +150,7 @@ func GetArgsFromRCFiles(commandLineArgs []string) []string {
 	rcFileArgs := make([]string, 0)
 	rcFileArgs = appendArgsForConfig(opts, rcFileArgs, command, config)
 
-	bblog.Printf("rcFileArgs: %+v", rcFileArgs)
+	log.Debugf("rcFileArgs: %+v", rcFileArgs)
 
 	return rcFileArgs
 }
