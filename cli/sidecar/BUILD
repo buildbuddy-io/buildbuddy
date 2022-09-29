@@ -7,12 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
-        "//cli/download",
         "//cli/logging",
         "//cli/sidecar_bundle",
         "//cli/storage",
         "//proto:sidecar_go_proto",
         "//server/util/grpc_client",
-        "@org_golang_x_mod//semver",
     ],
 )
