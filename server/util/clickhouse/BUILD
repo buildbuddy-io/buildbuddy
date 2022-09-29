@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/tables",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",

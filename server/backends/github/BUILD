@@ -11,6 +11,7 @@ go_library(
         "//server/http/filters",
         "//server/tables",
         "//server/util/authutil",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/random",

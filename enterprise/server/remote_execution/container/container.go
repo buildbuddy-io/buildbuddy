@@ -46,7 +46,7 @@ var (
 type ContainerRegistry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
 	Username  string   `yaml:"username" json:"username"`
-	Password  string   `yaml:"password" json:"password"`
+	Password  string   `yaml:"password" json:"password" config:"secret"`
 }
 
 type DockerDeviceMapping struct {
