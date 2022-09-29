@@ -9,6 +9,7 @@ import (
 
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -39,7 +40,7 @@ func Run(args []string) {
 }
 
 func setBazelVersion() error {
-	ws, err := findWorkspacePath()
+	ws, err := workspace.Path()
 	if err != nil {
 		return err
 	}
@@ -65,28 +66,4 @@ func setBazelVersion() error {
 	}
 
 	return os.Setenv("USE_BAZEL_VERSION", parts[0])
-}
-
-func findWorkspacePath() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for {
-		for _, basename := range []string{"WORKSPACE", "WORKSPACE.bazel"} {
-			ex, err := disk.FileExists(context.TODO(), filepath.Join(dir, basename))
-			if err != nil {
-				return "", err
-			}
-			if ex {
-				return dir, nil
-			}
-		}
-		next := filepath.Dir(dir)
-		if dir == next {
-			// We've reached the root dir without finding a WORKSPACE file
-			return "", status.FailedPreconditionError("not within a bazel workspace (could not find WORKSPACE or WORKSPACE.bazel file)")
-		}
-		dir = next
-	}
 }
