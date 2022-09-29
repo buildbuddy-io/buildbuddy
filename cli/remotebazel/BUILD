@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
-        "//cli/logging",
+        "//cli/log",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",

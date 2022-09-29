@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
-        "//cli/logging",
+        "//cli/log",
         "//cli/sidecar_bundle",
         "//cli/storage",
         "//proto:sidecar_go_proto",

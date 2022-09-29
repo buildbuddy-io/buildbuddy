@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_bundle"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -76,7 +75,7 @@ func pathExists(p string) bool {
 
 func startBackgroundProcess(cmd string, args []string) error {
 	c := exec.Command(cmd, args...)
-	bblog.Printf("running sidecar cmd: %s", c.String())
+	log.Debugf("running sidecar cmd: %s", c.String())
 	return c.Start()
 }
 
@@ -90,7 +89,7 @@ func restartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []str
 	// Check if a process is already running with this sock.
 	// If one is, we're all done!
 	if pathExists(sockPath) {
-		bblog.Printf("sidecar with args %s is already listening at %q.", args, sockPath)
+		log.Debugf("sidecar with args %s is already listening at %q.", args, sockPath)
 		return sockPath, nil
 	}
 
@@ -109,7 +108,7 @@ func ConfigureSidecar(args []string) []string {
 		log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
 	}
 	if err := extractBundledSidecar(ctx, bbHome); err != nil {
-		bblog.Printf("Error extracting sidecar: %s", err)
+		log.Printf("Error extracting sidecar: %s", err)
 	}
 
 	// Re(Start) the sidecar if the flags set don't match.
@@ -164,7 +163,7 @@ func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
 		for {
 			_, err := s.Ping(ctx, &scpb.PingRequest{})
 			if connectionValidated && err != nil {
-				bblog.Printf("sidecar did not respond to ping request: %s\n", err)
+				log.Debugf("sidecar did not respond to ping request: %s\n", err)
 				return
 			}
 			if !connectionValidated && err == nil {

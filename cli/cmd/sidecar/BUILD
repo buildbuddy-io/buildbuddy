@@ -8,7 +8,7 @@ go_library(
     deps = [
         "//cli/cache_proxy",
         "//cli/devnull",
-        "//cli/logging",
+        "//cli/log",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:sidecar_go_proto",

@@ -17,6 +17,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -32,7 +33,6 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
-	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -107,7 +107,7 @@ func determineRemote(repo *git.Repository) (*git.Remote, error) {
 		if err == nil {
 			return r, nil
 		}
-		bblog.Printf("Could not find remote %q saved in config, ignoring", confRemote)
+		log.Debugf("Could not find remote %q saved in config, ignoring", confRemote)
 	}
 
 	var remoteNames []string
@@ -204,21 +204,21 @@ func Config(path string) (*RepoConfig, error) {
 	}
 	fetchURL := remote.Config().URLs[0]
 
-	bblog.Printf("Using fetch URL: %s", fetchURL)
+	log.Debugf("Using fetch URL: %s", fetchURL)
 
 	defaultBranchRef, err := determineDefaultBranch(repo)
 	if err != nil {
 		return nil, err
 	}
 
-	bblog.Printf("Using base branch: %s", defaultBranchRef)
+	log.Debugf("Using base branch: %s", defaultBranchRef)
 
 	defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranchRef))
 	if err != nil {
 		return nil, status.UnknownErrorf("could not find commit hash for branch ref %q", defaultBranchRef)
 	}
 
-	bblog.Printf("Using base branch commit hash: %s", defaultBranchCommitHash)
+	log.Debugf("Using base branch commit hash: %s", defaultBranchCommitHash)
 
 	wt, err := repo.Worktree()
 	if err != nil {
@@ -486,7 +486,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
-	bblog.Printf("Requesting command execution on remote Bazel instance.")
+	log.Debugf("Requesting command execution on remote Bazel instance.")
 
 	instanceHash := sha256.New()
 	instanceHash.Write(uuid.NodeID())
@@ -535,7 +535,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	iid := rsp.GetInvocationId()
 
-	bblog.Printf("Invocation ID: %s", iid)
+	log.Debugf("Invocation ID: %s", iid)
 
 	if err := streamLogs(ctx, bbClient, iid); err != nil {
 		return 0, err
@@ -603,7 +603,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			execArgs := defaultRunArgs
 			// Pass through extra arguments (-- --foo=bar) from the command line.
 			execArgs = append(execArgs, arg.GetPassthroughArgs(opts.Args)...)
-			bblog.Printf("Executing %q with arguments %s", binPath, execArgs)
+			log.Debugf("Executing %q with arguments %s", binPath, execArgs)
 			cmd := exec.CommandContext(ctx, binPath, execArgs...)
 			cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
 			cmd.Stdout = os.Stdout
@@ -633,12 +633,12 @@ func handleRemoteBazel(args []string) []string {
 	ctx := context.Background()
 	repoConfig, err := Config(".")
 	if err != nil {
-		bblog.Fatalf("config err: %s", err)
+		log.Fatalf("config err: %s", err)
 	}
 
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
-		bblog.Fatalf("error finding workspace: %s", err)
+		log.Fatalf("error finding workspace: %s", err)
 	}
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            "grpcs://" + defaultRemoteExecutionURL,
@@ -647,7 +647,7 @@ func handleRemoteBazel(args []string) []string {
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
 	if err != nil {
-		bblog.Fatalf("error running remote bazel: %s", err)
+		log.Fatalf("error running remote bazel: %s", err)
 	}
 
 	os.Exit(exitCode)
