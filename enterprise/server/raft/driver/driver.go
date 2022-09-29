@@ -828,19 +828,19 @@ func (d *Driver) Statusz(ctx context.Context) string {
 	if len(changes.overloadedReplicas) > 0 {
 		buf += "Overloaded Replicas:\n"
 		for rep, _ := range changes.overloadedReplicas {
-			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
 		}
 	}
 	if len(changes.deadReplicas) > 0 {
 		buf += "Dead Replicas:\n"
 		for rep, _ := range changes.deadReplicas {
-			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
 		}
 	}
 	if len(changes.moveableReplicas) > 0 {
 		buf += "Moveable Replicas:\n"
 		for rep, _ := range changes.moveableReplicas {
-			buf += fmt.Sprintf("\t c%dn%d", rep.clusterID, rep.nodeID)
+			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
 		}
 	}
 	buf += "</pre>"

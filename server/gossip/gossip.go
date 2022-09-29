@@ -140,6 +140,16 @@ func (gm *GossipManager) Statusz(ctx context.Context) string {
 		}
 		buf += fmt.Sprintf("\t%s\n", formatMember(peerMember))
 	}
+
+	buf += "Stats:\n"
+	var statStrings []string
+	for k, v := range gm.serfInstance.Stats() {
+		statStrings = append(statStrings, fmt.Sprintf("\t%s: %s\n", k, v))
+	}
+	sort.Strings(statStrings)
+	for _, statString := range statStrings {
+		buf += statString
+	}
 	buf += "</pre>"
 	return buf
 }
