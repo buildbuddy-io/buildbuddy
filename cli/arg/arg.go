@@ -77,7 +77,7 @@ func GetNonPassthroughArgs(args []string) []string {
 			return args[:i]
 		}
 	}
-	return []string{}
+	return args
 }
 
 // Returns args with any arguments also found in existingArgs removed
