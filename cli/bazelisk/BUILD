@@ -10,6 +10,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/logging",
+        "//cli/workspace",
         "//server/util/disk",
         "//server/util/status",
         "@com_github_bazelbuild_bazelisk//core:go_default_library",
