@@ -311,7 +311,7 @@ func (rc *RaftCache) lookupPartitionID(ctx context.Context, remoteInstanceName s
 	return DefaultPartitionID, nil
 }
 
-func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
 	partID, err := rc.lookupPartitionID(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err

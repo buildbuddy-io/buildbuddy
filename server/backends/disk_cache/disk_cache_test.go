@@ -933,7 +933,7 @@ func TestScanDiskDirectoryV1(t *testing.T) {
 
 	tests := []struct {
 		remoteInstanceName string
-		cacheType          interfaces.CacheType
+		cacheType          interfaces.CacheTypeDeprecated
 		apiKey             string
 		expectedPartition  string
 	}{
@@ -1055,7 +1055,7 @@ func TestScanDiskDirectoryV2(t *testing.T) {
 
 	tests := []struct {
 		remoteInstanceName string
-		cacheType          interfaces.CacheType
+		cacheType          interfaces.CacheTypeDeprecated
 		apiKey             string
 		expectedPartition  string
 	}{
