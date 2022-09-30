@@ -799,7 +799,6 @@ func TestReadWrite(t *testing.T) {
 	destCache, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
 	require.NoError(t, err)
 	destCache.Start()
-	defer destCache.Stop()
 	config := &migration_cache.MigrationConfig{
 		DoubleReadPercentage: 1.0,
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -153,9 +154,6 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	}
 
 	c.Start()
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		return c.Stop()
-	})
 	return c, nil
 }
 
@@ -736,8 +734,40 @@ func (mc *MigrationCache) Start() error {
 func (mc *MigrationCache) Stop() error {
 	log.Info("Migration cache beginning shut down")
 	close(mc.quitChan)
+	// Wait for migration-related channels that use cache resources (like copying) to close before shutting down
+	// the caches
 	if err := mc.eg.Wait(); err != nil {
 		return err
 	}
-	return nil
+
+	var wg sync.WaitGroup
+	var srcShutdownErr, dstShutdownErr error
+	if src, canStopSrc := mc.src.(interfaces.StoppableCache); canStopSrc {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			srcShutdownErr = src.Stop()
+			if srcShutdownErr != nil {
+				log.Warningf("Migration src cache shutdown err: %s", srcShutdownErr)
+			}
+		}()
+	}
+
+	if dest, canStopDest := mc.dest.(interfaces.StoppableCache); canStopDest {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dstShutdownErr = dest.Stop()
+			if dstShutdownErr != nil {
+				log.Warningf("Migration dest cache shutdown err: %s", dstShutdownErr)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if srcShutdownErr != nil {
+		return srcShutdownErr
+	}
+	return dstShutdownErr
 }
