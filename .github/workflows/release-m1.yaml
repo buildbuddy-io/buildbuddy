@@ -13,6 +13,14 @@ jobs:
       run:
         shell: "/usr/bin/arch -arch arm64e /bin/bash --noprofile --norc -eo pipefail {0}"
     steps:
+      - name: Clean workspace
+        run: |
+          set -x
+          ls -la ./
+          rm -rf ./* || true
+          rm -rf ./.??* || true
+          ls -la ./
+
       - name: Checkout
         uses: actions/checkout@v3
 
