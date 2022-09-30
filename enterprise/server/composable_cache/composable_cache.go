@@ -31,7 +31,7 @@ func NewComposableCache(outer, inner interfaces.Cache, mode CacheMode) interface
 	}
 }
 
-func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
 	newInner, err := c.inner.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, status.WrapError(err, "WithIsolation failed on inner cache")

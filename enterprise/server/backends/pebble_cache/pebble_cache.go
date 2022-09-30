@@ -795,7 +795,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 	return user.GetGroupID(), defaultPartitionID, nil
 }
 
-func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
 	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err

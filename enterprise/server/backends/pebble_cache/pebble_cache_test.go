@@ -157,7 +157,7 @@ func TestIsolation(t *testing.T) {
 		cache2         interfaces.Cache
 		shouldBeShared bool
 	}
-	mustIsolate := func(cacheType interfaces.CacheType, remoteInstanceName string) interfaces.Cache {
+	mustIsolate := func(cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) interfaces.Cache {
 		c, err := pc.WithIsolation(ctx, cacheType, remoteInstanceName)
 		if err != nil {
 			t.Fatalf("Error isolating cache: %s", err)
@@ -787,7 +787,7 @@ func TestStartupScan(t *testing.T) {
 }
 
 type digestAndType struct {
-	cacheType interfaces.CacheType
+	cacheType interfaces.CacheTypeDeprecated
 	digest    *repb.Digest
 }
 

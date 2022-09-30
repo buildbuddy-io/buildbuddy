@@ -25,7 +25,7 @@ var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use t
 type MemoryCache struct {
 	l                  interfaces.LRU
 	lock               *sync.RWMutex
-	cacheType          interfaces.CacheType
+	cacheType          interfaces.CacheTypeDeprecated
 	remoteInstanceName string
 }
 
@@ -88,7 +88,7 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	return key, nil
 }
 
-func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
 	return &MemoryCache{
 		l:                  m.l,
 		lock:               m.lock,

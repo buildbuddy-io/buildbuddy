@@ -360,7 +360,7 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
 
 	var parsedResourceName *digest.ResourceName
-	var cacheType interfaces.CacheType
+	var cacheType interfaces.CacheTypeDeprecated
 	if digest.IsActionCacheResourceName(urlStr) {
 		parsedResourceName, err = digest.ParseActionCacheResourceName(urlStr)
 		if err != nil {

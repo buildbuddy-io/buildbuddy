@@ -919,7 +919,7 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 	}, nil
 }
 
-func ProtoCacheTypeToCacheType(cacheType resource.CacheType) (interfaces.CacheType, error) {
+func ProtoCacheTypeToCacheType(cacheType resource.CacheType) (interfaces.CacheTypeDeprecated, error) {
 	switch cacheType {
 	case resource.CacheType_AC:
 		return interfaces.ActionCacheType, nil

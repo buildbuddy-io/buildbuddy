@@ -49,7 +49,7 @@ func TestIsolation(t *testing.T) {
 		cache2         interfaces.Cache
 		shouldBeShared bool
 	}
-	mustIsolate := func(cacheType interfaces.CacheType, remoteInstanceName string) interfaces.Cache {
+	mustIsolate := func(cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) interfaces.Cache {
 		c, err := mc.WithIsolation(ctx, cacheType, remoteInstanceName)
 		if err != nil {
 			t.Fatalf("Error isolating cache: %s", err)

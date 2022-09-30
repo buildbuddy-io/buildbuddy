@@ -157,7 +157,7 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	return c, nil
 }
 
-func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
 	srcCache, err := mc.src.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, errors.WithMessage(err, "cannot get src cache with isolation")

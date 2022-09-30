@@ -101,7 +101,7 @@ func (c *Cache) mcSet(key string, data []byte) error {
 	return c.mc.Set(makeItem(key, data))
 }
 
-func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
 	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
 	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
 		newPrefix += "/"

@@ -137,7 +137,7 @@ type snitchCache struct {
 	writeCount map[string]int
 }
 
-func (s *snitchCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (s *snitchCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
 	c, err := s.Cache.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, err

@@ -154,7 +154,7 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	return client, nil
 }
 
-func ProtoCacheTypeToCacheType(cacheType dcpb.Isolation_CacheType) (interfaces.CacheType, error) {
+func ProtoCacheTypeToCacheType(cacheType dcpb.Isolation_CacheType) (interfaces.CacheTypeDeprecated, error) {
 	switch cacheType {
 	case dcpb.Isolation_CAS_CACHE:
 		return interfaces.CASCacheType, nil

@@ -198,15 +198,15 @@ type Blobstore interface {
 	DeleteBlob(ctx context.Context, blobName string) error
 }
 
-type CacheType int
+type CacheTypeDeprecated int
 
 const (
-	UnknownCacheType CacheType = iota
+	UnknownCacheType CacheTypeDeprecated = iota
 	ActionCacheType
 	CASCacheType
 )
 
-func (t CacheType) Prefix() string {
+func (t CacheTypeDeprecated) Prefix() string {
 	switch t {
 	case ActionCacheType:
 		return "ac"
@@ -233,7 +233,7 @@ type CacheMetadata struct {
 type Cache interface {
 	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
-	WithIsolation(ctx context.Context, cacheType CacheType, remoteInstanceName string) (Cache, error)
+	WithIsolation(ctx context.Context, cacheType CacheTypeDeprecated, remoteInstanceName string) (Cache, error)
 
 	// Normal cache-like operations.
 	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)

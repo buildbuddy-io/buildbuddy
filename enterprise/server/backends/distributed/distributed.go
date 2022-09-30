@@ -323,7 +323,7 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	return c.cacheProxy.Shutdown(ctx)
 }
 
-func toProtoCacheType(cacheType interfaces.CacheType) (dcpb.Isolation_CacheType, error) {
+func toProtoCacheType(cacheType interfaces.CacheTypeDeprecated) (dcpb.Isolation_CacheType, error) {
 	switch cacheType {
 	case interfaces.CASCacheType:
 		return dcpb.Isolation_CAS_CACHE, nil
@@ -334,7 +334,7 @@ func toProtoCacheType(cacheType interfaces.CacheType) (dcpb.Isolation_CacheType,
 	}
 }
 
-func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
 	newLocal, err := c.local.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, err
