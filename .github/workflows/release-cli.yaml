@@ -68,6 +68,13 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
+      - name: Clean workspace
+        run: |
+          ls -la ./
+          rm -rf ./* || true
+          rm -rf ./.??* || true
+          ls -la ./
+
       - name: Checkout
         uses: actions/checkout@v3
         with:
