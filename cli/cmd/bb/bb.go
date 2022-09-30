@@ -61,25 +61,16 @@ func run() (exitCode int, err error) {
 	// Remove any args that don't need to be on the command line
 	args = arg.RemoveExistingArgs(args, rcFileArgs)
 
-	// Make a file where we'll write all bazel output
-	outputFile, err := os.CreateTemp("", "bazelisk-*.log")
-	if err != nil {
-		return 0, err
-	}
-	defer func() {
-		outputFile.Close()
-		os.Remove(outputFile.Name())
-	}()
-
 	// Actually run bazel
-	exitCode, err = bazelisk.Run(args, outputFile)
+	exitCode, output, err := bazelisk.Run(args)
 	if err != nil {
 		return 0, err
 	}
+	defer output.Close()
 
 	// Run plugin post-bazel hooks
 	for _, p := range plugins {
-		if err := p.PostBazel(outputFile.Name()); err != nil {
+		if err := p.PostBazel(output.Name()); err != nil {
 			return 0, err
 		}
 	}

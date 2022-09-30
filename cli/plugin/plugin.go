@@ -309,6 +309,7 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	if !exists {
 		return nil
 	}
+	log.Debugf("Running post-bazel hook for %s/%s", p.config.Repo, p.config.Path)
 	cmd := exec.Command(scriptPath, bazelOutputPath)
 	// TODO: Prefix stderr output with "output from [plugin]" ?
 	cmd.Stderr = os.Stderr
