@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -42,6 +43,9 @@ type MigrationCache struct {
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *int64
+
+	srcShutdownFn  func() error
+	destShutdownFn func() error
 }
 
 func Register(env environment.Env) error {
@@ -50,16 +54,16 @@ func Register(env environment.Env) error {
 	}
 	log.Infof("Registering Migration Cache")
 
-	srcCache, err := getCacheFromConfig(env, *cacheMigrationConfig.Src)
+	srcCache, srcShutdownFn, err := getCacheFromConfig(env, *cacheMigrationConfig.Src)
 	if err != nil {
 		return err
 	}
-	destCache, err := getCacheFromConfig(env, *cacheMigrationConfig.Dest)
+	destCache, destShutdownFn, err := getCacheFromConfig(env, *cacheMigrationConfig.Dest)
 	if err != nil {
 		return err
 	}
 	cacheMigrationConfig.SetConfigDefaults()
-	mc := NewMigrationCache(cacheMigrationConfig, srcCache, destCache)
+	mc := NewMigrationCache(cacheMigrationConfig, srcCache, destCache, srcShutdownFn, destShutdownFn)
 
 	if env.GetCache() != nil {
 		log.Warningf("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
@@ -75,7 +79,7 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
+func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache, srcShutdownFn func() error, destShutdownFn func() error) *MigrationCache {
 	zero := int64(0)
 	return &MigrationCache{
 		src:                         srcCache,
@@ -87,6 +91,8 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &zero,
+		srcShutdownFn:               srcShutdownFn,
+		destShutdownFn:              destShutdownFn,
 	}
 }
 
@@ -100,27 +106,30 @@ func validateCacheConfig(config CacheConfig) error {
 	return nil
 }
 
-func getCacheFromConfig(env environment.Env, cfg CacheConfig) (interfaces.Cache, error) {
+func getCacheFromConfig(env environment.Env, cfg CacheConfig) (interfaces.Cache, func() error, error) {
 	err := validateCacheConfig(cfg)
 	if err != nil {
-		return nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
+		return nil, nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
 	}
 
 	if cfg.DiskConfig != nil {
 		c, err := diskCacheFromConfig(env, cfg.DiskConfig)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return c, nil
+		return c, nil, nil
 	} else if cfg.PebbleConfig != nil {
 		c, err := pebbleCacheFromConfig(env, cfg.PebbleConfig)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return c, nil
+		pebbleShutdownFn := func() error {
+			return c.Stop()
+		}
+		return c, pebbleShutdownFn, nil
 	}
 
-	return nil, status.FailedPreconditionErrorf("error getting cache from migration config: no valid cache types")
+	return nil, nil, status.FailedPreconditionErrorf("error getting cache from migration config: no valid cache types")
 }
 
 func diskCacheFromConfig(env environment.Env, cfg *DiskCacheConfig) (*disk_cache.DiskCache, error) {
@@ -153,9 +162,6 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	}
 
 	c.Start()
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		return c.Stop()
-	})
 	return c, nil
 }
 
@@ -736,8 +742,40 @@ func (mc *MigrationCache) Start() error {
 func (mc *MigrationCache) Stop() error {
 	log.Info("Migration cache beginning shut down")
 	close(mc.quitChan)
+	// Wait for migration-related channels that use cache resources (like copying) to close before shutting down
+	// the caches
 	if err := mc.eg.Wait(); err != nil {
 		return err
 	}
-	return nil
+
+	var wg sync.WaitGroup
+	var srcShutdownErr, dstShutdownErr error
+	if mc.srcShutdownFn != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			srcShutdownErr = mc.srcShutdownFn()
+			if srcShutdownErr != nil {
+				log.Warningf("Migration src cache shutdown err: %s", srcShutdownErr)
+			}
+		}()
+	}
+
+	if mc.destShutdownFn != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dstShutdownErr = mc.destShutdownFn()
+			if dstShutdownErr != nil {
+				log.Warningf("Migration dest cache shutdown err: %s", dstShutdownErr)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if srcShutdownErr != nil {
+		return srcShutdownErr
+	}
+	return dstShutdownErr
 }
