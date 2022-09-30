@@ -5,7 +5,6 @@ go_library(
     srcs = ["retry.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/retry",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/log"],
 )
 
 go_test(
