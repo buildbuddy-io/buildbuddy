@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"time"
 
@@ -23,6 +24,10 @@ const (
 
 	// default poll interval for WaitUntilExists.
 	defaultWaitPollInterval = 1 * time.Millisecond
+)
+
+var (
+	tmpWriteFileRe = regexp.MustCompile(`\.[0-9a-zA-Z]{10}\.tmp$`)
 )
 
 type Partition struct {
@@ -223,6 +228,10 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 		DeleteLocalFileIfExists(tmpFileName)
 	})
 	return wm, nil
+}
+
+func IsWriteTempFile(fullPath string) bool {
+	return tmpWriteFileRe.MatchString(fullPath)
 }
 
 // DirSize returns the size of a directory specified by path, in bytes.

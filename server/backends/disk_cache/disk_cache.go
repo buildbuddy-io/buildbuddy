@@ -622,7 +622,14 @@ func (p *partition) initializeCache() error {
 			}
 			timestampedRecord, err := p.makeTimestampedRecordFromPathAndFileInfo(path, info)
 			if err != nil {
-				log.Debugf("Skipping file: %s", err)
+				if disk.IsWriteTempFile(path) {
+					err = os.Remove(path)
+					if err != nil {
+						log.Warningf("Could not delete stale temp file %q (size %d): %s", path, info.Size(), err)
+					}
+					return nil
+				}
+				log.Infof("Skipping unrecognized file %q (size %d): %s", path, info.Size(), err)
 				return nil
 			}
 			timestampedRecords = append(timestampedRecords, timestampedRecord)

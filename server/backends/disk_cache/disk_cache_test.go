@@ -585,6 +585,40 @@ func TestZeroLengthFiles(t *testing.T) {
 	}
 }
 
+func TestDeleteStaleTempFiles(t *testing.T) {
+	maxSizeBytes := int64(100_000_000) // 100MB
+	rootDir := testfs.MakeTempDir(t)
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	anonPath := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
+	err := disk.EnsureDirectoryExists(anonPath)
+	require.NoError(t, err)
+
+	// Create a temp file for a write that should be deleted.
+	badDigest, _ := testdigest.NewRandomDigestBuf(t, 1000)
+	writeTempFile := filepath.Join(anonPath, badDigest.GetHash()+".ababababab.tmp")
+	err = os.WriteFile(writeTempFile, []byte("hello"), 0644)
+	require.NoError(t, err)
+
+	// Create an unexpected file that should not be deleted.
+	unexpectedFile := filepath.Join(anonPath, "some_other_file.txt")
+	err = os.WriteFile(unexpectedFile, []byte("hello"), 0644)
+	require.NoError(t, err)
+
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	require.NoError(t, err)
+
+	dc.WaitUntilMapped()
+
+	exists, err := disk.FileExists(ctx, writeTempFile)
+	require.NoError(t, err)
+	require.False(t, exists, "temp file %q should have been deleted", writeTempFile)
+
+	exists, err = disk.FileExists(ctx, unexpectedFile)
+	require.NoError(t, err)
+	require.True(t, exists, "unexpected file %q should not have been deleted", unexpectedFile)
+}
+
 func TestNonDefaultPartition(t *testing.T) {
 	maxSizeBytes := int64(100_000_000) // 100MB
 	rootDir := testfs.MakeTempDir(t)
