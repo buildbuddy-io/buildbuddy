@@ -2,19 +2,36 @@ package main
 
 import (
 	"flag"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 )
 
 func main() {
 	flag.Parse()
+	exitCode, err := run()
+	if err != nil {
+		log.Fatal(err)
+	}
+	os.Exit(exitCode)
+}
+
+func run() (exitCode int, err error) {
+	// Load plugins
+	plugins, err := plugin.LoadAll()
+	if err != nil {
+		return 0, err
+	}
 
 	// Parse args
 	commandLineArgs := flag.Args()
@@ -22,9 +39,19 @@ func main() {
 	args := append(commandLineArgs, rcFileArgs...)
 
 	// Fiddle with args
+	// TODO(bduffany): model these as "built-in" plugins
 	args = tooltag.ConfigureToolTag(args)
 	args = sidecar.ConfigureSidecar(args)
 	args = login.ConfigureAPIKey(args)
+	args = terminal.ConfigureOutputMode(args)
+
+	// Run plugin pre-bazel hooks
+	for _, p := range plugins {
+		args, err = p.PreBazel(args)
+		if err != nil {
+			return 0, err
+		}
+	}
 
 	// Handle commands
 	args = remotebazel.HandleRemoteBazel(args)
@@ -34,6 +61,28 @@ func main() {
 	// Remove any args that don't need to be on the command line
 	args = arg.RemoveExistingArgs(args, rcFileArgs)
 
+	// Make a file where we'll write all bazel output
+	outputFile, err := os.CreateTemp("", "bazelisk-*.log")
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		outputFile.Close()
+		os.Remove(outputFile.Name())
+	}()
+
 	// Actually run bazel
-	bazelisk.Run(args)
+	exitCode, err = bazelisk.Run(args, outputFile)
+	if err != nil {
+		return 0, err
+	}
+
+	// Run plugin post-bazel hooks
+	for _, p := range plugins {
+		if err := p.PostBazel(outputFile.Name()); err != nil {
+			return 0, err
+		}
+	}
+
+	return exitCode, nil
 }

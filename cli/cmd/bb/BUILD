@@ -11,10 +11,13 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
+        "//cli/log",
         "//cli/login",
         "//cli/parser",
+        "//cli/plugin",
         "//cli/remotebazel",
         "//cli/sidecar",
+        "//cli/terminal",
         "//cli/tooltag",
         "//cli/version",
     ],

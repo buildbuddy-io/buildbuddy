@@ -2,6 +2,7 @@ package bazelisk
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-func Run(args []string) {
+func Run(args []string, output io.Writer) (int, error) {
 	// If we were already invoked via bazelisk, then set the bazel version to
 	// the next version appearing in the .bazelversion file so that bazelisk
 	// doesn't just invoke us again (resulting in an infinite loop).
@@ -29,12 +30,57 @@ func Run(args []string) {
 	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
 	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
 
+	// Temporarily redirect stdout/stderr so that we can capture the bazelisk
+	// output.
+	// Note, we might be able to use Bazel's "command.log" file instead, but
+	// would need to find a way to avoid a race condition if another Bazel
+	// command is run concurrently (since it will clear out command.log as
+	// soon as our bazelisk invocation below is complete and it is able to
+	// grap the workspace lock).
+	originalStdout, originalStderr := os.Stdout, os.Stderr
+	defer func() {
+		os.Stdout, os.Stderr = originalStdout, originalStderr
+	}()
+	stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, os.Stdout))
+	if err != nil {
+		return 0, err
+	}
+	defer closeStdoutPipe()
+	os.Stdout = stdoutPipe
+	stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, os.Stderr))
+	if err != nil {
+		return 0, err
+	}
+	defer closeStderrPipe()
+	os.Stderr = stderrPipe
+
 	exitCode, err := core.RunBazelisk(args, repos)
 	if err != nil {
 		log.Fatalf("error running bazelisk: %s", err)
 	}
+	return exitCode, nil
+}
 
-	os.Exit(exitCode)
+// makePipeWriter adapts a writer to an *os.File by using an os.Pipe().
+// The returned file should not be closed; instead the returned closeFunc
+// should be called to ensure that all data from the pipe is flushed to the
+// underlying writer.
+func makePipeWriter(w io.Writer) (pw *os.File, closeFunc func(), err error) {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return
+	}
+	done := make(chan struct{}, 1)
+	go func() {
+		io.Copy(w, pr)
+		close(done)
+	}()
+	closeFunc = func() {
+		pw.Close()
+		// Wait until the pipe contents are flushed to w.
+		<-done
+	}
+	return
 }
 
 func setBazelVersion() error {

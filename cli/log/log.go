@@ -9,11 +9,8 @@ var (
 	verbose = flag.Bool("verbose", false, "If true, enable verbose buildbuddy logging.")
 )
 
-func Debug(v ...any) {
-	if !*verbose {
-		return
-	}
-	log.Print(v...)
+func init() {
+	log.SetFlags(0)
 }
 
 func Debug(v ...any) {
