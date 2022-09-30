@@ -287,15 +287,7 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 // Currently the invocation data is fed as plain text via a file. The file path
 // is passed as the first argument.
 //
-// Example plugin that highlights lines containing source locations (like
-// "/path/to/foo.go:23:42: undefined variable") so they are easier to visually
-// spot in the build output:
-//
-//     post_bazel.sh
-//       #!/usr/bin/env bash
-//       perl -nle 'if (/^(.*\.\w+:\d+:\d+:)(.*)/) {
-//         print "\x1b[33m" . $1 . "\x1b[m" . $2
-//       }' < "$1"
+// See cli/example_plugins/go_highlight/post_bazel.sh for an example.
 func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	path, err := p.Path()
 	if err != nil {
