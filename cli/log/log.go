@@ -13,11 +13,22 @@ func init() {
 	log.SetFlags(0)
 }
 
+func Debug(v ...any) {
+	if !*verbose {
+		return
+	}
+	log.Print(v...)
+}
+
 func Debugf(format string, v ...interface{}) {
 	if !*verbose {
 		return
 	}
 	log.Printf(format, v...)
+}
+
+func Print(v ...any) {
+	log.Print(v...)
 }
 
 func Printf(format string, v ...interface{}) {
@@ -28,6 +39,6 @@ func Fatalf(format string, v ...interface{}) {
 	log.Fatalf(format, v...)
 }
 
-func Fatal(format string) {
-	log.Fatal(format)
+func Fatal(v ...any) {
+	log.Fatal(v...)
 }
