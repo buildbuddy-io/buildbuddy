@@ -471,8 +471,8 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 }
 
 type doubleWriter struct {
-	src          io.WriteCloser
-	dest         io.WriteCloser
+	src          interfaces.CommittedWriteCloser
+	dest         interfaces.CommittedWriteCloser
 	destDeleteFn func()
 }
 
@@ -538,7 +538,7 @@ func (d *doubleWriter) Close() error {
 func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
-	var destWriter io.WriteCloser
+	var destWriter interfaces.CommittedWriteCloser
 
 	eg.Go(func() error {
 		destWriter, dstErr = mc.dest.Writer(ctx, d)

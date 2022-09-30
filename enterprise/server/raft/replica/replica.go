@@ -798,7 +798,7 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 			return nil, status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
 		}
 		if err := writeCloserMetadata.Commit(); err != nil {
-			return err
+			return nil, err
 		}
 		if err := writeCloserMetadata.Close(); err != nil {
 			return nil, err
