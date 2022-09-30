@@ -13,30 +13,30 @@ import (
 )
 
 var (
-	defaultRedisTarget          = flag.String("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.")
+	defaultRedisTarget          = flagutil.New("app.default_redis_target", "", "A Redis target for storing remote shared state. To ease migration, the redis target from the remote execution config will be used if this value is not specified.", flagutil.SecretTag)
 	defaultRedisShards          = flagutil.New("app.default_sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
 	defaultShardedRedisUsername = flag.String("app.default_sharded_redis.username", "", "Redis username")
-	defaultShardedRedisPassword = flag.String("app.default_sharded_redis.password", "", "Redis password")
+	defaultShardedRedisPassword = flagutil.New("app.default_sharded_redis.password", "", "Redis password", flagutil.SecretTag)
 
 	// Cache Redis
 	// TODO: We need to deprecate one of the redis targets here or distinguish them
-	cacheRedisTargetFallback  = flag.String("cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
-	cacheRedisTarget          = flag.String("cache.redis.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **")
+	cacheRedisTargetFallback  = flagutil.New("cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flagutil.SecretTag)
+	cacheRedisTarget          = flagutil.New("cache.redis.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flagutil.SecretTag)
 	cacheRedisShards          = flagutil.New("cache.redis.sharded.shards", []string{}, "Ordered list of Redis shard addresses.")
 	cacheShardedRedisUsername = flag.String("cache.redis.sharded.username", "", "Redis username")
-	cacheShardedRedisPassword = flag.String("cache.redis.sharded.password", "", "Redis password")
+	cacheShardedRedisPassword = flagutil.New("cache.redis.sharded.password", "", "Redis password", flagutil.SecretTag)
 
 	// Remote Execution Redis
-	remoteExecRedisTarget          = flag.String("remote_execution.redis_target", "", "A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified.")
+	remoteExecRedisTarget          = flagutil.New("remote_execution.redis_target", "", "A Redis target for storing remote execution state. Falls back to app.default_redis_target if unspecified. Required for remote execution. To ease migration, the redis target from the cache config will be used if neither this value nor app.default_redis_target are specified.", flagutil.SecretTag)
 	remoteExecRedisShards          = flagutil.New("remote_execution.sharded_redis.shards", []string{}, "Ordered list of Redis shard addresses.")
 	remoteExecShardedRedisUsername = flag.String("remote_execution.sharded_redis.username", "", "Redis username")
-	remoteExecShardedRedisPassword = flag.String("remote_execution.sharded_redis.password", "", "Redis password")
+	remoteExecShardedRedisPassword = flagutil.New("remote_execution.sharded_redis.password", "", "Redis password", flagutil.SecretTag)
 )
 
 type ShardedRedisConfig struct {
 	Shards   []string `yaml:"shards" usage:"Ordered list of Redis shard addresses."`
 	Username string   `yaml:"username" usage:"Redis username"`
-	Password string   `yaml:"password" usage:"Redis password"`
+	Password string   `yaml:"password" usage:"Redis password" config:"secret"`
 }
 
 func defaultRedisClientOptsNoFallback() *redisutil.Opts {

@@ -2,44 +2,28 @@ package sidecar
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"hash/crc32"
-	"log"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"time"
 
-	"golang.org/x/mod/semver"
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_bundle"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/download"
-	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/sidecar"
 )
 
 const (
 	windowsOSName        = "windows"
 	windowsFileExtension = ".exe"
-
-	// The name of the directory that will contain
-	// tag/version dirs (which each contain a sidecar binary)
-	// inside of the buildbuddy dir.
-	sidecarsSubdir = "sidecars"
-
-	// The name of the file that contains a timestamp indicating
-	// when we last checked for an update.
-	lastCheckedForUpdateFileName = "last_checked_for_update"
-
-	// How long to wait between checks for a new sidecar version.
-	timeBetweenUpdateChecks = 24 * time.Hour
-
-	sockPrefix = "sidecar-"
-)
-
-var (
-	forceUpdateCheck = flag.Bool("bb_force_update_check", false, "If true, force a check for buildbuddy updates.")
+	sockPrefix           = "sidecar-"
 )
 
 func getSidecarBinaryName() string {
@@ -51,103 +35,28 @@ func getSidecarBinaryName() string {
 	return sidecarName
 }
 
-func getLatestInstalledSidecarVersion(sidecarDir, sidecarName string) string {
-	entries, err := os.ReadDir(sidecarDir)
-	if err != nil {
-		return ""
-	}
-	latestVersion := ""
-	for _, entry := range entries {
-		version := entry.Name()
-		binPath := filepath.Join(sidecarDir, version, sidecarName)
-		if _, err := os.Stat(binPath); !os.IsNotExist(err) && entry.IsDir() {
-			if semver.Compare(version, latestVersion) > 0 {
-				latestVersion = version
-			}
-		}
-	}
-	return latestVersion
-}
-
-func getlastUpdateCheck(bbHomeDir string) (time.Time, error) {
-	lastCheckedForUpdateFilePath := filepath.Join(bbHomeDir, lastCheckedForUpdateFileName)
-	content, err := os.ReadFile(lastCheckedForUpdateFilePath)
-	if err != nil {
-		return time.Time{}, err
-	}
-	i, err := strconv.ParseInt(string(content), 10, 64)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.Unix(i, 0), nil
-}
-
-func setLastUpdateCheck(bbHomeDir string) error {
-	lastCheckedForUpdateFilePath := filepath.Join(bbHomeDir, lastCheckedForUpdateFileName)
-	f, err := os.OpenFile(lastCheckedForUpdateFilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write([]byte(strconv.FormatInt(time.Now().Unix(), 10))); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func shouldForceUpdateCheck() bool {
-	return os.Getenv("BB_ALWAYS_CHECK_FOR_UPDATES") != "" || *forceUpdateCheck
-}
-
-func MaybeUpdateSidecar(ctx context.Context, bbHomeDir string) (bool, error) {
-	sidecarDir := filepath.Join(bbHomeDir, sidecarsSubdir)
-	if err := os.MkdirAll(sidecarDir, 0755); err != nil {
-		return false, err
-	}
-
+func extractBundledSidecar(ctx context.Context, bbHomeDir string) error {
 	// Figure out appropriate os/arch for this machine.
 	sidecarName := getSidecarBinaryName()
+	sidecarPath := filepath.Join(bbHomeDir, sidecarName)
 
-	// Check what is the latest sidecar we have installed.
-	latestInstalledVersion := getLatestInstalledSidecarVersion(sidecarDir, sidecarName)
-
-	// We're done If:
-	//  1) we already have a version
-	//  2) we've checked recently and
-	//  3) checking is not being forced
-	forceUpdateCheck := shouldForceUpdateCheck()
-	lastChecked, _ := getlastUpdateCheck(bbHomeDir)
-	if latestInstalledVersion != "" && time.Since(lastChecked) < timeBetweenUpdateChecks && !forceUpdateCheck {
-		bblog.Printf("Not checking for update, last checked at %s", lastChecked)
-		return false, nil
+	if _, err := os.Stat(sidecarPath); err == nil {
+		return nil
 	}
-
-	// Check what is the latest sidecar on github.
-	bin, err := download.GetLatestSidecarFromGithub(ctx, sidecarName)
+	f, err := sidecar_bundle.Open()
 	if err != nil {
-		bblog.Printf("Error getting latest release from github: %s", err.Error())
-		return false, err
+		return err
 	}
-
-	setLastUpdateCheck(bbHomeDir) // ignore error; if it doesn't work we'll check again.
-
-	bblog.Printf("Latest release on github was %q, installed version is %q", bin.Version(), latestInstalledVersion)
-
-	// If there is an update available, download it.
-	if semver.Compare(bin.Version(), latestInstalledVersion) > 0 {
-		// Always log when we are updating.
-		log.Printf("Buildbuddy sidecar version %q is available, downloading...", bin.Version())
-		sidecarOutputDir := filepath.Join(sidecarDir, bin.Version())
-		if err := os.MkdirAll(sidecarOutputDir, 0755); err != nil {
-			return false, err
-		}
-		sidecarOutputPath := filepath.Join(sidecarOutputDir, sidecarName)
-		if err := bin.Download(ctx, sidecarOutputPath); err != nil {
-			return false, err
-		}
-		return true, nil
+	defer f.Close()
+	dst, err := os.OpenFile(sidecarPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
+	if err != nil {
+		return err
 	}
-
-	return false, nil
+	defer dst.Close()
+	if _, err := io.Copy(dst, f); err != nil {
+		return err
+	}
+	return nil
 }
 
 func hashStrings(in []string) string {
@@ -166,15 +75,13 @@ func pathExists(p string) bool {
 
 func startBackgroundProcess(cmd string, args []string) error {
 	c := exec.Command(cmd, args...)
-	bblog.Printf("running sidecar cmd: %s", c.String())
+	log.Debugf("running sidecar cmd: %s", c.String())
 	return c.Start()
 }
 
-func RestartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []string) (string, error) {
+func restartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []string) (string, error) {
 	sidecarName := getSidecarBinaryName()
-	sidecarDir := filepath.Join(bbHomeDir, sidecarsSubdir)
-	latestInstalledVersion := getLatestInstalledSidecarVersion(sidecarDir, sidecarName)
-	cmd := filepath.Join(sidecarDir, latestInstalledVersion, sidecarName)
+	cmd := filepath.Join(bbHomeDir, sidecarName)
 
 	sockName := sockPrefix + hashStrings(append(args, cmd)) + ".sock"
 	sockPath := filepath.Join(os.TempDir(), sockName)
@@ -182,7 +89,7 @@ func RestartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []str
 	// Check if a process is already running with this sock.
 	// If one is, we're all done!
 	if pathExists(sockPath) {
-		bblog.Printf("sidecar with args %s is already listening at %q.", args, sockPath)
+		log.Debugf("sidecar with args %s is already listening at %q.", args, sockPath)
 		return sockPath, nil
 	}
 
@@ -192,4 +99,88 @@ func RestartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []str
 		return "", err
 	}
 	return sockPath, nil
+}
+
+func ConfigureSidecar(args []string) []string {
+	bbHome, err := storage.Dir()
+	ctx := context.Background()
+	if err != nil {
+		log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
+	}
+	if err := extractBundledSidecar(ctx, bbHome); err != nil {
+		log.Printf("Error extracting sidecar: %s", err)
+	}
+
+	// Re(Start) the sidecar if the flags set don't match.
+	sidecarArgs := make([]string, 0)
+	besBackendFlag := arg.Get(args, "bes_backend")
+	remoteCacheFlag := arg.Get(args, "remote_cache")
+	remoteExecFlag := arg.Get(args, "remote_executor")
+
+	if besBackendFlag != "" {
+		sidecarArgs = append(sidecarArgs, "--bes_backend="+besBackendFlag)
+	}
+	if remoteCacheFlag != "" && remoteExecFlag == "" {
+		sidecarArgs = append(sidecarArgs, "--remote_cache="+remoteCacheFlag)
+		// Also specify as disk cache directory.
+		diskCacheDir := filepath.Join(bbHome, "filecache")
+		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
+	}
+
+	if len(sidecarArgs) > 0 {
+		sidecarSocket, err := restartSidecarIfNecessary(ctx, bbHome, sidecarArgs)
+		if err == nil {
+			err = keepaliveSidecar(ctx, sidecarSocket)
+		}
+		if err == nil {
+			if besBackendFlag != "" {
+				_, rest := arg.Pop(args, "bes_backend")
+				args = append(rest, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
+			}
+			if remoteCacheFlag != "" && remoteExecFlag == "" {
+				_, rest := arg.Pop(args, "remote_cache")
+				args = append(rest, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
+			}
+		} else {
+			log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
+		}
+	}
+	return args
+}
+
+// keepaliveSidecar validates the connection to the sidecar and keeps the
+// sidecar alive as long as this process is alive by issuing background ping
+// requests.
+func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
+	conn, err := grpc_client.DialTarget("unix://" + sidecarSocket)
+	if err != nil {
+		return err
+	}
+	s := scpb.NewSidecarClient(conn)
+	connected := make(chan struct{})
+	go func() {
+		connectionValidated := false
+		for {
+			_, err := s.Ping(ctx, &scpb.PingRequest{})
+			if connectionValidated && err != nil {
+				log.Debugf("sidecar did not respond to ping request: %s\n", err)
+				return
+			}
+			if !connectionValidated && err == nil {
+				close(connected)
+				connectionValidated = true
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Second):
+			}
+		}
+	}()
+	select {
+	case <-connected:
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("could not connect to sidecar")
+	}
 }

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -174,19 +176,6 @@ func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Head
 	return wc, nil
 }
 
-func RemoteSyncWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Header, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
-	stream, err := client.SyncWriter(ctx)
-	if err != nil {
-		return nil, err
-	}
-	wc := &streamWriteCloser{
-		header:     header,
-		fileRecord: fileRecord,
-		stream:     stream,
-	}
-	return wc, nil
-}
-
 type multiWriteCloser struct {
 	ctx           context.Context
 	fileRecord    *rfpb.FileRecord
@@ -197,7 +186,8 @@ type multiWriteCloser struct {
 }
 
 func fileRecordLogString(f *rfpb.FileRecord) string {
-	return fmt.Sprintf("%s/%s/%d", f.GetIsolation().GetCacheType(), f.GetDigest().GetHash(), f.GetDigest().GetSizeBytes())
+	fmk, _ := filestore.New(false).FileMetadataKey(f)
+	return string(fmk)
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
@@ -391,4 +381,24 @@ func (nhs *NodeHostSender) SyncProposeLocal(ctx context.Context, clusterID uint6
 }
 func (nhs *NodeHostSender) SyncReadLocal(ctx context.Context, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	return SyncReadLocal(ctx, nhs.NodeHost, clusterID, batch)
+}
+
+func SyncProposeLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
+	batch, err := builder.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := SyncProposeLocal(ctx, nodehost, clusterID, batch)
+	if err != nil {
+		return nil, err
+	}
+	return rbuilder.NewBatchResponseFromProto(rsp), nil
+}
+
+func SyncProposeLocalBatchNoRsp(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, builder *rbuilder.BatchBuilder) error {
+	rspBatch, err := SyncProposeLocalBatch(ctx, nodehost, clusterID, builder)
+	if err != nil {
+		return err
+	}
+	return rspBatch.AnyError()
 }

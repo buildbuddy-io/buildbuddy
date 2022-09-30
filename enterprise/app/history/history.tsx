@@ -94,6 +94,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         repoUrl: this.props.repo || filterParams.repo,
         branchName: this.props.branch || filterParams.branch,
         commitSha: this.props.commit || filterParams.commit,
+        command: filterParams.command,
         groupId: this.props.user?.selectedGroup?.id,
       }),
       pageToken: nextPage ? this.state.pageToken : "",
@@ -134,6 +135,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         repoUrl: this.props.repo || filterParams.repo,
         branchName: this.props.branch || filterParams.branch,
         commitSha: this.props.commit || filterParams.commit,
+        command: filterParams.command,
 
         role: filterParams.role,
         updatedBefore: filterParams.updatedBefore,
@@ -165,6 +167,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         repoUrl: this.props.repo || filterParams.repo,
         branchName: this.props.branch || filterParams.branch,
         commitSha: this.props.commit || filterParams.commit,
+        command: filterParams.command,
 
         role: filterParams.role,
         updatedAfter: filterParams.updatedAfter,

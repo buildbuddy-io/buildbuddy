@@ -13,7 +13,11 @@ type MigrationConfig struct {
 	// LogNotFoundErrors controls whether to log not found errors in the dest cache when double reading
 	// At the beginning of the migration, we may want this to be false, or it may clog the logs
 	// if a lot of data has not been copied over yet
-	LogNotFoundErrors bool `yaml:"log_not_found_errors"`
+	LogNotFoundErrors  bool `yaml:"log_not_found_errors"`
+	CopyChanBufferSize int  `yaml:"copy_chan_buffer_size"`
+	// CopyChanFullWarningIntervalMin controls how often we should log when the copy chan is full
+	CopyChanFullWarningIntervalMin int64 `yaml:"copy_chan_full_warning_interval_min"`
+	MaxCopiesPerSec                int   `yaml:"max_copies_per_sec"`
 }
 
 type CacheConfig struct {
@@ -39,4 +43,14 @@ type PebbleCacheConfig struct {
 	AtimeWriteBatchSize    int                     `yaml:"atime_write_batch_size"`
 	AtimeBufferSize        *int                    `yaml:"atime_buffer_size"`
 	MinEvictionAge         *time.Duration          `yaml:"min_eviction_age"`
+	IsolateByGroupIDs      bool                    `yaml:"isolate_by_group_ids"`
+}
+
+func (cfg *MigrationConfig) SetConfigDefaults() {
+	if cfg.CopyChanBufferSize == 0 {
+		cfg.CopyChanBufferSize = 50000
+	}
+	if cfg.MaxCopiesPerSec == 0 {
+		cfg.MaxCopiesPerSec = 5000
+	}
 }

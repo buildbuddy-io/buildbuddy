@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/remotebazel",
     visibility = ["//visibility:public"],
     deps = [
-        "//cli/commandline",
-        "//cli/logging",
+        "//cli/arg",
+        "//cli/log",
         "//enterprise/server/remote_execution/dirtools",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
@@ -19,6 +19,7 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/bazel",
         "//server/util/grpc_client",
         "//server/util/healthcheck",
         "//server/util/status",

@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -36,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/shlex"
 	"github.com/prometheus/client_golang/prometheus"
@@ -252,7 +252,7 @@ func (r *statsRecorder) lookupInvocation(ctx context.Context, ij *invocationJWT)
 	return r.env.GetInvocationDB().LookupInvocation(ctx, ij.id)
 }
 
-func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *invocationJWT, ti *tables.Invocation) error {
+func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *invocationJWT) error {
 	if r.env.GetOLAPDBHandle() == nil || !*writeToOLAPDBEnabled {
 		return nil
 	}
@@ -261,20 +261,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		return status.InternalErrorf("failed to flush invocation stats to clickhouse: %s", err)
 	}
 
-	ti.GroupID = inv.GroupID
-	ti.UpdatedAtUsec = inv.UpdatedAtUsec
-	ti.InvocationUUID = inv.InvocationUUID
-	ti.Role = inv.Role
-	ti.User = inv.User
-	ti.Host = inv.Host
-	ti.CommitSHA = inv.CommitSHA
-	ti.BranchName = inv.BranchName
-	ti.ActionCount = inv.ActionCount
-	ti.RepoURL = inv.RepoURL
-	ti.Success = inv.Success
-	ti.InvocationStatus = inv.InvocationStatus
-
-	return r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, ti)
+	return r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
 }
 
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
@@ -305,7 +292,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	if task.invocationStatus == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
-		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationJWT, ti)
+		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationJWT)
 		if err != nil {
 			log.Errorf("Failed to flush stats for invocation %s to clickhouse: %s", ti.InvocationID, err)
 		}
@@ -587,11 +574,11 @@ type EventChannel struct {
 
 func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
 	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	var screenWriter *terminal.ScreenWriter
+	var terminalWriter *terminal.ScreenWriter
 	if !invocation.HasChunkedEventLogs {
-		screenWriter = terminal.NewScreenWriter()
+		terminalWriter = terminal.NewScreenWriter()
 	}
-	parser := event_parser.NewStreamingEventParser(screenWriter)
+	parser := event_parser.NewStreamingEventParser(terminalWriter)
 	parser.FillInvocation(invocation)
 	for {
 		event := &inpb.InvocationEvent{}
@@ -1247,7 +1234,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			invocation.Event = events
 			invocation.StructuredCommandLine = structuredCommandLines
 			if screenWriter != nil {
-				invocation.ConsoleBuffer = string(screenWriter.RenderAsANSI())
+				invocation.ConsoleBuffer = string(screenWriter.Render())
 			}
 		}
 		invocationMu.Unlock()
@@ -1294,8 +1281,7 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
-		// TODO(Maggie): Return the error here once we're confident this is stable
-		log.Warningf("Error fetching group perms for invocation %v", p.InvocationId)
+		return nil, err
 	} else {
 		i.Perms = userGroupPerms.Perms
 	}

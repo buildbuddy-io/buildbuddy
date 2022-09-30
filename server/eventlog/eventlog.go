@@ -12,9 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"google.golang.org/protobuf/proto"
 
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -296,7 +296,7 @@ func NewEventLogWriter(ctx context.Context, b interfaces.Blobstore, c interfaces
 	cw := chunkstore.New(b, chunkstoreOptions).Writer(ctx, eventLogPath, chunkstoreWriterOptions)
 	eventLogWriter.WriteCloserWithContext = &ANSICursorBufferWriter{
 		WriteWithTailCloser:           cw,
-		screenWriter:                  terminal.NewScreenWriter(),
+		terminalWriter:                terminal.NewScreenWriter(),
 		numLinesToRetainForANSICursor: numLinesToRetain,
 	}
 	eventLogWriter.chunkstoreWriter = cw
@@ -358,7 +358,7 @@ type WriteWithTailCloser interface {
 // N lines.
 type ANSICursorBufferWriter struct {
 	WriteWithTailCloser
-	screenWriter *terminal.ScreenWriter
+	terminalWriter *terminal.ScreenWriter
 
 	// Number of lines to keep in the screen buffer so that they may be modified
 	// by ANSI Cursor control codes.
@@ -369,14 +369,15 @@ func (w *ANSICursorBufferWriter) Write(ctx context.Context, p []byte) (int, erro
 	if p == nil || len(p) == 0 {
 		return w.WriteWithTailCloser.WriteWithTail(ctx, p, nil)
 	}
-	if _, err := w.screenWriter.Write(p); err != nil {
+
+	if _, err := w.terminalWriter.Write(p); err != nil {
 		return 0, err
 	}
-	popped := w.screenWriter.PopExtraLinesAsANSI(w.numLinesToRetainForANSICursor)
+	popped := w.terminalWriter.PopExtraLines(w.numLinesToRetainForANSICursor)
 	if len(popped) != 0 {
 		popped = append(popped, '\n')
 	}
-	return w.WriteWithTailCloser.WriteWithTail(ctx, popped, w.screenWriter.RenderAsANSI())
+	return w.WriteWithTailCloser.WriteWithTail(ctx, popped, w.terminalWriter.Render())
 }
 
 func (w *ANSICursorBufferWriter) Close(ctx context.Context) error {

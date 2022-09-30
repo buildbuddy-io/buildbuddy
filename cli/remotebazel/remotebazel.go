@@ -16,12 +16,14 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/buildbuddy-io/buildbuddy/cli/commandline"
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -31,7 +33,6 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
-	bblog "github.com/buildbuddy-io/buildbuddy/cli/logging"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -47,6 +48,7 @@ const (
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
+	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
 )
 
 var (
@@ -70,9 +72,8 @@ func consoleDeleteLines(n int) {
 type RunOpts struct {
 	Server            string
 	APIKey            string
-	Args              *commandline.BazelArgs
+	Args              []string
 	WorkspaceFilePath string
-	SidecarSocket     string
 }
 
 type RepoConfig struct {
@@ -106,7 +107,7 @@ func determineRemote(repo *git.Repository) (*git.Remote, error) {
 		if err == nil {
 			return r, nil
 		}
-		bblog.Printf("Could not find remote %q saved in config, ignoring", confRemote)
+		log.Debugf("Could not find remote %q saved in config, ignoring", confRemote)
 	}
 
 	var remoteNames []string
@@ -203,21 +204,21 @@ func Config(path string) (*RepoConfig, error) {
 	}
 	fetchURL := remote.Config().URLs[0]
 
-	bblog.Printf("Using fetch URL: %s", fetchURL)
+	log.Debugf("Using fetch URL: %s", fetchURL)
 
 	defaultBranchRef, err := determineDefaultBranch(repo)
 	if err != nil {
 		return nil, err
 	}
 
-	bblog.Printf("Using base branch: %s", defaultBranchRef)
+	log.Debugf("Using base branch: %s", defaultBranchRef)
 
 	defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranchRef))
 	if err != nil {
 		return nil, status.UnknownErrorf("could not find commit hash for branch ref %q", defaultBranchRef)
 	}
 
-	bblog.Printf("Using base branch commit hash: %s", defaultBranchCommitHash)
+	log.Debugf("Using base branch commit hash: %s", defaultBranchCommitHash)
 
 	wt, err := repo.Worktree()
 	if err != nil {
@@ -485,7 +486,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
-	bblog.Printf("Requesting command execution on remote Bazel instance.")
+	log.Debugf("Requesting command execution on remote Bazel instance.")
 
 	instanceHash := sha256.New()
 	instanceHash.Write(uuid.NodeID())
@@ -502,9 +503,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	fetchOutputs := false
 	runOutput := false
-	var bazelArgs []string
-	bazelArgs = append(bazelArgs, opts.Args.Filtered...)
-	bazelArgs = append(bazelArgs, opts.Args.Added...)
+	bazelArgs := arg.GetNonPassthroughArgs(opts.Args)
 	if len(bazelArgs) > 0 && (bazelArgs[0] == "build" || bazelArgs[0] == "run") {
 		fetchOutputs = true
 		if bazelArgs[0] == "run" {
@@ -536,7 +535,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	iid := rsp.GetInvocationId()
 
-	bblog.Printf("Invocation ID: %s", iid)
+	log.Debugf("Invocation ID: %s", iid)
 
 	if err := streamLogs(ctx, bbClient, iid); err != nil {
 		return 0, err
@@ -576,7 +575,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	if fetchOutputs && exitCode == 0 {
-		conn, err := grpc_client.DialTarget("unix://" + opts.SidecarSocket)
+		conn, err := grpc_client.DialTarget(opts.Server)
 		if err != nil {
 			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
 		}
@@ -603,8 +602,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			}
 			execArgs := defaultRunArgs
 			// Pass through extra arguments (-- --foo=bar) from the command line.
-			execArgs = append(execArgs, opts.Args.Passthrough...)
-			bblog.Printf("Executing %q with arguments %s", binPath, execArgs)
+			execArgs = append(execArgs, arg.GetPassthroughArgs(opts.Args)...)
+			log.Debugf("Executing %q with arguments %s", binPath, execArgs)
 			cmd := exec.CommandContext(ctx, binPath, execArgs...)
 			cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
 			cmd.Stdout = os.Stdout
@@ -618,4 +617,49 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	return exitCode, nil
+}
+
+func handleRemoteBazel(args []string) []string {
+	args = arg.Remove(args, "bes_backend")
+	args = arg.Remove(args, "remote_cache")
+	args = arg.Remove(args, "remote_executor")
+	args = arg.Remove(args, "jobs")
+
+	args = append(args, "--bes_backend="+defaultRemoteExecutionURL)
+	args = append(args, "--remote_cache="+defaultRemoteExecutionURL)
+	args = append(args, "--remote_executor="+defaultRemoteExecutionURL)
+	args = append(args, "--jobs=100")
+
+	ctx := context.Background()
+	repoConfig, err := Config(".")
+	if err != nil {
+		log.Fatalf("config err: %s", err)
+	}
+
+	wsFilePath, err := bazel.FindWorkspaceFile(".")
+	if err != nil {
+		log.Fatalf("error finding workspace: %s", err)
+	}
+	exitCode, err := Run(ctx, RunOpts{
+		Server:            "grpcs://" + defaultRemoteExecutionURL,
+		APIKey:            arg.Get(args, "remote_header=x-buildbuddy-api-key"),
+		Args:              args,
+		WorkspaceFilePath: wsFilePath,
+	}, repoConfig)
+	if err != nil {
+		log.Fatalf("error running remote bazel: %s", err)
+	}
+
+	os.Exit(exitCode)
+	return args
+}
+
+func HandleRemoteBazel(args []string) []string {
+	if c, i := arg.GetCommandAndIndex(args); c == "remote" {
+		return handleRemoteBazel(args[i+1:])
+	}
+	if arg, rest := arg.Pop(args, "remote"); arg == "true" {
+		return handleRemoteBazel(rest)
+	}
+	return args
 }

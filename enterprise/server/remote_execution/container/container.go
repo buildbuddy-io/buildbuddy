@@ -46,7 +46,7 @@ var (
 type ContainerRegistry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
 	Username  string   `yaml:"username" json:"username"`
-	Password  string   `yaml:"password" json:"password"`
+	Password  string   `yaml:"password" json:"password" config:"secret"`
 }
 
 type DockerDeviceMapping struct {
@@ -118,8 +118,13 @@ func (m *ContainerMetrics) Observe(c CommandContainer, s *repb.UsageStats) {
 			cpuNanos += stats.CpuNanos
 		}
 		diffCPUNanos := cpuNanos - prevCPUNanos
-		metrics.RemoteExecutionUsedMilliCPU.Add(float64(diffCPUNanos) / 1e6)
-		m.intervalCPUNanos += diffCPUNanos
+		// Note: This > 0 check is here to avoid panicking in case there are
+		// issues with process stats returning non-monotonically-increasing
+		// values for CPU usage.
+		if diffCPUNanos > 0 {
+			metrics.RemoteExecutionUsedMilliCPU.Add(float64(diffCPUNanos) / 1e6)
+			m.intervalCPUNanos += diffCPUNanos
+		}
 	}
 	var totalMemBytes, totalPeakMemBytes int64
 	for _, stats := range m.latest {
@@ -185,6 +190,12 @@ type CommandContainer interface {
 	Remove(ctx context.Context) error
 
 	// Stats returns the current resource usage of this container.
+	//
+	// A `nil` value may be returned if the resource usage is unknown.
+	//
+	// Implementations may assume that this will only be called when the
+	// container is paused, for the purposes of computing resources used for
+	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 

@@ -26,6 +26,7 @@ type Action struct {
 	Triggers          *Triggers `yaml:"triggers"`
 	OS                string    `yaml:"os"`
 	Arch              string    `yaml:"arch"`
+	User              string    `yaml:"user"`
 	GitCleanExclude   []string  `yaml:"git_clean_exclude"`
 	BazelWorkspaceDir string    `yaml:"bazel_workspace_dir"`
 	BazelCommands     []string  `yaml:"bazel_commands"`

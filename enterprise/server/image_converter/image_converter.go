@@ -42,7 +42,6 @@ import (
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -485,11 +484,11 @@ func (c *imageConverter) Start(hc interfaces.HealthChecker, env environment.Env)
 }
 
 func main() {
-	flag.Parse()
-
-	if err := flagyaml.PopulateFlagsFromFile(config.Path()); err != nil {
+	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
+
+	config.ReloadOnSIGHUP()
 
 	if err := log.Configure(); err != nil {
 		fmt.Printf("Error configuring logging: %s", err)

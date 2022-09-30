@@ -19,7 +19,7 @@ jobs:
           destination_repo: "https://${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}@github.com/buildbuddy-io/buildbuddy-foss.git"
           destination_branch: "master"
       - name: Checkout buildbuddy-foss
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: "buildbuddy-io/buildbuddy-foss"
           ref: master

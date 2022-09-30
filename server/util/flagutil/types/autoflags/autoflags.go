@@ -11,18 +11,45 @@ import (
 	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
+type Tag interface {
+	Taggable()
+}
+
+type secret struct{}
+
+func (s *secret) Taggable() {}
+
+var SecretTag = &secret{}
+
+type deprecated struct {
+	migrationPlan string
+}
+
+func (d *deprecated) Taggable() {}
+
+func DeprecatedTag(migrationPlan string) *deprecated {
+	return &deprecated{migrationPlan: migrationPlan}
+}
+
 // New declares a new flag named `name` with the specified value `defaultValue`
 // of type `T` and the help text `usage`. It returns a pointer to where the
-// value is stored.
-func New[T any](name string, defaultValue T, usage string) *T {
+// value is stored. Tags may be used to mark flags; for example, use
+// `SecretTag` to mark a flag that contains a secret that should be redacted in
+// output, or use `DeprecatedTag(migrationPlan)` to mark a flag that has been
+// deprecated and provide its migration plan.
+func New[T any](name string, defaultValue T, usage string, tags ...Tag) *T {
 	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
-	Var(value, name, defaultValue, usage)
+	Var(value, name, defaultValue, usage, tags...)
 	return value
 }
 
 // Var declares a new flag named `name` with the specified value `defaultValue`
-// of type `T` stored at the pointer `value` and the help text `usage`.
-func Var[T any](value *T, name string, defaultValue T, usage string) {
+// of type `T` stored at the pointer `value` and the help text `usage`. Tags may
+// be used to mark flags; for example, use `SecretTag` to mark a flag that
+// contains a secret that should be redacted in output, or use
+// `DeprecatedTag(migrationPlan)` to mark a flag that has been deprecated and
+// provide its migration plan.
+func Var[T any](value *T, name string, defaultValue T, usage string, tags ...Tag) {
 	switch v := any(value).(type) {
 	case *bool:
 		common.DefaultFlagSet.BoolVar(v, name, any(defaultValue).(bool), usage)
@@ -47,31 +74,22 @@ func Var[T any](value *T, name string, defaultValue T, usage string) {
 	default:
 		if reflect.TypeOf(value).Elem().Kind() == reflect.Slice {
 			flagtypes.JSONSliceVar(value, name, defaultValue, usage)
-			return
+			break
 		}
 		if reflect.TypeOf(value).Elem().Kind() == reflect.Struct {
 			flagtypes.JSONStructVar(value, name, defaultValue, usage)
-			return
+			break
 		}
 		log.Fatalf("Var was called from flag registry for flag %s with value %v of unrecognized type %T.", name, defaultValue, defaultValue)
 	}
-}
-
-// Deprecated declares a new deprecated flag named `name` with the specified
-// value `defaultValue` of type `T`, the help text `usage`, and a
-// `migrationPlan` explaining to the user how to migrate from the deprecated
-// functionality. It returns a pointer to where the value is stored.
-func Deprecated[T any](name string, defaultValue T, usage string, migrationPlan string) *T {
-	value := New(name, defaultValue, usage)
-	flagtypes.Deprecate[T](name, migrationPlan)
-	return value
-}
-
-// DeprecatedVar declares a new deprecated flag named `name` with the specified
-// value `defaultValue` of type `T` stored at the pointer `value`, the help text
-// `usage`, and a `migrationPlan` explaining to the user how to migrate from the
-// deprecated functionality.
-func DeprecatedVar[T any](value *T, name string, defaultValue T, usage string, migrationPlan string) {
-	Var(value, name, defaultValue, usage)
-	flagtypes.Deprecate[T](name, migrationPlan)
+	for _, tg := range tags {
+		switch v := any(tg).(type) {
+		case *secret:
+			flagtypes.Secret[T](name)
+		case *deprecated:
+			flagtypes.Deprecate[T](name, v.migrationPlan)
+		default:
+			log.Fatalf("Var was called from flag registry for flag %s with unrecognized tag %#v.", name, tg)
+		}
+	}
 }

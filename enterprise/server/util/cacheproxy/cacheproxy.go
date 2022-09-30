@@ -426,7 +426,11 @@ func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, isolation 
 	if err != nil {
 		return nil, err
 	}
-	return &interfaces.CacheMetadata{SizeBytes: md.GetSizeBytes()}, nil
+	return &interfaces.CacheMetadata{
+		SizeBytes:          md.GetSizeBytes(),
+		LastAccessTimeUsec: md.GetLastAccessUsec(),
+		LastModifyTimeUsec: md.GetLastModifyUsec(),
+	}, nil
 }
 
 func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {

@@ -15,27 +15,30 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
+        with:
+          path: buildbuddy
 
       - name: Checkout internal
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
         with:
           repository: "buildbuddy-io/buildbuddy-internal"
           ref: "master"
           token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
+          path: buildbuddy-internal
 
       - name: Update deps.bzl
         run: |
-          cp deps.bzl ../buildbuddy-internal/deps.bzl
+          cp buildbuddy/deps.bzl buildbuddy-internal/deps.bzl
 
       - name: Update SHA
         run: |
-          cd ../buildbuddy-internal
+          cd "$GITHUB_WORKSPACE"/buildbuddy-internal
           sed -i "s/commit = \"[a-z0-9]*\",  # autoupdate buildbuddy-io\/buildbuddy/commit = \"$GITHUB_SHA\",  # autoupdate buildbuddy-io\/buildbuddy/g" WORKSPACE
 
       - name: Commit
         run: |
-          cd ../buildbuddy-internal
+          cd "$GITHUB_WORKSPACE"/buildbuddy-internal
           git config --local user.email ${{ github.event.head_commit.author.email }}
           git config --local user.name ${{ github.event.head_commit.author.name }}
           git add WORKSPACE
@@ -51,7 +54,7 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@v0.6.0
         with:
-          directory: ../buildbuddy-internal
+          directory: buildbuddy-internal
           repository: buildbuddy-io/buildbuddy-internal
           github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
           branch: master

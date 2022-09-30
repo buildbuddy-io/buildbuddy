@@ -126,6 +126,9 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if branch := req.GetQuery().GetBranchName(); branch != "" {
 		q.AddWhereClause("i.branch_name = ?", branch)
 	}
+	if command := req.GetQuery().GetCommand(); command != "" {
+		q.AddWhereClause("i.command = ?", command)
+	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
 		q.AddWhereClause("i.commit_sha = ?", sha)
 	}

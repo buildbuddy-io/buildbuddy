@@ -6,8 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/sidecar",
     visibility = ["//visibility:public"],
     deps = [
-        "//cli/download",
-        "//cli/logging",
-        "@org_golang_x_mod//semver",
+        "//cli/arg",
+        "//cli/log",
+        "//cli/sidecar_bundle",
+        "//cli/storage",
+        "//proto:sidecar_go_proto",
+        "//server/util/grpc_client",
     ],
 )

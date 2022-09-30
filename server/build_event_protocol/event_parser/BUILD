@@ -9,7 +9,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
         "//proto:invocation_go_proto",
-        "//server/terminal",
+        "//server/util/terminal",
         "//server/util/timeutil",
     ],
 )

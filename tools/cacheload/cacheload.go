@@ -33,10 +33,9 @@ var (
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 
-	realisticBlobSizes = flag.Bool("realistic_blob_sizes", true, "If true, use realistic blob sizes, ignoring blob_size flag.")
-	blobSize           = flag.Int64("blob_size", 100000, "Num bytes (max) of blob to send/read.")
-	recycleRate        = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
-	timeout            = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
+	blobSize    = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
+	recycleRate = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
+	timeout     = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
 )
 
 const (
@@ -80,7 +79,7 @@ func randRange(low, high int) int64 {
 }
 
 func randomBlobSize() int64 {
-	if !*realisticBlobSizes {
+	if *blobSize > 0 {
 		return *blobSize
 	}
 	n := rand.Intn(histCountsTotal)
@@ -127,7 +126,7 @@ func main() {
 	ctx := context.Background()
 
 	blobSizeDesc := fmt.Sprintf("size %d bytes", *blobSize)
-	if *realisticBlobSizes {
+	if *blobSize < 0 {
 		blobSizeDesc = "simulating real blob sizes."
 	}
 	log.Printf("Applying load to cache W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)

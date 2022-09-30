@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"math/rand"
 	"os"
 	"path"
@@ -11,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -51,7 +54,22 @@ var (
 	}
 )
 
+// fakeFirecrackerContainer behaves like a bare container except it returns
+// 0 mem / CPU resources, like Firecracker.
+type fakeFirecrackerContainer struct {
+	container.CommandContainer
+}
+
+func newFakeFirecrackerContainer() *fakeFirecrackerContainer {
+	return &fakeFirecrackerContainer{CommandContainer: bare.NewBareCommandContainer(&bare.Opts{})}
+}
+
+func (*fakeFirecrackerContainer) Stats(context.Context) (*repb.UsageStats, error) {
+	return &repb.UsageStats{}, nil
+}
+
 type RunnerPoolOptions struct {
+	*PoolOptions
 	MaxRunnerCount            int
 	MaxRunnerDiskSizeBytes    int64
 	MaxRunnerMemoryUsageBytes int64
@@ -131,7 +149,10 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	flags.Set(t, "executor.runner_pool.max_runner_count", cfg.MaxRunnerCount)
 	flags.Set(t, "executor.runner_pool.max_runner_disk_size_bytes", cfg.MaxRunnerDiskSizeBytes)
 	flags.Set(t, "executor.runner_pool.max_runner_memory_usage_bytes", cfg.MaxRunnerMemoryUsageBytes)
-	p, err := NewPool(env)
+	if cfg.PoolOptions == nil {
+		cfg.PoolOptions = &PoolOptions{}
+	}
+	p, err := NewPool(env, cfg.PoolOptions)
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	return p
@@ -389,6 +410,39 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 	assert.Equal(t, 1, pool.PausedRunnerCount())
 }
 
+func TestRunnerPool_DiskOnlyContainer_CanAddMultiple(t *testing.T) {
+	env := newTestEnv(t)
+	// Swap out the `newContainer` implementation so that it always returns
+	// a container that consumes only disk resources (like Firecracker).
+	newDiskOnlyContainer := func(context.Context, *platform.Properties, *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
+		fc := newFakeFirecrackerContainer()
+		return container.NewTracedCommandContainer(fc), nil
+	}
+	maxRunnerCount := 10
+	pool := newRunnerPool(t, env, &RunnerPoolOptions{
+		PoolOptions: &PoolOptions{
+			ContainerProvider: newDiskOnlyContainer,
+		},
+		MaxRunnerCount:         maxRunnerCount,
+		MaxRunnerDiskSizeBytes: unlimited,
+		// Only allow up to 1 byte of memory. This should be OK since FC
+		// containers use no mem.
+		MaxRunnerMemoryUsageBytes: 1,
+	})
+
+	// Make sure we can add up to `maxRunnerCount` runners without eviction.
+	ctx := context.Background()
+	for i := 0; i < maxRunnerCount; i++ {
+		ctx = withAuthenticatedUser(t, ctx, fmt.Sprintf("US%d", i))
+		r := mustGetNewRunner(t, ctx, pool, newTask())
+		mustAddWithoutEviction(t, ctx, pool, r)
+	}
+	for i := 0; i < maxRunnerCount; i++ {
+		ctx = withAuthenticatedUser(t, ctx, fmt.Sprintf("US%d", i))
+		_ = mustGetPausedRunner(t, ctx, pool, newTask())
+	}
+}
+
 func TestRunnerPool_ExceedMaxRunnerCount_OldestRunnerEvicted(t *testing.T) {
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, &RunnerPoolOptions{
@@ -434,32 +488,6 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 
 	assert.True(t, status.IsResourceExhaustedError(err), "should exceed disk limit")
 	assert.Equal(t, 0, pool.PausedRunnerCount())
-}
-
-func TestRunnerPool_ExceedMemoryLimit_OldestRunnerEvicted(t *testing.T) {
-	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, &RunnerPoolOptions{
-		MaxRunnerCount:            unlimited,
-		MaxRunnerMemoryUsageBytes: 5200e6,
-		MaxRunnerDiskSizeBytes:    unlimited,
-	})
-	ctx := withAuthenticatedUser(t, context.Background(), "US1")
-
-	// Get 3 runners for workflow tasks.
-	r1 := mustGetNewRunner(t, ctx, pool, newWorkflowTask())
-	r2 := mustGetNewRunner(t, ctx, pool, newWorkflowTask())
-	r3 := mustGetNewRunner(t, ctx, pool, newWorkflowTask())
-
-	// Try adding all of them to the pool. 3rd runner should result in eviction,
-	// since the estimated memory usage for paused bare runners is 2.6GB, and the
-	// pool can only fit 2 * 2.6GB = 5.2GB worth of runners.
-	mustAddWithoutEviction(t, ctx, pool, r1)
-	mustAddWithoutEviction(t, ctx, pool, r2)
-	mustAddWithEviction(t, ctx, pool, r3)
-
-	// Now take one from the pool and put it back; this should not evict.
-	r4 := mustGetPausedRunner(t, ctx, pool, newWorkflowTask())
-	mustAddWithoutEviction(t, ctx, pool, r4)
 }
 
 func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T) {

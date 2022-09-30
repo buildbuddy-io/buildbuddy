@@ -10,7 +10,7 @@ go_test(
     # Run the ci_runner_test in the same environment that the CI runner uses in prod,
     # since we invoke the ci runner binary directly.
     exec_properties = {
-        "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.8",
+        "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.9",
     },
     shard_count = 11,
     visibility = [

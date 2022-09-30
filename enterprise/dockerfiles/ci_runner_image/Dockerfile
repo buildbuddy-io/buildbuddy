@@ -10,3 +10,7 @@ RUN curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/rele
 # Pre-install bazel 4.1.0 to avoid bazelisk downloading & installing bazel on every
 # CI run, at least for CI runs on the BuildBuddy repo itself.
 RUN USE_BAZEL_VERSION=4.1.0 bazelisk version
+
+# Provision a non-root user named "buildbuddy".
+# Non-root users are needed for some bazel toolchains, such as hermetic python.
+RUN useradd --create-home buildbuddy

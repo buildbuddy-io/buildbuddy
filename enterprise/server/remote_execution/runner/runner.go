@@ -64,7 +64,7 @@ var (
 	rootDirectory           = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
 	hostRootDirectory       = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
 	dockerMountMode         = flag.String("executor.docker_mount_mode", "", "Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/")
-	dockerNetHost           = flagutil.Deprecated("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.", "Use --executor.docker_network=host instead.")
+	dockerNetHost           = flagutil.New("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.", flagutil.DeprecatedTag("Use --executor.docker_network=host instead."))
 	dockerNetwork           = flag.String("executor.docker_network", "", "If set, set docker/podman --network to this value by default. Can be overridden per-action with the `dockerNetwork` exec property, which accepts values 'off' (--network=none) or 'bridge' (--network=<default>).")
 	dockerCapAdd            = flag.String("docker_cap_add", "", "Sets --cap-add= on the docker command. Comma separated.")
 	dockerSiblingContainers = flag.Bool("executor.docker_sibling_containers", false, "If set, mount the configured Docker socket to containers spawned for each action, to enable Docker-out-of-Docker (DooD). Takes effect only if docker_socket is also set. Should not be set by executors that can run untrusted code.")
@@ -124,15 +124,6 @@ const (
 )
 
 var (
-	// RunnerMaxMemoryExceeded is returned from Pool.Add if a runner cannot be
-	// added to the pool because its current memory consumption exceeds the max
-	// configured limit.
-	RunnerMaxMemoryExceeded = status.ResourceExhaustedError("runner memory limit exceeded")
-	// RunnerMaxDiskSizeExceeded is returned from Pool.Add if a runner cannot be
-	// added to the pool because its current disk usage exceeds the max configured
-	// limit.
-	RunnerMaxDiskSizeExceeded = status.ResourceExhaustedError("runner disk size limit exceeded")
-
 	podIDFromCpusetRegexp = regexp.MustCompile("/kubepods(/.*?)?/pod([a-z0-9\\-]{36})/")
 
 	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
@@ -506,6 +497,14 @@ func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
 	return perms.ToACLProto(userID, groupID, permBits)
 }
 
+type ContainerProvider func(context.Context, *platform.Properties, *repb.ScheduledTask) (*container.TracedCommandContainer, error)
+
+type PoolOptions struct {
+	// ContainerProvider is an optional implementation overriding
+	// newContainerImpl.
+	ContainerProvider ContainerProvider
+}
+
 type pool struct {
 	env            environment.Env
 	imageCacheAuth *container.ImageCacheAuthenticator
@@ -513,6 +512,7 @@ type pool struct {
 	buildRoot      string
 	dockerClient   *dockerclient.Client
 	podmanProvider *podman.Provider
+	newContainer   ContainerProvider
 
 	maxRunnerCount            int
 	maxRunnerMemoryUsageBytes int64
@@ -527,7 +527,7 @@ type pool struct {
 	runners []*commandRunner
 }
 
-func NewPool(env environment.Env) (*pool, error) {
+func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 	hc := env.GetHealthChecker()
 	if hc == nil {
 		return nil, status.FailedPreconditionError("Missing health checker")
@@ -544,8 +544,11 @@ func NewPool(env environment.Env) (*pool, error) {
 			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
 		}
 		dockerSocket := platform.DockerSocket()
+		if !strings.Contains(dockerSocket, "://") {
+			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
+		}
 		dockerClient, err = dockerclient.NewClientWithOpts(
-			dockerclient.WithHost(fmt.Sprintf("unix://%s", dockerSocket)),
+			dockerclient.WithHost(dockerSocket),
 			dockerclient.WithAPIVersionNegotiation(),
 		)
 		if err != nil {
@@ -569,6 +572,10 @@ func NewPool(env environment.Env) (*pool, error) {
 		buildRoot:      *rootDirectory,
 		imageCacheAuth: imageCacheAuth,
 		runners:        []*commandRunner{},
+	}
+	p.newContainer = p.newContainerImpl
+	if opts.ContainerProvider != nil {
+		p.newContainer = opts.ContainerProvider
 	}
 	p.setLimits()
 	hc.RegisterShutdownFunction(p.Shutdown)
@@ -636,13 +643,14 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 	}
 	// If memory usage stats are not implemented, fall back to the default task
 	// size estimate.
-	if stats.MemoryBytes == 0 {
+	if stats == nil {
+		stats = &repb.UsageStats{}
 		stats.MemoryBytes = int64(float64(tasksize.DefaultMemEstimate) * runnerMemUsageEstimateMultiplierBytes)
 	}
 
 	if stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
 		return &labeledError{
-			RunnerMaxMemoryExceeded,
+			status.ResourceExhaustedErrorf("runner memory usage of %d bytes exceeds limit of %d bytes", stats.MemoryBytes, p.maxRunnerMemoryUsageBytes),
 			"max_memory_exceeded",
 		}
 	}
@@ -655,7 +663,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 	}
 	if du > p.maxRunnerDiskUsageBytes {
 		return &labeledError{
-			RunnerMaxDiskSizeExceeded,
+			status.ResourceExhaustedErrorf("runner disk usage of %d bytes exceeds limit of %d bytes", du, p.maxRunnerDiskUsageBytes),
 			"max_disk_usage_exceeded",
 		}
 	}
@@ -677,8 +685,7 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 		}
 	}
 
-	for p.pausedRunnerCount() >= p.maxRunnerCount ||
-		p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
+	for p.pausedRunnerCount() >= p.maxRunnerCount {
 		// Evict the oldest (first) paused runner to make room for the new one.
 		evictIndex := -1
 		for i, r := range p.runners {
@@ -879,6 +886,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		r, err := p.take(ctx, &query{
 			User:                   user,
 			ContainerImage:         props.ContainerImage,
+			CommandUser:            props.DockerUser,
 			WorkflowID:             props.WorkflowID,
 			WorkloadIsolationType:  platform.ContainerType(props.WorkloadIsolationType),
 			InitDockerd:            props.InitDockerd,
@@ -966,7 +974,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	return r, nil
 }
 
-func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
+func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
 	var ctr container.CommandContainer
 	switch platform.ContainerType(props.WorkloadIsolationType) {
 	case platform.DockerContainerType:
@@ -996,6 +1004,7 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		sizeEstimate := task.GetSchedulingMetadata().GetTaskSize()
 		opts := firecracker.ContainerOpts{
 			ContainerImage:         props.ContainerImage,
+			User:                   props.DockerUser,
 			DockerClient:           p.dockerClient,
 			ActionWorkingDirectory: p.hostBuildRoot(),
 			NumCPUs:                int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000)),
@@ -1037,6 +1046,8 @@ type query struct {
 	// container.
 	// Required; the zero-value "" matches bare runners.
 	ContainerImage string
+	// CommandUser is the username or ID to run commands as.
+	CommandUser string
 	// WorkflowID is the BuildBuddy workflow ID, if applicable.
 	// Required; the zero-value "" matches non-workflow runners.
 	WorkflowID string
@@ -1070,6 +1081,7 @@ func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 		r := p.runners[i]
 		if r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
+			r.PlatformProperties.DockerUser != q.CommandUser ||
 			platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != q.WorkloadIsolationType ||
 			r.PlatformProperties.InitDockerd != q.InitDockerd ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
@@ -1171,9 +1183,15 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		}
 		runnersToRemove = pausedRunners
 		p.runners = activeRunners
+		if len(runnersToRemove) > 0 {
+			log.Infof("Runner pool: removing %d paused runners", len(runnersToRemove))
+		}
 	} else {
 		runnersToRemove = p.runners
 		p.runners = nil
+		if len(runnersToRemove) > 0 {
+			log.Infof("Runner pool: removing %d runners", len(runnersToRemove))
+		}
 	}
 	p.mu.Unlock()
 

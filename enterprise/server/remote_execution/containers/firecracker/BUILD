@@ -75,6 +75,7 @@ go_test(
         "//enterprise:bundle",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/workspace",
         "//proto:remote_execution_go_proto",
         "//server/backends/disk_cache",
         "//server/interfaces",

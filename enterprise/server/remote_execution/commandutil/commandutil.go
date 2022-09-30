@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"os/user"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +40,11 @@ var (
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
 	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+)
+
+var (
+	// Regexp matching a string consisting solely of digits (0-9).
+	allDigits = regexp.MustCompile(`^\d+$`)
 )
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *container.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
@@ -316,4 +324,63 @@ func EnvStringList(command *repb.Command) []string {
 		env = append(env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	return env
+}
+
+// LookupCredential resolves a "USER[:GROUP]" string to a credential with both
+// uid and gid populated. Both numeric IDs and non-numeric names can be
+// specified for either USER or GROUP. If no group is specified, then the user's
+// primary group is used.
+//
+// NOTE: This function does not authenticate that the user is part of the
+// specified group.
+func LookupCredential(spec string) (*syscall.Credential, error) {
+	parts := strings.Split(spec, ":")
+	if len(parts) == 0 {
+		return nil, status.InvalidArgumentError("credential spec is empty: expected USER[:GROUP]")
+	}
+	if len(parts) > 2 {
+		return nil, status.InvalidArgumentError("credential spec had too many parts: expected USER[:GROUP]")
+	}
+	userSpec := parts[0]
+	var u *user.User
+	var g *user.Group
+	var err error
+	if allDigits.MatchString(userSpec) {
+		u, err = user.LookupId(userSpec)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("uid lookup failed: %s", err)
+		}
+	} else {
+		u, err = user.Lookup(userSpec)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("user lookup failed: %s", err)
+		}
+	}
+
+	groupSpec := u.Gid
+	if len(parts) > 1 {
+		groupSpec = parts[1]
+	}
+	if allDigits.MatchString(groupSpec) {
+		g, err = user.LookupGroupId(groupSpec)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("gid lookup failed: %s", err)
+		}
+	} else {
+		g, err = user.LookupGroup(groupSpec)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("group lookup failed: %s", err)
+		}
+	}
+
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to parse uid: %s", err)
+	}
+	gid, err := strconv.Atoi(g.Gid)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to parse gid: %s", err)
+	}
+
+	return &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}, nil
 }

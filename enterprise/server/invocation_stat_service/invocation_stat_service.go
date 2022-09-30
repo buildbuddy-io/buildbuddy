@@ -123,6 +123,10 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		q.AddWhereClause("branch_name = ?", branchName)
 	}
 
+	if command := req.GetQuery().GetCommand(); command != "" {
+		q.AddWhereClause("command = ?", command)
+	}
+
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
 		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
@@ -264,6 +268,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	if branchName := req.GetQuery().GetBranchName(); branchName != "" {
 		q.AddWhereClause("branch_name = ?", branchName)
+	}
+
+	if command := req.GetQuery().GetCommand(); command != "" {
+		q.AddWhereClause("command = ?", command)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {

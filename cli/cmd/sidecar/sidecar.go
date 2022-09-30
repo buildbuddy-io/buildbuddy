@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"net"
 	"strings"
 	"sync"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
@@ -134,7 +134,7 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 	if err != nil {
 		log.Fatalf("Failed to listen: %s", err.Error())
 	}
-	log.Printf("gRPC listening on %q", *listenAddr)
+	log.Debugf("gRPC listening on %q", *listenAddr)
 	grpcOptions := []grpc.ServerOption{
 		rpcfilters.GetUnaryInterceptor(env),
 		rpcfilters.GetStreamInterceptor(env),
@@ -151,7 +151,7 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	besTarget := normalizeGrpcTarget(*besBackend)
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget))
-	log.Printf("Proxy: forwarding build events to: %q", besTarget)
+	log.Debugf("Proxy: forwarding build events to: %q", besTarget)
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 
 	// Register to handle build event protocol messages.

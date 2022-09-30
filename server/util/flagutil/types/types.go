@@ -25,6 +25,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var UnwrapFlagValue = common.UnwrapFlagValue
+var ConvertFlagValue = common.ConvertFlagValue
+
 // NewPrimitiveFlagVar returns a flag.Value derived from the given primitive pointer.
 func NewPrimitiveFlagVar[T bool | time.Duration | float64 | int | int64 | uint | uint64 | string](value *T) flag.Value {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
@@ -216,6 +219,9 @@ func (f *StringSliceFlag) String() string {
 }
 
 func (f *StringSliceFlag) Set(values string) error {
+	if values == "" {
+		return nil
+	}
 	for _, val := range strings.Split(values, ",") {
 		*f = append(*f, val)
 	}
@@ -423,4 +429,34 @@ func (d *DeprecatedFlag[T]) String() string {
 		return fmt.Sprint(common.Zero[T]())
 	}
 	return d.Value.String()
+}
+
+type SecretFlag[T any] struct {
+	flag.Value
+}
+
+func Secret[T any](name string) {
+	flg := common.DefaultFlagSet.Lookup(name)
+	converted, err := common.ConvertFlagValue(flg.Value)
+	if err != nil {
+		log.Fatalf("Error creating secret flag %s: %v", name, err)
+	} else if _, ok := converted.(*T); !ok {
+		log.Fatalf("Error creating secret flag %s: could not coerce flag of type %T to type %T.", name, converted, (*T)(nil))
+	}
+	flg.Value = &SecretFlag[T]{flg.Value}
+}
+
+func (s *SecretFlag[T]) WrappedValue() flag.Value {
+	return s.Value
+}
+
+func (s *SecretFlag[T]) IsSecret() bool {
+	return true
+}
+
+func (s *SecretFlag[T]) String() string {
+	if s.Value == nil {
+		return fmt.Sprint(common.Zero[T]())
+	}
+	return s.Value.String()
 }

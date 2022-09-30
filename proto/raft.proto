@@ -78,6 +78,12 @@ message FileMetadata {
   int64 last_modify_usec = 5;
 }
 
+message PartitionMetadata {
+  int64 size_bytes = 1;
+  int64 cas_count = 2;
+  int64 ac_count = 3;
+}
+
 message FileWriteRequest {
   FileRecord file_record = 1;
 }
@@ -88,7 +94,20 @@ message FileDeleteRequest {
   FileRecord file_record = 1;
 }
 
+message DeleteRangeRequest {
+  bytes start = 1;
+  bytes end = 2;
+}
+message DeleteRangeResponse {}
+
 message FileDeleteResponse {}
+
+message FileUpdateMetadataRequest {
+  FileRecord file_record = 1;
+  int64 last_access_usec = 2;
+}
+
+message FileUpdateMetadataResponse {}
 
 message DirectWriteRequest {
   KV kv = 1;
@@ -158,22 +177,46 @@ message FindSplitPointResponse {
   uint64 range_generation = 5;
 }
 
-// Split a range.
-message SplitRequest {
-  RangeDescriptor left = 1;
-  RangeDescriptor proposed_right = 2;
-  FindSplitPointResponse split_point = 3;
+// A request to hold or renew the split lock, blocking all writes. The split
+// lock will be reverted if it is not renewed within the specified duration.
+message SplitLeaseRequest {
+  // This CAS will be executed if the lease *expires*. If SplitRelease is called
+  // before expiry, this request will not be applied.
+  CASRequest cas_on_expiry = 1;
+
+  // How long the lease should be valid for. If the lease is already valid, it
+  // will be extended by this much.
+  int64 duration_seconds = 2;
 }
 
-message SplitResponse {
-  RangeDescriptor left = 1;
-  RangeDescriptor right = 2;
+message SplitLeaseResponse {}
+
+// A request to release the split lock, unblocking all writes.
+message SplitReleaseRequest {
+  // This batch will be executed *before* the lease is released.
+  // Because it's part of the splitRelease, it will ignore the
+  // fact that the lease is held.
+  BatchCmdRequest batch = 1;
 }
+message SplitReleaseResponse {}
+
+// A request to copy stored files from one replica to another
+// on the same nodehost. No copying will be done if the replica
+// processing this command is not present in source_range.
+message CopyStoredFilesRequest {
+  RangeDescriptor source_range = 1;
+  uint64 target_range_id = 2;
+  bytes start = 3;
+  bytes end = 4;
+}
+
+message CopyStoredFilesResponse {}
 
 // Raft CMD API, used to encode raft commands that are replicated via raft and
 // written to a log. Everything written via SyncPropose must be a RequestUnion
 // wrapped in a BatchCmdRequest..
 message RequestUnion {
+  reserved 8;
   oneof value {
     FileWriteRequest file_write = 1;
     DirectWriteRequest direct_write = 2;
@@ -182,8 +225,12 @@ message RequestUnion {
     ScanRequest scan = 5;
     CASRequest cas = 6;
     FindSplitPointRequest find_split_point = 7;
-    SplitRequest split = 8;
     FileDeleteRequest file_delete = 9;
+    FileUpdateMetadataRequest file_update_metadata = 10;
+    SplitLeaseRequest split_lease = 11;
+    SplitReleaseRequest split_release = 12;
+    CopyStoredFilesRequest copy_stored_files = 13;
+    DeleteRangeRequest delete_range = 14;
   }
 }
 
@@ -192,6 +239,7 @@ message RequestUnion {
 // wrapped in a BatchCmdRequest and everything returned will be a
 // BatchCmdResponse.
 message ResponseUnion {
+  reserved 9;
   google.rpc.Status status = 1;
 
   oneof value {
@@ -202,8 +250,12 @@ message ResponseUnion {
     ScanResponse scan = 6;
     CASResponse cas = 7;
     FindSplitPointResponse find_split_point = 8;
-    SplitResponse split = 9;
     FileDeleteResponse file_delete = 10;
+    FileUpdateMetadataResponse file_update_metadata = 11;
+    SplitLeaseResponse split_lease = 12;
+    SplitReleaseResponse split_release = 13;
+    CopyStoredFilesResponse copy_stored_files = 14;
+    DeleteRangeResponse delete_range = 15;
   }
 }
 
@@ -402,7 +454,8 @@ message RemoveClusterNodeResponse {
 }
 
 message SplitClusterRequest {
-  RangeDescriptor range = 1;
+  Header header = 1;
+  RangeDescriptor range = 2;
 }
 message SplitClusterResponse {
   RangeDescriptor left = 1;
@@ -423,6 +476,23 @@ message ListClusterResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
 }
+
+message CreateSnapshotRequest {
+  Header header = 1;
+  bytes start = 2;
+  bytes end = 3;
+}
+
+message CreateSnapshotResponse {
+  string snap_id = 1;
+}
+
+message LoadSnapshotRequest {
+  Header header = 1;
+  string snap_id = 2;
+}
+
+message LoadSnapshotResponse {}
 
 ////////////////////////////////////////////////////////////////////////////////
 //

@@ -1,25 +1,22 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
-# gazelle:resolve go github.com/bazelbuild/bazelisk/core @com_github_bazelbuild_bazelisk//core:go_default_library
-# gazelle:resolve go github.com/bazelbuild/bazelisk/repositories @com_github_bazelbuild_bazelisk//repositories:go_default_library
-
 go_library(
     name = "bb_lib",
     srcs = ["bb.go"],
+    data = [
+        "//cli/cmd/sidecar",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/bb",
     visibility = ["//visibility:private"],
     deps = [
-        "//cli/autoconfig",
-        "//cli/commandline",
-        "//cli/logging",
+        "//cli/arg",
+        "//cli/bazelisk",
+        "//cli/login",
         "//cli/parser",
         "//cli/remotebazel",
         "//cli/sidecar",
-        "//proto:sidecar_go_proto",
-        "//server/util/grpc_client",
-        "//server/version",
-        "@com_github_bazelbuild_bazelisk//core:go_default_library",
-        "@com_github_bazelbuild_bazelisk//repositories:go_default_library",
+        "//cli/tooltag",
+        "//cli/version",
     ],
 )
 

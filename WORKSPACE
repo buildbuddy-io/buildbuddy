@@ -72,11 +72,6 @@ install_buildbuddy_dependencies()
 
 gazelle_dependencies()
 
-# Tensorflow
-load("@com_github_tensorflow_tensorflow//:deps.bzl", "tensorflow_cgo_deps")
-
-tensorflow_cgo_deps()
-
 # Node
 
 http_archive(

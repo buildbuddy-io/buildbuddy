@@ -279,12 +279,21 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                           .map((option) => (
                             <div>
                               <span className="invocation-option-dash">--</span>
-                              <a
-                                className="invocation-option-name"
-                                href={`https://bazel.build/reference/command-line-reference#flag--${option.optionName}`}
-                                target="_blank">
-                                {option.optionName}
-                              </a>
+                              {/*
+                                For custom flags like --@repo//foo:bar=true or --//foo:bar=true,
+                                render as plain text. For other flags, link to Bazel docs.
+                              */}
+                              {option.optionName.startsWith("//") || option.optionName.startsWith("@") ? (
+                                <span className="invocation-option-name">{option.optionName}</span>
+                              ) : (
+                                <a
+                                  className="invocation-option-name"
+                                  href={`https://bazel.build/reference/command-line-reference#flag--${option.optionName}`}
+                                  target="_blank">
+                                  {option.optionName}
+                                </a>
+                              )}
+
                               {option.optionValue !== undefined && (
                                 <>
                                   <span className="invocation-option-equal">=</span>

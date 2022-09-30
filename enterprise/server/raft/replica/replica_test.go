@@ -56,11 +56,11 @@ func TestOpenCloseReplica(t *testing.T) {
 
 	stopc := make(chan struct{})
 	lastAppliedIndex, err := repl.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 
 	err = repl.Close()
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 type entryMaker struct {
@@ -82,15 +82,9 @@ func (em *entryMaker) makeEntry(batch *rbuilder.BatchBuilder) dbsm.Entry {
 	return dbsm.Entry{Cmd: buf, Index: em.index}
 }
 
-func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
-	// Do a direct write of the range local range.
-	rdBuf, err := proto.Marshal(&rfpb.RangeDescriptor{
-		Left:       []byte{constants.MinByte},
-		Right:      []byte("z"),
-		RangeId:    1,
-		Generation: 1,
-	})
-	require.Nil(t, err)
+func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
+	rdBuf, err := proto.Marshal(rd)
+	require.NoError(t, err)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   constants.LocalRangeKey,
@@ -99,8 +93,17 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 	}))
 	entries := []dbsm.Entry{entry}
 	writeRsp, err := r.Update(entries)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
+}
+
+func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
+	writeLocalRangeDescriptor(t, em, r, &rfpb.RangeDescriptor{
+		Left:       []byte("a"),
+		Right:      []byte("z"),
+		RangeId:    1,
+		Generation: 1,
+	})
 }
 
 func TestReplicaDirectReadWrite(t *testing.T) {
@@ -111,7 +114,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 
 	stopc := make(chan struct{})
 	lastAppliedIndex, err := repl.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
@@ -125,7 +128,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	}))
 	entries := []dbsm.Entry{entry}
 	writeRsp, err := repl.Update(entries)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
 
 	// Do a DirectRead and verify the value is was written.
@@ -133,16 +136,16 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 		Key: []byte("key-name"),
 	}).ToBuf()
 	readRsp, err := repl.Lookup(buf)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	readBatch := rbuilder.NewBatchResponse(readRsp)
 	directRead, err := readBatch.DirectReadResponse(0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	require.Equal(t, []byte("key-value"), directRead.GetKv().GetValue())
 
 	err = repl.Close()
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestReplicaIncrement(t *testing.T) {
@@ -153,7 +156,7 @@ func TestReplicaIncrement(t *testing.T) {
 
 	stopc := make(chan struct{})
 	lastAppliedIndex, err := repl.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
@@ -164,13 +167,13 @@ func TestReplicaIncrement(t *testing.T) {
 		Delta: 1,
 	}))
 	writeRsp, err := repl.Update([]dbsm.Entry{entry})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
 
 	// Make sure the response holds the new value.
 	incrBatch := rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
 	incrRsp, err := incrBatch.IncrementResponse(0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, uint64(1), incrRsp.GetValue())
 
 	// Increment the same key again by a different value.
@@ -179,17 +182,17 @@ func TestReplicaIncrement(t *testing.T) {
 		Delta: 3,
 	}))
 	writeRsp, err = repl.Update([]dbsm.Entry{entry})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
 
 	// Make sure the response holds the new value.
 	incrBatch = rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
 	incrRsp, err = incrBatch.IncrementResponse(0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, uint64(4), incrRsp.GetValue())
 
 	err = repl.Close()
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestReplicaCAS(t *testing.T) {
@@ -200,7 +203,7 @@ func TestReplicaCAS(t *testing.T) {
 
 	stopc := make(chan struct{})
 	lastAppliedIndex, err := repl.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
@@ -213,7 +216,7 @@ func TestReplicaCAS(t *testing.T) {
 		},
 	}))
 	writeRsp, err := repl.Update([]dbsm.Entry{entry})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
 
 	// Do a CAS and verify:
@@ -227,7 +230,7 @@ func TestReplicaCAS(t *testing.T) {
 		ExpectedValue: []byte("bogus-expected-value"),
 	}))
 	writeRsp, err = repl.Update([]dbsm.Entry{entry})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	readBatch := rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
 	casRsp, err := readBatch.CASResponse(0)
@@ -244,15 +247,15 @@ func TestReplicaCAS(t *testing.T) {
 		ExpectedValue: []byte("key-value"),
 	}))
 	writeRsp, err = repl.Update([]dbsm.Entry{entry})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	readBatch = rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
 	casRsp, err = readBatch.CASResponse(0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, []byte("new-key-value"), casRsp.GetKv().GetValue())
 
 	err = repl.Close()
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestReplicaScan(t *testing.T) {
@@ -263,10 +266,15 @@ func TestReplicaScan(t *testing.T) {
 
 	stopc := make(chan struct{})
 	lastAppliedIndex, err := repl.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
+	writeLocalRangeDescriptor(t, em, repl, &rfpb.RangeDescriptor{
+		Left:       []byte{constants.MinByte},
+		Right:      []byte("z"),
+		RangeId:    1,
+		Generation: 1,
+	})
 
 	// Do a DirectWrite of some range descriptors.
 	batch := rbuilder.NewBatchBuilder()
@@ -290,7 +298,7 @@ func TestReplicaScan(t *testing.T) {
 	})
 	entry := em.makeEntry(batch)
 	writeRsp, err := repl.Update([]dbsm.Entry{entry})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
 
 	// Ensure that scan reads just the ranges we want.
@@ -301,11 +309,11 @@ func TestReplicaScan(t *testing.T) {
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	readRsp, err := repl.Lookup(buf)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	readBatch := rbuilder.NewBatchResponse(readRsp)
 	scanRsp, err := readBatch.ScanResponse(0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, []byte("range-1"), scanRsp.GetKvs()[0].GetValue())
 
 	// Scan c-d.
@@ -315,11 +323,11 @@ func TestReplicaScan(t *testing.T) {
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	readRsp, err = repl.Lookup(buf)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	readBatch = rbuilder.NewBatchResponse(readRsp)
 	scanRsp, err = readBatch.ScanResponse(0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, []byte("range-2"), scanRsp.GetKvs()[0].GetValue())
 
 	// Scan d-*.
@@ -329,11 +337,11 @@ func TestReplicaScan(t *testing.T) {
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	readRsp, err = repl.Lookup(buf)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	readBatch = rbuilder.NewBatchResponse(readRsp)
 	scanRsp, err = readBatch.ScanResponse(0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, []byte("range-3"), scanRsp.GetKvs()[0].GetValue())
 
 	// Scan the full range.
@@ -343,17 +351,17 @@ func TestReplicaScan(t *testing.T) {
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	readRsp, err = repl.Lookup(buf)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	readBatch = rbuilder.NewBatchResponse(readRsp)
 	scanRsp, err = readBatch.ScanResponse(0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, []byte("range-1"), scanRsp.GetKvs()[0].GetValue())
 	require.Equal(t, []byte("range-2"), scanRsp.GetKvs()[1].GetValue())
 	require.Equal(t, []byte("range-3"), scanRsp.GetKvs()[2].GetValue())
 
 	err = repl.Close()
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestReplicaFileWrite(t *testing.T) {
@@ -365,7 +373,7 @@ func TestReplicaFileWrite(t *testing.T) {
 
 	stopc := make(chan struct{})
 	_, err := repl.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
@@ -392,7 +400,7 @@ func TestReplicaFileWrite(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = writeCommitter.Write(buf)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Nil(t, writeCommitter.Commit())
 	require.Nil(t, writeCommitter.Close())
 
@@ -403,7 +411,7 @@ func TestReplicaFileWrite(t *testing.T) {
 		}))
 		entries := []dbsm.Entry{entry}
 		writeRsp, err := repl.Update(entries)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, 1, len(writeRsp))
 	}
 
@@ -422,7 +430,7 @@ func TestReplicaFileWrite(t *testing.T) {
 		}))
 		entries := []dbsm.Entry{entry}
 		writeRsp, err := repl.Update(entries)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, 1, len(writeRsp))
 
 		writeBatch := rbuilder.NewBatchResponse(writeRsp)
@@ -441,7 +449,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	stopc := make(chan struct{})
 	_, err := repl.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
@@ -470,26 +478,26 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = writeCommitter.Write(buf)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Nil(t, writeCommitter.Commit())
 	require.Nil(t, writeCommitter.Close())
 
 	readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 
 	// Create a snapshot of the replica.
 	snapI, err := repl.PrepareSnapshot()
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	baseDir := testfs.MakeTempDir(t)
 	snapFile, err := os.CreateTemp(baseDir, "snapfile-*")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	snapFileName := snapFile.Name()
 	defer os.Remove(snapFileName)
 
 	err = repl.SaveSnapshot(snapI, snapFile, nil /*=quitChan*/)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	snapFile.Seek(0, 0)
 
 	// Restore a new replica from the created snapshot.
@@ -497,14 +505,14 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	repl2 := replica.New(rootDir2, 2, 2, store)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	err = repl2.RecoverFromSnapshot(snapFile, nil /*=quitChan*/)
-	require.Nil(t, err, err)
+	require.NoError(t, err)
 
 	// Verify that the file is readable.
 	readCloser, err = repl2.Reader(ctx, header, fileRecord, 0, 0)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }
 
@@ -517,7 +525,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 
 	stopc := make(chan struct{})
 	_, err := repl.Open(stopc)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
@@ -538,7 +546,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = writeCommitter.Write(buf)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Nil(t, writeCommitter.Commit())
 	require.Nil(t, writeCommitter.Close())
 
@@ -549,13 +557,13 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 		}))
 		entries := []dbsm.Entry{entry}
 		writeRsp, err := repl.Update(entries)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, 1, len(writeRsp))
 	}
 	// Verify that the file is readable.
 	{
 		readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, d.GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 	}
 	// Delete the file.
@@ -565,7 +573,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 		}))
 		entries := []dbsm.Entry{entry}
 		deleteRsp, err := repl.Update(entries)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		require.Equal(t, 1, len(deleteRsp))
 	}
 	// Verify that the file is no longer readable and reading it returns a
@@ -574,5 +582,183 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 		_, err := repl.Reader(ctx, header, fileRecord, 0, 0)
 		require.NotNil(t, err)
 		require.True(t, status.IsNotFoundError(err), err)
+	}
+}
+
+func TestReplicaSplitLease(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := replica.New(rootDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	// Acquire a split lease on a replica.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
+			DurationSeconds: 5,
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// Ensure that a direct write now fails.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("key-name"),
+				Value: []byte("key-value"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.Error(t, err)
+	}
+
+	// Reset the lease to 10 seconds from now.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
+			DurationSeconds: 10,
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// Release the split lease on a replica.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SplitReleaseRequest{}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// A direct write should now succeed again without error.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("key-name"),
+				Value: []byte("key-value"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// Acquire another split lease on the replica, but one that should
+	// expire immediately.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
+			DurationSeconds: 0,
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	// A direct write should succeed immediately without error.
+	{
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   []byte("key-name"),
+				Value: []byte("key-value"),
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		_, err := repl.Update(entries)
+		require.NoError(t, err)
+	}
+
+	err = repl.Close()
+	require.NoError(t, err)
+}
+
+func TestFindSplitPoint(t *testing.T) {
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := replica.New(rootDir, 1, 1, store)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	writeFiles := func(partitionID string, count int, sizeBytes int64) {
+		for i := 0; i < count; i++ {
+			// Write a file to the replica's data dir.
+			d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
+			fileRecord := &rfpb.FileRecord{
+				Isolation: &rfpb.Isolation{
+					CacheType:   rfpb.Isolation_CAS_CACHE,
+					PartitionId: partitionID,
+					GroupId:     interfaces.AuthAnonymousUser,
+				},
+				Digest: d,
+			}
+			header := &rfpb.Header{RangeId: 1, Generation: 1}
+			writeCommitter, err := repl.Writer(ctx, header, fileRecord)
+			require.NoError(t, err)
+			_, err = writeCommitter.Write(buf)
+			require.NoError(t, err)
+			require.Nil(t, writeCommitter.Commit())
+			require.Nil(t, writeCommitter.Close())
+
+			entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+				FileRecord: fileRecord,
+			}))
+			entries := []dbsm.Entry{entry}
+			writeRsp, err := repl.Update(entries)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(writeRsp))
+		}
+	}
+
+	{
+		// No data: findSplitPoint should return error.
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
+		rsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+		require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	{
+		// 1000 digests of the same size, split point should be half way between
+		writeFiles("default", 10, 100000)
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
+		rsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+
+		splitRsp, err := rbuilder.NewBatchResponse(rsp[0].Result.Data).FindSplitPointResponse(0)
+		require.NoError(t, err)
+		require.NotNil(t, splitRsp)
+
+		// Left and right side of split should both be approximately 50%
+		require.Equal(t, splitRsp.GetLeftSizeBytes()/100000, int64(5))
+		require.Equal(t, splitRsp.GetRightSizeBytes()/100000, int64(5))
+	}
+	{
+		// Write one more big blob; expect split point to be right before it.
+		writeFiles("default2", 1, 1000000)
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
+		rsp, err := repl.Update([]dbsm.Entry{entry})
+		require.NoError(t, err)
+
+		splitRsp, err := rbuilder.NewBatchResponse(rsp[0].Result.Data).FindSplitPointResponse(0)
+		require.NoError(t, err)
+		require.NotNil(t, splitRsp)
+
+		// Left and right side of split should both be approximately 50%
+		require.Equal(t, splitRsp.GetLeftSizeBytes()/100000, int64(10))
+		require.Equal(t, splitRsp.GetRightSizeBytes()/100000, int64(10))
 	}
 }

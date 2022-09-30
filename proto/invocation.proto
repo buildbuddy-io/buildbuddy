@@ -227,6 +227,9 @@ message InvocationQuery {
 
   // The git branch used for the build.
   string branch_name = 10;
+
+  // The bazel command that was used. Ex: "build", "test", "run"
+  string command = 11;
 }
 
 // OverallStatus is a status representing both the completion status and
@@ -366,6 +369,9 @@ message InvocationStatQuery {
 
   // The git branch used for the build.
   string branch_name = 10;
+
+  // The bazel command that was used. Ex: "build", "test", "run"
+  string command = 11;
 }
 
 message GetInvocationStatRequest {
@@ -469,6 +475,9 @@ message TrendQuery {
 
   // The git branch used for the build.
   string branch_name = 10;
+
+  // The bazel command that was used. Ex: "build", "test", "run"
+  string command = 11;
 }
 
 message GetTrendRequest {

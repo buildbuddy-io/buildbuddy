@@ -26,7 +26,7 @@ const (
 )
 
 // Execute executes the command using the ExecStreamed API.
-func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir string, statsListener procstats.Listener, stdio *container.Stdio) *interfaces.CommandResult {
+func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, workDir, user string, statsListener procstats.Listener, stdio *container.Stdio) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -44,6 +44,7 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	}
 	req := &vmxpb.ExecRequest{
 		WorkingDirectory: workDir,
+		User:             user,
 		Arguments:        cmd.GetArguments(),
 		OpenStdin:        stdio.Stdin != nil,
 	}

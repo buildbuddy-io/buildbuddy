@@ -376,6 +376,21 @@ func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit i
 	return readCloser, err
 }
 
+type raftWriteCloser struct {
+	io.WriteCloser
+	closeFn func() error
+}
+
+func (rwc *raftWriteCloser) Commit() error {
+	if err := rwc.WriteCloser.Close(); err != nil {
+		return err
+	}
+	return rwc.closeFn()
+}
+func (rwc *raftWriteCloser) Close() error {
+	return nil
+}
+
 func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, d)
 	if err != nil {
@@ -385,17 +400,41 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Com
 	if err != nil {
 		return nil, err
 	}
-	var writeCloser io.WriteCloser
-	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		wc, err := client.RemoteSyncWriter(ctx, c, h, fileRecord)
+
+	var mwc io.WriteCloser
+	err = rc.sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
+		w, err := rc.apiClient.MultiWriter(ctx, peers, fileRecord)
 		if err != nil {
-			log.Printf("RemoteSyncWriter err: %s", err)
 			return err
 		}
-		writeCloser = wc
+		// Attempt the first write to see if all the peers will accept
+		// it. If the range information is stale, the write will fail
+		// here and the entire operation will be retried via RunAll.
+		_, err = w.Write([]byte{})
+		if err != nil {
+			return err
+		}
+		mwc = w
 		return nil
 	})
-	return ioutil.AutoUpgradeCloser(writeCloser), err
+	if err != nil {
+		return nil, err
+	}
+
+	rwc := &raftWriteCloser{mwc, func() error {
+		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
+			FileRecord: fileRecord,
+		}).ToProto()
+		if err != nil {
+			return err
+		}
+		writeRsp, err := rc.sender.SyncPropose(ctx, fileMetadataKey, writeReq)
+		if err != nil {
+			return err
+		}
+		return rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	}}
+	return rwc, nil
 }
 
 func (rc *RaftCache) Stop() error {

@@ -10,8 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
-
-	flag_yaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
 var (
@@ -26,10 +24,12 @@ var (
 func main() {
 	version.Print()
 
-	flag.Parse()
-	if err := flag_yaml.PopulateFlagsFromFile(config.Path()); err != nil {
+	if err := config.Load(); err != nil {
 		log.Fatalf("Error loading config from file: %s", err)
 	}
+
+	config.ReloadOnSIGHUP()
+
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := libmain.GetConfiguredEnvironmentOrDie(healthChecker)
 

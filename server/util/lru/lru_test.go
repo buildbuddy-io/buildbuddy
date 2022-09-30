@@ -15,7 +15,7 @@ func TestAdd(t *testing.T) {
 		OnEvict: func(value interface{}) { evictions = append(evictions, value.(int)) },
 		SizeFn:  func(value interface{}) int64 { return int64(value.(int)) },
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	require.True(t, l.Add("a", 5))
 	require.True(t, l.Add("b", 4))
@@ -32,7 +32,7 @@ func TestPushBack(t *testing.T) {
 		OnEvict: func(value interface{}) { evictions = append(evictions, value.(int)) },
 		SizeFn:  func(value interface{}) int64 { return int64(value.(int)) },
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	require.True(t, l.PushBack("a", 5))
 	require.True(t, l.PushBack("b", 4))

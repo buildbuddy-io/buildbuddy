@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -263,6 +264,21 @@ func newCommand(start *vmxpb.ExecRequest, reapMutex *sync.RWMutex) (*command, er
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if start.GetUser() != "" {
+		// Need to make the top-level workspace dir writable by non-root users,
+		// since we created it with 0755 perms. Subdirs have the proper
+		// permissions though, so we don't need to recurse.
+		if err := os.Chmod(start.GetWorkingDirectory(), 0777); err != nil {
+			return nil, status.InternalErrorf("failed to update workspace dir perms")
+		}
+
+		cred, err := commandutil.LookupCredential(start.GetUser())
+		if err != nil {
+			return nil, err
+		}
+		cmd.SysProcAttr.Credential = cred
+	}
+
 	stdoutReader, stdoutWriter := io.Pipe()
 	cmd.Stdout = stdoutWriter
 	stderrReader, stderrWriter := io.Pipe()

@@ -124,14 +124,17 @@ const (
 	/// Status of the task size write request: `ok`, `missing_stats` or `error`.
 	TaskSizeWriteStatusLabel = "status"
 
-	// The full name of the grpc method: /<service>/<method>
+	/// The full name of the grpc method: `/<service>/<method>`
 	GRPCFullMethodLabel = "grpc_full_method"
 
-	// The key used for quota accounting. It's either a group ID or an ip address.
+	/// The key used for quota accounting, either a group ID or an IP address.
 	QuotaKey = "quota_key"
 
-	// Whether this request is allowed by quota manager.
+	/// Whether the request was allowed by quota manager.
 	QuotaAllowed = "quota_allowed"
+
+	// Describes the type of cache request
+	CacheRequestType = "type"
 )
 
 const (
@@ -382,6 +385,20 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 40),
 	})
 
+	DiskCacheFilesystemTotalBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_filesystem_total_bytes",
+		Help:      "Total size of the underlying filesystem.",
+	})
+
+	DiskCacheFilesystemAvailBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_filesystem_avail_bytes",
+		Help:      "Available bytes in the underlying filesystem.",
+	})
+
 	/// #### Examples
 	///
 	/// ```promql
@@ -402,6 +419,15 @@ var (
 	/// # Total number of duplicate write bytes.
 	/// sum(buildbuddy_remote_cache_duplicate_writes_bytes)
 	/// ```
+
+	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "migration_not_found_error_count",
+		Help:      "Number of not found errors from the destination cache during a cache migration.",
+	}, []string{
+		CacheRequestType,
+	})
 
 	/// ## Remote execution metrics
 
@@ -481,6 +507,16 @@ var (
 		OS,
 		Arch,
 		GroupID,
+	})
+
+	RemoteExecutionTaskSizePredictionDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "task_size_prediction_duration_usec",
+		Help:      "Task size prediction model request duration in **microseconds**.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 2),
+	}, []string{
+		StatusHumanReadableLabel,
 	})
 
 	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{

@@ -68,6 +68,7 @@ const (
 	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
 	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
+	disablePredictedTaskSizePropertyName = "debug-disable-predicted-task-size"
 	extraArgsPropertyName                = "extra-args"
 	envOverridesPropertyName             = "env-overrides"
 	podmanImageStreamingPropertyName     = "podman-enable-image-streaming"
@@ -80,7 +81,7 @@ const (
 	CPUArchitecturePropertyName = "Arch"
 	defaultCPUArchitecture      = "amd64"
 
-	dockerUserPropertyName = "dockerUser"
+	DockerUserPropertyName = "dockerUser"
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
 	dockerRunAsRootPropertyName = "dockerRunAsRoot"
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L156
@@ -152,6 +153,10 @@ type Properties struct {
 	// TODO(bduffany): remove this once measured task sizing is battle-tested
 	// and this is no longer needed for debugging
 	DisableMeasuredTaskSize bool
+	// DisablePredictedTaskSize disables model-based task sizing, even if it
+	// is enabled via flag, and instead uses the default / platform based
+	// sizing.
+	DisablePredictedTaskSize bool
 	// ExtraArgs contains arguments to append to the action.
 	ExtraArgs []string
 	// EnvOverrides contains environment variables in the form NAME=VALUE to be
@@ -202,7 +207,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		WorkloadIsolationType:      stringProp(m, workloadIsolationPropertyName, ""),
 		InitDockerd:                boolProp(m, initDockerdPropertyName, false),
 		DockerForceRoot:            boolProp(m, dockerRunAsRootPropertyName, false),
-		DockerUser:                 stringProp(m, dockerUserPropertyName, ""),
+		DockerUser:                 stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:              stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:              boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                  vfsEnabled,
@@ -217,6 +222,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		HostedBazelAffinityKey:     stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
 		UseSelfHostedExecutors:     boolProp(m, useSelfHostedExecutorsPropertyName, false),
 		DisableMeasuredTaskSize:    boolProp(m, disableMeasuredTaskSizePropertyName, false),
+		DisablePredictedTaskSize:   boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                  stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:               stringListProp(m, envOverridesPropertyName),
 	}

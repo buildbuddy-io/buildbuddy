@@ -62,5 +62,5 @@ func (c *bareCommandContainer) Pause(ctx context.Context) error   { return nil }
 func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
 
 func (c *bareCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	return &repb.UsageStats{}, nil
+	return nil, nil
 }

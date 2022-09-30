@@ -45,7 +45,7 @@ func TestContains(t *testing.T) {
 		SizeFn:       sizeFn,
 		RandomSample: randomSampleFn,
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	for i := 0; i < 15; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -101,7 +101,7 @@ func TestEviction(t *testing.T) {
 		SizeFn:       sizeFn,
 		RandomSample: randomSampleFn,
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Fill the cache 100% full.
 	for i := 0; i < totalNumKeys; i++ {
@@ -195,7 +195,7 @@ func TestEvictionOutOfOrder(t *testing.T) {
 		SizeFn:       sizeFn,
 		RandomSample: randomSampleFn,
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	// Fill the cache 100% full.
 	for i := 0; i < totalNumKeys; i++ {
