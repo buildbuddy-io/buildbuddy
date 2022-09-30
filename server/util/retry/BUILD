@@ -14,5 +14,6 @@ go_test(
     deps = [
         ":retry",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
