@@ -51,7 +51,7 @@ func ConfigureAPIKey(args []string) []string {
 	apiKeyFile := filepath.Join(dir, apiKeyFileName)
 	apiKeyBytes, err := os.ReadFile(apiKeyFile)
 	if err != nil {
-		fmt.Print(err)
+		log.Debug(err)
 		return args
 	}
 
