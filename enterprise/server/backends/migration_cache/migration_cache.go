@@ -43,9 +43,6 @@ type MigrationCache struct {
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *int64
-
-	srcShutdownFn  func() error
-	destShutdownFn func() error
 }
 
 func Register(env environment.Env) error {
@@ -54,16 +51,16 @@ func Register(env environment.Env) error {
 	}
 	log.Infof("Registering Migration Cache")
 
-	srcCache, srcShutdownFn, err := getCacheFromConfig(env, *cacheMigrationConfig.Src)
+	srcCache, err := getCacheFromConfig(env, *cacheMigrationConfig.Src)
 	if err != nil {
 		return err
 	}
-	destCache, destShutdownFn, err := getCacheFromConfig(env, *cacheMigrationConfig.Dest)
+	destCache, err := getCacheFromConfig(env, *cacheMigrationConfig.Dest)
 	if err != nil {
 		return err
 	}
 	cacheMigrationConfig.SetConfigDefaults()
-	mc := NewMigrationCache(cacheMigrationConfig, srcCache, destCache, srcShutdownFn, destShutdownFn)
+	mc := NewMigrationCache(cacheMigrationConfig, srcCache, destCache)
 
 	if env.GetCache() != nil {
 		log.Warningf("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
@@ -79,7 +76,7 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache, srcShutdownFn func() error, destShutdownFn func() error) *MigrationCache {
+func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
 	zero := int64(0)
 	return &MigrationCache{
 		src:                         srcCache,
@@ -91,8 +88,6 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &zero,
-		srcShutdownFn:               srcShutdownFn,
-		destShutdownFn:              destShutdownFn,
 	}
 }
 
@@ -106,30 +101,27 @@ func validateCacheConfig(config CacheConfig) error {
 	return nil
 }
 
-func getCacheFromConfig(env environment.Env, cfg CacheConfig) (interfaces.Cache, func() error, error) {
+func getCacheFromConfig(env environment.Env, cfg CacheConfig) (interfaces.Cache, error) {
 	err := validateCacheConfig(cfg)
 	if err != nil {
-		return nil, nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
+		return nil, status.FailedPreconditionErrorf("error validating migration cache config: %s", err)
 	}
 
 	if cfg.DiskConfig != nil {
 		c, err := diskCacheFromConfig(env, cfg.DiskConfig)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		return c, nil, nil
+		return c, nil
 	} else if cfg.PebbleConfig != nil {
 		c, err := pebbleCacheFromConfig(env, cfg.PebbleConfig)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		pebbleShutdownFn := func() error {
-			return c.Stop()
-		}
-		return c, pebbleShutdownFn, nil
+		return c, nil
 	}
 
-	return nil, nil, status.FailedPreconditionErrorf("error getting cache from migration config: no valid cache types")
+	return nil, status.FailedPreconditionErrorf("error getting cache from migration config: no valid cache types")
 }
 
 func diskCacheFromConfig(env environment.Env, cfg *DiskCacheConfig) (*disk_cache.DiskCache, error) {
@@ -750,22 +742,22 @@ func (mc *MigrationCache) Stop() error {
 
 	var wg sync.WaitGroup
 	var srcShutdownErr, dstShutdownErr error
-	if mc.srcShutdownFn != nil {
+	if src, canStopSrc := mc.src.(interfaces.StoppableCache); canStopSrc {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			srcShutdownErr = mc.srcShutdownFn()
+			srcShutdownErr = src.Stop()
 			if srcShutdownErr != nil {
 				log.Warningf("Migration src cache shutdown err: %s", srcShutdownErr)
 			}
 		}()
 	}
 
-	if mc.destShutdownFn != nil {
+	if dest, canStopDest := mc.dest.(interfaces.StoppableCache); canStopDest {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dstShutdownErr = mc.destShutdownFn()
+			dstShutdownErr = dest.Stop()
 			if dstShutdownErr != nil {
 				log.Warningf("Migration dest cache shutdown err: %s", dstShutdownErr)
 			}

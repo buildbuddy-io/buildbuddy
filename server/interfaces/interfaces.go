@@ -250,6 +250,11 @@ type Cache interface {
 	Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error)
 }
 
+type StoppableCache interface {
+	Cache
+	Stop() error
+}
+
 type TxRunner func(tx *gorm.DB) error
 
 type DBOptions interface {
