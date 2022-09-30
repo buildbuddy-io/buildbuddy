@@ -236,7 +236,7 @@ type Cache interface {
 	WithIsolation(ctx context.Context, cacheType CacheType, remoteInstanceName string) (Cache, error)
 
 	// Normal cache-like operations.
-	Contains(ctx context.Context, d *repb.Digest) (bool, error)
+	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)
 	Metadata(ctx context.Context, d *repb.Digest) (*CacheMetadata, error)
 	FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
 	Get(ctx context.Context, d *repb.Digest) ([]byte, error)

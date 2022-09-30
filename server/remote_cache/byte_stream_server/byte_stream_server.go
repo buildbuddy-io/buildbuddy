@@ -251,7 +251,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
-	exists, err := cache.Contains(ctx, r.GetDigest())
+	exists, err := cache.ContainsDeprecated(ctx, r.GetDigest())
 	if err != nil {
 		return nil, err
 	}

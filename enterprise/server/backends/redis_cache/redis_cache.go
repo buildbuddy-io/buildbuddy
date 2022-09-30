@@ -146,7 +146,7 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTyp
 	}, nil
 }
 
-func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	key, err := c.key(ctx, d)
 	if err != nil {
 		return false, err

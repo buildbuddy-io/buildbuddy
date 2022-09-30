@@ -47,7 +47,7 @@ func getAnonContext(t *testing.T, env environment.Env) context.Context {
 // copied the given digest over
 func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, digest *repb.Digest) {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
-		contains, err := destCache.Contains(ctx, digest)
+		contains, err := destCache.ContainsDeprecated(ctx, digest)
 		require.NoError(t, err, "error calling contains on dest cache")
 
 		if contains {
@@ -78,7 +78,7 @@ func (c *errorCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return errors.New("error cache delete err")
 }
 
-func (c *errorCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *errorCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	return false, errors.New("error cache contains err")
 }
 
@@ -518,12 +518,12 @@ func TestContains(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	contains, err := mc.Contains(ctx, d)
+	contains, err := mc.ContainsDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, contains)
 
 	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
-	contains, err = mc.Contains(ctx, notWrittenDigest)
+	contains, err = mc.ContainsDeprecated(ctx, notWrittenDigest)
 	require.NoError(t, err)
 	require.False(t, contains)
 }
@@ -544,7 +544,7 @@ func TestContains_DestErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	contains, err := mc.Contains(ctx, d)
+	contains, err := mc.ContainsDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, contains)
 }

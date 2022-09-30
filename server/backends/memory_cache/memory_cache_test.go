@@ -302,7 +302,7 @@ func TestLRU(t *testing.T) {
 		digestKeys = append(digestKeys, d)
 	}
 	// Now "use" the first digest written so it is most recently used.
-	ok, err := mc.Contains(ctx, digestKeys[0])
+	ok, err := mc.ContainsDeprecated(ctx, digestKeys[0])
 	if err != nil {
 		t.Fatal(err)
 	}

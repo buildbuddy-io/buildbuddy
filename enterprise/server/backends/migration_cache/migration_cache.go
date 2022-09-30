@@ -174,20 +174,20 @@ func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interface
 	return &clone, nil
 }
 
-func (mc *MigrationCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcContains, dstContains bool
 
 	eg.Go(func() error {
-		srcContains, srcErr = mc.src.Contains(gctx, d)
+		srcContains, srcErr = mc.src.ContainsDeprecated(gctx, d)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			dstContains, dstErr = mc.dest.Contains(gctx, d)
+			dstContains, dstErr = mc.dest.ContainsDeprecated(gctx, d)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -595,7 +595,7 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 }
 
 func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Digest) {
-	alreadyCopied, err := mc.dest.Contains(ctx, d)
+	alreadyCopied, err := mc.dest.ContainsDeprecated(ctx, d)
 	if err != nil {
 		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
 		return

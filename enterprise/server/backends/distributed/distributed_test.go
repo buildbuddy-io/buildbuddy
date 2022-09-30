@@ -130,7 +130,7 @@ func TestBasicReadWrite(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.Contains(ctx, d)
+			exists, err := baseCache.ContainsDeprecated(ctx, d)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -297,7 +297,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.Contains(ctx, d)
+			exists, err := baseCache.ContainsDeprecated(ctx, d)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -367,7 +367,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 		}
 		digestsWritten = append(digestsWritten, d)
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.Contains(ctx, d)
+			exists, err := baseCache.ContainsDeprecated(ctx, d)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -380,7 +380,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	waitForReady(t, config3.ListenAddr)
 	for _, d := range digestsWritten {
 		for _, distributedCache := range distributedCaches {
-			exists, err := distributedCache.Contains(ctx, d)
+			exists, err := distributedCache.ContainsDeprecated(ctx, d)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, distributedCache, d)
@@ -434,7 +434,7 @@ func TestBackfill(t *testing.T) {
 		}
 		digestsWritten = append(digestsWritten, d)
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.Contains(ctx, d)
+			exists, err := baseCache.ContainsDeprecated(ctx, d)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -453,13 +453,13 @@ func TestBackfill(t *testing.T) {
 	// because it has been backfilled.
 	for _, d := range digestsWritten {
 		for _, distributedCache := range distributedCaches {
-			exists, err := distributedCache.Contains(ctx, d)
+			exists, err := distributedCache.ContainsDeprecated(ctx, d)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, distributedCache, d)
 		}
 		for i, baseCache := range baseCaches {
-			exists, err := baseCache.Contains(ctx, d)
+			exists, err := baseCache.ContainsDeprecated(ctx, d)
 			assert.Nil(t, err, fmt.Sprintf("basecache %dmissing digest", i))
 			assert.True(t, exists, fmt.Sprintf("basecache %dmissing digest", i))
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -799,7 +799,7 @@ func TestHintedHandoff(t *testing.T) {
 		}
 		digestsWritten = append(digestsWritten, d)
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.Contains(ctx, d)
+			exists, err := baseCache.ContainsDeprecated(ctx, d)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -840,7 +840,7 @@ func TestHintedHandoff(t *testing.T) {
 
 	// Ensure that dc3 successfully received all the hinted handoffs.
 	for _, d := range hintedHandoffs {
-		exists, err := memoryCache3.Contains(ctx, d)
+		exists, err := memoryCache3.ContainsDeprecated(ctx, d)
 		assert.Nil(t, err)
 		assert.True(t, exists)
 		readAndCompareDigest(t, ctx, dc3, d)
@@ -893,7 +893,7 @@ func TestDelete(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.Contains(ctx, d)
+			exists, err := baseCache.ContainsDeprecated(ctx, d)
 			assert.NoError(t, err)
 			assert.True(t, exists)
 		}
@@ -903,7 +903,7 @@ func TestDelete(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.Contains(ctx, d)
+			exists, err := baseCache.ContainsDeprecated(ctx, d)
 			assert.NoError(t, err)
 			assert.False(t, exists)
 		}

@@ -873,7 +873,7 @@ func (p *PebbleCache) handleMetadataMismatch(err error, fileMetadataKey []byte, 
 	}
 }
 
-func (p *PebbleCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return false, err

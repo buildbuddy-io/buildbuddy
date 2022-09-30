@@ -447,7 +447,7 @@ func TestSizeLimit(t *testing.T) {
 	// size bytes.
 	containedDigestsSize := int64(0)
 	for _, d := range digestKeys {
-		if ok, err := pc.Contains(ctx, d); err == nil && ok {
+		if ok, err := pc.ContainsDeprecated(ctx, d); err == nil && ok {
 			containedDigestsSize += d.GetSizeBytes()
 		}
 	}
@@ -583,7 +583,7 @@ func TestLRU(t *testing.T) {
 
 	evictionsByQuartile := make([][]*repb.Digest, 5)
 	for i, d := range digestKeys {
-		ok, err := pc.Contains(ctx, d)
+		ok, err := pc.ContainsDeprecated(ctx, d)
 		evicted := err != nil || !ok
 		q := i / quartile
 		if evicted {
@@ -1093,7 +1093,7 @@ func BenchmarkContains1(b *testing.B) {
 	b.StopTimer()
 	for n := 0; n < b.N; n++ {
 		b.StartTimer()
-		found, err := pc.Contains(ctx, digestKeys[rand.Intn(len(digestKeys))])
+		found, err := pc.ContainsDeprecated(ctx, digestKeys[rand.Intn(len(digestKeys))])
 		b.StopTimer()
 		if err != nil {
 			b.Fatal(err)
