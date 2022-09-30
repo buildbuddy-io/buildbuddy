@@ -21,6 +21,8 @@ import (
 )
 
 const (
+	// If we know there's a split going on, we use a fixed retry interval
+	// since we know the split is likely to finish within this bound.
 	splitRetryInterval = 250 * time.Millisecond
 )
 
