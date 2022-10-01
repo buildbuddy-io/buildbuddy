@@ -317,8 +317,16 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
+func (c *DiskCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	return c.containsHelper(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+}
+
 func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	record, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
+	return c.containsHelper(ctx, c.cacheType, c.remoteInstanceName, d)
+}
+
+func (c *DiskCache) containsHelper(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) (bool, error) {
+	record, err := c.partition.lruGet(ctx, cacheType, remoteInstanceName, d)
 	contains := record != nil
 	return contains, err
 }

@@ -211,11 +211,15 @@ type CacheMetadata struct {
 // Similar to the Cache above, a digest cache allows for more intelligent
 // storing of blob data based on its size.
 type Cache interface {
+	// TODO(Maggie) Deprecate WithIsolation and associated methods
+	// We are refactoring the pattern of using two methods on the cache (WithIsolation + a target method)
+	// with a single target method that contains all the necessary data to complete the request
+
 	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
 	WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (Cache, error)
 
-	// Normal cache-like operations.
+	// [Deprecated] Normal cache-like operations that act in conjunction with WithIsolation
 	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)
 	Metadata(ctx context.Context, d *repb.Digest) (*CacheMetadata, error)
 	FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
@@ -224,6 +228,9 @@ type Cache interface {
 	Set(ctx context.Context, d *repb.Digest, data []byte) error
 	SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	Delete(ctx context.Context, d *repb.Digest) error
+
+	// Normal cache-like operations
+	Contains(ctx context.Context, r *rspb.ResourceName) (bool, error)
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
