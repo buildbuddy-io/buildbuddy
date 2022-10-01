@@ -3,6 +3,7 @@ package sender
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
@@ -17,6 +18,12 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+)
+
+const (
+	// If we know there's a split going on, we use a fixed retry interval
+	// since we know the split is likely to finish within this bound.
+	splitRetryInterval = 250 * time.Millisecond
 )
 
 type ISender interface {
@@ -147,6 +154,10 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
 
+func isRangeSplittingError(err error) bool {
+	return strings.HasPrefix(status.Message(err), constants.RangeSplittingMsg)
+}
+
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) (int, error) {
 	for i, replica := range rd.GetReplicas() {
 		client, err := s.connectionForReplicaDescriptor(ctx, replica)
@@ -211,6 +222,9 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 		if !status.IsOutOfRangeError(err) {
 			return err
 		}
+		if isRangeSplittingError(err) {
+			retrier.FixedDelayOnce(splitRetryInterval)
+		}
 		lastError = err
 	}
 	return status.UnavailableErrorf("sender.Run retries exceeded for key: %q err: %s", key, lastError)
@@ -259,6 +273,9 @@ func (s *Sender) RunAll(ctx context.Context, key []byte, fn runAllFunc) error {
 		skipRangeCache = true
 		if !status.IsOutOfRangeError(err) {
 			return err
+		}
+		if isRangeSplittingError(err) {
+			retrier.FixedDelayOnce(splitRetryInterval)
 		}
 		lastError = err
 	}
@@ -323,6 +340,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		// We'll repopulate remaining keys below.
 		remainingKeys = nil
 
+		var errs []error
 		for _, rk := range keysByRange {
 			var rangeRsp interface{}
 			_, err = s.tryReplicas(ctx, rk.rd, func(c rfspb.ApiClient, h *rfpb.Header) error {
@@ -337,6 +355,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 				if !status.IsOutOfRangeError(err) {
 					return nil, err
 				}
+				errs = append(errs, err)
 				skipRangeCache = true
 				// No luck for the keys in the range on this try, let's try them
 				// on the next attempt.
@@ -345,6 +364,19 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 				rsps = append(rsps, rangeRsp)
 			}
 			lastError = err
+		}
+
+		waitingForSplit := len(errs) > 0
+		for _, err := range errs {
+			if !isRangeSplittingError(err) {
+				waitingForSplit = false
+			}
+		}
+
+		// Only use the short split wait interval if it's the only error left.
+		// If there are other errors, use the normal backoff.
+		if waitingForSplit {
+			retrier.FixedDelayOnce(splitRetryInterval)
 		}
 
 		if len(remainingKeys) == 0 {

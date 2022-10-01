@@ -21,20 +21,32 @@ type Retry struct {
 
 	currentAttempt int
 	maxAttempts    int
-	isReset        bool
+
+	delayed time.Duration
+	maxTime time.Duration
+
+	isReset   bool
+	nextDelay time.Duration
 }
 
 func New(ctx context.Context, opts *Options) *Retry {
+	maxTime := 0 * time.Millisecond
 	maxAttempts := opts.MaxRetries
 	if maxAttempts <= 0 {
-		// always try at least once
-		maxAttempts = 1
 		if opts.Multiplier > 1 && opts.MaxBackoff > opts.InitialBackoff {
-			maxAttempts = 1 + int(math.Ceil(
+			tries := 1 + int(math.Ceil(
 				math.Log(
 					float64(opts.MaxBackoff)/float64(opts.InitialBackoff),
 				)/math.Log(opts.Multiplier),
 			))
+			b := opts.InitialBackoff
+			for i := 0; i < tries; i++ {
+				maxTime += b
+				b = time.Duration(math.Min(float64(b)*opts.Multiplier, float64(opts.MaxBackoff)))
+			}
+		} else {
+			// always try at least once
+			maxAttempts = 1
 		}
 	}
 
@@ -42,6 +54,7 @@ func New(ctx context.Context, opts *Options) *Retry {
 		ctx:         ctx,
 		opts:        opts,
 		maxAttempts: maxAttempts,
+		maxTime:     maxTime,
 	}
 	r.Reset()
 	return r
@@ -69,6 +82,11 @@ func DefaultWithContext(ctx context.Context) *Retry {
 func (r *Retry) Reset() {
 	r.currentAttempt = 0
 	r.isReset = true
+	r.nextDelay = 0
+}
+
+func (r *Retry) updateNextDelay() {
+	r.nextDelay = r.delay()
 }
 
 func (r *Retry) delay() time.Duration {
@@ -79,21 +97,48 @@ func (r *Retry) delay() time.Duration {
 	return time.Duration(backoff)
 }
 
-func (r *Retry) Next() bool {
+func (r *Retry) NextDelay() (time.Duration, bool) {
 	// Run once, initially, always.
 	if r.isReset {
 		r.isReset = false
-		return true
+		r.updateNextDelay()
+		return 0, true
 	}
 
 	// If we're out of retries, exit.
-	if r.currentAttempt >= r.maxAttempts {
+	if r.maxAttempts > 0 && r.currentAttempt >= r.maxAttempts {
+		return 0, false
+	}
+
+	// If we're out of time, exit.
+	if r.maxTime > 0 && r.delayed >= r.maxTime {
+		return 0, false
+	}
+
+	delay := r.nextDelay
+	r.currentAttempt++
+	r.delayed += delay
+	r.updateNextDelay()
+	return delay, true
+}
+
+// FixedDelayOnce causes the next retry to be attempted after a fixed delay.
+// Subsequent retries go back to use the normal backoff delays.
+func (r *Retry) FixedDelayOnce(delay time.Duration) {
+	r.nextDelay = delay
+	if r.currentAttempt > 0 {
+		r.currentAttempt -= 1
+	}
+}
+
+func (r *Retry) Next() bool {
+	d, valid := r.NextDelay()
+	if !valid {
 		return false
 	}
 
 	select {
-	case <-time.After(r.delay()):
-		r.currentAttempt++
+	case <-time.After(d):
 		return true
 	case <-r.ctx.Done():
 		return false
@@ -104,6 +149,15 @@ func (r *Retry) AttemptNumber() int {
 	return r.currentAttempt + 1
 }
 
+// MaxAttempts the maximum numer of retry attempts.
+// Only valid if retrier was created with MaxRetries set.
 func (r *Retry) MaxAttempts() int {
 	return r.maxAttempts
+}
+
+// MaxTotalDelay returns the bound on total time that the retrier will sleep
+// across all attempts.
+// Only valid if MaxRetries was not set.
+func (r *Retry) MaxTotalDelay() time.Duration {
+	return r.maxTime
 }
