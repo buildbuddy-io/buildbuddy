@@ -16,12 +16,15 @@ type discardWriteCloser struct {
 
 // DiscardWriteCloser returns an io.WriteCloser that wraps ioutil.Discard,
 // dropping any bytes written to it and returning nil on Close.
-func DiscardWriteCloser() io.WriteCloser {
+func DiscardWriteCloser() *discardWriteCloser {
 	return &discardWriteCloser{
 		io.Discard,
 	}
 }
 
+func (discardWriteCloser) Commit() error {
+	return nil
+}
 func (discardWriteCloser) Close() error {
 	return nil
 }
@@ -74,12 +77,6 @@ func (c *CustomCommitWriteCloser) Close() error {
 	log.Printf("CustomCommitWriteCloser: Close")
 	var firstErr error
 
-	// TODO(tylerw): remove this safety catch after migration is complete
-	// and all tests pass.
-	if !c.committed {
-		firstErr = c.Commit()
-	}
-
 	// Close may free resources, so all Close functions should be called.
 	// The first error encountered will be returned.
 	if closer, ok := c.w.(io.Closer); ok {
@@ -116,11 +113,6 @@ func (r *CloseCommitReplacer) Commit() error {
 }
 
 func (r *CloseCommitReplacer) Close() error {
-	// TODO(tylerw): remove this safety catch after migration is complete
-	// and all tests pass.
-	if !r.committed {
-		return r.Commit()
-	}
 	return nil
 }
 

@@ -732,6 +732,10 @@ func (mc *MigrationCache) copy(c *copyData) {
 	if _, err = io.Copy(destWriter, srcReader); err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
 	}
+
+	if err := destWriter.Commit(); err != nil {
+		log.Warningf("Migration copy err: desitination commit failed: %s", err)
+	}
 }
 
 func (mc *MigrationCache) Start() error {

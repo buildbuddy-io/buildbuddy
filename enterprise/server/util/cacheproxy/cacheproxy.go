@@ -348,7 +348,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	up, _ := prefix.UserPrefixFromContext(ctx)
 
 	var bytesWritten int64
-	var writeCloser io.WriteCloser
+	var writeCloser interfaces.CommittedWriteCloser
 	handoffPeer := ""
 	for {
 		req, err := stream.Recv()
@@ -369,6 +369,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 				return err
 			}
+			defer wc.Close()
 			writeCloser = wc
 			handoffPeer = req.GetHandoffPeer()
 		}
@@ -378,7 +379,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		bytesWritten += int64(n)
 		if req.FinishWrite {
-			if err := writeCloser.Close(); err != nil {
+			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
 			// TODO(vadim): use handoff peer from request once client is including it in the FinishWrite request.

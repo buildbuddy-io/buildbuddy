@@ -322,6 +322,9 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 	if err != nil {
 		return nil, err
 	}
+	if err := wc.Commit(); err != nil {
+		return nil, err
+	}
 	return d, wc.Close()
 }
 

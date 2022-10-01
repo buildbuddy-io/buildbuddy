@@ -1021,6 +1021,9 @@ func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 	if _, err := wc.Write(data); err != nil {
 		return err
 	}
+	if err := wc.Commit(); err != nil {
+		return err
+	}
 	return wc.Close()
 }
 
