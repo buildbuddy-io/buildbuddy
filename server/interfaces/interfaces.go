@@ -26,6 +26,7 @@ import (
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -215,6 +216,18 @@ func (t CacheTypeDeprecated) Prefix() string {
 	default:
 		alert.UnexpectedEvent("unknown_cache_type", "type: %v", t)
 		return "unknown"
+	}
+}
+
+func (t CacheTypeDeprecated) ToResourceNameCacheType() rspb.CacheType {
+	switch t {
+	case ActionCacheType:
+		return rspb.CacheType_AC
+	case CASCacheType:
+		return rspb.CacheType_AC
+	default:
+		alert.UnexpectedEvent("unknown_cache_type", "type: %v", t)
+		return rspb.CacheType_UNKNOWN_CACHE_TYPE
 	}
 }
 
