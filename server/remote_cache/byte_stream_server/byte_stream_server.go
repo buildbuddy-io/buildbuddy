@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"hash"
 	"io"
 
@@ -251,7 +252,12 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
-	exists, err := cache.ContainsDeprecated(ctx, r.GetDigest())
+	exists, err := s.cache.Contains(ctx, &resource.ResourceName{
+		Digest:       r.GetDigest(),
+		InstanceName: r.GetInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_CAS,
+	})
 	if err != nil {
 		return nil, err
 	}
