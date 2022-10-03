@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cache_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -529,6 +528,7 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit in
 type waitForUploadWriteCloser struct {
 	io.WriteCloser
 	ctx           context.Context
+	cancelFunc   context.CancelFunc
 	finishedWrite chan struct{}
 	timer         *cache_metrics.CacheTimer
 	size          int64
@@ -540,7 +540,7 @@ func (w *waitForUploadWriteCloser) Write(p []byte) (int, error) {
 	return w.WriteCloser.Write(p)
 }
 
-func (w *waitForUploadWriteCloser) Close() error {
+func (w *waitForUploadWriteCloser) Commit() error {
 	err := w.WriteCloser.Close()
 	if err != nil {
 		return err
@@ -549,6 +549,10 @@ func (w *waitForUploadWriteCloser) Close() error {
 	return nil
 }
 
+func (w *waitForUploadWriteCloser) Close() error {
+	w.cancelFunc()
+	return nil
+}
 func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	k, err := s3c.key(ctx, d)
 	if err != nil {
@@ -562,9 +566,11 @@ func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Comm
 		Body:   r,
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	ctx, cancel := context.WithCancel(ctx)
 	closer := &waitForUploadWriteCloser{
 		WriteCloser:   w,
 		ctx:           ctx,
+		cancelFunc:    cancel,
 		finishedWrite: make(chan struct{}),
 		timer:         timer,
 		size:          d.GetSizeBytes(),
@@ -575,7 +581,7 @@ func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Comm
 		}
 		close(closer.finishedWrite)
 	}()
-	return ioutil.AutoUpgradeCloser(closer), nil
+	return closer, nil
 }
 
 func (s3c *S3Cache) Start() error {

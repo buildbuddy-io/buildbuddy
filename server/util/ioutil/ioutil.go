@@ -4,7 +4,6 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 // A writer that drops anything written to it.
@@ -42,14 +41,12 @@ type CustomCommitWriteCloser struct {
 }
 
 func (c *CustomCommitWriteCloser) Write(buf []byte) (int, error) {
-	log.Printf("CustomCommitWriteCloser: Write %d", len(buf))
 	n, err := c.w.Write(buf)
 	c.bytesWritten += int64(n)
 	return n, err
 }
 
 func (c *CustomCommitWriteCloser) Commit() error {
-	log.Printf("CustomCommitWriteCloser: Commit")
 	// Commit functions are run in order. If a commit function at a lower
 	// level succeeds, the one above it should succeed as well.
 	//
@@ -74,7 +71,6 @@ func (c *CustomCommitWriteCloser) Commit() error {
 }
 
 func (c *CustomCommitWriteCloser) Close() error {
-	log.Printf("CustomCommitWriteCloser: Close")
 	var firstErr error
 
 	// Close may free resources, so all Close functions should be called.
@@ -93,35 +89,12 @@ func (c *CustomCommitWriteCloser) Close() error {
 	return firstErr
 }
 
+// NewCustomCommitWriteCloser wraps an io.Writer/interfaces.CommittedWriteCloser
+// and returns a pointer to a CustomCommitWriteCloser, which implents
+// interfaces.CommittedWriteCloser but allows adding on custom logic that will
+// be called when Commit or Close methods are called.
 func NewCustomCommitWriteCloser(w io.Writer) *CustomCommitWriteCloser {
-	log.Printf("NewCustomCommitWriteCloser: %+v", w)
 	return &CustomCommitWriteCloser{
 		w: w,
-	}
-}
-
-type CloseCommitReplacer struct {
-	io.WriteCloser
-	committed bool
-}
-
-func (r *CloseCommitReplacer) Commit() error {
-	defer func() {
-		r.committed = true
-	}()
-	return r.WriteCloser.Close()
-}
-
-func (r *CloseCommitReplacer) Close() error {
-	return nil
-}
-
-func AutoUpgradeCloser(wc io.WriteCloser) interfaces.CommittedWriteCloser {
-	if cwc, ok := wc.(interfaces.CommittedWriteCloser); ok {
-		return cwc
-	}
-
-	return &CloseCommitReplacer{
-		WriteCloser: wc,
 	}
 }

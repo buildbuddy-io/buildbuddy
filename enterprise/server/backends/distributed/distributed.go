@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -436,7 +435,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.I
 	}
 	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset, limit)
 }
-func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
 		return c.local.Writer(ctx, d)
@@ -475,6 +474,9 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 	if _, err := io.Copy(rwc, r); err != nil {
 		return err
 	}
+	if err := rwc.Commit(); err != nil {
+		return err
+	}
 	return rwc.Close()
 }
 
@@ -492,6 +494,9 @@ func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, iso
 		return err
 	}
 	if _, err := io.Copy(rwc, r); err != nil {
+		return err
+	}
+	if err := rwc.Commit(); err != nil {
 		return err
 	}
 	return rwc.Close()
@@ -861,7 +866,7 @@ type multiWriteCloser struct {
 	ctx           context.Context
 	log           log.Logger
 	isolation     *dcpb.Isolation
-	peerClosers   map[string]io.WriteCloser
+	peerClosers   map[string]interfaces.CommittedWriteCloser
 	mu            *sync.Mutex
 	d             *repb.Digest
 	listenAddr    string
@@ -887,13 +892,13 @@ func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 	return len(data), eg.Wait()
 }
 
-func (mc *multiWriteCloser) Close() error {
+func (mc *multiWriteCloser) Commit() error {
 	eg, _ := errgroup.WithContext(mc.ctx)
 	for peer, wc := range mc.peerClosers {
 		wc := wc
 		peer := peer
 		eg.Go(func() error {
-			if err := wc.Close(); err != nil {
+			if err := wc.Commit(); err != nil {
 				return err
 			}
 			mc.log.Debugf("Successfully wrote %s to %q", cacheproxy.IsolationToString(mc.isolation)+mc.d.GetHash(), peer)
@@ -911,18 +916,34 @@ func (mc *multiWriteCloser) Close() error {
 	return err
 }
 
+func (mc *multiWriteCloser) Close() error {
+	eg, _ := errgroup.WithContext(mc.ctx)
+	for peer, wc := range mc.peerClosers {
+		wc := wc
+		peer := peer
+		eg.Go(func() error {
+			if err := wc.Close(); err != nil {
+				log.Errorf("Error closing peer %q writer: %s", peer, err)
+			}
+			return nil
+		})
+	}
+	err := eg.Wait()
+	return err
+}
+
 // Attempt to write digest to N peers (where N == replicationFactor).
 // Return an unavailable error if less than a quarum of peers can be
 // written to.
 //
 // This is like setting WRITE_CONSISTENCY = QUORUM.
-func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	ps := c.peers(d)
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
 		d:           d,
-		peerClosers: make(map[string]io.WriteCloser, 0),
+		peerClosers: make(map[string]interfaces.CommittedWriteCloser, 0),
 		mu:          &sync.Mutex{},
 		listenAddr:  c.config.ListenAddr,
 		isolation:   c.isolation,
@@ -954,6 +975,9 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 		return err
 	}
 	if _, err := wc.Write(data); err != nil {
+		return err
+	}
+	if err := wc.Commit(); err != nil {
 		return err
 	}
 	return wc.Close()
@@ -1001,5 +1025,5 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Committe
 	if err != nil {
 		return nil, err
 	}
-	return ioutil.AutoUpgradeCloser(mwc), nil
+	return mwc, nil
 }

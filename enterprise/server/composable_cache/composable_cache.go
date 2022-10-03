@@ -5,7 +5,6 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -203,15 +202,14 @@ func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 }
 
 type doubleWriter struct {
-	inner   io.WriteCloser
-	outer   io.WriteCloser
-	closeFn func(err error)
+	inner   interfaces.CommittedWriteCloser
+	outer   interfaces.CommittedWriteCloser
+	commitFn func(err error)
 }
 
 func (d *doubleWriter) Write(p []byte) (int, error) {
 	n, err := d.inner.Write(p)
 	if err != nil {
-		d.closeFn(err)
 		return n, err
 	}
 	if n > 0 {
@@ -220,10 +218,14 @@ func (d *doubleWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (d *doubleWriter) Close() error {
-	err := d.inner.Close()
-	d.closeFn(err)
+func (d *doubleWriter) Commit() error {
+	err := d.inner.Commit()
+	d.commitFn(err)
 	return err
+}
+
+func (d *doubleWriter) Close() error {
+	return nil
 }
 
 func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
@@ -237,15 +239,15 @@ func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interface
 			dw := &doubleWriter{
 				inner: innerWriter,
 				outer: outerWriter,
-				closeFn: func(err error) {
+				commitFn: func(err error) {
 					if err == nil {
 						outerWriter.Close()
 					}
 				},
 			}
-			return ioutil.AutoUpgradeCloser(dw), nil
+			return dw, nil
 		}
 	}
 
-	return ioutil.AutoUpgradeCloser(innerWriter), nil
+	return innerWriter, nil
 }

@@ -559,6 +559,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *d
 }
 
 type streamWriteCloser struct {
+	cancelFunc    context.CancelFunc
 	stream        dcpb.DistributedCache_WriteClient
 	key           *dcpb.Key
 	isolation     *dcpb.Isolation
@@ -578,7 +579,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 	return len(data), err
 }
 
-func (wc *streamWriteCloser) Close() error {
+func (wc *streamWriteCloser) Commit() error {
 	req := &dcpb.WriteRequest{
 		Isolation:   wc.isolation,
 		Key:         wc.key,
@@ -592,7 +593,12 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
+func (wc *streamWriteCloser) Close() error {
+	wc.cancelFunc()
+	return nil
+}
+
+func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	// Stopping a write mid-stream is difficult because Write streams are
 	// unidirectional. The server can close the stream early, but this does
 	// not necessarily save the client any work. So, to attempt to reduce
@@ -609,11 +615,14 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	wc := &streamWriteCloser{
+		cancelFunc:    cancel,
 		isolation:     isolation,
 		handoffPeer:   handoffPeer,
 		key:           digestToKey(d),
