@@ -186,6 +186,7 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 
 type writeMover struct {
 	*os.File
+	tmpFileIsClosed    bool
 	ctx       context.Context
 	finalPath string
 }
@@ -201,10 +202,14 @@ func (w *writeMover) Commit() error {
 	if err := w.File.Close(); err != nil {
 		return err
 	}
+	w.tmpFileIsClosed = true
 	return os.Rename(tmpName, w.finalPath)
 }
 
 func (w *writeMover) Close() error {
+	if !w.tmpFileIsClosed {
+		w.File.Close()
+	}
 	DeleteLocalFileIfExists(w.File.Name())
 	return nil
 }
