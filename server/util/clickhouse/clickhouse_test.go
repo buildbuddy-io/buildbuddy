@@ -23,31 +23,47 @@ func isExcluded(fieldName string, excludedFields []string) bool {
 }
 
 func TestSchemaInSync(t *testing.T) {
-	chInvType := reflect.TypeOf(clickhouse.Invocation{})
-	primaryInvType := reflect.TypeOf(tables.Invocation{})
-
-	chInvFields := reflect.VisibleFields(chInvType)
-	primaryInvFields := reflect.VisibleFields(primaryInvType)
-
-	for _, chField := range chInvFields {
-		_, found := primaryInvType.FieldByName(chField.Name)
-		assert.True(t, found, "Field %q is not found in tables.Invocation", chField.Name)
+	tests := []struct {
+		clickhouseTable clickhouse.Table
+		primaryDBTable  interface{}
+	}{
+		{
+			clickhouseTable: &clickhouse.Invocation{},
+			primaryDBTable:  tables.Invocation{},
+		},
 	}
 
-	excludedFields := (&clickhouse.Invocation{}).ExcludedFields()
-	for _, primaryField := range primaryInvFields {
-		if primaryField.Anonymous {
-			continue
-		}
+	for _, tc := range tests {
 
-		_, found := chInvType.FieldByName(primaryField.Name)
-		isExcluded := isExcluded(primaryField.Name, excludedFields)
-		if isExcluded {
-			assert.False(t, found, "Field %q is found in clickhouse.Invocation, but it's marked as excluded", primaryField.Name)
-		} else {
-			assert.True(t, found, "Field %q is not found in clickhouse.Invocation", primaryField.Name)
-		}
-		assert.NotEqual(t, found, isExcluded, "Field %q is not found in clickhouse.Invocation", primaryField.Name)
+		chType := reflect.Indirect(reflect.ValueOf(tc.clickhouseTable)).Type()
+
+		t.Run(chType.Name(), func(t *testing.T) {
+			primaryDBType := reflect.TypeOf(tc.primaryDBTable)
+
+			chFields := reflect.VisibleFields(chType)
+			primaryFields := reflect.VisibleFields(primaryDBType)
+
+			for _, chField := range chFields {
+				_, found := primaryDBType.FieldByName(chField.Name)
+				assert.True(t, found, "Field %q is not found in %s", chField.Name, primaryDBType)
+			}
+
+			excludedFields := tc.clickhouseTable.ExcludedFields()
+			for _, primaryField := range primaryFields {
+				if primaryField.Anonymous {
+					continue
+				}
+
+				_, found := chType.FieldByName(primaryField.Name)
+				isExcluded := isExcluded(primaryField.Name, excludedFields)
+				if isExcluded {
+					assert.False(t, found, "Field %q is found in %s, but it's marked as excluded", primaryField.Name, chType)
+				} else {
+					assert.True(t, found, "Field %q is not found in %s", primaryField.Name, chType)
+				}
+				assert.NotEqual(t, found, isExcluded, "Field %q is not found in %s", primaryField.Name, chType)
+			}
+		})
 	}
 }
 
