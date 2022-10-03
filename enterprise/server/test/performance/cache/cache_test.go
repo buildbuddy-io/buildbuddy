@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -198,7 +199,7 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 		{dc, "DDisk"},
 	}
 	for _, c := range caches {
-		ic, err := c.WithIsolation(context.Background(), interfaces.CASCacheType, "")
+		ic, err := c.WithIsolation(context.Background(), resource.CacheType_CAS, "")
 		require.NoError(b, err)
 		c.Cache = ic
 	}
