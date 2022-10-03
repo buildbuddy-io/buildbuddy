@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -186,8 +186,9 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 
 type writeMover struct {
 	*os.File
-	ctx       context.Context
-	finalPath string
+	tmpFileIsClosed bool
+	ctx             context.Context
+	finalPath       string
 }
 
 func (w *writeMover) Write(p []byte) (int, error) {
@@ -196,15 +197,24 @@ func (w *writeMover) Write(p []byte) (int, error) {
 	return w.File.Write(p)
 }
 
-func (w *writeMover) Close() error {
+func (w *writeMover) Commit() error {
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {
 		return err
 	}
+	w.tmpFileIsClosed = true
 	return os.Rename(tmpName, w.finalPath)
 }
 
-func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
+func (w *writeMover) Close() error {
+	if !w.tmpFileIsClosed {
+		w.File.Close()
+	}
+	DeleteLocalFileIfExists(w.File.Name())
+	return nil
+}
+
+func FileWriter(ctx context.Context, fullPath string) (interfaces.CommittedWriteCloser, error) {
 	if err := EnsureDirectoryExists(filepath.Dir(fullPath)); err != nil {
 		return nil, err
 	}
@@ -223,10 +233,6 @@ func FileWriter(ctx context.Context, fullPath string) (io.WriteCloser, error) {
 		ctx:       ctx,
 		finalPath: fullPath,
 	}
-	// Ensure that the temp file is cleaned up here too!
-	runtime.SetFinalizer(wm, func(m *writeMover) {
-		DeleteLocalFileIfExists(tmpFileName)
-	})
 	return wm, nil
 }
 

@@ -380,14 +380,17 @@ type raftWriteCloser struct {
 	closeFn func() error
 }
 
-func (rwc *raftWriteCloser) Close() error {
+func (rwc *raftWriteCloser) Commit() error {
 	if err := rwc.WriteCloser.Close(); err != nil {
 		return err
 	}
 	return rwc.closeFn()
 }
+func (rwc *raftWriteCloser) Close() error {
+	return nil
+}
 
-func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, d)
 	if err != nil {
 		return nil, err

@@ -16,7 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
-	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -191,6 +191,7 @@ type writeState struct {
 	writer io.Writer
 
 	decompressorCloser io.Closer
+	cacheCommitter     interfaces.Committer
 	cacheCloser        io.Closer
 
 	checksum           *Checksum
@@ -261,15 +262,21 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 
 	ws.checksum = NewChecksum()
 	ws.writer = ws.checksum
-	cacheWriteCloser := devnull.NewWriteCloser()
+	var committedWriteCloser interfaces.CommittedWriteCloser
+
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
-		cacheWriteCloser, err = cache.Writer(ctx, r.GetDigest())
+		cacheWriter, err := cache.Writer(ctx, r.GetDigest())
 		if err != nil {
 			return nil, err
 		}
+		committedWriteCloser = cacheWriter
+	} else {
+		committedWriteCloser = ioutil.DiscardWriteCloser()
 	}
-	ws.cacheCloser = cacheWriteCloser
-	ws.writer = io.MultiWriter(ws.checksum, cacheWriteCloser)
+	ws.cacheCommitter = committedWriteCloser
+	ws.cacheCloser = committedWriteCloser
+	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
+
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		decompressor, err := compression.NewZstdDecompressor(ws.writer)
 		if err != nil {
@@ -287,7 +294,7 @@ func (w *writeState) Write(buf []byte) error {
 	return err
 }
 
-func (w *writeState) Close() error {
+func (w *writeState) Flush() error {
 	if w.decompressorCloser != nil {
 		defer func() {
 			w.decompressorCloser = nil
@@ -307,11 +314,15 @@ func (w *writeState) Close() error {
 
 func (w *writeState) Commit() error {
 	// Verify the checksum. If it does not match, note that the cache writer is
-	// not closed, since that commits the file to cache.
+	// not committed, since that persists the file to cache.
 	if err := w.checksum.Check(w.resourceName.GetDigest()); err != nil {
 		return err
 	}
 
+	return w.cacheCommitter.Commit()
+}
+
+func (w *writeState) Close() error {
 	return w.cacheCloser.Close()
 }
 
@@ -369,9 +380,10 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 		}
 
 		if req.FinishWrite {
-			// Note: Need to Close before committing, since this flushes any currently
-			// buffered bytes from the decompressor to the cache writer.
-			if err := streamState.Close(); err != nil {
+			// Note: Need to Flush before committing, since this
+			// flushes any currently buffered bytes from the
+			// decompressor to the cache writer.
+			if err := streamState.Flush(); err != nil {
 				return err
 			}
 			if err := streamState.Commit(); err != nil {

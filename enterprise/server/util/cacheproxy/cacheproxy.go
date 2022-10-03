@@ -14,9 +14,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
-	"github.com/buildbuddy-io/buildbuddy/server/util/devnull"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -348,7 +348,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	up, _ := prefix.UserPrefixFromContext(ctx)
 
 	var bytesWritten int64
-	var writeCloser io.WriteCloser
+	var writeCloser interfaces.CommittedWriteCloser
 	handoffPeer := ""
 	for {
 		req, err := stream.Recv()
@@ -369,6 +369,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 				return err
 			}
+			defer wc.Close()
 			writeCloser = wc
 			handoffPeer = req.GetHandoffPeer()
 		}
@@ -378,7 +379,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		bytesWritten += int64(n)
 		if req.FinishWrite {
-			if err := writeCloser.Close(); err != nil {
+			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
 			// TODO(vadim): use handoff peer from request once client is including it in the FinishWrite request.
@@ -558,6 +559,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, isolation *d
 }
 
 type streamWriteCloser struct {
+	cancelFunc    context.CancelFunc
 	stream        dcpb.DistributedCache_WriteClient
 	key           *dcpb.Key
 	isolation     *dcpb.Isolation
@@ -577,7 +579,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 	return len(data), err
 }
 
-func (wc *streamWriteCloser) Close() error {
+func (wc *streamWriteCloser) Commit() error {
 	req := &dcpb.WriteRequest{
 		Isolation:   wc.isolation,
 		Key:         wc.key,
@@ -591,7 +593,12 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (io.WriteCloser, error) {
+func (wc *streamWriteCloser) Close() error {
+	wc.cancelFunc()
+	return nil
+}
+
+func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	// Stopping a write mid-stream is difficult because Write streams are
 	// unidirectional. The server can close the stream early, but this does
 	// not necessarily save the client any work. So, to attempt to reduce
@@ -601,18 +608,21 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	if isolation.GetCacheType() == dcpb.Isolation_CAS_CACHE {
 		if alreadyExists, err := c.RemoteContains(ctx, peer, isolation, d); err == nil && alreadyExists {
 			log.Debugf("Skipping duplicate CAS write of %q", d.GetHash())
-			return devnull.NewWriteCloser(), nil
+			return ioutil.DiscardWriteCloser(), nil
 		}
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	wc := &streamWriteCloser{
+		cancelFunc:    cancel,
 		isolation:     isolation,
 		handoffPeer:   handoffPeer,
 		key:           digestToKey(d),

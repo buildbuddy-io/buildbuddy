@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -291,17 +292,7 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64)
 	return io.NopCloser(r), nil
 }
 
-type closeFn func(b *bytes.Buffer) error
-type setOnClose struct {
-	*bytes.Buffer
-	c closeFn
-}
-
-func (d *setOnClose) Close() error {
-	return d.c(d.Buffer)
-}
-
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for memcache", d)
 	}
@@ -310,13 +301,12 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, err
 		return nil, err
 	}
 	var buffer bytes.Buffer
-	return &setOnClose{
-		Buffer: &buffer,
-		c: func(b *bytes.Buffer) error {
-			// Locking and key prefixing are handled in Set.
-			return c.mcSet(k, b.Bytes())
-		},
-	}, nil
+	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
+	wc.CommitFn = func(int64) error {
+		// Locking and key prefixing are handled in Set.
+		return c.mcSet(k, buffer.Bytes())
+	}
+	return wc, nil
 }
 
 func (c *Cache) Start() error {

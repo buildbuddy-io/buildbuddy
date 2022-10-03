@@ -471,8 +471,8 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 }
 
 type doubleWriter struct {
-	src          io.WriteCloser
-	dest         io.WriteCloser
+	src          interfaces.CommittedWriteCloser
+	dest         interfaces.CommittedWriteCloser
 	destDeleteFn func()
 }
 
@@ -499,6 +499,24 @@ func (d *doubleWriter) Write(data []byte) (int, error) {
 	return srcN, srcErr
 }
 
+func (d *doubleWriter) Commit() error {
+	eg := &errgroup.Group{}
+	if d.dest != nil {
+		eg.Go(func() error {
+			dstErr := d.dest.Commit()
+			if dstErr != nil {
+				log.Warningf("Migration writer commit err: %s", dstErr)
+			}
+			return nil
+		})
+	}
+
+	srcErr := d.src.Commit()
+	eg.Wait()
+
+	return srcErr
+}
+
 func (d *doubleWriter) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
@@ -517,10 +535,10 @@ func (d *doubleWriter) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
-	var destWriter io.WriteCloser
+	var destWriter interfaces.CommittedWriteCloser
 
 	eg.Go(func() error {
 		destWriter, dstErr = mc.dest.Writer(ctx, d)
@@ -713,6 +731,10 @@ func (mc *MigrationCache) copy(c *copyData) {
 
 	if _, err = io.Copy(destWriter, srcReader); err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
+	}
+
+	if err := destWriter.Commit(); err != nil {
+		log.Warningf("Migration copy err: desitination commit failed: %s", err)
 	}
 }
 

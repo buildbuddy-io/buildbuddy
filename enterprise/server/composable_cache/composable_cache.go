@@ -202,15 +202,14 @@ func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 }
 
 type doubleWriter struct {
-	inner   io.WriteCloser
-	outer   io.WriteCloser
-	closeFn func(err error)
+	inner    interfaces.CommittedWriteCloser
+	outer    interfaces.CommittedWriteCloser
+	commitFn func(err error)
 }
 
 func (d *doubleWriter) Write(p []byte) (int, error) {
 	n, err := d.inner.Write(p)
 	if err != nil {
-		d.closeFn(err)
 		return n, err
 	}
 	if n > 0 {
@@ -219,13 +218,17 @@ func (d *doubleWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func (d *doubleWriter) Close() error {
-	err := d.inner.Close()
-	d.closeFn(err)
+func (d *doubleWriter) Commit() error {
+	err := d.inner.Commit()
+	d.commitFn(err)
 	return err
 }
 
-func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (d *doubleWriter) Close() error {
+	return nil
+}
+
+func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	innerWriter, err := c.inner.Writer(ctx, d)
 	if err != nil {
 		return nil, err
@@ -236,7 +239,7 @@ func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteC
 			dw := &doubleWriter{
 				inner: innerWriter,
 				outer: outerWriter,
-				closeFn: func(err error) {
+				commitFn: func(err error) {
 					if err == nil {
 						outerWriter.Close()
 					}

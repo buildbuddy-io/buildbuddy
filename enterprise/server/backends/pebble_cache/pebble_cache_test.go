@@ -402,6 +402,9 @@ func TestReadWrite(t *testing.T) {
 		if _, err := io.Copy(wc, r); err != nil {
 			t.Fatalf("Error copying bytes to cache: %s", err.Error())
 		}
+		if err := wc.Commit(); err != nil {
+			t.Fatalf("Error closing writer: %s", err.Error())
+		}
 		if err := wc.Close(); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}

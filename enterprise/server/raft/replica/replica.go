@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -796,6 +797,9 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 		if n != fileMetadata.GetSizeBytes() {
 			return nil, status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
 		}
+		if err := writeCloserMetadata.Commit(); err != nil {
+			return nil, err
+		}
 		if err := writeCloserMetadata.Close(); err != nil {
 			return nil, err
 		}
@@ -1173,11 +1177,11 @@ func (sm *Replica) GetMulti(ctx context.Context, header *rfpb.Header, fileRecord
 	return rsp, nil
 }
 
-func (sm *Replica) storedFileWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error) {
+func (sm *Replica) storedFileWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
 	return sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
 }
 
-func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
+func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedWriteCloser, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1204,7 +1208,9 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-	commitFn := func(bytesWritten int64) error {
+	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
+	wc.CloseFn = db.Close
+	wc.CommitFn = func(bytesWritten int64) error {
 		batch := db.NewBatch()
 		now := time.Now()
 		md := &rfpb.FileMetadata{
@@ -1223,7 +1229,7 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 		}
 		return batch.Commit(&pebble.WriteOptions{Sync: true})
 	}
-	return pebbleutil.CommittedWriterWithFunc(writeCloserMetadata, commitFn, db.Close), nil
+	return wc, nil
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
@@ -1546,6 +1552,9 @@ func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb
 	defer readCloser.Close()
 	n, err := io.Copy(writeCloserMetadata, readCloser)
 	if err != nil {
+		return nil, 0, err
+	}
+	if err := writeCloserMetadata.Commit(); err != nil {
 		return nil, 0, err
 	}
 	if err := writeCloserMetadata.Close(); err != nil {

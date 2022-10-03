@@ -17,7 +17,7 @@ go_library(
         "//server/util/bytebufferpool",
         "//server/util/capabilities",
         "//server/util/compression",
-        "//server/util/devnull",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",

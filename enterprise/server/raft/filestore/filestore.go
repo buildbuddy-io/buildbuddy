@@ -55,13 +55,13 @@ type Store interface {
 	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
 
 	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
-	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error)
+	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
 
 	InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
 	InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser
 
 	FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error)
-	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error)
+	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
 
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
@@ -129,7 +129,7 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	}
 }
 
-func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error) {
+func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
 	// New files are written using this method. Existing files will be read
 	// from wherever they were originally written according to their stored
 	// StorageMetadata.
@@ -182,7 +182,7 @@ func (fs *fileStorer) InlineWriter(ctx context.Context, sizeBytes int64) interfa
 }
 
 type fileChunker struct {
-	io.WriteCloser
+	interfaces.CommittedWriteCloser
 	fileName string
 }
 
@@ -199,7 +199,7 @@ func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *rfpb.St
 	return disk.FileReader(ctx, fp, offset, limit)
 }
 
-func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error) {
+func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
 	file, err := fs.FileKey(fileRecord)
 	if err != nil {
 		return nil, err
@@ -209,8 +209,8 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 		return nil, err
 	}
 	return &fileChunker{
-		WriteCloser: wc,
-		fileName:    string(file),
+		CommittedWriteCloser: wc,
+		fileName:             string(file),
 	}, nil
 }
 

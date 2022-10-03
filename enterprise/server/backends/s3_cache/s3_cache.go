@@ -528,6 +528,7 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit in
 type waitForUploadWriteCloser struct {
 	io.WriteCloser
 	ctx           context.Context
+	cancelFunc    context.CancelFunc
 	finishedWrite chan struct{}
 	timer         *cache_metrics.CacheTimer
 	size          int64
@@ -539,7 +540,7 @@ func (w *waitForUploadWriteCloser) Write(p []byte) (int, error) {
 	return w.WriteCloser.Write(p)
 }
 
-func (w *waitForUploadWriteCloser) Close() error {
+func (w *waitForUploadWriteCloser) Commit() error {
 	err := w.WriteCloser.Close()
 	if err != nil {
 		return err
@@ -548,7 +549,11 @@ func (w *waitForUploadWriteCloser) Close() error {
 	return nil
 }
 
-func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (w *waitForUploadWriteCloser) Close() error {
+	w.cancelFunc()
+	return nil
+}
+func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	k, err := s3c.key(ctx, d)
 	if err != nil {
 		return nil, err
@@ -561,9 +566,11 @@ func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser,
 		Body:   r,
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	ctx, cancel := context.WithCancel(ctx)
 	closer := &waitForUploadWriteCloser{
 		WriteCloser:   w,
 		ctx:           ctx,
+		cancelFunc:    cancel,
 		finishedWrite: make(chan struct{}),
 		timer:         timer,
 		size:          d.GetSizeBytes(),

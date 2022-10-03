@@ -68,8 +68,11 @@ func waitUntilServerIsAlive(addr string) {
 	}
 }
 
-func copyAndClose(wc io.WriteCloser, r io.Reader) error {
+func copyAndClose(wc interfaces.CommittedWriteCloser, r io.Reader) error {
 	if _, err := io.Copy(wc, r); err != nil {
+		return err
+	}
+	if err := wc.Commit(); err != nil {
 		return err
 	}
 	return wc.Close()
@@ -147,7 +150,7 @@ func (s *snitchCache) WithIsolation(ctx context.Context, cacheType interfaces.Ca
 		s.writeCount,
 	}, nil
 }
-func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	wc, err := s.Cache.Writer(ctx, d)
 	if err != nil {
 		return nil, err

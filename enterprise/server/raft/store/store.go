@@ -598,7 +598,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 
 func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 	var bytesWritten int64
-	var writeCloser interfaces.CommittedMetadataWriteCloser
+	var writeCloser interfaces.CommittedWriteCloser
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {

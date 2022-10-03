@@ -90,7 +90,7 @@ func (c *errorCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 	return nil, errors.New("error cache findmissing err")
 }
 
-func (c *errorCache) Writer(ctx context.Context, d *repb.Digest) (io.WriteCloser, error) {
+func (c *errorCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	return nil, errors.New("error cache writer err")
 }
 
@@ -818,6 +818,9 @@ func TestReadWrite(t *testing.T) {
 		_, err = w.Write(buf)
 		require.NoError(t, err)
 
+		err = w.Commit()
+		require.NoError(t, err)
+
 		err = w.Close()
 		require.NoError(t, err)
 
@@ -883,6 +886,10 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	// Should still write data to src cache without error
 	_, err = w.Write(buf)
 	require.NoError(t, err)
+
+	err = w.Commit()
+	require.NoError(t, err)
+
 	err = w.Close()
 	require.NoError(t, err)
 
