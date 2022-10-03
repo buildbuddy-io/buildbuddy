@@ -224,7 +224,7 @@ func (t CacheTypeDeprecated) ToResourceNameCacheType() rspb.CacheType {
 	case ActionCacheType:
 		return rspb.CacheType_AC
 	case CASCacheType:
-		return rspb.CacheType_AC
+		return rspb.CacheType_CAS
 	default:
 		alert.UnexpectedEvent("unknown_cache_type", "type: %v", t)
 		return rspb.CacheType_UNKNOWN_CACHE_TYPE
