@@ -919,14 +919,14 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 	}, nil
 }
 
-func ProtoCacheTypeToCacheType(cacheType resource.CacheType) (interfaces.CacheTypeDeprecated, error) {
+func ProtoCacheTypeToCacheType(cacheType resource.CacheType) (resource.CacheType, error) {
 	switch cacheType {
 	case resource.CacheType_AC:
-		return interfaces.ActionCacheType, nil
+		return resource.CacheType_AC, nil
 	case resource.CacheType_CAS:
-		return interfaces.CASCacheType, nil
+		return resource.CacheType_CAS, nil
 	default:
-		return interfaces.UnknownCacheType, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
+		return resource.CacheType_UNKNOWN_CACHE_TYPE, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
 	}
 }
 

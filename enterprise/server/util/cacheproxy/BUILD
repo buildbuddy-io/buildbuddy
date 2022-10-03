@@ -11,8 +11,10 @@ go_library(
     deps = [
         "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/digest",
         "//server/resources",
         "//server/util/alert",
         "//server/util/bytebufferpool",
@@ -37,6 +39,7 @@ go_test(
         ":cacheproxy",
         "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",

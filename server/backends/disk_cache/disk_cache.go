@@ -156,10 +156,11 @@ type DiskCache struct {
 	addChan    chan *rfpb.FileMetadata
 	removeChan chan *rfpb.FileMetadata
 
+	// TODO(Maggie): Deprecate these fields
 	// The currently selected partition. Initialized to the default partition.
 	// WithRemoteInstanceName can create a new cache accessor with a different selected partition.
 	partition          *partition
-	cacheType          interfaces.CacheTypeDeprecated
+	cacheType          resource.CacheType
 	remoteInstanceName string
 }
 
@@ -200,7 +201,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	c := &DiskCache{
 		env:                env,
 		partitionMappings:  opts.PartitionMappings,
-		cacheType:          interfaces.CASCacheType,
+		cacheType:          resource.CacheType_CAS,
 		remoteInstanceName: "",
 	}
 
@@ -292,7 +293,7 @@ func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string)
 	return c.partition, nil
 }
 
-func (c *DiskCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *DiskCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	p, err := c.getPartition(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err
@@ -317,13 +318,13 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 }
 
 func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	record, err := c.partition.lruGet(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, d)
+	record, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
 	contains := record != nil
 	return contains, err
 }
 
 func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	lruRecord, err := c.partition.lruGet(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, d)
+	lruRecord, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
 	if err != nil {
 		return nil, err
 	}
@@ -347,35 +348,35 @@ func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.C
 }
 
 func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	return c.partition.findMissing(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, digests)
+	return c.partition.findMissing(ctx, c.cacheType, c.remoteInstanceName, digests)
 }
 
 func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return c.partition.get(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, d)
+	return c.partition.get(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
 func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	return c.partition.getMulti(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, digests)
+	return c.partition.getMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
 }
 
 func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	return c.partition.set(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, d, data)
+	return c.partition.set(ctx, c.cacheType, c.remoteInstanceName, d, data)
 }
 
 func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	return c.partition.setMulti(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, kvs)
+	return c.partition.setMulti(ctx, c.cacheType, c.remoteInstanceName, kvs)
 }
 
 func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
-	return c.partition.delete(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, d)
+	return c.partition.delete(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
 func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	return c.partition.reader(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, d, offset, limit)
+	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset, limit)
 }
 
 func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	return c.partition.writer(ctx, c.cacheType.ToResourceNameCacheType(), c.remoteInstanceName, d)
+	return c.partition.writer(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
 func (c *DiskCache) WaitUntilMapped() {

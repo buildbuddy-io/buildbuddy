@@ -14,8 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
@@ -323,24 +325,24 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	return c.cacheProxy.Shutdown(ctx)
 }
 
-func toProtoCacheType(cacheType interfaces.CacheTypeDeprecated) (dcpb.Isolation_CacheType, error) {
+func toProtoCacheType(cacheType resource.CacheType) (dcpb.Isolation_CacheType, error) {
 	switch cacheType {
-	case interfaces.CASCacheType:
+	case resource.CacheType_CAS:
 		return dcpb.Isolation_CAS_CACHE, nil
-	case interfaces.ActionCacheType:
+	case resource.CacheType_AC:
 		return dcpb.Isolation_ACTION_CACHE, nil
 	default:
 		return dcpb.Isolation_UNKNOWN_TYPE, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
 	}
 }
 
-func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newLocal, err := c.local.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, err
 	}
 
-	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
+	newPrefix := filepath.Join(remoteInstanceName, digest.CacheTypeToPrefix(cacheType))
 	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
 		newPrefix += "/"
 	}

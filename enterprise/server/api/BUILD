@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:api_key_go_proto",
         "//proto:eventlog_go_proto",
+        "//proto:resource_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/api/common",
         "//server/api/config",

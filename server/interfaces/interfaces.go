@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
@@ -26,7 +26,6 @@ import (
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -199,38 +198,6 @@ type Blobstore interface {
 	DeleteBlob(ctx context.Context, blobName string) error
 }
 
-type CacheTypeDeprecated int
-
-const (
-	UnknownCacheType CacheTypeDeprecated = iota
-	ActionCacheType
-	CASCacheType
-)
-
-func (t CacheTypeDeprecated) Prefix() string {
-	switch t {
-	case ActionCacheType:
-		return "ac"
-	case CASCacheType:
-		return ""
-	default:
-		alert.UnexpectedEvent("unknown_cache_type", "type: %v", t)
-		return "unknown"
-	}
-}
-
-func (t CacheTypeDeprecated) ToResourceNameCacheType() rspb.CacheType {
-	switch t {
-	case ActionCacheType:
-		return rspb.CacheType_AC
-	case CASCacheType:
-		return rspb.CacheType_CAS
-	default:
-		alert.UnexpectedEvent("unknown_cache_type", "type: %v", t)
-		return rspb.CacheType_UNKNOWN_CACHE_TYPE
-	}
-}
-
 type CacheMetadata struct {
 	// Size of the cache contents (uncompressed).
 	SizeBytes          int64
@@ -246,7 +213,7 @@ type CacheMetadata struct {
 type Cache interface {
 	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
-	WithIsolation(ctx context.Context, cacheType CacheTypeDeprecated, remoteInstanceName string) (Cache, error)
+	WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (Cache, error)
 
 	// Normal cache-like operations.
 	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)

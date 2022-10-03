@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -360,19 +361,19 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
 
 	var parsedResourceName *digest.ResourceName
-	var cacheType interfaces.CacheTypeDeprecated
+	var cacheType resource.CacheType
 	if digest.IsActionCacheResourceName(urlStr) {
 		parsedResourceName, err = digest.ParseActionCacheResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
 		}
-		cacheType = interfaces.ActionCacheType
+		cacheType = resource.CacheType_AC
 	} else if digest.IsDownloadResourceName(urlStr) {
 		parsedResourceName, err = digest.ParseDownloadResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
 		}
-		cacheType = interfaces.CASCacheType
+		cacheType = resource.CacheType_CAS
 	} else {
 		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
 	}

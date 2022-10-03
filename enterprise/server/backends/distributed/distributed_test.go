@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -63,7 +64,7 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 	if err != nil {
 		t.Fatal(err)
 	}
-	ic, err := c.WithIsolation(context.Background(), interfaces.CASCacheType, "" /* =remoteInstanceName */)
+	ic, err := c.WithIsolation(context.Background(), resource.CacheType_CAS, "" /* =remoteInstanceName */)
 	require.NoError(t, err)
 	c = ic.(*Cache)
 	c.StartListening()

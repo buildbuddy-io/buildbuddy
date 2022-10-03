@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -311,7 +312,7 @@ func (rc *RaftCache) lookupPartitionID(ctx context.Context, remoteInstanceName s
 	return DefaultPartitionID, nil
 }
 
-func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTypeDeprecated, remoteInstanceName string) (interfaces.Cache, error) {
+func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	partID, err := rc.lookupPartitionID(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err
@@ -319,9 +320,9 @@ func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.Cac
 
 	newIsolation := &rfpb.Isolation{}
 	switch cacheType {
-	case interfaces.CASCacheType:
+	case resource.CacheType_CAS:
 		newIsolation.CacheType = rfpb.Isolation_CAS_CACHE
-	case interfaces.ActionCacheType:
+	case resource.CacheType_AC:
 		newIsolation.CacheType = rfpb.Isolation_ACTION_CACHE
 	default:
 		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
