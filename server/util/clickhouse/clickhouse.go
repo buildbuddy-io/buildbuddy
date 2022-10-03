@@ -40,6 +40,11 @@ func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 	return dbh.db.WithContext(ctx)
 }
 
+// Making a new table? Please make sure you:
+// 1) Add your table in getAllTables()
+// 2) Add the table in clickhouse_test.go TestSchemaInSync
+// 3) Make sure all the fields in the corresponding Table deinition in tables.go
+// are present in clickhouse Table definition or in ExcludedFields()
 type Table interface {
 	TableName() string
 	TableOptions() string
