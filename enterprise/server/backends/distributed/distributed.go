@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"io"
 	"path/filepath"
 	"sort"
@@ -538,6 +539,10 @@ func (c *Cache) getBackfillOrders(d *repb.Digest, ps *peerset.PeerSet) []*backfi
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
+func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+
+}
+
 func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	ps := c.readPeers(d)
 	backfill := func() {

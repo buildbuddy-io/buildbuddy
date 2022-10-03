@@ -888,7 +888,15 @@ func (p *PebbleCache) handleMetadataMismatch(err error, fileMetadataKey []byte, 
 	}
 }
 
+func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	return p.containsHelper(ctx, r.GetDigest())
+}
+
 func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return p.containsHelper(ctx, d)
+}
+
+func (p *PebbleCache) containsHelper(ctx context.Context, d *repb.Digest) (bool, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return false, err
@@ -902,6 +910,7 @@ func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 	if err != nil {
 		return false, err
 	}
+	// fileRecord uses the isolation from p - instead, we want to use the isolation from R
 	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
 		return false, err
