@@ -505,7 +505,7 @@ func (d *doubleWriter) Commit() error {
 		eg.Go(func() error {
 			dstErr := d.dest.Commit()
 			if dstErr != nil {
-				log.Warningf("Migration writer close err: %s", dstErr)
+				log.Warningf("Migration writer commit err: %s", dstErr)
 			}
 			return nil
 		})
