@@ -61,11 +61,18 @@ func getAllTables() []Table {
 	}
 }
 
-func tableClusterOption() string {
+func getTableClusterOption() string {
 	if *dataReplicationEnabled {
 		return fmt.Sprintf("on cluster '%s'", *clusterName)
 	}
 	return ""
+}
+
+func getEngine() string {
+	if *dataReplicationEnabled {
+		return fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s')", *zooPath, *replicaName)
+	}
+	return "ReplacingMergeTree()"
 }
 
 // Invocation constains a subset of tables.Invocations.
@@ -124,15 +131,74 @@ func (i *Invocation) TableName() string {
 }
 
 func (i *Invocation) TableOptions() string {
-	engine := ""
-	if *dataReplicationEnabled {
-		engine = fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s')", *zooPath, *replicaName)
-	} else {
-		engine = "ReplacingMergeTree()"
-	}
 	// Note: the sorting key need to be able to uniquely identify the invocation.
 	// ReplacingMergeTree will remove entries with the same sorting key in the background.
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", engine)
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", getEngine())
+}
+
+type Execution struct {
+	GroupID        string `gorm:"primaryKey;"`
+	InvocationUUID string `gorm:"primaryKey;"`
+	UpdatedAtUsec  int64
+
+	CreatedAtUsec int64
+	ExecutionID   string
+	UserID        string
+	Worker        string
+
+	Stage int64
+
+	// IOStats
+	FileDownloadCount        int64
+	FileDownloadSizeBytes    int64
+	FileDownloadDurationUsec int64
+	FileUploadCount          int64
+	FileUploadSizeBytes      int64
+	FileUploadDurationUsec   int64
+
+	// UsageStats
+	PeakMemoryBytes int64
+	CPUNanos        int64
+
+	// Task sizing
+	EstimatedMemoryBytes int64
+	EstimatedMilliCPU    int64
+
+	// ExecutedActionMetadata (in addition to Worker above)
+	QueuedTimestampUsec                int64
+	WorkerStartTimestampUsec           int64
+	WorkerCompletedTimestampUsec       int64
+	InputFetchStartTimestampUsec       int64
+	InputFetchCompletedTimestampUsec   int64
+	ExecutionStartTimestampUsec        int64
+	ExecutionCompletedTimestampUsec    int64
+	OutputUploadStartTimestampUsec     int64
+	OutputUploadCompletedTimestampUsec int64
+
+	StatusCode int32
+	ExitCode   int32
+
+	CachedResult bool
+	DoNotCache   bool
+}
+
+func (e *Execution) TableName() string {
+	return "Executions"
+}
+
+func (e *Execution) TableOptions() string {
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, invocation_uuid, updated_at_usec)", getEngine())
+}
+
+func (e *Execution) ExcludeFields() []string {
+	return []string{
+		"InvocationID",
+		"Perms",
+		"SerializedOperation",
+		"SerializedStatusDetails",
+		"CommandSnippet",
+		"StatusMessage",
+	}
 }
 
 // DateFromUsecTimestamp returns an SQL expression compatible with clickhouse
@@ -208,7 +274,7 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 
 func runMigrations(gdb *gorm.DB) error {
 	log.Info("Auto-migrating clickhouse DB")
-	if clusterOpts := tableClusterOption(); clusterOpts != "" {
+	if clusterOpts := getTableClusterOption(); clusterOpts != "" {
 		gdb = gdb.Set("gorm:table_cluster_options", clusterOpts)
 	}
 	for _, t := range getAllTables() {
