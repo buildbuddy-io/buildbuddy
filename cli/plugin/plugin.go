@@ -225,26 +225,28 @@ func (p *Plugin) Path() (string, error) {
 // PreBazel executes the plugin's pre-bazel hook if it exists, allowing the
 // plugin to return a set of transformed bazel arguments.
 //
-// Plugins are currently expected to output the new arguments on stdout. To
-// simplify handling of whitespace, each line is expected to contain exactly one
-// argument.
+// Plugins receive as their first argument a path to a file containing the
+// arguments to be passed to bazel. The plugin can read and write that file to
+// modify the args (most commonly, just appending to the file), which will then
+// be fed to the next plugin in the pipeline, or passed to Bazel if this is the
+// last plugin.
 //
-// Example plugin that automatically disables remote cache if it takes longer
-// than 1s to ping buildbuddy:
-//
-//     pre_bazel.sh
-//       #!/usr/bin/env bash
-//       # echo original args, one per line
-//       for arg in "$@"; do
-//         echo "$arg"
-//       done
-//       # Note: redirect ping stdout to stderr, to avoid adding ping output to
-//       # bazel args.
-//       if ! timeout 1 ping -c1 remote.buildbuddy.io >&2; then
-//           # Network is spotty; don't use cache
-//           echo "--remote_cache="
-//       fi
+// See cli/example_plugins/ping_remote/pre_bazel.sh for an example.
 func (p *Plugin) PreBazel(args []string) ([]string, error) {
+	// Write args to a file so the plugin can manipulate them.
+	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
+	}
+	defer func() {
+		argsFile.Close()
+		os.Remove(argsFile.Name())
+	}()
+	_, err = disk.WriteFile(context.TODO(), argsFile.Name(), []byte(strings.Join(args, "\n")+"\n"))
+	if err != nil {
+		return nil, err
+	}
+
 	path, err := p.Path()
 	if err != nil {
 		return nil, err
@@ -263,20 +265,19 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	// line, wrap it with "/usr/bin/env bash"
 	// TODO: support "pre_bazel.<any-extension>" as long as the file is
 	// executable and has a shebang line
-	buf := &bytes.Buffer{}
-	cmd := exec.Command(scriptPath, args...)
-	// TODO: Prefix stderr output with "output from [plugin]" ?
+	cmd := exec.Command(scriptPath, argsFile.Name())
+	// TODO: Prefix output with "output from [plugin]" ?
 	cmd.Stderr = os.Stderr
-	cmd.Stdout = buf
+	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
-	out := buf.String()
-	// For convenience, allow output to end with a trailing newline.
-	if len(out) > 0 && out[len(out)-1] == '\n' {
-		out = out[:len(out)-1]
+
+	newArgs, err := readArgsFile(argsFile.Name())
+	if err != nil {
+		return nil, err
 	}
-	newArgs := strings.Split(out, "\n")
+
 	log.Debugf("New bazel args: %s", newArgs)
 	return newArgs, nil
 }
@@ -307,4 +308,25 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	return cmd.Run()
+}
+
+// readArgsFile reads the arguments from the file at the given path.
+// Each arg is expected to be placed on its own line.
+// Blank lines are ignored.
+func readArgsFile(path string) ([]string, error) {
+	b, err := disk.ReadFile(context.TODO(), path)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to read arguments: %s", err)
+	}
+
+	lines := strings.Split(string(b), "\n")
+	// Construct args from non-blank lines.
+	newArgs := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line != "" {
+			newArgs = append(newArgs, line)
+		}
+	}
+
+	return newArgs, nil
 }
