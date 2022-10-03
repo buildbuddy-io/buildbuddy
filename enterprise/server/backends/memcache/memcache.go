@@ -112,7 +112,7 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheTyp
 	}, nil
 }
 
-func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	key, err := c.key(ctx, d)
 	if err != nil {
 		return false, err
@@ -159,7 +159,7 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				exists, err := c.Contains(ctx, d)
+				exists, err := c.ContainsDeprecated(ctx, d)
 				if err != nil {
 					return err
 				}

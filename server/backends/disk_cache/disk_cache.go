@@ -314,7 +314,7 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (c *DiskCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	record, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
 	contains := record != nil
 	return contains, err

@@ -351,7 +351,7 @@ func (g *GCSCache) metadata(ctx context.Context, d *repb.Digest) (*storage.Objec
 	return nil, finalErr
 }
 
-func (g *GCSCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	metadata, err := g.metadata(ctx, d)
 	if err != nil || metadata == nil {
 		return false, err
@@ -393,7 +393,7 @@ func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				exists, err := g.Contains(ctx, d)
+				exists, err := g.ContainsDeprecated(ctx, d)
 				if err != nil {
 					return err
 				}

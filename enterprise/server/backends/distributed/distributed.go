@@ -400,7 +400,7 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 func (c *Cache) remoteContains(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Contains(ctx, d)
+		return c.local.ContainsDeprecated(ctx, d)
 	}
 	return c.cacheProxy.RemoteContains(ctx, peer, isolation, d)
 }
@@ -553,7 +553,7 @@ func (c *Cache) getBackfillOrders(d *repb.Digest, ps *peerset.PeerSet) []*backfi
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {

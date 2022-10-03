@@ -405,7 +405,7 @@ func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time)
 	return true
 }
 
-func (s3c *S3Cache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	var err error
 	defer timer.ObserveContains(err)
@@ -474,7 +474,7 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				exists, err := s3c.Contains(ctx, d)
+				exists, err := s3c.ContainsDeprecated(ctx, d)
 				if err != nil {
 					return err
 				}

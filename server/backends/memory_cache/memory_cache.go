@@ -97,7 +97,7 @@ func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.Ca
 	}, nil
 }
 
-func (m *MemoryCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
+func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	k, err := m.key(ctx, d)
 	if err != nil {
 		return false, err
@@ -134,7 +134,7 @@ func (m *MemoryCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 	var missing []*repb.Digest
 	// No parallelism here either. Not necessary for an in-memory cache.
 	for _, d := range digests {
-		ok, err := m.Contains(ctx, d)
+		ok, err := m.ContainsDeprecated(ctx, d)
 		if err != nil {
 			return nil, err
 		}

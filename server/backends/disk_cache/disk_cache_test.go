@@ -367,7 +367,7 @@ func TestLRU(t *testing.T) {
 		digestKeys = append(digestKeys, d)
 	}
 	// Now "use" the first digest written so it is most recently used.
-	ok, err := dc.Contains(ctx, digestKeys[0])
+	ok, err := dc.ContainsDeprecated(ctx, digestKeys[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +464,7 @@ func TestAsyncLoading(t *testing.T) {
 	// Ensure that files on disk exist *immediately*, even though
 	// they may not have been async processed yet.
 	for _, d := range digests {
-		exists, err := dc.Contains(ctx, d)
+		exists, err := dc.ContainsDeprecated(ctx, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -485,7 +485,7 @@ func TestAsyncLoading(t *testing.T) {
 
 	// Check that everything still exists.
 	for _, d := range digests {
-		exists, err := dc.Contains(ctx, d)
+		exists, err := dc.ContainsDeprecated(ctx, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -527,7 +527,7 @@ func TestJanitorThread(t *testing.T) {
 		if i > 500 {
 			break
 		}
-		contains, err := dc.Contains(ctx, d)
+		contains, err := dc.ContainsDeprecated(ctx, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -568,7 +568,7 @@ func TestZeroLengthFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Ensure that the goodDigest exists and the zero length one does not.
-	exists, err := dc.Contains(ctx, badDigest)
+	exists, err := dc.ContainsDeprecated(ctx, badDigest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +576,7 @@ func TestZeroLengthFiles(t *testing.T) {
 		t.Fatalf("%q (empty file) should not be mapped in cache.", badDigest.GetHash())
 	}
 
-	exists, err = dc.Contains(ctx, goodDigest)
+	exists, err = dc.ContainsDeprecated(ctx, goodDigest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -748,7 +748,7 @@ func TestV2Layout(t *testing.T) {
 	dPath := filepath.Join(userRoot, d.GetHash()[0:disk_cache.HashPrefixDirPrefixLen], d.GetHash())
 	require.FileExists(t, dPath)
 
-	ok, err := dc.Contains(ctx, d)
+	ok, err := dc.ContainsDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.Truef(t, ok, "digest should be in the cache")
 
@@ -845,7 +845,7 @@ func TestV2LayoutMigration(t *testing.T) {
 		require.NoError(t, err)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.Contains(ctx, d)
+		ok, err := ic.ContainsDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
@@ -861,7 +861,7 @@ func TestV2LayoutMigration(t *testing.T) {
 		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "" /*=instanceName*/)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.Contains(ctx, d)
+		ok, err := ic.ContainsDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
@@ -878,7 +878,7 @@ func TestV2LayoutMigration(t *testing.T) {
 		require.NoError(t, err)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.Contains(ctx, d)
+		ok, err := ic.ContainsDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 

@@ -47,13 +47,13 @@ func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType interface
 	}, nil
 }
 
-func (c *ComposableCache) Contains(ctx context.Context, d *repb.Digest) (bool, error) {
-	outerExists, err := c.outer.Contains(ctx, d)
+func (c *ComposableCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	outerExists, err := c.outer.ContainsDeprecated(ctx, d)
 	if err == nil && outerExists {
 		return outerExists, nil
 	}
 
-	return c.inner.Contains(ctx, d)
+	return c.inner.ContainsDeprecated(ctx, d)
 }
 
 func (c *ComposableCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
