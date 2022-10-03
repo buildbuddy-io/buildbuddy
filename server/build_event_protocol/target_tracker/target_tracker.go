@@ -309,7 +309,7 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 		log.Warningf("Not all targets for %q reached state: %d, targets: %+v", t.buildEventAccumulator.InvocationID(), targetStateConfigured, t.targets)
 		return
 	}
-	if t.buildEventAccumulator.Command() != "test" {
+	if !isTestCommand(t.buildEventAccumulator.Command()) {
 		log.Debugf("Not tracking targets for %q because it's not a test", t.buildEventAccumulator.InvocationID())
 		return
 	}
@@ -328,7 +328,7 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 }
 
 func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
-	if t.buildEventAccumulator.Command() != "test" {
+	if !isTestCommand(t.buildEventAccumulator.Command()) {
 		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.buildEventAccumulator.InvocationID())
 		return
 	}
@@ -353,6 +353,10 @@ func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_
 	if err := t.writeTestTargetStatuses(ctx, permissions); err != nil {
 		log.Debugf("Error writing %q target statuses: %s", t.buildEventAccumulator.InvocationID(), err.Error())
 	}
+}
+
+func isTestCommand(command string) bool {
+	return command == "test" || command == "coverage"
 }
 
 func readRepoTargetsWithTx(ctx context.Context, env environment.Env, repoURL string, tx *db.DB) ([]*tables.Target, error) {
