@@ -68,8 +68,11 @@ func waitUntilServerIsAlive(addr string) {
 	}
 }
 
-func copyAndClose(wc io.WriteCloser, r io.Reader) error {
+func copyAndClose(wc interfaces.CommittedWriteCloser, r io.Reader) error {
 	if _, err := io.Copy(wc, r); err != nil {
+		return err
+	}
+	if err := wc.Commit(); err != nil {
 		return err
 	}
 	return wc.Close()
