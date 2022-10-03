@@ -202,8 +202,8 @@ func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 }
 
 type doubleWriter struct {
-	inner   interfaces.CommittedWriteCloser
-	outer   interfaces.CommittedWriteCloser
+	inner    interfaces.CommittedWriteCloser
+	outer    interfaces.CommittedWriteCloser
 	commitFn func(err error)
 }
 

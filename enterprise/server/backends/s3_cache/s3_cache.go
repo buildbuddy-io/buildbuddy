@@ -528,7 +528,7 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit in
 type waitForUploadWriteCloser struct {
 	io.WriteCloser
 	ctx           context.Context
-	cancelFunc   context.CancelFunc
+	cancelFunc    context.CancelFunc
 	finishedWrite chan struct{}
 	timer         *cache_metrics.CacheTimer
 	size          int64

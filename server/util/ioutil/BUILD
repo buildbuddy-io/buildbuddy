@@ -5,8 +5,5 @@ go_library(
     srcs = ["ioutil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/ioutil",
     visibility = ["//visibility:public"],
-    deps = [
-        "//server/interfaces",
-        "//server/util/log",
-    ],
+    deps = ["//server/interfaces"],
 )
