@@ -820,7 +820,6 @@ func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
 	return scanned
 }
 
-// TODO: Make sure they map to the same numbers
 type fileKey struct {
 	part               *partition
 	cacheType          resource.CacheType
