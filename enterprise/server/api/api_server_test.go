@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -263,7 +264,7 @@ func TestDeleteFile_AC(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	actionCache, err := s.env.GetCache().WithIsolation(ctx, interfaces.ActionCacheType, "")
+	actionCache, err := s.env.GetCache().WithIsolation(ctx, resource.CacheType_AC, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +299,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	// Save file
 	remoteInstanceName := "remote/instance"
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	actionCache, err := s.env.GetCache().WithIsolation(ctx, interfaces.ActionCacheType, remoteInstanceName)
+	actionCache, err := s.env.GetCache().WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
 	if err != nil {
 		t.Fatal(err)
 	}

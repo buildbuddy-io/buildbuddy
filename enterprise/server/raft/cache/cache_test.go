@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -204,7 +205,7 @@ func TestReaderAndWriter(t *testing.T) {
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
 
-	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+	cache, err := rc1.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
@@ -252,7 +253,7 @@ func TestCacheShutdown(t *testing.T) {
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
 
-	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+	cache, err := rc1.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
 	require.NoError(t, err)
 
 	cacheRPCTimeout := 5 * time.Second
@@ -280,7 +281,7 @@ func TestCacheShutdown(t *testing.T) {
 	require.NoError(t, err)
 	waitForHealthy(t, rc3)
 
-	cache, err = rc3.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+	cache, err = rc3.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
 	require.NoError(t, err)
 
 	for _, d := range digestsWritten {
@@ -327,7 +328,7 @@ func TestDistributedRanges(t *testing.T) {
 	digests := make([]*repb.Digest, 0)
 	for i := 0; i < 10; i++ {
 		rc := raftCaches[rand.Intn(len(raftCaches))]
-		cache, err := rc.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+		cache, err := rc.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -338,7 +339,7 @@ func TestDistributedRanges(t *testing.T) {
 
 	for _, d := range digests {
 		rc := raftCaches[rand.Intn(len(raftCaches))]
-		cache, err := rc.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+		cache, err := rc.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
 		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -381,7 +382,7 @@ func TestFindMissingBlobs(t *testing.T) {
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
 
-	cache, err := rc1.WithIsolation(ctx, interfaces.CASCacheType, "remote/instance/name")
+	cache, err := rc1.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
 	require.NoError(t, err)
 
 	digestsWritten := make([]*repb.Digest, 0)
