@@ -230,7 +230,7 @@ type Cache interface {
 	Delete(ctx context.Context, d *repb.Digest) error
 
 	// Normal cache-like operations
-	Contains(ctx context.Context, r *rspb.ResourceName) (bool, error)
+	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
