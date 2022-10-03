@@ -30,7 +30,7 @@ func run() (exitCode int, err error) {
 	// Load plugins
 	plugins, err := plugin.LoadAll()
 	if err != nil {
-		return 0, err
+		return -1, err
 	}
 
 	// Parse args
@@ -49,7 +49,7 @@ func run() (exitCode int, err error) {
 	for _, p := range plugins {
 		args, err = p.PreBazel(args)
 		if err != nil {
-			return 0, err
+			return -1, err
 		}
 	}
 
@@ -64,14 +64,14 @@ func run() (exitCode int, err error) {
 	// Actually run bazel
 	exitCode, output, err := bazelisk.Run(args)
 	if err != nil {
-		return 0, err
+		return -1, err
 	}
 	defer output.Close()
 
 	// Run plugin post-bazel hooks
 	for _, p := range plugins {
 		if err := p.PostBazel(output.Name()); err != nil {
-			return 0, err
+			return -1, err
 		}
 	}
 
