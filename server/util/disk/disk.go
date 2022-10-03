@@ -186,9 +186,9 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 
 type writeMover struct {
 	*os.File
-	tmpFileIsClosed    bool
-	ctx       context.Context
-	finalPath string
+	tmpFileIsClosed bool
+	ctx             context.Context
+	finalPath       string
 }
 
 func (w *writeMover) Write(p []byte) (int, error) {
