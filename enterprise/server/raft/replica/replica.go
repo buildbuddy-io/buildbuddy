@@ -795,14 +795,14 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 		n, err := io.Copy(writeCloserMetadata, readCloser)
 		readCloser.Close()
 		if n != fileMetadata.GetSizeBytes() {
+			writeCloserMetadata.Close()
 			return nil, status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
 		}
 		if err := writeCloserMetadata.Commit(); err != nil {
+			writeCloserMetadata.Close()
 			return nil, err
 		}
-		if err := writeCloserMetadata.Close(); err != nil {
-			return nil, err
-		}
+		writeCloserMetadata.Close()
 		if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
 			sm.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
 			return nil, status.FailedPreconditionError("stored metadata changed when fetching file")
@@ -1545,6 +1545,7 @@ func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb
 	if err != nil {
 		return nil, 0, err
 	}
+	defer writeCloserMetadata.Close()
 	readCloser, err := sm.store.ReadFileFromPeer(ctx, rd, fileRecord)
 	if err != nil {
 		return nil, 0, err
@@ -1555,9 +1556,6 @@ func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb
 		return nil, 0, err
 	}
 	if err := writeCloserMetadata.Commit(); err != nil {
-		return nil, 0, err
-	}
-	if err := writeCloserMetadata.Close(); err != nil {
 		return nil, 0, err
 	}
 	return writeCloserMetadata.Metadata(), n, nil
