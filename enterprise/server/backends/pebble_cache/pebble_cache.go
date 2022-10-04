@@ -388,7 +388,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
 		isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: defaultPartitionID,
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -804,14 +804,7 @@ func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 	}
 
 	newIsolation := &rfpb.Isolation{}
-	switch cacheType {
-	case resource.CacheType_CAS:
-		newIsolation.CacheType = rfpb.Isolation_CAS_CACHE
-	case resource.CacheType_AC:
-		newIsolation.CacheType = rfpb.Isolation_ACTION_CACHE
-	default:
-		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
-	}
+	newIsolation.CacheType = cacheType
 	newIsolation.RemoteInstanceName = remoteInstanceName
 	newIsolation.PartitionId = partID
 	newIsolation.GroupId = groupID
