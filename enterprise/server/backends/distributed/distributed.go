@@ -473,13 +473,11 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 	if err != nil {
 		return err
 	}
+	defer rwc.Close()
 	if _, err := io.Copy(rwc, r); err != nil {
 		return err
 	}
-	if err := rwc.Commit(); err != nil {
-		return err
-	}
-	return rwc.Close()
+	return rwc.Commit()
 }
 
 func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, isolation *dcpb.Isolation, dest string) error {
@@ -495,13 +493,11 @@ func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, iso
 	if err != nil {
 		return err
 	}
+	defer rwc.Close()
 	if _, err := io.Copy(rwc, r); err != nil {
 		return err
 	}
-	if err := rwc.Commit(); err != nil {
-		return err
-	}
-	return rwc.Close()
+	return rwc.Commit()
 }
 
 type backfillOrder struct {
@@ -976,13 +972,11 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	if err != nil {
 		return err
 	}
+	defer wc.Close()
 	if _, err := wc.Write(data); err != nil {
 		return err
 	}
-	if err := wc.Commit(); err != nil {
-		return err
-	}
-	return wc.Close()
+	return wc.Commit()
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {

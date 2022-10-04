@@ -1019,13 +1019,11 @@ func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 	if err != nil {
 		return err
 	}
+	defer wc.Close()
 	if _, err := wc.Write(data); err != nil {
 		return err
 	}
-	if err := wc.Commit(); err != nil {
-		return err
-	}
-	return wc.Close()
+	return wc.Commit()
 }
 
 func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {

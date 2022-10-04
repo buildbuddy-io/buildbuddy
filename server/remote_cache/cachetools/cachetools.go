@@ -318,14 +318,12 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 	if err != nil {
 		return nil, err
 	}
+	defer wc.Close()
 	_, err = io.Copy(wc, in)
 	if err != nil {
 		return nil, err
 	}
-	if err := wc.Commit(); err != nil {
-		return nil, err
-	}
-	return d, wc.Close()
+	return d, wc.Commit()
 }
 
 func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
