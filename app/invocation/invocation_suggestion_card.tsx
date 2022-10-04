@@ -120,6 +120,46 @@ const matchers: SuggestionMatcher[] = [
       ),
     };
   },
+  // Suggest recommended flags for `bazel coverage` when using RBE
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (model.getCommand() !== "coverage") return null;
+    if (!model.optionsMap.get("remote_executor")) return null;
+    if (
+      model.optionsMap.has("experimental_split_coverage_postprocessing") ||
+      model.optionsMap.has("experimental_fetch_all_coverage_outputs")
+    ) {
+      return null;
+    }
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          <p>
+            To ensure test coverage outputs are downloaded when using remote execution, you may need to set{" "}
+            <BazelFlag>--experimental_split_coverage_postprocessing</BazelFlag> and{" "}
+            <BazelFlag>--experimental_fetch_all_coverage_outputs</BazelFlag>.
+          </p>
+          <p>
+            Some other flags may be necessary as well. See{" "}
+            <TextLink href="https://bazel.build/configure/coverage#remote-execution">
+              Bazel coverage remote execution configuration
+            </TextLink>{" "}
+            and <TextLink href="https://github.com/bazelbuild/bazel/issues/4685">bazelbuild/bazel#4685</TextLink> for
+            more information.
+          </p>
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this coverage invocation is using remote execution, but does not explicitly set{" "}
+          <BazelFlag>--experimental_split_coverage_postprocessing</BazelFlag> or{" "}
+          <BazelFlag>--experimental_fetch_all_coverage_outputs</BazelFlag>.
+        </>
+      ),
+    };
+  },
   // Suggest remote.buildbuddy.io instead of cloud.buildbuddy.io
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
