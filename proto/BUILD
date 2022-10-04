@@ -70,6 +70,9 @@ proto_library(
     srcs = [
         "distributed_cache.proto",
     ],
+    deps = [
+        ":resource_proto",
+    ],
 )
 
 proto_library(
@@ -809,7 +812,9 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache",
     proto = ":distributed_cache_proto",
-    deps = [],
+    deps = [
+        ":resource_go_proto",
+    ],
 )
 
 go_proto_library(

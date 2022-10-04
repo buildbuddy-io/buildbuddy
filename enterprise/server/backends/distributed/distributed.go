@@ -325,17 +325,6 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	return c.cacheProxy.Shutdown(ctx)
 }
 
-func toProtoCacheType(cacheType resource.CacheType) (dcpb.Isolation_CacheType, error) {
-	switch cacheType {
-	case resource.CacheType_CAS:
-		return dcpb.Isolation_CAS_CACHE, nil
-	case resource.CacheType_AC:
-		return dcpb.Isolation_ACTION_CACHE, nil
-	default:
-		return dcpb.Isolation_UNKNOWN_TYPE, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
-	}
-}
-
 func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newLocal, err := c.local.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
@@ -347,12 +336,8 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType,
 		newPrefix += "/"
 	}
 	clone := *c
-	protoCacheType, err := toProtoCacheType(cacheType)
-	if err != nil {
-		return nil, err
-	}
 	clone.isolation = &dcpb.Isolation{
-		CacheType:          protoCacheType,
+		CacheType:          cacheType,
 		RemoteInstanceName: remoteInstanceName,
 	}
 	clone.local = newLocal
@@ -456,11 +441,7 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 		return nil
 	}
 
-	cacheType, err := cacheproxy.ProtoCacheTypeToCacheType(isolation.GetCacheType())
-	if err != nil {
-		return err
-	}
-	localCache, err := c.local.WithIsolation(ctx, cacheType, isolation.GetRemoteInstanceName())
+	localCache, err := c.local.WithIsolation(ctx, isolation.GetCacheType(), isolation.GetRemoteInstanceName())
 	if err != nil {
 		return err
 	}
