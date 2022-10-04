@@ -193,7 +193,7 @@ func runMigrations(gdb *gorm.DB) error {
 	}
 	for _, t := range getAllTables() {
 		gdb = gdb.Set("gorm:table_options", t.TableOptions())
-		if err := gdb.AutoMigrate(&Invocation{}); err != nil {
+		if err := gdb.AutoMigrate(t); err != nil {
 			return err
 		}
 	}
