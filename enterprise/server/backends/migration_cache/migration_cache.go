@@ -44,6 +44,11 @@ type MigrationCache struct {
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *int64
+
+	// TODO(Maggie): Clean up these fields when removing WithIsolation
+	// These fields describe the current isolation, as set by WithIsolation
+	remoteInstanceName string
+	cacheType          resource.CacheType
 }
 
 func Register(env environment.Env) error {
@@ -89,6 +94,8 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &zero,
+		remoteInstanceName:          "",
+		cacheType:                   resource.CacheType_CAS,
 	}
 }
 
@@ -171,6 +178,8 @@ func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType resource.
 	clone := *mc
 	clone.src = srcCache
 	clone.dest = destCache
+	clone.remoteInstanceName = remoteInstanceName
+	clone.cacheType = cacheType
 
 	return &clone, nil
 }
@@ -627,9 +636,11 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Diges
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
-		d:         d,
-		ctx:       ctx,
-		ctxCancel: cancel,
+		d:                  d,
+		ctx:                ctx,
+		ctxCancel:          cancel,
+		remoteInstanceName: mc.remoteInstanceName,
+		cacheType:          mc.cacheType,
 	}:
 	default:
 		cancel()
@@ -671,9 +682,11 @@ func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) 
 }
 
 type copyData struct {
-	d         *repb.Digest
-	ctx       context.Context
-	ctxCancel context.CancelFunc
+	d                  *repb.Digest
+	ctx                context.Context
+	ctxCancel          context.CancelFunc
+	cacheType          resource.CacheType
+	remoteInstanceName string
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
@@ -714,7 +727,19 @@ func (mc *MigrationCache) logCopyChanFullInBackground() {
 func (mc *MigrationCache) copy(c *copyData) {
 	defer c.ctxCancel()
 
-	srcReader, err := mc.src.Reader(c.ctx, c.d, 0, 0)
+	cache, err := mc.WithIsolation(c.ctx, c.cacheType, c.remoteInstanceName)
+	if err != nil {
+		log.Warningf("Migration copy err: Could not call WithIsolation for type %v instance %s: %s", c.cacheType, c.remoteInstanceName, err)
+		return
+	}
+
+	migrationCache, ok := cache.(*MigrationCache)
+	if !ok {
+		log.Warningf("Migration copy err: Could not cast cache with isolation to migration cache: %s", err)
+		return
+	}
+
+	srcReader, err := migrationCache.src.Reader(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
@@ -723,7 +748,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer srcReader.Close()
 
-	destWriter, err := mc.dest.Writer(c.ctx, c.d)
+	destWriter, err := migrationCache.dest.Writer(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return
@@ -735,7 +760,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 
 	if err := destWriter.Commit(); err != nil {
-		log.Warningf("Migration copy err: desitination commit failed: %s", err)
+		log.Warningf("Migration copy err: destination commit failed: %s", err)
 	}
 }
 
