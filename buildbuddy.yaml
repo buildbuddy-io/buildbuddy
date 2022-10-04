@@ -54,3 +54,4 @@ actions:
 
 plugins:
   - path: cli/example_plugins/go_highlight
+  - path: cli/example_plugins/ping_remote
