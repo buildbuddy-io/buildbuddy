@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -43,7 +43,7 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	// Connect directly to the DB and configure webhooks to point at the server.
 	// (For now, manual SQL is the only way to set up invocation webhooks.)
 	flags.Set(t, "database.data_source", dataSource)
-	hc := healthcheck.NewTestingHealthChecker()
+	hc := testhealthcheck.NewTestingHealthChecker()
 	dbh, err := db.GetConfiguredDatabase(hc)
 	require.NoError(t, err)
 	ctx := context.Background()
