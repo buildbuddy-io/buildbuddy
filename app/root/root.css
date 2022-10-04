@@ -607,6 +607,10 @@ svg.icon.orange {
   white-space: nowrap;
 }
 
+.card-suggestion p {
+  margin-top: 0;
+}
+
 .card-suggestion .suggestions-tab-link {
   margin-top: 8px;
 }
