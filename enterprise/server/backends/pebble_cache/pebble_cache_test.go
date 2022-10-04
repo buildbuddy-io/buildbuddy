@@ -865,7 +865,7 @@ func TestDeleteOrphans(t *testing.T) {
 		require.NoError(t, err)
 		fr := fileMetadata.GetFileRecord()
 		ct := resource.CacheType_CAS
-		if fr.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
+		if fr.GetIsolation().GetCacheType() == resource.CacheType_AC {
 			ct = resource.CacheType_AC
 		}
 		deletedDigests[fr.GetDigest().GetHash()] = &digestAndType{ct, fr.GetDigest()}
