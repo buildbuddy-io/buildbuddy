@@ -37,6 +37,8 @@ func TestSchemaInSync(t *testing.T) {
 		},
 	}
 
+	assert.Equal(t, len(clickhouse.GetAllTables()), len(tests), "All clickhouse tables should be present in the tests")
+
 	for _, tc := range tests {
 
 		chType := reflect.Indirect(reflect.ValueOf(tc.clickhouseTable)).Type()

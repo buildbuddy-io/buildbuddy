@@ -57,9 +57,10 @@ type Table interface {
 	AdditionalFields() []string
 }
 
-func getAllTables() []Table {
+func GetAllTables() []Table {
 	return []Table{
 		&Invocation{},
+		&Execution{},
 	}
 }
 
@@ -289,7 +290,7 @@ func runMigrations(gdb *gorm.DB) error {
 	if clusterOpts := getTableClusterOption(); clusterOpts != "" {
 		gdb = gdb.Set("gorm:table_cluster_options", clusterOpts)
 	}
-	for _, t := range getAllTables() {
+	for _, t := range GetAllTables() {
 		gdb = gdb.Set("gorm:table_options", t.TableOptions())
 		if err := gdb.AutoMigrate(t); err != nil {
 			return err
