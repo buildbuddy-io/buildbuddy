@@ -620,7 +620,11 @@ func (p *partition) initializeCache() error {
 				return err
 			}
 			if info.Size() == 0 {
-				log.Debugf("Skipping 0 length file: %q", path)
+				log.Debugf("Deleting 0 length file: %q", path)
+				err = os.Remove(path)
+				if err != nil {
+					log.Warningf("Could not delete 0 length file %q: %s", path, err)
+				}
 				return nil
 			}
 			timestampedRecord, err := p.makeTimestampedRecordFromPathAndFileInfo(path, info)
