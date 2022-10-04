@@ -1086,9 +1086,16 @@ func (p *partition) set(ctx context.Context, cacheType resource.CacheType, remot
 	if err != nil {
 		return err
 	}
-	n, err := disk.WriteFile(ctx, k.FullPath(), data)
+	w, err := disk.FileWriter(ctx, k.FullPath())
 	if err != nil {
-		// If we had an error writing the file, just return that.
+		return err
+	}
+	defer w.Close()
+	n, err := w.Write(data)
+	if err != nil {
+		return err
+	}
+	if err := w.Commit(); err != nil {
 		return err
 	}
 	record := makeRecord(k, int64(n))
