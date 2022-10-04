@@ -1983,8 +1983,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_google_go_cmp",
         importpath = "github.com/google/go-cmp",
-        sum = "h1:e6P7q2lk1O+qJJb4BtCQXlK8vWEO8V1ZeuEdJNOqZyg=",
-        version = "v0.5.8",
+        sum = "h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=",
+        version = "v0.5.9",
     )
     go_repository(
         name = "com_github_google_go_containerregistry",
@@ -3759,6 +3759,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.2.3",
     )
     go_repository(
+        name = "com_github_power_devops_perfstat",
+        importpath = "github.com/power-devops/perfstat",
+        sum = "h1:ncq/mPwQF4JjgDlrVEn3C11VoGHZN7m8qihwgMEtzYw=",
+        version = "v0.0.0-20210106213030-5aafc221ea8c",
+    )
+
+    go_repository(
         name = "com_github_pquerna_cachecontrol",
         importpath = "github.com/pquerna/cachecontrol",
         sum = "h1:jWKYCNlX4J5s8M0nHYkh7Y7c9gRVDEb3mq51j5J0F5M=",
@@ -4015,8 +4022,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_shirou_gopsutil_v3",
         importpath = "github.com/shirou/gopsutil/v3",
-        sum = "h1:flTg1DrnV/UVrBqjLgVgDJzx6lf+91rC64/dBHmO2IA=",
-        version = "v3.21.10",
+        patch_args = ["-p1"],
+        # TODO(bduffany): Remove this patch once https://github.com/shirou/gopsutil/pull/1360/files
+        # is merged and released
+        patches = ["@%s//buildpatches:com_github_shirou_gopsutil.patch" % workspace_name],
+        sum = "h1:yibtJhIVEMcdw+tCTbOPiF1VcsuDeTE4utJ8Dm4c5eA=",
+        version = "v3.22.9",
     )
 
     go_repository(
