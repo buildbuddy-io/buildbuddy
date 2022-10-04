@@ -53,6 +53,8 @@ type Table interface {
 	TableOptions() string
 	// Fields that are in the primary DB Table schema; but not in the clickhouse schema.
 	ExcludedFields() []string
+	// Fields that are in the clickhouse Table schema; but not in the primary DB Table Schema.
+	AdditionalFields() []string
 }
 
 func getAllTables() []Table {
@@ -126,6 +128,10 @@ func (i *Invocation) ExcludedFields() []string {
 	}
 }
 
+func (i *Invocation) AdditionalFields() []string {
+	return []string{}
+}
+
 func (i *Invocation) TableName() string {
 	return "Invocations"
 }
@@ -190,7 +196,7 @@ func (e *Execution) TableOptions() string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, invocation_uuid, updated_at_usec)", getEngine())
 }
 
-func (e *Execution) ExcludeFields() []string {
+func (e *Execution) ExcludedFields() []string {
 	return []string{
 		"InvocationID",
 		"Perms",
@@ -198,6 +204,12 @@ func (e *Execution) ExcludeFields() []string {
 		"SerializedStatusDetails",
 		"CommandSnippet",
 		"StatusMessage",
+	}
+}
+
+func (e *Execution) AdditionalFields() []string {
+	return []string{
+		"InvocationUUID",
 	}
 }
 
