@@ -152,16 +152,17 @@ type DiskCache struct {
 	env               environment.Env
 	partitions        map[string]*partition
 	partitionMappings []disk.PartitionMapping
+	defaultPartition  *partition
 
 	addChan    chan *rfpb.FileMetadata
 	removeChan chan *rfpb.FileMetadata
 
-	// TODO(Maggie): Deprecate these fields
+	// TODO(Maggie): Delete these fields that are used with WithIsolation
 	// The currently selected partition. Initialized to the default partition.
 	// WithRemoteInstanceName can create a new cache accessor with a different selected partition.
-	partition          *partition
-	cacheType          resource.CacheType
-	remoteInstanceName string
+	partitionDeprecated          *partition
+	cacheTypeDeprecated          resource.CacheType
+	remoteInstanceNameDeprecated string
 }
 
 func Register(env environment.Env) error {
@@ -199,10 +200,10 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	}
 
 	c := &DiskCache{
-		env:                env,
-		partitionMappings:  opts.PartitionMappings,
-		cacheType:          resource.CacheType_CAS,
-		remoteInstanceName: "",
+		env:                          env,
+		partitionMappings:            opts.PartitionMappings,
+		cacheTypeDeprecated:          resource.CacheType_CAS,
+		remoteInstanceNameDeprecated: "",
 	}
 
 	if *enableLiveUpdates {
@@ -248,7 +249,8 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	}
 
 	c.partitions = partitions
-	c.partition = defaultPartition
+	c.defaultPartition = defaultPartition
+	c.partitionDeprecated = defaultPartition
 
 	if *enableLiveUpdates {
 		c.env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
@@ -275,11 +277,11 @@ func (c *DiskCache) LiveUpdatesChan() (<-chan *rfpb.FileMetadata, <-chan *rfpb.F
 func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
 	auth := c.env.GetAuthenticator()
 	if auth == nil {
-		return c.partition, nil
+		return c.defaultPartition, nil
 	}
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		return c.partition, nil
+		return c.defaultPartition, nil
 	}
 	for _, m := range c.partitionMappings {
 		if m.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, m.Prefix) {
@@ -290,7 +292,7 @@ func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string)
 			return p, nil
 		}
 	}
-	return c.partition, nil
+	return c.defaultPartition, nil
 }
 
 func (c *DiskCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
@@ -300,12 +302,13 @@ func (c *DiskCache) WithIsolation(ctx context.Context, cacheType resource.CacheT
 	}
 
 	return &DiskCache{
-		env:                c.env,
-		partition:          p,
-		partitions:         c.partitions,
-		partitionMappings:  c.partitionMappings,
-		cacheType:          cacheType,
-		remoteInstanceName: remoteInstanceName,
+		env:                          c.env,
+		partitionDeprecated:          p,
+		defaultPartition:             c.defaultPartition,
+		partitions:                   c.partitions,
+		partitionMappings:            c.partitionMappings,
+		cacheTypeDeprecated:          cacheType,
+		remoteInstanceNameDeprecated: remoteInstanceName,
 	}, nil
 }
 
@@ -318,21 +321,26 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 }
 
 func (c *DiskCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
-	return c.containsHelper(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return false, err
+	}
+
+	return c.containsHelper(ctx, p, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 }
 
 func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.containsHelper(ctx, c.cacheType, c.remoteInstanceName, d)
+	return c.containsHelper(ctx, c.partitionDeprecated, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, d)
 }
 
-func (c *DiskCache) containsHelper(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) (bool, error) {
-	record, err := c.partition.lruGet(ctx, cacheType, remoteInstanceName, d)
+func (c *DiskCache) containsHelper(ctx context.Context, partition *partition, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) (bool, error) {
+	record, err := partition.lruGet(ctx, cacheType, remoteInstanceName, d)
 	contains := record != nil
 	return contains, err
 }
 
 func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	lruRecord, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
+	lruRecord, err := c.partitionDeprecated.lruGet(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, d)
 	if err != nil {
 		return nil, err
 	}
@@ -356,35 +364,35 @@ func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.C
 }
 
 func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	return c.partition.findMissing(ctx, c.cacheType, c.remoteInstanceName, digests)
+	return c.partitionDeprecated.findMissing(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, digests)
 }
 
 func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return c.partition.get(ctx, c.cacheType, c.remoteInstanceName, d)
+	return c.partitionDeprecated.get(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, d)
 }
 
 func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	return c.partition.getMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
+	return c.partitionDeprecated.getMulti(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, digests)
 }
 
 func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	return c.partition.set(ctx, c.cacheType, c.remoteInstanceName, d, data)
+	return c.partitionDeprecated.set(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, d, data)
 }
 
 func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	return c.partition.setMulti(ctx, c.cacheType, c.remoteInstanceName, kvs)
+	return c.partitionDeprecated.setMulti(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, kvs)
 }
 
 func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
-	return c.partition.delete(ctx, c.cacheType, c.remoteInstanceName, d)
+	return c.partitionDeprecated.delete(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, d)
 }
 
 func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset, limit)
+	return c.partitionDeprecated.reader(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, d, offset, limit)
 }
 
 func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	return c.partition.writer(ctx, c.cacheType, c.remoteInstanceName, d)
+	return c.partitionDeprecated.writer(ctx, c.cacheTypeDeprecated, c.remoteInstanceNameDeprecated, d)
 }
 
 func (c *DiskCache) WaitUntilMapped() {

@@ -845,6 +845,24 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceNa
 	}, nil
 }
 
+func (p *PebbleCache) makeFileRecord2(r *resource.ResourceName) (*rfpb.FileRecord, error) {
+	_, err := digest.Validate(r.GetDigest())
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO Complete
+	return &rfpb.FileRecord{
+		Isolation: &rfpb.Isolation{
+			CacheType:          r.GetCacheType(),
+			RemoteInstanceName: r.GetInstanceName(),
+			PartitionId:        "",
+			GroupId:            "",
+		},
+		Digest: r.GetDigest(),
+	}, nil
+}
+
 func (p *PebbleCache) partitionBlobDir(partID string) string {
 	partDir := partitionDirectoryPrefix + partID
 	return filepath.Join(p.rootDirectory, "blobs", partDir)

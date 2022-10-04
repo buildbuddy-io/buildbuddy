@@ -25,10 +25,12 @@ import (
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
 type MemoryCache struct {
-	l                  interfaces.LRU
-	lock               *sync.RWMutex
-	cacheType          resource.CacheType
-	remoteInstanceName string
+	l    interfaces.LRU
+	lock *sync.RWMutex
+
+	// TODO(Maggie): Delete these fields that are used with WithIsolation
+	cacheTypeDeprecated          resource.CacheType
+	remoteInstanceNameDeprecated string
 }
 
 func sizeFn(value interface{}) int64 {
@@ -64,14 +66,14 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 		return nil, err
 	}
 	return &MemoryCache{
-		l:                  l,
-		lock:               &sync.RWMutex{},
-		cacheType:          resource.CacheType_CAS,
-		remoteInstanceName: "",
+		l:                            l,
+		lock:                         &sync.RWMutex{},
+		cacheTypeDeprecated:          resource.CacheType_CAS,
+		remoteInstanceNameDeprecated: "",
 	}, nil
 }
 
-func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
+func (m *MemoryCache) key(ctx context.Context, d *repb.Digest, cacheType resource.CacheType, remoteInstanceName string) (string, error) {
 	hash, err := digest.Validate(d)
 	if err != nil {
 		return "", err
@@ -82,25 +84,33 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	}
 
 	var key string
-	if m.cacheType == resource.CacheType_AC {
-		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(m.cacheType), m.remoteInstanceName, hash)
+	if cacheType == resource.CacheType_AC {
+		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(cacheType), remoteInstanceName, hash)
 	} else {
-		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(m.cacheType), hash)
+		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(cacheType), hash)
 	}
 	return key, nil
 }
 
 func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	return &MemoryCache{
-		l:                  m.l,
-		lock:               m.lock,
-		cacheType:          cacheType,
-		remoteInstanceName: remoteInstanceName,
+		l:                            m.l,
+		lock:                         m.lock,
+		cacheTypeDeprecated:          cacheType,
+		remoteInstanceNameDeprecated: remoteInstanceName,
 	}, nil
 }
 
+func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	return m.containsHelper(ctx, r.GetDigest(), r.GetCacheType(), r.GetInstanceName())
+}
+
 func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	k, err := m.key(ctx, d)
+	return m.containsHelper(ctx, d, m.cacheTypeDeprecated, m.remoteInstanceNameDeprecated)
+}
+
+func (m *MemoryCache) containsHelper(ctx context.Context, d *repb.Digest, cacheType resource.CacheType, remoteInstanceName string) (bool, error) {
+	k, err := m.key(ctx, d, cacheType, remoteInstanceName)
 	if err != nil {
 		return false, err
 	}
@@ -113,7 +123,7 @@ func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, d, m.cacheTypeDeprecated, m.remoteInstanceNameDeprecated)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +158,7 @@ func (m *MemoryCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 }
 
 func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, d, m.cacheTypeDeprecated, m.remoteInstanceNameDeprecated)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +192,7 @@ func (m *MemoryCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 }
 
 func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, d, m.cacheTypeDeprecated, m.remoteInstanceNameDeprecated)
 	if err != nil {
 		return err
 	}
@@ -202,7 +212,7 @@ func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 }
 
 func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, d, m.cacheTypeDeprecated, m.remoteInstanceNameDeprecated)
 	if err != nil {
 		return err
 	}

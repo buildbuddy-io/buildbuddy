@@ -676,6 +676,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
 		dPath := filepath.Join(userRoot, d.GetHash())
 		require.FileExists(t, dPath)
+
+		c, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: "",
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, c)
 	}
 
 	// Authenticated user on default partition.
@@ -691,6 +699,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, testGroup1)
 		dPath := filepath.Join(userRoot, d.GetHash())
 		require.FileExists(t, dPath)
+
+		c, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: "",
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, c)
 	}
 
 	// Authenticated user with group ID that matches custom partition, but without a matching instance name prefix.
@@ -702,14 +718,22 @@ func TestNonDefaultPartition(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
 		instanceName := "nonmatchingprefix"
-		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
+		cas, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
 		require.NoError(t, err)
-		err = c.Set(ctx, d, buf)
+		err = cas.Set(ctx, d, buf)
 		require.NoError(t, err)
 
 		userRoot := filepath.Join(rootDir, testGroup2)
 		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
+
+		c, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, c)
 	}
 
 	// Authenticated user with group ID that matches custom partition and instance name prefix that matches non-default
@@ -722,14 +746,22 @@ func TestNonDefaultPartition(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
 		instanceName := otherPartitionPrefix + "hello"
-		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
+		ac, err := dc.WithIsolation(ctx, resource.CacheType_AC, instanceName)
 		require.NoError(t, err)
-		err = c.Set(ctx, d, buf)
+		err = ac.Set(ctx, d, buf)
 		require.NoError(t, err)
 
 		userRoot := filepath.Join(rootDir, disk_cache.PartitionDirectoryPrefix+otherPartitionID, testGroup2)
-		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
+		dPath := filepath.Join(userRoot, instanceName, "ac", d.GetHash())
 		require.FileExists(t, dPath)
+
+		c, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			CacheType:    resource.CacheType_AC,
+		})
+		require.NoError(t, err)
+		require.True(t, c)
 	}
 }
 
