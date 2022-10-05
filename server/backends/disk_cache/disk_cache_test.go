@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -57,7 +56,7 @@ func TestGetSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
+	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +94,7 @@ func TestMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
+	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +158,7 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
+	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -702,7 +701,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
 		instanceName := "nonmatchingprefix"
-		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
+		c, err := dc.WithIsolation(ctx, interfaces.CASCacheType, instanceName)
 		require.NoError(t, err)
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
@@ -722,7 +721,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
 		instanceName := otherPartitionPrefix + "hello"
-		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
+		c, err := dc.WithIsolation(ctx, interfaces.CASCacheType, instanceName)
 		require.NoError(t, err)
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
@@ -848,7 +847,7 @@ func TestV2LayoutMigration(t *testing.T) {
 	}
 
 	{
-		ic, err := dc.WithIsolation(ctx, resource.CacheType_CAS, "prefix")
+		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix")
 		require.NoError(t, err)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
@@ -865,7 +864,7 @@ func TestV2LayoutMigration(t *testing.T) {
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
-		ic, err := dc.WithIsolation(ctx, resource.CacheType_CAS, "" /*=instanceName*/)
+		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "" /*=instanceName*/)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
 		ok, err := ic.ContainsDeprecated(ctx, d)
@@ -881,7 +880,7 @@ func TestV2LayoutMigration(t *testing.T) {
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
-		ic, err := dc.WithIsolation(ctx, resource.CacheType_CAS, "prefix" /*=instanceName*/)
+		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix" /*=instanceName*/)
 		require.NoError(t, err)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
@@ -934,31 +933,31 @@ func TestScanDiskDirectoryV1(t *testing.T) {
 
 	tests := []struct {
 		remoteInstanceName string
-		cacheType          resource.CacheType
+		cacheType          interfaces.CacheType
 		apiKey             string
 		expectedPartition  string
 	}{
 		{
 			remoteInstanceName: "",
-			cacheType:          resource.CacheType_CAS,
+			cacheType:          interfaces.CASCacheType,
 			apiKey:             "",
 			expectedPartition:  "default",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          resource.CacheType_AC,
+			cacheType:          interfaces.ActionCacheType,
 			apiKey:             "",
 			expectedPartition:  "default",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          resource.CacheType_CAS,
+			cacheType:          interfaces.CASCacheType,
 			apiKey:             testAPIKey,
 			expectedPartition:  "FOO",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          resource.CacheType_AC,
+			cacheType:          interfaces.ActionCacheType,
 			apiKey:             testAPIKey,
 			expectedPartition:  "FOO",
 		},
@@ -991,9 +990,9 @@ func TestScanDiskDirectoryV1(t *testing.T) {
 		}
 		isolation := &rfpb.Isolation{}
 		switch test.cacheType {
-		case resource.CacheType_CAS:
+		case interfaces.CASCacheType:
 			isolation.CacheType = rfpb.Isolation_CAS_CACHE
-		case resource.CacheType_AC:
+		case interfaces.ActionCacheType:
 			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
 		default:
 			t.Fatalf("Unknown cache type: %+v", test.cacheType)
@@ -1056,31 +1055,31 @@ func TestScanDiskDirectoryV2(t *testing.T) {
 
 	tests := []struct {
 		remoteInstanceName string
-		cacheType          resource.CacheType
+		cacheType          interfaces.CacheType
 		apiKey             string
 		expectedPartition  string
 	}{
 		{
 			remoteInstanceName: "",
-			cacheType:          resource.CacheType_CAS,
+			cacheType:          interfaces.CASCacheType,
 			apiKey:             "",
 			expectedPartition:  "default",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          resource.CacheType_AC,
+			cacheType:          interfaces.ActionCacheType,
 			apiKey:             "",
 			expectedPartition:  "default",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          resource.CacheType_CAS,
+			cacheType:          interfaces.CASCacheType,
 			apiKey:             testAPIKey,
 			expectedPartition:  "FOO",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          resource.CacheType_AC,
+			cacheType:          interfaces.ActionCacheType,
 			apiKey:             testAPIKey,
 			expectedPartition:  "FOO",
 		},
@@ -1113,9 +1112,9 @@ func TestScanDiskDirectoryV2(t *testing.T) {
 		}
 		isolation := &rfpb.Isolation{}
 		switch test.cacheType {
-		case resource.CacheType_CAS:
+		case interfaces.CASCacheType:
 			isolation.CacheType = rfpb.Isolation_CAS_CACHE
-		case resource.CacheType_AC:
+		case interfaces.ActionCacheType:
 			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
 		default:
 			t.Fatalf("Unknown cache type: %+v", test.cacheType)

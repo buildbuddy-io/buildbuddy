@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -15,8 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -51,7 +49,7 @@ func TestIsolation(t *testing.T) {
 		cache2         interfaces.Cache
 		shouldBeShared bool
 	}
-	mustIsolate := func(cacheType resource.CacheType, remoteInstanceName string) interfaces.Cache {
+	mustIsolate := func(cacheType interfaces.CacheType, remoteInstanceName string) interfaces.Cache {
 		c, err := mc.WithIsolation(ctx, cacheType, remoteInstanceName)
 		if err != nil {
 			t.Fatalf("Error isolating cache: %s", err)
@@ -61,28 +59,28 @@ func TestIsolation(t *testing.T) {
 
 	tests := []test{
 		{ // caches with the same isolation are shared.
-			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
+			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
 			shouldBeShared: true,
 		},
 		{ // action caches with the same isolation are shared.
-			cache1:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
+			cache1:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
 			shouldBeShared: true,
 		},
 		{ // CAS caches with different remote instance names are shared.
-			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_CAS, "otherInstanceName"),
+			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.CASCacheType, "otherInstanceName"),
 			shouldBeShared: true,
 		},
 		{ // Action caches with different remote instance names are not shared.
-			cache1:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_AC, "otherInstanceName"),
+			cache1:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.ActionCacheType, "otherInstanceName"),
 			shouldBeShared: false,
 		},
 		{ // CAS and Action caches are not shared.
-			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
+			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
+			cache2:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
 			shouldBeShared: false,
 		},
 	}
