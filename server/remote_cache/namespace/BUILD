@@ -5,5 +5,8 @@ go_library(
     srcs = ["namespace.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace",
     visibility = ["//visibility:public"],
-    deps = ["//server/interfaces"],
+    deps = [
+        "//proto:resource_go_proto",
+        "//server/interfaces",
+    ],
 )

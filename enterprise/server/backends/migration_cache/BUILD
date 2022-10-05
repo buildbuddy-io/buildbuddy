@@ -11,6 +11,7 @@ go_library(
     deps = [
         "//enterprise/server/backends/pebble_cache",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/backends/disk_cache",
         "//server/cache/config",
         "//server/environment",
@@ -37,6 +38,7 @@ go_test(
         ":migration_cache",
         "//enterprise/server/backends/pebble_cache",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/backends/disk_cache",
         "//server/environment",
         "//server/interfaces",
