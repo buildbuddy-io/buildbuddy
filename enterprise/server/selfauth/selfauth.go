@@ -238,13 +238,9 @@ func (o *selfAuth) AccessToken(w http.ResponseWriter, r *http.Request) {
 	token.Set(jwt.IssuerKey, o.IssuerURL().String())
 	token.Set(jwt.SubjectKey, "")
 
-	pictureUrl := o.IssuerURL()
-	pictureUrl.Path = "/favicon/favicon_black.svg"
 	token.Set("email", "buildbuddy@example.com")
 	token.Set("name", "buildbuddy")
-	token.Set("given_name", "Build")
-	token.Set("family_name", "Buddy")
-	token.Set("picture", pictureUrl.String())
+	token.Set("given_name", "Default")
 
 	// This value is a hash of the access token, so must match. It can be
 	// computed with the following python snippet:
