@@ -6,6 +6,7 @@ ts_library(
     name = "footer",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//app/capabilities",
         "@npm//@types/react",
         "@npm//react",
     ],
