@@ -437,7 +437,7 @@ func (r *commandRunner) Remove(ctx context.Context) error {
 	if r.VFSServer != nil {
 		r.VFSServer.Stop()
 	}
-	if err := r.Workspace.Remove(); err != nil {
+	if err := r.Workspace.Remove(ctx); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {

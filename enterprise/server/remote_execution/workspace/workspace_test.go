@@ -1,6 +1,7 @@
 package workspace_test
 
 import (
+	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -67,6 +68,7 @@ func actualFilePaths(t *testing.T, ws *workspace.Workspace) map[string]struct{} 
 }
 
 func TestWorkspaceRemove_ReadOnlyTree_DeletesEntireTree(t *testing.T) {
+	ctx := context.Background()
 	ws := newWorkspace(t, &workspace.Opts{})
 	writeEmptyFiles(t, ws, []string{
 		"READONLY",
@@ -79,7 +81,7 @@ func TestWorkspaceRemove_ReadOnlyTree_DeletesEntireTree(t *testing.T) {
 	err = os.Chmod(filepath.Join(ws.Path(), "dir"), 0400)
 	require.NoError(t, err)
 
-	err = ws.Remove()
+	err = ws.Remove(ctx)
 	require.NoError(t, err)
 }
 
