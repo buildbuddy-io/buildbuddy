@@ -32,6 +32,8 @@ func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeByte
 	require.NoError(t, err)
 	_, err = w.Write(buf)
 	require.NoError(t, err)
+	err = w.Commit()
+	require.NoError(t, err)
 	err = w.Close()
 	require.NoError(t, err)
 	return d
@@ -48,8 +50,6 @@ func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, 
 }
 
 func TestReadThrough(t *testing.T) {
-	t.Skip()
-
 	env1, ctx := testEnvAndContext(t)
 	flag.Set("cache.redis.max_value_size_bytes", "100")
 	outer := redis_cache.NewCache(env1.GetDefaultRedisClient())
@@ -81,8 +81,7 @@ func TestReadThrough(t *testing.T) {
 		readAndVerifyDigest(ctx, t, c, d)
 	}
 
-	// Perform a partial read and check that nothing was written to the outer
-	// cache.
+	// Perform a partial read and check that outer has the correct (full) blob.
 	{
 		d := writeDigest(ctx, t, inner, 99)
 
@@ -94,7 +93,6 @@ func TestReadThrough(t *testing.T) {
 		require.NoError(t, err)
 		r.Close()
 
-		_, err = outer.Reader(ctx, d, 0, 0)
-		require.ErrorContains(t, err, "not found")
+		readAndVerifyDigest(ctx, t, outer, d)
 	}
 }
