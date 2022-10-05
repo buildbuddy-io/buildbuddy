@@ -32,8 +32,8 @@ message ResourceName {
 // CacheType represents the type of cache being written to.
 enum CacheType {
   UNKNOWN_CACHE_TYPE = 0;
-  // Content addressable storage (CAS) cache.
-  CAS = 1;
   // Action cache (AC).
-  AC = 2;
+  AC = 1;
+  // Content addressable storage (CAS) cache.
+  CAS = 2;
 }
