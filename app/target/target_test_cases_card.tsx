@@ -2,6 +2,7 @@ import React from "react";
 import format from "../format/format";
 import { AlertCircle, XCircle, PlayCircle, CheckCircle } from "lucide-react";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { durationToMillisWithFallback } from "../util/proto";
 
 interface Props {
   testResult: invocation.InvocationEvent;
@@ -63,7 +64,12 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
             <div className="title">{this.props.testSuite.getAttribute("name")}</div>
             <div className="test-subtitle">
               {testCases.length} {testCases.length == 1 ? "test" : "tests"} {this.getStatusTitle()} in{" "}
-              {format.durationSec(this.props.testResult.buildEvent.testResult.testAttemptDuration.seconds)}
+              {format.durationMillis(
+                durationToMillisWithFallback(
+                  this.props.testResult.buildEvent.testResult.testAttemptDuration,
+                  this.props.testResult.buildEvent.testResult.testAttemptDurationMillis
+                )
+              )}
             </div>
             <div className="test-document">
               <div className="test-suite">
