@@ -226,7 +226,9 @@ func (d *doubleWriter) Commit() error {
 }
 
 func (d *doubleWriter) Close() error {
-	return nil
+	err := d.inner.Close()
+	d.outer.Close()
+	return err
 }
 
 func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
@@ -242,7 +244,7 @@ func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interface
 				outer: outerWriter,
 				commitFn: func(err error) {
 					if err == nil {
-						outerWriter.Close()
+						outerWriter.Commit()
 					}
 				},
 			}
