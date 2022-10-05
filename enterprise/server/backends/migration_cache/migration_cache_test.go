@@ -11,7 +11,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -114,7 +113,7 @@ func TestACIsolation(t *testing.T) {
 
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
-	c1, err := mc.WithIsolation(ctx, resource.CacheType_AC, "")
+	c1, err := mc.WithIsolation(ctx, interfaces.ActionCacheType, "")
 	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
@@ -143,7 +142,7 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
-	c1, err := mc.WithIsolation(ctx, resource.CacheType_AC, "remote")
+	c1, err := mc.WithIsolation(ctx, interfaces.ActionCacheType, "remote")
 	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)

@@ -15,10 +15,8 @@ go_library(
         "//enterprise/server/util/redisutil",
         "//proto:distributed_cache_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/remote_cache/digest",
         "//server/resources",
         "//server/util/background",
         "//server/util/consistent_hash",
@@ -43,7 +41,6 @@ go_test(
     ],
     deps = [
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/backends/memory_cache",
         "//server/environment",
         "//server/interfaces",

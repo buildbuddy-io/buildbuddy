@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -797,7 +796,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 	return user.GetGroupID(), defaultPartitionID, nil
 }
 
-func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err
@@ -805,9 +804,9 @@ func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 
 	newIsolation := &rfpb.Isolation{}
 	switch cacheType {
-	case resource.CacheType_CAS:
+	case interfaces.CASCacheType:
 		newIsolation.CacheType = rfpb.Isolation_CAS_CACHE
-	case resource.CacheType_AC:
+	case interfaces.ActionCacheType:
 		newIsolation.CacheType = rfpb.Isolation_ACTION_CACHE
 	default:
 		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)

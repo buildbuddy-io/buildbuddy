@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/cache/config",
         "//server/environment",
         "//server/interfaces",
@@ -27,7 +26,6 @@ go_test(
     deps = [
         ":memory_cache",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",

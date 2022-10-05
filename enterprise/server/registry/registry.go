@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -104,7 +103,7 @@ func (r *registry) getCachedManifest(ctx context.Context, digest string) (*rgpb.
 		return nil, status.UnknownErrorf("could not unmarshal manifest proto %s: %s", digest, err)
 	}
 
-	c, err := r.cache.WithIsolation(ctx, resource.CacheType_CAS, registryInstanceName)
+	c, err := r.cache.WithIsolation(ctx, interfaces.CASCacheType, registryInstanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +208,7 @@ func blobResourceName(h v1.Hash) *digest.ResourceName {
 func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 	rn := blobResourceName(h)
 
-	c, err := r.cache.WithIsolation(ctx, resource.CacheType_CAS, registryInstanceName)
+	c, err := r.cache.WithIsolation(ctx, interfaces.CASCacheType, registryInstanceName)
 	if err != nil {
 		return 0, err
 	}
@@ -277,7 +276,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		}()
 	}
 	rn := blobResourceName(h)
-	c, err := r.cache.WithIsolation(ctx, resource.CacheType_CAS, registryInstanceName)
+	c, err := r.cache.WithIsolation(ctx, interfaces.CASCacheType, registryInstanceName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not get cache: %s", err), http.StatusInternalServerError)
 		return
