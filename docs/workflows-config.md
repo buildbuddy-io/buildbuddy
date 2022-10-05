@@ -94,7 +94,7 @@ inspecting the command line details in the invocation page (look for
 BuildBuddy remote cache and remote execution (RBE) are not enabled by
 default for workflows, and require additional configuration. The
 configuration steps are the same as when running Bazel locally. See the
-**Setup** page in the BuildBuddy UI.
+**Quickstart** page in the BuildBuddy UI.
 
 :::
 

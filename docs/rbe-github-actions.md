@@ -69,7 +69,7 @@ build:ci --bes_backend=grpcs://remote.buildbuddy.io
 
 Finally, you'll need to create a GitHub Secret containing your BuildBuddy API Key.
 
-You can get your BuildBuddy API key by logging in to your [BuildBuddy account](https://app.buildbuddy.io) and visiting your [Setup instructions](https://app.buildbuddy.io/docs/setup/).
+You can get your BuildBuddy API key by logging in to your [BuildBuddy account](https://app.buildbuddy.io) and visiting your [Quickstart page](https://app.buildbuddy.io/docs/setup/).
 
 Add your BuildBuddy API Key as GitHub Secret named `BUILDBUDDY_ORG_API_KEY`. For more information on setting up Github Secrets, [click here](https://docs.github.com/en/actions/configuring-and-managing-workflows/creating-and-storing-encrypted-secrets).
 
