@@ -166,6 +166,10 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 }
 
 func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	return mc.withIsolation(ctx, cacheType, remoteInstanceName)
+}
+
+func (mc *MigrationCache) withIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (*MigrationCache, error) {
 	srcCache, err := mc.src.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, errors.WithMessage(err, "cannot get src cache with isolation")
@@ -727,19 +731,13 @@ func (mc *MigrationCache) logCopyChanFullInBackground() {
 func (mc *MigrationCache) copy(c *copyData) {
 	defer c.ctxCancel()
 
-	cache, err := mc.WithIsolation(c.ctx, c.cacheType, c.remoteInstanceName)
+	cache, err := mc.withIsolation(c.ctx, c.cacheType, c.remoteInstanceName)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not call WithIsolation for type %v instance %s: %s", c.cacheType, c.remoteInstanceName, err)
 		return
 	}
 
-	migrationCache, ok := cache.(*MigrationCache)
-	if !ok {
-		log.Warningf("Migration copy err: Could not cast cache with isolation to migration cache: %s", err)
-		return
-	}
-
-	srcReader, err := migrationCache.src.Reader(c.ctx, c.d, 0, 0)
+	srcReader, err := cache.src.Reader(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
@@ -748,7 +746,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer srcReader.Close()
 
-	destWriter, err := migrationCache.dest.Writer(c.ctx, c.d)
+	destWriter, err := cache.dest.Writer(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return
