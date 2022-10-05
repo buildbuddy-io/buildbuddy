@@ -410,7 +410,11 @@ export default class InvocationModel {
   }
 
   getAllPatterns(patternLimit?: number) {
-    let patterns = this.expanded?.id?.pattern?.pattern || this.aborted?.id?.pattern?.pattern || [];
+    let patterns =
+      this.invocations.find(() => true).pattern ||
+      this.expanded?.id?.pattern?.pattern ||
+      this.aborted?.id?.pattern?.pattern ||
+      [];
     if (patternLimit && patterns.length > patternLimit) {
       return `${patterns.slice(0, patternLimit).join(", ")} and ${patterns.length - 3} more`;
     }

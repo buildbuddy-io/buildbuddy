@@ -174,7 +174,47 @@ build --workspace_status_command=$(pwd)/workspace_status.sh
 
 Then you'll need to add a `workspace_status.sh` file to the root of your workspace that prints `HOST yourhost`.
 
-### Custom Links
+## Pattern
+
+By default a build's pattern is determined by bazel command that is run.
+
+If the bazel command is:
+
+```
+bazel build //...
+```
+
+The pattern would be:
+
+```
+//...
+```
+
+You can override this using build metadata or workspace info.
+
+This is generally only needed for advanced use cases where you want to display a more user friendly or information rich pattern in the UI than was originally used on the command line.
+
+### Build metadata
+
+You can provide a custom pattern with Bazel's build_metadata flag with the key `PATTERN`. You can do this by adding the flag to your bazel invocations:
+
+```
+--build_metadata=PATTERN=yourpattern
+```
+
+### Workspace info
+
+The second method is a little more involved, but allows you to populate multiple pieces of metadata at once.
+
+First, you'll need to point your `workspace_status_command` flag at a `workspace_status.sh` file at the root of your workspace. You can do this by adding the following line to your `.bazelrc`.
+
+```
+build --workspace_status_command=$(pwd)/workspace_status.sh
+```
+
+Then you'll need to add a `workspace_status.sh` file to the root of your workspace that prints `PATTERN yourpattern`.
+
+## Custom Links
 
 You can add custom links to the BuildBuddy overview page using the `BUILDBUDDY_LINKS` build metadata flag. These links must be comma separated, and in the form [link text](https://linkurl.com). Urls must begin with either `http://` or `https://`.
 
