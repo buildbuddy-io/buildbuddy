@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -115,7 +114,7 @@ func TestReaderMaxOffset(t *testing.T) {
 		CacheType:          dcpb.Isolation_CAS_CACHE,
 	}
 	// Set the random bytes in the cache (with a prefix)
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, instanceName)
+	cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, instanceName)
 	require.NoError(t, err)
 
 	err = cache.Set(ctx, d, buf.Bytes())
@@ -141,7 +140,7 @@ type snitchCache struct {
 	writeCount map[string]int
 }
 
-func (s *snitchCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (s *snitchCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	c, err := s.Cache.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, err
@@ -307,7 +306,7 @@ func TestReader(t *testing.T) {
 		readSeeker.Seek(0, 0)
 
 		// Set the random bytes in the cache (with a prefix)
-		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
+		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 		require.NoError(t, err)
 		err = cache.Set(ctx, d, buf.Bytes())
 		if err != nil {
@@ -406,7 +405,7 @@ func TestWriter(t *testing.T) {
 
 		// Read the bytes back directly from the cache and check that
 		// they match..
-		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
+		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 		require.NoError(t, err)
 		r, err := cache.Reader(ctx, d, 0, 0)
 		if err != nil {
@@ -509,7 +508,7 @@ func TestContains(t *testing.T) {
 		}
 
 		// Set the random bytes in the cache (with a prefix)
-		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
+		cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 		require.NoError(t, err)
 		err = cache.Set(ctx, d, buf.Bytes())
 		if err != nil {
@@ -660,7 +659,7 @@ func TestFindMissing(t *testing.T) {
 			}
 			existingDigests = append(existingDigests, d)
 			// Set the random bytes in the cache (with a prefix)
-			cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
+			cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 			require.NoError(t, err)
 			err = cache.Set(ctx, d, buf.Bytes())
 			if err != nil {
@@ -719,7 +718,7 @@ func TestGetMulti(t *testing.T) {
 			}
 			digests = append(digests, d)
 			// Set the random bytes in the cache (with a prefix)
-			cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
+			cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 			require.NoError(t, err)
 			err = cache.Set(ctx, d, buf.Bytes())
 			if err != nil {
@@ -763,7 +762,7 @@ func TestEmptyRead(t *testing.T) {
 		Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		SizeBytes: 0,
 	}
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
+	cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 	require.NoError(t, err)
 	err = cache.Set(ctx, d, []byte{})
 	if err != nil {
@@ -803,7 +802,7 @@ func TestDelete(t *testing.T) {
 
 	// Write to the cache (with a prefix)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
+	cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -842,7 +841,7 @@ func TestMetadata(t *testing.T) {
 
 	remoteInstanceName := "remote/instance"
 	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
+	cache, err := te.GetCache().WithIsolation(ctx, interfaces.CASCacheType, remoteInstanceName)
 
 	// Write to the cache
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)

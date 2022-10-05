@@ -9,10 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -156,14 +154,14 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	return client, nil
 }
 
-func ProtoCacheTypeToCacheType(cacheType dcpb.Isolation_CacheType) (resource.CacheType, error) {
+func ProtoCacheTypeToCacheType(cacheType dcpb.Isolation_CacheType) (interfaces.CacheType, error) {
 	switch cacheType {
 	case dcpb.Isolation_CAS_CACHE:
-		return resource.CacheType_CAS, nil
+		return interfaces.CASCacheType, nil
 	case dcpb.Isolation_ACTION_CACHE:
-		return resource.CacheType_AC, nil
+		return interfaces.ActionCacheType, nil
 	default:
-		return resource.CacheType_UNKNOWN_CACHE_TYPE, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
+		return interfaces.UnknownCacheType, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
 	}
 }
 
@@ -240,9 +238,9 @@ func IsolationToString(isolation *dcpb.Isolation) string {
 	ct, err := ProtoCacheTypeToCacheType(isolation.GetCacheType())
 	if err != nil {
 		alert.UnexpectedEvent("unknown_cache_type", "isolation: %s", isolation)
-		ct = resource.CacheType_UNKNOWN_CACHE_TYPE
+		ct = interfaces.UnknownCacheType
 	}
-	rep := filepath.Join(isolation.GetRemoteInstanceName(), digest.CacheTypeToPrefix(ct))
+	rep := filepath.Join(isolation.GetRemoteInstanceName(), ct.Prefix())
 	if !strings.HasSuffix(rep, "/") {
 		rep += "/"
 	}

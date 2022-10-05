@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/cache/config",
         "//server/environment",
         "//server/interfaces",
@@ -36,7 +35,6 @@ go_test(
         ":disk_cache",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",

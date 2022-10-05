@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//proto:api_key_go_proto",
         "//proto:eventlog_go_proto",
-        "//proto:resource_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/api/common",
         "//server/api/config",
@@ -40,7 +39,6 @@ go_test(
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:publish_build_event_go_proto",
-        "//proto:resource_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/interfaces",

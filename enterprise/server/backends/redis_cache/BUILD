@@ -13,7 +13,6 @@ go_library(
         "//enterprise/server/composable_cache",
         "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",

@@ -30,7 +30,7 @@ go_test(
         ":dirtools",
         "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
+        "//server/interfaces",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/digest",
         "//server/testutil/testenv",
