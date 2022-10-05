@@ -29,6 +29,7 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 		redisClient := redisutil.NewSimpleClient(opts.RedisTarget, healthChecker, "cache_redis")
 		env.SetRemoteExecutionRedisClient(redisClient)
 		env.SetRemoteExecutionRedisPubSubClient(redisClient)
+		env.SetDefaultRedisClient(redisClient)
 		log.Info("Using redis cache")
 		if flag.Lookup("cache.redis.max_value_size_bytes") != nil {
 			flags.Set(t, "cache.redis.max_value_size_bytes", 500_000_000)
