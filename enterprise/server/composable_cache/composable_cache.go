@@ -214,7 +214,9 @@ func (d *doubleWriter) Write(p []byte) (int, error) {
 		return n, err
 	}
 	if n > 0 {
-		d.outer.Write(p)
+		if n, err := d.outer.Write(p); err != nil {
+			return n, err
+		}
 	}
 	return n, err
 }
