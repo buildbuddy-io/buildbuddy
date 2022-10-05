@@ -192,6 +192,8 @@ The pattern would be:
 
 You can override this using build metadata or workspace info.
 
+This is generally only needed for advanced use cases where you want to display a more user friendly or information rich pattern in the UI than was originally used on the command line.
+
 ### Build metadata
 
 You can provide a custom pattern with Bazel's build_metadata flag with the key `PATTERN`. You can do this by adding the flag to your bazel invocations:
