@@ -8,7 +8,7 @@
 ########################
 ## Get your API key by:
 ## 1) Logging in or creating an account here: https://app.buildbuddy.io/
-## 2) Following the setup instructions here: https://app.buildbuddy.io/docs/setup/
+## 2) Following the Quickstart guide here: https://app.buildbuddy.io/docs/setup/
 ## 3) Update and uncomment the line below accordingly
 #--remote_header=x-buildbuddy-api-key=YOUR_API_KEY
 

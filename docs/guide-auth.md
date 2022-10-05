@@ -10,7 +10,7 @@ BuildBuddy uses API keys to authenticate Bazel invocations. In order to authenti
 
 An API key should be passed along with all gRPCs requests that you'd like to be associated with your BuildBuddy organization. This key can be used by anyone in your organization, as it ties builds to your org - not your individual user.
 
-You can find your API key on your [setup instructions](https://app.buildbuddy.io/docs/setup/) once you've [created an account](https://app.buildbuddy.io/) and logged in. You can also create multiple API keys for use in different contexts.
+You can find your API key on your [Quickstart page](https://app.buildbuddy.io/docs/setup/) once you've [created an account](https://app.buildbuddy.io/) and logged in. You can also create multiple API keys for use in different contexts.
 
 Your API key can be added directly to your `.bazelrc` as long as no one outside of your organization has access to your source code.
 

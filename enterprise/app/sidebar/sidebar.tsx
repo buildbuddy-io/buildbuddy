@@ -1,7 +1,6 @@
 import {
   BookOpen,
   Gauge,
-  Settings,
   Cloud,
   PlayCircle,
   Code,
@@ -20,6 +19,7 @@ import {
   LogOut,
   PlusCircle,
   Sliders,
+  Terminal,
 } from "lucide-react";
 import React from "react";
 import authService, { User } from "../../../app/auth/auth_service";
@@ -102,7 +102,11 @@ export default class SidebarComponent extends React.Component<Props, State> {
   }
 
   isSetupSelected() {
-    return this.props.path.startsWith("/docs/setup/");
+    return this.props.path.startsWith("/docs/");
+  }
+
+  isSettingsSelected() {
+    return this.props.path.startsWith("/settings/");
   }
 
   isUsageSelected() {
@@ -164,8 +168,13 @@ export default class SidebarComponent extends React.Component<Props, State> {
             </SidebarLink>
           )}
           <SidebarLink selected={this.isSetupSelected()} href={Path.setupPath}>
-            <Settings className="icon" /> Setup
+            <Terminal className="icon" /> Quickstart
           </SidebarLink>
+
+          <SidebarLink selected={this.isSettingsSelected()} href={Path.settingsPath}>
+            <Sliders className="icon" /> Settings
+          </SidebarLink>
+
           {router.canAccessUsagePage(this.props.user) && (
             <SidebarLink selected={this.isUsageSelected()} href={Path.usagePath}>
               <Gauge className="icon" /> Usage
@@ -208,10 +217,6 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <hr />
               <div className="sidebar-item sidebar-logout-item" onClick={() => authService.logout()}>
                 <LogOut className="icon" /> Logout
-              </div>
-              <div className="sidebar-item" onClick={() => router.navigateToSettings()}>
-                <Sliders className="icon" />
-                Settings
               </div>
             </div>
           )}
