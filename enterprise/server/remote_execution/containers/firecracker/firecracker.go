@@ -219,6 +219,9 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 	if _, err := io.Copy(writer, f); err != nil {
 		return "", err
 	}
+	if err := writer.Commit(); err != nil {
+		return "", err
+	}
 	if err := writer.Close(); err != nil {
 		return "", err
 	}
