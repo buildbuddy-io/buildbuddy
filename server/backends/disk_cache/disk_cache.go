@@ -1100,6 +1100,7 @@ func (p *partition) set(ctx context.Context, cacheType resource.CacheType, remot
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lruAdd(record)
+	metrics.DiskCacheAddedFileSizeBytes.Observe(float64(n))
 	return err
 }
 
@@ -1190,6 +1191,7 @@ func (p *partition) writer(ctx context.Context, cacheType resource.CacheType, re
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		p.lruAdd(record)
+		metrics.DiskCacheAddedFileSizeBytes.Observe(float64(totalBytesWritten))
 		return nil
 	}
 	return cwc, nil
