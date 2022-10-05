@@ -105,6 +105,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
     return this.props.path.startsWith("/docs/setup/");
   }
 
+  isSettingsSelected() {
+    return this.props.path.startsWith("/settings");
+  }
+
   isUsageSelected() {
     return this.props.path.startsWith("/usage/");
   }
@@ -166,6 +170,11 @@ export default class SidebarComponent extends React.Component<Props, State> {
           <SidebarLink selected={this.isSetupSelected()} href={Path.setupPath}>
             <Settings className="icon" /> Setup
           </SidebarLink>
+
+          <SidebarLink selected={this.isSettingsSelected()} href={Path.settingsPath}>
+            <Sliders className="icon" /> Settings
+          </SidebarLink>
+
           {router.canAccessUsagePage(this.props.user) && (
             <SidebarLink selected={this.isUsageSelected()} href={Path.usagePath}>
               <Gauge className="icon" /> Usage
@@ -208,10 +217,6 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <hr />
               <div className="sidebar-item sidebar-logout-item" onClick={() => authService.logout()}>
                 <LogOut className="icon" /> Logout
-              </div>
-              <div className="sidebar-item" onClick={() => router.navigateToSettings()}>
-                <Sliders className="icon" />
-                Settings
               </div>
             </div>
           )}
