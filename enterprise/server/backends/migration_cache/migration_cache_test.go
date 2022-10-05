@@ -502,6 +502,74 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 	require.True(t, time.Since(start) >= 1*time.Second)
 }
 
+func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1000)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize: 10,
+		MaxCopiesPerSec:    1,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	// Save data to different isolations in src cache
+	instanceName1 := "cat"
+	srcIsolation1, err := srcCache.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
+	require.NoError(t, err)
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = srcIsolation1.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	instanceName2 := "cow"
+	srcIsolation2, err := srcCache.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
+	require.NoError(t, err)
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	err = srcIsolation2.Set(ctx, d2, buf2)
+	require.NoError(t, err)
+
+	// Call get so the digests are copied to the destination cache
+	mcIsolation2, err := mc.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
+	require.NoError(t, err)
+	data, err := mcIsolation2.Get(ctx, d2)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf2, data))
+
+	mcIsolation1, err := mc.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
+	require.NoError(t, err)
+	data, err = mcIsolation1.Get(ctx, d)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data))
+
+	// Verify data was copied to correct isolation in destination cache
+	destIsolation1, err := destCache.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
+	require.NoError(t, err)
+
+	destIsolation2, err := destCache.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
+	require.NoError(t, err)
+
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		waitForCopy(t, ctx, destIsolation1, d)
+		return nil
+	})
+	eg.Go(func() error {
+		waitForCopy(t, ctx, destIsolation2, d2)
+		return nil
+	})
+	eg.Wait()
+}
+
 func TestContains(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
