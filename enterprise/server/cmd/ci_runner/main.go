@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -1272,8 +1273,8 @@ func (ws *workspace) setup(ctx context.Context) error {
 		if err := os.Chdir(".."); err != nil {
 			return status.WrapError(err, "cd")
 		}
-		if err := os.RemoveAll(repoDirName); err != nil {
-			return status.WrapErrorf(err, "rm -r %q", repoDirName)
+		if err := disk.ForceRemove(ctx, repoDirName); err != nil {
+			return status.WrapErrorf(err, "rm -rf %q", repoDirName)
 		}
 	}
 

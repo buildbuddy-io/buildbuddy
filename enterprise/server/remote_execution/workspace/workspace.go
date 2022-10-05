@@ -275,21 +275,17 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	return txInfo, nil
 }
 
-func (ws *Workspace) Remove() error {
+func (ws *Workspace) Remove(ctx context.Context) error {
 	ws.mu.Lock()
 	ws.removing = true
 	// No need to keep the lock held while removing; other operations will
 	// immediately fail since we've set the removing bit.
 	ws.mu.Unlock()
 
-	if err := os.RemoveAll(ws.rootDir); err != nil {
-		// Sometimes removal fails if badly-behaved actions write their
-		// directories read-only. Retry with force-removal in this case.
-		log.Debugf("Failed to remove %s - attempting force-removal.", ws.rootDir)
-		if err := forceRemove(ws.rootDir); err != nil {
-			return status.InternalErrorf("failed to force-remove workspace directory %q: %s", ws.rootDir, err)
-		}
-		return nil
+	// Sometimes removal fails if badly-behaved actions write their
+	// directories read-only. Use force-removal to handle these cases.
+	if err := disk.ForceRemove(ctx, ws.rootDir); err != nil {
+		return status.InternalErrorf("failed to force-remove workspace: %s", err)
 	}
 	return nil
 }
@@ -358,28 +354,6 @@ func (ws *Workspace) Clean() error {
 		return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 	}
 	return nil
-}
-
-// forceRemove attempts to remove a directory by first making the entire tree
-// writable. Before calling this function, it's recommended to first try
-// os.RemoveAll, since this function is expensive (it incurs a system call for
-// each permissions change).
-func forceRemove(path string) error {
-	err := filepath.WalkDir(path, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			// In order to remove dir entries and make sure we can further
-			// recurse into the dir, we need all bits set (RWX).
-			return os.Chmod(path, 0770)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return os.RemoveAll(path)
 }
 
 func removeChildren(dirPath string) error {

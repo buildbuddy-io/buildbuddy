@@ -97,6 +97,37 @@ func DeleteFile(ctx context.Context, fullPath string) error {
 	return os.Remove(fullPath)
 }
 
+// ForceRemove attempts to delete a directory using os.RemoveAll. If that fails,
+// it will attempt to traverse the directory and update permissions so that the
+// directory can be removed, then retry os.RemoveAll. This fallback approach is
+// used for performance reasons, since recursive chmod can be slow for very
+// large directories.
+func ForceRemove(ctx context.Context, path string) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	err := os.RemoveAll(path)
+	if err == nil {
+		return nil
+	}
+	log.Debugf("Failed to remove %q: %s. Attempting to force-remove by changing permissions.", path, err)
+	err = filepath.WalkDir(path, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			// In order to remove dir entries and make sure we can further
+			// recurse into the dir, we need all bits set (RWX).
+			return os.Chmod(path, 0770)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(path)
+}
+
 func FileExists(ctx context.Context, fullPath string) (bool, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
