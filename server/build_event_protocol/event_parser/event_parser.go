@@ -315,6 +315,8 @@ func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.Works
 			invocation.Host = item.Value
 		case "HOST":
 			invocation.Host = item.Value
+		case "PATTERN":
+			invocation.Pattern = strings.Split(item.Value, " ")
 		case "ROLE":
 			invocation.Role = item.Value
 		case "REPO_URL":
@@ -342,6 +344,9 @@ func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inp
 	}
 	if host, ok := metadata["HOST"]; ok && host != "" {
 		invocation.Host = host
+	}
+	if pattern, ok := metadata["PATTERN"]; ok && pattern != "" {
+		invocation.Pattern = strings.Split(pattern, " ")
 	}
 	if role, ok := metadata["ROLE"]; ok && role != "" {
 		invocation.Role = role
