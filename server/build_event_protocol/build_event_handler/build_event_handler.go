@@ -296,6 +296,8 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		if err != nil {
 			log.Errorf("Failed to flush stats for invocation %s to clickhouse: %s", ti.InvocationID, err)
 		}
+	} else {
+		log.Infof("skipped writing stats for invocation %s to clickhouse, invocationStatus = %s", ti.InvocationID, task.invocationStatus)
 	}
 	// Cleanup regardless of whether the stats are flushed successfully to
 	// the DB (since we won't retry the flush and we don't need these stats
