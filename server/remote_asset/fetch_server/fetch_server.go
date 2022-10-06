@@ -180,6 +180,11 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 
 	return &rapb.FetchBlobResponse{
 		Status: &statuspb.Status{
+			// Note: returning NotFound here because the other error codes in
+			// the proto documentation for FetchBlobResponse.status don't really
+			// apply when we fail to fetch. (PermissionDenied and Aborted might
+			// make sense in some cases, but it's unclear at the moment whether
+			// there is any benefit to using those.)
 			Code:    int32(gcodes.NotFound),
 			Message: status.Message(fetchErr),
 		},
