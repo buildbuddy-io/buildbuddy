@@ -132,43 +132,17 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 
 	// Keep track of the last fetch error so that if we fail to fetch, we at
 	// least have something we can return to the client.
-	var fetchErr error
-	setFetchErr := func(err error) {
-		fetchErr = err
-		log.Warning(status.Message(err))
-	}
+	var lastFetchErr error
 
 	for _, uri := range req.GetUris() {
 		_, err := url.Parse(uri)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
 		}
-		rsp, err := httpClient.Get(uri)
+		blobDigest, err := mirrorToCache(ctx, cache, httpClient, uri, expectedSHA256)
 		if err != nil {
-			setFetchErr(status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err))
-			continue
-		}
-		defer rsp.Body.Close()
-		if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
-			setFetchErr(status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, err))
-			continue
-		}
-		data, err := io.ReadAll(rsp.Body)
-		if err != nil {
-			setFetchErr(status.UnavailableErrorf("failed to read response body from %q: %s", uri, err))
-			continue
-		}
-		blobDigest, err := digest.Compute(bytes.NewReader(data))
-		if err != nil {
-			setFetchErr(status.InternalErrorf("failed to compute digest: %s", err))
-			continue
-		}
-		if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
-			setFetchErr(status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256))
-			continue
-		}
-		if err := cache.Set(ctx, blobDigest, data); err != nil {
-			setFetchErr(status.InternalErrorf("failed to add object to cache: %s", err))
+			lastFetchErr = err
+			log.Warningf("Failed to mirror %q to cache: %s", uri, err)
 			continue
 		}
 		return &rapb.FetchBlobResponse{
@@ -186,11 +160,41 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			// make sense in some cases, but it's unclear at the moment whether
 			// there is any benefit to using those.)
 			Code:    int32(gcodes.NotFound),
-			Message: status.Message(fetchErr),
+			Message: status.Message(lastFetchErr),
 		},
 	}, nil
 }
 
 func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirectoryRequest) (*rapb.FetchDirectoryResponse, error) {
 	return nil, status.UnimplementedError("FetchDirectory is not yet implemented")
+}
+
+// mirrorToCache uploads the contents at the given URI to the given cache,
+// returning the digest. The fetched contents are checked against the given
+// expectedSHA256 (if non-empty), and if there is a mismatch then an error is
+// returned.
+func mirrorToCache(ctx context.Context, cache interfaces.Cache, httpClient *http.Client, uri, expectedSHA256 string) (*repb.Digest, error) {
+	rsp, err := httpClient.Get(uri)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
+		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, err)
+	}
+	data, err := io.ReadAll(rsp.Body)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to read response body from %q: %s", uri, err)
+	}
+	blobDigest, err := digest.Compute(bytes.NewReader(data))
+	if err != nil {
+		return nil, status.InternalErrorf("failed to compute digest: %s", err)
+	}
+	if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
+		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256)
+	}
+	if err := cache.Set(ctx, blobDigest, data); err != nil {
+		return nil, status.InternalErrorf("failed to add object to cache: %s", err)
+	}
+	return blobDigest, nil
 }
