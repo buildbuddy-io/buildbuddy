@@ -942,7 +942,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
-	log.Infof("Started workflow execution (WFID: %q, Repo: %q, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, workflowAction.Name, op.GetName())
+	log.Infof("Started workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
 	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
 		metrics.WebhookEventName: wd.EventName,
 	}).Inc()
