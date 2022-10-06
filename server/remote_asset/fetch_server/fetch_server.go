@@ -105,6 +105,8 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		return nil, err
 	}
 
+	var expectedSHA256 string
+
 	for _, qualifier := range req.GetQualifiers() {
 		if qualifier.GetName() == checksumQualifier && strings.HasPrefix(qualifier.GetValue(), sha256Prefix) {
 			b64sha256 := strings.TrimPrefix(qualifier.GetValue(), sha256Prefix)
@@ -116,6 +118,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				Hash:      fmt.Sprintf("%x", sha256),
 				SizeBytes: int64(-1),
 			}
+			expectedSHA256 = blobDigest.Hash
 			if data, err := cache.Get(ctx, blobDigest); err == nil {
 				blobDigest.SizeBytes = int64(len(data)) // set the actual correct size.
 				return &rapb.FetchBlobResponse{
@@ -126,28 +129,46 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}
 	}
 	httpClient := timeoutHTTPClient(ctx, req.GetTimeout())
+
+	// Keep track of the last fetch error so that if we fail to fetch, we at
+	// least have something we can return to the client.
+	var fetchErr error
+	setFetchErr := func(err error) {
+		fetchErr = err
+		log.Warning(status.Message(err))
+	}
+
 	for _, uri := range req.GetUris() {
 		_, err := url.Parse(uri)
 		if err != nil {
-			return nil, status.InvalidArgumentErrorf("Unparsable URI: %q", uri)
+			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
 		}
 		rsp, err := httpClient.Get(uri)
 		if err != nil {
-			return nil, status.AbortedErrorf("Error fetching URI  %q: %s", uri, err.Error())
+			setFetchErr(status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err))
+			continue
+		}
+		defer rsp.Body.Close()
+		if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
+			setFetchErr(status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, err))
+			continue
 		}
 		data, err := io.ReadAll(rsp.Body)
 		if err != nil {
-			log.Warningf("Error reading object bytes: %s", err.Error())
+			setFetchErr(status.UnavailableErrorf("failed to read response body from %q: %s", uri, err))
 			continue
 		}
-		reader := bytes.NewReader(data)
-		blobDigest, err := digest.Compute(reader)
+		blobDigest, err := digest.Compute(bytes.NewReader(data))
 		if err != nil {
-			log.Warningf("Error computing object digest: %s", err.Error())
+			setFetchErr(status.InternalErrorf("failed to compute digest: %s", err))
+			continue
+		}
+		if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
+			setFetchErr(status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256))
 			continue
 		}
 		if err := cache.Set(ctx, blobDigest, data); err != nil {
-			log.Warningf("Error inserting object into cache: %s", err.Error())
+			setFetchErr(status.InternalErrorf("failed to add object to cache: %s", err))
 			continue
 		}
 		return &rapb.FetchBlobResponse{
@@ -158,7 +179,10 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 
 	return &rapb.FetchBlobResponse{
-		Status: &statuspb.Status{Code: int32(gcodes.NotFound)},
+		Status: &statuspb.Status{
+			Code:    int32(gcodes.NotFound),
+			Message: status.Message(fetchErr),
+		},
 	}, nil
 }
 
