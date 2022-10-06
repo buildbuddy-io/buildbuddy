@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
@@ -661,6 +662,10 @@ func TestReplicaSplitLease(t *testing.T) {
 		entries := []dbsm.Entry{entry}
 		_, err := repl.Update(entries)
 		require.NoError(t, err)
+
+		// Give expiration timer a chance to fire.
+		time.Sleep(25 * time.Millisecond)
+		require.False(t, repl.IsSplitting(), "replica split should have been aborted")
 	}
 
 	// A direct write should succeed immediately without error.

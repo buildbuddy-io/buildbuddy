@@ -1227,7 +1227,7 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
 			return err
 		}
-		return batch.Commit(&pebble.WriteOptions{Sync: true})
+		return batch.Commit(pebble.NoSync)
 	}
 	return wc, nil
 }
@@ -1373,7 +1373,6 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 
 	lastEntry := entries[len(entries)-1]
 	appliedIndex := uint64ToBytes(lastEntry.Index)
-	syncWriteOptions := &pebble.WriteOptions{Sync: true}
 
 	if sm.lastAppliedIndex >= lastEntry.Index {
 		return nil, status.FailedPreconditionError("lastApplied not moving forward")
@@ -1385,11 +1384,11 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
 			return nil, err
 		}
-		if err := wb.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+		if err := wb.Commit(pebble.NoSync); err != nil {
 			return nil, err
 		}
 	} else {
-		if err := sm.db.Set(constants.LastAppliedIndexKey, appliedIndex, syncWriteOptions); err != nil {
+		if err := sm.db.Set(constants.LastAppliedIndexKey, appliedIndex, pebble.NoSync); err != nil {
 			return nil, err
 		}
 	}
@@ -1457,7 +1456,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 // Sync returns an error when there is unrecoverable error for synchronizing
 // the in-core state.
 func (sm *Replica) Sync() error {
-	return nil
+	return sm.db.LogData(nil, pebble.Sync)
 }
 
 // PrepareSnapshot prepares the snapshot to be concurrently captured and
