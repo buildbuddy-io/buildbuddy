@@ -258,10 +258,15 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	}
 	inv, err := r.lookupInvocation(ctx, ij)
 	if err != nil {
-		return status.InternalErrorf("failed to flush invocation stats to clickhouse: %s", err)
+		return status.InternalErrorf("failed to flush invocation stats to clickhouse for invocation id %q: %s", ij.id, err)
 	}
 
-	return r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
+	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
+	// Temporary logging for debugging clickhouse missing data.
+	if err == nil {
+		log.Infof("successfully wrote invocation %q to clickhouse", inv.InvocationID)
+	}
+	return err
 }
 
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
@@ -287,7 +292,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
-		log.Errorf("Failed to write cache stats for invocation to primaryDB: %s", err)
+		log.Errorf("Failed to write cache stats for invocation %q to primaryDB: %s", ti.InvocationID, err)
 	}
 
 	if task.invocationStatus == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
