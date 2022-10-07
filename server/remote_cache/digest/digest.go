@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/proto"
@@ -102,6 +103,18 @@ func (r *ResourceName) UploadString() (string, error) {
 		instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
 		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
 	), nil
+}
+
+func CacheTypeToPrefix(cacheType rspb.CacheType) string {
+	switch cacheType {
+	case rspb.CacheType_CAS:
+		return ""
+	case rspb.CacheType_AC:
+		return "ac"
+	default:
+		alert.UnexpectedEvent("unknown_cache_type", "type: %v", cacheType)
+		return "unknown"
+	}
 }
 
 // Key is a representation of a digest that can be used as a map key.

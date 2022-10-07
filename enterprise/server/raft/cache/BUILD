@@ -21,6 +21,7 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/gossip",
         "//server/interfaces",
@@ -44,6 +45,7 @@ go_test(
     deps = [
         ":cache",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",

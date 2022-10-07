@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -26,7 +27,7 @@ var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use t
 type MemoryCache struct {
 	l                  interfaces.LRU
 	lock               *sync.RWMutex
-	cacheType          interfaces.CacheType
+	cacheType          resource.CacheType
 	remoteInstanceName string
 }
 
@@ -65,7 +66,7 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 	return &MemoryCache{
 		l:                  l,
 		lock:               &sync.RWMutex{},
-		cacheType:          interfaces.CASCacheType,
+		cacheType:          resource.CacheType_CAS,
 		remoteInstanceName: "",
 	}, nil
 }
@@ -81,15 +82,15 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	}
 
 	var key string
-	if m.cacheType == interfaces.ActionCacheType {
-		key = filepath.Join(userPrefix, m.cacheType.Prefix(), m.remoteInstanceName, hash)
+	if m.cacheType == resource.CacheType_AC {
+		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(m.cacheType), m.remoteInstanceName, hash)
 	} else {
-		key = filepath.Join(userPrefix, m.cacheType.Prefix(), hash)
+		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(m.cacheType), hash)
 	}
 	return key, nil
 }
 
-func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	return &MemoryCache{
 		l:                  m.l,
 		lock:               m.lock,
