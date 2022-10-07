@@ -642,6 +642,8 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 	}
 
 	optimalSplitSize := totalSize / 2
+	minSplitSize := totalSize / 5
+	maxSplitSize := totalSize - minSplitSize
 
 	leftSize := int64(0)
 	var lastKey []byte
@@ -653,7 +655,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 		if canSplitKeys(lastKey, iter.Key()) {
 			splitDistance := absInt(optimalSplitSize - leftSize)
 			bestSplitDistance := absInt(optimalSplitSize - splitSize)
-			if splitDistance < bestSplitDistance {
+			if leftSize > minSplitSize && leftSize < maxSplitSize && splitDistance < bestSplitDistance {
 				if len(splitKey) != len(lastKey) {
 					splitKey = make([]byte, len(lastKey))
 				}
