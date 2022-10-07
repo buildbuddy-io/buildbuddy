@@ -174,11 +174,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := ToInvocationFromPrimaryDB(ti)
 	res := h.DB(ctx).Create(inv)
-
-	if res.RowsAffected == 0 && res.Error == nil {
-		return status.InternalErrorf("invocation %q not inserted into clickhouse.", ti.InvocationID)
-	}
-
 	return res.Error
 }
 
