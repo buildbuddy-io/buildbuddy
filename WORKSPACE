@@ -252,6 +252,12 @@ dockerfile_image(
     visibility = ["//visibility:public"],
 )
 
+dockerfile_image(
+    name = "run_script_image",
+    dockerfile = "//dockerfiles/run_script:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
 # BuildBuddy Toolchain
 
 http_archive(
