@@ -36,6 +36,12 @@ func TestDownloadTree(t *testing.T) {
 				Digest: fileADigest,
 			},
 		},
+		Symlinks: []*repb.SymlinkNode{
+			&repb.SymlinkNode{
+				Name:   "fileA.symlink",
+				Target: "./fileA.txt",
+			},
+		},
 	}
 
 	childDigest, err := digest.ComputeForMessage(childDir)
@@ -71,6 +77,10 @@ func TestDownloadTree(t *testing.T) {
 	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+
+	target, err := os.Readlink(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
+	assert.NoError(t, err, "should be able to read symlink")
+	assert.Equal(t, "./fileA.txt", target)
 }
 
 func TestDownloadTreeWithFileCache(t *testing.T) {
