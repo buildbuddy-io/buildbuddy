@@ -48,6 +48,7 @@ ts_library(
         "//proto:grpc_code_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:remote_execution_ts_proto",
+        "//proto:resource_ts_proto",
         "//proto:user_ts_proto",
         "//proto:workflow_ts_proto",
         "@npm//@types/dagre-d3",

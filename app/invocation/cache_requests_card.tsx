@@ -4,6 +4,7 @@ import InvocationModel from "./invocation_model";
 import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { resource } from "../../proto/resource_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
 import Link, { TextLink } from "../components/link/link";
@@ -374,6 +375,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private getCacheMetadata(scorecardResult: cache.ScoreCard.IResult) {
     const digest = scorecardResult.digest;
     const remoteInstanceName = this.props.model.getRemoteInstanceName();
+    const cacheType = toResourceCacheType(scorecardResult.cacheType);
 
     // Set an empty struct in the map so the FE doesn't fire duplicate requests while the first request is in progress
     // or if there is an invalid result
@@ -383,7 +385,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       .getCacheMetadata({
         resourceName: {
           digest: digest,
-          cacheType: scorecardResult.cacheType,
+          cacheType: cacheType,
           instanceName: remoteInstanceName,
         },
       })
@@ -710,4 +712,15 @@ function groupResults(
  */
 function looksLikeDigest(actionId: string) {
   return actionId.length === 64;
+}
+
+function toResourceCacheType(cacheType: cache.CacheType) {
+  switch(cacheType) {
+    case cache.CacheType.CAS:
+      return resource.CacheType.CAS;
+    case cache.CacheType.AC:
+      return resource.CacheType.AC;
+    default:
+      return resource.CacheType.UNKNOWN_CACHE_TYPE;
+  }
 }
