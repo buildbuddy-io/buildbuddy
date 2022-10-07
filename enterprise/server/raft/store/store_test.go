@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 	"github.com/stretchr/testify/require"
@@ -525,8 +526,17 @@ func TestPostFactoSplit(t *testing.T) {
 	closer.Close()
 	r1DB.Close()
 
-	r4, err := s4.GetReplica(2)
-	require.NoError(t, err)
+	var r4 *replica.Replica
+	for {
+		r4, err = s4.GetReplica(2)
+		if err == nil {
+			break
+		}
+		if !status.IsOutOfRangeError(err) {
+			require.FailNowf(t, "unexpected error", "unexpected error %s", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// Wait for raft replication to finish bringing the new node up to date.
 	waitStart := time.Now()

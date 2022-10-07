@@ -348,7 +348,10 @@ message RangeLeaseRecord {
 
 message ReplicaUsage {
   ReplicaDescriptor replica = 1;
-  int64 estimated_disk_bytes_used = 2;
+  uint64 range_id = 2;
+  uint64 generation = 3;
+
+  int64 estimated_disk_bytes_used = 4;
 }
 
 message NodeUsage {
