@@ -375,7 +375,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private getCacheMetadata(scorecardResult: cache.ScoreCard.IResult) {
     const digest = scorecardResult.digest;
     const remoteInstanceName = this.props.model.getRemoteInstanceName();
-    const ct = toResourceCacheType(scorecardResult.cacheType);
+    const cacheType = toResourceCacheType(scorecardResult.cacheType);
 
     // Set an empty struct in the map so the FE doesn't fire duplicate requests while the first request is in progress
     // or if there is an invalid result
@@ -385,7 +385,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       .getCacheMetadata({
         resourceName: {
           digest: digest,
-          cacheType: ct,
+          cacheType: cacheType,
           instanceName: remoteInstanceName,
         },
       })
@@ -714,8 +714,8 @@ function looksLikeDigest(actionId: string) {
   return actionId.length === 64;
 }
 
-function toResourceCacheType(ct: cache.CacheType) {
-  switch(ct) {
+function toResourceCacheType(cacheType: cache.CacheType) {
+  switch(cacheType) {
     case cache.CacheType.CAS:
       return resource.CacheType.CAS;
     case cache.CacheType.AC:
