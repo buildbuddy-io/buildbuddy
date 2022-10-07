@@ -689,12 +689,10 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	splitStart := []byte{constants.UnsplittableMaxByte}
 	// Disallow splitting the metarange, or any range before '\x04'.
 	if bytes.Compare(rightKey, splitStart) <= 0 {
-		log.Debugf("can't split between %q and %q, end in metarange", leftKey, rightKey)
 		return false
 	}
 
 	if bytes.Compare(leftKey, splitStart) <= 0 && bytes.Compare(rightKey, splitStart) > 0 {
-		log.Debugf("can't split between %q and %q, overlaps metarange", leftKey, rightKey)
 		return false
 	}
 
