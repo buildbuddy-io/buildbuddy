@@ -824,7 +824,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 			}
 		}
 		for _, symlinkNode := range dir.GetSymlinks() {
-			if err := os.Symlink(symlinkNode.GetTarget(), symlinkNode.GetName()); err != nil {
+			nodeAbsPath := filepath.Join(parentDir, symlinkNode.GetName())
+			if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
 				return err
 			}
 		}
