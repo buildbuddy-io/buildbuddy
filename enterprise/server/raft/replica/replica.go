@@ -143,6 +143,15 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 			NodeId:    sm.NodeID,
 		},
 	}
+	sm.rangeMu.RLock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.RUnlock()
+	if rd == nil {
+		return nil, status.FailedPreconditionError("range descriptor is not set")
+	}
+	ru.Generation = rd.GetGeneration()
+	ru.RangeId = rd.GetRangeId()
+
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
