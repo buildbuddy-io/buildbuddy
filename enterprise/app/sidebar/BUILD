@@ -10,7 +10,6 @@ ts_library(
     deps = [
         "//app/auth",
         "//app/capabilities",
-        "//app/components/link",
         "//app/router",
         "//app/service",
         "@npm//@types/react",
