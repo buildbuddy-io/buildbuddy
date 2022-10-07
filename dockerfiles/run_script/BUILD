@@ -1,6 +1,5 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_push")
 
-
 container_push(
     name = "push_run_script",
     format = "Docker",
