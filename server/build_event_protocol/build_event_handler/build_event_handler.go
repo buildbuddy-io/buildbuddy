@@ -263,7 +263,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 
 	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
 	// Temporary logging for debugging clickhouse missing data.
-	if err != nil {
+	if err == nil {
 		log.Infof("successfully write invocation %q to clickhouse", inv.InvocationID)
 	}
 	return err
