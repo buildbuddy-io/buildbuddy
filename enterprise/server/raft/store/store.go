@@ -897,6 +897,18 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, status.FailedPreconditionErrorf("Range %d not found on this node", req.GetHeader().GetRangeId())
 	}
 
+	// Before proceeding, see if this cluster has a split point. If it does not; we can
+	// exit early.
+	findSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
+	findSplitBatchRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
+	if err != nil {
+		return nil, status.InternalErrorf("could not find split point: %s", err)
+	}
+	_, err = findSplitBatchRsp.FindSplitPointResponse(0)
+	if err != nil {
+		return nil, status.InternalErrorf("could not find split point: %s", err)
+	}
+
 	// start a new cluster in parallel to the existing cluster
 	existingMembers, err := s.GetClusterMembership(ctx, clusterID)
 	if err != nil {
@@ -976,8 +988,8 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	}
 
 	// Find an appropriate split point.
-	findSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
-	findSplitBatchRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
+	findSplitReq = rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
+	findSplitBatchRsp, err = client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
 	if err != nil {
 		return nil, status.InternalErrorf("could not find split point: %s", err)
 	}
