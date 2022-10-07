@@ -934,11 +934,6 @@ ts_proto_library(
 )
 
 ts_proto_library(
-    name = "resource_ts_proto",
-    proto = ":resource_proto",
-)
-
-ts_proto_library(
     name = "target_ts_proto",
     proto = ":target_proto",
 )

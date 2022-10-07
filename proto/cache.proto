@@ -67,7 +67,7 @@ message GetCacheScoreCardRequest {
     google.protobuf.FieldMask mask = 1;
 
     // Return only results with this cache type.
-    resource.CacheType cache_type = 2;
+    CacheType cache_type = 2;
 
     // Return only results with this request type.
     RequestType request_type = 3;
@@ -132,6 +132,16 @@ message GetCacheScoreCardResponse {
   string next_page_token = 3;
 }
 
+// TODO(Maggie): Deprecate this enum - replace with the enum in resource.proto
+// CacheType represents the type of cache being written to.
+enum CacheType {
+  UNKNOWN_CACHE_TYPE = 0;
+  // Content addressable storage (CAS) cache.
+  CAS = 1;
+  // Action cache (AC).
+  AC = 2;
+}
+
 // RequestType represents the type of cache request being performed: read or
 // write.
 enum RequestType {
@@ -169,7 +179,7 @@ message ScoreCard {
     string action_id = 3;
 
     // The type of cache relevant to this result.
-    resource.CacheType cache_type = 4;
+    CacheType cache_type = 4;
 
     // The type of cache request described by this result (read or write).
     RequestType request_type = 5;
