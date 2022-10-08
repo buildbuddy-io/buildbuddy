@@ -289,7 +289,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		ActionMnemonic:       h.requestMetadata.ActionMnemonic,
 		TargetId:             h.requestMetadata.TargetId,
 		ActionId:             h.requestMetadata.ActionId,
-		CacheType:            cacheType,
+		CacheTypeDeprecated:  cacheType,
 		RequestType:          requestType,
 		Digest:               d,
 		Status:               &statuspb.Status{Code: int32(statusCode)},

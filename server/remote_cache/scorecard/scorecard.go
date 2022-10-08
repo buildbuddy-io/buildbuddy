@@ -105,7 +105,7 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 		switch path {
 		case "cache_type":
 			predicates = append(predicates, func(result *capb.ScoreCard_Result) bool {
-				return result.GetCacheType() == req.GetFilter().GetCacheType()
+				return result.GetCacheTypeDeprecated() == req.GetFilter().GetCacheType()
 			})
 		case "request_type":
 			predicates = append(predicates, func(result *capb.ScoreCard_Result) bool {

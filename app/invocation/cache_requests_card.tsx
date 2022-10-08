@@ -348,8 +348,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             )}
           </div>
         )}
-        <div className="cache-type-column" title={cacheTypeTitle(result.cacheType)}>
-          {renderCacheType(result.cacheType)}
+        <div className="cache-type-column" title={cacheTypeTitle(result.cacheTypeDeprecated)}>
+          {renderCacheType(result.cacheTypeDeprecated)}
         </div>
         <div className="status-column column-with-icon">{renderStatus(result)}</div>
         <div>
@@ -375,7 +375,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private getCacheMetadata(scorecardResult: cache.ScoreCard.IResult) {
     const digest = scorecardResult.digest;
     const remoteInstanceName = this.props.model.getRemoteInstanceName();
-    const cacheType = toResourceCacheType(scorecardResult.cacheType);
+    const cacheType = toResourceCacheType(scorecardResult.cacheTypeDeprecated);
 
     // Set an empty struct in the map so the FE doesn't fire duplicate requests while the first request is in progress
     // or if there is an invalid result
@@ -625,7 +625,7 @@ function renderCompressionSavings(result: cache.ScoreCard.IResult) {
 }
 
 function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
-  if (result.requestType === cache.RequestType.READ && result.cacheType === cache.CacheType.AC) {
+  if (result.requestType === cache.RequestType.READ && result.cacheTypeDeprecated === cache.CacheType.AC) {
     if (result.status.code !== 0 /*=OK*/) {
       return (
         <>

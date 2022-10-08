@@ -178,7 +178,7 @@ message ScoreCard {
     string action_id = 3;
 
     // The type of cache relevant to this result.
-    CacheType cache_type = 4;
+    CacheType cache_type_deprecated = 4;
 
     // The type of cache request described by this result (read or write).
     RequestType request_type = 5;
