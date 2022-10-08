@@ -897,6 +897,18 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, status.FailedPreconditionErrorf("Range %d not found on this node", req.GetHeader().GetRangeId())
 	}
 
+	// Before proceeding, see if this cluster has a split point. If it does not; we can
+	// exit early.
+	findSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
+	findSplitBatchRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
+	if err != nil {
+		return nil, status.InternalErrorf("could not find split point: %s", err)
+	}
+	findSplitRsp, err := findSplitBatchRsp.FindSplitPointResponse(0)
+	if err != nil {
+		return nil, status.InternalErrorf("could not find split point: %s", err)
+	}
+
 	// start a new cluster in parallel to the existing cluster
 	existingMembers, err := s.GetClusterMembership(ctx, clusterID)
 	if err != nil {
@@ -931,6 +943,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	// when the split lock is released, if the split succeeds successfully.
 	newLeft := proto.Clone(oldLeftNewGen).(*rfpb.RangeDescriptor)
 	newLeft.Generation += 1 // increment rd generation upon split
+	newLeft.Right = findSplitRsp.GetSplit()
 
 	// Initially, insert a range descriptor that does not contain replicas.
 	// This will keep the range from being marked as "active" in the store
@@ -940,7 +953,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	newRight := &rfpb.RangeDescriptor{
 		RangeId:    newIDs.rangeID,
 		Generation: newLeft.Generation + 1,
-		Left:       oldLeft.GetLeft(),
+		Left:       findSplitRsp.GetSplit(),
 		Right:      oldLeft.GetRight(),
 	}
 	newRightBuf, err := proto.Marshal(newRight)
@@ -974,20 +987,6 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, leaseReq); err != nil {
 		return nil, status.InternalErrorf("could not obtain split lease: %s", err)
 	}
-
-	// Find an appropriate split point.
-	findSplitReq := rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{})
-	findSplitBatchRsp, err := client.SyncProposeLocalBatch(ctx, s.nodeHost, clusterID, findSplitReq)
-	if err != nil {
-		return nil, status.InternalErrorf("could not find split point: %s", err)
-	}
-	findSplitRsp, err := findSplitBatchRsp.FindSplitPointResponse(0)
-	if err != nil {
-		return nil, status.InternalErrorf("could not find split point: %s", err)
-	}
-
-	oldRight := proto.Clone(newRight).(*rfpb.RangeDescriptor)
-	newLeft.Right = findSplitRsp.GetSplit()
 
 	// Copy stored data from the old range -> new range by creating a
 	// snapshot of the db, copying stored files, then loading the snapshot
@@ -1023,9 +1022,8 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	}
 
 	// As mentioned above, add the replicas to right range now that it is
-	// about to be activated, and set the Left/Right correctly.
-	newRight.Left = findSplitRsp.GetSplit()
-	newRight.Right = oldLeft.GetRight()
+	// about to be activated.
+	oldRight := proto.Clone(newRight).(*rfpb.RangeDescriptor)
 	newRight.Replicas = bootStrapInfo.Replicas
 	b := rbuilder.NewBatchBuilder()
 	if err := addLocalRangeEdits(oldRight, newRight, b); err != nil {
