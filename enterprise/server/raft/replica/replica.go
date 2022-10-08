@@ -624,21 +624,27 @@ func absInt(i int64) int64 {
 }
 
 func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
+	sm.rangeMu.Lock()
+	rangeDescriptor := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
 	iterOpts := &pebble.IterOptions{
-		LowerBound: keys.Key([]byte{constants.MinByte}),
-		UpperBound: keys.Key([]byte{constants.MaxByte}),
+		LowerBound: rangeDescriptor.GetLeft(),
+		UpperBound: rangeDescriptor.GetRight(),
 	}
 
 	iter := sm.db.NewIter(iterOpts)
 	defer iter.Close()
 
 	totalSize := int64(0)
+	totalRows := 0
 	for iter.First(); iter.Valid(); iter.Next() {
 		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
 		totalSize += sizeBytes
+		totalRows += 1
 	}
 
 	optimalSplitSize := totalSize / 2
@@ -646,21 +652,24 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 	maxSplitSize := totalSize - minSplitSize
 
 	leftSize := int64(0)
+	leftRows := 0
 	var lastKey []byte
 
 	splitSize := int64(0)
+	splitRows := 0
 	var splitKey []byte
 
 	for iter.First(); iter.Valid(); iter.Next() {
 		if canSplitKeys(lastKey, iter.Key()) {
 			splitDistance := absInt(optimalSplitSize - leftSize)
 			bestSplitDistance := absInt(optimalSplitSize - splitSize)
-			if leftSize > minSplitSize && leftSize < maxSplitSize && splitDistance < bestSplitDistance {
+			if leftRows > 2 && leftSize > minSplitSize && leftSize < maxSplitSize && splitDistance < bestSplitDistance {
 				if len(splitKey) != len(lastKey) {
 					splitKey = make([]byte, len(lastKey))
 				}
 				copy(splitKey, lastKey)
 				splitSize = leftSize
+				splitRows = leftRows
 			}
 		}
 		size, err := sizeOf(iter.Key(), iter.Value())
@@ -668,6 +677,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 			return nil, err
 		}
 		leftSize += size
+		leftRows += 1
 		if len(lastKey) != len(iter.Key()) {
 			lastKey = make([]byte, len(iter.Key()))
 		}
@@ -675,9 +685,10 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 	}
 
 	if splitKey == nil {
-		sm.printRange(sm.db, "unsplittable range")
+		sm.printRange(sm.db, iterOpts, "unsplittable range")
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
 	}
+	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ClusterID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
 	return &rfpb.FindSplitPointResponse{
 		Split:          splitKey,
 		LeftSizeBytes:  splitSize,
@@ -686,13 +697,17 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 }
 
 func canSplitKeys(leftKey, rightKey []byte) bool {
-	splitStart := []byte{constants.UnsplittableMaxByte}
-	// Disallow splitting the metarange, or any range before '\x04'.
-	if bytes.Compare(rightKey, splitStart) <= 0 {
+	if len(leftKey) == 0 || len(rightKey) == 0 {
 		return false
 	}
-
+	// Disallow splitting the metarange, or any range before '\x04'.
+	splitStart := []byte{constants.UnsplittableMaxByte}
+	if bytes.Compare(rightKey, splitStart) <= 0 {
+		// left-right is before splitStart
+		return false
+	}
 	if bytes.Compare(leftKey, splitStart) <= 0 && bytes.Compare(rightKey, splitStart) > 0 {
+		// left-right crosses splitStart boundary
 		return false
 	}
 
@@ -707,8 +722,8 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	return true
 }
 
-func (sm *Replica) printRange(r pebble.Reader, tag string) {
-	iter := r.NewIter(&pebble.IterOptions{})
+func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag string) {
+	iter := r.NewIter(iterOpts)
 	defer iter.Close()
 
 	totalSize := int64(0)
