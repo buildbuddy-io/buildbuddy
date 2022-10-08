@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -35,6 +36,7 @@ var (
 	besUpload = &capb.ScoreCard_Result{
 		ActionId:            "bes-upload",
 		Digest:              &repb.Digest{Hash: "aaa", SizeBytes: 1_000},
+		CacheType:           resource.CacheType_CAS,
 		CacheTypeDeprecated: capb.CacheType_CAS,
 		RequestType:         capb.RequestType_WRITE,
 		Status:              &statuspb.Status{Code: int32(gcodes.OK)},
@@ -46,6 +48,7 @@ var (
 		ActionMnemonic:      "GoCompile",
 		TargetId:            "//foo",
 		Digest:              &repb.Digest{Hash: "abc", SizeBytes: 111},
+		CacheType:           resource.CacheType_AC,
 		CacheTypeDeprecated: capb.CacheType_AC,
 		RequestType:         capb.RequestType_READ,
 		Status:              &statuspb.Status{Code: int32(gcodes.NotFound)},
@@ -57,6 +60,7 @@ var (
 		ActionMnemonic:      "GoCompile",
 		TargetId:            "//foo",
 		Digest:              &repb.Digest{Hash: "ccc", SizeBytes: 10_000},
+		CacheType:           resource.CacheType_CAS,
 		CacheTypeDeprecated: capb.CacheType_CAS,
 		RequestType:         capb.RequestType_WRITE,
 		Status:              &statuspb.Status{Code: int32(gcodes.OK)},
@@ -68,6 +72,7 @@ var (
 		ActionMnemonic:      "GoLink",
 		TargetId:            "//bar",
 		Digest:              &repb.Digest{Hash: "fff", SizeBytes: 100_000},
+		CacheType:           resource.CacheType_CAS,
 		CacheTypeDeprecated: capb.CacheType_CAS,
 		RequestType:         capb.RequestType_READ,
 		Status:              &statuspb.Status{Code: int32(gcodes.OK)},
