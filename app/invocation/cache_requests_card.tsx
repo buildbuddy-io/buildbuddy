@@ -46,7 +46,7 @@ const RETRY_FETCH_DELAY_MS = 1000;
 type PresetFilter = {
   label: string;
   values: {
-    cache: cache.CacheType;
+    cache: resource.CacheType;
     request: cache.RequestType;
     response: cache.ResponseType;
   };
@@ -60,19 +60,19 @@ const filters: PresetFilter[] = [
   },
   {
     label: "AC Hits",
-    values: { cache: cache.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.OK },
+    values: { cache: resource.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.OK },
   },
   {
     label: "AC Misses",
-    values: { cache: cache.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.NOT_FOUND },
+    values: { cache: resource.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.NOT_FOUND },
   },
   {
     label: "CAS Hits",
-    values: { cache: cache.CacheType.CAS, request: cache.RequestType.READ, response: cache.ResponseType.OK },
+    values: { cache: resource.CacheType.CAS, request: cache.RequestType.READ, response: cache.ResponseType.OK },
   },
   {
     label: "CAS Writes",
-    values: { cache: cache.CacheType.CAS, request: cache.RequestType.WRITE, response: cache.ResponseType.OK },
+    values: { cache: resource.CacheType.CAS, request: cache.RequestType.WRITE, response: cache.ResponseType.OK },
   },
   {
     label: "Errors",
@@ -479,7 +479,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   private isCompressedSizeColumnVisible() {
     return (
-      this.props.model.isCacheCompressionEnabled() && filters[this.getFilterIndex()].values.cache !== cache.CacheType.AC
+      this.props.model.isCacheCompressionEnabled() && filters[this.getFilterIndex()].values.cache !== resource.CacheType.AC
     );
   }
 
@@ -592,22 +592,22 @@ const RequestsCardContainer: React.FC<JSX.IntrinsicElements["div"]> = ({ classNa
   </div>
 );
 
-function renderCacheType(cacheType: cache.CacheType): React.ReactNode {
+function renderCacheType(cacheType: resource.CacheType): React.ReactNode {
   switch (cacheType) {
-    case cache.CacheType.CAS:
+    case resource.CacheType.CAS:
       return "CAS";
-    case cache.CacheType.AC:
+    case resource.CacheType.AC:
       return "AC";
     default:
       return "";
   }
 }
 
-function cacheTypeTitle(cacheType: cache.CacheType): string | undefined {
+function cacheTypeTitle(cacheType: resource.CacheType): string | undefined {
   switch (cacheType) {
-    case cache.CacheType.CAS:
+    case resource.CacheType.CAS:
       return "Content addressable storage";
-    case cache.CacheType.AC:
+    case resource.CacheType.AC:
       return "Action cache";
     default:
       return undefined;
