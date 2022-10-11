@@ -813,6 +813,7 @@ func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 	return &clone, nil
 }
 
+// TODO(Maggie): Clean this up after completing refactor to deprecate WithIsolation
 func (p *PebbleCache) makeFileRecordDeprecated(ctx context.Context, d *repb.Digest) (*rfpb.FileRecord, error) {
 	return p.makeFileRecord(ctx, &resource.ResourceName{
 		Digest:       d,
