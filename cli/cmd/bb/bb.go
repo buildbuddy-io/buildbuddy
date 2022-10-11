@@ -61,8 +61,15 @@ func run() (exitCode int, err error) {
 	// Remove any args that don't need to be on the command line
 	args = arg.RemoveExistingArgs(args, rcFileArgs)
 
+	// Build the pipeline of bazel output handlers
+	wc, err := plugin.PipelineWriter(os.Stdout, plugins)
+	if err != nil {
+		return -1, err
+	}
+	defer wc.Close()
+
 	// Actually run bazel
-	exitCode, output, err := bazelisk.Run(args)
+	exitCode, output, err := bazelisk.Run(args, wc)
 	if err != nil {
 		return -1, err
 	}
