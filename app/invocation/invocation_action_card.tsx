@@ -6,6 +6,7 @@ import { build } from "../../proto/remote_execution_ts_proto";
 import InputNodeComponent, { InputNode } from "./invocation_action_input_node";
 import rpcService from "../service/rpc_service";
 import DigestComponent, { parseDigest } from "../components/digest/digest";
+import { TextLink } from "../components/link/link";
 import TerminalComponent from "../terminal/terminal";
 import UserPreferences from "../preferences/preferences";
 import router from "../router/router";
@@ -319,50 +320,36 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return;
   }
 
-  private onClickSetup(e: React.MouseEvent) {
-    e.preventDefault();
-    router.navigateTo("/docs/setup");
-  }
-
-  private renderNotFoundDetails() {
+  private renderNotFoundDetails({ result = false }) {
     const hasRemoteUploadLocalResults = this.props.model.booleanCommandLineOption("remote_upload_local_results");
     const hasRemoteExecutor = Boolean(this.props.model.stringCommandLineOption("remote_executor"));
     const hasRemoteCache = Boolean(this.props.model.booleanCommandLineOption("remote_cache"));
 
-    if (hasRemoteExecutor) {
-      return <p>The action may have expired from cache, or the action may not be cacheable.</p>;
-    }
-    if (!hasRemoteCache) {
+    if (result && !hasRemoteCache && !hasRemoteExecutor) {
       return (
         <p>
-          Action results are available for builds with{" "}
-          <a href="/docs/setup" className="text-link" onClick={this.onClickSetup.bind(this)}>
-            full cache or remote execution
-          </a>{" "}
-          enabled.
+          No result details found. Action results are available for builds with{" "}
+          <TextLink href="/docs/setup">full cache or remote execution</TextLink> enabled.
         </p>
       );
     }
-    if (!hasRemoteUploadLocalResults) {
+    if (result && !hasRemoteExecutor && !hasRemoteUploadLocalResults) {
       return (
-        <>
-          <p>
-            Action results for locally executed actions are available for builds with{" "}
-            <a href="/docs/setup" className="text-link" onClick={this.onClickSetup.bind(this)}>
-              full cache
-            </a>{" "}
-            enabled (<span className="inline-code">--remote_upload_local_results</span>).
-          </p>
-        </>
+        <p>
+          No result details found. Action results for locally executed actions are available for builds with{" "}
+          <TextLink href="/docs/setup">full cache</TextLink> enabled (
+          <span className="inline-code">--remote_upload_local_results</span>).
+        </p>
       );
     }
     return (
-      <p>
-        The action may have expired from cache, or the action may not be cacheable.{" "}
+      <>
+        {result && <p>Action result not found. The result may have expired from cache, or it may not be cacheable.</p>}
+        {!result && <p>Action not found. The action may have expired from cache.</p>}
         {!this.props.model.isAnonymousInvocation() && (
-          <>This can also happen if the invocation was authenticated with a read-only API key.</>
+          <p>This can also happen if the invocation was authenticated with a read-only API key.</p>
         )}
-      </p>
+      </>
     );
   }
 
@@ -376,106 +363,103 @@ export default class InvocationActionCardComponent extends React.Component<Props
             <div className="loading" />
           </div>
         )}
-        {!this.state.loadingAction && !this.state.action && (
-          <div className="card">
-            <HelpCircle className="icon purple" />
-            <div className="content">
-              <div className="title">Action not found</div>
-              <div className="details">{this.renderNotFoundDetails()}</div>
-            </div>
-          </div>
-        )}
-        {!this.state.loadingAction && this.state.action && (
+        {!this.state.loadingAction && (
           <div className="card">
             <Info className="icon purple" />
             <div className="content">
               <div className="title">Action details</div>
-              <div className="details">
-                <div>
-                  <div className="action-section">
-                    <div className="action-property-title">Digest</div>
-                    <DigestComponent digest={digest} expanded={true} />
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Cacheable</div>
-                    <div>{!this.state.action.doNotCache ? "True" : "False"}</div>
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Input root digest</div>
-                    <div>
-                      <DigestComponent digest={this.state.action.inputRootDigest} expanded={true} />
+              {this.state.action ? (
+                <div className="details">
+                  <div>
+                    <div className="action-section">
+                      <div className="action-property-title">Digest</div>
+                      <DigestComponent digest={digest} expanded={true} />
                     </div>
-                  </div>
-                  <div className="action-section">
-                    <div
-                      title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
-                      className="action-property-title">
-                      Output node properties
+                    <div className="action-section">
+                      <div className="action-property-title">Cacheable</div>
+                      <div>{!this.state.action.doNotCache ? "True" : "False"}</div>
                     </div>
-                    {this.state.action.outputNodeProperties.length ? (
+                    <div className="action-section">
+                      <div className="action-property-title">Input root digest</div>
                       <div>
-                        {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
-                          <div className="output-node">{outputNodeProperty}</div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div>Default</div>
-                    )}
-                  </div>
-                  <div className="action-section">
-                    <div className="action-property-title">Input files</div>
-                    {this.state.inputDirs.length ? (
-                      <div className="input-tree">
-                        {this.state.inputDirs.map((node) => (
-                          <InputNodeComponent
-                            node={node}
-                            treeShaToExpanded={this.state.treeShaToExpanded}
-                            treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                            handleFileClicked={this.handleFileClicked.bind(this)}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div>None found</div>
-                    )}
-                  </div>
-                </div>
-                <div className="action-line">
-                  <div className="action-title">Command details</div>
-                  {this.state.command ? (
-                    <div>
-                      <div className="action-section">
-                        <div className="action-property-title">Arguments</div>
-                        {this.displayList(this.state.command.arguments)}
-                      </div>
-                      <div className="action-section">
-                        <div className="action-property-title">Environment variables</div>
-                        <div className="action-list">
-                          {this.state.command.environmentVariables.map((variable) => (
-                            <div>
-                              <span className="prop-name">{variable.name}</span>
-                              <span className="prop-value">={variable.value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="action-section">
-                        <div className="action-property-title">Platform properties</div>
-                        <div className="action-list">
-                          {this.state.command.platform.properties.map((property) => (
-                            <div>
-                              <span className="prop-name">{property.name}</span>
-                              <span className="prop-value">={property.value}</span>
-                            </div>
-                          ))}
-                          {!this.state.command.platform.properties.length && <div>(Default)</div>}
-                        </div>
+                        <DigestComponent digest={this.state.action.inputRootDigest} expanded={true} />
                       </div>
                     </div>
-                  ) : (
-                    <div>No command details were found.</div>
-                  )}
+                    <div className="action-section">
+                      <div
+                        title="List of required supported NodeProperty [build.bazel.remote.execution.v2.NodeProperty] keys."
+                        className="action-property-title">
+                        Output node properties
+                      </div>
+                      {this.state.action.outputNodeProperties.length ? (
+                        <div>
+                          {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
+                            <div className="output-node">{outputNodeProperty}</div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div>Default</div>
+                      )}
+                    </div>
+                    <div className="action-section">
+                      <div className="action-property-title">Input files</div>
+                      {this.state.inputDirs.length ? (
+                        <div className="input-tree">
+                          {this.state.inputDirs.map((node) => (
+                            <InputNodeComponent
+                              node={node}
+                              treeShaToExpanded={this.state.treeShaToExpanded}
+                              treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                              handleFileClicked={this.handleFileClicked.bind(this)}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div>None found</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="action-line">
+                    <div className="action-title">Command details</div>
+                    {this.state.command ? (
+                      <div>
+                        <div className="action-section">
+                          <div className="action-property-title">Arguments</div>
+                          {this.displayList(this.state.command.arguments)}
+                        </div>
+                        <div className="action-section">
+                          <div className="action-property-title">Environment variables</div>
+                          <div className="action-list">
+                            {this.state.command.environmentVariables.map((variable) => (
+                              <div>
+                                <span className="prop-name">{variable.name}</span>
+                                <span className="prop-value">={variable.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="action-section">
+                          <div className="action-property-title">Platform properties</div>
+                          <div className="action-list">
+                            {this.state.command.platform.properties.map((property) => (
+                              <div>
+                                <span className="prop-name">{property.name}</span>
+                                <span className="prop-value">={property.value}</span>
+                              </div>
+                            ))}
+                            {!this.state.command.platform.properties.length && <div>(Default)</div>}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>No command details were found.</div>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <div className="details">{this.renderNotFoundDetails({ result: false })}</div>
+              )}
+              <div>
                 <div className="action-line">
                   <div className="action-title">Result details</div>
                   {this.state.actionResult ? (
@@ -593,7 +577,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                     </div>
                   ) : (
-                    <div>No action result details found.</div>
+                    <div>{this.renderNotFoundDetails({ result: true })}</div>
                   )}
                 </div>
               </div>
