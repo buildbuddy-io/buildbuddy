@@ -15,7 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-func Run(args []string) (int, *Output, error) {
+func Run(args []string, w io.Writer) (int, *Output, error) {
 	// If we were already invoked via bazelisk, then set the bazel version to
 	// the next version appearing in the .bazelversion file so that bazelisk
 	// doesn't just invoke us again (resulting in an infinite loop).
@@ -46,13 +46,13 @@ func Run(args []string) (int, *Output, error) {
 	defer func() {
 		os.Stdout, os.Stderr = originalStdout, originalStderr
 	}()
-	stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, os.Stdout))
+	stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, w))
 	if err != nil {
 		return 0, nil, err
 	}
 	defer closeStdoutPipe()
 	os.Stdout = stdoutPipe
-	stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, os.Stderr))
+	stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, w))
 	if err != nil {
 		return 0, nil, err
 	}

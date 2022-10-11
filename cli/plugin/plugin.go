@@ -267,6 +267,7 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	// executable and has a shebang line
 	cmd := exec.Command(scriptPath, argsFile.Name())
 	// TODO: Prefix output with "output from [plugin]" ?
+	cmd.Dir = path
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
@@ -288,7 +289,7 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 // Currently the invocation data is fed as plain text via a file. The file path
 // is passed as the first argument.
 //
-// See cli/example_plugins/go_highlight/post_bazel.sh for an example.
+// TODO(bduffany): Example
 func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	path, err := p.Path()
 	if err != nil {
@@ -305,9 +306,91 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	log.Debugf("Running post-bazel hook for %s/%s", p.config.Repo, p.config.Path)
 	cmd := exec.Command(scriptPath, bazelOutputPath)
 	// TODO: Prefix stderr output with "output from [plugin]" ?
+	cmd.Dir = path
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	return cmd.Run()
+}
+
+// Pipe streams the combined console output (stdout + stderr) from the previous
+// plugin in the pipeline to this plugin, returning the output of this plugin.
+// If there is no previous plugin in the pipeline then the original bazel output
+// is piped in.
+//
+// It returns the original reader if no output handler is configured for this
+// plugin.
+//
+// See cli/example_plugins/go_highlight/handle_bazel_output.sh for an example.
+func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
+	path, err := p.Path()
+	if err != nil {
+		return nil, err
+	}
+	scriptPath := filepath.Join(path, "handle_bazel_output.sh")
+	exists, err := disk.FileExists(context.TODO(), scriptPath)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return r, nil
+	}
+	cmd := exec.Command(scriptPath)
+	pr, pw := io.Pipe()
+	cmd.Dir = path
+	cmd.Stdout = pw
+	cmd.Stderr = pw
+	cmd.Stdin = r
+	go func() {
+		defer pw.Close()
+		if err := cmd.Run(); err != nil {
+			log.Debugf("Command failed: %s", err)
+		}
+	}()
+	return pr, nil
+}
+
+// PipelineWriter returns a WriteCloser that sends written bytes through all the
+// plugins in the given pipeline and then finally to the given writer. It is the
+// caller's responsibility to close the returned WriteCloser. Closing the
+// returned writer will inform the first plugin in the pipeline that there is no
+// more input to be flushed, causing each plugin to terminate once it has
+// finished processing any remaining input.
+func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
+	pr, pw := io.Pipe()
+
+	var pluginOutput io.Reader = pr
+	for _, p := range plugins {
+		r, err := p.Pipe(pluginOutput)
+		if err != nil {
+			return nil, err
+		}
+		if r == pr {
+			continue
+		}
+		pluginOutput = r
+	}
+	doneCopying := make(chan struct{})
+	go func() {
+		defer close(doneCopying)
+		io.Copy(w, pluginOutput)
+	}()
+	out := &overrideCloser{
+		WriteCloser: pw,
+		// Make Close() block until we're done copying the plugin output,
+		// otherwise we might miss some output lines.
+		AfterClose: func() { <-doneCopying },
+	}
+	return out, nil
+}
+
+type overrideCloser struct {
+	io.WriteCloser
+	AfterClose func()
+}
+
+func (o *overrideCloser) Close() error {
+	defer o.AfterClose()
+	return o.WriteCloser.Close()
 }
 
 // readArgsFile reads the arguments from the file at the given path.
