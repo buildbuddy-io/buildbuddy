@@ -99,6 +99,10 @@ func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 	}, nil
 }
 
+func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	return false, nil
+}
+
 func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	k, err := m.key(ctx, d)
 	if err != nil {

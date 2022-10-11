@@ -151,6 +151,7 @@ type DiskCache struct {
 	env               environment.Env
 	partitions        map[string]*partition
 	partitionMappings []disk.PartitionMapping
+	defaultPartition  *partition
 
 	// TODO(Maggie): Deprecate these fields
 	// The currently selected partition. Initialized to the default partition.
@@ -240,6 +241,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 	c.partitions = partitions
 	c.partition = defaultPartition
+	c.defaultPartition = defaultPartition
 
 	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
@@ -248,11 +250,11 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
 	auth := c.env.GetAuthenticator()
 	if auth == nil {
-		return c.partition, nil
+		return c.defaultPartition, nil
 	}
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		return c.partition, nil
+		return c.defaultPartition, nil
 	}
 	for _, m := range c.partitionMappings {
 		if m.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, m.Prefix) {
@@ -263,7 +265,7 @@ func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string)
 			return p, nil
 		}
 	}
-	return c.partition, nil
+	return c.defaultPartition, nil
 }
 
 func (c *DiskCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
@@ -275,6 +277,7 @@ func (c *DiskCache) WithIsolation(ctx context.Context, cacheType resource.CacheT
 	return &DiskCache{
 		env:                c.env,
 		partition:          p,
+		defaultPartition:   c.defaultPartition,
 		partitions:         c.partitions,
 		partitionMappings:  c.partitionMappings,
 		cacheType:          cacheType,
@@ -290,10 +293,24 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	record, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
+func (c *DiskCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return false, err
+	}
+
+	record, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	contains := record != nil
 	return contains, err
+}
+
+func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return c.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 }
 
 func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
