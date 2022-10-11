@@ -314,7 +314,7 @@ func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.C
 	lastModifyNanos := getLastModifyTimeNanos(fileInfo)
 
 	return &interfaces.CacheMetadata{
-		SizeBytes:          lruRecord.sizeBytes,
+		SizeBytes:          fileInfo.Size(),
 		LastAccessTimeUsec: lastUseNanos / 1000,
 		LastModifyTimeUsec: lastModifyNanos / 1000,
 	}, nil
@@ -401,8 +401,10 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 
 // fileRecord is the data struct we store in the LRU cache
 type fileRecord struct {
-	key       *fileKey
-	sizeBytes int64
+	key *fileKey
+	// Size of the data on disk. Multiple of filesystem block size.
+	// NOT the actual size of the digest.
+	sizeOnDiskBytes int64
 }
 
 // timestampedFileRecord is a wrapper for fileRecord that contains additional metadata that does not need to be
@@ -419,7 +421,7 @@ func (fr *fileRecord) FullPath() string {
 func sizeFn(value interface{}) int64 {
 	size := int64(0)
 	if v, ok := value.(*fileRecord); ok {
-		size += v.sizeBytes
+		size += v.sizeOnDiskBytes
 	}
 	return size
 }
@@ -454,10 +456,22 @@ func getLastModifyTimeNanos(info os.FileInfo) int64 {
 	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
 }
 
-func makeRecord(key *fileKey, sizeBytes int64) *fileRecord {
+func makeRecordFromPath(key *fileKey, fullPath string) (*fileRecord, error) {
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	return makeRecordFromInfo(key, info), nil
+}
+
+func makeRecordFromInfo(key *fileKey, info fs.FileInfo) *fileRecord {
+	stat := info.Sys().(*syscall.Stat_t)
+	// Stat always returns number of 512 byte blocks, regardless of the FS
+	// settings.
+	sizeOnDisk := stat.Blocks * 512
 	return &fileRecord{
-		key:       key,
-		sizeBytes: sizeBytes,
+		key:             key,
+		sizeOnDiskBytes: sizeOnDisk,
 	}
 }
 
@@ -469,7 +483,9 @@ func (p *partition) evictFn(value interface{}) {
 			ageUsec := float64(time.Now().Sub(lastUse).Microseconds())
 			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id}).Set(ageUsec)
 		}
-		disk.DeleteFile(context.TODO(), v.FullPath())
+		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
+			log.Warningf("Could delete evicted file: %s", err)
+		}
 	}
 }
 
@@ -492,7 +508,7 @@ func (p *partition) makeTimestampedRecordFromPathAndFileInfo(fullPath string, in
 		return nil, err
 	}
 	return &timestampedFileRecord{
-		fileRecord:   makeRecord(fk, info.Size()),
+		fileRecord:   makeRecordFromInfo(fk, info),
 		lastUseNanos: getLastUseNanos(info),
 	}, nil
 }
@@ -862,7 +878,7 @@ func (p *partition) addFileToLRUIfExists(key *fileKey) *fileRecord {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
 			return nil
 		}
-		record := makeRecord(key, info.Size())
+		record := makeRecordFromInfo(key, info)
 		p.fileChannel <- record
 		p.lruAdd(record)
 		return record
@@ -1002,7 +1018,10 @@ func (p *partition) set(ctx context.Context, cacheType resource.CacheType, remot
 		// If we had an error writing the file, just return that.
 		return err
 	}
-	record := makeRecord(k, int64(n))
+	record, err := makeRecordFromPath(k, k.FullPath())
+	if err != nil {
+		return err
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -1094,7 +1113,10 @@ func (p *partition) writer(ctx context.Context, cacheType resource.CacheType, re
 	}
 	cwc := ioutil.NewCustomCommitWriteCloser(fw)
 	cwc.CommitFn = func(totalBytesWritten int64) error {
-		record := makeRecord(k, totalBytesWritten)
+		record, err := makeRecordFromPath(k, k.FullPath())
+		if err != nil {
+			return err
+		}
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		p.lruAdd(record)
