@@ -111,7 +111,9 @@ func (i *Invocation) TableOptions() string {
 	} else {
 		engine = "ReplacingMergeTree()"
 	}
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec)", engine)
+	// Note: the sorting key need to be able to uniquely identify the invocation.
+	// ReplacingMergeTree will remove entries with the same sorting key in the background.
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", engine)
 }
 
 func (i *Invocation) TableClusterOption() string {
