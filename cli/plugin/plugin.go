@@ -364,9 +364,6 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 		if err != nil {
 			return nil, err
 		}
-		if r == pr {
-			continue
-		}
 		pluginOutput = r
 	}
 	doneCopying := make(chan struct{})
