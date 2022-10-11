@@ -26,6 +26,7 @@ go_test(
         ":scorecard",
         "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/tables",
         "//server/testutil/testenv",

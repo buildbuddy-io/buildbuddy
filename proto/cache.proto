@@ -177,8 +177,8 @@ message ScoreCard {
     // Action digest hash for the action relevant to the transfer.
     string action_id = 3;
 
-    // The type of cache relevant to this result.
-    CacheType cache_type = 4;
+    // TODO(#1733) Clean up deprecated field and CacheType enum
+    CacheType cache_type_deprecated = 4;
 
     // The type of cache request described by this result (read or write).
     RequestType request_type = 5;
@@ -215,6 +215,9 @@ message ScoreCard {
     // kept separate.
     // Ex: "bazel-out/k8-fastbuild/bin"
     string path_prefix = 13;
+
+    // The type of cache relevant to this result.
+    resource.CacheType cache_type = 14;
   }
 
   // In the interest of saving space, we only show cache misses.
