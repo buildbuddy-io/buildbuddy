@@ -346,9 +346,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
       <>
         {result && <p>Action result not found. The result may have expired from cache, or it may not be cacheable.</p>}
         {!result && <p>Action not found. The action may have expired from cache.</p>}
-        {!this.props.model.isAnonymousInvocation() && (
-          <p>This can also happen if the invocation was authenticated with a read-only API key.</p>
-        )}
+        {!hasRemoteExecutor &&
+          !this.props.model.isAnonymousInvocation() &&
+          !this.props.model.hasCacheWriteCapability() && (
+            <p>This could also be because the invocation was authenticated with a read-only API key.</p>
+          )}
       </>
     );
   }
