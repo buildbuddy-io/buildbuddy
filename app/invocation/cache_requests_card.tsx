@@ -720,7 +720,7 @@ function getCacheType(result: cache.ScoreCard.IResult): resource.CacheType {
    const cacheType = result.cacheType;
    // If the cacheType field is not set, try reading data from the older cacheTypeDeprecated field
    // for scorecard results that were written before we added the new cacheType field
-   if (cacheType == resource.CacheType.UNKNOWN_CACHE_TYPE) {
+   if (!cacheType) {
       return toResourceCacheType(result.cacheTypeDeprecated);
    }
    return cacheType;
