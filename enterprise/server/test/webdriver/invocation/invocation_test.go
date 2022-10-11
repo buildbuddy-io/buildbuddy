@@ -19,7 +19,12 @@ func TestAuthenticatedInvocation_LogUploadEnabled(t *testing.T) {
 		"WORKSPACE": "",
 		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
-	buildArgs := append([]string{"//:a", "--show_progress=0"}, app.BESBazelFlags()...)
+	buildArgs := append([]string{
+		"//:a",
+		"--show_progress=0",
+		"--build_metadata=COMMIT_SHA=cc5011e9a82b545885025d5f08b531bfbbf95d5b",
+		"--build_metadata=REPO_URL=https://github.com/test-owner/test-repo",
+	}, app.BESBazelFlags()...)
 
 	// Log in and get the build flags needed for BuildBuddy, including API key
 	webtester.Login(wt, app.HTTPURL())
@@ -40,6 +45,18 @@ func TestAuthenticatedInvocation_LogUploadEnabled(t *testing.T) {
 	assert.Contains(t, details, "//:a")
 	assert.Contains(t, details, "Log upload on")
 	assert.Contains(t, details, "Remote execution off")
+
+	// Make sure it shows up in repo history
+	webtester.ClickSidebarItem(wt, "Repos")
+
+	historyCardTitle := wt.Find(".history .card .title").Text()
+	assert.Equal(t, "test-owner/test-repo", historyCardTitle)
+
+	// Make sure it shows up in commit history
+	webtester.ClickSidebarItem(wt, "Commits")
+
+	historyCardTitle = wt.Find(".history .card .title").Text()
+	assert.Equal(t, "Commit cc5011", historyCardTitle)
 
 	// Sanity check that the login button is not present while logged in,
 	// since we rely on this to check whether we're logged out

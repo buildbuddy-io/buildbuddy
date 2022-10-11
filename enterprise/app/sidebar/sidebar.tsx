@@ -137,19 +137,19 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <LayoutGrid className="icon" /> Tests
             </SidebarLink>
           )}
-          <SidebarLink selected={this.isUsersSelected()} href="#users">
+          <SidebarLink selected={this.isUsersSelected()} href="/#users">
             <Users className="icon" /> Users
           </SidebarLink>
-          <SidebarLink selected={this.isReposSelected()} href="#repos">
+          <SidebarLink selected={this.isReposSelected()} href="/#repos">
             <Github className="icon" /> Repos
           </SidebarLink>
-          <SidebarLink selected={this.isBranchesSelected()} href="#branches">
+          <SidebarLink selected={this.isBranchesSelected()} href="/#branches">
             <GitBranch className="icon" /> Branches
           </SidebarLink>
-          <SidebarLink selected={this.isCommitsSelected()} href="#commits">
+          <SidebarLink selected={this.isCommitsSelected()} href="/#commits">
             <GitCommit className="icon" /> Commits
           </SidebarLink>
-          <SidebarLink selected={this.isHostsSelected()} href="#hosts">
+          <SidebarLink selected={this.isHostsSelected()} href="/#hosts">
             <HardDrive className="icon" /> Hosts
           </SidebarLink>
           {router.canAccessExecutorsPage(this.props.user) && (

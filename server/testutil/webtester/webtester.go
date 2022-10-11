@@ -193,6 +193,18 @@ func ExpandSidebarOptions(wt *WebTester) {
 	toggle.Click()
 }
 
+// ClickSidebarItem clicks the sidebar item with the given label.
+func ClickSidebarItem(wt *WebTester, label string) {
+	items := wt.FindAll(".sidebar-item")
+	for _, item := range items {
+		if strings.TrimSpace(item.Text()) == label {
+			item.Click()
+			return
+		}
+	}
+	require.FailNowf(wt.t, "Failed to locate sidebar item", "label: %s", label)
+}
+
 // SetupPageOption applies a desired setting to the setup page.
 type SetupPageOption func(wt *WebTester)
 
