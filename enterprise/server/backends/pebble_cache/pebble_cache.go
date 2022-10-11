@@ -767,15 +767,35 @@ func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 	return &clone, nil
 }
 
-func (p *PebbleCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.FileRecord, error) {
-	_, err := digest.Validate(d)
+// TODO(Maggie): Clean this up after completing refactor to deprecate WithIsolation
+func (p *PebbleCache) makeFileRecordDeprecated(ctx context.Context, d *repb.Digest) (*rfpb.FileRecord, error) {
+	return p.makeFileRecord(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.RemoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.CacheType,
+	})
+}
+
+func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
+	_, err := digest.Validate(r.GetDigest())
+	if err != nil {
+		return nil, err
+	}
+
+	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
 
 	return &rfpb.FileRecord{
-		Isolation: p.isolation,
-		Digest:    d,
+		Isolation: &rfpb.Isolation{
+			CacheType:          r.GetCacheType(),
+			RemoteInstanceName: r.GetInstanceName(),
+			PartitionId:        partID,
+			GroupId:            groupID,
+		},
+		Digest: r.GetDigest(),
 	}, nil
 }
 
@@ -832,7 +852,7 @@ func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 	if err != nil {
 		return false, err
 	}
@@ -854,7 +874,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -889,7 +909,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 
 	var missing []*repb.Digest
 	for _, d := range digests {
-		fileRecord, err := p.makeFileRecord(ctx, d)
+		fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 		if err != nil {
 			return nil, err
 		}
@@ -931,7 +951,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 	blobDir := p.blobDir()
 	buf := &bytes.Buffer{}
 	for _, d := range digests {
-		fileRecord, err := p.makeFileRecord(ctx, d)
+		fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 		if err != nil {
 			return nil, err
 		}
@@ -1073,7 +1093,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 	if err != nil {
 		return err
 	}
@@ -1094,7 +1114,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -1158,7 +1178,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Co
 	}
 	defer db.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
