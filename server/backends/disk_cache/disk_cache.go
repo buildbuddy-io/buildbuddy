@@ -786,14 +786,7 @@ func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
 		}
 
 		isolation := &rfpb.Isolation{}
-		switch cacheType {
-		case resource.CacheType_CAS:
-			isolation.CacheType = rfpb.Isolation_CAS_CACHE
-		case resource.CacheType_AC:
-			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
-		default:
-			return status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
-		}
+		isolation.CacheType = cacheType
 		isolation.RemoteInstanceName = remoteInstanceName
 		isolation.PartitionId = partID
 		fm := &rfpb.FileMetadata{
@@ -1035,14 +1028,7 @@ func (p *partition) getMulti(ctx context.Context, cacheType resource.CacheType, 
 
 func (p *partition) makeFileMetadata(fr *fileRecord) (*rfpb.FileMetadata, error) {
 	isolation := &rfpb.Isolation{}
-	switch fr.key.cacheType {
-	case resource.CacheType_CAS:
-		isolation.CacheType = rfpb.Isolation_CAS_CACHE
-	case resource.CacheType_AC:
-		isolation.CacheType = rfpb.Isolation_ACTION_CACHE
-	default:
-		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", fr.key.cacheType)
-	}
+	isolation.CacheType = fr.key.cacheType
 	isolation.RemoteInstanceName = fr.key.remoteInstanceName
 	isolation.PartitionId = fr.key.part.id
 	return &rfpb.FileMetadata{

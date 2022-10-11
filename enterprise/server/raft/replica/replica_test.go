@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -383,7 +384,7 @@ func TestReplicaFileWrite(t *testing.T) {
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -422,7 +423,7 @@ func TestReplicaFileWrite(t *testing.T) {
 		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
 			FileRecord: &rfpb.FileRecord{
 				Isolation: &rfpb.Isolation{
-					CacheType:   rfpb.Isolation_CAS_CACHE,
+					CacheType:   resource.CacheType_CAS,
 					PartitionId: "default",
 					GroupId:     interfaces.AuthAnonymousUser,
 				},
@@ -467,7 +468,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -535,7 +536,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -705,7 +706,7 @@ func TestFindSplitPoint(t *testing.T) {
 			d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
 			fileRecord := &rfpb.FileRecord{
 				Isolation: &rfpb.Isolation{
-					CacheType:   rfpb.Isolation_CAS_CACHE,
+					CacheType:   resource.CacheType_CAS,
 					PartitionId: partitionID,
 					GroupId:     interfaces.AuthAnonymousUser,
 				},

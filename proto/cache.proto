@@ -132,6 +132,7 @@ message GetCacheScoreCardResponse {
   string next_page_token = 3;
 }
 
+// TODO(Maggie): Deprecate this enum - replace with the enum in resource.proto
 // CacheType represents the type of cache being written to.
 enum CacheType {
   UNKNOWN_CACHE_TYPE = 0;

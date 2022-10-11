@@ -16,7 +16,6 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/resources",
-        "//server/util/alert",
         "//server/util/bytebufferpool",
         "//server/util/grpc_client",
         "//server/util/grpc_server",

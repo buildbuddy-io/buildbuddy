@@ -1,14 +1,11 @@
 syntax = "proto3";
 
+import "proto/resource.proto";
+
 package distributed_cache;
 
 message Isolation {
-  enum CacheType {
-    UNKNOWN_TYPE = 0;
-    ACTION_CACHE = 1;
-    CAS_CACHE = 2;
-  }
-  CacheType cache_type = 1;
+  resource.CacheType cache_type = 1;
   string remote_instance_name = 2;
 }
 

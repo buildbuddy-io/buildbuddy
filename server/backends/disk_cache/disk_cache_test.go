@@ -990,14 +990,7 @@ func TestScanDiskDirectoryV1(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		isolation := &rfpb.Isolation{}
-		switch test.cacheType {
-		case resource.CacheType_CAS:
-			isolation.CacheType = rfpb.Isolation_CAS_CACHE
-		case resource.CacheType_AC:
-			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
-		default:
-			t.Fatalf("Unknown cache type: %+v", test.cacheType)
-		}
+		isolation.CacheType = test.cacheType
 		isolation.RemoteInstanceName = test.remoteInstanceName
 		isolation.PartitionId = test.expectedPartition
 		fr := &rfpb.FileRecord{
@@ -1112,14 +1105,7 @@ func TestScanDiskDirectoryV2(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		isolation := &rfpb.Isolation{}
-		switch test.cacheType {
-		case resource.CacheType_CAS:
-			isolation.CacheType = rfpb.Isolation_CAS_CACHE
-		case resource.CacheType_AC:
-			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
-		default:
-			t.Fatalf("Unknown cache type: %+v", test.cacheType)
-		}
+		isolation.CacheType = test.cacheType
 		isolation.RemoteInstanceName = test.remoteInstanceName
 		isolation.PartitionId = test.expectedPartition
 		fr := &rfpb.FileRecord{

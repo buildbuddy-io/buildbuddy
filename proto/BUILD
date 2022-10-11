@@ -70,6 +70,9 @@ proto_library(
     srcs = [
         "distributed_cache.proto",
     ],
+    deps = [
+        ":resource_proto",
+    ],
 )
 
 proto_library(
@@ -154,6 +157,7 @@ proto_library(
     ],
     deps = [
         ":remote_execution_proto",
+        ":resource_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
 )
@@ -624,6 +628,7 @@ go_proto_library(
     proto = ":raft_proto",
     deps = [
         ":remote_execution_go_proto",
+        ":resource_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
@@ -807,7 +812,9 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache",
     proto = ":distributed_cache_proto",
-    deps = [],
+    deps = [
+        ":resource_go_proto",
+    ],
 )
 
 go_proto_library(
@@ -912,6 +919,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "resource_ts_proto",
+    proto = ":resource_proto",
+)
+
+ts_proto_library(
     name = "scheduler_ts_proto",
     proto = ":scheduler_proto",
 )
@@ -919,11 +931,6 @@ ts_proto_library(
 ts_proto_library(
     name = "build_event_stream_ts_proto",
     proto = ":build_event_stream_proto",
-)
-
-ts_proto_library(
-    name = "resource_ts_proto",
-    proto = ":resource_proto",
 )
 
 ts_proto_library(

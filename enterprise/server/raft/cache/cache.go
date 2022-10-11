@@ -319,14 +319,7 @@ func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType resource.Cache
 	}
 
 	newIsolation := &rfpb.Isolation{}
-	switch cacheType {
-	case resource.CacheType_CAS:
-		newIsolation.CacheType = rfpb.Isolation_CAS_CACHE
-	case resource.CacheType_AC:
-		newIsolation.CacheType = rfpb.Isolation_ACTION_CACHE
-	default:
-		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
-	}
+	newIsolation.CacheType = cacheType
 	newIsolation.RemoteInstanceName = remoteInstanceName
 	newIsolation.PartitionId = partID
 

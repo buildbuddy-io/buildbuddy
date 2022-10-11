@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/resource.proto";
 import "proto/remote_execution.proto";
 import "google/rpc/status.proto";
 
@@ -19,12 +20,7 @@ message KV {
 
 // Isolation represents the cache isolation type of a particular item.
 message Isolation {
-  enum CacheType {
-    UNKNOWN_TYPE = 0;
-    ACTION_CACHE = 1;
-    CAS_CACHE = 2;
-  }
-  CacheType cache_type = 1;
+  resource.CacheType cache_type = 1;
   string remote_instance_name = 2;
   string partition_id = 3;
   string group_id = 4;

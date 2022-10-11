@@ -112,7 +112,7 @@ func TestReaderMaxOffset(t *testing.T) {
 	instanceName := "foo"
 	isolation := &dcpb.Isolation{
 		RemoteInstanceName: instanceName,
-		CacheType:          dcpb.Isolation_CAS_CACHE,
+		CacheType:          resource.CacheType_CAS,
 	}
 	// Set the random bytes in the cache (with a prefix)
 	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, instanceName)
@@ -183,7 +183,7 @@ func TestWriteAlreadyExistsCAS(t *testing.T) {
 	testSize := int64(10000000)
 	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
 	isolation := &dcpb.Isolation{
-		CacheType: dcpb.Isolation_CAS_CACHE,
+		CacheType: resource.CacheType_CAS,
 	}
 
 	// Remote-write the random bytes to the cache (with a prefix).
@@ -238,7 +238,7 @@ func TestWriteAlreadyExistsAC(t *testing.T) {
 	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
 
 	isolation := &dcpb.Isolation{
-		CacheType: dcpb.Isolation_ACTION_CACHE,
+		CacheType: resource.CacheType_AC,
 	}
 
 	// Remote-write the random bytes to the cache (with a prefix).
@@ -292,7 +292,7 @@ func TestReader(t *testing.T) {
 
 	for _, testSize := range testSizes {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+		isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
@@ -347,7 +347,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	offset := int64(2)
 	limit := int64(3)
-	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE}
+	isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS}
 	reader, err := c.RemoteReader(ctx, peer, isolation, d, offset, limit)
 	require.NoError(t, err)
 
@@ -381,7 +381,7 @@ func TestWriter(t *testing.T) {
 
 	for _, testSize := range testSizes {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+		isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
@@ -442,7 +442,7 @@ func TestWriteAlreadyExists(t *testing.T) {
 	testSize := int64(10000000)
 	d, readSeeker := testdigest.NewRandomDigestReader(t, testSize)
 	remoteInstanceName := ""
-	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+	isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 	// Remote-write the random bytes to the cache (with a prefix).
 	wc, err := c.RemoteWriter(ctx, peer, noHandoff, isolation, d)
@@ -495,7 +495,7 @@ func TestContains(t *testing.T) {
 
 	for _, testSize := range testSizes {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+		isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
@@ -566,7 +566,7 @@ func TestOversizeBlobs(t *testing.T) {
 
 	for _, testSize := range testSizes {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", testSize)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+		isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		// Read some random bytes.
 		buf := new(bytes.Buffer)
@@ -644,7 +644,7 @@ func TestFindMissing(t *testing.T) {
 		{numExistingDigests: 10000, numMissingDigests: 10},
 	} {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", tc.numExistingDigests)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+		isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		existingDigests := make([]*repb.Digest, 0, tc.numExistingDigests)
 		for i := 0; i < tc.numExistingDigests; i++ {
@@ -703,7 +703,7 @@ func TestGetMulti(t *testing.T) {
 
 	for _, numDigests := range testSizes {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
-		isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+		isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 		digests := make([]*repb.Digest, 0, numDigests)
 		for i := 0; i < numDigests; i++ {
@@ -758,7 +758,7 @@ func TestEmptyRead(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	remoteInstanceName := "null"
-	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+	isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 	d := &repb.Digest{
 		Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		SizeBytes: 0,
@@ -799,7 +799,7 @@ func TestDelete(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	remoteInstanceName := "remote/instance"
-	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+	isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 	// Write to the cache (with a prefix)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -841,7 +841,7 @@ func TestMetadata(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	remoteInstanceName := "remote/instance"
-	isolation := &dcpb.Isolation{CacheType: dcpb.Isolation_CAS_CACHE, RemoteInstanceName: remoteInstanceName}
+	isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 
 	// Write to the cache
