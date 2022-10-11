@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
@@ -494,7 +495,7 @@ func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationJW
 						"response_type",
 					},
 				},
-				CacheType:    capb.CacheType_AC,
+				CacheType:    resource.CacheType_AC,
 				RequestType:  capb.RequestType_READ,
 				ResponseType: capb.ResponseType_NOT_FOUND,
 			},
