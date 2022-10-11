@@ -24,7 +24,6 @@ go_library(
         "//server/util/alert",
         "//server/util/disk",
         "//server/util/flagutil",
-        "//server/util/flagutil/types",
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",
