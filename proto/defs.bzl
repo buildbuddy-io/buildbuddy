@@ -1,12 +1,20 @@
-load("@build_bazel_rules_nodejs//:index.bzl", "js_library")
-
-# TODO switch to protobufjs-cli when its published
-# https://github.com/protobufjs/protobuf.js/commit/da34f43ccd51ad97017e139f137521782f5ef119
-load("@npm//protobufjs-cli:index.bzl", "pbjs", "pbts")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:protobufjs-cli/package_json.bzl", "bin")
 load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 
 def _proto_sources_impl(ctx):
-    return DefaultInfo(files = ctx.attr.proto[ProtoInfo].transitive_sources)
+    transitive_srcs = ctx.attr.proto[ProtoInfo].transitive_sources
+    outs = []
+    for src in transitive_srcs.to_list():
+        out = ctx.actions.declare_file("%s/%s" % (ctx.bin_dir.path, src.short_path))
+        ctx.actions.run_shell(
+            outputs = [out],
+            inputs = [src],
+            command = "cp %s %s" % (src.path, out.path),
+        )
+        outs.append(out)
+
+    return DefaultInfo(files = depset(outs))
 
 _proto_sources = rule(
     doc = """Provider Adapter from ProtoInfo to DefaultInfo.
@@ -17,7 +25,7 @@ _proto_sources = rule(
     attrs = {"proto": attr.label(providers = [ProtoInfo])},
 )
 
-def ts_proto_library(name, proto, **kwargs):
+def ts_proto_library(name, proto, deps = [], **kwargs):
     """Minimal wrapper macro around pbjs/pbts tooling
 
     Args:
@@ -42,9 +50,13 @@ def ts_proto_library(name, proto, **kwargs):
     )
 
     # Transform .proto files to a single _pb.js file named after the macro
-    pbjs(
+    bin.pbjs(
         name = js_target,
-        data = [":" + proto_target],
+        srcs = [":" + proto_target],
+        # We explicitly copy the sources to bin via the _proto_sources rule.
+        # This is needed because the copy_srcs_to_bin attribute here doesn't
+        # support external repositories.
+        copy_srcs_to_bin = False,
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbjs-for-javascript
         args = [
@@ -53,40 +65,38 @@ def ts_proto_library(name, proto, **kwargs):
             "--wrap=es6",
             "--root=%s" % name,
             "--strict-long",  # Force usage of Long type with int64 fields
-            "--out=$@",
-            "$(execpaths %s)" % proto_target,
+            "--out=$(rootpath %s)" % js_out,
+            "$(rootpaths %s)" % proto_target,
         ],
         outs = [js_out],
     )
 
     # Transform the _pb.js file to a .d.ts file with TypeScript types
-    pbts(
+    bin.pbts(
         name = ts_target,
-        data = [js_target],
+        srcs = [js_target],
+        # env = {"BAZEL_BINDIR": "."},
+        # copy_srcs_to_bin = False,
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbts-for-typescript
         args = [
-            "--out=$@",
-            "$(execpath %s)" % js_target,
+            "--out=$(rootpath %s)" % ts_out,
+            "$(rootpath %s)" % js_target,
         ],
         outs = [ts_out],
     )
 
-    # umd_bundle(
-    #     name = name + "__umd",
-    #     package_name = name,
-    #     entry_point = ":" + js_out,
-    # )
-
     # Expose the results as js_library which provides DeclarationInfo for interop with other rules
-    if "deps" not in kwargs:
-        kwargs["deps"] = []
-    kwargs["deps"].append("@npm//protobufjs")
     js_library(
         name = name,
         srcs = [
             js_target,
             ts_target,
+        ],
+        deps = deps + [
+            "//:node_modules/@types/long",
+            "//:node_modules/long",
+            "//:node_modules/protobufjs",
         ],
         **kwargs
     )

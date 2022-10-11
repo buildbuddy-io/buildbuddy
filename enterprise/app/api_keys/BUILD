@@ -8,6 +8,9 @@ ts_library(
     name = "api_keys",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/auth",
         "//app/capabilities",
         "//app/components/button",
@@ -19,8 +22,5 @@ ts_library(
         "//app/service",
         "//app/util:errors",
         "//proto:api_key_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )

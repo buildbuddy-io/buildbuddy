@@ -8,7 +8,7 @@ ts_library(
     strict = True,
     deps = [
         ":math",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -18,7 +18,7 @@ ts_library(
     strict = True,
     deps = [
         ":time_delta",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -27,7 +27,7 @@ ts_library(
     srcs = ["async.ts"],
     strict = True,
     deps = [
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -36,7 +36,7 @@ ts_jasmine_node_test(
     srcs = ["async_test.ts"],
     deps = [
         ":async",
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -57,7 +57,7 @@ ts_library(
     srcs = ["dom.ts"],
     strict = True,
     deps = [
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -96,7 +96,7 @@ ts_library(
     srcs = ["time_delta.ts"],
     strict = True,
     deps = [
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -105,7 +105,7 @@ ts_library(
     srcs = ["math.ts"],
     strict = True,
     deps = [
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -114,7 +114,7 @@ ts_library(
     srcs = ["memo.ts"],
     strict = True,
     deps = [
-        "@npm//tslib",
+        "//:node_modules/tslib",
     ],
 )
 
@@ -123,9 +123,9 @@ ts_library(
     srcs = ["proto.ts"],
     strict = True,
     deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
         "//proto:duration_ts_proto",
         "//proto:timestamp_ts_proto",
-        "@npm//@types/long",
-        "@npm//long",
     ],
 )

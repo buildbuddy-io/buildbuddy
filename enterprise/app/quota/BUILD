@@ -8,6 +8,8 @@ ts_library(
     name = "quota",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/alert",
         "//app/components/button",
         "//app/components/dialog:simple_modal_dialog",
@@ -21,7 +23,5 @@ ts_library(
         "//app/service",
         "//app/util:proto",
         "//proto:quota_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
     ],
 )

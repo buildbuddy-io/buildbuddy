@@ -9,13 +9,13 @@ ts_library(
     srcs = glob(["*.tsx"]),
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/auth",
         "//app/capabilities",
         "//app/components/link",
         "//app/router",
         "//app/service",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )

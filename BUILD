@@ -1,9 +1,13 @@
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_gazelle//:def.bzl", "gazelle")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
-load("@npm//@bazel/typescript:index.bzl", "ts_config")
+load("@npm//:defs.bzl", "npm_link_all_packages")
 load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
 
 nogo(
     name = "vet",
@@ -61,10 +65,14 @@ go_sdk_tool(
 )
 
 exports_files([
-    ".swcrc",
     "package.json",
     "yarn.lock",
 ])
+
+copy_to_bin(
+    name = "swcrc",
+    srcs = [".swcrc"],
+)
 
 ts_config(
     name = "tsconfig",

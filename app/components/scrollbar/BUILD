@@ -10,11 +10,11 @@ ts_library(
     ]),
     strict = True,
     deps = [
-        "@npm//@types/react",
-        "@npm//@types/uuid",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
-        "@npm//uuid",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/uuid",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
+        "//:node_modules/uuid",
     ],
 )

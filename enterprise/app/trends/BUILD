@@ -8,6 +8,11 @@ ts_library(
     name = "trends",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//:node_modules/recharts",
+        "//:node_modules/rxjs",
         "//app/auth",
         "//app/capabilities",
         "//app/components/button",
@@ -17,10 +22,5 @@ ts_library(
         "//app/util:proto",
         "//enterprise/app/filter",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//moment",
-        "@npm//react",
-        "@npm//recharts",
-        "@npm//rxjs",
     ],
 )

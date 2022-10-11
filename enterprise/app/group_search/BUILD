@@ -7,13 +7,13 @@ ts_library(
     srcs = glob(["*.tsx"]),
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/auth",
         "//app/components/dialog:simple_modal_dialog",
         "//app/components/input",
         "//app/errors",
         "//app/service",
         "//proto:group_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
     ],
 )

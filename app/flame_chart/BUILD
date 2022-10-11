@@ -12,17 +12,17 @@ ts_library(
         exclude = ["*_test.*"],
     ),
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
+        "//:node_modules/tslib",
         "//app/components/scrollbar",
         "//app/util:animated_value",
         "//app/util:animation_loop",
         "//app/util:color",
         "//app/util:dom",
         "//app/util:math",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//rxjs",
-        "@npm//tslib",
     ],
 )
 

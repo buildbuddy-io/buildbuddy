@@ -8,6 +8,11 @@ ts_library(
     name = "secrets",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//:node_modules/@types/libsodium-wrappers",
+        "//:node_modules/@types/react",
+        "//:node_modules/libsodium-wrappers",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert",
         "//app/components/button",
         "//app/components/dialog:simple_modal_dialog",
@@ -18,11 +23,5 @@ ts_library(
         "//app/router",
         "//app/service",
         "//proto:secrets_ts_proto",
-        "@npm//@types/libsodium-wrappers",
-        "@npm//@types/react",
-        "@npm//libsodium-wrappers",
-        "@npm//lucide-react",
-        "@npm//path-browserify",
-        "@npm//react",
     ],
 )

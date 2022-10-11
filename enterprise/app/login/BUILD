@@ -7,6 +7,9 @@ ts_library(
     srcs = glob(["*.tsx"]),
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/protobufjs",
+        "//:node_modules/react",
         "//app/alert",
         "//app/auth",
         "//app/capabilities",
@@ -15,8 +18,5 @@ ts_library(
         "//app/router",
         "//app/service",
         "//proto:invocation_ts_proto",
-        "@npm//@types/react",
-        "@npm//protobufjs",
-        "@npm//react",
     ],
 )

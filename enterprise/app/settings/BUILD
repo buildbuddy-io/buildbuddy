@@ -9,6 +9,9 @@ ts_library(
     srcs = glob(["*.tsx"]),
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert",
         "//app/auth",
         "//app/auth:user",
@@ -27,8 +30,5 @@ ts_library(
         "//enterprise/app/quota",
         "//enterprise/app/secrets",
         "//proto:github_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )

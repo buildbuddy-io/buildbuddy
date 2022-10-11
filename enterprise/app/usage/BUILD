@@ -8,13 +8,13 @@ ts_library(
     name = "usage",
     srcs = glob(["*.tsx"]),
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
         "//app/auth",
         "//app/components/select",
         "//app/errors",
         "//app/format",
         "//app/service",
         "//proto:usage_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
     ],
 )

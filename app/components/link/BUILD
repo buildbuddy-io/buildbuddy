@@ -7,10 +7,10 @@ ts_library(
     srcs = ["link.tsx"],
     strict = True,
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/router",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//tslib",
     ],
 )
 

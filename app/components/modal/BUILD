@@ -12,9 +12,9 @@ ts_library(
     ]),
     strict = True,
     deps = [
-        "@npm//@types/react",
-        "@npm//@types/react-modal",
-        "@npm//react",
-        "@npm//react-modal",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-modal",
+        "//:node_modules/react",
+        "//:node_modules/react-modal",
     ],
 )

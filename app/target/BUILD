@@ -6,6 +6,9 @@ ts_library(
     name = "target",
     srcs = glob(["**/*.tsx"]),
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
         "//app/alert",
         "//app/auth",
         "//app/components/button",
@@ -19,8 +22,5 @@ ts_library(
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto:zip_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
     ],
 )
