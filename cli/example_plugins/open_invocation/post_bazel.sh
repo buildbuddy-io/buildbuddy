@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eu
 
 # If the "invocation_url.txt" file was written by the pre-bazel hook,
 # open the URL in that file.
