@@ -434,7 +434,7 @@ func (s *Store) isLeader(clusterID uint64) bool {
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
 	rc := raftConfig.GetRaftConfig(req.GetClusterId(), req.GetNodeId())
 
-	waitErr := make(chan error, 0)
+	waitErr := make(chan error, 1)
 	// Wait for the notification that the cluster node is ready on the local
 	// nodehost.
 	go func() {
