@@ -45,6 +45,11 @@ func run() (exitCode int, err error) {
 	args = login.ConfigureAPIKey(args)
 	args = terminal.ConfigureOutputMode(args)
 
+	// Prepare convenience env vars for plugins
+	if err := plugin.PrepareEnv(); err != nil {
+		return -1, err
+	}
+
 	// Run plugin pre-bazel hooks
 	for _, p := range plugins {
 		args, err = p.PreBazel(args)
@@ -61,18 +66,8 @@ func run() (exitCode int, err error) {
 	// Remove any args that don't need to be on the command line
 	args = arg.RemoveExistingArgs(args, rcFileArgs)
 
-	// Build the pipeline of bazel output handlers
-	wc, err := plugin.PipelineWriter(os.Stdout, plugins)
-	if err != nil {
-		return -1, err
-	}
-	defer wc.Close()
-
-	// Actually run bazel
-	exitCode, output, err := bazelisk.Run(args, wc)
-	if err != nil {
-		return -1, err
-	}
+	// Run bazelisk
+	exitCode, output, err := runBazeliskWithOutputHandlers(args, plugins)
 	defer output.Close()
 
 	// Run plugin post-bazel hooks
@@ -83,4 +78,20 @@ func run() (exitCode int, err error) {
 	}
 
 	return exitCode, nil
+}
+
+func runBazeliskWithOutputHandlers(args []string, plugins []*plugin.Plugin) (int, *bazelisk.Output, error) {
+	// Build the pipeline of bazel output handlers
+	wc, err := plugin.PipelineWriter(os.Stdout, plugins)
+	if err != nil {
+		return -1, nil, err
+	}
+	// Note, it's important that the Close() here happens just after the
+	// bazelisk run completes and before we run post_bazel hooks, since this
+	// waits for all plugins to finish writing to stdout. Otherwise, the
+	// post_bazel output will get intermingled with bazel output.
+	defer wc.Close()
+
+	// Actually run bazel
+	return bazelisk.Run(args, wc)
 }
