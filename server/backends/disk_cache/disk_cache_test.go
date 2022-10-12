@@ -766,7 +766,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		contains, err := dc.Contains(ctx, &resource.ResourceName{
 			Digest:       d,
 			InstanceName: instanceName,
-			CacheType:    resource.CacheType_AC,
+			CacheType:    resource.CacheType_CAS,
 		})
 		require.NoError(t, err)
 		require.True(t, contains)
