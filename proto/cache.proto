@@ -66,8 +66,8 @@ message GetCacheScoreCardRequest {
     // Field mask selecting filters to be applied.
     google.protobuf.FieldMask mask = 1;
 
-    // Return only results with this cache type.
-    CacheType cache_type = 2;
+    // TODO(#1733) Clean up deprecated field and CacheType enum
+    CacheType cache_type_deprecated = 2;
 
     // Return only results with this request type.
     RequestType request_type = 3;
@@ -78,6 +78,9 @@ message GetCacheScoreCardRequest {
     // Return only results whose target ID, action mnemonic, action ID, or
     // digest hash contain this string.
     string search = 5;
+
+    // Return only results with this cache type.
+    resource.CacheType cache_type = 6;
   }
 
   // Optional filter for returned results.

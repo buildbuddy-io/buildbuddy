@@ -46,7 +46,7 @@ const RETRY_FETCH_DELAY_MS = 1000;
 type PresetFilter = {
   label: string;
   values: {
-    cache: cache.CacheType;
+    cache: resource.CacheType;
     request: cache.RequestType;
     response: cache.ResponseType;
   };
@@ -60,19 +60,19 @@ const filters: PresetFilter[] = [
   },
   {
     label: "AC Hits",
-    values: { cache: cache.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.OK },
+    values: { cache: resource.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.OK },
   },
   {
     label: "AC Misses",
-    values: { cache: cache.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.NOT_FOUND },
+    values: { cache: resource.CacheType.AC, request: cache.RequestType.READ, response: cache.ResponseType.NOT_FOUND },
   },
   {
     label: "CAS Hits",
-    values: { cache: cache.CacheType.CAS, request: cache.RequestType.READ, response: cache.ResponseType.OK },
+    values: { cache: resource.CacheType.CAS, request: cache.RequestType.READ, response: cache.ResponseType.OK },
   },
   {
     label: "CAS Writes",
-    values: { cache: cache.CacheType.CAS, request: cache.RequestType.WRITE, response: cache.ResponseType.OK },
+    values: { cache: resource.CacheType.CAS, request: cache.RequestType.WRITE, response: cache.ResponseType.OK },
   },
   {
     label: "Errors",
@@ -141,6 +141,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         filter: {
           mask: { paths: filterFields },
           cacheType: filter.cache,
+          cacheTypeDeprecated: toCacheProtoCacheType(filter.cache),
           requestType: filter.request,
           responseType: filter.response,
           search: this.getSearch(),
@@ -348,8 +349,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             )}
           </div>
         )}
-        <div className="cache-type-column" title={cacheTypeTitle(result.cacheTypeDeprecated)}>
-          {renderCacheType(result.cacheTypeDeprecated)}
+        <div className="cache-type-column" title={cacheTypeTitle(getCacheType(result))}>
+          {renderCacheType(getCacheType(result))}
         </div>
         <div className="status-column column-with-icon">{renderStatus(result)}</div>
         <div>
@@ -479,7 +480,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   private isCompressedSizeColumnVisible() {
     return (
-      this.props.model.isCacheCompressionEnabled() && filters[this.getFilterIndex()].values.cache !== cache.CacheType.AC
+      this.props.model.isCacheCompressionEnabled() && filters[this.getFilterIndex()].values.cache !== resource.CacheType.AC
     );
   }
 
@@ -592,22 +593,22 @@ const RequestsCardContainer: React.FC<JSX.IntrinsicElements["div"]> = ({ classNa
   </div>
 );
 
-function renderCacheType(cacheType: cache.CacheType): React.ReactNode {
+function renderCacheType(cacheType: resource.CacheType): React.ReactNode {
   switch (cacheType) {
-    case cache.CacheType.CAS:
+    case resource.CacheType.CAS:
       return "CAS";
-    case cache.CacheType.AC:
+    case resource.CacheType.AC:
       return "AC";
     default:
       return "";
   }
 }
 
-function cacheTypeTitle(cacheType: cache.CacheType): string | undefined {
+function cacheTypeTitle(cacheType: resource.CacheType): string | undefined {
   switch (cacheType) {
-    case cache.CacheType.CAS:
+    case resource.CacheType.CAS:
       return "Content addressable storage";
-    case cache.CacheType.AC:
+    case resource.CacheType.AC:
       return "Action cache";
     default:
       return undefined;
@@ -625,7 +626,8 @@ function renderCompressionSavings(result: cache.ScoreCard.IResult) {
 }
 
 function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
-  if (result.requestType === cache.RequestType.READ && result.cacheTypeDeprecated === cache.CacheType.AC) {
+  const cacheType = getCacheType(result);
+  if (result.requestType === cache.RequestType.READ && cacheType === resource.CacheType.AC) {
     if (result.status.code !== 0 /*=OK*/) {
       return (
         <>
@@ -714,7 +716,17 @@ function looksLikeDigest(actionId: string) {
   return actionId.length === 64;
 }
 
-function toResourceCacheType(cacheType: cache.CacheType) {
+function getCacheType(result: cache.ScoreCard.IResult): resource.CacheType {
+   const cacheType = result.cacheType;
+   // If the cacheType field is not set, try reading data from the older cacheTypeDeprecated field
+   // for scorecard results that were written before we added the new cacheType field
+   if (!cacheType) {
+      return toResourceCacheType(result.cacheTypeDeprecated);
+   }
+   return cacheType;
+}
+
+function toResourceCacheType(cacheType: cache.CacheType): resource.CacheType {
   switch(cacheType) {
     case cache.CacheType.CAS:
       return resource.CacheType.CAS;
@@ -722,5 +734,16 @@ function toResourceCacheType(cacheType: cache.CacheType) {
       return resource.CacheType.AC;
     default:
       return resource.CacheType.UNKNOWN_CACHE_TYPE;
+  }
+}
+
+function toCacheProtoCacheType(cacheType: resource.CacheType):cache.CacheType {
+  switch(cacheType) {
+    case resource.CacheType.CAS:
+      return cache.CacheType.CAS;
+    case resource.CacheType.AC:
+      return cache.CacheType.AC;
+    default:
+      return cache.CacheType.UNKNOWN_CACHE_TYPE;
   }
 }

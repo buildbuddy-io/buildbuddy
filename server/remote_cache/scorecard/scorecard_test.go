@@ -115,7 +115,7 @@ func TestGetCacheScoreCard_Filter_CacheType(t *testing.T) {
 		InvocationId: invocationID,
 		Filter: &capb.GetCacheScoreCardRequest_Filter{
 			Mask:      &fieldmaskpb.FieldMask{Paths: []string{"cache_type"}},
-			CacheType: capb.CacheType_AC,
+			CacheType: resource.CacheType_AC,
 		},
 	}
 

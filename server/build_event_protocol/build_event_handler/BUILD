@@ -13,6 +13,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:pagination_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//proto:resource_go_proto",
         "//proto:user_id_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/api/common",

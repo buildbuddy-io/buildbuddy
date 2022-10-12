@@ -10,6 +10,7 @@ go_library(
         "//proto:cache_go_proto",
         "//proto:invocation_go_proto",
         "//proto:pagination_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/util/paging",
         "//server/util/status",

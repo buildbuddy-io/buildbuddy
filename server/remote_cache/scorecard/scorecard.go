@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -105,7 +106,21 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 		switch path {
 		case "cache_type":
 			predicates = append(predicates, func(result *capb.ScoreCard_Result) bool {
-				return result.GetCacheTypeDeprecated() == req.GetFilter().GetCacheType()
+				// If the cacheType fields are not set, try reading data from the older cacheTypeDeprecated field
+				// for requests that were made before we added the new cacheType field
+				filterCacheType := req.GetFilter().GetCacheType()
+				if filterCacheType == resource.CacheType_UNKNOWN_CACHE_TYPE {
+					deprecatedCacheType := req.GetFilter().GetCacheTypeDeprecated()
+					filterCacheType = toResourceCacheType(deprecatedCacheType)
+				}
+
+				resultCacheType := result.GetCacheType()
+				if resultCacheType == resource.CacheType_UNKNOWN_CACHE_TYPE {
+					deprecatedCacheType := result.GetCacheTypeDeprecated()
+					resultCacheType = toResourceCacheType(deprecatedCacheType)
+				}
+
+				return resultCacheType == filterCacheType
 			})
 		case "request_type":
 			predicates = append(predicates, func(result *capb.ScoreCard_Result) bool {
@@ -161,6 +176,17 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 	}
 
 	return out, nil
+}
+
+func toResourceCacheType(cacheType capb.CacheType) resource.CacheType {
+	switch cacheType {
+	case capb.CacheType_AC:
+		return resource.CacheType_AC
+	case capb.CacheType_CAS:
+		return resource.CacheType_CAS
+	default:
+		return resource.CacheType_UNKNOWN_CACHE_TYPE
+	}
 }
 
 type sortOpts struct {
