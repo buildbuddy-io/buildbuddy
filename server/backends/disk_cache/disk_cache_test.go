@@ -33,6 +33,12 @@ var (
 	emptyUserMap = testauth.TestUsers()
 )
 
+const (
+	// All files on disk will be a multiple of this block size, assuming a
+	// filesystem with default settings.
+	defaultExt4BlockSize = 4096
+)
+
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(users))
@@ -296,7 +302,7 @@ func TestReadOffset(t *testing.T) {
 func TestReadOffsetLimit(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
-	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, 1000)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, defaultExt4BlockSize)
 	require.NoError(t, err)
 
 	ctx := getAnonContext(t, te)
@@ -317,7 +323,8 @@ func TestReadOffsetLimit(t *testing.T) {
 }
 
 func TestSizeLimit(t *testing.T) {
-	maxSizeBytes := int64(1000) // 1000 bytes
+	// Enough space for 2 small digests.
+	maxSizeBytes := int64(defaultExt4BlockSize * 2)
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
@@ -356,7 +363,8 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
-	maxSizeBytes := int64(1000) // 1000 bytes
+	// Enough room for two small digests.
+	maxSizeBytes := int64(defaultExt4BlockSize * 2)
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)

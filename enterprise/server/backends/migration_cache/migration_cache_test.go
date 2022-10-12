@@ -28,6 +28,12 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+const (
+	// All files on disk will be a multiple of this block size, assuming a
+	// filesystem with default settings.
+	defaultExt4BlockSize = 4096
+)
+
 var (
 	emptyUserMap = testauth.TestUsers()
 )
@@ -102,7 +108,7 @@ func (c *errorCache) Reader(ctx context.Context, d *repb.Digest, offset, limit i
 func TestACIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -133,7 +139,7 @@ func TestACIsolation(t *testing.T) {
 func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -162,7 +168,7 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 func TestSet_DoubleWrite(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -193,7 +199,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	rootDirSrc := testfs.MakeTempDir(t)
 
-	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(1000))
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(defaultExt4BlockSize*10))
 	require.NoError(t, err)
 	destCache := &errorCache{}
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
@@ -276,7 +282,7 @@ func TestGetSet(t *testing.T) {
 func TestGet_DoubleRead(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -299,7 +305,7 @@ func TestGet_DoubleRead(t *testing.T) {
 func TestGet_DestReadErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -455,7 +461,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 func TestCopyDataInBackground_RateLimit(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -508,7 +514,7 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 	testUsers := testauth.TestUsers(testAPIKey, testGroup)
 
 	te := getTestEnv(t, testUsers)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -584,7 +590,7 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 
 	te := getTestEnv(t, testUsers)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -652,7 +658,7 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 func TestContains(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -679,7 +685,7 @@ func TestContains(t *testing.T) {
 func TestContains_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -700,7 +706,7 @@ func TestContains_DestErr(t *testing.T) {
 func TestMetadata(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -727,7 +733,7 @@ func TestMetadata(t *testing.T) {
 func TestMetadata_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -748,7 +754,7 @@ func TestMetadata_DestErr(t *testing.T) {
 func TestFindMissing(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -777,7 +783,7 @@ func TestFindMissing(t *testing.T) {
 func TestFindMissing_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -801,7 +807,7 @@ func TestFindMissing_DestErr(t *testing.T) {
 func TestGetMultiWithCopying(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(10000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -847,7 +853,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 func TestSetMulti(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(10000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -895,7 +901,7 @@ func TestSetMulti(t *testing.T) {
 func TestDelete(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
