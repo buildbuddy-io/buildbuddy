@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
@@ -15,20 +16,28 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 func main() {
 	flag.Parse()
 	exitCode, err := run()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(status.Message(err))
 	}
 	os.Exit(exitCode)
 }
 
 func run() (exitCode int, err error) {
+	// Prepare a dir for temporary files created by this CLI run
+	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
+	if err != nil {
+		return -1, err
+	}
+	defer os.RemoveAll(tempDir)
+
 	// Load plugins
-	plugins, err := plugin.LoadAll()
+	plugins, err := plugin.LoadAll(tempDir)
 	if err != nil {
 		return -1, err
 	}
@@ -66,32 +75,20 @@ func run() (exitCode int, err error) {
 	// Remove any args that don't need to be on the command line
 	args = arg.RemoveExistingArgs(args, rcFileArgs)
 
-	// Run bazelisk
-	exitCode, output, err := runBazeliskWithOutputHandlers(args, plugins)
-	defer output.Close()
+	// Run bazelisk, capturing the original output in a file and allowing
+	// plugins to control how the output is rendered to the terminal.
+	outputPath := filepath.Join(tempDir, "bazel.log")
+	exitCode, err = bazelisk.RunWithPlugins(args, outputPath, plugins)
+	if err != nil {
+		return -1, err
+	}
 
 	// Run plugin post-bazel hooks
 	for _, p := range plugins {
-		if err := p.PostBazel(output.Name()); err != nil {
+		if err := p.PostBazel(outputPath); err != nil {
 			return -1, err
 		}
 	}
 
 	return exitCode, nil
-}
-
-func runBazeliskWithOutputHandlers(args []string, plugins []*plugin.Plugin) (int, *bazelisk.Output, error) {
-	// Build the pipeline of bazel output handlers
-	wc, err := plugin.PipelineWriter(os.Stdout, plugins)
-	if err != nil {
-		return -1, nil, err
-	}
-	// Note, it's important that the Close() here happens just after the
-	// bazelisk run completes and before we run post_bazel hooks, since this
-	// waits for all plugins to finish writing to stdout. Otherwise, the
-	// post_bazel output will get intermingled with bazel output.
-	defer wc.Close()
-
-	// Actually run bazel
-	return bazelisk.Run(args, wc)
 }

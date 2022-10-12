@@ -10,6 +10,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/log",
+        "//cli/plugin",
         "//cli/workspace",
         "//server/util/disk",
         "//server/util/status",

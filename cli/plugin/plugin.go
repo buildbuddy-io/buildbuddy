@@ -3,6 +3,7 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -69,18 +70,26 @@ func readConfig() (*BuildBuddyConfig, error) {
 // (if remote, they will be fetched).
 type Plugin struct {
 	config *PluginConfig
+	// tempDir is a directory where the plugin can store temporary files.
+	// This dir lasts only for the current CLI invocation and is visible
+	// to all hooks.
+	tempDir string
 }
 
 // LoadAll loads all plugins from the config, and ensures that any remote
 // plugins are downloaded.
-func LoadAll() ([]*Plugin, error) {
+func LoadAll(tempDir string) ([]*Plugin, error) {
 	cfg, err := readConfig()
 	if err != nil {
 		return nil, err
 	}
 	plugins := make([]*Plugin, 0, len(cfg.Plugins))
 	for _, p := range cfg.Plugins {
-		plugin := &Plugin{config: p}
+		pluginTempDir, err := os.MkdirTemp(tempDir, "plugin-tmp-*")
+		if err != nil {
+			return nil, status.InternalErrorf("failed to create plugin temp dir: %s", err)
+		}
+		plugin := &Plugin{config: p, tempDir: pluginTempDir}
 		if err := plugin.load(); err != nil {
 			return nil, err
 		}
@@ -241,6 +250,12 @@ func (p *Plugin) Path() (string, error) {
 	return filepath.Join(ws, p.config.Path), nil
 }
 
+func (p *Plugin) commandEnv() []string {
+	env := os.Environ()
+	env = append(env, fmt.Sprintf("PLUGIN_TEMPDIR=%s", p.tempDir))
+	return env
+}
+
 // PreBazel executes the plugin's pre-bazel hook if it exists, allowing the
 // plugin to return a set of transformed bazel arguments.
 //
@@ -289,8 +304,9 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	cmd.Dir = path
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+	cmd.Env = p.commandEnv()
 	if err := cmd.Run(); err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
 
 	newArgs, err := readArgsFile(argsFile.Name())
@@ -329,7 +345,11 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
-	return cmd.Run()
+	cmd.Env = p.commandEnv()
+	if err := cmd.Run(); err != nil {
+		return status.InternalErrorf("Post-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
+	}
+	return nil
 }
 
 // Pipe streams the combined console output (stdout + stderr) from the previous
@@ -361,6 +381,7 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	cmd.Stderr = pw
 	// Allow output handlers to accept user input.
 	cmd.Stdin = r
+	cmd.Env = p.commandEnv()
 	go func() {
 		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
