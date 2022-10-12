@@ -139,6 +139,160 @@ func TestBasicReadWrite(t *testing.T) {
 	}
 }
 
+func TestContains_WithIsolation(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+	remoteInstanceName := "remote"
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+	dcWithIsolation1, err := dc1.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+	dcWithIsolation2, err := dc2.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+	dcWithIsolation3, err := dc3.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	// Do a write - should be written to all nodes
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	if err = dcWithIsolation1.Set(ctx, d, buf); err != nil {
+		require.NoError(t, err)
+	}
+
+	c, err := dcWithIsolation1.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.True(t, c)
+	c, err = dc1.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_AC,
+	})
+	require.NoError(t, err)
+	require.True(t, c)
+
+	c, err = dcWithIsolation2.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.True(t, c)
+	c, err = dc2.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_AC,
+	})
+	require.NoError(t, err)
+	require.True(t, c)
+
+	c, err = dcWithIsolation3.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.True(t, c)
+	c, err = dc3.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_AC,
+	})
+	require.NoError(t, err)
+	require.True(t, c)
+}
+
+func TestContains_NotWritten(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	// Data is not written - no nodes should contain it
+	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	c, err := dc1.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.False(t, c)
+	c, err = dc1.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: "",
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_CAS,
+	})
+	require.NoError(t, err)
+	require.False(t, c)
+
+	c, err = dc2.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.False(t, c)
+	c, err = dc2.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: "",
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_CAS,
+	})
+	require.NoError(t, err)
+	require.False(t, c)
+
+	c, err = dc3.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.False(t, c)
+	c, err = dc3.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: "",
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_CAS,
+	})
+	require.NoError(t, err)
+	require.False(t, c)
+}
+
 func TestReadMaxOffset(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)

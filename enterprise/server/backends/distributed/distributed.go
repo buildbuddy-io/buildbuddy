@@ -560,7 +560,6 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 		ps.MarkPeerAsFailed(peer)
 	}
 	return false, nil
-
 }
 
 func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
