@@ -381,7 +381,12 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 func (c *Cache) remoteContains(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.ContainsDeprecated(ctx, d)
+		return c.local.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: isolation.GetRemoteInstanceName(),
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    isolation.GetCacheType(),
+		})
 	}
 	return c.cacheProxy.RemoteContains(ctx, peer, isolation, d)
 }
