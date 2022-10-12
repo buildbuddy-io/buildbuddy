@@ -576,7 +576,7 @@ func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, e
 	})
 }
 
-func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.isolation, c.getBackfillOrders(d, ps)); err != nil {
@@ -601,6 +601,10 @@ func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interf
 	}
 
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q, peerset: %v", d.GetHash(), ps)
+}
+
+func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+
 }
 
 func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
