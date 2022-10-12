@@ -161,15 +161,6 @@ func (g *GCSCache) key(ctx context.Context, r *resource.ResourceName) (string, e
 	return userPrefix + isolationPrefix + hash, nil
 }
 
-func (g *GCSCache) keyDeprecated(ctx context.Context, d *repb.Digest) (string, error) {
-	return g.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
-}
-
 func (g *GCSCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	return &GCSCache{
 		gcsClient:          g.gcsClient,
@@ -182,7 +173,12 @@ func (g *GCSCache) WithIsolation(ctx context.Context, cacheType resource.CacheTy
 }
 
 func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := g.keyDeprecated(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +251,12 @@ func swallowGCSAlreadyExistsError(err error) error {
 }
 
 func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := g.keyDeprecated(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -301,7 +302,12 @@ func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) er
 }
 
 func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := g.keyDeprecated(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -365,14 +371,24 @@ func (g *GCSCache) metadata(ctx context.Context, r *resource.ResourceName) (*sto
 }
 
 func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	metadata, err := g.metadata(ctx, d)
+	metadata, err := g.metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil || metadata == nil {
 		return false, err
 	}
 
 	// Bump TTL to ensure that referenced blobs are available and will be for some period of time afterwards,
 	// as specified by the protocol description
-	k, err := g.key(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return false, err
 	}
@@ -434,7 +450,12 @@ func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*
 }
 
 func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := g.keyDeprecated(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +534,12 @@ func setChunkSize(d *repb.Digest, w *storage.Writer) {
 }
 
 func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	k, err := g.keyDeprecated(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}

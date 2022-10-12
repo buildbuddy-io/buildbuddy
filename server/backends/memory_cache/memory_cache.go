@@ -90,15 +90,6 @@ func (m *MemoryCache) key(ctx context.Context, r *resource.ResourceName) (string
 	return key, nil
 }
 
-func (m *MemoryCache) keyDeprecated(ctx context.Context, d *repb.Digest) (string, error) {
-	return m.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	return &MemoryCache{
 		l:                  m.l,
@@ -109,7 +100,12 @@ func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 }
 
 func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return false, err
 	}
@@ -122,7 +118,12 @@ func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	k, err := m.keyDeprecated(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +158,12 @@ func (m *MemoryCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 }
 
 func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := m.keyDeprecated(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +197,12 @@ func (m *MemoryCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 }
 
 func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := m.keyDeprecated(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -211,7 +222,12 @@ func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 }
 
 func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := m.keyDeprecated(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return err
 	}

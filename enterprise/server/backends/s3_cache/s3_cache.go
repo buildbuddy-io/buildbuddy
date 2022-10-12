@@ -228,15 +228,6 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 	return err
 }
 
-func (s3c *S3Cache) keyDeprecated(ctx context.Context, d *repb.Digest) (string, error) {
-	return s3c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
-}
-
 func (s3c *S3Cache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
 	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
@@ -277,7 +268,12 @@ func (s3c *S3Cache) WithIsolation(ctx context.Context, cacheType resource.CacheT
 }
 
 func (s3c *S3Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := s3c.keyDeprecated(ctx, d)
+	k, err := s3c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +325,12 @@ func (s3c *S3Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 	return foundMap, nil
 }
 func (s3c *S3Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := s3c.keyDeprecated(ctx, d)
+	k, err := s3c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -366,7 +367,12 @@ func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) e
 }
 
 func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := s3c.keyDeprecated(ctx, d)
+	k, err := s3c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -421,14 +427,20 @@ func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (boo
 	var err error
 	defer timer.ObserveContains(err)
 
-	metadata, err := s3c.metadata(ctx, r)
+	resourceName := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	}
+	metadata, err := s3c.metadata(ctx, resourceName)
 	if err != nil || metadata == nil {
 		return false, err
 	}
 
 	// Bump TTL to ensure that referenced blobs are available and will be for some period of time afterwards,
 	// as specified by the protocol description
-	key, err := s3c.key(ctx, d)
+	key, err := s3c.key(ctx, resourceName)
 	if err != nil {
 		return false, err
 	}
@@ -513,7 +525,12 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]
 }
 
 func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := s3c.keyDeprecated(ctx, d)
+	k, err := s3c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -570,7 +587,12 @@ func (w *waitForUploadWriteCloser) Close() error {
 	return nil
 }
 func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	k, err := s3c.keyDeprecated(ctx, d)
+	k, err := s3c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
