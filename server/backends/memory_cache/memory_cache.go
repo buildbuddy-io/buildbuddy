@@ -71,8 +71,8 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 	}, nil
 }
 
-func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
-	hash, err := digest.Validate(d)
+func (m *MemoryCache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
 	}
@@ -82,10 +82,10 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	}
 
 	var key string
-	if m.cacheType == resource.CacheType_AC {
-		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(m.cacheType), m.remoteInstanceName, hash)
+	if r.GetCacheType() == resource.CacheType_AC {
+		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), r.GetInstanceName(), hash)
 	} else {
-		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(m.cacheType), hash)
+		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), hash)
 	}
 	return key, nil
 }
@@ -100,7 +100,12 @@ func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 }
 
 func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return false, err
 	}
@@ -113,7 +118,12 @@ func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +158,12 @@ func (m *MemoryCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 }
 
 func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +197,12 @@ func (m *MemoryCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 }
 
 func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -202,7 +222,12 @@ func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 }
 
 func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return err
 	}
