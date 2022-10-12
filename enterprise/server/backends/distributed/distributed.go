@@ -393,8 +393,12 @@ func (c *Cache) remoteContains(ctx context.Context, peer string, isolation *dcpb
 
 func (c *Cache) remoteMetadata(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
-		return c.local.MetadataDeprecated(ctx, d)
+		return c.local.Metadata(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: isolation.GetRemoteInstanceName(),
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    isolation.GetCacheType(),
+		})
 	}
 	return c.cacheProxy.RemoteMetadata(ctx, peer, isolation, d)
 }
@@ -577,22 +581,27 @@ func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, e
 }
 
 func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	d := r.GetDigest()
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
 	ps := c.readPeers(d)
 	backfill := func() {
-		if err := c.backfillPeers(ctx, c.isolation, c.getBackfillOrders(d, ps)); err != nil {
+		if err := c.backfillPeers(ctx, isolation, c.getBackfillOrders(d, ps)); err != nil {
 			c.log.Debugf("Error backfilling peers: %s", err)
 		}
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		md, err := c.remoteMetadata(ctx, peer, c.isolation, d)
+		md, err := c.remoteMetadata(ctx, peer, isolation, d)
 		if err == nil {
 			c.log.Debugf("Metadata(%q) found on peer %q", d, peer)
 			backfill()
 			return md, nil
 		}
 		if status.IsNotFoundError(err) {
-			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
+			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.IsolationToString(isolation)+d.GetHash(), peer)
 			continue
 		}
 
@@ -604,7 +613,12 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 }
 
 func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-
+	return c.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.isolation.GetCacheType(),
+	})
 }
 
 func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
