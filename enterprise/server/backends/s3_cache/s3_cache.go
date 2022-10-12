@@ -60,12 +60,13 @@ var (
 
 // AWS stuff
 type S3Cache struct {
-	s3         *s3.S3
-	bucket     *string
-	downloader *s3manager.Downloader
-	uploader   *s3manager.Uploader
-	prefix     string
-	ttlInDays  int64
+	s3                 *s3.S3
+	bucket             *string
+	downloader         *s3manager.Downloader
+	uploader           *s3manager.Uploader
+	cacheType          resource.CacheType
+	remoteInstanceName string
+	ttlInDays          int64
 }
 
 func Register(env environment.Env) error {
@@ -117,11 +118,13 @@ func NewS3Cache() (*S3Cache, error) {
 	// Create S3 service client
 	svc := s3.New(sess)
 	s3c := &S3Cache{
-		s3:         svc,
-		bucket:     aws.String(*bucket),
-		downloader: s3manager.NewDownloader(sess),
-		uploader:   s3manager.NewUploader(sess),
-		ttlInDays:  *ttlDays,
+		s3:                 svc,
+		bucket:             aws.String(*bucket),
+		downloader:         s3manager.NewDownloader(sess),
+		uploader:           s3manager.NewUploader(sess),
+		ttlInDays:          *ttlDays,
+		cacheType:          resource.CacheType_CAS,
+		remoteInstanceName: "",
 	}
 
 	// S3 access points can't modify or delete buckets
@@ -225,8 +228,17 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 	return err
 }
 
-func (s3c *S3Cache) key(ctx context.Context, d *repb.Digest) (string, error) {
-	hash, err := digest.Validate(d)
+func (s3c *S3Cache) keyDeprecated(ctx context.Context, d *repb.Digest) (string, error) {
+	return s3c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
+}
+
+func (s3c *S3Cache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
 	}
@@ -234,7 +246,8 @@ func (s3c *S3Cache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	k := filepath.Join(userPrefix, s3c.prefix, hash, hash)
+	isolationPrefix := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()))
+	k := filepath.Join(userPrefix, isolationPrefix, hash, hash)
 	return k, nil
 }
 
@@ -252,22 +265,19 @@ func isNotFoundErr(err error) bool {
 }
 
 func (s3c *S3Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	newPrefix := filepath.Join(remoteInstanceName, digest.CacheTypeToPrefix(cacheType))
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
 	return &S3Cache{
-		s3:         s3c.s3,
-		bucket:     s3c.bucket,
-		downloader: s3c.downloader,
-		uploader:   s3c.uploader,
-		ttlInDays:  s3c.ttlInDays,
-		prefix:     newPrefix,
+		s3:                 s3c.s3,
+		bucket:             s3c.bucket,
+		downloader:         s3c.downloader,
+		uploader:           s3c.uploader,
+		ttlInDays:          s3c.ttlInDays,
+		cacheType:          cacheType,
+		remoteInstanceName: remoteInstanceName,
 	}, nil
 }
 
 func (s3c *S3Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := s3c.key(ctx, d)
+	k, err := s3c.keyDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +329,7 @@ func (s3c *S3Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 	return foundMap, nil
 }
 func (s3c *S3Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := s3c.key(ctx, d)
+	k, err := s3c.keyDeprecated(ctx, d)
 	if err != nil {
 		return err
 	}
@@ -356,7 +366,7 @@ func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) e
 }
 
 func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := s3c.key(ctx, d)
+	k, err := s3c.keyDeprecated(ctx, d)
 	if err != nil {
 		return err
 	}
@@ -411,7 +421,7 @@ func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (boo
 	var err error
 	defer timer.ObserveContains(err)
 
-	metadata, err := s3c.metadata(ctx, d)
+	metadata, err := s3c.metadata(ctx, r)
 	if err != nil || metadata == nil {
 		return false, err
 	}
@@ -431,7 +441,12 @@ func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (boo
 
 // TODO(buildbuddy-internal#1485) - Add last access time
 func (s3c *S3Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	metadata, err := s3c.metadata(ctx, d)
+	metadata, err := s3c.metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -444,8 +459,8 @@ func (s3c *S3Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.C
 	}, nil
 }
 
-func (s3c *S3Cache) metadata(ctx context.Context, d *repb.Digest) (*s3.HeadObjectOutput, error) {
-	key, err := s3c.key(ctx, d)
+func (s3c *S3Cache) metadata(ctx context.Context, r *resource.ResourceName) (*s3.HeadObjectOutput, error) {
+	key, err := s3c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +513,7 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]
 }
 
 func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := s3c.key(ctx, d)
+	k, err := s3c.keyDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -555,7 +570,7 @@ func (w *waitForUploadWriteCloser) Close() error {
 	return nil
 }
 func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	k, err := s3c.key(ctx, d)
+	k, err := s3c.keyDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
