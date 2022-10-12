@@ -370,25 +370,15 @@ func (g *GCSCache) metadata(ctx context.Context, r *resource.ResourceName) (*sto
 	return nil, finalErr
 }
 
-func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	metadata, err := g.metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
+func (g *GCSCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	metadata, err := g.metadata(ctx, r)
 	if err != nil || metadata == nil {
 		return false, err
 	}
 
 	// Bump TTL to ensure that referenced blobs are available and will be for some period of time afterwards,
 	// as specified by the protocol description
-	k, err := g.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return false, err
 	}
@@ -397,6 +387,15 @@ func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool
 		return true, nil
 	}
 	return false, nil
+}
+
+func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return g.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access time

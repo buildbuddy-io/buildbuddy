@@ -99,13 +99,8 @@ func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 	}, nil
 }
 
-func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	k, err := m.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
+func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return false, err
 	}
@@ -114,6 +109,15 @@ func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 	m.lock.Unlock()
 
 	return contains, nil
+}
+
+func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return m.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
