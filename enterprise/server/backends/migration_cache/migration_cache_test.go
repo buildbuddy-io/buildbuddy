@@ -742,9 +742,21 @@ func TestMetadata(t *testing.T) {
 	md, err := mc.MetadataDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.SizeBytes)
+	md, err = mc.Metadata(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(100), md.SizeBytes)
 
 	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
 	md, err = mc.MetadataDeprecated(ctx, notWrittenDigest)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, md)
+	md, err = mc.Metadata(ctx, &resource.ResourceName{
+		Digest:    notWrittenDigest,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, md)
 }

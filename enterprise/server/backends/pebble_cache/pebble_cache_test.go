@@ -298,43 +298,64 @@ func TestMetadata(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		// Set() the bytes in the cache.
 		err := pc.Set(ctx, d, buf)
-		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err)
+
 		// Metadata should return true size of the blob, regardless of queried size.
-		md, err := pc.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-		if err != nil {
-			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+		digestWrongSize := &repb.Digest{Hash: d.GetHash(), SizeBytes: 1}
+		rn := &resource.ResourceName{
+			Digest:    digestWrongSize,
+			CacheType: resource.CacheType_CAS,
 		}
+
+		md, err := pc.MetadataDeprecated(ctx, digestWrongSize)
+		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime1 := md.LastAccessTimeUsec
 		lastModifyTime1 := md.LastModifyTimeUsec
 		require.NotZero(t, lastAccessTime1)
 		require.NotZero(t, lastModifyTime1)
 
+		md, err = pc.Metadata(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime1 = md.LastAccessTimeUsec
+		lastModifyTime1 = md.LastModifyTimeUsec
+		require.NotZero(t, lastAccessTime1)
+		require.NotZero(t, lastModifyTime1)
+
 		// Last access time should not update since last call to Metadata()
-		md, err = pc.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-		if err != nil {
-			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
-		}
+		md, err = pc.MetadataDeprecated(ctx, digestWrongSize)
+		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
 		lastModifyTime2 := md.LastModifyTimeUsec
 		require.Equal(t, lastAccessTime1, lastAccessTime2)
 		require.Equal(t, lastModifyTime1, lastModifyTime2)
 
+		md, err = pc.Metadata(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime2 = md.LastAccessTimeUsec
+		lastModifyTime2 = md.LastModifyTimeUsec
+		require.Equal(t, lastAccessTime1, lastAccessTime2)
+		require.Equal(t, lastModifyTime1, lastModifyTime2)
+
 		// After updating data, last access and modify time should update
 		err = pc.Set(ctx, d, buf)
-		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
-		md, err = pc.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-		if err != nil {
-			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err)
+		md, err = pc.MetadataDeprecated(ctx, digestWrongSize)
+		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
 		lastModifyTime3 := md.LastModifyTimeUsec
+		require.Greater(t, lastAccessTime3, lastAccessTime1)
+		require.Greater(t, lastModifyTime3, lastModifyTime2)
+
+		md, err = pc.Metadata(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime3 = md.LastAccessTimeUsec
+		lastModifyTime3 = md.LastModifyTimeUsec
 		require.Greater(t, lastAccessTime3, lastAccessTime1)
 		require.Greater(t, lastModifyTime3, lastModifyTime2)
 	}

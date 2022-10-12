@@ -701,21 +701,28 @@ func TestMetadata(t *testing.T) {
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
+	dcWithIsolation1, err := dc1.WithIsolation(ctx, resource.CacheType_CAS, "blah")
+	require.NoError(t, err)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
+	dcWithIsolation2, err := dc2.WithIsolation(ctx, resource.CacheType_CAS, "blah")
+	require.NoError(t, err)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
+	dcWithIsolation3, err := dc3.WithIsolation(ctx, resource.CacheType_CAS, "blah")
+	require.NoError(t, err)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
 
+	distributedCachesWithIsolation := []interfaces.Cache{dcWithIsolation1, dcWithIsolation2, dcWithIsolation3}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	testSizes := []int64{
@@ -724,14 +731,27 @@ func TestMetadata(t *testing.T) {
 	for i, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		// Set() the bytes in the cache.
-		err := distributedCaches[i%3].Set(ctx, d, buf)
+		err := distributedCachesWithIsolation[i%3].Set(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 
-		for _, dc := range distributedCaches {
+		for _, dc := range distributedCachesWithIsolation {
 			// Metadata should return true size of the blob, regardless of queried size.
 			md, err := dc.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+			if err != nil {
+				t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+			}
+			require.Equal(t, testSize, md.SizeBytes)
+		}
+
+		for _, dc := range distributedCaches {
+			// Metadata should return true size of the blob, regardless of queried size.
+			md, err := dc.Metadata(ctx, &resource.ResourceName{
+				Digest:       &repb.Digest{Hash: d.GetHash(), SizeBytes: 1},
+				InstanceName: "blah",
+				CacheType:    resource.CacheType_CAS,
+			})
 			if err != nil {
 				t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
 			}

@@ -174,13 +174,8 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 // Note: Can't use rdb.ObjectIdleTime to calculate last access time, because rdb.StrLen resets the idle time to 0,
 // so this API will always incorrectly set the last access time to the current time
-func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	key, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	key, err := c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -189,6 +184,7 @@ func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interf
 		return nil, err
 	}
 	if found == 0 {
+		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 	blobLen, err := c.rdb.StrLen(ctx, key).Result()
@@ -199,6 +195,15 @@ func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interf
 	return &interfaces.CacheMetadata{
 		SizeBytes: blobLen,
 	}, nil
+}
+
+func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return c.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 }
 
 func update(old, new map[string]bool) {

@@ -313,8 +313,14 @@ func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (boo
 	})
 }
 
-func (c *DiskCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	lruRecord, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
+func (c *DiskCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+
+	d := r.GetDigest()
+	lruRecord, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), d)
 	if err != nil {
 		return nil, err
 	}
@@ -335,6 +341,15 @@ func (c *DiskCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*in
 		LastAccessTimeUsec: lastUseNanos / 1000,
 		LastModifyTimeUsec: lastModifyNanos / 1000,
 	}, nil
+}
+
+func (c *DiskCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return c.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 }
 
 func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {

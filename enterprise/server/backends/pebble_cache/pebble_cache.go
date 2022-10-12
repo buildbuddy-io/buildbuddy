@@ -873,7 +873,7 @@ func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 	})
 }
 
-func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -883,7 +883,7 @@ func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
+	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -900,6 +900,15 @@ func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
 	}, nil
+}
+
+func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return p.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.RemoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.CacheType,
+	})
 }
 
 func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
