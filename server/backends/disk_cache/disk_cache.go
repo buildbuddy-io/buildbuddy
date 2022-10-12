@@ -293,10 +293,24 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	record, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
+func (c *DiskCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return false, err
+	}
+
+	record, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	contains := record != nil
 	return contains, err
+}
+
+func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return c.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 }
 
 func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {

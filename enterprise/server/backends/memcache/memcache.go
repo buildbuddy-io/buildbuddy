@@ -117,13 +117,8 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType,
 	}, nil
 }
 
-func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	key, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	key, err := c.key(ctx, r)
 	if err != nil {
 		return false, err
 	}
@@ -136,6 +131,15 @@ func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, e
 		return false, nil
 	}
 	return false, err
+}
+
+func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return c.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time

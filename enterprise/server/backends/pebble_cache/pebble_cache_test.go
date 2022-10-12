@@ -138,6 +138,18 @@ func TestACIsolation(t *testing.T) {
 	got1, err := c1.Get(ctx, d1)
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
+
+	contains, err := c1.ContainsDeprecated(ctx, d1)
+	require.NoError(t, err)
+	require.True(t, contains)
+
+	contains, err = pc.Contains(ctx, &resource.ResourceName{
+		Digest:       d1,
+		InstanceName: "foo",
+		CacheType:    resource.CacheType_AC,
+	})
+	require.NoError(t, err)
+	require.True(t, contains)
 }
 
 func TestIsolation(t *testing.T) {

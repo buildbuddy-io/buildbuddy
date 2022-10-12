@@ -422,25 +422,19 @@ func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time)
 	return true
 }
 
-func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+func (s3c *S3Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	var err error
 	defer timer.ObserveContains(err)
 
-	resourceName := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	}
-	metadata, err := s3c.metadata(ctx, resourceName)
+	metadata, err := s3c.metadata(ctx, r)
 	if err != nil || metadata == nil {
 		return false, err
 	}
 
 	// Bump TTL to ensure that referenced blobs are available and will be for some period of time afterwards,
 	// as specified by the protocol description
-	key, err := s3c.key(ctx, resourceName)
+	key, err := s3c.key(ctx, r)
 	if err != nil {
 		return false, err
 	}
@@ -449,6 +443,15 @@ func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (boo
 		return true, nil
 	}
 	return false, err
+}
+
+func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return s3c.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access time

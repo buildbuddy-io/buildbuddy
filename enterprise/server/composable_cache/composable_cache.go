@@ -48,6 +48,15 @@ func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType resource.
 	}, nil
 }
 
+func (c *ComposableCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	outerExists, err := c.outer.Contains(ctx, r)
+	if err == nil && outerExists {
+		return outerExists, nil
+	}
+
+	return c.inner.Contains(ctx, r)
+}
+
 func (c *ComposableCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	outerExists, err := c.outer.ContainsDeprecated(ctx, d)
 	if err == nil && outerExists {
