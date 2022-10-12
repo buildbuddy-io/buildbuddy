@@ -190,7 +190,7 @@ func rdString(rd *rfpb.RangeDescriptor) string {
 	if rd == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("Range(%d) [%q, %q)", rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
+	return fmt.Sprintf("Range(%d) [%q, %q) gen %d", rd.GetRangeId(), rd.GetLeft(), rd.GetRight(), rd.GetGeneration())
 }
 
 func (sm *Replica) setRange(key, val []byte) error {
@@ -775,15 +775,11 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 // which must be running locally on this nodehost and available in the store.
 func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.CopyStoredFilesResponse, error) {
 	start := time.Now()
-	defer func() {
-		sm.log.Infof("Took %s to copy stored files between ranges", time.Since(start))
-	}()
 	appliesToThisReplica := sm.splitAppliesToThisReplica(req.GetSourceRange())
 	if !appliesToThisReplica {
 		sm.log.Debugf("Received copyStoredFiles cmd but it doesn't apply to this replica. Not doing anything.")
 		return &rfpb.CopyStoredFilesResponse{}, nil
 	}
-
 	targetReplica, err := sm.store.GetReplica(req.GetTargetRangeId())
 	if err != nil {
 		return nil, err
@@ -791,8 +787,10 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 	if targetReplica == sm {
 		return nil, status.FailedPreconditionErrorf("cannot copy stored files from replica (range %d) to self", req.GetTargetRangeId())
 	}
+	defer func() {
+		sm.log.Infof("Took %s to copy stored files from %+v to %+v", time.Since(start), sm, targetReplica)
+	}()
 
-	sm.log.Debugf("Copying stored files from %+v to %+v", sm, targetReplica)
 	ctx := context.Background()
 	iter := sm.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(req.GetStart()),
