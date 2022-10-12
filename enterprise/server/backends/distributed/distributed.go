@@ -394,7 +394,7 @@ func (c *Cache) remoteContains(ctx context.Context, peer string, isolation *dcpb
 func (c *Cache) remoteMetadata(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Metadata(ctx, d)
+		return c.local.MetadataDeprecated(ctx, d)
 	}
 	return c.cacheProxy.RemoteMetadata(ctx, peer, isolation, d)
 }
@@ -576,7 +576,7 @@ func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, e
 	})
 }
 
-func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.isolation, c.getBackfillOrders(d, ps)); err != nil {

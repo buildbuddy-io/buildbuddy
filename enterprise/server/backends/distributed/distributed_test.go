@@ -731,7 +731,7 @@ func TestMetadata(t *testing.T) {
 
 		for _, dc := range distributedCaches {
 			// Metadata should return true size of the blob, regardless of queried size.
-			md, err := dc.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+			md, err := dc.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
 			if err != nil {
 				t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
 			}

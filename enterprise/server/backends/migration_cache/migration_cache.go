@@ -232,20 +232,20 @@ func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest
 	})
 }
 
-func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (mc *MigrationCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMetadata *interfaces.CacheMetadata
 
 	eg.Go(func() error {
-		srcMetadata, srcErr = mc.src.Metadata(gctx, d)
+		srcMetadata, srcErr = mc.src.MetadataDeprecated(gctx, d)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.Metadata(gctx, d)
+			_, dstErr = mc.dest.MetadataDeprecated(gctx, d)
 			return nil // we don't care about the return error from this cache
 		})
 	}

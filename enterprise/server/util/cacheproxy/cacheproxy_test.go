@@ -865,7 +865,7 @@ func TestMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error fetching metadata from cacheproxy: %s", err)
 	}
-	cacheMetadata, err := cache.Metadata(ctx, d)
+	cacheMetadata, err := cache.MetadataDeprecated(ctx, d)
 	if err != nil {
 		t.Fatalf("Error fetching metadata from underlying cache: %s", err)
 	}

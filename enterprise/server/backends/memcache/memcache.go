@@ -143,7 +143,7 @@ func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, e
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
-func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	key, err := c.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: c.remoteInstanceName,

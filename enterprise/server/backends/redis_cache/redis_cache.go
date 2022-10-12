@@ -174,7 +174,7 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 // Note: Can't use rdb.ObjectIdleTime to calculate last access time, because rdb.StrLen resets the idle time to 0,
 // so this API will always incorrectly set the last access time to the current time
-func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	key, err := c.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: c.remoteInstanceName,

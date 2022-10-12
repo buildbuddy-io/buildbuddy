@@ -208,7 +208,7 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 		return nil, err
 	}
 	d := digestFromKey(req.GetKey())
-	md, err := cache.Metadata(ctx, d)
+	md, err := cache.MetadataDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}

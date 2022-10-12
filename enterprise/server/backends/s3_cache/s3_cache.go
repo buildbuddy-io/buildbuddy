@@ -455,7 +455,7 @@ func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (boo
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access time
-func (s3c *S3Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (s3c *S3Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	metadata, err := s3c.metadata(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: s3c.remoteInstanceName,

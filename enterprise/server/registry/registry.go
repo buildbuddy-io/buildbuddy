@@ -213,7 +213,7 @@ func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	md, err := c.Metadata(ctx, rn.GetDigest())
+	md, err := c.MetadataDeprecated(ctx, rn.GetDigest())
 	if err != nil {
 		return 0, err
 	}

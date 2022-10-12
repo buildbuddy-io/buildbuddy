@@ -458,7 +458,7 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 		return nil, err
 	}
 
-	md, err := cache.Metadata(ctx, rn.GetDigest())
+	md, err := cache.MetadataDeprecated(ctx, rn.GetDigest())
 	if err != nil {
 		// If the data has not been committed to the cache, then just tell the
 		// client that we don't have anything and let them retry it.

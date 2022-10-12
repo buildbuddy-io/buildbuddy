@@ -873,7 +873,7 @@ func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 	})
 }
 
-func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err

@@ -313,7 +313,7 @@ func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (boo
 	})
 }
 
-func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *DiskCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	lruRecord, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
 	if err != nil {
 		return nil, err

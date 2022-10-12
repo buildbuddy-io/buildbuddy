@@ -472,7 +472,7 @@ func (rc *RaftCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bo
 	})
 }
 
-func (rc *RaftCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (rc *RaftCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
 

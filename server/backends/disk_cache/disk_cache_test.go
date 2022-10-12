@@ -116,7 +116,7 @@ func TestMetadata(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Metadata should return true size of the blob, regardless of queried size.
-		md, err := c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+		md, err := c.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
 		if err != nil {
 			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
 		}
@@ -127,7 +127,7 @@ func TestMetadata(t *testing.T) {
 		require.NotZero(t, lastModifyTime1)
 
 		// Last access time should not update since last call to Metadata()
-		md, err = c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+		md, err = c.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
 		if err != nil {
 			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
 		}
@@ -143,7 +143,7 @@ func TestMetadata(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
-		md, err = c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+		md, err = c.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
 		if err != nil {
 			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
 		}
@@ -173,7 +173,7 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 	testSize := int64(100)
 	d, _ := testdigest.NewRandomDigestBuf(t, testSize)
 
-	md, err := c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+	md, err := c.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, md)
 }
