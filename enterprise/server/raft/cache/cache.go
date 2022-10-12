@@ -329,20 +329,28 @@ func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType resource.Cache
 	return &clone, nil
 }
 
-func (rc *RaftCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.FileRecord, error) {
-	_, err := digest.Validate(d)
+func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
+	_, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return nil, err
 	}
 
 	return &rfpb.FileRecord{
-		Isolation: rc.isolation,
-		Digest:    d,
+		Isolation: &rfpb.Isolation{
+			CacheType:          r.GetCacheType(),
+			RemoteInstanceName: r.GetInstanceName(),
+		},
+		Digest: r.GetDigest(),
 	}, nil
 }
 
 func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	fileRecord, err := rc.makeFileRecord(ctx, d)
+	fileRecord, err := rc.makeFileRecord(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +393,12 @@ func (rwc *raftWriteCloser) Close() error {
 }
 
 func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	fileRecord, err := rc.makeFileRecord(ctx, d)
+	fileRecord, err := rc.makeFileRecord(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -454,10 +467,10 @@ func (rc *RaftCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func (rc *RaftCache) digestsToKeyMetas(ctx context.Context, digests []*repb.Digest) ([]*sender.KeyMeta, error) {
+func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames []*resource.ResourceName) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
-	for _, d := range digests {
-		fileRecord, err := rc.makeFileRecord(ctx, d)
+	for _, rn := range resourceNames {
+		fileRecord, err := rc.makeFileRecord(ctx, rn)
 		if err != nil {
 			return nil, err
 		}
@@ -470,8 +483,22 @@ func (rc *RaftCache) digestsToKeyMetas(ctx context.Context, digests []*repb.Dige
 	return keys, nil
 }
 
+func digestsToResourceNames(isolation *rfpb.Isolation, digests []*repb.Digest) []*resource.ResourceName {
+	rns := make([]*resource.ResourceName, 0, len(digests))
+	for _, d := range digests {
+		rns = append(rns, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: isolation.GetRemoteInstanceName(),
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    isolation.GetCacheType(),
+		})
+	}
+	return rns
+}
+
 func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	keys, err := rc.digestsToKeyMetas(ctx, digests)
+	resourceNames := digestsToResourceNames(rc.isolation, digests)
+	keys, err := rc.resourceNamesToKeyMetas(ctx, resourceNames)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +542,8 @@ func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	keys, err := rc.digestsToKeyMetas(ctx, digests)
+	resourceNames := digestsToResourceNames(rc.isolation, digests)
+	keys, err := rc.resourceNamesToKeyMetas(ctx, resourceNames)
 	if err != nil {
 		return nil, err
 	}
