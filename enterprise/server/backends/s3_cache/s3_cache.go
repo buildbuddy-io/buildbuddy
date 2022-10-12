@@ -417,7 +417,7 @@ func (s3c *S3Cache) bumpTTLIfStale(ctx context.Context, key string, t time.Time)
 		return false
 	}
 	if err != nil {
-		log.Printf("Error bumping TTL for keyDeprecated %s: %s", key, err.Error())
+		log.Printf("Error bumping TTL for key %s: %s", key, err.Error())
 	}
 	return true
 }

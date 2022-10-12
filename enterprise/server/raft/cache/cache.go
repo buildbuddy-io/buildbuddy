@@ -455,6 +455,11 @@ func (rc *RaftCache) Stop() error {
 	return nil
 }
 
+func (rc *RaftCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (rc *RaftCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	missing, err := rc.FindMissing(ctx, []*repb.Digest{d})
 	if err != nil {
