@@ -684,6 +684,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
 		dPath := filepath.Join(userRoot, d.GetHash())
 		require.FileExists(t, dPath)
+
+		c, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: "",
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, c)
 	}
 
 	// Authenticated user on default partition.
@@ -699,6 +707,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, testGroup1)
 		dPath := filepath.Join(userRoot, d.GetHash())
 		require.FileExists(t, dPath)
+
+		c, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: "",
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, c)
 	}
 
 	// Authenticated user with group ID that matches custom partition, but without a matching instance name prefix.
@@ -718,6 +734,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, testGroup2)
 		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
+
+		contains, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, contains)
 	}
 
 	// Authenticated user with group ID that matches custom partition and instance name prefix that matches non-default
@@ -738,6 +762,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, disk_cache.PartitionDirectoryPrefix+otherPartitionID, testGroup2)
 		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
+
+		contains, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			CacheType:    resource.CacheType_AC,
+		})
+		require.NoError(t, err)
+		require.True(t, contains)
 	}
 }
 

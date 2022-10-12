@@ -188,20 +188,20 @@ func (mc *MigrationCache) withIsolation(ctx context.Context, cacheType resource.
 	return &clone, nil
 }
 
-func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcContains, dstContains bool
 
 	eg.Go(func() error {
-		srcContains, srcErr = mc.src.ContainsDeprecated(gctx, d)
+		srcContains, srcErr = mc.src.Contains(gctx, r)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			dstContains, dstErr = mc.dest.ContainsDeprecated(gctx, d)
+			dstContains, dstErr = mc.dest.Contains(gctx, r)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -211,9 +211,9 @@ func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest
 	}
 
 	if dstErr != nil {
-		log.Warningf("Migration dest %v contains failed: %s", d, dstErr)
+		log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
 	} else if mc.logNotFoundErrors && srcContains != dstContains {
-		log.Warningf("Migration digest %v src contains %v, dest contains %v", d, srcContains, dstContains)
+		log.Warningf("Migration digest %v src contains %v, dest contains %v", r.GetDigest(), srcContains, dstContains)
 	}
 
 	if doubleRead && srcContains && !dstContains {
@@ -221,6 +221,15 @@ func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest
 	}
 
 	return srcContains, srcErr
+}
+
+func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return mc.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
 }
 
 func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {

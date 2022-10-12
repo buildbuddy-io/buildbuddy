@@ -39,8 +39,9 @@ func eligibleForMc(d *repb.Digest) bool {
 // Adding a WithPrefix method allows us to separate AC content from CAS
 // content.
 type Cache struct {
-	mc     *memcache.Client
-	prefix string
+	mc                 *memcache.Client
+	cacheType          resource.CacheType
+	remoteInstanceName string
 }
 
 func Register(env environment.Env) error {
@@ -63,13 +64,14 @@ func Register(env environment.Env) error {
 
 func NewCache(mcServers ...string) *Cache {
 	return &Cache{
-		prefix: "",
-		mc:     memcache.New(mcServers...),
+		cacheType:          resource.CacheType_CAS,
+		remoteInstanceName: "",
+		mc:                 memcache.New(mcServers...),
 	}
 }
 
-func (c *Cache) key(ctx context.Context, d *repb.Digest) (string, error) {
-	hash, err := digest.Validate(d)
+func (c *Cache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
 	}
@@ -77,7 +79,11 @@ func (c *Cache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return userPrefix + c.prefix + hash, nil
+	isolationPrefix := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()))
+	if len(isolationPrefix) > 0 && isolationPrefix[len(isolationPrefix)-1] != '/' {
+		isolationPrefix += "/"
+	}
+	return userPrefix + isolationPrefix + hash, nil
 }
 
 func (c *Cache) mcGet(key string) ([]byte, error) {
@@ -104,18 +110,15 @@ func (c *Cache) mcSet(key string, data []byte) error {
 }
 
 func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	newPrefix := filepath.Join(remoteInstanceName, digest.CacheTypeToPrefix(cacheType))
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
 	return &Cache{
-		prefix: newPrefix,
-		mc:     c.mc,
+		cacheType:          cacheType,
+		remoteInstanceName: remoteInstanceName,
+		mc:                 c.mc,
 	}, nil
 }
 
-func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	key, err := c.key(ctx, d)
+func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	key, err := c.key(ctx, r)
 	if err != nil {
 		return false, err
 	}
@@ -130,9 +133,23 @@ func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, e
 	return false, err
 }
 
+func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return c.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
+}
+
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	key, err := c.key(ctx, d)
+	key, err := c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +204,12 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for memcache", d)
 	}
-	k, err := c.key(ctx, d)
+	k, err := c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +221,12 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 	keys := make([]string, 0, len(digests))
 	digestsByKey := make(map[string]*repb.Digest, len(digests))
 	for _, d := range digests {
-		k, err := c.key(ctx, d)
+		k, err := c.key(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: c.remoteInstanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    c.cacheType,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -228,7 +255,12 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	if !eligibleForMc(d) {
 		return status.ResourceExhaustedErrorf("Set: Digest %v too big for memcache", d)
 	}
-	k, err := c.key(ctx, d)
+	k, err := c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -256,7 +288,12 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 }
 
 func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := c.key(ctx, d)
+	k, err := c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -272,7 +309,12 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64)
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", d)
 	}
-	k, err := c.key(ctx, d)
+	k, err := c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +339,12 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Committe
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for memcache", d)
 	}
-	k, err := c.key(ctx, d)
+	k, err := c.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
