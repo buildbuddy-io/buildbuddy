@@ -18,7 +18,6 @@ go_library(
         "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/remote_cache/digest",
         "//server/resources",
         "//server/util/background",
         "//server/util/consistent_hash",
