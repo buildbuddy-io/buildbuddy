@@ -732,16 +732,12 @@ func TestMetadata(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		// Set() the bytes in the cache.
 		err := distributedCachesWithIsolation[i%3].Set(ctx, d, buf)
-		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err)
 
 		for _, dc := range distributedCachesWithIsolation {
 			// Metadata should return true size of the blob, regardless of queried size.
 			md, err := dc.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-			if err != nil {
-				t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
-			}
+			require.NoError(t, err)
 			require.Equal(t, testSize, md.SizeBytes)
 		}
 
@@ -752,9 +748,7 @@ func TestMetadata(t *testing.T) {
 				InstanceName: "blah",
 				CacheType:    resource.CacheType_CAS,
 			})
-			if err != nil {
-				t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
-			}
+			require.NoError(t, err)
 			require.Equal(t, testSize, md.SizeBytes)
 		}
 	}
