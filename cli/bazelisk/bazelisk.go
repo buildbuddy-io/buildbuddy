@@ -10,12 +10,28 @@ import (
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-func Run(args []string, w io.Writer) (int, *Output, error) {
+func RunWithPlugins(args []string, outputPath string, plugins []*plugin.Plugin) (int, error) {
+	// Build the pipeline of bazel output handlers
+	wc, err := plugin.PipelineWriter(os.Stdout, plugins)
+	if err != nil {
+		return -1, err
+	}
+	// Note, it's important that the Close() here happens just after the
+	// bazelisk run completes and before we run post_bazel hooks, since this
+	// waits for all plugins to finish writing to stdout. Otherwise, the
+	// post_bazel output will get intermingled with bazel output.
+	defer wc.Close()
+
+	return Run(args, outputPath, wc)
+}
+
+func Run(args []string, outputPath string, w io.Writer) (int, error) {
 	// If we were already invoked via bazelisk, then set the bazel version to
 	// the next version appearing in the .bazelversion file so that bazelisk
 	// doesn't just invoke us again (resulting in an infinite loop).
@@ -30,10 +46,11 @@ func Run(args []string, w io.Writer) (int, *Output, error) {
 	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
 	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
 
-	output, err := os.CreateTemp("", "bazelisk-output-*")
+	output, err := os.Create(outputPath)
 	if err != nil {
-		return 0, nil, status.FailedPreconditionErrorf("failed to create output file: %s", err)
+		return 0, status.FailedPreconditionErrorf("failed to create output file: %s", err)
 	}
+	defer output.Close()
 
 	// Temporarily redirect stdout/stderr so that we can capture the bazelisk
 	// output.
@@ -48,13 +65,13 @@ func Run(args []string, w io.Writer) (int, *Output, error) {
 	}()
 	stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, w))
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 	defer closeStdoutPipe()
 	os.Stdout = stdoutPipe
 	stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, w))
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 	defer closeStderrPipe()
 	os.Stderr = stderrPipe
@@ -63,7 +80,7 @@ func Run(args []string, w io.Writer) (int, *Output, error) {
 	if err != nil {
 		log.Fatalf("error running bazelisk: %s", err)
 	}
-	return exitCode, &Output{output}, nil
+	return exitCode, nil
 }
 
 // makePipeWriter adapts a writer to an *os.File by using an os.Pipe().
@@ -115,14 +132,4 @@ func setBazelVersion() error {
 	}
 
 	return os.Setenv("USE_BAZEL_VERSION", parts[0])
-}
-
-// Output points to the stdout/stderr written by bazelisk. It is like a regular
-// file, but the Close() method also deletes the file to avoid accumulating too
-// many logs on disk.
-type Output struct{ *os.File }
-
-func (o *Output) Close() error {
-	o.File.Close()
-	return os.Remove(o.File.Name())
 }
