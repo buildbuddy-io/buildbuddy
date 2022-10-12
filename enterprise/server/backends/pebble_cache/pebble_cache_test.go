@@ -1092,7 +1092,7 @@ func BenchmarkFindMissing(b *testing.B) {
 		keys := randomDigests(100)
 
 		b.StartTimer()
-		missing, err := pc.FindMissing(ctx, keys)
+		missing, err := pc.FindMissingDeprecated(ctx, keys)
 		if err != nil {
 			b.Fatal(err)
 		}

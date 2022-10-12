@@ -273,20 +273,20 @@ func (mc *MigrationCache) MetadataDeprecated(ctx context.Context, d *repb.Digest
 	})
 }
 
-func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (mc *MigrationCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMissing, dstMissing []*repb.Digest
 
 	eg.Go(func() error {
-		srcMissing, srcErr = mc.src.FindMissing(gctx, digests)
+		srcMissing, srcErr = mc.src.FindMissingDeprecated(gctx, digests)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			dstMissing, dstErr = mc.dest.FindMissing(gctx, digests)
+			dstMissing, dstErr = mc.dest.FindMissingDeprecated(gctx, digests)
 			return nil // we don't care about the return error from this cache
 		})
 	}

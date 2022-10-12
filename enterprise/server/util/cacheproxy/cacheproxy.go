@@ -187,7 +187,7 @@ func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingReque
 	if err != nil {
 		return nil, err
 	}
-	missing, err := cache.FindMissing(ctx, digests)
+	missing, err := cache.FindMissingDeprecated(ctx, digests)
 	if err != nil {
 		return nil, err
 	}

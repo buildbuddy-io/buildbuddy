@@ -911,7 +911,7 @@ func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*
 	})
 }
 
-func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (p *PebbleCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err

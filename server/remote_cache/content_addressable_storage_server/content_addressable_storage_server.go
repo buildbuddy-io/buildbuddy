@@ -113,7 +113,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, d)
 	}
-	missing, err := cache.FindMissing(ctx, digestsToLookup)
+	missing, err := cache.FindMissingDeprecated(ctx, digestsToLookup)
 	if err != nil {
 		return nil, err
 	}

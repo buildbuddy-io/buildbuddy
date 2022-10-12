@@ -82,15 +82,15 @@ func (c *ComposableCache) MetadataDeprecated(ctx context.Context, d *repb.Digest
 	return c.inner.MetadataDeprecated(ctx, d)
 }
 
-func (c *ComposableCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	missing, err := c.outer.FindMissing(ctx, digests)
+func (c *ComposableCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	missing, err := c.outer.FindMissingDeprecated(ctx, digests)
 	if err != nil {
 		missing = digests
 	}
 	if len(missing) == 0 {
 		return nil, nil
 	}
-	return c.inner.FindMissing(ctx, missing)
+	return c.inner.FindMissingDeprecated(ctx, missing)
 }
 
 func (c *ComposableCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {

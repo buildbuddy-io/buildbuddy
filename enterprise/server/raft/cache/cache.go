@@ -551,7 +551,7 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 	return missingDigests, nil
 }
 
-func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	resourceNames := digestsToResourceNames(rc.isolation, digests)
 	return rc.findMissingResourceNames(ctx, resourceNames)
 }

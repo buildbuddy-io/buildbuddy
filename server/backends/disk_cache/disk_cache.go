@@ -352,7 +352,7 @@ func (c *DiskCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*in
 	})
 }
 
-func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (c *DiskCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	return c.partition.findMissing(ctx, c.cacheType, c.remoteInstanceName, digests)
 }
 

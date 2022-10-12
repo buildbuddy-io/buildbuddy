@@ -502,7 +502,7 @@ func (s3c *S3Cache) metadata(ctx context.Context, r *resource.ResourceName) (*s3
 	return head, nil
 }
 
-func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (s3c *S3Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)

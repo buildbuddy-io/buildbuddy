@@ -212,7 +212,7 @@ func update(old, new map[string]bool) {
 	}
 }
 
-func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	if len(digests) == 0 {
 		return nil, nil
 	}

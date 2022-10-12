@@ -406,7 +406,7 @@ func (c *Cache) remoteMetadata(ctx context.Context, peer string, isolation *dcpb
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.FindMissing(ctx, digests)
+		return c.local.FindMissingDeprecated(ctx, digests)
 	}
 	return c.cacheProxy.RemoteFindMissing(ctx, peer, isolation, digests)
 }
@@ -621,7 +621,7 @@ func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interf
 	})
 }
 
-func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	mu := sync.RWMutex{} // protects(foundMap)
 	hashDigests := make(map[string][]*repb.Digest, 0)
 	foundMap := make(map[string]struct{}, len(digests))

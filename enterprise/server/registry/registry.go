@@ -108,7 +108,7 @@ func (r *registry) getCachedManifest(ctx context.Context, digest string) (*rgpb.
 	if err != nil {
 		return nil, err
 	}
-	missing, err := c.FindMissing(ctx, mfProto.CasDependencies)
+	missing, err := c.FindMissingDeprecated(ctx, mfProto.CasDependencies)
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not check blob existence in CAS: %s", err)
 	}

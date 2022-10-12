@@ -423,7 +423,7 @@ func (g *GCSCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*int
 	})
 }
 
-func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (g *GCSCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
