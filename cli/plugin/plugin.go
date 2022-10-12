@@ -92,6 +92,25 @@ func LoadAll() ([]*Plugin, error) {
 	return plugins, nil
 }
 
+// PrepareEnv sets environment variables for use in plugins.
+func PrepareEnv() error {
+	ws, err := workspace.Path()
+	if err != nil {
+		return err
+	}
+	if err := os.Setenv("BUILD_WORKSPACE_DIRECTORY", ws); err != nil {
+		return err
+	}
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.Setenv("USER_CONFIG_DIR", cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
 // RepoURL returns the normalized repo URL. It does not include the ref part of
 // the URL. For example, a "repo" spec of "foo/bar@abc123" returns
 // "https://github.com/foo/bar".
@@ -289,7 +308,7 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 // Currently the invocation data is fed as plain text via a file. The file path
 // is passed as the first argument.
 //
-// TODO(bduffany): Example
+// See cli/example_plugins/go_deps/post_bazel.sh for an example.
 func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	path, err := p.Path()
 	if err != nil {
@@ -309,6 +328,7 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	cmd.Dir = path
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+	cmd.Stdin = os.Stdin
 	return cmd.Run()
 }
 
@@ -339,11 +359,15 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	cmd.Dir = path
 	cmd.Stdout = pw
 	cmd.Stderr = pw
+	// Allow output handlers to accept user input.
 	cmd.Stdin = r
 	go func() {
 		defer pw.Close()
+		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
 		if err := cmd.Run(); err != nil {
 			log.Debugf("Command failed: %s", err)
+		} else {
+			log.Debugf("Command %s completed", cmd.Args)
 		}
 	}()
 	return pr, nil
