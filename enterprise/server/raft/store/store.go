@@ -453,7 +453,7 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 
 	err, ok := <-waitErr
 	if ok && err != nil {
-		s.log.Errorf("Got a WaitForClusterReady error: %s", err)
+		s.log.Errorf("WaitForClusterReady err: %s", err)
 		return nil, err
 	}
 
