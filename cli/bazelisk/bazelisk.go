@@ -78,7 +78,7 @@ func Run(args []string, outputPath string, w io.Writer) (int, error) {
 
 	exitCode, err := core.RunBazelisk(args, repos)
 	if err != nil {
-		log.Fatalf("error running bazelisk: %s", err)
+		return -1, status.InternalErrorf("failed to run bazelisk: %s", err)
 	}
 	return exitCode, nil
 }

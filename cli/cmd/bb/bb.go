@@ -82,6 +82,11 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 
+	// If the build was interrupted (Ctrl+C), don't run post-bazel plugins.
+	if exitCode == 8 /*interrupted*/ {
+		return exitCode, nil
+	}
+
 	// Run plugin post-bazel hooks
 	for _, p := range plugins {
 		if err := p.PostBazel(outputPath); err != nil {
