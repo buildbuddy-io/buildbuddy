@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -18,6 +19,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	gormclickhouse "gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
+)
+
+const (
+	numClickhouseRetries = 3
 )
 
 var (
@@ -178,7 +183,12 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := ToInvocationFromPrimaryDB(ti)
-	retrier := retry.DefaultWithContext(ctx)
+	retrier := retry.New(ctx, &retry.Options{
+		MaxRetries:     numClickhouseRetries,
+		InitialBackoff: 50 * time.Millisecond,
+		MaxBackoff:     3 * time.Second,
+		Multiplier:     2,
+	})
 	var lastError error
 	for retrier.Next() {
 		res := h.DB(ctx).Create(inv)
@@ -186,9 +196,8 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 			return nil
 		}
 		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) {
-			// connection is reset by peer. Retry.
+			// Retry since it's an transient error.
 			lastError = res.Error
-			log.Info("retry")
 			continue
 		} else {
 			return res.Error
