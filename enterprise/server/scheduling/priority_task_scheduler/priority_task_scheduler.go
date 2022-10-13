@@ -171,8 +171,6 @@ type PriorityTaskScheduler struct {
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runnerPool interfaces.RunnerPool, options *Options) *PriorityTaskScheduler {
-	sublog := log.NamedSubLogger(exec.HostID())
-
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
 		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
@@ -183,9 +181,11 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 	}
 
 	rootContext, rootCancel := context.WithCancel(context.Background())
+	rootContext = log.EnrichContext(rootContext, "executor_host_id", exec.HostID())
+	rootContext = log.EnrichContext(rootContext, "executor_id", exec.ID())
+
 	qes := &PriorityTaskScheduler{
 		env:                     env,
-		log:                     sublog,
 		q:                       newTaskQueue(),
 		exec:                    exec,
 		runnerPool:              runnerPool,
@@ -261,13 +261,15 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 }
 
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
+
 	if req.GetTaskSize().GetEstimatedMemoryBytes() > q.ramBytesCapacity ||
 		req.GetTaskSize().GetEstimatedMilliCpu() > q.cpuMillisCapacity {
 		// TODO(bduffany): Return an error here instead. Currently we cannot
 		// return an error because it causes the executor to disconnect and
 		// reconnect to the scheduler, and the scheduler will keep attempting to
 		// re-enqueue the oversized task onto this executor once reconnected.
-		log.Errorf(
+		log.CtxErrorf(ctx,
 			"Task exceeds executor capacity: requires %d bytes memory of %d available and %d milliCPU of %d available",
 			req.GetTaskSize().GetEstimatedMemoryBytes(), q.ramBytesCapacity,
 			req.GetTaskSize().GetEstimatedMilliCpu(), q.cpuMillisCapacity,
@@ -277,7 +279,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 	q.mu.Lock()
 	q.q.Enqueue(req)
 	q.mu.Unlock()
-	q.log.Infof("Added task %+v to pq.", req)
+	log.CtxInfof(ctx, "Added task %+v to pq.", req)
 	// Wake up the scheduling loop so that it can run the task if there are
 	// enough resources available.
 	q.checkQueueSignal <- struct{}{}
@@ -307,7 +309,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
 	clientStream, err := q.env.GetRemoteExecutionClient().PublishOperation(ctx)
 	if err != nil {
-		q.log.Warningf("Error opening publish operation stream: %s", err)
+		log.CtxWarningf(ctx, "Error opening publish operation stream: %s", err)
 		return true, err
 	}
 	start := time.Now()
@@ -315,7 +317,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	// it too soon after establishing the clientStream, and remove this delay.
 	const closeStreamDelay = 10 * time.Millisecond
 	if retry, err := q.exec.ExecuteTaskAndStreamResults(ctx, st, clientStream); err != nil {
-		q.log.Warningf("ExecuteTaskAndStreamResults error %q: %s", execTask, err)
+		log.CtxWarningf(ctx, "ExecuteTaskAndStreamResults error %q: %s", execTask, err)
 		time.Sleep(time.Until(start.Add(closeStreamDelay)))
 		_, _ = clientStream.CloseAndRecv()
 		return retry, err
@@ -360,11 +362,11 @@ func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservati
 	}
 
 	if willFit {
-		q.log.Infof("ram remaining: %d, cpu remaining: %d, tasks running: %d, q depth: %d", knownRAMremaining, knownCPUremaining, len(q.activeTaskCancelFuncs), q.q.Len())
+		log.CtxInfof(q.rootContext, "ram remaining: %d, cpu remaining: %d, tasks running: %d, q depth: %d", knownRAMremaining, knownCPUremaining, len(q.activeTaskCancelFuncs), q.q.Len())
 		if res.GetTaskSize().GetEstimatedMemoryBytes() == 0 {
-			q.log.Warningf("Scheduling another unknown size task. THIS SHOULD NOT HAPPEN! res: %+v", res)
+			log.CtxWarningf(q.rootContext, "Scheduling another unknown size task. THIS SHOULD NOT HAPPEN! res: %+v", res)
 		} else {
-			q.log.Infof("Scheduling another task of size: %+v", res.GetTaskSize())
+			log.CtxInfof(q.rootContext, "Scheduling another task of size: %+v", res.GetTaskSize())
 		}
 	}
 	return willFit
@@ -377,7 +379,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	// Don't claim work if this machine is about to shutdown.
 	if q.shuttingDown {
 		shuttingDownLogOnce.Do(func() {
-			q.log.Info("Stopping queue processing, machine is shutting down.")
+			log.CtxInfof(q.rootContext, "Stopping queue processing, machine is shutting down.")
 		})
 		return
 	}
@@ -392,10 +394,11 @@ func (q *PriorityTaskScheduler) handleTask() {
 	}
 	reservation := q.q.Dequeue()
 	if reservation == nil {
-		q.log.Warningf("reservation is nil")
+		log.CtxWarningf(q.rootContext, "reservation is nil")
 		return
 	}
-	ctx, cancel := context.WithCancel(q.rootContext)
+	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, reservation.GetTaskId())
+	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
 
 	q.trackTask(reservation, &cancel)
@@ -416,17 +419,17 @@ func (q *PriorityTaskScheduler) handleTask() {
 		if err != nil {
 			// NotFound means the task is already claimed.
 			if status.IsNotFoundError(err) {
-				q.log.Infof("Could not claim task %q, it was likely claimed by another executor: %s", reservation.GetTaskId(), err)
+				log.CtxInfof(ctx, "Could not claim task %q, it was likely claimed by another executor: %s", reservation.GetTaskId(), err)
 			} else {
-				q.log.Warningf("Error leasing task %q: %s", reservation.GetTaskId(), err)
+				log.CtxWarningf(ctx, "Error leasing task %q: %s", reservation.GetTaskId(), err)
 			}
 			return
 		}
 
 		execTask := &repb.ExecutionTask{}
 		if err := proto.Unmarshal(serializedTask, execTask); err != nil {
-			q.log.Errorf("error unmarshalling task %q: %s", reservation.GetTaskId(), err)
-			taskLease.Close(nil, false /*=retry*/)
+			log.CtxErrorf(ctx, "error unmarshalling task %q: %s", reservation.GetTaskId(), err)
+			taskLease.Close(ctx, nil, false /*=retry*/)
 			return
 		}
 		scheduledTask := &repb.ScheduledTask{
@@ -435,9 +438,9 @@ func (q *PriorityTaskScheduler) handleTask() {
 		}
 		retry, err := q.runTask(ctx, scheduledTask)
 		if err != nil {
-			q.log.Errorf("Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
+			log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}
-		taskLease.Close(err, retry)
+		taskLease.Close(ctx, err, retry)
 	}()
 }
 
