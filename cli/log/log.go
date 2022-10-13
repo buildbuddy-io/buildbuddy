@@ -1,27 +1,29 @@
 package log
 
 import (
-	"flag"
 	"log"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 )
 
-var (
-	verbose = flag.Bool("verbose", false, "If true, enable verbose buildbuddy logging.")
-)
+var verbose bool
 
-func init() {
+func Configure(args []string) []string {
+	verboseFlagVal, args := arg.Pop(args, "verbose")
+	verbose = verboseFlagVal == "1" || verboseFlagVal == "true"
 	log.SetFlags(0)
+	return args
 }
 
 func Debug(v ...any) {
-	if !*verbose {
+	if !verbose {
 		return
 	}
 	log.Print(v...)
 }
 
 func Debugf(format string, v ...interface{}) {
-	if !*verbose {
+	if !verbose {
 		return
 	}
 	log.Printf(format, v...)
