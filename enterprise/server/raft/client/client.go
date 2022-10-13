@@ -324,7 +324,11 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 	}
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		rs, err := nodehost.Propose(sesh, buf, time.Second)
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return status.FailedPreconditionError("nodehost.Propose *requires* a context deadline be set")
+		}
+		rs, err := nodehost.Propose(sesh, buf, time.Until(deadline))
 		if err != nil {
 			return err
 		}
