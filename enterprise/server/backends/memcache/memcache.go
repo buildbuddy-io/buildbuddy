@@ -143,13 +143,8 @@ func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, e
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
-func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	key, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	key, err := c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -159,9 +154,19 @@ func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.Cache
 		return nil, err
 	}
 	if err == memcache.ErrCacheMiss {
+		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 	return &interfaces.CacheMetadata{SizeBytes: int64(len(data))}, nil
+}
+
+func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return c.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 }
 
 func update(old, new map[string]bool) {

@@ -89,7 +89,7 @@ func (c *errorCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bo
 	return false, errors.New("error cache contains err")
 }
 
-func (c *errorCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *errorCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	return nil, errors.New("error cache metadata err")
 }
 
@@ -739,12 +739,24 @@ func TestMetadata(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	md, err := mc.Metadata(ctx, d)
+	md, err := mc.MetadataDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), md.SizeBytes)
+	md, err = mc.Metadata(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.SizeBytes)
 
 	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
-	md, err = mc.Metadata(ctx, notWrittenDigest)
+	md, err = mc.MetadataDeprecated(ctx, notWrittenDigest)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, md)
+	md, err = mc.Metadata(ctx, &resource.ResourceName{
+		Digest:    notWrittenDigest,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, md)
 }
@@ -765,7 +777,7 @@ func TestMetadata_DestErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	md, err := mc.Metadata(ctx, d)
+	md, err := mc.MetadataDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.SizeBytes)
 }

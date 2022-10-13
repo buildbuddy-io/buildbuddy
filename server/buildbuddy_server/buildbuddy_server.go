@@ -904,7 +904,7 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 		return nil, err
 	}
 
-	metadata, err := cache.Metadata(ctx, resourceName.GetDigest())
+	metadata, err := cache.MetadataDeprecated(ctx, resourceName.GetDigest())
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil

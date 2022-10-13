@@ -232,20 +232,20 @@ func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest
 	})
 }
 
-func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (mc *MigrationCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMetadata *interfaces.CacheMetadata
 
 	eg.Go(func() error {
-		srcMetadata, srcErr = mc.src.Metadata(gctx, d)
+		srcMetadata, srcErr = mc.src.Metadata(gctx, r)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.Metadata(gctx, d)
+			_, dstErr = mc.dest.Metadata(gctx, r)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -255,13 +255,22 @@ func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interf
 	}
 
 	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
-		log.Warningf("Migration dest %v metadata failed: %s", d, dstErr)
+		log.Warningf("Migration dest %v metadata failed: %s", r.GetDigest(), dstErr)
 	}
 	if status.IsNotFoundError(dstErr) {
 		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "metadata"}).Inc()
 	}
 
 	return srcMetadata, srcErr
+}
+
+func (mc *MigrationCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return mc.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
 }
 
 func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {

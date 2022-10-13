@@ -455,23 +455,28 @@ func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (boo
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access time
-func (s3c *S3Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	metadata, err := s3c.metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
+func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	metadata, err := s3c.metadata(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	if metadata == nil {
+		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 	return &interfaces.CacheMetadata{
 		SizeBytes:          *metadata.ContentLength,
 		LastModifyTimeUsec: metadata.LastModified.UnixMicro(),
 	}, nil
+}
+
+func (s3c *S3Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return s3c.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	})
 }
 
 func (s3c *S3Cache) metadata(ctx context.Context, r *resource.ResourceName) (*s3.HeadObjectOutput, error) {
