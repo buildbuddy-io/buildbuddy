@@ -896,24 +896,6 @@ func statusProto(err error) *statuspb.Status {
 	return s.Proto()
 }
 
-func batchContainsSplit(batchCmdReq *rfpb.BatchCmdRequest) bool {
-	for _, union := range batchCmdReq.GetUnion() {
-		switch union.Value.(type) {
-		case *rfpb.RequestUnion_SplitLease:
-			return true
-		case *rfpb.RequestUnion_SplitRelease:
-			return true
-		case *rfpb.RequestUnion_FindSplitPoint:
-			return true
-		case *rfpb.RequestUnion_CopyStoredFiles:
-			return true
-		default:
-			continue
-		}
-	}
-	return false
-}
-
 func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion, rsp *rfpb.ResponseUnion) {
 	switch value := req.Value.(type) {
 	case *rfpb.RequestUnion_FileWrite:
