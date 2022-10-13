@@ -610,16 +610,9 @@ func TestReplicaSplitLease(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Ensure that a direct write now fails.
+	// Ensure that trying to access the DB via the leaser now fails.
 	{
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   []byte("key-name"),
-				Value: []byte("key-value"),
-			},
-		}))
-		entries := []dbsm.Entry{entry}
-		_, err := repl.Update(entries)
+		_, err := repl.TestingDB()
 		require.Error(t, err)
 	}
 

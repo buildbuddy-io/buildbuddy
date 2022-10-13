@@ -940,6 +940,30 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion, rsp *
 			FileUpdateMetadata: r,
 		}
 		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_SplitLease:
+		r, err := sm.splitLease(value.SplitLease)
+		rsp.Value = &rfpb.ResponseUnion_SplitLease{
+			SplitLease: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_SplitRelease:
+		r, err := sm.splitRelease(value.SplitRelease)
+		rsp.Value = &rfpb.ResponseUnion_SplitRelease{
+			SplitRelease: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FindSplitPoint:
+		r, err := sm.findSplitPoint(value.FindSplitPoint)
+		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
+			FindSplitPoint: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_CopyStoredFiles:
+		r, err := sm.copyStoredFiles(value.CopyStoredFiles)
+		rsp.Value = &rfpb.ResponseUnion_CopyStoredFiles{
+			CopyStoredFiles: r,
+		}
+		rsp.Status = statusProto(err)
 	default:
 		rsp.Status = statusProto(status.UnimplementedErrorf("SyncPropose handling for %+v not implemented.", req))
 	}
@@ -1300,86 +1324,22 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
-	var wb *pebble.Batch
-
-	// Insert all of the data in the batch.
-	batchCmdReq := &rfpb.BatchCmdRequest{}
 	for idx, entry := range entries {
+		// Insert all of the data in the batch.
+		batchCmdReq := &rfpb.BatchCmdRequest{}
+		batchCmdRsp := &rfpb.BatchCmdResponse{}
 		if err := proto.Unmarshal(entry.Cmd, batchCmdReq); err != nil {
 			return nil, err
 		}
-		batchCmdRsp := &rfpb.BatchCmdResponse{}
+		wb := sm.db.NewIndexedBatch()
+		defer wb.Close()
+
 		for _, union := range batchCmdReq.GetUnion() {
 			rsp := &rfpb.ResponseUnion{}
-			// Special Case: SplitLease and SplitRelease don't need
-			// access to the db in the stame way, and once it's
-			// locked, accessing it would block anyway. For that
-			// reason, they are handled separately here.
-			switch value := union.Value.(type) {
-			case *rfpb.RequestUnion_SplitLease:
-				r, err := sm.splitLease(value.SplitLease)
-				rsp.Value = &rfpb.ResponseUnion_SplitLease{
-					SplitLease: r,
-				}
-				rsp.Status = statusProto(err)
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
-				continue
-			case *rfpb.RequestUnion_SplitRelease:
-				r, err := sm.splitRelease(value.SplitRelease)
-				rsp.Value = &rfpb.ResponseUnion_SplitRelease{
-					SplitRelease: r,
-				}
-				rsp.Status = statusProto(err)
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
-				continue
-			case *rfpb.RequestUnion_FindSplitPoint:
-				r, err := sm.findSplitPoint(value.FindSplitPoint)
-				rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
-					FindSplitPoint: r,
-				}
-				rsp.Status = statusProto(err)
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
-				continue
-			case *rfpb.RequestUnion_CopyStoredFiles:
-				r, err := sm.copyStoredFiles(value.CopyStoredFiles)
-				rsp.Value = &rfpb.ResponseUnion_CopyStoredFiles{
-					CopyStoredFiles: r,
-				}
-				rsp.Status = statusProto(err)
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
-				continue
-			}
-
-			// All other raft commands are handled normally via
-			// handlePropose below. If no write batch is currently
-			// open, open one now.
-			if wb == nil {
-				db, err := sm.leaser.DB()
-				if err != nil {
-					// This should really be an error. The
-					// reason it's not yet is because range
-					// lease requests sometimes come in
-					// during a split, and they are safe
-					// to ignore.
-					if bytes.Compare(union.GetCas().GetKv().GetKey(), constants.LocalRangeLeaseKey) == 0 {
-						log.Warningf("mid-split, dropping rangelease cmd: %+v", union)
-						continue
-					}
-					log.Errorf("Range locked but got request: %+v", union)
-					return nil, err
-				}
-				defer db.Close()
-				wb = db.NewIndexedBatch()
-				defer wb.Close()
-			}
-
-			// sm.log.Debugf("Update: request union: %+v", union)
 			sm.handlePropose(wb, union, rsp)
 			if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
 				sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
 			}
-
-			// sm.log.Debugf("Update: response union: %+v", rsp)
 			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
 
@@ -1391,31 +1351,16 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			Value: uint64(len(entries[idx].Cmd)),
 			Data:  rspBuf,
 		}
-	}
-
-	lastEntry := entries[len(entries)-1]
-	appliedIndex := uint64ToBytes(lastEntry.Index)
-
-	if sm.lastAppliedIndex >= lastEntry.Index {
-		return nil, status.FailedPreconditionError("lastApplied not moving forward")
-	}
-
-	// If we have an active batch, bundle the LastAppliedIndex change into it
-	// and commit it all at once. Otherwise just do a db set.
-	if wb != nil {
+		appliedIndex := uint64ToBytes(entry.Index)
 		if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
 			return nil, err
 		}
 		if err := wb.Commit(pebble.NoSync); err != nil {
 			return nil, err
 		}
-	} else {
-		if err := sm.db.Set(constants.LastAppliedIndexKey, appliedIndex, pebble.NoSync); err != nil {
-			return nil, err
-		}
+		sm.lastAppliedIndex = entry.Index
 	}
 
-	sm.lastAppliedIndex = lastEntry.Index
 	return entries, nil
 }
 
