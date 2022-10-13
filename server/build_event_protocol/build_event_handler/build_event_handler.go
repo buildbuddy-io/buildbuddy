@@ -259,7 +259,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	}
 	inv, err := r.lookupInvocation(ctx, ij)
 	if err != nil {
-		return status.InternalErrorf("failed to flush invocation stats to clickhouse for invocation id %q: %s", ij.id, err)
+		return status.InternalErrorf("failed to look up invocation for invocation id %q: %s", ij.id, err)
 	}
 
 	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)

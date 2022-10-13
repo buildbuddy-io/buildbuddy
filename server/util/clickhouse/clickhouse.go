@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	gormclickhouse "gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
@@ -175,8 +176,17 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := ToInvocationFromPrimaryDB(ti)
-	res := h.DB(ctx).Create(inv)
-	return res.Error
+	retrier := retry.DefaultWithContext(ctx)
+	var lastError error
+	for retrier.Next() {
+		res := h.DB(ctx).Create(inv)
+		if res.Error != nil {
+			continue
+		} else {
+			return nil
+		}
+	}
+	return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", lastError)
 }
 
 func runMigrations(gdb *gorm.DB) error {
