@@ -196,17 +196,17 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return status.InternalErrorf("failed to parse clickhouse data source (%q): %s", *dataSource, err)
 	}
-	if *maxOpenConns != 0 {
-		options.MaxOpenConns = *maxOpenConns
-	}
-	if *maxIdleConns != 0 {
-		options.MaxIdleConns = *maxIdleConns
-	}
-	if *connMaxLifetime != 0 {
-		options.ConnMaxLifetime = *connMaxLifetime
-	}
 
 	sqlDB := clickhouse.OpenDB(options)
+	if *maxOpenConns != 0 {
+		sqlDB.SetMaxOpenConns(*maxOpenConns)
+	}
+	if *maxIdleConns != 0 {
+		sqlDB.SetMaxIdleConns(*maxIdleConns)
+	}
+	if *connMaxLifetime != 0 {
+		sqlDB.SetConnMaxLifetime(*connMaxLifetime)
+	}
 
 	db, err := gorm.Open(gormclickhouse.New(gormclickhouse.Config{
 		Conn: sqlDB,
