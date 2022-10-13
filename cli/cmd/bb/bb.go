@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"os"
 	"path/filepath"
 
@@ -20,7 +19,6 @@ import (
 )
 
 func main() {
-	flag.Parse()
 	exitCode, err := run()
 	if err != nil {
 		log.Fatal(status.Message(err))
@@ -43,12 +41,13 @@ func run() (exitCode int, err error) {
 	}
 
 	// Parse args
-	commandLineArgs := flag.Args()
+	commandLineArgs := os.Args[1:]
 	rcFileArgs := parser.GetArgsFromRCFiles(commandLineArgs)
 	args := append(commandLineArgs, rcFileArgs...)
 
 	// Fiddle with args
 	// TODO(bduffany): model these as "built-in" plugins
+	args = log.Configure(args)
 	args = tooltag.ConfigureToolTag(args)
 	args = sidecar.ConfigureSidecar(args)
 	args = login.ConfigureAPIKey(args)
