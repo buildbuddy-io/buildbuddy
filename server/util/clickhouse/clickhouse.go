@@ -186,7 +186,7 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 			return nil
 		}
 	}
-	return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", lastError)
+	return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
 }
 
 func runMigrations(gdb *gorm.DB) error {
