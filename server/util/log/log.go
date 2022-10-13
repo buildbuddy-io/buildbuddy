@@ -14,9 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -33,6 +31,8 @@ var (
 )
 
 const (
+	ExecutionIDKey = "execution_id"
+
 	callerSkipFrameCount = 3
 )
 
@@ -75,16 +75,11 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	if log.Logger.GetLevel() > zerolog.DebugLevel {
 		return
 	}
-	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
 	// ByteStream and DistributedCache services share some method names.
 	// We disambiguate them in the logs by adding a D prefix to DistributedCache methods.
 	fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
 	shortPath := "/" + path.Base(fullMethod)
-	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
-		Debugf("%s %s %s %s %s [%s]", "gRPC", reqID, iid, shortPath, fmtErr(err), formatDuration(dur))
-	} else {
-		Debugf("%s %s %s %s [%s]", "gRPC", reqID, shortPath, fmtErr(err), formatDuration(dur))
-	}
+	CtxDebugf(ctx, "%s %s %s [%s]", "gRPC", shortPath, fmtErr(err), formatDuration(dur))
 	if *LogErrorStackTraces {
 		if se, ok := err.(interface {
 			StackTrace() status.StackTrace
@@ -93,7 +88,7 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 			for _, f := range se.StackTrace() {
 				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
 			}
-			Debug(stackBuf)
+			CtxDebugf(ctx, stackBuf)
 		}
 	}
 }
@@ -102,8 +97,7 @@ func LogHTTPRequest(ctx context.Context, url string, dur time.Duration, statusCo
 	if log.Logger.GetLevel() > zerolog.InfoLevel {
 		return
 	}
-	reqID, _ := uuid.GetFromContext(ctx) // Ignore error, we're logging anyway.
-	Debugf("HTTP %s %q %d %s [%s]", reqID, url, statusCode, http.StatusText(statusCode), formatDuration(dur))
+	CtxDebugf(ctx, "HTTP %q %d %s [%s]", url, statusCode, http.StatusText(statusCode), formatDuration(dur))
 }
 
 func init() {
@@ -247,12 +241,24 @@ func NamedSubLogger(name string) Logger {
 }
 
 func enrichEventFromContext(ctx context.Context, e *zerolog.Event) {
-	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
-		e.Str("invocation_id", iid)
+	if m, ok := ctx.Value(logMetaKey).(*logMeta); ok {
+		for m != nil {
+			e.Str(m.key, m.value)
+			m = m.prev
+		}
 	}
-	if reqID, err := uuid.GetFromContext(ctx); err == nil {
-		e.Str("request_id", reqID)
-	}
+}
+
+type logMeta struct {
+	prev       *logMeta
+	key, value string
+}
+
+const logMetaKey = "log-meta"
+
+func EnrichContext(ctx context.Context, key, value string) context.Context {
+	prev, _ := ctx.Value(logMetaKey).(*logMeta)
+	return context.WithValue(ctx, logMetaKey, &logMeta{prev, key, value})
 }
 
 // Zerolog convenience wrapper below here:

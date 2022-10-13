@@ -9,6 +9,7 @@ go_library(
         "//server/environment",
         "//server/metrics",
         "//server/role_filter",
+        "//server/util/bazel_request",
         "//server/util/log",
         "//server/util/quota",
         "//server/util/request_context",
