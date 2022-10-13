@@ -558,6 +558,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 				log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
 			}
 			if ee != "" {
+				ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
 				log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, adInstanceDigest.DownloadString(), invocationID)
 				executionID = ee
 				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
@@ -577,6 +578,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			log.CtxErrorf(ctx, "Error dispatching execution for %q: %s", adInstanceDigest.DownloadString(), err)
 			return err
 		}
+		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, newExecutionID)
 		executionID = newExecutionID
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, adInstanceDigest.DownloadString(), invocationID)
 	}
@@ -584,7 +586,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	waitReq := repb.WaitExecutionRequest{
 		Name: executionID,
 	}
-	return s.waitExecution(&waitReq, stream, waitOpts{isExecuteRequest: true})
+	return s.waitExecution(ctx, &waitReq, stream, waitOpts{isExecuteRequest: true})
 }
 
 // WaitExecution waits for an execution operation to complete. When the client initially
@@ -594,7 +596,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 // server MAY choose to stream additional updates as execution progresses,
 // such as to provide an update as to the state of the execution.
 func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error {
-	return s.waitExecution(req, stream, waitOpts{isExecuteRequest: false})
+	ctx := log.EnrichContext(stream.Context(), log.ExecutionIDKey, req.GetName())
+	return s.waitExecution(ctx, req, stream, waitOpts{isExecuteRequest: false})
 }
 
 type InProgressExecution struct {
@@ -659,9 +662,9 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 	return ""
 }
 
-func (s *ExecutionServer) waitExecution(req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
-	log.CtxInfof(stream.Context(), "WaitExecution called for: %q", req.GetName())
-	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
+func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
+	log.CtxInfof(ctx, "WaitExecution called for: %q", req.GetName())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return err
 	}

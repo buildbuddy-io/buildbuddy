@@ -2,12 +2,12 @@ package uuid
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	guuid "github.com/google/uuid"
 )
@@ -16,7 +16,6 @@ const (
 	// Name of the configuration directory in os.UserConfigDir
 	configDirName  = "buildbuddy"
 	hostIDFilename = "host_id"
-	uuidContextKey = "uuid"
 )
 
 var (
@@ -28,24 +27,12 @@ var (
 	failsafeIDOnce sync.Once
 )
 
-func GetFromContext(ctx context.Context) (string, error) {
-	u, ok := ctx.Value(uuidContextKey).(string)
-	if ok {
-		return u, nil
-	}
-	return "", fmt.Errorf("UUID not present in context")
-}
-
 func SetInContext(ctx context.Context) (context.Context, error) {
 	u, err := guuid.NewRandom()
 	if err != nil {
 		return nil, err
 	}
-	ou, ok := ctx.Value(uuidContextKey).(string)
-	if ok {
-		return nil, fmt.Errorf("UUID %q already set in context!", ou)
-	}
-	return context.WithValue(ctx, uuidContextKey, u.String()), nil
+	return log.EnrichContext(ctx, "request_id", u.String()), nil
 }
 
 func StringToBytes(text string) ([]byte, error) {
