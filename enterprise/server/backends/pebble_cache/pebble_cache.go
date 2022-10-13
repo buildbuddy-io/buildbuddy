@@ -947,7 +947,7 @@ func (p *PebbleCache) FindMissingDeprecated(ctx context.Context, digests []*repb
 	return p.FindMissing(ctx, rns)
 }
 
-func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (p *PebbleCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	rc, err := p.Reader(ctx, d, 0, 0)
 	if err != nil {
 		return nil, err

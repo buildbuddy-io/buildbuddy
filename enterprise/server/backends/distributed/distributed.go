@@ -784,7 +784,7 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset, l
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q, peerset: %v", d.GetHash(), ps)
 }
 
-func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	r, err := c.distributedReader(ctx, d, 0, 0)
 	if err != nil {
 		return nil, err

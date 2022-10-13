@@ -276,7 +276,7 @@ func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 }
 
 func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.ResourceName, out proto.Message) error {
-	data, err := cache.Get(ctx, r.GetDigest())
+	data, err := cache.GetDeprecated(ctx, r.GetDigest())
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
 			return digest.MissingDigestError(r.GetDigest())

@@ -243,7 +243,7 @@ func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Diges
 	return c.FindMissing(ctx, rns)
 }
 
-func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	if !c.eligibleForCache(d) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for redis", d)
 	}

@@ -77,7 +77,7 @@ func (c *errorCache) Set(ctx context.Context, d *repb.Digest, data []byte) error
 	return errors.New("error cache set err")
 }
 
-func (c *errorCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *errorCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return nil, errors.New("error cache get err")
 }
 
@@ -126,12 +126,12 @@ func TestACIsolation(t *testing.T) {
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	require.NoError(t, c1.Set(ctx, d1, buf1))
 
-	got1, err := c1.Get(ctx, d1)
+	got1, err := c1.GetDeprecated(ctx, d1)
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
-	gotCAS, err := mc.Get(ctx, d1)
+	gotCAS, err := mc.GetDeprecated(ctx, d1)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, gotCAS)
 }
@@ -155,12 +155,12 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	require.NoError(t, c1.Set(ctx, d1, buf1))
 
-	got1, err := c1.Get(ctx, d1)
+	got1, err := c1.GetDeprecated(ctx, d1)
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
-	gotCAS, err := mc.Get(ctx, d1)
+	gotCAS, err := mc.GetDeprecated(ctx, d1)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, gotCAS)
 }
@@ -183,11 +183,11 @@ func TestSet_DoubleWrite(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify data was written to both caches
-	srcData, err := srcCache.Get(ctx, d)
+	srcData, err := srcCache.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.NotNil(t, srcData)
 
-	destData, err := destCache.Get(ctx, d)
+	destData, err := destCache.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.NotNil(t, destData)
 
@@ -209,7 +209,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify data was successfully written to src cache
-	srcData, err := srcCache.Get(ctx, d)
+	srcData, err := srcCache.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.Equal(t, buf, srcData)
 }
@@ -229,7 +229,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify data was deleted from the dest cache
-	destData, err := destCache.Get(ctx, d)
+	destData, err := destCache.GetDeprecated(ctx, d)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, destData)
@@ -270,7 +270,7 @@ func TestGetSet(t *testing.T) {
 		require.NoError(t, err, "error setting digest in cache")
 
 		// Get() the bytes from the cache.
-		rbuf, err := mc.Get(ctx, d)
+		rbuf, err := mc.GetDeprecated(ctx, d)
 		require.NoError(t, err, "error getting from cache")
 
 		// Compute a digest for the bytes returned.
@@ -297,7 +297,7 @@ func TestGet_DoubleRead(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	data, err := mc.Get(ctx, d)
+	data, err := mc.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -319,7 +319,7 @@ func TestGet_DestReadErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	data, err := mc.Get(ctx, d)
+	data, err := mc.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -342,7 +342,7 @@ func TestGet_SrcReadErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return error
-	data, err := mc.Get(ctx, d)
+	data, err := mc.GetDeprecated(ctx, d)
 	require.Error(t, err)
 	require.Nil(t, data)
 }
@@ -365,7 +365,7 @@ func TestGetSet_EmptyData(t *testing.T) {
 	err = mc.Set(ctx, d, []byte{})
 	require.NoError(t, err)
 
-	data, err := mc.Get(ctx, d)
+	data, err := mc.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal([]byte{}, data))
 }
@@ -403,7 +403,7 @@ func TestCopyDataInBackground(t *testing.T) {
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.Get(ctx, d)
+			data, err := mc.GetDeprecated(ctx, d)
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
@@ -449,7 +449,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 
 			// We should exceed the copy channel size, but should not prevent us from continuing
 			// to read from the cache
-			data, err := mc.Get(ctx, d)
+			data, err := mc.GetDeprecated(ctx, d)
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 			return nil
@@ -493,7 +493,7 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.Get(ctx, d)
+			data, err := mc.GetDeprecated(ctx, d)
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
@@ -557,12 +557,12 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 	//Call get so the digests are copied to the destination cache
 	mcIsolation2, err := mc.WithIsolation(authenticatedCtx, resource.CacheType_AC, instanceName2)
 	require.NoError(t, err)
-	data, err := mcIsolation2.Get(authenticatedCtx, d2)
+	data, err := mcIsolation2.GetDeprecated(authenticatedCtx, d2)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf2, data))
 
 	mcIsolation, err := mc.WithIsolation(authenticatedCtx, resource.CacheType_CAS, "")
-	data, err = mcIsolation.Get(authenticatedCtx, d)
+	data, err = mcIsolation.GetDeprecated(authenticatedCtx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -626,13 +626,13 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 	// Call get so the digests are copied to the destination cache
 	mcIsolation2, err := mc.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
 	require.NoError(t, err)
-	data, err := mcIsolation2.Get(ctx, d2)
+	data, err := mcIsolation2.GetDeprecated(ctx, d2)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf2, data))
 
 	mcIsolation1, err := mc.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
 	require.NoError(t, err)
-	data, err = mcIsolation1.Get(ctx, d)
+	data, err = mcIsolation1.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -926,15 +926,15 @@ func TestSetMulti(t *testing.T) {
 	require.NoError(t, err)
 
 	for d, expected := range dataToSet {
-		data, err := mc.Get(ctx, d)
+		data, err := mc.GetDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = srcCache.Get(ctx, d)
+		data, err = srcCache.GetDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = destCache.Get(ctx, d)
+		data, err = destCache.GetDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 	}
@@ -959,15 +959,15 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check data exists before delete
-	data, err := mc.Get(ctx, d)
+	data, err := mc.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = srcCache.Get(ctx, d)
+	data, err = srcCache.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = destCache.Get(ctx, d)
+	data, err = destCache.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -975,13 +975,13 @@ func TestDelete(t *testing.T) {
 	err = mc.Delete(ctx, d)
 	require.NoError(t, err)
 
-	data, err = mc.Get(ctx, d)
+	data, err = mc.GetDeprecated(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = srcCache.Get(ctx, d)
+	data, err = srcCache.GetDeprecated(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = destCache.Get(ctx, d)
+	data, err = destCache.GetDeprecated(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
 }
 

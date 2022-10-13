@@ -172,7 +172,7 @@ func (g *GCSCache) WithIsolation(ctx context.Context, cacheType resource.CacheTy
 	}, nil
 }
 
-func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	k, err := g.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: g.remoteInstanceName,
@@ -208,7 +208,7 @@ func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*r
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				data, err := g.Get(ctx, d)
+				data, err := g.GetDeprecated(ctx, d)
 				if err != nil {
 					return err
 				}

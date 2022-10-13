@@ -135,7 +135,7 @@ func TestACIsolation(t *testing.T) {
 	require.Nil(t, c1.Set(ctx, d1, buf1))
 	require.Nil(t, c2.Set(ctx, d1, []byte("evilbuf")))
 
-	got1, err := c1.Get(ctx, d1)
+	got1, err := c1.GetDeprecated(ctx, d1)
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
@@ -214,7 +214,7 @@ func TestIsolation(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from cache2.
-		rbuf, err := test.cache2.Get(ctx, d)
+		rbuf, err := test.cache2.GetDeprecated(ctx, d)
 		if test.shouldBeShared {
 			// if the caches should be shared but there was an error
 			// getting the digest: fail.
@@ -265,7 +265,7 @@ func TestGetSet(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
-		rbuf, err := pc.Get(ctx, d)
+		rbuf, err := pc.GetDeprecated(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -579,7 +579,7 @@ func TestNoEarlyEviction(t *testing.T) {
 
 	// Verify that nothing was evicted
 	for _, d := range digestKeys {
-		if _, err := pc.Get(ctx, d); err != nil {
+		if _, err := pc.GetDeprecated(ctx, d); err != nil {
 			t.Fatalf("Error getting %q from cache. May have been improperly evicted early: %s", d.GetHash(), err)
 		}
 	}
@@ -635,7 +635,7 @@ func TestLRU(t *testing.T) {
 		log.Printf("Using data from 0:%d", quartile*i)
 		for j := 0; j < quartile*i; j++ {
 			d := digestKeys[j]
-			if _, err := pc.Get(ctx, d); err != nil {
+			if _, err := pc.GetDeprecated(ctx, d); err != nil {
 				t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err)
 			}
 		}
@@ -722,7 +722,7 @@ func TestMigrationFromDiskV1(t *testing.T) {
 		c, err := pc.WithIsolation(ctx, resource.CacheType_AC, rn.GetInstanceName())
 		require.NoError(t, err)
 
-		gotBuf, err := c.Get(ctx, rn.GetDigest())
+		gotBuf, err := c.GetDeprecated(ctx, rn.GetDigest())
 		require.NoError(t, err)
 
 		require.Equal(t, buf, gotBuf)
@@ -798,7 +798,7 @@ func TestMigrationFromDiskV2(t *testing.T) {
 		c, err := pc.WithIsolation(ctx, resource.CacheType_CAS, rn.GetInstanceName())
 		require.NoError(t, err)
 
-		gotBuf, err := c.Get(ctx, rn.GetDigest())
+		gotBuf, err := c.GetDeprecated(ctx, rn.GetDigest())
 		require.NoError(t, err)
 
 		require.Equal(t, buf, gotBuf)
@@ -845,7 +845,7 @@ func TestStartupScan(t *testing.T) {
 		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 		c, err := pc2.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
 		require.NoError(t, err)
-		rbuf, err := c.Get(ctx, d)
+		rbuf, err := c.GetDeprecated(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -955,7 +955,7 @@ func TestDeleteOrphans(t *testing.T) {
 	// Check that all of the deleted digests are not in the cache.
 	for _, dt := range deletedDigests {
 		if c, err := pc2.WithIsolation(ctx, dt.cacheType, "remoteInstanceName"); err == nil {
-			_, err := c.Get(ctx, dt.digest)
+			_, err := c.GetDeprecated(ctx, dt.digest)
 			require.True(t, status.IsNotFoundError(err), "digest %q should not be in the cache", dt.digest.GetHash())
 		}
 	}
@@ -979,7 +979,7 @@ func TestDeleteOrphans(t *testing.T) {
 		c, err := pc2.WithIsolation(ctx, dt.cacheType, "remoteInstanceName")
 		require.NoError(t, err)
 
-		_, err = c.Get(ctx, dt.digest)
+		_, err = c.GetDeprecated(ctx, dt.digest)
 		require.NoError(t, err)
 	}
 

@@ -112,13 +112,13 @@ func (c *ComposableCache) FindMissingDeprecated(ctx context.Context, digests []*
 	return c.inner.FindMissingDeprecated(ctx, missing)
 }
 
-func (c *ComposableCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	outerRsp, err := c.outer.Get(ctx, d)
+func (c *ComposableCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	outerRsp, err := c.outer.GetDeprecated(ctx, d)
 	if err == nil {
 		return outerRsp, nil
 	}
 
-	innerRsp, err := c.inner.Get(ctx, d)
+	innerRsp, err := c.inner.GetDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}

@@ -611,13 +611,13 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 	return dw, nil
 }
 
-func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcBuf []byte
 
 	eg.Go(func() error {
-		srcBuf, srcErr = mc.src.Get(gctx, d)
+		srcBuf, srcErr = mc.src.GetDeprecated(gctx, d)
 		return srcErr
 	})
 
@@ -625,7 +625,7 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.Get(gctx, d)
+			_, dstErr = mc.dest.GetDeprecated(gctx, d)
 			return nil // we don't care about the return error from this cache
 		})
 	}

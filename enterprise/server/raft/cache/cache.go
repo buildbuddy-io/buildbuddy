@@ -547,7 +547,7 @@ func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.
 	return rc.findMissingResourceNames(ctx, resourceNames)
 }
 
-func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (rc *RaftCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	r, err := rc.Reader(ctx, d, 0, 0)
 	if err != nil {
 		return nil, err

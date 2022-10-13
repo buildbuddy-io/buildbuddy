@@ -267,7 +267,7 @@ func (s3c *S3Cache) WithIsolation(ctx context.Context, cacheType resource.CacheT
 	}, nil
 }
 
-func (s3c *S3Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (s3c *S3Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	k, err := s3c.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: s3c.remoteInstanceName,
@@ -305,7 +305,7 @@ func (s3c *S3Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 	for _, d := range digests {
 		fetchFn := func(d *repb.Digest) {
 			eg.Go(func() error {
-				data, err := s3c.Get(ctx, d)
+				data, err := s3c.GetDeprecated(ctx, d)
 				if err != nil {
 					return err
 				}

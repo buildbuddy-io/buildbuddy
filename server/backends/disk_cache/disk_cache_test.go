@@ -78,7 +78,7 @@ func TestGetSet(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
-		rbuf, err := c.Get(ctx, d)
+		rbuf, err := c.GetDeprecated(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -228,7 +228,7 @@ func TestFindMissing(t *testing.T) {
 	err = dcWithIsolation.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	_, err = dcWithIsolation.Get(ctx, d)
+	_, err = dcWithIsolation.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
@@ -401,7 +401,7 @@ func TestSizeLimit(t *testing.T) {
 	// Expect the last *2* digests to be present.
 	// The first digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := dc.Get(ctx, d)
+		rbuf, err := dc.GetDeprecated(ctx, d)
 		if i == 0 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())
@@ -457,7 +457,7 @@ func TestLRU(t *testing.T) {
 	// Expect the first and third digests to be present.
 	// The second digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := dc.Get(ctx, d)
+		rbuf, err := dc.GetDeprecated(ctx, d)
 		if i == 1 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())
@@ -493,7 +493,7 @@ func TestFileAtomicity(t *testing.T) {
 				if err := dc.Set(gctx, d, buf); err != nil {
 					return err
 				}
-				_, err := dc.Get(gctx, d)
+				_, err := dc.GetDeprecated(gctx, d)
 				if err != nil {
 					return err
 				}
@@ -872,7 +872,7 @@ func TestV2Layout(t *testing.T) {
 	require.NoError(t, err)
 	require.Truef(t, ok, "digest should be in the cache")
 
-	_, err = dc.Get(ctx, d)
+	_, err = dc.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 }
 
@@ -955,7 +955,7 @@ func TestV2LayoutMigration(t *testing.T) {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	testHash := "7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620"
 	{
-		buf, err := dc.Get(ctx, &repb.Digest{Hash: testHash, SizeBytes: 5})
+		buf, err := dc.GetDeprecated(ctx, &repb.Digest{Hash: testHash, SizeBytes: 5})
 		require.NoError(t, err)
 		require.Equal(t, []byte("test1"), buf)
 	}
@@ -969,7 +969,7 @@ func TestV2LayoutMigration(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.Get(ctx, d)
+		buf, err := ic.GetDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test2"), buf)
 	}
@@ -985,7 +985,7 @@ func TestV2LayoutMigration(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.Get(ctx, d)
+		buf, err := ic.GetDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test3"), buf)
 	}
@@ -1002,7 +1002,7 @@ func TestV2LayoutMigration(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.Get(ctx, d)
+		buf, err := ic.GetDeprecated(ctx, d)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test4"), buf)
 	}

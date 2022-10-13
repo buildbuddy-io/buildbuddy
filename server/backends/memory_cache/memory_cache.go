@@ -171,7 +171,7 @@ func (m *MemoryCache) FindMissingDeprecated(ctx context.Context, digests []*repb
 	return m.FindMissing(ctx, rns)
 }
 
-func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (m *MemoryCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	k, err := m.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: m.remoteInstanceName,
@@ -198,7 +198,7 @@ func (m *MemoryCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	// No parallelism here either. Not necessary for an in-memory cache.
 	for _, d := range digests {
-		data, err := m.Get(ctx, d)
+		data, err := m.GetDeprecated(ctx, d)
 		if status.IsNotFoundError(err) {
 			continue
 		}
@@ -257,7 +257,7 @@ func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 // Low level interface used for seeking and stream-writing.
 func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
-	buf, err := m.Get(ctx, d)
+	buf, err := m.GetDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
