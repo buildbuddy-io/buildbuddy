@@ -3,9 +3,11 @@ package clickhouse
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"syscall"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -180,10 +182,15 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	var lastError error
 	for retrier.Next() {
 		res := h.DB(ctx).Create(inv)
-		if res.Error != nil {
+		if res.Error == nil {
+			return nil
+		}
+		if errors.Is(res.Error, syscall.ECONNRESET) {
+			// connection is reset by peer. Retry.
+			lastError = res.Error
 			continue
 		} else {
-			return nil
+			return res.Error
 		}
 	}
 	return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
