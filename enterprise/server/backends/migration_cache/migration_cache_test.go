@@ -802,11 +802,23 @@ func TestFindMissing(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	missing, err := mc.FindMissingDeprecated(ctx, []*repb.Digest{d, notSetD1, notSetD2})
+	digests := []*repb.Digest{d, notSetD1, notSetD2}
+	missing, err := mc.FindMissingDeprecated(ctx, digests)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
 
-	missing, err = mc.FindMissingDeprecated(ctx, []*repb.Digest{d})
+	rns := digest.ResourceNames(resource.CacheType_CAS, "", digests)
+	missing, err = mc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
+
+	digests = []*repb.Digest{d}
+	missing, err = mc.FindMissingDeprecated(ctx, digests)
+	require.NoError(t, err)
+	require.Empty(t, missing)
+
+	rns = digest.ResourceNames(resource.CacheType_CAS, "", digests)
+	missing, err = mc.FindMissing(ctx, rns)
 	require.NoError(t, err)
 	require.Empty(t, missing)
 }

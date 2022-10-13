@@ -45,6 +45,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/disk",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_stretchr_testify//require",

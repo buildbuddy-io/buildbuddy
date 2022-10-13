@@ -230,6 +230,7 @@ type Cache interface {
 	// Normal cache-like operations
 	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
 	Metadata(ctx context.Context, r *resource.ResourceName) (*CacheMetadata, error)
+	FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error)
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)

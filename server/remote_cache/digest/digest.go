@@ -117,6 +117,19 @@ func CacheTypeToPrefix(cacheType rspb.CacheType) string {
 	}
 }
 
+func ResourceNames(cacheType rspb.CacheType, remoteInstanceName string, digests []*repb.Digest) []*rspb.ResourceName {
+	rns := make([]*rspb.ResourceName, 0, len(digests))
+	for _, d := range digests {
+		rns = append(rns, &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: remoteInstanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    cacheType,
+		})
+	}
+	return rns
+}
+
 // Key is a representation of a digest that can be used as a map key.
 type Key struct {
 	Hash      string

@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -80,6 +81,24 @@ func (c *ComposableCache) MetadataDeprecated(ctx context.Context, d *repb.Digest
 		return md, nil
 	}
 	return c.inner.MetadataDeprecated(ctx, d)
+}
+
+func (c *ComposableCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	cacheType := resources[0].GetCacheType()
+	instanceName := resources[0].GetInstanceName()
+
+	missingDigests, err := c.outer.FindMissing(ctx, resources)
+	missingResources := digest.ResourceNames(cacheType, instanceName, missingDigests)
+	if err != nil {
+		missingResources = resources
+	}
+	if len(missingResources) == 0 {
+		return nil, nil
+	}
+	return c.inner.FindMissing(ctx, missingResources)
 }
 
 func (c *ComposableCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
