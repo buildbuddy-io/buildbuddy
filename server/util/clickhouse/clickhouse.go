@@ -185,9 +185,10 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 		if res.Error == nil {
 			return nil
 		}
-		if errors.Is(res.Error, syscall.ECONNRESET) {
+		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) {
 			// connection is reset by peer. Retry.
 			lastError = res.Error
+			log.Info("retry")
 			continue
 		} else {
 			return res.Error
