@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/creack/pty"
 	"gopkg.in/yaml.v2"
 )
 
@@ -377,12 +378,22 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	cmd := exec.Command(scriptPath)
 	pr, pw := io.Pipe()
 	cmd.Dir = path
-	cmd.Stdout = pw
-	cmd.Stderr = pw
-	// Allow output handlers to accept user input.
+	// Write command output to a pty to ensure line buffering.
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to open pty: %s", err)
+	}
+	cmd.Stdout = tty
+	cmd.Stderr = tty
 	cmd.Stdin = r
 	cmd.Env = p.commandEnv()
 	go func() {
+		// Copy pty output to the next pipeline stage.
+		io.Copy(pw, ptmx)
+	}()
+	go func() {
+		defer tty.Close()
+		defer ptmx.Close()
 		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
 		if err := cmd.Run(); err != nil {
