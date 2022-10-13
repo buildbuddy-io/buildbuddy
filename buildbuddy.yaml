@@ -54,7 +54,6 @@ actions:
 
 plugins:
   - path: cli/example_plugins/go_deps
-  # TODO(bduffany): Fix terminal IO for bazel output handling and re-enable.
-  # - path: cli/example_plugins/go_highlight
+  - path: cli/example_plugins/go_highlight
   - path: cli/example_plugins/open_invocation
   - path: cli/example_plugins/ping_remote
