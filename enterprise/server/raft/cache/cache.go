@@ -49,8 +49,8 @@ var (
 	join                = flagutil.New("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
 	httpAddr            = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
 	gRPCAddr            = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
-	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
-	testMode            = flag.Bool("cache.raft.test_mode", false, "If set, use driver TestingOpts to split sooner / faster")
+	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", true, "If set, remove all raft + cache data on start")
+	testMode            = flag.Bool("cache.raft.test_mode", true, "If set, use driver TestingOpts to split sooner / faster")
 )
 
 const (
@@ -295,25 +295,8 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	})
 }
 
-func (rc *RaftCache) lookupPartitionID(ctx context.Context, remoteInstanceName string) (string, error) {
-	auth := rc.env.GetAuthenticator()
-	if auth == nil {
-		return DefaultPartitionID, nil
-	}
-	user, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return DefaultPartitionID, nil
-	}
-	for _, pm := range rc.conf.PartitionMappings {
-		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
-			return pm.PartitionID, nil
-		}
-	}
-	return DefaultPartitionID, nil
-}
-
 func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	partID, err := rc.lookupPartitionID(ctx, remoteInstanceName)
+	_, partID, err := rc.lookupGroupAndPartitionID(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -329,8 +312,30 @@ func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType resource.Cache
 	return &clone, nil
 }
 
+func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
+	auth := rc.env.GetAuthenticator()
+	if auth == nil {
+		return interfaces.AuthAnonymousUser, DefaultPartitionID, nil
+	}
+	user, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser, DefaultPartitionID, nil
+	}
+	for _, pm := range rc.conf.PartitionMappings {
+		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+			return user.GetGroupID(), pm.PartitionID, nil
+		}
+	}
+	return user.GetGroupID(), DefaultPartitionID, nil
+}
+
 func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
 	_, err := digest.Validate(r.GetDigest())
+	if err != nil {
+		return nil, err
+	}
+
+	groupID, partID, err := rc.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +344,8 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceNam
 		Isolation: &rfpb.Isolation{
 			CacheType:          r.GetCacheType(),
 			RemoteInstanceName: r.GetInstanceName(),
+			PartitionId:        partID,
+			GroupId:            groupID,
 		},
 		Digest: r.GetDigest(),
 	}, nil
