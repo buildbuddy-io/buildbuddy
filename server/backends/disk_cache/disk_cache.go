@@ -47,6 +47,10 @@ const (
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
 
+	// staleFilePeriod is the timeframe after which an empty or temp file will be considered stale and eligible
+	// for automatic deletion
+	staleFilePeriod = 15 * time.Minute
+
 	DefaultPartitionID       = "default"
 	PartitionDirectoryPrefix = "PT"
 	HashPrefixDirPrefixLen   = 4
@@ -58,7 +62,6 @@ var (
 	partitionsFlag        = flagutil.New("cache.disk.partitions", []disk.Partition{}, "")
 	partitionMappingsFlag = flagutil.New("cache.disk.partition_mappings", []disk.PartitionMapping{}, "")
 	useV2LayoutFlag       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
-	cleanupStaleFilesFlag = flag.Bool("cache.disk.cleanup_stale_files", true, "If enabled, stale files will be deleted during LRU initialization.")
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
 )
@@ -68,7 +71,6 @@ type Options struct {
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
 	UseV2Layout       bool
-	CleanupStaleFiles bool
 }
 
 // MigrateToV2Layout restructures the files under the root directory to conform to the "v2" layout.
@@ -175,7 +177,6 @@ func Register(env environment.Env) error {
 		Partitions:        *partitionsFlag,
 		PartitionMappings: *partitionMappingsFlag,
 		UseV2Layout:       *useV2LayoutFlag,
-		CleanupStaleFiles: *cleanupStaleFilesFlag,
 	}
 	c, err := NewDiskCache(env, dc, cache_config.MaxSizeBytes())
 	if err != nil {
@@ -220,7 +221,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
-		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, opts.UseV2Layout, opts.CleanupStaleFiles)
+		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, opts.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -234,7 +235,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		if opts.UseV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
-		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, opts.UseV2Layout, opts.CleanupStaleFiles)
+		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, opts.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -413,31 +414,29 @@ func (c *DiskCache) WaitUntilMapped() {
 // serialize this ledger, we regenerate it from scratch on startup by looking
 // at the filesystem.
 type partition struct {
-	id                string
-	useV2Layout       bool
-	mu                sync.RWMutex
-	rootDir           string
-	maxSizeBytes      int64
-	lru               interfaces.LRU
-	fileChannel       chan *fileRecord
-	diskIsMapped      bool
-	doneAsyncLoading  chan struct{}
-	lastGCTime        time.Time
-	stringLock        sync.RWMutex
-	internedStrings   map[string]string
-	cleanupStaleFiles bool
+	id               string
+	useV2Layout      bool
+	mu               sync.RWMutex
+	rootDir          string
+	maxSizeBytes     int64
+	lru              interfaces.LRU
+	fileChannel      chan *fileRecord
+	diskIsMapped     bool
+	doneAsyncLoading chan struct{}
+	lastGCTime       time.Time
+	stringLock       sync.RWMutex
+	internedStrings  map[string]string
 }
 
-func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool, cleanupStaleFiles bool) (*partition, error) {
+func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
 	p := &partition{
-		id:                id,
-		useV2Layout:       useV2Layout,
-		maxSizeBytes:      maxSizeBytes,
-		rootDir:           rootDir,
-		fileChannel:       make(chan *fileRecord),
-		internedStrings:   make(map[string]string, 0),
-		doneAsyncLoading:  make(chan struct{}),
-		cleanupStaleFiles: cleanupStaleFiles,
+		id:               id,
+		useV2Layout:      useV2Layout,
+		maxSizeBytes:     maxSizeBytes,
+		rootDir:          rootDir,
+		fileChannel:      make(chan *fileRecord),
+		internedStrings:  make(map[string]string, 0),
+		doneAsyncLoading: make(chan struct{}),
 	}
 	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: p.evictFn, SizeFn: sizeFn})
 	if err != nil {
@@ -656,7 +655,7 @@ func (p *partition) initializeCache() error {
 				return err
 			}
 			if info.Size() == 0 {
-				if p.cleanupStaleFiles {
+				if isStaleFile(info) {
 					log.Debugf("Deleting 0 length file: %q", path)
 					err = os.Remove(path)
 					if err != nil {
@@ -668,7 +667,7 @@ func (p *partition) initializeCache() error {
 			timestampedRecord, err := p.makeTimestampedRecordFromPathAndFileInfo(path, info)
 			if err != nil {
 				if disk.IsWriteTempFile(path) {
-					if p.cleanupStaleFiles {
+					if isStaleFile(info) {
 						err = os.Remove(path)
 						if err != nil {
 							log.Warningf("Could not delete stale temp file %q (size %d): %s", path, info.Size(), err)
@@ -718,6 +717,10 @@ func (p *partition) initializeCache() error {
 		p.mu.Unlock()
 	}()
 	return nil
+}
+
+func isStaleFile(info fs.FileInfo) bool {
+	return time.Since(info.ModTime()) > staleFilePeriod
 }
 
 func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType resource.CacheType, userPrefix, remoteInstanceName string, digestBytes []byte, err error) {
