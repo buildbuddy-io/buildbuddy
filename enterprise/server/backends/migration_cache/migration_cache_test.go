@@ -126,12 +126,18 @@ func TestACIsolation(t *testing.T) {
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	require.NoError(t, c1.Set(ctx, d1, buf1))
 
-	got1, err := c1.GetDeprecated(ctx, d1)
+	got1, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d1,
+		CacheType: resource.CacheType_AC,
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
-	gotCAS, err := mc.GetDeprecated(ctx, d1)
+	gotCAS, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d1,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, gotCAS)
 }
@@ -155,12 +161,20 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	require.NoError(t, c1.Set(ctx, d1, buf1))
 
-	got1, err := c1.GetDeprecated(ctx, d1)
+	got1, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d1,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: "remote",
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
-	gotCAS, err := mc.GetDeprecated(ctx, d1)
+	gotCAS, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d1,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: "remote",
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, gotCAS)
 }
@@ -183,11 +197,17 @@ func TestSet_DoubleWrite(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify data was written to both caches
-	srcData, err := srcCache.GetDeprecated(ctx, d)
+	srcData, err := srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, srcData)
 
-	destData, err := destCache.GetDeprecated(ctx, d)
+	destData, err := destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, destData)
 
@@ -209,7 +229,10 @@ func TestSet_DestWriteErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify data was successfully written to src cache
-	srcData, err := srcCache.GetDeprecated(ctx, d)
+	srcData, err := srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf, srcData)
 }
@@ -229,7 +252,10 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify data was deleted from the dest cache
-	destData, err := destCache.GetDeprecated(ctx, d)
+	destData, err := destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, destData)
@@ -577,14 +603,19 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 	require.NoError(t, err)
 
 	//Call get so the digests are copied to the destination cache
-	mcIsolation2, err := mc.WithIsolation(authenticatedCtx, resource.CacheType_AC, instanceName2)
-	require.NoError(t, err)
-	data, err := mcIsolation2.GetDeprecated(authenticatedCtx, d2)
+	data, err := mc.Get(authenticatedCtx, &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: instanceName2,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf2, data))
 
-	mcIsolation, err := mc.WithIsolation(authenticatedCtx, resource.CacheType_CAS, "")
-	data, err = mcIsolation.GetDeprecated(authenticatedCtx, d)
+	data, err = mc.Get(authenticatedCtx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: "",
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -646,15 +677,19 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call get so the digests are copied to the destination cache
-	mcIsolation2, err := mc.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
-	require.NoError(t, err)
-	data, err := mcIsolation2.GetDeprecated(ctx, d2)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: instanceName2,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf2, data))
 
-	mcIsolation1, err := mc.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
-	require.NoError(t, err)
-	data, err = mcIsolation1.GetDeprecated(ctx, d)
+	data, err = mc.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: instanceName1,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -955,11 +990,17 @@ func TestSetMulti(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = srcCache.GetDeprecated(ctx, d)
+		data, err = srcCache.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = destCache.GetDeprecated(ctx, d)
+		data, err = destCache.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 	}
@@ -991,11 +1032,17 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = srcCache.GetDeprecated(ctx, d)
+	data, err = srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = destCache.GetDeprecated(ctx, d)
+	data, err = destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -1009,10 +1056,16 @@ func TestDelete(t *testing.T) {
 	})
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = srcCache.GetDeprecated(ctx, d)
+	data, err = srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = destCache.GetDeprecated(ctx, d)
+	data, err = destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 }
 
