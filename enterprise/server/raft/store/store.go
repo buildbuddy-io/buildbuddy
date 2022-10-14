@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
@@ -75,6 +76,7 @@ type Store struct {
 	leaderUpdatedCB listener.LeaderCB
 
 	fileStorer filestore.Store
+	splitMu    sync.Mutex
 }
 
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
@@ -96,6 +98,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 		metaRangeData: "",
 		fileStorer:    filestore.New(true /*=isolateByGroupIDs*/),
+		splitMu:       sync.Mutex{},
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)
@@ -329,14 +332,14 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 	if err != nil {
 		return nil, nil, err
 	}
+	if r.IsSplitting() {
+		return nil, nil, status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeSplittingMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
+	}
 
 	// Ensure the header generation matches what we have locally -- if not,
 	// force client to go back and re-pull the rangeDescriptor from the meta
 	// range.
 	if rd.GetGeneration() != header.GetGeneration() {
-		if r.IsSplitting() {
-			return nil, nil, status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeSplittingMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
-		}
 		return nil, nil, status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
 	}
 
@@ -505,7 +508,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	// log during a range split, we check here if the replica is splitting
 	// before doing the syncPropose.
 	if r.IsSplitting() {
-		return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, clusterID)
+		return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeSplittingMsg, clusterID)
 	}
 
 	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, req.GetBatch())
@@ -877,7 +880,13 @@ func casRevert(cas *rfpb.CASRequest) *rfpb.CASRequest {
 //   new endpoints.
 // 6) The split range is unlocked.
 func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
-	if _, err := s.LeasedRange(req.GetHeader()); err != nil {
+	s.splitMu.Lock()
+	defer s.splitMu.Unlock()
+
+	splitStart := time.Now()
+
+	_, err := s.LeasedRange(req.GetHeader())
+	if err != nil {
 		return nil, err
 	}
 
@@ -896,6 +905,8 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if !rangeOK {
 		return nil, status.FailedPreconditionErrorf("Range %d not found on this node", req.GetHeader().GetRangeId())
 	}
+
+	s.log.Infof("splitlog: checking if cluster %d has a viable split point", clusterID)
 
 	// Before proceeding, see if this cluster has a split point. If it does not; we can
 	// exit early.
@@ -935,13 +946,11 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	firstNodeID := newIDs.maxNodeID - uint64(len(existingMembers))
 	bootStrapInfo := bringup.MakeBootstrapInfo(newIDs.clusterID, firstNodeID, nodeGrpcAddrs)
 
-	// Bump the local range descriptor so that outstanding reqeusts are rejected.
-	oldLeftNewGen := proto.Clone(oldLeft).(*rfpb.RangeDescriptor)
-	oldLeftNewGen.Generation += 1
+	s.log.Infof("splitlog: new cluster ID will be %d", newIDs.clusterID)
 
 	// Create a new range descriptor for the left range. This will be inserted
 	// when the split lock is released, if the split succeeds successfully.
-	newLeft := proto.Clone(oldLeftNewGen).(*rfpb.RangeDescriptor)
+	newLeft := proto.Clone(oldLeft).(*rfpb.RangeDescriptor)
 	newLeft.Generation += 1 // increment rd generation upon split
 	newLeft.Right = findSplitRsp.GetSplit()
 
@@ -969,24 +978,20 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := bringup.StartCluster(ctx, s.apiClient, bootStrapInfo, newRightBatch); err != nil {
 		return nil, status.InternalErrorf("could not start new cluster: %s", err)
 	}
+	s.log.Infof("splitlog: new cluster %d started", newIDs.clusterID)
 
-	cas, err := casRangeEdit(constants.LocalRangeKey, oldLeft, oldLeftNewGen)
-	if err != nil {
-		return nil, err
-	}
-	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, rbuilder.NewBatchBuilder().Add(cas)); err != nil {
-		return nil, status.InternalErrorf("could not update left range generation: %s", err)
-	}
-	// Lock the cluster that is to be split.
-	// TODO(tylerw): add lease renewal goroutine instead of using such a long
-	// lease.
+	s.log.Infof("splitlog: attempting to acquire split lease")
+	leaseStart := time.Now()
+	// Lock the DB that is to be split. This acquires the split lock on the db leaser,
+	// preventing Reader and Writer access once all Reads/Writes have finished.
 	leaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
-		CasOnExpiry:     casRevert(cas),
-		DurationSeconds: 10,
+		DurationSeconds: 60,
 	})
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, leaseReq); err != nil {
 		return nil, status.InternalErrorf("could not obtain split lease: %s", err)
 	}
+
+	s.log.Infof("splitlog: acquired split lease")
 
 	// Copy stored data from the old range -> new range by creating a
 	// snapshot of the db, copying stored files, then loading the snapshot
@@ -1000,6 +1005,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, status.InternalErrorf("could not create snapshot: %s", err)
 	}
 
+	s.log.Infof("splitlog: snapshotted existing cluster metadata %+v", createSnapshotRsp)
 	copyStoredFiles := rbuilder.NewBatchBuilder().Add(&rfpb.CopyStoredFilesRequest{
 		SourceRange:   oldLeft,
 		TargetRangeId: newIDs.rangeID,
@@ -1009,7 +1015,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, copyStoredFiles); err != nil {
 		return nil, status.InternalErrorf("could not copy data to right side: %s", err)
 	}
-
+	s.log.Infof("splitlog: copied stored file data to new cluster")
 	loadSnapReq := &rfpb.LoadSnapshotRequest{
 		Header: &rfpb.Header{
 			RangeId:    newIDs.rangeID,
@@ -1017,9 +1023,12 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		},
 		SnapId: createSnapshotRsp.GetSnapId(),
 	}
-	if _, err := s.loadSnapshot(ctx, loadSnapReq); err != nil {
+	loadSnapRsp, err := s.loadSnapshot(ctx, loadSnapReq)
+	if err != nil {
 		return nil, status.InternalErrorf("could not load snapshot: %s", err)
 	}
+
+	s.log.Infof("splitlog: loaded cluster metadata snapshot into new cluster: %+v", loadSnapRsp)
 
 	// As mentioned above, add the replicas to right range now that it is
 	// about to be activated.
@@ -1033,16 +1042,19 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, newIDs.clusterID, b); err != nil {
 		return nil, status.InternalErrorf("could not update right range descriptor: %s", err)
 	}
+	s.log.Infof("splitlog: added right range replicas %v", newRight.Replicas)
 
 	// Update the metarange to add the new right range.
 	if err := s.updateMetarange(ctx, oldLeft, newLeft, newRight); err != nil {
 		return nil, status.InternalErrorf("could not update meta range: %s", err)
 	}
 
+	s.log.Infof("splitlog: updated metarange")
+
 	// Finally, update this ranges RangeDescriptor to reflect the fact that
 	// it is now split, and unlock it.
 	b = rbuilder.NewBatchBuilder()
-	if err := addLocalRangeEdits(oldLeftNewGen, newLeft, b); err != nil {
+	if err := addLocalRangeEdits(oldLeft, newLeft, b); err != nil {
 		return nil, err
 	}
 	batchProto, err := b.ToProto()
@@ -1057,6 +1069,9 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, status.InternalErrorf("could not release split lease: %s", err)
 	}
 
+	leaseDuration := time.Since(leaseStart)
+	s.log.Infof("splitlog: released split lease")
+
 	// Delete old data from left range
 	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRangeRequest{
 		Start: newLeft.Right,
@@ -1066,11 +1081,13 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, status.InternalErrorf("could not delete old data: %s", err)
 	}
 
+	s.log.Infof("splitlog: cleaned up old data on cluster %d", clusterID)
+
 	splitRsp := &rfpb.SplitClusterResponse{
 		Left:  newLeft,
 		Right: newRight,
 	}
-	s.log.Infof("SplitResponse: %+v", splitRsp)
+	s.log.Infof("splitlog: split completed in %s (lease %s): %+v", time.Since(splitStart), leaseDuration, splitRsp)
 	return splitRsp, nil
 }
 

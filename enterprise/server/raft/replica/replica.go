@@ -570,7 +570,9 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 
 	timeTilExpiry := time.Duration(req.GetDurationSeconds()) * time.Second
 	startNewTimer := func() {
+		sm.log.Infof("Trying to acquire split lock...")
 		sm.leaser.AcquireSplitLock()
+		sm.log.Infof("Acquired split lock")
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
 			log.Warning("Split lease expired!")
 			sm.releaseAndClearTimer()
@@ -1139,28 +1141,23 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
 
 	if err := sm.validateRange(header); err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	fileMetadata, err := sm.metadataForRecord(db, fileRecord)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 	sm.sendAccessTimeUpdate(fileMetadata)
-
-	// Grab another lease and pass the Close function to the reader
-	// so it will be closed when the reader is.
-	db, err = sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
 	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
 }
 
@@ -1232,28 +1229,24 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
 
 	if err := sm.validateRange(header); err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	writeCloserMetadata, err := sm.storedFileWriter(ctx, fileRecord)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
-	// Grab another lease and pass the Close function to the writer
-	// (below) so it will be closed when the writer is.
-	db, err = sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
 	wc.CloseFn = db.Close
 	wc.CommitFn = func(bytesWritten int64) error {
