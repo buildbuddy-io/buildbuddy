@@ -157,7 +157,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 		return nil, err
 	}
 	defer db.Close()
-	
+
 	iterOpts := &pebble.IterOptions{
 		LowerBound: keys.Key([]byte{constants.MinByte}),
 		UpperBound: keys.Key([]byte{constants.MaxByte}),
