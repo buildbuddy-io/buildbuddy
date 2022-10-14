@@ -152,12 +152,18 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru.Generation = rd.GetGeneration()
 	ru.RangeId = rd.GetRangeId()
 
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	
 	iterOpts := &pebble.IterOptions{
 		LowerBound: keys.Key([]byte{constants.MinByte}),
 		UpperBound: keys.Key([]byte{constants.MaxByte}),
 	}
 
-	iter := sm.db.NewIter(iterOpts)
+	iter := db.NewIter(iterOpts)
 	defer iter.Close()
 
 	estimatedBytesUsed := int64(0)
