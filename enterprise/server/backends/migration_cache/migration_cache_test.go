@@ -85,7 +85,7 @@ func (c *errorCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return errors.New("error cache delete err")
 }
 
-func (c *errorCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *errorCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	return false, errors.New("error cache contains err")
 }
 
