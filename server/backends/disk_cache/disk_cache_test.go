@@ -677,7 +677,7 @@ func TestDeleteStaleTempFiles(t *testing.T) {
 	err = os.WriteFile(unexpectedFile, []byte("hello"), 0644)
 	require.NoError(t, err)
 
-	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir, CleanupStaleFiles: true}, maxSizeBytes)
 	require.NoError(t, err)
 
 	dc.WaitUntilMapped()
