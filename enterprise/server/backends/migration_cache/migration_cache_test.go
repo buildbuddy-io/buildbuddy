@@ -823,6 +823,39 @@ func TestFindMissing(t *testing.T) {
 	require.Empty(t, missing)
 }
 
+func TestFindMissing_DestSrcMismatch(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	d3, buf3 := testdigest.NewRandomDigestBuf(t, 100)
+
+	// Set d in both caches, but set d2 and d3 in only one of the caches
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+	err = srcCache.Set(ctx, d2, buf2)
+	require.NoError(t, err)
+	err = destCache.Set(ctx, d3, buf3)
+	require.NoError(t, err)
+
+	digests := []*repb.Digest{d, d2, d3}
+	rns := digest.ResourceNames(resource.CacheType_CAS, "", digests)
+	missing, err := mc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	// Even though d3 is written to the dest cache, expect output to reflect that it's missing from src cache
+	require.ElementsMatch(t, []*repb.Digest{d3}, missing)
+}
+
 func TestFindMissing_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
