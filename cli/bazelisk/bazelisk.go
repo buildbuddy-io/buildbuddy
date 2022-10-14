@@ -106,6 +106,16 @@ func makePipeWriter(w io.Writer) (pw *os.File, closeFunc func(), err error) {
 }
 
 func setBazelVersion() error {
+	// If USE_BAZEL_VERSION is already set and not pointing to us (the BB CLI),
+	// preserve that value.
+	envVersion := os.Getenv("USE_BAZEL_VERSION")
+	if envVersion != "" && !strings.HasPrefix(envVersion, "buildbuddy-io/") {
+		return nil
+	}
+
+	// TODO: Handle the cases where we were invoked via .bazeliskrc
+	// or USE_BAZEL_FALLBACK_VERSION (less common).
+
 	ws, err := workspace.Path()
 	if err != nil {
 		return err
@@ -117,8 +127,6 @@ func setBazelVersion() error {
 		}
 	}
 	parts := strings.Split(string(b), "\n")
-	// TODO: Handle the cases where we were invoked via .bazeliskrc,
-	// USE_BAZEL_VERSION, or USE_BAZEL_FALLBACK_VERSION.
 
 	// Bazelisk probably chose us because we were specified first in
 	// .bazelversion. Delete the first line, if it exists.
