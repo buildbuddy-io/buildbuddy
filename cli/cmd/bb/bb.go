@@ -74,6 +74,10 @@ func run() (exitCode int, err error) {
 	// Remove any args that don't need to be on the command line
 	args = arg.RemoveExistingArgs(args, rcFileArgs)
 
+	// If this is a `bazel run` command, add a --run_script arg so that
+	// we can execute post-bazel plugins between the build and the run step.
+	args, scriptPath := bazelisk.ConfigureRunScript(args, tempDir)
+
 	// Run bazelisk, capturing the original output in a file and allowing
 	// plugins to control how the output is rendered to the terminal.
 	outputPath := filepath.Join(tempDir, "bazel.log")
@@ -93,6 +97,17 @@ func run() (exitCode int, err error) {
 			return -1, err
 		}
 	}
+
+	// If this is a `bazel run` command, invoke the run script.
+	if scriptPath != "" {
+		exitCode, err = bazelisk.InvokeRunScript(scriptPath)
+		if err != nil {
+			return -1, err
+		}
+	}
+
+	// TODO: Support post-run hooks?
+	// e.g. show a desktop notification once a k8s deploy has finished
 
 	return exitCode, nil
 }
