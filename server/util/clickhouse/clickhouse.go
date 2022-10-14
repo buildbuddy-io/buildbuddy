@@ -20,10 +20,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	numClickhouseRetries = 3
-)
-
 var (
 	dataSource      = flagutil.New("olap_database.data_source", "", "The clickhouse database to connect to, specified a a connection string", flagutil.SecretTag)
 	maxOpenConns    = flag.Int("olap_database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
