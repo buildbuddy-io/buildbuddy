@@ -297,7 +297,7 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 
 	if dstErr != nil {
 		log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
-	} else if !digest.ElementsMatch(srcMissing, dstMissing) {
+	} else if doubleRead && !digest.ElementsMatch(srcMissing, dstMissing) {
 		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
 
 		if mc.logNotFoundErrors {
