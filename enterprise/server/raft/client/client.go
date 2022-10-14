@@ -226,7 +226,6 @@ func (mc *multiWriteCloser) Close() error {
 		for peer := range mc.closers {
 			peers = append(peers, peer)
 		}
-		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", fileRecordLogString(mc.fileRecord), peers)
 	} else {
 		log.Errorf("MWC is returning err: %s", err)
 	}

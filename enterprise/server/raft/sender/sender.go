@@ -223,6 +223,7 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 			return err
 		}
 		if isRangeSplittingError(err) {
+			log.Debugf("Run() delayed %q for split", key)
 			retrier.FixedDelayOnce(splitRetryInterval)
 		}
 		lastError = err
@@ -275,6 +276,7 @@ func (s *Sender) RunAll(ctx context.Context, key []byte, fn runAllFunc) error {
 			return err
 		}
 		if isRangeSplittingError(err) {
+			log.Debugf("RunAll() delayed %q for split", key)
 			retrier.FixedDelayOnce(splitRetryInterval)
 		}
 		lastError = err
@@ -376,6 +378,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		// Only use the short split wait interval if it's the only error left.
 		// If there are other errors, use the normal backoff.
 		if waitingForSplit {
+			log.Debugf("RunMultiKey() delayed for split")
 			retrier.FixedDelayOnce(splitRetryInterval)
 		}
 
