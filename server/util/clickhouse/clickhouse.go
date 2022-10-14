@@ -3,15 +3,18 @@ package clickhouse
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"syscall"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	gormclickhouse "gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
@@ -175,8 +178,23 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := ToInvocationFromPrimaryDB(ti)
-	res := h.DB(ctx).Create(inv)
-	return res.Error
+	retrier := retry.DefaultWithContext(ctx)
+	var lastError error
+	for retrier.Next() {
+		res := h.DB(ctx).Create(inv)
+		if res.Error == nil {
+			return nil
+		}
+		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) {
+			// Retry since it's an transient error.
+			lastError = res.Error
+			log.Infof("attempt to write invocation (id: %q) to clickhouse failed: %s", res.Error, ti.InvocationID)
+			continue
+		} else {
+			return res.Error
+		}
+	}
+	return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
 }
 
 func runMigrations(gdb *gorm.DB) error {

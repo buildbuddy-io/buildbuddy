@@ -10,6 +10,7 @@ go_library(
         "//server/tables",
         "//server/util/flagutil",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@io_gorm_driver_clickhouse//:clickhouse",
