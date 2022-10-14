@@ -24,8 +24,12 @@ func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn C
 	}
 
 	done := make(chan struct{})
+	canceled := false
 	cancel := func() {
-		close(done)
+		if !canceled {
+			close(done)
+			canceled = true
+		}
 	}
 
 	start := time.Now()
