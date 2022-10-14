@@ -131,7 +131,7 @@ func main() {
 	}
 	log.Printf("Applying load to cache W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
 
-	conn, err := grpc_client.DialTargetWithOptions(*cacheTarget, false, grpc.WithBlock(), grpc.WithTimeout(5*time.Second))
+	conn, err := grpc_client.DialTargetWithOptions(*cacheTarget, false, grpc.WithBlock(), grpc.WithTimeout(*timeout))
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", *cacheTarget, err)
 	}
@@ -181,14 +181,16 @@ func main() {
 				d, err := writeBlob(ctx, bsClient)
 				cancel()
 				if err != nil {
+					log.Errorf("Write err: %s", err)
 					return err
 				}
 				writeQPSCounter.Inc()
+
 				select {
 				case writtenDigests <- d:
 					break
 				default:
-					log.Warningf("Digest Q is full")
+					log.Warningf("Digest Q is full, maybe increase read QPS")
 				}
 			}
 		})
@@ -206,6 +208,7 @@ func main() {
 					err := readBlob(ctx, bsClient, d)
 					cancel()
 					if err != nil {
+						log.Errorf("Read err: %s", err)
 						return err
 					}
 					readQPSCounter.Inc()
