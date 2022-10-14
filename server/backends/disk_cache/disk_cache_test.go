@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -495,21 +496,22 @@ func TestFileAtomicity(t *testing.T) {
 	}
 	ctx := getAnonContext(t, te)
 
+	lock := sync.RWMutex{}
 	eg, gctx := errgroup.WithContext(ctx)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100000)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 100; i++ {
 		eg.Go(func() error {
-			for n := 0; n < 100; n++ {
-				if err := dc.Set(gctx, d, buf); err != nil {
-					return err
-				}
-				_, err = dc.Get(ctx, &resource.ResourceName{
-					Digest:    d,
-					CacheType: resource.CacheType_CAS,
-				})
-				if err != nil {
-					return err
-				}
+			lock.Lock()
+			defer lock.Unlock()
+			if err := dc.Set(gctx, d, buf); err != nil {
+				return err
+			}
+			_, err = dc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
+			if err != nil {
+				return err
 			}
 			return nil
 		})
