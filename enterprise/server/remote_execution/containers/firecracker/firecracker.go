@@ -1405,7 +1405,23 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			log.Warningf("OOM error occurred during task execution: %s", err)
 		}
 	}()
+
+	execDone := make(chan struct{})
+	go func() {
+		t := time.NewTimer(1 * time.Hour)
+		defer t.Stop()
+		select {
+		case <-execDone:
+			return
+		case <-t.C:
+			log.CtxWarningf(ctx, "execution possibly stuck. vm log:\n%s", string(c.vmLog.Tail()))
+			return
+		}
+	}()
+
 	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
+	close(execDone)
+
 	ctx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 
