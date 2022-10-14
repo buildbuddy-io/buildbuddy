@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -83,6 +84,9 @@ func LoadAll(tempDir string) ([]*Plugin, error) {
 	cfg, err := readConfig()
 	if err != nil {
 		return nil, err
+	}
+	if cfg == nil {
+		return nil, nil
 	}
 	plugins := make([]*Plugin, 0, len(cfg.Plugins))
 	for _, p := range cfg.Plugins {
@@ -386,7 +390,17 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	cmd.Stdout = tty
 	cmd.Stderr = tty
 	cmd.Stdin = r
+	// Prevent output handlers from receiving Ctrl+C, to prevent things like
+	// "KeyboardInterrupt" being printed in Python plugins. Instead, plugins
+	// will just receive EOF on stdin and exit normally.
+	// TODO: Should we still have a way for plugins to listen to Ctrl+C?
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
 	cmd.Env = p.commandEnv()
+	if err := cmd.Start(); err != nil {
+		return nil, status.InternalErrorf("failed to start plugin bazel output handler: %s", err)
+	}
 	go func() {
 		// Copy pty output to the next pipeline stage.
 		io.Copy(pw, ptmx)
@@ -396,11 +410,14 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 		defer ptmx.Close()
 		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
-		if err := cmd.Run(); err != nil {
+		if err := cmd.Wait(); err != nil {
 			log.Debugf("Command failed: %s", err)
 		} else {
 			log.Debugf("Command %s completed", cmd.Args)
 		}
+		// Flush any remaining data from the preceding stage, to prevent
+		// the output writer for the preceding stage from getting stuck.
+		io.Copy(io.Discard, r)
 	}()
 	return pr, nil
 }
