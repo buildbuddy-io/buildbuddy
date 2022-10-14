@@ -192,6 +192,7 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) {
 			// Retry since it's an transient error.
 			lastError = res.Error
+			log.Infof("attempt to write invocation (id: %q) to clickhouse failed: %s", res.Error)
 			continue
 		} else {
 			return res.Error
