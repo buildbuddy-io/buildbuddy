@@ -112,6 +112,23 @@ func (c *ComposableCache) FindMissingDeprecated(ctx context.Context, digests []*
 	return c.inner.FindMissingDeprecated(ctx, missing)
 }
 
+func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	outerRsp, err := c.outer.Get(ctx, r)
+	if err == nil {
+		return outerRsp, nil
+	}
+
+	innerRsp, err := c.inner.Get(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	if c.mode&ModeReadThrough != 0 {
+		c.outer.Set(ctx, r.GetDigest(), innerRsp)
+	}
+
+	return innerRsp, nil
+}
+
 func (c *ComposableCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	outerRsp, err := c.outer.GetDeprecated(ctx, d)
 	if err == nil {

@@ -77,7 +77,7 @@ func (c *errorCache) Set(ctx context.Context, d *repb.Digest, data []byte) error
 	return errors.New("error cache set err")
 }
 
-func (c *errorCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *errorCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	return nil, errors.New("error cache get err")
 }
 
@@ -270,10 +270,11 @@ func TestGetSet(t *testing.T) {
 		require.NoError(t, err, "error setting digest in cache")
 
 		// Get() the bytes from the cache.
-		rbuf, err := mc.GetDeprecated(ctx, d)
-		require.NoError(t, err, "error getting from cache")
-
-		// Compute a digest for the bytes returned.
+		rbuf, err := mc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
 		require.True(t, d.GetHash() == d2.GetHash())
 	}
@@ -297,7 +298,10 @@ func TestGet_DoubleRead(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	data, err := mc.GetDeprecated(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -319,7 +323,10 @@ func TestGet_DestReadErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	data, err := mc.GetDeprecated(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -342,7 +349,10 @@ func TestGet_SrcReadErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return error
-	data, err := mc.GetDeprecated(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.Error(t, err)
 	require.Nil(t, data)
 }
@@ -365,7 +375,10 @@ func TestGetSet_EmptyData(t *testing.T) {
 	err = mc.Set(ctx, d, []byte{})
 	require.NoError(t, err)
 
-	data, err := mc.GetDeprecated(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal([]byte{}, data))
 }
@@ -403,7 +416,10 @@ func TestCopyDataInBackground(t *testing.T) {
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.GetDeprecated(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
@@ -449,7 +465,10 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 
 			// We should exceed the copy channel size, but should not prevent us from continuing
 			// to read from the cache
-			data, err := mc.GetDeprecated(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 			return nil
@@ -493,7 +512,10 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.GetDeprecated(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
@@ -926,7 +948,10 @@ func TestSetMulti(t *testing.T) {
 	require.NoError(t, err)
 
 	for d, expected := range dataToSet {
-		data, err := mc.GetDeprecated(ctx, d)
+		data, err := mc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
@@ -959,7 +984,10 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check data exists before delete
-	data, err := mc.GetDeprecated(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -975,7 +1003,10 @@ func TestDelete(t *testing.T) {
 	err = mc.Delete(ctx, d)
 	require.NoError(t, err)
 
-	data, err = mc.GetDeprecated(ctx, d)
+	data, err = mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 
 	data, err = srcCache.GetDeprecated(ctx, d)

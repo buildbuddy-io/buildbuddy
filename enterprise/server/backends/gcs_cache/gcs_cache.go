@@ -172,13 +172,8 @@ func (g *GCSCache) WithIsolation(ctx context.Context, cacheType resource.CacheTy
 	}, nil
 }
 
-func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := g.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
+func (g *GCSCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +181,7 @@ func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, e
 	reader, err := g.bucketHandle.Object(k).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
+			d := r.GetDigest()
 			return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 		}
 		return nil, err
@@ -198,6 +194,15 @@ func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, e
 	// Note, if we decide to retry reads in the future, be sure to
 	// add a new metric for retry count.
 	return b, err
+}
+
+func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return g.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 }
 
 func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {

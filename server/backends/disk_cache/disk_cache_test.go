@@ -63,7 +63,8 @@ func TestGetSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
+	instanceName := "remoteInstanceName"
+	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, instanceName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,10 +79,12 @@ func TestGetSet(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
-		rbuf, err := c.GetDeprecated(ctx, d)
-		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
-		}
+		rbuf, err := dc.Get(ctx, &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_AC,
+			InstanceName: instanceName,
+		})
+		require.NoError(t, err)
 
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
@@ -226,9 +229,6 @@ func TestFindMissing(t *testing.T) {
 	dcWithIsolation, err := dc.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
 	require.NoError(t, err)
 	err = dcWithIsolation.Set(ctx, d, buf)
-	require.NoError(t, err)
-
-	_, err = dcWithIsolation.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
@@ -398,16 +398,21 @@ func TestSizeLimit(t *testing.T) {
 		}
 		digestKeys = append(digestKeys, d)
 	}
-	// Expect the last *2* digests to be present.
-	// The first digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := dc.GetDeprecated(ctx, d)
+		rbuf, err := dc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
+
+		// The first digest should have been evicted.
 		if i == 0 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())
 			}
 			continue
 		}
+
+		// Expect the last *2* digests to be present.
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -454,16 +459,21 @@ func TestLRU(t *testing.T) {
 	}
 	digestKeys = append(digestKeys, d)
 
-	// Expect the first and third digests to be present.
-	// The second digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := dc.GetDeprecated(ctx, d)
+		rbuf, err := dc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
+
+		// The second digest should have been evicted.
 		if i == 1 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())
 			}
 			continue
 		}
+
+		// Expect the first and third digests to be present.
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -493,7 +503,10 @@ func TestFileAtomicity(t *testing.T) {
 				if err := dc.Set(gctx, d, buf); err != nil {
 					return err
 				}
-				_, err := dc.GetDeprecated(gctx, d)
+				_, err = dc.Get(ctx, &resource.ResourceName{
+					Digest:    d,
+					CacheType: resource.CacheType_CAS,
+				})
 				if err != nil {
 					return err
 				}
@@ -868,11 +881,17 @@ func TestV2Layout(t *testing.T) {
 	dPath := filepath.Join(userRoot, d.GetHash()[0:disk_cache.HashPrefixDirPrefixLen], d.GetHash())
 	require.FileExists(t, dPath)
 
-	ok, err := dc.ContainsDeprecated(ctx, d)
+	ok, err := dc.Contains(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.Truef(t, ok, "digest should be in the cache")
 
-	_, err = dc.GetDeprecated(ctx, d)
+	_, err = dc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 }
 
@@ -955,21 +974,27 @@ func TestV2LayoutMigration(t *testing.T) {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	testHash := "7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620"
 	{
-		buf, err := dc.GetDeprecated(ctx, &repb.Digest{Hash: testHash, SizeBytes: 5})
+		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
+		buf, err := dc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.Equal(t, []byte("test1"), buf)
 	}
 
 	{
-		ic, err := dc.WithIsolation(ctx, resource.CacheType_CAS, "prefix")
-		require.NoError(t, err)
-
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.ContainsDeprecated(ctx, d)
+		rn := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: "prefix",
+		}
+		ok, err := dc.Contains(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.GetDeprecated(ctx, d)
+		buf, err := dc.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test2"), buf)
 	}
@@ -978,14 +1003,17 @@ func TestV2LayoutMigration(t *testing.T) {
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
-		ic, err := dc.WithIsolation(ctx, resource.CacheType_CAS, "" /*=instanceName*/)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.ContainsDeprecated(ctx, d)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		ok, err := dc.Contains(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.GetDeprecated(ctx, d)
+		buf, err := dc.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test3"), buf)
 	}
@@ -994,15 +1022,18 @@ func TestV2LayoutMigration(t *testing.T) {
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
-		ic, err := dc.WithIsolation(ctx, resource.CacheType_CAS, "prefix" /*=instanceName*/)
-		require.NoError(t, err)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.ContainsDeprecated(ctx, d)
+		rn := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: "prefix",
+		}
+		ok, err := dc.Contains(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.GetDeprecated(ctx, d)
+		buf, err := dc.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test4"), buf)
 	}

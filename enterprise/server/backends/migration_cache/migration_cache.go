@@ -345,7 +345,12 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) 
 	}
 
 	for _, d := range digests {
-		mc.sendNonBlockingCopy(ctx, d)
+		mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: mc.remoteInstanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    mc.cacheType,
+		})
 	}
 
 	// Return data from source cache
@@ -499,7 +504,12 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 		return nil, srcErr
 	}
 
-	mc.sendNonBlockingCopy(ctx, d)
+	mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
 
 	return &doubleReader{
 		src:  srcReader,
@@ -611,13 +621,13 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 	return dw, nil
 }
 
-func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcBuf []byte
 
 	eg.Go(func() error {
-		srcBuf, srcErr = mc.src.GetDeprecated(gctx, d)
+		srcBuf, srcErr = mc.src.Get(gctx, r)
 		return srcErr
 	})
 
@@ -625,7 +635,7 @@ func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.GetDeprecated(gctx, d)
+			_, dstErr = mc.dest.Get(gctx, r)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -636,21 +646,30 @@ func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]
 
 	if dstErr != nil {
 		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-			log.Warningf("Double read of %q failed. src err %s, dest err %s", d, srcErr, dstErr)
+			log.Warningf("Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
 		}
 		if status.IsNotFoundError(dstErr) {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
 		}
 	}
 
-	mc.sendNonBlockingCopy(ctx, d)
+	mc.sendNonBlockingCopy(ctx, r)
 
 	// Return data from source cache
 	return srcBuf, srcErr
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Digest) {
-	alreadyCopied, err := mc.dest.ContainsDeprecated(ctx, d)
+func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return mc.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
+}
+
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName) {
+	alreadyCopied, err := mc.dest.Contains(ctx, r)
 	if err != nil {
 		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
 		return
@@ -663,11 +682,11 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Diges
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
-		d:                  d,
+		d:                  r.GetDigest(),
 		ctx:                ctx,
 		ctxCancel:          cancel,
-		remoteInstanceName: mc.remoteInstanceName,
-		cacheType:          mc.cacheType,
+		remoteInstanceName: r.GetInstanceName(),
+		cacheType:          r.GetCacheType(),
 	}:
 	default:
 		cancel()
