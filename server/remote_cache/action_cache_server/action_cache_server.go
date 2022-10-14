@@ -51,7 +51,7 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 }
 
 func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
-	missing, err := cache.FindMissing(ctx, digests)
+	missing, err := cache.FindMissingDeprecated(ctx, digests)
 	if err != nil {
 		return err
 	}

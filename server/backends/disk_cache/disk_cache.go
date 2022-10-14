@@ -352,8 +352,23 @@ func (c *DiskCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*in
 	})
 }
 
-func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	return c.partition.findMissing(ctx, c.cacheType, c.remoteInstanceName, digests)
+func (c *DiskCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	remoteInstanceName := resources[0].GetInstanceName()
+
+	p, err := c.getPartition(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.findMissing(ctx, resources)
+}
+
+func (c *DiskCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
+	return c.FindMissing(ctx, rns)
 }
 
 func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
@@ -956,15 +971,15 @@ func (p *partition) lruGet(ctx context.Context, cacheType resource.CacheType, re
 	return nil, nil
 }
 
-func (p *partition) findMissing(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (p *partition) findMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				record, err := p.lruGet(ctx, cacheType, remoteInstanceName, d)
+				record, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 				// NotFoundError is never returned from lruGet above, so
 				// we don't check for it.
 				if err != nil {
@@ -972,13 +987,13 @@ func (p *partition) findMissing(ctx context.Context, cacheType resource.CacheTyp
 				}
 				if record == nil {
 					lock.Lock()
-					missing = append(missing, d)
+					missing = append(missing, r.GetDigest())
 					lock.Unlock()
 				}
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {

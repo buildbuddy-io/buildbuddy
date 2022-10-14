@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -672,13 +673,13 @@ func TestContainsMulti(t *testing.T) {
 	}
 
 	for _, baseCache := range baseCaches {
-		missingMap, err := baseCache.FindMissing(ctx, digestsWritten)
+		missingMap, err := baseCache.FindMissingDeprecated(ctx, digestsWritten)
 		assert.Nil(t, err)
 		assert.Equal(t, 0, len(missingMap))
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missingMap, err := distributedCache.FindMissing(ctx, digestsWritten)
+		missingMap, err := distributedCache.FindMissingDeprecated(ctx, digestsWritten)
 		assert.Nil(t, err)
 		assert.Equal(t, 0, len(missingMap))
 	}
@@ -811,15 +812,24 @@ func TestFindMissing(t *testing.T) {
 	}
 
 	allDigests := append(digestsWritten, digestsNotWritten...)
+	rns := digest.ResourceNames(resource.CacheType_CAS, "", allDigests)
 
 	for _, baseCache := range baseCaches {
-		missing, err := baseCache.FindMissing(ctx, allDigests)
+		missing, err := baseCache.FindMissingDeprecated(ctx, allDigests)
+		require.NoError(t, err)
+		require.ElementsMatch(t, missing, digestsNotWritten)
+
+		missing, err = baseCache.FindMissing(ctx, rns)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missing, err := distributedCache.FindMissing(ctx, allDigests)
+		missing, err := distributedCache.FindMissingDeprecated(ctx, allDigests)
+		require.NoError(t, err)
+		require.ElementsMatch(t, missing, digestsNotWritten)
+
+		missing, err = distributedCache.FindMissing(ctx, rns)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}

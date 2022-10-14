@@ -209,6 +209,41 @@ func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
 	return m
 }
 
+func TestFindMissing(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	rootDir := testfs.MakeTempDir(t)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	require.NoError(t, err)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	remoteInstanceName := "farFarAway"
+	dcWithIsolation, err := dc.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+	err = dcWithIsolation.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	_, err = dcWithIsolation.Get(ctx, d)
+	require.NoError(t, err)
+
+	digests := []*repb.Digest{d, notSetD1, notSetD2}
+	rns := digest.ResourceNames(resource.CacheType_AC, remoteInstanceName, digests)
+	missing, err := dc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
+
+	digests = []*repb.Digest{d}
+	rns = digest.ResourceNames(resource.CacheType_AC, remoteInstanceName, digests)
+	missing, err = dc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.Empty(t, missing)
+}
+
 func TestMultiGetSet(t *testing.T) {
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := testfs.MakeTempDir(t)

@@ -497,6 +497,41 @@ func TestSizeLimit(t *testing.T) {
 	require.LessOrEqual(t, dirSize, maxSizeBytes)
 }
 
+func TestFindMissing(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(1000)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	pcWithIsolation, err := pc.WithIsolation(ctx, resource.CacheType_AC, "remote")
+	require.NoError(t, err)
+	err = pcWithIsolation.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	digests := []*repb.Digest{d, notSetD1, notSetD2}
+	rns := digest.ResourceNames(resource.CacheType_AC, "remote", digests)
+	missing, err := pc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
+
+	digests = []*repb.Digest{d}
+	rns = digest.ResourceNames(resource.CacheType_AC, "remote", digests)
+	missing, err = pc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.Empty(t, missing)
+}
+
 func TestNoEarlyEviction(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
@@ -1092,7 +1127,7 @@ func BenchmarkFindMissing(b *testing.B) {
 		keys := randomDigests(100)
 
 		b.StartTimer()
-		missing, err := pc.FindMissing(ctx, keys)
+		missing, err := pc.FindMissingDeprecated(ctx, keys)
 		if err != nil {
 			b.Fatal(err)
 		}

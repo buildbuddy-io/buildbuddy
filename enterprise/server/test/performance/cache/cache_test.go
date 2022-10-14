@@ -178,7 +178,7 @@ func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeByt
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := c.FindMissing(ctx, digests)
+		_, err := c.FindMissingDeprecated(ctx, digests)
 		if err != nil {
 			b.Fatal(err)
 		}

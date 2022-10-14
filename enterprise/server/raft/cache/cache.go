@@ -503,19 +503,6 @@ func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames 
 	return keys, nil
 }
 
-func digestsToResourceNames(isolation *rfpb.Isolation, digests []*repb.Digest) []*resource.ResourceName {
-	rns := make([]*resource.ResourceName, 0, len(digests))
-	for _, d := range digests {
-		rns = append(rns, &resource.ResourceName{
-			Digest:       d,
-			InstanceName: isolation.GetRemoteInstanceName(),
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    isolation.GetCacheType(),
-		})
-	}
-	return rns
-}
-
 func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames []*resource.ResourceName) ([]*repb.Digest, error) {
 	keys, err := rc.resourceNamesToKeyMetas(ctx, resourceNames)
 	if err != nil {
@@ -551,8 +538,12 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 	return missingDigests, nil
 }
 
-func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	resourceNames := digestsToResourceNames(rc.isolation, digests)
+func (rc *RaftCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	return rc.findMissingResourceNames(ctx, resources)
+}
+
+func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	resourceNames := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
 	return rc.findMissingResourceNames(ctx, resourceNames)
 }
 
@@ -566,7 +557,7 @@ func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 }
 
 func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	resourceNames := digestsToResourceNames(rc.isolation, digests)
+	resourceNames := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
 	keys, err := rc.resourceNamesToKeyMetas(ctx, resourceNames)
 	if err != nil {
 		return nil, err

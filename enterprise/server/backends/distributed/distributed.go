@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
@@ -405,8 +406,8 @@ func (c *Cache) remoteMetadata(ctx context.Context, peer string, isolation *dcpb
 
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
-		return c.local.FindMissing(ctx, digests)
+		rns := digest.ResourceNames(isolation.GetCacheType(), isolation.GetRemoteInstanceName(), digests)
+		return c.local.FindMissing(ctx, rns)
 	}
 	return c.cacheProxy.RemoteFindMissing(ctx, peer, isolation, digests)
 }
@@ -621,12 +622,18 @@ func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interf
 	})
 }
 
-func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	isolation := getIsolation(resources)
+	if isolation == nil {
+		return nil, nil
+	}
+
 	mu := sync.RWMutex{} // protects(foundMap)
 	hashDigests := make(map[string][]*repb.Digest, 0)
-	foundMap := make(map[string]struct{}, len(digests))
-	peerMap := make(map[string]*peerset.PeerSet, len(digests))
-	for _, d := range digests {
+	foundMap := make(map[string]struct{}, len(resources))
+	peerMap := make(map[string]*peerset.PeerSet, len(resources))
+	for _, r := range resources {
+		d := r.GetDigest()
 		hash := d.GetHash()
 		hashDigests[hash] = append(hashDigests[hash], d)
 		if _, ok := peerMap[hash]; !ok {
@@ -671,7 +678,7 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				peerRsp, err := c.remoteFindMissing(gCtx, peer, c.isolation, digests)
+				peerRsp, err := c.remoteFindMissing(gCtx, peer, isolation, digests)
 				peerMissingHashes := make(map[string]struct{})
 				for _, d := range peerRsp {
 					peerMissingHashes[d.GetHash()] = struct{}{}
@@ -714,17 +721,34 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 		ps := peerMap[h]
 		backfills = append(backfills, c.getBackfillOrders(d, ps)...)
 	}
-	if err := c.backfillPeers(ctx, c.isolation, backfills); err != nil {
+	if err := c.backfillPeers(ctx, isolation, backfills); err != nil {
 		c.log.Debugf("Error backfilling peers: %s", err)
 	}
 
 	var missing []*repb.Digest
-	for _, d := range digests {
+	for _, r := range resources {
+		d := r.GetDigest()
 		if _, ok := foundMap[d.GetHash()]; !ok {
 			missing = append(missing, d)
 		}
 	}
 	return missing, nil
+}
+
+// Returns the isolation from the first resource name, assuming that all resources have the same isolation
+func getIsolation(resources []*resource.ResourceName) *dcpb.Isolation {
+	if len(resources) == 0 {
+		return nil
+	}
+	return &dcpb.Isolation{
+		CacheType:          resources[0].GetCacheType(),
+		RemoteInstanceName: resources[0].GetInstanceName(),
+	}
+}
+
+func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(c.isolation.GetCacheType(), c.isolation.GetRemoteInstanceName(), digests)
+	return c.FindMissing(ctx, rns)
 }
 
 // The first reader with a non-empty value will be returned. If all potential

@@ -273,20 +273,20 @@ func (mc *MigrationCache) MetadataDeprecated(ctx context.Context, d *repb.Digest
 	})
 }
 
-func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMissing, dstMissing []*repb.Digest
 
 	eg.Go(func() error {
-		srcMissing, srcErr = mc.src.FindMissing(gctx, digests)
+		srcMissing, srcErr = mc.src.FindMissing(gctx, resources)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			dstMissing, dstErr = mc.dest.FindMissing(gctx, digests)
+			dstMissing, dstErr = mc.dest.FindMissing(gctx, resources)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -296,16 +296,21 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Diges
 	}
 
 	if dstErr != nil {
-		log.Warningf("Migration dest FindMissing %v failed: %s", digests, dstErr)
+		log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
 	} else if !digest.ElementsMatch(srcMissing, dstMissing) {
 		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
 
 		if mc.logNotFoundErrors {
-			log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", digests, srcMissing, dstMissing)
+			log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
 		}
 	}
 
 	return srcMissing, srcErr
+}
+
+func (mc *MigrationCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(mc.cacheType, mc.remoteInstanceName, digests)
+	return mc.FindMissing(ctx, rns)
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {

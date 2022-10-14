@@ -402,7 +402,7 @@ func TestFindMissingBlobs(t *testing.T) {
 		expectedMissingHashes = append(expectedMissingHashes, d.GetHash())
 	}
 
-	missing, err := cache.FindMissing(ctx, append(digestsWritten, missingDigests...))
+	missing, err := cache.FindMissingDeprecated(ctx, append(digestsWritten, missingDigests...))
 	require.NoError(t, err)
 
 	missingHashes := make([]string, 0)

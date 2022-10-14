@@ -502,27 +502,27 @@ func (s3c *S3Cache) metadata(ctx context.Context, r *resource.ResourceName) (*s3
 	return head, nil
 }
 
-func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				exists, err := s3c.ContainsDeprecated(ctx, d)
+				exists, err := s3c.Contains(ctx, r)
 				if err != nil {
 					return err
 				}
 				if !exists {
 					lock.Lock()
 					defer lock.Unlock()
-					missing = append(missing, d)
+					missing = append(missing, r.GetDigest())
 				}
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -530,6 +530,11 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]
 	}
 
 	return missing, nil
+}
+
+func (s3c *S3Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(s3c.cacheType, s3c.remoteInstanceName, digests)
+	return s3c.FindMissing(ctx, rns)
 }
 
 func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {

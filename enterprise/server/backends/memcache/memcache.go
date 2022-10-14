@@ -169,33 +169,27 @@ func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interf
 	})
 }
 
-func update(old, new map[string]bool) {
-	for k, v := range new {
-		old[k] = v
-	}
-}
-
-func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				exists, err := c.ContainsDeprecated(ctx, d)
+				exists, err := c.Contains(ctx, r)
 				if err != nil {
 					return err
 				}
 				if !exists {
 					lock.Lock()
 					defer lock.Unlock()
-					missing = append(missing, d)
+					missing = append(missing, r.GetDigest())
 				}
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -203,6 +197,11 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 	}
 
 	return missing, nil
+}
+
+func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
+	return c.FindMissing(ctx, rns)
 }
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {

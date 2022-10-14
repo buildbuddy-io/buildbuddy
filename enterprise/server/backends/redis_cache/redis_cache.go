@@ -206,30 +206,19 @@ func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interf
 	})
 }
 
-func update(old, new map[string]bool) {
-	for k, v := range new {
-		old[k] = v
-	}
-}
-
-func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	if len(digests) == 0 {
+func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	if len(resources) == 0 {
 		return nil, nil
 	}
-	keys := make([]string, 0, len(digests))
-	digestsByKey := make(map[string]*repb.Digest, len(digests))
-	for _, d := range digests {
-		k, err := c.key(ctx, &resource.ResourceName{
-			Digest:       d,
-			InstanceName: c.remoteInstanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    c.cacheType,
-		})
+	keys := make([]string, 0, len(resources))
+	digestsByKey := make(map[string]*repb.Digest, len(resources))
+	for _, r := range resources {
+		k, err := c.key(ctx, r)
 		if err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
-		digestsByKey[k] = d
+		digestsByKey[k] = r.GetDigest()
 	}
 
 	mcMap, err := c.rdbMultiExists(ctx, keys...)
@@ -247,6 +236,11 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 		}
 	}
 	return missing, nil
+}
+
+func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
+	return c.FindMissing(ctx, rns)
 }
 
 func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {

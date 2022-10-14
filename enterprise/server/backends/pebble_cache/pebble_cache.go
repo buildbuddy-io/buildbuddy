@@ -911,7 +911,7 @@ func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*
 	})
 }
 
-func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -921,13 +921,13 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	sort.Slice(digests, func(i, j int) bool {
-		return digests[i].GetHash() < digests[j].GetHash()
+	sort.Slice(resources, func(i, j int) bool {
+		return resources[i].GetDigest().GetHash() < resources[j].GetDigest().GetHash()
 	})
 
 	var missing []*repb.Digest
-	for _, d := range digests {
-		fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
+	for _, r := range resources {
+		fileRecord, err := p.makeFileRecord(ctx, r)
 		if err != nil {
 			return nil, err
 		}
@@ -936,10 +936,15 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 			return nil, err
 		}
 		if !pebbleutil.IterHasKey(iter, fileMetadataKey) {
-			missing = append(missing, d)
+			missing = append(missing, r.GetDigest())
 		}
 	}
 	return missing, nil
+}
+
+func (p *PebbleCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), digests)
+	return p.FindMissing(ctx, rns)
 }
 
 func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {

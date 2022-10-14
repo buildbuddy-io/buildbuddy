@@ -151,19 +151,24 @@ func (m *MemoryCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*
 	})
 }
 
-func (m *MemoryCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	var missing []*repb.Digest
 	// No parallelism here either. Not necessary for an in-memory cache.
-	for _, d := range digests {
-		ok, err := m.ContainsDeprecated(ctx, d)
+	for _, r := range resources {
+		ok, err := m.Contains(ctx, r)
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
-			missing = append(missing, d)
+			missing = append(missing, r.GetDigest())
 		}
 	}
 	return missing, nil
+}
+
+func (m *MemoryCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
+	return m.FindMissing(ctx, rns)
 }
 
 func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
