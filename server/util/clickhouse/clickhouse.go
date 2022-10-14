@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"syscall"
-	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -183,12 +182,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := ToInvocationFromPrimaryDB(ti)
-	retrier := retry.New(ctx, &retry.Options{
-		MaxRetries:     numClickhouseRetries,
-		InitialBackoff: 50 * time.Millisecond,
-		MaxBackoff:     3 * time.Second,
-		Multiplier:     2,
-	})
+	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
 	for retrier.Next() {
 		res := h.DB(ctx).Create(inv)
