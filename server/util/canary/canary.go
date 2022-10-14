@@ -17,7 +17,7 @@ type CancelFunc func()
 type CanaryFunc func(timeTaken time.Duration)
 
 // StartWithLateFn starts a canary that will call lateFn every expectedDuration
-// period (if not cancelled) and once when cancelled.
+// period (if not canceled) and once when canceled.
 func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn CanaryFunc) CancelFunc {
 	if !*enableCanaries {
 		return func() {}
@@ -49,8 +49,8 @@ func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn C
 
 // Start starts a canary that will warn about the blocked function after
 // expectedDuration has passed. This is primarily useful when debugging
-// something -- you can add a canary and it will fire if the code does
-// not finish when expected.
+// something -- you can add a canary and it will fire if the function does not
+// finish when expected.
 //
 // Example:
 //  defer canary.Start(100 * time.Millisecond)()
