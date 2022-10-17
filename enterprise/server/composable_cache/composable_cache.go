@@ -159,19 +159,22 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.Re
 			foundMap[d] = data
 		}
 	}
-	stillMissingDigests := make([]*repb.Digest, 0)
+	stillMissing := make([]*resource.ResourceName, 0)
 	for _, r := range resources {
 		d := r.GetDigest()
 		if _, ok := foundMap[d]; !ok {
-			stillMissingDigests = append(stillMissingDigests, d)
+			stillMissing = append(stillMissing, &resource.ResourceName{
+				Digest:       d,
+				InstanceName: instanceName,
+				CacheType:    cacheType,
+			})
 		}
 	}
-	if len(stillMissingDigests) == 0 {
+	if len(stillMissing) == 0 {
 		return foundMap, nil
 	}
 
-	stillMissingResources := digest.ResourceNames(cacheType, instanceName, stillMissingDigests)
-	innerFoundMap, err := c.inner.GetMulti(ctx, stillMissingResources)
+	innerFoundMap, err := c.inner.GetMulti(ctx, stillMissing)
 	if err != nil {
 		return nil, err
 	}
