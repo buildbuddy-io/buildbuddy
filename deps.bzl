@@ -314,6 +314,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:nhqjA2IslEOLViRBF5djQCiOD//7VyyHNKrqAZ1AuYA=",
         version = "v0.2.0",
     )
+    go_repository(
+        name = "com_github_bduffany_godemon",
+        importpath = "github.com/bduffany/godemon",
+        sum = "h1:BFwU6kr4ppuckKMtavYfk2pKTALlBtH6nEwBPX77LtQ=",
+        version = "v0.0.0-20221017142458-a1c682732be9",
+    )
 
     go_repository(
         name = "com_github_beevik_etree",
@@ -378,6 +384,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/blizzy78/varnamelen",
         sum = "h1:80mYO7Y5ppeEefg1Jzu+NBg16iwToOQVnDnNIoWSShs=",
         version = "v0.3.0",
+    )
+    go_repository(
+        name = "com_github_bmatcuk_doublestar_v4",
+        importpath = "github.com/bmatcuk/doublestar/v4",
+        sum = "h1:X0krlUVAVmtr2cRoTqR8aDMrDqnB36ht8wpWTiQ3jsA=",
+        version = "v4.0.2",
     )
 
     go_repository(
