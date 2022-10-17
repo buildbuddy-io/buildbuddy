@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 
-GAZELLE_PROMPT_PREFERENCE_KEY = "showRunGazellePrompt"
+AUTO_RUN_GAZELLE_PREFERENCE_KEY = "autoRunGazelle"
 
 
 def main():
@@ -36,15 +36,13 @@ def main():
 
     packages = set([get_package(problem["src_path"]) for problem in problems])
 
-    preference = get_preference(GAZELLE_PROMPT_PREFERENCE_KEY)
-    if preference == "never":
+    autorun = get_preference(AUTO_RUN_GAZELLE_PREFERENCE_KEY)
+    if autorun is None:
+        autorun, dont_ask_again = prompt("Run gazelle to fix these packages?")
+        if dont_ask_again:
+            set_preference(AUTO_RUN_GAZELLE_PREFERENCE_KEY, autorun)
+    if not autorun:
         return
-    if preference != "always":
-        response = prompt("Run gazelle to fix these packages?")
-        if response == "never" or response == "always":
-            set_preference(GAZELLE_PROMPT_PREFERENCE_KEY, response)
-        if response != "yes":
-            return
 
     build_workspace_directory = os.environ.get("BUILD_WORKSPACE_DIRECTORY", "")
     if not build_workspace_directory:
@@ -102,14 +100,15 @@ def prompt(msg):
     while True:
         print("\x1b[34m> " + msg + "\x1b[0;90m (yes)/always/no/never: \x1b[m", end="")
         response = input().lower().strip()
+        # Return (response, dont_ask_again) pair
         if response in ("", "yes", "y"):
-            return "yes"
+            return True, False
         if response == "always":
-            return "always"
+            return True, True
         if response in ("no", "n"):
-            return "no"
+            return False, False
         if response == "never":
-            return "never"
+            return False, True
         print("\x1b[31mInvalid response.\x1b[m")
 
 
@@ -147,6 +146,7 @@ def get_preference(key, default_value=None):
 def set_preference(key, value):
     preferences = read_preferences()
     preferences[key] = value
+    os.makedirs(os.path.dirname(preferences_path()))
     with open(preferences_path(), "w") as f:
         json.dump(preferences, f)
 
