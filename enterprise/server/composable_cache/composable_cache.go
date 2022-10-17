@@ -146,6 +146,41 @@ func (c *ComposableCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]
 	return innerRsp, nil
 }
 
+func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	cacheType := resources[0].GetCacheType()
+	instanceName := resources[0].GetInstanceName()
+
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	if outerFoundMap, err := c.outer.GetMulti(ctx, resources); err == nil {
+		for d, data := range outerFoundMap {
+			foundMap[d] = data
+		}
+	}
+	stillMissingDigests := make([]*repb.Digest, 0)
+	for _, r := range resources {
+		d := r.GetDigest()
+		if _, ok := foundMap[d]; !ok {
+			stillMissingDigests = append(stillMissingDigests, d)
+		}
+	}
+	if len(stillMissingDigests) == 0 {
+		return foundMap, nil
+	}
+
+	stillMissingResources := digest.ResourceNames(cacheType, instanceName, stillMissingDigests)
+	innerFoundMap, err := c.inner.GetMulti(ctx, stillMissingResources)
+	if err != nil {
+		return nil, err
+	}
+	for d, data := range innerFoundMap {
+		foundMap[d] = data
+	}
+	return foundMap, nil
+}
+
 func (c *ComposableCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	if outerFoundMap, err := c.outer.GetMultiDeprecated(ctx, digests); err == nil {

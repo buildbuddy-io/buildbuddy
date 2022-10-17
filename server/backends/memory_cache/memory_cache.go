@@ -198,20 +198,25 @@ func (m *MemoryCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte
 	})
 }
 
-func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	// No parallelism here either. Not necessary for an in-memory cache.
-	for _, d := range digests {
-		data, err := m.GetDeprecated(ctx, d)
+	for _, r := range resources {
+		data, err := m.Get(ctx, r)
 		if status.IsNotFoundError(err) {
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
-		foundMap[d] = data
+		foundMap[r.GetDigest()] = data
 	}
 	return foundMap, nil
+}
+
+func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
+	return m.GetMulti(ctx, rns)
 }
 
 func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

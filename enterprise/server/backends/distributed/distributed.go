@@ -414,8 +414,8 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
-		return c.local.GetMultiDeprecated(ctx, digests)
+		rns := digest.ResourceNames(isolation.GetCacheType(), isolation.GetRemoteInstanceName(), digests)
+		return c.local.GetMulti(ctx, rns)
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, digests)
 }
@@ -808,12 +808,18 @@ func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, erro
 	})
 }
 
-func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	isolation := getIsolation(resources)
+	if isolation == nil {
+		return nil, nil
+	}
+
 	mu := sync.RWMutex{} // protects(gotMap)
 	hashDigests := make(map[string][]*repb.Digest, 0)
-	gotMap := make(map[string][]byte, len(digests))
-	peerMap := make(map[string]*peerset.PeerSet, len(digests))
-	for _, d := range digests {
+	gotMap := make(map[string][]byte, len(resources))
+	peerMap := make(map[string]*peerset.PeerSet, len(resources))
+	for _, r := range resources {
+		d := r.GetDigest()
 		hash := d.GetHash()
 		hashDigests[hash] = append(hashDigests[hash], d)
 		if _, ok := peerMap[hash]; !ok {
@@ -857,7 +863,7 @@ func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) 
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				peerRsp, err := c.remoteGetMulti(gCtx, peer, c.isolation, digests)
+				peerRsp, err := c.remoteGetMulti(gCtx, peer, isolation, digests)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -897,17 +903,23 @@ func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) 
 			backfills = append(backfills, c.getBackfillOrders(d, ps)...)
 		}
 	}
-	if err := c.backfillPeers(ctx, c.isolation, backfills); err != nil {
+	if err := c.backfillPeers(ctx, isolation, backfills); err != nil {
 		c.log.Debugf("Error backfilling peers: %s", err)
 	}
 
-	rsp := make(map[*repb.Digest][]byte, len(digests))
-	for _, d := range digests {
+	rsp := make(map[*repb.Digest][]byte, len(resources))
+	for _, r := range resources {
+		d := r.GetDigest()
 		if buf, ok := gotMap[d.GetHash()]; ok {
 			rsp[d] = buf
 		}
 	}
 	return rsp, nil
+}
+
+func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(c.isolation.GetCacheType(), c.isolation.GetRemoteInstanceName(), digests)
+	return c.GetMulti(ctx, rns)
 }
 
 type multiWriteCloser struct {

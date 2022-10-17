@@ -258,11 +258,14 @@ func TestMultiGetSet(t *testing.T) {
 	if err := dc.SetMulti(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
-	digestKeys := make([]*repb.Digest, 0, len(digests))
+	resourceNames := make([]*resource.ResourceName, 0, len(digests))
 	for d := range digests {
-		digestKeys = append(digestKeys, d)
+		resourceNames = append(resourceNames, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 	}
-	m, err := dc.GetMultiDeprecated(ctx, digestKeys)
+	m, err := dc.GetMulti(ctx, resourceNames)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
