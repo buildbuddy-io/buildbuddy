@@ -74,8 +74,8 @@ func TestGetSet(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		// Set() the bytes in the cache.
-		err := c.Set(ctx, d, buf)
+		// SetDeprecated() the bytes in the cache.
+		err := c.SetDeprecated(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
@@ -114,8 +114,8 @@ func TestMetadata(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		// Set() the bytes in the cache.
-		err := c.Set(ctx, d, buf)
+		// SetDeprecated() the bytes in the cache.
+		err := c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 
 		// Metadata should return true size of the blob, regardless of queried size.
@@ -161,7 +161,7 @@ func TestMetadata(t *testing.T) {
 
 		// After updating data, last access and modify time should update
 		time.Sleep(1 * time.Second) // Sleep to guarantee timestamps change
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 		md, err = c.MetadataDeprecated(ctx, digestWrongSize)
 		require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestFindMissing(t *testing.T) {
 	remoteInstanceName := "farFarAway"
 	dcWithIsolation, err := dc.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
 	require.NoError(t, err)
-	err = dcWithIsolation.Set(ctx, d, buf)
+	err = dcWithIsolation.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
@@ -369,7 +369,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	size := int64(10)
 	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	err = dc.Set(ctx, d, buf)
+	err = dc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	offset := int64(2)
@@ -397,7 +397,7 @@ func TestSizeLimit(t *testing.T) {
 	digestBufs := randomDigests(t, 400, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		if err := dc.Set(ctx, d, buf); err != nil {
+		if err := dc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		digestKeys = append(digestKeys, d)
@@ -442,7 +442,7 @@ func TestLRU(t *testing.T) {
 	digestBufs := randomDigests(t, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		if err := dc.Set(ctx, d, buf); err != nil {
+		if err := dc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		digestKeys = append(digestKeys, d)
@@ -458,7 +458,7 @@ func TestLRU(t *testing.T) {
 	// Now write one more digest, which should evict the oldest digest,
 	// (the second one we wrote).
 	d, buf := testdigest.NewRandomDigestBuf(t, 400)
-	if err := dc.Set(ctx, d, buf); err != nil {
+	if err := dc.SetDeprecated(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
 	digestKeys = append(digestKeys, d)
@@ -506,7 +506,7 @@ func TestFileAtomicity(t *testing.T) {
 		eg.Go(func() error {
 			lock.Lock()
 			defer lock.Unlock()
-			if err := dc.Set(gctx, d, buf); err != nil {
+			if err := dc.SetDeprecated(gctx, d, buf); err != nil {
 				return err
 			}
 			_, err = dc.Get(ctx, &resource.ResourceName{
@@ -565,7 +565,7 @@ func TestAsyncLoading(t *testing.T) {
 	// Write some more files, just to ensure the LRU is appended to.
 	for i := 0; i < 1000; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		if err := dc.Set(ctx, d, buf); err != nil {
+		if err := dc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		digests = append(digests, d)
@@ -598,7 +598,7 @@ func TestJanitorThread(t *testing.T) {
 	digests := make([]*repb.Digest, 0)
 	for i := 0; i < 999; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		err := dc.Set(ctx, d, buf)
+		err := dc.SetDeprecated(ctx, d, buf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -769,7 +769,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
-		err = dc.Set(ctx, d, buf)
+		err = dc.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 
 		userRoot := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
@@ -792,7 +792,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
-		err = dc.Set(ctx, d, buf)
+		err = dc.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 
 		userRoot := filepath.Join(rootDir, testGroup1)
@@ -819,7 +819,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		instanceName := "nonmatchingprefix"
 		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
 		require.NoError(t, err)
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 
 		userRoot := filepath.Join(rootDir, testGroup2)
@@ -847,7 +847,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		instanceName := otherPartitionPrefix + "hello"
 		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
 		require.NoError(t, err)
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 
 		userRoot := filepath.Join(rootDir, disk_cache.PartitionDirectoryPrefix+otherPartitionID, testGroup2)
@@ -879,7 +879,7 @@ func TestV2Layout(t *testing.T) {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
-	err = dc.Set(ctx, d, buf)
+	err = dc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	userRoot := filepath.Join(rootDir, disk_cache.V2Dir, disk_cache.PartitionDirectoryPrefix+disk_cache.DefaultPartitionID, interfaces.AuthAnonymousUser)
@@ -1134,7 +1134,7 @@ func TestScanDiskDirectoryV1(t *testing.T) {
 		}
 
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		err = ic.Set(ctx, d, buf)
+		err = ic.SetDeprecated(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
@@ -1249,7 +1249,7 @@ func TestScanDiskDirectoryV2(t *testing.T) {
 		}
 
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		err = ic.Set(ctx, d, buf)
+		err = ic.SetDeprecated(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}

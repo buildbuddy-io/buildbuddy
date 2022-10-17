@@ -131,8 +131,8 @@ func TestACIsolation(t *testing.T) {
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 
-	require.Nil(t, c1.Set(ctx, d1, buf1))
-	require.Nil(t, c2.Set(ctx, d1, []byte("evilbuf")))
+	require.Nil(t, c1.SetDeprecated(ctx, d1, buf1))
+	require.Nil(t, c2.SetDeprecated(ctx, d1, []byte("evilbuf")))
 
 	got1, err := pc.Get(ctx, &resource.ResourceName{
 		Digest:       d1,
@@ -218,7 +218,7 @@ func TestIsolation(t *testing.T) {
 		// Set() the bytes in cache1.
 		c1, err := pc.WithIsolation(ctx, test.cacheType1, test.instanceName1)
 		require.NoError(t, err)
-		err = c1.Set(ctx, d, buf)
+		err = c1.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 
 		// Get() the bytes from cache2.
@@ -271,8 +271,8 @@ func TestGetSet(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		// Set() the bytes in the cache.
-		err := pc.Set(ctx, d, buf)
+		// SetDeprecated() the bytes in the cache.
+		err := pc.SetDeprecated(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
@@ -311,8 +311,8 @@ func TestMetadata(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		// Set() the bytes in the cache.
-		err := pc.Set(ctx, d, buf)
+		// SetDeprecated() the bytes in the cache.
+		err := pc.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 
 		// Metadata should return true size of the blob, regardless of queried size.
@@ -356,7 +356,7 @@ func TestMetadata(t *testing.T) {
 		require.Equal(t, lastModifyTime1, lastModifyTime2)
 
 		// After updating data, last access and modify time should update
-		err = pc.Set(ctx, d, buf)
+		err = pc.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 		md, err = pc.MetadataDeprecated(ctx, digestWrongSize)
 		require.NoError(t, err)
@@ -491,7 +491,7 @@ func TestSizeLimit(t *testing.T) {
 	for i := 0; i < 150; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 		digestKeys = append(digestKeys, d)
-		if err := pc.Set(ctx, d, buf); err != nil {
+		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 	}
@@ -535,7 +535,7 @@ func TestFindMissing(t *testing.T) {
 
 	pcWithIsolation, err := pc.WithIsolation(ctx, resource.CacheType_AC, "remote")
 	require.NoError(t, err)
-	err = pcWithIsolation.Set(ctx, d, buf)
+	err = pcWithIsolation.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
@@ -588,7 +588,7 @@ func TestNoEarlyEviction(t *testing.T) {
 	for i := 0; i < numDigests; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, digestSize)
 		digestKeys[i] = d
-		if err := pc.Set(ctx, d, buf); err != nil {
+		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
 		}
 	}
@@ -640,7 +640,7 @@ func TestLRU(t *testing.T) {
 	for i := range digestKeys {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		digestKeys[i] = d
-		if err := pc.Set(ctx, d, buf); err != nil {
+		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
 		}
 	}
@@ -668,7 +668,7 @@ func TestLRU(t *testing.T) {
 	for i := 0; i < quartile; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		digestKeys = append(digestKeys, d)
-		if err := pc.Set(ctx, d, buf); err != nil {
+		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
 		}
 	}
@@ -727,7 +727,7 @@ func TestMigrationFromDiskV1(t *testing.T) {
 		require.NoError(t, err)
 
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 		setKeys[digest.NewResourceName(d, remoteInstanceName)] = buf
 	}
@@ -798,7 +798,7 @@ func TestMigrationFromDiskV2(t *testing.T) {
 		require.NoError(t, err)
 
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 		setKeys[digest.NewResourceName(d, remoteInstanceName)] = buf
 	}
@@ -848,11 +848,11 @@ func TestStartupScan(t *testing.T) {
 		c, err := pc.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 		digests = append(digests, d)
 
-		err = pc.Set(ctx, d, buf)
+		err = pc.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 	}
 	log.Printf("Wrote %d digests", len(digests))
@@ -910,7 +910,7 @@ func TestDeleteOrphans(t *testing.T) {
 		c, err := pc.WithIsolation(ctx, resource.CacheType_CAS, "remoteInstanceName")
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 		digests[d.GetHash()] = &digestAndType{resource.CacheType_CAS, d}
 	}
@@ -918,7 +918,7 @@ func TestDeleteOrphans(t *testing.T) {
 		c, err := pc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 		digests[d.GetHash()] = &digestAndType{resource.CacheType_AC, d}
 	}
@@ -1036,7 +1036,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 		c, err := pc.WithIsolation(ctx, resource.CacheType_CAS, "remoteInstanceName")
 		require.NoError(t, err)
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
-		err = c.Set(ctx, d, buf)
+		err = c.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 		digests[d.GetHash()] = d
 	}
@@ -1086,7 +1086,7 @@ func BenchmarkGetMulti(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
 		digestKeys = append(digestKeys, d)
-		if err := pc.Set(ctx, d, buf); err != nil {
+		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 	}
@@ -1135,7 +1135,7 @@ func BenchmarkFindMissing(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
 		digestKeys = append(digestKeys, d)
-		if err := pc.Set(ctx, d, buf); err != nil {
+		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 	}
@@ -1184,7 +1184,7 @@ func BenchmarkContains1(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
 		digestKeys = append(digestKeys, d)
-		if err := pc.Set(ctx, d, buf); err != nil {
+		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 	}
@@ -1224,7 +1224,7 @@ func BenchmarkSet(b *testing.B) {
 		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
 
 		b.StartTimer()
-		err := pc.Set(ctx, d, buf)
+		err := pc.SetDeprecated(ctx, d, buf)
 		b.StopTimer()
 		if err != nil {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())

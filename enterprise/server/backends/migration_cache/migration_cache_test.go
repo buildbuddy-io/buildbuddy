@@ -73,7 +73,7 @@ type errorCache struct {
 	interfaces.Cache
 }
 
-func (c *errorCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *errorCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	return errors.New("error cache set err")
 }
 
@@ -124,7 +124,7 @@ func TestACIsolation(t *testing.T) {
 	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
-	require.NoError(t, c1.Set(ctx, d1, buf1))
+	require.NoError(t, c1.SetDeprecated(ctx, d1, buf1))
 
 	got1, err := mc.Get(ctx, &resource.ResourceName{
 		Digest:    d1,
@@ -159,7 +159,7 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
-	require.NoError(t, c1.Set(ctx, d1, buf1))
+	require.NoError(t, c1.SetDeprecated(ctx, d1, buf1))
 
 	got1, err := mc.Get(ctx, &resource.ResourceName{
 		Digest:       d1,
@@ -193,7 +193,7 @@ func TestSet_DoubleWrite(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	// Verify data was written to both caches
@@ -225,7 +225,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	// Verify data was successfully written to src cache
@@ -248,7 +248,7 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.Error(t, err)
 
 	// Verify data was deleted from the dest cache
@@ -270,7 +270,7 @@ func TestSet_SrcAndDestWriteErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err := mc.Set(ctx, d, buf)
+	err := mc.SetDeprecated(ctx, d, buf)
 	require.Error(t, err)
 }
 
@@ -292,7 +292,7 @@ func TestGetSet(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		err = mc.Set(ctx, d, buf)
+		err = mc.SetDeprecated(ctx, d, buf)
 		require.NoError(t, err, "error setting digest in cache")
 
 		// Get() the bytes from the cache.
@@ -321,7 +321,7 @@ func TestGet_DoubleRead(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	data, err := mc.Get(ctx, &resource.ResourceName{
@@ -345,7 +345,7 @@ func TestGet_DestReadErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
@@ -371,7 +371,7 @@ func TestGet_SrcReadErr(t *testing.T) {
 
 	// Write data to dest cache only
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = destCache.Set(ctx, d, buf)
+	err = destCache.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	// Should return error
@@ -398,7 +398,7 @@ func TestGetSet_EmptyData(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, []byte{})
+	err = mc.SetDeprecated(ctx, d, []byte{})
 	require.NoError(t, err)
 
 	data, err := mc.Get(ctx, &resource.ResourceName{
@@ -438,7 +438,7 @@ func TestCopyDataInBackground(t *testing.T) {
 			lock.Lock()
 			defer lock.Unlock()
 
-			err = srcCache.Set(ctx, d, buf)
+			err = srcCache.SetDeprecated(ctx, d, buf)
 			require.NoError(t, err)
 
 			// Get should queue copy in background
@@ -486,7 +486,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 			lock.Lock()
 			defer lock.Unlock()
 
-			err = srcCache.Set(ctx, d, buf)
+			err = srcCache.SetDeprecated(ctx, d, buf)
 			require.NoError(t, err)
 
 			// We should exceed the copy channel size, but should not prevent us from continuing
@@ -534,7 +534,7 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 			lock.Lock()
 			defer lock.Unlock()
 
-			err = srcCache.Set(ctx, d, buf)
+			err = srcCache.SetDeprecated(ctx, d, buf)
 			require.NoError(t, err)
 
 			// Get should queue copy in background
@@ -647,14 +647,14 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 
 	// Save data to different isolations in src cache
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcCache.Set(authenticatedCtx, d, buf)
+	err = srcCache.SetDeprecated(authenticatedCtx, d, buf)
 	require.NoError(t, err)
 
 	instanceName2 := "dog"
 	srcIsolation2, err := srcCache.WithIsolation(authenticatedCtx, resource.CacheType_AC, instanceName2)
 	require.NoError(t, err)
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcIsolation2.Set(authenticatedCtx, d2, buf2)
+	err = srcIsolation2.SetDeprecated(authenticatedCtx, d2, buf2)
 	require.NoError(t, err)
 
 	//Call get so the digests are copied to the destination cache
@@ -721,14 +721,14 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 	srcIsolation1, err := srcCache.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
 	require.NoError(t, err)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcIsolation1.Set(ctx, d, buf)
+	err = srcIsolation1.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	instanceName2 := "cow"
 	srcIsolation2, err := srcCache.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
 	require.NoError(t, err)
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcIsolation2.Set(ctx, d2, buf2)
+	err = srcIsolation2.SetDeprecated(ctx, d2, buf2)
 	require.NoError(t, err)
 
 	// Call get so the digests are copied to the destination cache
@@ -843,7 +843,7 @@ func TestContains(t *testing.T) {
 	require.NoError(t, err)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mcWithIsolation.Set(ctx, d, buf)
+	err = mcWithIsolation.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	contains, err := mcWithIsolation.ContainsDeprecated(ctx, d)
@@ -884,7 +884,7 @@ func TestContains_DestErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
@@ -907,7 +907,7 @@ func TestMetadata(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	md, err := mc.MetadataDeprecated(ctx, d)
@@ -944,7 +944,7 @@ func TestMetadata_DestErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
@@ -970,7 +970,7 @@ func TestFindMissing(t *testing.T) {
 	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
 	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
 
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
@@ -1011,12 +1011,12 @@ func TestFindMissing_DestSrcMismatch(t *testing.T) {
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
 	d3, buf3 := testdigest.NewRandomDigestBuf(t, 100)
 
-	// Set d in both caches, but set d2 and d3 in only one of the caches
-	err = mc.Set(ctx, d, buf)
+	// SetDeprecated d in both caches, but set d2 and d3 in only one of the caches
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
-	err = srcCache.Set(ctx, d2, buf2)
+	err = srcCache.SetDeprecated(ctx, d2, buf2)
 	require.NoError(t, err)
-	err = destCache.Set(ctx, d3, buf3)
+	err = destCache.SetDeprecated(ctx, d3, buf3)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, d2, d3}
@@ -1042,7 +1042,7 @@ func TestFindMissing_DestErr(t *testing.T) {
 	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
 	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
 
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
@@ -1078,7 +1078,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
 			lock.Lock()
 			defer lock.Unlock()
-			err = srcCache.Set(ctx, d, buf)
+			err = srcCache.SetDeprecated(ctx, d, buf)
 			require.NoError(t, err)
 
 			resourceNames[idx] = &resource.ResourceName{
@@ -1171,7 +1171,7 @@ func TestDelete(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	// Check data exists before delete

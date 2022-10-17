@@ -219,7 +219,7 @@ func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Di
 	return m.GetMulti(ctx, rns)
 }
 
-func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (m *MemoryCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	k, err := m.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: m.remoteInstanceName,
@@ -237,7 +237,7 @@ func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 
 func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	for d, data := range kvs {
-		if err := m.Set(ctx, d, data); err != nil {
+		if err := m.SetDeprecated(ctx, d, data); err != nil {
 			return err
 		}
 	}
@@ -286,8 +286,8 @@ func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Co
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
 	wc.CommitFn = func(int64) error {
-		// Locking and key prefixing are handled in Set.
-		return m.Set(ctx, d, buffer.Bytes())
+		// Locking and key prefixing are handled in SetDeprecated.
+		return m.SetDeprecated(ctx, d, buffer.Bytes())
 	}
 	return wc, nil
 }

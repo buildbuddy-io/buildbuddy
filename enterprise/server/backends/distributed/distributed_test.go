@@ -128,7 +128,7 @@ func TestBasicReadWrite(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[i%3].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
@@ -181,7 +181,7 @@ func TestContains_WithIsolation(t *testing.T) {
 
 	// Do a write - should be written to all nodes
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err = dcWithIsolation1.Set(ctx, d, buf); err != nil {
+	if err = dcWithIsolation1.SetDeprecated(ctx, d, buf); err != nil {
 		require.NoError(t, err)
 	}
 
@@ -330,7 +330,7 @@ func TestReadMaxOffset(t *testing.T) {
 
 	// Do a write, and ensure it was written to all nodes.
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err := distributedCaches[0].Set(ctx, d, buf); err != nil {
+	if err := distributedCaches[0].SetDeprecated(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -378,7 +378,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	// Do a write, and ensure it was written to all nodes.
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err := distributedCaches[0].Set(ctx, d, buf); err != nil {
+	if err := distributedCaches[0].SetDeprecated(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -449,7 +449,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[j].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
@@ -518,7 +518,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[j].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		digestsWritten = append(digestsWritten, d)
@@ -585,7 +585,7 @@ func TestBackfill(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[j].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		digestsWritten = append(digestsWritten, d)
@@ -666,7 +666,7 @@ func TestContainsMulti(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[i%3].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		digestsWritten = append(digestsWritten, d)
@@ -732,7 +732,7 @@ func TestMetadata(t *testing.T) {
 	for i, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		// Set() the bytes in the cache.
-		err := distributedCachesWithIsolation[i%3].Set(ctx, d, buf)
+		err := distributedCachesWithIsolation[i%3].SetDeprecated(ctx, d, buf)
 		require.NoError(t, err)
 
 		for _, dc := range distributedCachesWithIsolation {
@@ -798,7 +798,7 @@ func TestFindMissing(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[i%3].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		digestsWritten = append(digestsWritten, d)
@@ -878,7 +878,7 @@ func TestGetMulti(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[i%3].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		resourcesWritten = append(resourcesWritten, &resource.ResourceName{
@@ -978,7 +978,7 @@ func TestHintedHandoff(t *testing.T) {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[j].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		digestsWritten = append(digestsWritten, d)
@@ -1073,7 +1073,7 @@ func TestDelete(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[i%3].SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {

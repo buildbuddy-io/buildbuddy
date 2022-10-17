@@ -147,8 +147,8 @@ func TestRPCRead(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		// Set the value in the cache.
-		if err := te.GetCache().Set(ctx, tc.resourceName.GetDigest(), []byte(tc.wantData)); err != nil {
+		// SetDeprecated the value in the cache.
+		if err := te.GetCache().SetDeprecated(ctx, tc.resourceName.GetDigest(), []byte(tc.wantData)); err != nil {
 			t.Fatal(err)
 		}
 

@@ -1029,7 +1029,7 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (interfaces.Com
 	return mwc, nil
 }
 
-func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	wc, err := c.multiWriter(ctx, d)
 	if err != nil {
 		return err
@@ -1047,7 +1047,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	for d, data := range kvs {
 		setFn := func(d *repb.Digest, data []byte) {
 			eg.Go(func() error {
-				return c.Set(ctx, d, data)
+				return c.SetDeprecated(ctx, d, data)
 			})
 		}
 		setFn(d, data)

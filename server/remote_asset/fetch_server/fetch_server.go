@@ -193,7 +193,7 @@ func mirrorToCache(ctx context.Context, cache interfaces.Cache, httpClient *http
 	if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256)
 	}
-	if err := cache.Set(ctx, blobDigest, data); err != nil {
+	if err := cache.SetDeprecated(ctx, blobDigest, data); err != nil {
 		return nil, status.InternalErrorf("failed to add object to cache: %s", err)
 	}
 	return blobDigest, nil

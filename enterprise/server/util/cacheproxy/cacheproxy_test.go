@@ -118,7 +118,7 @@ func TestReaderMaxOffset(t *testing.T) {
 	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, instanceName)
 	require.NoError(t, err)
 
-	err = cache.Set(ctx, d, buf.Bytes())
+	err = cache.SetDeprecated(ctx, d, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +309,7 @@ func TestReader(t *testing.T) {
 		// Set the random bytes in the cache (with a prefix)
 		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 		require.NoError(t, err)
-		err = cache.Set(ctx, d, buf.Bytes())
+		err = cache.SetDeprecated(ctx, d, buf.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -342,7 +342,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	size := int64(10)
 	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	err = te.GetCache().Set(ctx, d, buf)
+	err = te.GetCache().SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	offset := int64(2)
@@ -511,7 +511,7 @@ func TestContains(t *testing.T) {
 		// Set the random bytes in the cache (with a prefix)
 		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 		require.NoError(t, err)
-		err = cache.Set(ctx, d, buf.Bytes())
+		err = cache.SetDeprecated(ctx, d, buf.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -662,7 +662,7 @@ func TestFindMissing(t *testing.T) {
 			// Set the random bytes in the cache (with a prefix)
 			cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 			require.NoError(t, err)
-			err = cache.Set(ctx, d, buf.Bytes())
+			err = cache.SetDeprecated(ctx, d, buf.Bytes())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -721,7 +721,7 @@ func TestGetMulti(t *testing.T) {
 			// Set the random bytes in the cache (with a prefix)
 			cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 			require.NoError(t, err)
-			err = cache.Set(ctx, d, buf.Bytes())
+			err = cache.SetDeprecated(ctx, d, buf.Bytes())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -765,7 +765,7 @@ func TestEmptyRead(t *testing.T) {
 	}
 	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 	require.NoError(t, err)
-	err = cache.Set(ctx, d, []byte{})
+	err = cache.SetDeprecated(ctx, d, []byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -807,7 +807,7 @@ func TestDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = cache.Set(ctx, d, buf)
+	err = cache.SetDeprecated(ctx, d, buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -849,7 +849,7 @@ func TestMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = cache.Set(ctx, d, buf)
+	err = cache.SetDeprecated(ctx, d, buf)
 	if err != nil {
 		t.Fatal(err)
 	}

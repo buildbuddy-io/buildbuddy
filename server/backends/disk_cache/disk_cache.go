@@ -404,7 +404,7 @@ func (c *DiskCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Dige
 	return c.partition.getMulti(ctx, rns)
 }
 
-func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *DiskCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	return c.partition.set(ctx, c.cacheType, c.remoteInstanceName, d, data)
 }
 

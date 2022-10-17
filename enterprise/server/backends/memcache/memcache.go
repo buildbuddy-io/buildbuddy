@@ -260,7 +260,7 @@ func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) 
 	return c.GetMulti(ctx, rns)
 }
 
-func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	if !eligibleForMc(d) {
 		return status.ResourceExhaustedErrorf("Set: Digest %v too big for memcache", d)
 	}
@@ -283,7 +283,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	for d, data := range kvs {
 		setFn := func(d *repb.Digest, data []byte) {
 			eg.Go(func() error {
-				return c.Set(ctx, d, data)
+				return c.SetDeprecated(ctx, d, data)
 			})
 		}
 		setFn(d, data)

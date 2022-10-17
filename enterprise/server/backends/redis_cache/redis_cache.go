@@ -315,7 +315,7 @@ func stringToBytes(s string) []byte {
 	))
 }
 
-func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	if !c.eligibleForCache(d) {
 		return status.ResourceExhaustedErrorf("Set: Digest %v too big for redis", d)
 	}

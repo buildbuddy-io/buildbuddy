@@ -610,7 +610,7 @@ func (rc *RaftCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Dig
 	return rc.GetMulti(ctx, rns)
 }
 
-func (rc *RaftCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (rc *RaftCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	wc, err := rc.Writer(ctx, d)
 	if err != nil {
 		return err

@@ -333,7 +333,7 @@ func (s3c *S3Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Dige
 	rns := digest.ResourceNames(s3c.cacheType, s3c.remoteInstanceName, digests)
 	return s3c.GetMulti(ctx, rns)
 }
-func (s3c *S3Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	k, err := s3c.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: s3c.remoteInstanceName,
@@ -362,7 +362,7 @@ func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) e
 	for d, data := range kvs {
 		setFn := func(d *repb.Digest, data []byte) {
 			eg.Go(func() error {
-				return s3c.Set(ctx, d, data)
+				return s3c.SetDeprecated(ctx, d, data)
 			})
 		}
 		setFn(d, data)

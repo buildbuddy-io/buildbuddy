@@ -260,7 +260,7 @@ func swallowGCSAlreadyExistsError(err error) error {
 	return err
 }
 
-func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (g *GCSCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	k, err := g.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: g.remoteInstanceName,
@@ -298,7 +298,7 @@ func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) er
 	for d, data := range kvs {
 		setFn := func(d *repb.Digest, data []byte) {
 			eg.Go(func() error {
-				return g.Set(ctx, d, data)
+				return g.SetDeprecated(ctx, d, data)
 			})
 		}
 		setFn(d, data)

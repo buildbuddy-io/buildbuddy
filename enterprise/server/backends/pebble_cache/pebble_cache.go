@@ -1015,7 +1015,7 @@ func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Di
 	return p.GetMulti(ctx, rns)
 }
 
-func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (p *PebbleCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	wc, err := p.Writer(ctx, d)
 	if err != nil {
 		return err
@@ -1029,7 +1029,7 @@ func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 
 func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	for d, data := range kvs {
-		if err := p.Set(ctx, d, data); err != nil {
+		if err := p.SetDeprecated(ctx, d, data); err != nil {
 			return err
 		}
 	}

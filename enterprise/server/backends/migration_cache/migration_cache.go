@@ -729,18 +729,18 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.R
 	}
 }
 
-func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (mc *MigrationCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	// Double write data to both caches
 	eg.Go(func() error {
-		srcErr = mc.src.Set(gctx, d, data)
+		srcErr = mc.src.SetDeprecated(gctx, d, data)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = mc.dest.Set(gctx, d, data)
+		dstErr = mc.dest.SetDeprecated(gctx, d, data)
 		return nil // don't fail if there's an error from this cache
 	})
 
