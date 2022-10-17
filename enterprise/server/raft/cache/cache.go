@@ -352,12 +352,17 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceNam
 }
 
 func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	fileRecord, err := rc.makeFileRecord(ctx, &resource.ResourceName{
+	rn := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: rc.isolation.GetRemoteInstanceName(),
 		Compressor:   repb.Compressor_IDENTITY,
 		CacheType:    rc.isolation.GetCacheType(),
-	})
+	}
+	return rc.reader(ctx, rn, offset, limit)
+}
+
+func (rc *RaftCache) reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -547,13 +552,22 @@ func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.
 	return rc.findMissingResourceNames(ctx, resourceNames)
 }
 
-func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	r, err := rc.Reader(ctx, d, 0, 0)
+func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
+	r, err := rc.reader(ctx, rn, 0, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	return io.ReadAll(r)
+}
+
+func (rc *RaftCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return rc.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	})
 }
 
 func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {

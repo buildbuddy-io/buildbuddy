@@ -375,7 +375,15 @@ func (c *DiskCache) FindMissingDeprecated(ctx context.Context, digests []*repb.D
 	return c.FindMissing(ctx, rns)
 }
 
-func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *DiskCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	return p.get(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+}
+
+func (c *DiskCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return c.partition.get(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 

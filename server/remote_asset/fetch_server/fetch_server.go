@@ -119,7 +119,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				SizeBytes: int64(-1),
 			}
 			expectedSHA256 = blobDigest.Hash
-			if data, err := cache.Get(ctx, blobDigest); err == nil {
+			if data, err := cache.GetDeprecated(ctx, blobDigest); err == nil {
 				blobDigest.SizeBytes = int64(len(data)) // set the actual correct size.
 				return &rapb.FetchBlobResponse{
 					Status:     &statuspb.Status{Code: int32(gcodes.OK)},

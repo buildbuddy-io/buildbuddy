@@ -297,7 +297,7 @@ func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *dig
 	if err != nil {
 		return nil, err
 	}
-	data, err := cache.Get(ctx, r.GetDigest())
+	data, err := cache.GetDeprecated(ctx, r.GetDigest())
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, digest.MissingDigestError(r.GetDigest())

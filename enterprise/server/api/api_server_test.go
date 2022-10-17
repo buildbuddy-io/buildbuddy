@@ -237,7 +237,7 @@ func TestDeleteFile_CAS(t *testing.T) {
 	if err := s.env.GetCache().Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
-	data, err := s.env.GetCache().Get(ctx, d)
+	data, err := s.env.GetCache().GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
@@ -247,7 +247,7 @@ func TestDeleteFile_CAS(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file was deleted
-	data, err = s.env.GetCache().Get(ctx, d)
+	data, err = s.env.GetCache().GetDeprecated(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }
@@ -271,7 +271,7 @@ func TestDeleteFile_AC(t *testing.T) {
 	if err = actionCache.Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
-	data, err := actionCache.Get(ctx, d)
+	data, err := actionCache.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
@@ -281,7 +281,7 @@ func TestDeleteFile_AC(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file was deleted
-	data, err = actionCache.Get(ctx, d)
+	data, err = actionCache.GetDeprecated(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }
@@ -306,7 +306,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	if err = actionCache.Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
-	data, err := actionCache.Get(ctx, d)
+	data, err := actionCache.GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
@@ -316,7 +316,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file was deleted
-	data, err = actionCache.Get(ctx, d)
+	data, err = actionCache.GetDeprecated(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }
@@ -339,7 +339,7 @@ func TestDeleteFile_NonExistentFile(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file still does not exist - no side effects
-	data, err := s.env.GetCache().Get(ctx, d)
+	data, err := s.env.GetCache().GetDeprecated(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }
@@ -359,7 +359,7 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 	if err = s.env.GetCache().Set(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
-	data, err := s.env.GetCache().Get(ctx, d)
+	data, err := s.env.GetCache().GetDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
@@ -369,7 +369,7 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file was deleted
-	data, err = s.env.GetCache().Get(ctx, d)
+	data, err = s.env.GetCache().GetDeprecated(ctx, d)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }

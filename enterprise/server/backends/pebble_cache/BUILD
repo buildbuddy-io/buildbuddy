@@ -50,7 +50,6 @@ go_test(
         "//proto:resource_go_proto",
         "//server/backends/disk_cache",
         "//server/environment",
-        "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",

@@ -455,7 +455,7 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache in
 		return nil, err
 	}
 	// Fetch the "Directory" object which enumerates all the blobs in the directory
-	blob, err := cache.Get(ctx, reqDigest)
+	blob, err := cache.GetDeprecated(ctx, reqDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +599,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 		if *enableTreeCaching {
-			if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
+			if blob, err := acCache.GetDeprecated(ctx, treeCacheDigest); err == nil {
 				treeCache := &repb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
 					if isComplete(treeCache.GetChildren()) {

@@ -79,7 +79,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.A
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			blob, err := cache.Get(gCtx, dc.GetTreeDigest())
+			blob, err := cache.GetDeprecated(gCtx, dc.GetTreeDigest())
 			if err != nil {
 				return err
 			}
@@ -157,7 +157,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
-	blob, err := cache.Get(ctx, d)
+	blob, err := cache.GetDeprecated(ctx, d)
 	if err != nil {
 		ht.TrackMiss(d)
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)

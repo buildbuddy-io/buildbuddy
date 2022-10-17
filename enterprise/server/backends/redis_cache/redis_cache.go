@@ -243,16 +243,11 @@ func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Diges
 	return c.FindMissing(ctx, rns)
 }
 
-func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	if !c.eligibleForCache(d) {
-		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for redis", d)
+func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	if !c.eligibleForCache(r.GetDigest()) {
+		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for redis", r.GetDigest())
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -261,6 +256,15 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	b, err := c.rdbGet(ctx, k)
 	timer.ObserveGet(len(b), err)
 	return b, err
+}
+
+func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return c.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 }
 
 func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
