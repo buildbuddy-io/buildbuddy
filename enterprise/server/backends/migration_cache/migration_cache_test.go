@@ -974,7 +974,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 	}
 	eg.Wait()
 
-	r, err := mc.GetMulti(ctx, digests)
+	r, err := mc.GetMultiDeprecated(ctx, digests)
 	require.NoError(t, err)
 	require.Equal(t, expected, r)
 

@@ -177,7 +177,7 @@ func TestMultiGetSet(t *testing.T) {
 	for d := range digests {
 		digestKeys = append(digestKeys, d)
 	}
-	m, err := mc.GetMulti(ctx, digestKeys)
+	m, err := mc.GetMultiDeprecated(ctx, digestKeys)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}

@@ -299,7 +299,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			cacheRequest = append(cacheRequest, readDigest)
 		}
 	}
-	cacheRsp, err := cache.GetMulti(ctx, cacheRequest)
+	cacheRsp, err := cache.GetMultiDeprecated(ctx, cacheRequest)
 	for _, d := range req.GetDigests() {
 		if d.GetHash() == digest.EmptySha256 {
 			rsp.Responses = append(rsp.Responses, &repb.BatchReadBlobsResponse_Response{
@@ -485,7 +485,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 		}
 		subdirDigests = append(subdirDigests, d)
 	}
-	rspMap, err := cache.GetMulti(ctx, subdirDigests)
+	rspMap, err := cache.GetMultiDeprecated(ctx, subdirDigests)
 	if err != nil {
 		return nil, err
 	}

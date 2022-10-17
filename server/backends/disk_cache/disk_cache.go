@@ -387,7 +387,7 @@ func (c *DiskCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, 
 	return c.partition.get(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
-func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *DiskCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	return c.partition.getMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
 }
 

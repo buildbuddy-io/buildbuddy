@@ -226,7 +226,7 @@ func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, erro
 	})
 }
 
-func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	keys := make([]string, 0, len(digests))
 	digestsByKey := make(map[string]*repb.Digest, len(digests))
 	for _, d := range digests {

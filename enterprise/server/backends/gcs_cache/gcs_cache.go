@@ -205,7 +205,7 @@ func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, e
 	})
 }
 
-func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (g *GCSCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	eg, ctx := errgroup.WithContext(ctx)

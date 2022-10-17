@@ -960,7 +960,7 @@ func (p *PebbleCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte
 	})
 }
 
-func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err

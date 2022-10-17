@@ -198,7 +198,7 @@ func (m *MemoryCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte
 	})
 }
 
-func (m *MemoryCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	// No parallelism here either. Not necessary for an in-memory cache.
 	for _, d := range digests {

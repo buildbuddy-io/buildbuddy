@@ -258,7 +258,7 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	found, err := cache.GetMulti(ctx, digests)
+	found, err := cache.GetMultiDeprecated(ctx, digests)
 	if err != nil {
 		return nil, err
 	}

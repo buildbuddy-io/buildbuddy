@@ -885,7 +885,7 @@ func TestGetMulti(t *testing.T) {
 	}
 
 	for _, baseCache := range baseCaches {
-		gotMap, err := baseCache.GetMulti(ctx, digestsWritten)
+		gotMap, err := baseCache.GetMultiDeprecated(ctx, digestsWritten)
 		assert.Nil(t, err)
 		for _, d := range digestsWritten {
 			buf, ok := gotMap[d]
@@ -895,7 +895,7 @@ func TestGetMulti(t *testing.T) {
 	}
 
 	for _, distributedCache := range distributedCaches {
-		gotMap, err := distributedCache.GetMulti(ctx, digestsWritten)
+		gotMap, err := distributedCache.GetMultiDeprecated(ctx, digestsWritten)
 		assert.Nil(t, err)
 		for _, d := range digestsWritten {
 			buf, ok := gotMap[d]

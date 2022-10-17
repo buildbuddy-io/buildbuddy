@@ -317,20 +317,20 @@ func (mc *MigrationCache) FindMissingDeprecated(ctx context.Context, digests []*
 	return mc.FindMissing(ctx, rns)
 }
 
-func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (mc *MigrationCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcData map[*repb.Digest][]byte
 
 	eg.Go(func() error {
-		srcData, srcErr = mc.src.GetMulti(gctx, digests)
+		srcData, srcErr = mc.src.GetMultiDeprecated(gctx, digests)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.GetMulti(gctx, digests)
+			_, dstErr = mc.dest.GetMultiDeprecated(gctx, digests)
 			return nil
 		})
 	}

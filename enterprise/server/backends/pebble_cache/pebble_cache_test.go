@@ -406,7 +406,7 @@ func TestMultiGetSet(t *testing.T) {
 	for d := range digests {
 		digestKeys = append(digestKeys, d)
 	}
-	m, err := pc.GetMulti(ctx, digestKeys)
+	m, err := pc.GetMultiDeprecated(ctx, digestKeys)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
@@ -1102,7 +1102,7 @@ func BenchmarkGetMulti(b *testing.B) {
 		keys := randomDigests(100)
 
 		b.StartTimer()
-		m, err := pc.GetMulti(ctx, keys)
+		m, err := pc.GetMultiDeprecated(ctx, keys)
 		if err != nil {
 			b.Fatal(err)
 		}

@@ -301,7 +301,7 @@ func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte
 	return buff.Bytes(), err
 }
 
-func (s3c *S3Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (s3c *S3Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
 	eg, ctx := errgroup.WithContext(ctx)

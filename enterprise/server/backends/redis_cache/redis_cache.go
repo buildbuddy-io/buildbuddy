@@ -267,7 +267,7 @@ func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, erro
 	})
 }
 
-func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	if len(digests) == 0 {
 		return nil, nil
 	}

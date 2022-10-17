@@ -570,7 +570,7 @@ func (rc *RaftCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte,
 	})
 }
 
-func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (rc *RaftCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	resourceNames := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
 	keys, err := rc.resourceNamesToKeyMetas(ctx, resourceNames)
 	if err != nil {

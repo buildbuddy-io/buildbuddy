@@ -415,7 +415,7 @@ func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *d
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.GetMulti(ctx, digests)
+		return c.local.GetMultiDeprecated(ctx, digests)
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, digests)
 }
@@ -808,7 +808,7 @@ func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, erro
 	})
 }
 
-func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	mu := sync.RWMutex{} // protects(gotMap)
 	hashDigests := make(map[string][]*repb.Digest, 0)
 	gotMap := make(map[string][]byte, len(digests))
