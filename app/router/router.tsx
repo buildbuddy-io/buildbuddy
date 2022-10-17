@@ -405,11 +405,12 @@ function getMatchedPath(urlPath: string): string | null {
     urlPath += "/";
   }
   let curMatch: string | null = null;
-  for (let path of Object.values(Path)) {
-    if (!path.endsWith("/")) {
-      path += "/";
+  for (const path of Object.values(Path)) {
+    let prefix = path;
+    if (!prefix.endsWith("/")) {
+      prefix += "/";
     }
-    if (urlPath.startsWith(path) && (curMatch === null || curMatch.length < path)) {
+    if (urlPath.startsWith(prefix) && (curMatch === null || curMatch.length < path)) {
       curMatch = path;
     }
   }
