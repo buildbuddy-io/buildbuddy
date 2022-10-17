@@ -960,25 +960,24 @@ func (p *PebbleCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte
 	})
 }
 
-func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	sort.Slice(digests, func(i, j int) bool {
-		return digests[i].GetHash() < digests[j].GetHash()
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	sort.Slice(resources, func(i, j int) bool {
+		return resources[i].GetDigest().GetHash() < resources[j].GetDigest().GetHash()
 	})
 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	blobDir := p.partitionBlobDir(p.isolation.GetPartitionId())
 	buf := &bytes.Buffer{}
-	for _, d := range digests {
-		fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
+	for _, r := range resources {
+		fileRecord, err := p.makeFileRecord(ctx, r)
 		if err != nil {
 			return nil, err
 		}
@@ -990,6 +989,8 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 			continue
 		}
+		partitionID := fileRecord.GetIsolation().GetPartitionId()
+		blobDir := p.partitionBlobDir(partitionID)
 		rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
@@ -1002,10 +1003,15 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if copyErr != nil || closeErr != nil {
 			continue
 		}
-		foundMap[d] = append([]byte{}, buf.Bytes()...)
+		foundMap[r.GetDigest()] = append([]byte{}, buf.Bytes()...)
 		buf.Reset()
 	}
 	return foundMap, nil
+}
+
+func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), digests)
+	return p.GetMulti(ctx, rns)
 }
 
 func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

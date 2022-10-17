@@ -317,20 +317,20 @@ func (mc *MigrationCache) FindMissingDeprecated(ctx context.Context, digests []*
 	return mc.FindMissing(ctx, rns)
 }
 
-func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcData map[*repb.Digest][]byte
 
 	eg.Go(func() error {
-		srcData, srcErr = mc.src.GetMulti(gctx, digests)
+		srcData, srcErr = mc.src.GetMulti(gctx, resources)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.GetMulti(gctx, digests)
+			_, dstErr = mc.dest.GetMulti(gctx, resources)
 			return nil
 		})
 	}
@@ -341,24 +341,24 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) 
 
 	if dstErr != nil {
 		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-			log.Warningf("Migration dest GetMulti of %v failed: %s", digests, dstErr)
+			log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
 		}
 		if status.IsNotFoundError(dstErr) {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
 		}
 	}
 
-	for _, d := range digests {
-		mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
-			Digest:       d,
-			InstanceName: mc.remoteInstanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    mc.cacheType,
-		})
+	for _, r := range resources {
+		mc.sendNonBlockingCopy(ctx, r)
 	}
 
 	// Return data from source cache
 	return srcData, srcErr
+}
+
+func (mc *MigrationCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(mc.cacheType, mc.remoteInstanceName, digests)
+	return mc.GetMulti(ctx, rns)
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {

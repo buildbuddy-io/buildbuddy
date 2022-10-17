@@ -387,8 +387,21 @@ func (c *DiskCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, 
 	return c.partition.get(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
-func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	return c.partition.getMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
+func (c *DiskCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	remoteInstanceName := resources[0].GetInstanceName()
+	p, err := c.getPartition(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+	return p.getMulti(ctx, resources)
+}
+
+func (c *DiskCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
+	return c.partition.getMulti(ctx, rns)
 }
 
 func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
@@ -1044,15 +1057,16 @@ func (p *partition) get(ctx context.Context, cacheType resource.CacheType, remot
 	return buf, nil
 }
 
-func (p *partition) getMulti(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (p *partition) getMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				data, err := p.get(ctx, cacheType, remoteInstanceName, d)
+				d := r.GetDigest()
+				data, err := p.get(ctx, r.GetCacheType(), r.GetInstanceName(), d)
 				if status.IsNotFoundError(err) {
 					return nil
 				}
@@ -1065,7 +1079,7 @@ func (p *partition) getMulti(ctx context.Context, cacheType resource.CacheType, 
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {

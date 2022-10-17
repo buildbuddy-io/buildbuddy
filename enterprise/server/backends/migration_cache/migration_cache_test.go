@@ -956,7 +956,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	lock := sync.RWMutex{}
-	digests := make([]*repb.Digest, 50)
+	resourceNames := make([]*resource.ResourceName, 50)
 	expected := make(map[*repb.Digest][]byte, 50)
 	for i := 0; i < 50; i++ {
 		idx := i
@@ -967,19 +967,22 @@ func TestGetMultiWithCopying(t *testing.T) {
 			err = srcCache.Set(ctx, d, buf)
 			require.NoError(t, err)
 
-			digests[idx] = d
+			resourceNames[idx] = &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
 			expected[d] = buf
 			return nil
 		})
 	}
 	eg.Wait()
 
-	r, err := mc.GetMulti(ctx, digests)
+	r, err := mc.GetMulti(ctx, resourceNames)
 	require.NoError(t, err)
 	require.Equal(t, expected, r)
 
-	for _, digest := range digests {
-		waitForCopy(t, ctx, destCache, digest)
+	for _, r := range resourceNames {
+		waitForCopy(t, ctx, destCache, r.GetDigest())
 	}
 }
 

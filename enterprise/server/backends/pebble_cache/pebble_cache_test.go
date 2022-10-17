@@ -402,11 +402,15 @@ func TestMultiGetSet(t *testing.T) {
 	if err := pc.SetMulti(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
-	digestKeys := make([]*repb.Digest, 0, len(digests))
+	resourceNames := make([]*resource.ResourceName, 0, len(digests))
 	for d := range digests {
-		digestKeys = append(digestKeys, d)
+		resourceNames = append(resourceNames, &resource.ResourceName{
+			Digest:     d,
+			Compressor: repb.Compressor_IDENTITY,
+			CacheType:  resource.CacheType_CAS,
+		})
 	}
-	m, err := pc.GetMulti(ctx, digestKeys)
+	m, err := pc.GetMulti(ctx, resourceNames)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
@@ -1102,7 +1106,7 @@ func BenchmarkGetMulti(b *testing.B) {
 		keys := randomDigests(100)
 
 		b.StartTimer()
-		m, err := pc.GetMulti(ctx, keys)
+		m, err := pc.GetMultiDeprecated(ctx, keys)
 		if err != nil {
 			b.Fatal(err)
 		}

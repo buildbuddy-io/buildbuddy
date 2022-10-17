@@ -267,24 +267,19 @@ func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, erro
 	})
 }
 
-func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	if len(digests) == 0 {
+func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	if len(resources) == 0 {
 		return nil, nil
 	}
-	keys := make([]string, 0, len(digests))
-	digestsByKey := make(map[string]*repb.Digest, len(digests))
-	for _, d := range digests {
-		k, err := c.key(ctx, &resource.ResourceName{
-			Digest:       d,
-			InstanceName: c.remoteInstanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    c.cacheType,
-		})
+	keys := make([]string, 0, len(resources))
+	digestsByKey := make(map[string]*repb.Digest, len(resources))
+	for _, r := range resources {
+		k, err := c.key(ctx, r)
 		if err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
-		digestsByKey[k] = d
+		digestsByKey[k] = r.GetDigest()
 	}
 
 	rMap, err := c.rdb.MGet(ctx, keys...).Result()
@@ -302,6 +297,11 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		}
 	}
 	return response, nil
+}
+
+func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
+	return c.GetMulti(ctx, rns)
 }
 
 // Efficiently convert string to byte slice: https://github.com/go-redis/redis/pull/1106

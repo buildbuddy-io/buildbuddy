@@ -205,25 +205,25 @@ func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, e
 	})
 }
 
-func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (g *GCSCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				data, err := g.GetDeprecated(ctx, d)
+				data, err := g.Get(ctx, r)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
 				defer lock.Unlock()
-				foundMap[d] = data
+				foundMap[r.GetDigest()] = data
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -231,6 +231,11 @@ func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*r
 	}
 
 	return foundMap, nil
+}
+
+func (g *GCSCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(g.cacheType, g.remoteInstanceName, digests)
+	return g.GetMulti(ctx, rns)
 }
 
 func swallowGCSAlreadyExistsError(err error) error {
