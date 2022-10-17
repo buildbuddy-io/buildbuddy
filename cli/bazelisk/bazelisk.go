@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
@@ -106,17 +106,14 @@ func InvokeRunScript(path string) (exitCode int, err error) {
 	if err := os.Chmod(path, 0755); err != nil {
 		return -1, err
 	}
-	cmd := exec.Command(path)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		if err, ok := err.(*exec.ExitError); ok {
-			return err.ProcessState.ExitCode(), nil
-		}
+	// TODO: Exec() replaces the current process, so it prevents us from running
+	// post-run hooks (if we decide those will be supported). If we want to use
+	// exec.Command() here instead of exec(), then we might need to manually
+	// forward signals from the parent file watcher process.
+	if err := syscall.Exec(path, nil, os.Environ()); err != nil {
 		return -1, err
 	}
-	return 0, nil
+	panic("unreachable")
 }
 
 // makePipeWriter adapts a writer to an *os.File by using an os.Pipe().

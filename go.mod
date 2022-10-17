@@ -21,6 +21,7 @@ require (
 	github.com/bazelbuild/bazelisk v1.11.0
 	github.com/bazelbuild/rules_go v0.29.0
 	github.com/bazelbuild/rules_webtesting v0.2.0
+	github.com/bduffany/godemon v0.0.0-20221017142458-a1c682732be9
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
@@ -116,6 +117,7 @@ require (
 	github.com/beevik/etree v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
+	github.com/bmatcuk/doublestar/v4 v4.0.2 // indirect
 	github.com/cilium/ebpf v0.7.0 // indirect
 	github.com/cockroachdb/errors v1.9.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
@@ -132,6 +134,7 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/felixge/httpsnoop v1.0.2 // indirect
+	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/getsentry/sentry-go v0.12.0 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
 	github.com/go-git/go-billy/v5 v5.0.0 // indirect

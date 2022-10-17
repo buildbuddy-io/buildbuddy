@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -27,12 +28,26 @@ func main() {
 }
 
 func run() (exitCode int, err error) {
+	// Maybe run interactively (watching for changes to files).
+	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {
+		return exitCode, err
+	}
+
+	var scriptPath string
 	// Prepare a dir for temporary files created by this CLI run
 	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
 	if err != nil {
 		return -1, err
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		// Remove tempdir. Need to do this before invoking the run script
+		// (if applicable), since the run script will replace this process.
+		os.RemoveAll(tempDir)
+
+		if scriptPath != "" {
+			exitCode, err = bazelisk.InvokeRunScript(scriptPath)
+		}
+	}()
 
 	// Load plugins
 	plugins, err := plugin.LoadAll(tempDir)
@@ -76,7 +91,7 @@ func run() (exitCode int, err error) {
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
-	args, scriptPath := bazelisk.ConfigureRunScript(args, tempDir)
+	args, scriptPath = bazelisk.ConfigureRunScript(args, tempDir)
 
 	// Run bazelisk, capturing the original output in a file and allowing
 	// plugins to control how the output is rendered to the terminal.
@@ -94,14 +109,6 @@ func run() (exitCode int, err error) {
 	// Run plugin post-bazel hooks
 	for _, p := range plugins {
 		if err := p.PostBazel(outputPath); err != nil {
-			return -1, err
-		}
-	}
-
-	// If this is a `bazel run` command, invoke the run script.
-	if scriptPath != "" {
-		exitCode, err = bazelisk.InvokeRunScript(scriptPath)
-		if err != nil {
 			return -1, err
 		}
 	}
