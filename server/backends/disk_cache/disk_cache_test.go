@@ -668,13 +668,25 @@ func TestDeleteStaleTempFiles(t *testing.T) {
 
 	// Create a temp file for a write that should be deleted.
 	badDigest, _ := testdigest.NewRandomDigestBuf(t, 1000)
+	yesterday := time.Now().AddDate(0, 0, -1)
 	writeTempFile := filepath.Join(anonPath, badDigest.GetHash()+".ababababab.tmp")
 	err = os.WriteFile(writeTempFile, []byte("hello"), 0644)
+	require.NoError(t, err)
+	err = os.Chtimes(writeTempFile, yesterday, yesterday)
 	require.NoError(t, err)
 
 	// Create an unexpected file that should not be deleted.
 	unexpectedFile := filepath.Join(anonPath, "some_other_file.txt")
 	err = os.WriteFile(unexpectedFile, []byte("hello"), 0644)
+	require.NoError(t, err)
+	err = os.Chtimes(unexpectedFile, yesterday, yesterday)
+	require.NoError(t, err)
+
+	// Create a temp file that was recently modified and should not be deleted.
+	// (Could've been created for a legitimate purpose - for example, we use tmp files when writing data)
+	badDigest2, _ := testdigest.NewRandomDigestBuf(t, 1000)
+	writeTempFile2 := filepath.Join(anonPath, badDigest2.GetHash()+".ababababab.tmp")
+	err = os.WriteFile(writeTempFile2, []byte("hello"), 0644)
 	require.NoError(t, err)
 
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
@@ -689,6 +701,10 @@ func TestDeleteStaleTempFiles(t *testing.T) {
 	exists, err = disk.FileExists(ctx, unexpectedFile)
 	require.NoError(t, err)
 	require.True(t, exists, "unexpected file %q should not have been deleted", unexpectedFile)
+
+	exists, err = disk.FileExists(ctx, writeTempFile2)
+	require.NoError(t, err)
+	require.True(t, exists, "recent temp file %q should not have been deleted", writeTempFile2)
 }
 
 func TestNonDefaultPartition(t *testing.T) {

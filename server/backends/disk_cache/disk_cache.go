@@ -47,6 +47,10 @@ const (
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
 
+	// staleFilePeriod is the timeframe after which an empty or temp file will be considered stale and eligible
+	// for automatic deletion
+	staleFilePeriod = 15 * time.Minute
+
 	DefaultPartitionID       = "default"
 	PartitionDirectoryPrefix = "PT"
 	HashPrefixDirPrefixLen   = 4
@@ -651,19 +655,23 @@ func (p *partition) initializeCache() error {
 				return err
 			}
 			if info.Size() == 0 {
-				log.Debugf("Deleting 0 length file: %q", path)
-				err = os.Remove(path)
-				if err != nil {
-					log.Warningf("Could not delete 0 length file %q: %s", path, err)
+				if isStaleFile(info) {
+					log.Debugf("Deleting 0 length file: %q", path)
+					err = os.Remove(path)
+					if err != nil {
+						log.Warningf("Could not delete 0 length file %q: %s", path, err)
+					}
 				}
 				return nil
 			}
 			timestampedRecord, err := p.makeTimestampedRecordFromPathAndFileInfo(path, info)
 			if err != nil {
 				if disk.IsWriteTempFile(path) {
-					err = os.Remove(path)
-					if err != nil {
-						log.Warningf("Could not delete stale temp file %q (size %d): %s", path, info.Size(), err)
+					if isStaleFile(info) {
+						err = os.Remove(path)
+						if err != nil {
+							log.Warningf("Could not delete stale temp file %q (size %d): %s", path, info.Size(), err)
+						}
 					}
 					return nil
 				}
@@ -709,6 +717,10 @@ func (p *partition) initializeCache() error {
 		p.mu.Unlock()
 	}()
 	return nil
+}
+
+func isStaleFile(info fs.FileInfo) bool {
+	return time.Since(info.ModTime()) > staleFilePeriod
 }
 
 func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType resource.CacheType, userPrefix, remoteInstanceName string, digestBytes []byte, err error) {
