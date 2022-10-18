@@ -20,7 +20,6 @@ var apiKey = flag.String("executor.api_key", "", "API Key used to authorize the 
 
 type TaskLeaser struct {
 	env        environment.Env
-	log        *log.Logger
 	executorID string
 	taskID     string
 	quit       chan struct{}
@@ -32,10 +31,8 @@ type TaskLeaser struct {
 }
 
 func NewTaskLeaser(env environment.Env, executorID string, taskID string) *TaskLeaser {
-	sublog := log.NamedSubLogger(executorID)
 	return &TaskLeaser{
 		env:        env,
-		log:        &sublog,
 		executorID: executorID,
 		taskID:     taskID,
 		quit:       make(chan struct{}),
@@ -82,7 +79,7 @@ func (t *TaskLeaser) keepLease(ctx context.Context) {
 				return
 			case <-time.After(t.ttl):
 				if _, err := t.pingServer(); err != nil {
-					t.log.Warningf("Error updating lease for task: %q: %s", t.taskID, err.Error())
+					log.CtxWarningf(ctx, "Error updating lease for task: %q: %s", t.taskID, err.Error())
 					t.cancelFunc()
 					return
 				}
@@ -108,19 +105,19 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 	if err == nil {
 		t.closed = false
 		defer t.keepLease(ctx)
-		t.log.Infof("Worker leased task: %q", t.taskID)
+		log.CtxInfof(ctx, "Worker leased task: %q", t.taskID)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	t.cancelFunc = cancel
 	return ctx, serializedTask, err
 }
 
-func (t *TaskLeaser) Close(taskErr error, retry bool) {
+func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.log.Infof("TaskLeaser %q Close() called with err: %v", t.taskID, taskErr)
+	log.CtxInfof(ctx, "TaskLeaser %q Close() called with err: %v", t.taskID, taskErr)
 	if t.closed {
-		t.log.Infof("TaskLeaser %q was already closed. Short-circuiting.", t.taskID)
+		log.CtxInfof(ctx, "TaskLeaser %q was already closed. Short-circuiting.", t.taskID)
 	}
 	close(t.quit) // This cancels our lease-keep-alive background goroutine.
 
@@ -140,7 +137,7 @@ func (t *TaskLeaser) Close(taskErr error, retry bool) {
 		shouldReEnqueue = true
 	}
 	if err := t.stream.Send(req); err != nil {
-		log.Warningf("Could not send request: %s", err)
+		log.CtxWarningf(ctx, "Could not send request: %s", err)
 	}
 	closedCleanly := false
 	for {
@@ -149,14 +146,14 @@ func (t *TaskLeaser) Close(taskErr error, retry bool) {
 			break
 		}
 		if err != nil {
-			t.log.Warningf("TaskLeaser %q: got non-EOF err: %s", t.taskID, err)
+			log.CtxWarningf(ctx, "TaskLeaser %q: got non-EOF err: %s", t.taskID, err)
 			break
 		}
 		closedCleanly = rsp.GetClosedCleanly()
 	}
 
 	if !closedCleanly {
-		t.log.Warningf("TaskLeaser %q: did not close cleanly but should have. Will re-enqueue.", t.taskID)
+		log.CtxWarningf(ctx, "TaskLeaser %q: did not close cleanly but should have. Will re-enqueue.", t.taskID)
 		shouldReEnqueue = true
 	}
 
@@ -166,12 +163,12 @@ func (t *TaskLeaser) Close(taskErr error, retry bool) {
 			reason = taskErr.Error()
 		}
 		if err := t.reEnqueueTask(context.Background(), reason); err != nil {
-			t.log.Warningf("TaskLeaser %q: error re-enqueueing task: %s", t.taskID, err.Error())
+			log.CtxWarningf(ctx, "TaskLeaser %q: error re-enqueueing task: %s", t.taskID, err.Error())
 		} else {
-			t.log.Infof("TaskLeaser %q: Successfully re-enqueued.", t.taskID)
+			log.CtxInfof(ctx, "TaskLeaser %q: Successfully re-enqueued.", t.taskID)
 		}
 	} else {
-		t.log.Infof("TaskLeaser %q: closed cleanly :)", t.taskID)
+		log.CtxInfof(ctx, "TaskLeaser %q: closed cleanly :)", t.taskID)
 	}
 
 	t.closed = true
