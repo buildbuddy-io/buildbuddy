@@ -142,4 +142,6 @@ type Env interface {
 	SetRegistryServer(r rgpb.RegistryServer)
 	GetOLAPDBHandle() interfaces.OLAPDBHandle
 	SetOLAPDBHandle(dbh interfaces.OLAPDBHandle)
+	GetKMS() interfaces.KMS
+	SetKMS(k interfaces.KMS)
 }

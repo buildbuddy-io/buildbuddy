@@ -86,6 +86,7 @@ func TestWorkspaceRemove_ReadOnlyTree_DeletesEntireTree(t *testing.T) {
 }
 
 func TestWorkspaceCleanup_NoPreserveWorkspace_DeletesAllFiles(t *testing.T) {
+	ctx := context.Background()
 	filePaths := []string{
 		"some_output_directory/DELETEME",
 		"some/nested/output/directory/DELETEME",
@@ -97,7 +98,7 @@ func TestWorkspaceCleanup_NoPreserveWorkspace_DeletesAllFiles(t *testing.T) {
 	}
 
 	ws := newWorkspace(t, &workspace.Opts{Preserve: false})
-	ws.SetTask(&repb.ExecutionTask{
+	ws.SetTask(ctx, &repb.ExecutionTask{
 		Command: &repb.Command{
 			OutputDirectories: []string{
 				"some_output_directory",
@@ -118,6 +119,7 @@ func TestWorkspaceCleanup_NoPreserveWorkspace_DeletesAllFiles(t *testing.T) {
 }
 
 func TestWorkspaceCleanup_PreserveWorkspace_PreservesAllFilesExceptOutputs(t *testing.T) {
+	ctx := context.Background()
 	filePaths := []string{
 		"some_output_directory/DELETEME",
 		"some/nested/output/directory/DELETEME",
@@ -128,7 +130,7 @@ func TestWorkspaceCleanup_PreserveWorkspace_PreservesAllFilesExceptOutputs(t *te
 		"foo/bar/KEEPME",
 	}
 	ws := newWorkspace(t, &workspace.Opts{Preserve: true})
-	ws.SetTask(&repb.ExecutionTask{
+	ws.SetTask(ctx, &repb.ExecutionTask{
 		Command: &repb.Command{
 			OutputDirectories: []string{
 				"some_output_directory",

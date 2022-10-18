@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
@@ -28,6 +29,12 @@ func main() {
 }
 
 func run() (exitCode int, err error) {
+	// Show help if applicable.
+	exitCode, err = help.HandleHelp(os.Args[1:])
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+
 	// Maybe run interactively (watching for changes to files).
 	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {
 		return exitCode, err

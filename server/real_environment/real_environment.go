@@ -98,6 +98,7 @@ type RealEnv struct {
 	grpcsServer                      *grpc.Server
 	registryServer                   rgpb.RegistryServer
 	olapDBHandle                     interfaces.OLAPDBHandle
+	kms                              interfaces.KMS
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -545,4 +546,12 @@ func (r *RealEnv) GetOLAPDBHandle() interfaces.OLAPDBHandle {
 
 func (r *RealEnv) SetOLAPDBHandle(dbh interfaces.OLAPDBHandle) {
 	r.olapDBHandle = dbh
+}
+
+func (r *RealEnv) GetKMS() interfaces.KMS {
+	return r.kms
+}
+
+func (r *RealEnv) SetKMS(k interfaces.KMS) {
+	r.kms = k
 }
