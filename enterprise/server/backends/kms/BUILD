@@ -4,7 +4,10 @@ go_library(
     name = "kms",
     srcs = ["kms.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//enterprise:__subpackages__",
+        "@buildbuddy_internal//enterprise:__subpackages__",
+    ],
     deps = [
         "//server/environment",
         "//server/interfaces",
