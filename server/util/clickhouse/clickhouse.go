@@ -11,11 +11,13 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	gormclickhouse "gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
 )
@@ -182,19 +184,26 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	var lastError error
 	for retrier.Next() {
 		res := h.DB(ctx).Create(inv)
-		if res.Error == nil {
-			return nil
-		}
+		lastError = res.Error
 		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) {
 			// Retry since it's an transient error.
-			lastError = res.Error
 			log.Infof("attempt to write invocation (id: %q) to clickhouse failed: %s", res.Error, ti.InvocationID)
 			continue
-		} else {
-			return res.Error
 		}
+		break
 	}
-	return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
+	statusLabel := "ok"
+	if lastError != nil {
+		statusLabel = "error"
+	}
+	metrics.ClickhouseInsertedCount.With(prometheus.Labels{
+		metrics.ClickhouseTableName:   inv.TableName(),
+		metrics.ClickhouseStatusLabel: statusLabel,
+	}).Inc()
+	if lastError != nil {
+		return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
+	}
+	return nil
 }
 
 func runMigrations(gdb *gorm.DB) error {
