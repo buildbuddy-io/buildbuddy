@@ -6,7 +6,7 @@ app:
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
 database:
-  data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
+  data_source: "sqlite3:///tmp/buildbuddy-enterprise-${USER}.db"
 #olap_database:
 #data_source: "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
 storage:
