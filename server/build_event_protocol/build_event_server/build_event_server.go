@@ -63,6 +63,7 @@ func (s *BuildEventProtocolServer) PublishLifecycleEvent(ctx context.Context, re
 // adds an OPEN_STREAM event.
 func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	ctx := stream.Context()
+	log.CtxInfof("PublishBuildToolEventStream")
 	// Semantically, the protocol requires we ack events in order.
 	acks := make([]int, 0)
 	var streamID *bepb.StreamId
