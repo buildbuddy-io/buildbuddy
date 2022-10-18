@@ -91,7 +91,10 @@ func run() (exitCode int, err error) {
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
-	args, scriptPath = bazelisk.ConfigureRunScript(args, tempDir)
+	args, scriptPath, err = bazelisk.ConfigureRunScript(args)
+	if err != nil {
+		return -1, err
+	}
 
 	// Run bazelisk, capturing the original output in a file and allowing
 	// plugins to control how the output is rendered to the terminal.
