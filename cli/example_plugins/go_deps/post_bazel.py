@@ -10,7 +10,7 @@ AUTO_RUN_GAZELLE_PREFERENCE_KEY = "autoRunGazelle"
 
 def main():
     # If not running in an interactive terminal session, don't do anything.
-    if not sys.stdin.isatty():
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return
 
     bazel_output_path = sys.argv[1]
@@ -146,7 +146,7 @@ def get_preference(key, default_value=None):
 def set_preference(key, value):
     preferences = read_preferences()
     preferences[key] = value
-    os.makedirs(os.path.dirname(preferences_path()))
+    os.makedirs(os.path.dirname(preferences_path()), exist_ok=True)
     with open(preferences_path(), "w") as f:
         json.dump(preferences, f)
 
