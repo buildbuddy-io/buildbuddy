@@ -145,11 +145,11 @@ func (i *Invocation) TableOptions() string {
 
 type Execution struct {
 	GroupID        string `gorm:"primaryKey;"`
+	UpdatedAtUsec  int64  `gorm:"primaryKey;"`
 	InvocationUUID string `gorm:"primaryKey;"`
-	UpdatedAtUsec  int64
+	ExecutionID    string `gorm:"primaryKey;"`
 
 	CreatedAtUsec int64
-	ExecutionID   string
 	UserID        string
 	Worker        string
 
@@ -194,7 +194,7 @@ func (e *Execution) TableName() string {
 }
 
 func (e *Execution) TableOptions() string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, invocation_uuid, updated_at_usec)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid, execution_id)", getEngine())
 }
 
 func (e *Execution) ExcludedFields() []string {
