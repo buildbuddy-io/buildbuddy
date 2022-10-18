@@ -1399,7 +1399,7 @@ var (
 	ClickhouseInsertedCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "clickhouse",
-		Name:      "count",
+		Name:      "insert_count",
 		Help:      "Num of rows inserted into clickhouse",
 	}, []string{
 		ClickhouseTableName,
