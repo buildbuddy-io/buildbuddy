@@ -64,20 +64,41 @@ func GetCommandAndIndex(args []string) (string, int) {
 func GetPassthroughArgs(args []string) []string {
 	for i, arg := range args {
 		if arg == "--" {
-			return args[i+1:]
+			return append([]string{}, args[i+1:]...)
 		}
 	}
-	return []string{}
+	return nil
 }
 
 // Returns any non "passthrough" arugments in args (those to the left of the first " -- ", if any)
 func GetNonPassthroughArgs(args []string) []string {
+	splitIndex := len(args)
 	for i, arg := range args {
 		if arg == "--" {
-			return args[:i]
+			splitIndex = i
+			break
 		}
 	}
-	return args
+	return append([]string{}, args[:splitIndex]...)
+}
+
+// Splits bazel args and passthrough args into two separate lists. The first
+// "--" separator is dropped if it exists.
+func SplitPassthroughArgs(args []string) (bazel []string, passthrough []string) {
+	return GetNonPassthroughArgs(args), GetPassthroughArgs(args)
+}
+
+// JoinPassthroughArgs joins the given args and passthrough args with a "--"
+// separator, if the passthrough args are non-empty. Otherwise it returns
+// the original non-passthrough args.
+func JoinPassthroughArgs(args, passthroughArgs []string) []string {
+	out := append([]string{}, args...)
+	if len(passthroughArgs) == 0 {
+		return out
+	}
+	out = append(out, "--")
+	out = append(out, passthroughArgs...)
+	return out
 }
 
 // Returns args with any arguments also found in existingArgs removed

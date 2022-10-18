@@ -55,10 +55,12 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 
-	// Parse args
-	commandLineArgs := os.Args[1:]
-	rcFileArgs := parser.GetArgsFromRCFiles(commandLineArgs)
-	args := append(commandLineArgs, rcFileArgs...)
+	// Parse args.
+	// Split out passthrough args and don't let plugins modify them,
+	// since those are intended to be passed to the built binary as-is.
+	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(os.Args[1:])
+	rcFileArgs := parser.GetArgsFromRCFiles(bazelArgs)
+	args := append(bazelArgs, rcFileArgs...)
 
 	// Fiddle with args
 	// TODO(bduffany): model these as "built-in" plugins
@@ -82,7 +84,7 @@ func run() (exitCode int, err error) {
 	}
 
 	// Handle commands
-	args = remotebazel.HandleRemoteBazel(args)
+	args = remotebazel.HandleRemoteBazel(args, passthroughArgs)
 	args = version.HandleVersion(args)
 	args = login.HandleLogin(args)
 
@@ -99,7 +101,9 @@ func run() (exitCode int, err error) {
 	// Run bazelisk, capturing the original output in a file and allowing
 	// plugins to control how the output is rendered to the terminal.
 	outputPath := filepath.Join(tempDir, "bazel.log")
-	exitCode, err = bazelisk.RunWithPlugins(args, outputPath, plugins)
+	exitCode, err = bazelisk.RunWithPlugins(
+		arg.JoinPassthroughArgs(args, passthroughArgs),
+		outputPath, plugins)
 	if err != nil {
 		return -1, err
 	}
