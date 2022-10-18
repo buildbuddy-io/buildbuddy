@@ -31,7 +31,8 @@ var (
 )
 
 const (
-	ExecutionIDKey = "execution_id"
+	ExecutionIDKey  = "execution_id"
+	InvocationIDKey = "invocation_id"
 
 	callerSkipFrameCount = 3
 )
@@ -302,6 +303,15 @@ func Infof(format string, args ...interface{}) {
 	log.Info().Msgf(format, args...)
 }
 
+// CtxInfo logs to the INFO log.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxInfo(ctx context.Context, message string) {
+	e := log.Info()
+	enrichEventFromContext(ctx, e)
+	e.Msg(message)
+}
+
 // CtxInfof logs to the INFO log. Arguments are handled in the manner of
 // fmt.Printf.
 // Logs are enriched with information from the context
@@ -320,6 +330,15 @@ func Warning(message string) {
 // Warningf logs to the WARNING log. Arguments are handled in the manner of fmt.Printf.
 func Warningf(format string, args ...interface{}) {
 	log.Warn().Msgf(format, args...)
+}
+
+// CtxWarning logs to the WARNING log.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxWarning(ctx context.Context, message string) {
+	e := log.Warn()
+	enrichEventFromContext(ctx, e)
+	e.Msg(message)
 }
 
 // CtxWarningf logs to the WARNING log. Arguments are handled in the manner of
