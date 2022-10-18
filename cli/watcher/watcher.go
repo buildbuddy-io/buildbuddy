@@ -6,6 +6,7 @@ import (
 
 	"github.com/bduffany/godemon"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
 )
@@ -38,8 +39,13 @@ func Watch() (exitCode int, err error) {
 	// Notes on FS watcher solutions:
 	// https://docs.google.com/document/d/1tbe7lAX6OEYe5_1FRLG8RPG3lXGUrT4_Vv9UCx6_Vwo
 
+	workspaceDir, err := workspace.Path()
+	if err != nil {
+		return -1, err
+	}
+
 	_ = os.Setenv("GODEMON_LOG_PREFIX", "--- ")
-	argv := append([]string{"godemon"}, watcherFlags...)
+	argv := append([]string{"godemon", "--watch", workspaceDir}, watcherFlags...)
 	argv = append(argv, args...)
 
 	// Optionally invoke a specific godemon binary.
