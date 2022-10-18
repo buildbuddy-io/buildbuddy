@@ -578,7 +578,7 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 
 	counts, err := c.ReadCounts(ctx, counterKey(iid))
 	if err != nil {
-		log.Warningf("Failed to collect cache stats for invocation %s: %s", iid, err)
+		log.CtxWarningf(ctx, "Failed to collect cache stats for invocation %s: %s", iid, err)
 		return cs
 	}
 	if counts == nil {
