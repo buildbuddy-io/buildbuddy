@@ -165,6 +165,11 @@ type DiskCache struct {
 	remoteInstanceName string
 }
 
+func (c *DiskCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func Register(env environment.Env) error {
 	if *rootDirectoryFlag == "" {
 		return nil

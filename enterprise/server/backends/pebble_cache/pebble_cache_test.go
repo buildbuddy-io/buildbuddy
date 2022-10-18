@@ -487,11 +487,15 @@ func TestSizeLimit(t *testing.T) {
 	pc.Start()
 	defer pc.Stop()
 
-	digestKeys := make([]*repb.Digest, 0, 150000)
+	resourceKeys := make([]*resource.ResourceName, 0, 150000)
 	for i := 0; i < 150; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-		digestKeys = append(digestKeys, d)
-		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		resourceKeys = append(resourceKeys, r)
+		if err := pc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 	}
@@ -502,9 +506,9 @@ func TestSizeLimit(t *testing.T) {
 	// Expect the sum of all contained digests be less than or equal to max
 	// size bytes.
 	containedDigestsSize := int64(0)
-	for _, d := range digestKeys {
-		if ok, err := pc.ContainsDeprecated(ctx, d); err == nil && ok {
-			containedDigestsSize += d.GetSizeBytes()
+	for _, r := range resourceKeys {
+		if ok, err := pc.Contains(ctx, r); err == nil && ok {
+			containedDigestsSize += r.Digest.GetSizeBytes()
 		}
 	}
 	require.LessOrEqual(t, containedDigestsSize, maxSizeBytes)
@@ -533,9 +537,11 @@ func TestFindMissing(t *testing.T) {
 	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
 	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
 
-	pcWithIsolation, err := pc.WithIsolation(ctx, resource.CacheType_AC, "remote")
-	require.NoError(t, err)
-	err = pcWithIsolation.SetDeprecated(ctx, d, buf)
+	err = pc.Set(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: "remote",
+	}, buf)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
@@ -584,11 +590,15 @@ func TestNoEarlyEviction(t *testing.T) {
 	defer pc.Stop()
 
 	// Should be able to add 10 things without anything getting evicted
-	digestKeys := make([]*repb.Digest, numDigests)
+	resourceKeys := make([]*resource.ResourceName, numDigests)
 	for i := 0; i < numDigests; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, digestSize)
-		digestKeys[i] = d
-		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		resourceKeys[i] = r
+		if err := pc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
 		}
 	}
@@ -597,11 +607,8 @@ func TestNoEarlyEviction(t *testing.T) {
 	pc.TestingWaitForGC()
 
 	// Verify that nothing was evicted
-	for _, d := range digestKeys {
-		_, err = pc.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+	for _, r := range resourceKeys {
+		_, err = pc.Get(ctx, r)
 		require.NoError(t, err)
 	}
 }
@@ -636,11 +643,15 @@ func TestLRU(t *testing.T) {
 
 	quartile := numDigests / 4
 
-	digestKeys := make([]*repb.Digest, numDigests)
-	for i := range digestKeys {
+	resourceKeys := make([]*resource.ResourceName, numDigests)
+	for i := range resourceKeys {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		digestKeys[i] = d
-		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		resourceKeys[i] = r
+		if err := pc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
 		}
 	}
@@ -655,11 +666,8 @@ func TestLRU(t *testing.T) {
 	for i := 3; i > 0; i-- {
 		log.Printf("Using data from 0:%d", quartile*i)
 		for j := 0; j < quartile*i; j++ {
-			d := digestKeys[j]
-			_, err = pc.Get(ctx, &resource.ResourceName{
-				Digest:    d,
-				CacheType: resource.CacheType_CAS,
-			})
+			r := resourceKeys[j]
+			_, err = pc.Get(ctx, r)
 			require.NoError(t, err)
 		}
 	}
@@ -667,8 +675,12 @@ func TestLRU(t *testing.T) {
 	// Write more data.
 	for i := 0; i < quartile; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		digestKeys = append(digestKeys, d)
-		if err := pc.SetDeprecated(ctx, d, buf); err != nil {
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		resourceKeys = append(resourceKeys, r)
+		if err := pc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
 		}
 	}
@@ -677,12 +689,12 @@ func TestLRU(t *testing.T) {
 	pc.TestingWaitForGC()
 
 	evictionsByQuartile := make([][]*repb.Digest, 5)
-	for i, d := range digestKeys {
-		ok, err := pc.ContainsDeprecated(ctx, d)
+	for i, r := range resourceKeys {
+		ok, err := pc.Contains(ctx, r)
 		evicted := err != nil || !ok
 		q := i / quartile
 		if evicted {
-			evictionsByQuartile[q] = append(evictionsByQuartile[q], d)
+			evictionsByQuartile[q] = append(evictionsByQuartile[q], r.GetDigest())
 		}
 	}
 
@@ -720,16 +732,18 @@ func TestMigrationFromDiskV1(t *testing.T) {
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: diskDir}, maxSizeBytes)
 	require.NoError(t, err)
 
-	setKeys := make(map[*digest.ResourceName][]byte, 0)
+	setKeys := make(map[*resource.ResourceName][]byte, 0)
 	for i := 0; i < 1000; i++ {
 		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-		c, err := dc.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
-		require.NoError(t, err)
-
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		err = c.SetDeprecated(ctx, d, buf)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_AC,
+			InstanceName: remoteInstanceName,
+		}
+		err = dc.Set(ctx, r, buf)
 		require.NoError(t, err)
-		setKeys[digest.NewResourceName(d, remoteInstanceName)] = buf
+		setKeys[r] = buf
 	}
 
 	pebbleDir := testfs.MakeTempDir(t)
@@ -742,13 +756,8 @@ func TestMigrationFromDiskV1(t *testing.T) {
 	defer pc.Stop()
 
 	for rn, buf := range setKeys {
-		gotBuf, err := pc.Get(ctx, &resource.ResourceName{
-			Digest:       rn.GetDigest(),
-			CacheType:    resource.CacheType_AC,
-			InstanceName: rn.GetInstanceName(),
-		})
+		gotBuf, err := pc.Get(ctx, rn)
 		require.NoError(t, err)
-
 		require.Equal(t, buf, gotBuf)
 	}
 }
@@ -791,16 +800,18 @@ func TestMigrationFromDiskV2(t *testing.T) {
 	ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 
-	setKeys := make(map[*digest.ResourceName][]byte, 0)
+	setKeys := make(map[*resource.ResourceName][]byte, 0)
 	for i := 0; i < 1000; i++ {
 		remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
-		require.NoError(t, err)
-
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		err = c.SetDeprecated(ctx, d, buf)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: remoteInstanceName,
+		}
+		err = dc.Set(ctx, r, buf)
 		require.NoError(t, err)
-		setKeys[digest.NewResourceName(d, remoteInstanceName)] = buf
+		setKeys[r] = buf
 	}
 
 	pebbleDir := testfs.MakeTempDir(t)
@@ -819,11 +830,7 @@ func TestMigrationFromDiskV2(t *testing.T) {
 	defer pc.Stop()
 
 	for rn, buf := range setKeys {
-		gotBuf, err := pc.Get(ctx, &resource.ResourceName{
-			Digest:       rn.GetDigest(),
-			CacheType:    resource.CacheType_CAS,
-			InstanceName: rn.GetInstanceName(),
-		})
+		gotBuf, err := pc.Get(ctx, rn)
 		require.NoError(t, err)
 
 		require.Equal(t, buf, gotBuf)

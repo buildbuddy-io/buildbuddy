@@ -31,6 +31,11 @@ type MemoryCache struct {
 	remoteInstanceName string
 }
 
+func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func sizeFn(value interface{}) int64 {
 	size := int64(0)
 	if v, ok := value.([]byte); ok {
