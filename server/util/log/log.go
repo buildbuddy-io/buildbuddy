@@ -283,6 +283,15 @@ func Debugf(format string, args ...interface{}) {
 	log.Debug().Msgf(format, args...)
 }
 
+// CtxDebug logs to the DEBUG log.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxDebug(ctx context.Context, message string) {
+	e := log.Debug()
+	enrichEventFromContext(ctx, e)
+	e.Msg(message)
+}
+
 // CtxDebugf logs to the DEBUG log. Arguments are handled in the manner of
 // fmt.Printf.
 // Logs are enriched with information from the context
@@ -359,6 +368,15 @@ func Error(message string) {
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func Errorf(format string, args ...interface{}) {
 	log.Error().Msgf(format, args...)
+}
+
+// CtxError logs to the ERROR log.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxError(ctx context.Context, message string) {
+	e := log.Error()
+	enrichEventFromContext(ctx, e)
+	e.Msg(message)
 }
 
 // CtxErrorf logs to the ERROR log. Arguments are handled in the manner of
