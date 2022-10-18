@@ -139,7 +139,7 @@ const (
 	/// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
-	/// Status of Clickhouse Operation: `ok`, `error`.
+	/// Status of the Clickhouse operation: `ok`, `error`.
 	ClickhouseStatusLabel = "status"
 )
 
