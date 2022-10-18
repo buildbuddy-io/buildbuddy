@@ -9,10 +9,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -154,23 +155,8 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	return client, nil
 }
 
-func ProtoCacheTypeToCacheType(cacheType dcpb.Isolation_CacheType) (interfaces.CacheType, error) {
-	switch cacheType {
-	case dcpb.Isolation_CAS_CACHE:
-		return interfaces.CASCacheType, nil
-	case dcpb.Isolation_ACTION_CACHE:
-		return interfaces.ActionCacheType, nil
-	default:
-		return interfaces.UnknownCacheType, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
-	}
-}
-
 func (c *CacheProxy) getCache(ctx context.Context, isolation *dcpb.Isolation) (interfaces.Cache, error) {
-	ct, err := ProtoCacheTypeToCacheType(isolation.GetCacheType())
-	if err != nil {
-		return nil, err
-	}
-	return c.cache.WithIsolation(ctx, ct, isolation.GetRemoteInstanceName())
+	return c.cache.WithIsolation(ctx, isolation.GetCacheType(), isolation.GetRemoteInstanceName())
 }
 
 func (c *CacheProxy) prepareContext(ctx context.Context) context.Context {
@@ -201,7 +187,7 @@ func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingReque
 	if err != nil {
 		return nil, err
 	}
-	missing, err := cache.FindMissing(ctx, digests)
+	missing, err := cache.FindMissingDeprecated(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +208,7 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 		return nil, err
 	}
 	d := digestFromKey(req.GetKey())
-	md, err := cache.Metadata(ctx, d)
+	md, err := cache.MetadataDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -235,12 +221,7 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 
 // IsolationToString returns a compact representation of the Isolation proto suitable for logging.
 func IsolationToString(isolation *dcpb.Isolation) string {
-	ct, err := ProtoCacheTypeToCacheType(isolation.GetCacheType())
-	if err != nil {
-		alert.UnexpectedEvent("unknown_cache_type", "isolation: %s", isolation)
-		ct = interfaces.UnknownCacheType
-	}
-	rep := filepath.Join(isolation.GetRemoteInstanceName(), ct.Prefix())
+	rep := filepath.Join(isolation.GetRemoteInstanceName(), digest.CacheTypeToPrefix(isolation.GetCacheType()))
 	if !strings.HasSuffix(rep, "/") {
 		rep += "/"
 	}
@@ -277,7 +258,7 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	found, err := cache.GetMulti(ctx, digests)
+	found, err := cache.GetMultiDeprecated(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -605,7 +586,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	// duplicate writes, we call Contains before writing a new digest, and
 	// if it already exists, we'll return a devnull writecloser so no bytes
 	// are transmitted over the network.
-	if isolation.GetCacheType() == dcpb.Isolation_CAS_CACHE {
+	if isolation.GetCacheType() == resource.CacheType_CAS {
 		if alreadyExists, err := c.RemoteContains(ctx, peer, isolation, d); err == nil && alreadyExists {
 			log.Debugf("Skipping duplicate CAS write of %q", d.GetHash())
 			return ioutil.DiscardWriteCloser(), nil

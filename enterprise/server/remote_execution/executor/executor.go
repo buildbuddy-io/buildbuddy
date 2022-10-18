@@ -183,6 +183,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	if !req.GetSkipCacheLookup() {
+		log.CtxInfof(ctx, "Checking action cache for existing result.")
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
 			return true, err
 		}
@@ -191,10 +192,12 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithCachedResult(actionResult)); err != nil {
 				return true, err
 			}
+			log.CtxInfof(ctx, "Found existing result in action cache, all done.")
 			return false, nil
 		}
 	}
 
+	log.CtxInfof(ctx, "Getting a runner for task.")
 	r, err := s.runnerPool.Get(ctx, st)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
@@ -205,6 +208,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	}()
 
+	log.CtxInfof(ctx, "Preparing runner for task.")
 	stage.Set("pull_image")
 	if err := r.PrepareForTask(ctx); err != nil {
 		return finishWithErrFn(err)
@@ -212,6 +216,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	md.InputFetchStartTimestamp = timestamppb.Now()
 
+	log.CtxInfof(ctx, "Downloading inputs.")
 	stage.Set("input_fetch")
 	if err := r.DownloadInputs(ctx, md.IoStats); err != nil {
 		return finishWithErrFn(err)
@@ -235,6 +240,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	ctx, cancel := context.WithTimeout(ctx, execDuration)
 	defer cancel()
 
+	log.CtxInfof(ctx, "Executing task.")
 	stage.Set("execution")
 	cmdResultChan := make(chan *interfaces.CommandResult, 1)
 	go func() {
@@ -258,7 +264,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	if cmdResult.ExitCode != 0 {
-		log.Debugf("%q finished with non-zero exit code (%d). Err: %s, Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Error, cmdResult.Stdout, cmdResult.Stderr)
+		log.CtxDebugf(ctx, "%q finished with non-zero exit code (%d). Err: %s, Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Error, cmdResult.Stdout, cmdResult.Stderr)
 	}
 	// Exit codes < 0 mean that the command either never started or was killed.
 	// Make sure we return an error in this case.
@@ -266,7 +272,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		cmdResult.Error = incompleteExecutionError(ctx, cmdResult.ExitCode, cmdResult.Error)
 	}
 	if cmdResult.Error != nil {
-		log.Warningf("Command execution returned error: %s", cmdResult.Error)
+		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}
 
 	md.UsageStats = cmdResult.UsageStats
@@ -284,6 +290,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	actionResult := &repb.ActionResult{}
 	actionResult.ExitCode = int32(cmdResult.ExitCode)
 
+	log.CtxInfof(ctx, "Uploading outputs.")
 	stage.Set("output_upload")
 	if err := r.UploadOutputs(ctx, md.IoStats, actionResult, cmdResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading outputs: %s", err.Error()))
@@ -338,10 +345,11 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// Otherwise, send the error back to the client via the ExecuteResponse
 	// status.
 	if err := stateChangeFn(repb.ExecutionStage_COMPLETED, operation.ExecuteResponseWithResult(actionResult, cmdResult.Error)); err != nil {
-		log.Errorf("Failed to publish ExecuteResponse: %s", err)
+		log.CtxErrorf(ctx, "Failed to publish ExecuteResponse: %s", err)
 		return finishWithErrFn(err)
 	}
 	if cmdResult.Error == nil {
+		log.CtxInfof(ctx, "Task finished cleanly.")
 		finishedCleanly = true
 	}
 	return false, nil

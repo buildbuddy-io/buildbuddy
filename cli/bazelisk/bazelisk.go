@@ -6,16 +6,34 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-func Run(args []string) (int, *Output, error) {
+func RunWithPlugins(args []string, outputPath string, plugins []*plugin.Plugin) (int, error) {
+	// Build the pipeline of bazel output handlers
+	wc, err := plugin.PipelineWriter(os.Stdout, plugins)
+	if err != nil {
+		return -1, err
+	}
+	// Note, it's important that the Close() here happens just after the
+	// bazelisk run completes and before we run post_bazel hooks, since this
+	// waits for all plugins to finish writing to stdout. Otherwise, the
+	// post_bazel output will get intermingled with bazel output.
+	defer wc.Close()
+
+	return Run(args, outputPath, wc)
+}
+
+func Run(args []string, outputPath string, w io.Writer) (int, error) {
 	// If we were already invoked via bazelisk, then set the bazel version to
 	// the next version appearing in the .bazelversion file so that bazelisk
 	// doesn't just invoke us again (resulting in an infinite loop).
@@ -30,10 +48,11 @@ func Run(args []string) (int, *Output, error) {
 	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
 	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
 
-	output, err := os.CreateTemp("", "bazelisk-output-*")
+	output, err := os.Create(outputPath)
 	if err != nil {
-		return 0, nil, status.FailedPreconditionErrorf("failed to create output file: %s", err)
+		return 0, status.FailedPreconditionErrorf("failed to create output file: %s", err)
 	}
+	defer output.Close()
 
 	// Temporarily redirect stdout/stderr so that we can capture the bazelisk
 	// output.
@@ -46,24 +65,60 @@ func Run(args []string) (int, *Output, error) {
 	defer func() {
 		os.Stdout, os.Stderr = originalStdout, originalStderr
 	}()
-	stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, os.Stdout))
+	stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, w))
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 	defer closeStdoutPipe()
 	os.Stdout = stdoutPipe
-	stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, os.Stderr))
+	stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, w))
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 	defer closeStderrPipe()
 	os.Stderr = stderrPipe
 
 	exitCode, err := core.RunBazelisk(args, repos)
 	if err != nil {
-		log.Fatalf("error running bazelisk: %s", err)
+		return -1, status.InternalErrorf("failed to run bazelisk: %s", err)
 	}
-	return exitCode, &Output{output}, nil
+	return exitCode, nil
+}
+
+// ConfigureRunScript adds `--script_path` to a bazel run command so that we can
+// invoke the build and the run separately.
+func ConfigureRunScript(args []string) (newArgs []string, scriptPath string, err error) {
+	if arg.GetCommand(args) != "run" {
+		return args, "", nil
+	}
+	// If --script_path is already set, don't create a run script ourselves,
+	// since the caller probably has the intention to invoke it on their own.
+	existingScript := arg.Get(args, "script_path")
+	if existingScript != "" {
+		return args, "", nil
+	}
+	script, err := os.CreateTemp("", "bb-run-*")
+	if err != nil {
+		return nil, "", err
+	}
+	defer script.Close()
+	scriptPath = script.Name()
+	args = append(args, "--script_path="+scriptPath)
+	return args, scriptPath, nil
+}
+
+func InvokeRunScript(path string) (exitCode int, err error) {
+	if err := os.Chmod(path, 0755); err != nil {
+		return -1, err
+	}
+	// TODO: Exec() replaces the current process, so it prevents us from running
+	// post-run hooks (if we decide those will be supported). If we want to use
+	// exec.Command() here instead of exec(), then we might need to manually
+	// forward signals from the parent file watcher process.
+	if err := syscall.Exec(path, nil, os.Environ()); err != nil {
+		return -1, err
+	}
+	panic("unreachable")
 }
 
 // makePipeWriter adapts a writer to an *os.File by using an os.Pipe().
@@ -89,6 +144,16 @@ func makePipeWriter(w io.Writer) (pw *os.File, closeFunc func(), err error) {
 }
 
 func setBazelVersion() error {
+	// If USE_BAZEL_VERSION is already set and not pointing to us (the BB CLI),
+	// preserve that value.
+	envVersion := os.Getenv("USE_BAZEL_VERSION")
+	if envVersion != "" && !strings.HasPrefix(envVersion, "buildbuddy-io/") {
+		return nil
+	}
+
+	// TODO: Handle the cases where we were invoked via .bazeliskrc
+	// or USE_BAZEL_FALLBACK_VERSION (less common).
+
 	ws, err := workspace.Path()
 	if err != nil {
 		return err
@@ -100,8 +165,6 @@ func setBazelVersion() error {
 		}
 	}
 	parts := strings.Split(string(b), "\n")
-	// TODO: Handle the cases where we were invoked via .bazeliskrc,
-	// USE_BAZEL_VERSION, or USE_BAZEL_FALLBACK_VERSION.
 
 	// Bazelisk probably chose us because we were specified first in
 	// .bazelversion. Delete the first line, if it exists.
@@ -115,14 +178,4 @@ func setBazelVersion() error {
 	}
 
 	return os.Setenv("USE_BAZEL_VERSION", parts[0])
-}
-
-// Output points to the stdout/stderr written by bazelisk. It is like a regular
-// file, but the Close() method also deletes the file to avoid accumulating too
-// many logs on disk.
-type Output struct{ *os.File }
-
-func (o *Output) Close() error {
-	o.File.Close()
-	return os.Remove(o.File.Name())
 }

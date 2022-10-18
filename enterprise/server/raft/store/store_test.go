@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -29,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 	"github.com/stretchr/testify/require"
@@ -267,7 +269,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
 	fr := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: groupID,
 		},
 		Digest: d,
@@ -525,8 +527,17 @@ func TestPostFactoSplit(t *testing.T) {
 	closer.Close()
 	r1DB.Close()
 
-	r4, err := s4.GetReplica(2)
-	require.NoError(t, err)
+	var r4 *replica.Replica
+	for {
+		r4, err = s4.GetReplica(2)
+		if err == nil {
+			break
+		}
+		if !status.IsOutOfRangeError(err) {
+			require.FailNowf(t, "unexpected error", "unexpected error %s", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	// Wait for raft replication to finish bringing the new node up to date.
 	waitStart := time.Now()

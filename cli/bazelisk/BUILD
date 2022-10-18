@@ -9,7 +9,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/bazelisk",
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/arg",
         "//cli/log",
+        "//cli/plugin",
         "//cli/workspace",
         "//server/util/disk",
         "//server/util/status",

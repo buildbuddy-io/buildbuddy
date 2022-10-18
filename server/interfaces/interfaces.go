@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
@@ -198,26 +198,6 @@ type Blobstore interface {
 	DeleteBlob(ctx context.Context, blobName string) error
 }
 
-type CacheType int
-
-const (
-	UnknownCacheType CacheType = iota
-	ActionCacheType
-	CASCacheType
-)
-
-func (t CacheType) Prefix() string {
-	switch t {
-	case ActionCacheType:
-		return "ac"
-	case CASCacheType:
-		return ""
-	default:
-		alert.UnexpectedEvent("unknown_cache_type", "type: %v", t)
-		return "unknown"
-	}
-}
-
 type CacheMetadata struct {
 	// Size of the cache contents (uncompressed).
 	SizeBytes          int64
@@ -231,19 +211,28 @@ type CacheMetadata struct {
 // Similar to the Cache above, a digest cache allows for more intelligent
 // storing of blob data based on its size.
 type Cache interface {
+	// TODO(Maggie) Deprecate WithIsolation and associated methods
+
 	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
-	WithIsolation(ctx context.Context, cacheType CacheType, remoteInstanceName string) (Cache, error)
+	WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (Cache, error)
 
-	// Normal cache-like operations.
+	// [Deprecated] Normal cache-like operations that act in conjunction with WithIsolation
 	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)
-	Metadata(ctx context.Context, d *repb.Digest) (*CacheMetadata, error)
-	FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
-	Get(ctx context.Context, d *repb.Digest) ([]byte, error)
-	GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
+	MetadataDeprecated(ctx context.Context, d *repb.Digest) (*CacheMetadata, error)
+	FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
+	GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error)
+	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
 	Set(ctx context.Context, d *repb.Digest, data []byte) error
 	SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	Delete(ctx context.Context, d *repb.Digest) error
+
+	// Normal cache-like operations
+	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
+	Metadata(ctx context.Context, r *resource.ResourceName) (*CacheMetadata, error)
+	FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error)
+	Get(ctx context.Context, r *resource.ResourceName) ([]byte, error)
+	GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error)
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
@@ -899,4 +888,24 @@ type CommittedMetadataWriteCloser interface {
 	io.Closer
 	Metadater
 	Committer
+}
+
+// This interface is copied from tink:
+// AEAD is the interface for authenticated encryption with associated data.
+type AEAD interface {
+	// Encrypt encrypts plaintext with associatedData as associated data.
+	// The resulting ciphertext allows for checking authenticity and
+	// integrity of associated data associatedData, but does not guarantee
+	// its secrecy.
+	Encrypt(plaintext, associatedData []byte) ([]byte, error)
+
+	// Decrypt decrypts ciphertext with associatedData as associated data.
+	// The decryption verifies the authenticity and integrity of the
+	// associated data, but there are no guarantees with respect to secrecy
+	// of that data.
+	Decrypt(ciphertext, associatedData []byte) ([]byte, error)
+}
+
+type KMS interface {
+	FetchMasterKey() (AEAD, error)
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -26,7 +27,7 @@ var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use t
 type MemoryCache struct {
 	l                  interfaces.LRU
 	lock               *sync.RWMutex
-	cacheType          interfaces.CacheType
+	cacheType          resource.CacheType
 	remoteInstanceName string
 }
 
@@ -65,13 +66,13 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 	return &MemoryCache{
 		l:                  l,
 		lock:               &sync.RWMutex{},
-		cacheType:          interfaces.CASCacheType,
+		cacheType:          resource.CacheType_CAS,
 		remoteInstanceName: "",
 	}, nil
 }
 
-func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
-	hash, err := digest.Validate(d)
+func (m *MemoryCache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
 	}
@@ -81,15 +82,15 @@ func (m *MemoryCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	}
 
 	var key string
-	if m.cacheType == interfaces.ActionCacheType {
-		key = filepath.Join(userPrefix, m.cacheType.Prefix(), m.remoteInstanceName, hash)
+	if r.GetCacheType() == resource.CacheType_AC {
+		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), r.GetInstanceName(), hash)
 	} else {
-		key = filepath.Join(userPrefix, m.cacheType.Prefix(), hash)
+		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), hash)
 	}
 	return key, nil
 }
 
-func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	return &MemoryCache{
 		l:                  m.l,
 		lock:               m.lock,
@@ -98,8 +99,8 @@ func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType interfaces.Ca
 	}, nil
 }
 
-func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	k, err := m.key(ctx, d)
+func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return false, err
 	}
@@ -110,9 +111,19 @@ func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 	return contains, nil
 }
 
+func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return m.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
+}
+
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
-func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	k, err := m.key(ctx, d)
+func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	d := r.GetDigest()
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -131,23 +142,37 @@ func (m *MemoryCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	return &interfaces.CacheMetadata{SizeBytes: int64(len(vb))}, nil
 }
 
-func (m *MemoryCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (m *MemoryCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return m.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
+}
+
+func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	var missing []*repb.Digest
 	// No parallelism here either. Not necessary for an in-memory cache.
-	for _, d := range digests {
-		ok, err := m.ContainsDeprecated(ctx, d)
+	for _, r := range resources {
+		ok, err := m.Contains(ctx, r)
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
-			missing = append(missing, d)
+			missing = append(missing, r.GetDigest())
 		}
 	}
 	return missing, nil
 }
 
-func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := m.key(ctx, d)
+func (m *MemoryCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
+	return m.FindMissing(ctx, rns)
+}
+
+func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -155,33 +180,52 @@ func (m *MemoryCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	v, ok := m.l.Get(k)
 	m.lock.Unlock()
 	if !ok {
-		return nil, status.NotFoundErrorf("Key %s not found", d)
+		return nil, status.NotFoundErrorf("Key %s not found", r.GetDigest())
 	}
 	value, ok := v.([]byte)
 	if !ok {
-		return nil, status.InternalErrorf("LRU type assertion failed for %s", d)
+		return nil, status.InternalErrorf("LRU type assertion failed for %s", r.GetDigest())
 	}
 	return value, nil
 }
 
-func (m *MemoryCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+func (m *MemoryCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return m.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
+}
+
+func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	// No parallelism here either. Not necessary for an in-memory cache.
-	for _, d := range digests {
-		data, err := m.Get(ctx, d)
+	for _, r := range resources {
+		data, err := m.Get(ctx, r)
 		if status.IsNotFoundError(err) {
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
-		foundMap[d] = data
+		foundMap[r.GetDigest()] = data
 	}
 	return foundMap, nil
 }
 
+func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
+	return m.GetMulti(ctx, rns)
+}
+
 func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -201,7 +245,12 @@ func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte)
 }
 
 func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := m.key(ctx, d)
+	k, err := m.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -217,7 +266,7 @@ func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 // Low level interface used for seeking and stream-writing.
 func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
-	buf, err := m.Get(ctx, d)
+	buf, err := m.GetDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}

@@ -98,8 +98,8 @@ func (ws *Workspace) Path() string {
 }
 
 // SetTask sets the next task to be executed within the workspace.
-func (ws *Workspace) SetTask(task *repb.ExecutionTask) {
-	log.Debugf("Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
+func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
+	log.CtxDebugf(ctx, "Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
 	cmd := task.GetCommand()
 	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd.GetOutputFiles(), cmd.GetOutputDirectories(), ws.dirPerms)
@@ -161,7 +161,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
 		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
-		log.Debugf("GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+		log.CtxDebugf(ctx, "GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 	return txInfo, err
 }
@@ -247,7 +247,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 		var err error
 		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
-			log.Warningf("Failed to upload stdout: %s", err)
+			log.CtxWarningf(ctx, "Failed to upload stdout: %s", err)
 		}
 		return nil
 	})
@@ -256,7 +256,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 		var err error
 		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, bytes.NewReader(cmdResult.Stderr))
 		if err != nil {
-			log.Warningf("Failed to upload stderr: %s", err)
+			log.CtxWarningf(ctx, "Failed to upload stderr: %s", err)
 		}
 		return nil
 	})
@@ -275,21 +275,17 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, actionResult *repb.Actio
 	return txInfo, nil
 }
 
-func (ws *Workspace) Remove() error {
+func (ws *Workspace) Remove(ctx context.Context) error {
 	ws.mu.Lock()
 	ws.removing = true
 	// No need to keep the lock held while removing; other operations will
 	// immediately fail since we've set the removing bit.
 	ws.mu.Unlock()
 
-	if err := os.RemoveAll(ws.rootDir); err != nil {
-		// Sometimes removal fails if badly-behaved actions write their
-		// directories read-only. Retry with force-removal in this case.
-		log.Debugf("Failed to remove %s - attempting force-removal.", ws.rootDir)
-		if err := forceRemove(ws.rootDir); err != nil {
-			return status.InternalErrorf("failed to force-remove workspace directory %q: %s", ws.rootDir, err)
-		}
-		return nil
+	// Sometimes removal fails if badly-behaved actions write their
+	// directories read-only. Use force-removal to handle these cases.
+	if err := disk.ForceRemove(ctx, ws.rootDir); err != nil {
+		return status.InternalErrorf("failed to force-remove workspace: %s", err)
 	}
 	return nil
 }
@@ -358,28 +354,6 @@ func (ws *Workspace) Clean() error {
 		return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 	}
 	return nil
-}
-
-// forceRemove attempts to remove a directory by first making the entire tree
-// writable. Before calling this function, it's recommended to first try
-// os.RemoveAll, since this function is expensive (it incurs a system call for
-// each permissions change).
-func forceRemove(path string) error {
-	err := filepath.WalkDir(path, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			// In order to remove dir entries and make sure we can further
-			// recurse into the dir, we need all bits set (RWX).
-			return os.Chmod(path, 0770)
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return os.RemoveAll(path)
 }
 
 func removeChildren(dirPath string) error {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
@@ -258,10 +259,15 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	}
 	inv, err := r.lookupInvocation(ctx, ij)
 	if err != nil {
-		return status.InternalErrorf("failed to flush invocation stats to clickhouse: %s", err)
+		return status.InternalErrorf("failed to look up invocation for invocation id %q: %s", ij.id, err)
 	}
 
-	return r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
+	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
+	// Temporary logging for debugging clickhouse missing data.
+	if err == nil {
+		log.Infof("successfully wrote invocation %q to clickhouse", inv.InvocationID)
+	}
+	return err
 }
 
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
@@ -287,7 +293,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 
 	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
-		log.Errorf("Failed to write cache stats for invocation to primaryDB: %s", err)
+		log.Errorf("Failed to write cache stats for invocation %q to primaryDB: %s", ti.InvocationID, err)
 	}
 
 	if task.invocationStatus == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
@@ -296,6 +302,8 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		if err != nil {
 			log.Errorf("Failed to flush stats for invocation %s to clickhouse: %s", ti.InvocationID, err)
 		}
+	} else {
+		log.Infof("skipped writing stats for invocation %s to clickhouse, invocationStatus = %s", ti.InvocationID, task.invocationStatus)
 	}
 	// Cleanup regardless of whether the stats are flushed successfully to
 	// the DB (since we won't retry the flush and we don't need these stats
@@ -487,7 +495,7 @@ func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationJW
 						"response_type",
 					},
 				},
-				CacheType:    capb.CacheType_AC,
+				CacheType:    resource.CacheType_AC,
 				RequestType:  capb.RequestType_READ,
 				ResponseType: capb.ResponseType_NOT_FOUND,
 			},

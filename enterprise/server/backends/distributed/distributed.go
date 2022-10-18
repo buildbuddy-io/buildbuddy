@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -14,8 +13,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
@@ -323,34 +324,15 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	return c.cacheProxy.Shutdown(ctx)
 }
 
-func toProtoCacheType(cacheType interfaces.CacheType) (dcpb.Isolation_CacheType, error) {
-	switch cacheType {
-	case interfaces.CASCacheType:
-		return dcpb.Isolation_CAS_CACHE, nil
-	case interfaces.ActionCacheType:
-		return dcpb.Isolation_ACTION_CACHE, nil
-	default:
-		return dcpb.Isolation_UNKNOWN_TYPE, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
-	}
-}
-
-func (c *Cache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newLocal, err := c.local.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, err
 	}
 
-	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
 	clone := *c
-	protoCacheType, err := toProtoCacheType(cacheType)
-	if err != nil {
-		return nil, err
-	}
 	clone.isolation = &dcpb.Isolation{
-		CacheType:          protoCacheType,
+		CacheType:          cacheType,
 		RemoteInstanceName: remoteInstanceName,
 	}
 	clone.local = newLocal
@@ -400,31 +382,40 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 func (c *Cache) remoteContains(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.ContainsDeprecated(ctx, d)
+		return c.local.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: isolation.GetRemoteInstanceName(),
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    isolation.GetCacheType(),
+		})
 	}
 	return c.cacheProxy.RemoteContains(ctx, peer, isolation, d)
 }
 
 func (c *Cache) remoteMetadata(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Metadata(ctx, d)
+		return c.local.Metadata(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: isolation.GetRemoteInstanceName(),
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    isolation.GetCacheType(),
+		})
 	}
 	return c.cacheProxy.RemoteMetadata(ctx, peer, isolation, d)
 }
 
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) ([]*repb.Digest, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
-		return c.local.FindMissing(ctx, digests)
+		rns := digest.ResourceNames(isolation.GetCacheType(), isolation.GetRemoteInstanceName(), digests)
+		return c.local.FindMissing(ctx, rns)
 	}
 	return c.cacheProxy.RemoteFindMissing(ctx, peer, isolation, digests)
 }
 
 func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
-		return c.local.GetMulti(ctx, digests)
+		rns := digest.ResourceNames(isolation.GetCacheType(), isolation.GetRemoteInstanceName(), digests)
+		return c.local.GetMulti(ctx, rns)
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, digests)
 }
@@ -454,11 +445,7 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 		return nil
 	}
 
-	cacheType, err := cacheproxy.ProtoCacheTypeToCacheType(isolation.GetCacheType())
-	if err != nil {
-		return err
-	}
-	localCache, err := c.local.WithIsolation(ctx, cacheType, isolation.GetRemoteInstanceName())
+	localCache, err := c.local.WithIsolation(ctx, isolation.GetCacheType(), isolation.GetRemoteInstanceName())
 	if err != nil {
 		return err
 	}
@@ -471,13 +458,11 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 	if err != nil {
 		return err
 	}
+	defer rwc.Close()
 	if _, err := io.Copy(rwc, r); err != nil {
 		return err
 	}
-	if err := rwc.Commit(); err != nil {
-		return err
-	}
-	return rwc.Close()
+	return rwc.Commit()
 }
 
 func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, isolation *dcpb.Isolation, dest string) error {
@@ -493,13 +478,11 @@ func (c *Cache) copyFile(ctx context.Context, d *repb.Digest, source string, iso
 	if err != nil {
 		return err
 	}
+	defer rwc.Close()
 	if _, err := io.Copy(rwc, r); err != nil {
 		return err
 	}
-	if err := rwc.Commit(); err != nil {
-		return err
-	}
-	return rwc.Close()
+	return rwc.Commit()
 }
 
 type backfillOrder struct {
@@ -521,7 +504,7 @@ func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
 	return deduped
 }
 
-func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) error {
+func (c *Cache) backfillPeers(ctx context.Context, isolation *dcpb.Isolation, backfills []*backfillOrder) error {
 	if len(backfills) == 0 {
 		return nil
 	}
@@ -530,7 +513,7 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) e
 	for _, bf := range backfills {
 		bf := bf
 		eg.Go(func() error {
-			return c.copyFile(gCtx, bf.d, bf.source, c.isolation, bf.dest)
+			return c.copyFile(gCtx, bf.d, bf.source, isolation, bf.dest)
 		})
 	}
 	return eg.Wait()
@@ -559,23 +542,27 @@ func (c *Cache) getBackfillOrders(d *repb.Digest, ps *peerset.PeerSet) []*backfi
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	ps := c.readPeers(d)
+func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
+	ps := c.readPeers(r.GetDigest())
 	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
+		if err := c.backfillPeers(ctx, isolation, c.getBackfillOrders(r.GetDigest(), ps)); err != nil {
 			c.log.Debugf("Error backfilling peers: %s", err)
 		}
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		exists, err := c.remoteContains(ctx, peer, c.isolation, d)
+		exists, err := c.remoteContains(ctx, peer, isolation, r.GetDigest())
 		if err == nil {
 			if exists {
-				c.log.Debugf("Contains(%q) found on peer %q", d, peer)
+				c.log.Debugf("Contains(%q) found on peer %q", r.GetDigest(), peer)
 				backfill()
 				return exists, err
 			}
-			c.log.Debugf("Contains(%q) not found on peer %q (err: %+v)", d, peer, err)
+			c.log.Debugf("Contains(%q) not found on peer %q (err: %+v)", r.GetDigest(), peer, err)
 			continue
 		}
 
@@ -585,23 +572,37 @@ func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, e
 	return false, nil
 }
 
-func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return c.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.isolation.GetCacheType(),
+	})
+}
+
+func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	d := r.GetDigest()
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
 	ps := c.readPeers(d)
 	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
+		if err := c.backfillPeers(ctx, isolation, c.getBackfillOrders(d, ps)); err != nil {
 			c.log.Debugf("Error backfilling peers: %s", err)
 		}
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		md, err := c.remoteMetadata(ctx, peer, c.isolation, d)
+		md, err := c.remoteMetadata(ctx, peer, isolation, d)
 		if err == nil {
 			c.log.Debugf("Metadata(%q) found on peer %q", d, peer)
 			backfill()
 			return md, nil
 		}
 		if status.IsNotFoundError(err) {
-			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
+			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.IsolationToString(isolation)+d.GetHash(), peer)
 			continue
 		}
 
@@ -612,12 +613,27 @@ func (c *Cache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.Cache
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q, peerset: %v", d.GetHash(), ps)
 }
 
-func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return c.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.isolation.GetCacheType(),
+	})
+}
+
+func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	isolation := getIsolation(resources)
+	if isolation == nil {
+		return nil, nil
+	}
+
 	mu := sync.RWMutex{} // protects(foundMap)
 	hashDigests := make(map[string][]*repb.Digest, 0)
-	foundMap := make(map[string]struct{}, len(digests))
-	peerMap := make(map[string]*peerset.PeerSet, len(digests))
-	for _, d := range digests {
+	foundMap := make(map[string]struct{}, len(resources))
+	peerMap := make(map[string]*peerset.PeerSet, len(resources))
+	for _, r := range resources {
+		d := r.GetDigest()
 		hash := d.GetHash()
 		hashDigests[hash] = append(hashDigests[hash], d)
 		if _, ok := peerMap[hash]; !ok {
@@ -662,7 +678,7 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				peerRsp, err := c.remoteFindMissing(gCtx, peer, c.isolation, digests)
+				peerRsp, err := c.remoteFindMissing(gCtx, peer, isolation, digests)
 				peerMissingHashes := make(map[string]struct{})
 				for _, d := range peerRsp {
 					peerMissingHashes[d.GetHash()] = struct{}{}
@@ -705,17 +721,34 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 		ps := peerMap[h]
 		backfills = append(backfills, c.getBackfillOrders(d, ps)...)
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
+	if err := c.backfillPeers(ctx, isolation, backfills); err != nil {
 		c.log.Debugf("Error backfilling peers: %s", err)
 	}
 
 	var missing []*repb.Digest
-	for _, d := range digests {
+	for _, r := range resources {
+		d := r.GetDigest()
 		if _, ok := foundMap[d.GetHash()]; !ok {
 			missing = append(missing, d)
 		}
 	}
 	return missing, nil
+}
+
+// Returns the isolation from the first resource name, assuming that all resources have the same isolation
+func getIsolation(resources []*resource.ResourceName) *dcpb.Isolation {
+	if len(resources) == 0 {
+		return nil
+	}
+	return &dcpb.Isolation{
+		CacheType:          resources[0].GetCacheType(),
+		RemoteInstanceName: resources[0].GetInstanceName(),
+	}
+}
+
+func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(c.isolation.GetCacheType(), c.isolation.GetRemoteInstanceName(), digests)
+	return c.FindMissing(ctx, rns)
 }
 
 // The first reader with a non-empty value will be returned. If all potential
@@ -724,23 +757,29 @@ func (c *Cache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*rep
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	ps := c.readPeers(d)
+func (c *Cache) distributedReader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
+	d := r.GetDigest()
+
+	ps := c.readPeers(r.GetDigest())
 	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(d, ps)); err != nil {
+		if err := c.backfillPeers(ctx, isolation, c.getBackfillOrders(d, ps)); err != nil {
 			c.log.Debugf("Error backfilling peers: %s", err)
 		}
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		r, err := c.remoteReader(ctx, peer, c.isolation, d, offset, limit)
+		r, err := c.remoteReader(ctx, peer, isolation, d, offset, limit)
 		if err == nil {
-			c.log.Debugf("Reader(%q) found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
+			c.log.Debugf("Reader(%q) found on peer %s", cacheproxy.IsolationToString(isolation)+d.GetHash(), peer)
 			backfill()
 			return r, err
 		}
 		if status.IsNotFoundError(err) {
-			c.log.Debugf("Reader(%q) not found on peer %s", cacheproxy.IsolationToString(c.isolation)+d.GetHash(), peer)
+			c.log.Debugf("Reader(%q) not found on peer %s", cacheproxy.IsolationToString(isolation)+d.GetHash(), peer)
 			continue
 		}
 
@@ -751,8 +790,8 @@ func (c *Cache) distributedReader(ctx context.Context, d *repb.Digest, offset, l
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q, peerset: %v", d.GetHash(), ps)
 }
 
-func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	r, err := c.distributedReader(ctx, d, 0, 0)
+func (c *Cache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
+	r, err := c.distributedReader(ctx, rn, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -760,12 +799,27 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return c.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.isolation.GetCacheType(),
+	})
+}
+
+func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	isolation := getIsolation(resources)
+	if isolation == nil {
+		return nil, nil
+	}
+
 	mu := sync.RWMutex{} // protects(gotMap)
 	hashDigests := make(map[string][]*repb.Digest, 0)
-	gotMap := make(map[string][]byte, len(digests))
-	peerMap := make(map[string]*peerset.PeerSet, len(digests))
-	for _, d := range digests {
+	gotMap := make(map[string][]byte, len(resources))
+	peerMap := make(map[string]*peerset.PeerSet, len(resources))
+	for _, r := range resources {
+		d := r.GetDigest()
 		hash := d.GetHash()
 		hashDigests[hash] = append(hashDigests[hash], d)
 		if _, ok := peerMap[hash]; !ok {
@@ -809,7 +863,7 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 			peer := peer
 			digests := digests
 			eg.Go(func() error {
-				peerRsp, err := c.remoteGetMulti(gCtx, peer, c.isolation, digests)
+				peerRsp, err := c.remoteGetMulti(gCtx, peer, isolation, digests)
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -849,17 +903,23 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 			backfills = append(backfills, c.getBackfillOrders(d, ps)...)
 		}
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
+	if err := c.backfillPeers(ctx, isolation, backfills); err != nil {
 		c.log.Debugf("Error backfilling peers: %s", err)
 	}
 
-	rsp := make(map[*repb.Digest][]byte, len(digests))
-	for _, d := range digests {
+	rsp := make(map[*repb.Digest][]byte, len(resources))
+	for _, r := range resources {
+		d := r.GetDigest()
 		if buf, ok := gotMap[d.GetHash()]; ok {
 			rsp[d] = buf
 		}
 	}
 	return rsp, nil
+}
+
+func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(c.isolation.GetCacheType(), c.isolation.GetRemoteInstanceName(), digests)
+	return c.GetMulti(ctx, rns)
 }
 
 type multiWriteCloser struct {
@@ -974,13 +1034,11 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	if err != nil {
 		return err
 	}
+	defer wc.Close()
 	if _, err := wc.Write(data); err != nil {
 		return err
 	}
-	if err := wc.Commit(); err != nil {
-		return err
-	}
-	return wc.Close()
+	return wc.Commit()
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -1017,7 +1075,13 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	return c.distributedReader(ctx, d, offset, limit)
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.isolation.GetCacheType(),
+	}
+	return c.distributedReader(ctx, rn, offset, limit)
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {

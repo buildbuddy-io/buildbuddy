@@ -61,8 +61,8 @@ type evilCache struct {
 	interfaces.Cache
 }
 
-func (e *evilCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rsp, err := e.Cache.GetMulti(ctx, digests)
+func (e *evilCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rsp, err := e.Cache.GetMultiDeprecated(ctx, digests)
 	for d := range rsp {
 		rsp[d] = []byte{}
 	}

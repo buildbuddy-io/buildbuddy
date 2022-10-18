@@ -276,7 +276,7 @@ func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 }
 
 func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.ResourceName, out proto.Message) error {
-	data, err := cache.Get(ctx, r.GetDigest())
+	data, err := cache.GetDeprecated(ctx, r.GetDigest())
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
 			return digest.MissingDigestError(r.GetDigest())
@@ -318,14 +318,12 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 	if err != nil {
 		return nil, err
 	}
+	defer wc.Close()
 	_, err = io.Copy(wc, in)
 	if err != nil {
 		return nil, err
 	}
-	if err := wc.Commit(); err != nil {
-		return nil, err
-	}
-	return d, wc.Close()
+	return d, wc.Commit()
 }
 
 func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {

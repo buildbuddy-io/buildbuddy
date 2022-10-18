@@ -103,7 +103,7 @@ export default class MenuComponent extends React.Component<Props, State> {
                   <li onClick={this.handleToggleDenseModeClicked.bind(this)}>
                     {this.props.preferences.denseModeEnabled ? "Disable" : "Enable"} dense mode
                   </li>
-                  <li onClick={this.handleSetupClicked.bind(this)}>Setup instructions</li>
+                  <li onClick={this.handleSetupClicked.bind(this)}>Quickstart</li>
                   {!capabilities.enterprise && (
                     <li onClick={this.dismissMenu.bind(this)}>
                       <a target="_blank" href="https://buildbuddy.typeform.com/to/wIXFIA">

@@ -1331,7 +1331,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		if req.GetExecutorId() != "" {
 			executorID = req.GetExecutorId()
 		}
-		taskID = req.GetTaskId()
+		if taskID == "" {
+			taskID = req.GetTaskId()
+			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
+		}
 		if time.Since(lastCheckin) > (leaseInterval + leaseGracePeriod) {
 			log.CtxWarningf(ctx, "LeaseTask %q client went away after %s", taskID, time.Since(lastCheckin))
 			break
@@ -1670,6 +1673,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID string, numR
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
+	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 	if err := s.reEnqueueTask(ctx, req.GetTaskId(), probesPerTask, req.GetReason()); err != nil {
 		log.CtxErrorf(ctx, "ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)
 		return nil, err

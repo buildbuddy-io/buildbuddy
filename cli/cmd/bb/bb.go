@@ -1,11 +1,12 @@
 package main
 
 import (
-	"flag"
 	"os"
+	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
@@ -15,35 +16,71 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 func main() {
-	flag.Parse()
 	exitCode, err := run()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(status.Message(err))
 	}
 	os.Exit(exitCode)
 }
 
 func run() (exitCode int, err error) {
+	// Show help if applicable.
+	exitCode, err = help.HandleHelp(os.Args[1:])
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+
+	// Maybe run interactively (watching for changes to files).
+	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {
+		return exitCode, err
+	}
+
+	var scriptPath string
+	// Prepare a dir for temporary files created by this CLI run
+	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
+	if err != nil {
+		return -1, err
+	}
+	defer func() {
+		// Remove tempdir. Need to do this before invoking the run script
+		// (if applicable), since the run script will replace this process.
+		os.RemoveAll(tempDir)
+
+		if scriptPath != "" {
+			exitCode, err = bazelisk.InvokeRunScript(scriptPath)
+		}
+	}()
+
 	// Load plugins
-	plugins, err := plugin.LoadAll()
+	plugins, err := plugin.LoadAll(tempDir)
 	if err != nil {
 		return -1, err
 	}
 
-	// Parse args
-	commandLineArgs := flag.Args()
-	rcFileArgs := parser.GetArgsFromRCFiles(commandLineArgs)
-	args := append(commandLineArgs, rcFileArgs...)
+	// Parse args.
+	// Split out passthrough args and don't let plugins modify them,
+	// since those are intended to be passed to the built binary as-is.
+	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(os.Args[1:])
+	rcFileArgs := parser.GetArgsFromRCFiles(bazelArgs)
+	args := append(bazelArgs, rcFileArgs...)
 
 	// Fiddle with args
 	// TODO(bduffany): model these as "built-in" plugins
+	args = log.Configure(args)
 	args = tooltag.ConfigureToolTag(args)
 	args = sidecar.ConfigureSidecar(args)
 	args = login.ConfigureAPIKey(args)
 	args = terminal.ConfigureOutputMode(args)
+
+	// Prepare convenience env vars for plugins
+	if err := plugin.PrepareEnv(); err != nil {
+		return -1, err
+	}
 
 	// Run plugin pre-bazel hooks
 	for _, p := range plugins {
@@ -54,26 +91,44 @@ func run() (exitCode int, err error) {
 	}
 
 	// Handle commands
-	args = remotebazel.HandleRemoteBazel(args)
+	args = remotebazel.HandleRemoteBazel(args, passthroughArgs)
 	args = version.HandleVersion(args)
 	args = login.HandleLogin(args)
 
 	// Remove any args that don't need to be on the command line
 	args = arg.RemoveExistingArgs(args, rcFileArgs)
 
-	// Actually run bazel
-	exitCode, output, err := bazelisk.Run(args)
+	// If this is a `bazel run` command, add a --run_script arg so that
+	// we can execute post-bazel plugins between the build and the run step.
+	args, scriptPath, err = bazelisk.ConfigureRunScript(args)
 	if err != nil {
 		return -1, err
 	}
-	defer output.Close()
+
+	// Run bazelisk, capturing the original output in a file and allowing
+	// plugins to control how the output is rendered to the terminal.
+	outputPath := filepath.Join(tempDir, "bazel.log")
+	exitCode, err = bazelisk.RunWithPlugins(
+		arg.JoinPassthroughArgs(args, passthroughArgs),
+		outputPath, plugins)
+	if err != nil {
+		return -1, err
+	}
+
+	// If the build was interrupted (Ctrl+C), don't run post-bazel plugins.
+	if exitCode == 8 /*interrupted*/ {
+		return exitCode, nil
+	}
 
 	// Run plugin post-bazel hooks
 	for _, p := range plugins {
-		if err := p.PostBazel(output.Name()); err != nil {
+		if err := p.PostBazel(outputPath); err != nil {
 			return -1, err
 		}
 	}
+
+	// TODO: Support post-run hooks?
+	// e.g. show a desktop notification once a k8s deploy has finished
 
 	return exitCode, nil
 }

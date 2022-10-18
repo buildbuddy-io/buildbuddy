@@ -35,7 +35,7 @@ export default class SetupComponent extends React.Component<Props> {
     return (
       <div className="home">
         <div className="container narrow">
-          <div className="title">Setup instructions</div>
+          <div className="title">Quickstart</div>
           {this.props.children}
           To get started, select options below then copy the results to your <b>.bazelrc</b> file.
           <br />

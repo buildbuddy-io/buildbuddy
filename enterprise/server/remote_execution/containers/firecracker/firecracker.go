@@ -219,6 +219,9 @@ func putFileIntoDir(ctx context.Context, env environment.Env, fileName, destDir 
 	if _, err := io.Copy(writer, f); err != nil {
 		return "", err
 	}
+	if err := writer.Commit(); err != nil {
+		return "", err
+	}
 	if err := writer.Close(); err != nil {
 		return "", err
 	}
@@ -1154,7 +1157,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 
 	start := time.Now()
 	defer func() {
-		log.Debugf("Run took %s", time.Since(start))
+		log.CtxInfof(ctx, "Run took %s", time.Since(start))
 	}()
 
 	snapDigest := c.ConfigurationHash()
@@ -1174,11 +1177,12 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// If a snapshot was already loaded, then c.machine will be set, so
 	// there's no need to Create the machine.
 	if c.machine == nil {
-		log.Debugf("Pulling image %q", c.containerImage)
+		log.CtxInfof(ctx, "Pulling image %q", c.containerImage)
 		if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.containerImage); err != nil {
 			return nonCmdExit(err)
 		}
 
+		log.CtxInfof(ctx, "Creating VM.")
 		if err := c.Create(ctx, actionWorkingDir); err != nil {
 			return nonCmdExit(err)
 		}
@@ -1202,13 +1206,15 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 	// the removal result so that we can ensure the removal is complete during
 	// executor shutdown and test cleanup.
 	defer func() {
+		log.CtxInfof(ctx, "Removing VM.")
 		ctx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		defer cancel()
 		if err := c.Remove(ctx); err != nil {
-			log.Errorf("Failed to remove firecracker VM: %s", err)
+			log.CtxErrorf(ctx, "Failed to remove firecracker VM: %s", err)
 		}
 	}()
 
+	log.CtxInfof(ctx, "Executing command.")
 	cmdResult := c.Exec(ctx, command, &container.Stdio{})
 	return cmdResult
 }
@@ -1402,7 +1408,23 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			log.Warningf("OOM error occurred during task execution: %s", err)
 		}
 	}()
+
+	execDone := make(chan struct{})
+	go func() {
+		t := time.NewTimer(1 * time.Hour)
+		defer t.Stop()
+		select {
+		case <-execDone:
+			return
+		case <-t.C:
+			log.CtxWarningf(ctx, "execution possibly stuck. vm log:\n%s", string(c.vmLog.Tail()))
+			return
+		}
+	}()
+
 	result = c.SendExecRequestToGuest(ctx, cmd, workDir, stdio)
+	close(execDone)
+
 	ctx, cancel := background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 

@@ -5,4 +5,5 @@ go_library(
     srcs = ["log.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/log",
     visibility = ["//visibility:public"],
+    deps = ["//cli/arg"],
 )

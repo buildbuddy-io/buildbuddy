@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -46,6 +47,10 @@ const (
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
 
+	// staleFilePeriod is the timeframe after which an empty or temp file will be considered stale and eligible
+	// for automatic deletion
+	staleFilePeriod = 15 * time.Minute
+
 	DefaultPartitionID       = "default"
 	PartitionDirectoryPrefix = "PT"
 	HashPrefixDirPrefixLen   = 4
@@ -59,7 +64,6 @@ var (
 	useV2LayoutFlag       = flag.Bool("cache.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 
 	migrateDiskCacheToV2AndExit = flag.Bool("migrate_disk_cache_to_v2_and_exit", false, "If true, attempt to migrate disk cache to v2 layout.")
-	enableLiveUpdates           = flag.Bool("cache.disk.enable_live_updates", false, "If set, enable live updates of disk cache adds / removes")
 )
 
 type Options struct {
@@ -151,14 +155,13 @@ type DiskCache struct {
 	env               environment.Env
 	partitions        map[string]*partition
 	partitionMappings []disk.PartitionMapping
+	defaultPartition  *partition
 
-	addChan    chan *rfpb.FileMetadata
-	removeChan chan *rfpb.FileMetadata
-
+	// TODO(Maggie): Deprecate these fields
 	// The currently selected partition. Initialized to the default partition.
 	// WithRemoteInstanceName can create a new cache accessor with a different selected partition.
 	partition          *partition
-	cacheType          interfaces.CacheType
+	cacheType          resource.CacheType
 	remoteInstanceName string
 }
 
@@ -199,13 +202,8 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	c := &DiskCache{
 		env:                env,
 		partitionMappings:  opts.PartitionMappings,
-		cacheType:          interfaces.CASCacheType,
+		cacheType:          resource.CacheType_CAS,
 		remoteInstanceName: "",
-	}
-
-	if *enableLiveUpdates {
-		c.addChan = make(chan *rfpb.FileMetadata, 1000)
-		c.removeChan = make(chan *rfpb.FileMetadata, 1000)
 	}
 
 	partitions := make(map[string]*partition)
@@ -223,7 +221,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
-		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, opts.UseV2Layout, c.addChan, c.removeChan)
+		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, opts.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -237,7 +235,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		if opts.UseV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
-		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, opts.UseV2Layout, c.addChan, c.removeChan)
+		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, opts.UseV2Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -247,37 +245,20 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 	c.partitions = partitions
 	c.partition = defaultPartition
-
-	if *enableLiveUpdates {
-		c.env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-			for _, p := range c.partitions {
-				p.mu.Lock()
-				p.addChan = nil
-				p.removeChan = nil
-				p.mu.Unlock()
-			}
-			close(c.addChan)
-			close(c.removeChan)
-			return nil
-		})
-	}
+	c.defaultPartition = defaultPartition
 
 	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
 }
 
-func (c *DiskCache) LiveUpdatesChan() (<-chan *rfpb.FileMetadata, <-chan *rfpb.FileMetadata) {
-	return c.addChan, c.removeChan
-}
-
 func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
 	auth := c.env.GetAuthenticator()
 	if auth == nil {
-		return c.partition, nil
+		return c.defaultPartition, nil
 	}
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		return c.partition, nil
+		return c.defaultPartition, nil
 	}
 	for _, m := range c.partitionMappings {
 		if m.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, m.Prefix) {
@@ -288,10 +269,10 @@ func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string)
 			return p, nil
 		}
 	}
-	return c.partition, nil
+	return c.defaultPartition, nil
 }
 
-func (c *DiskCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *DiskCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	p, err := c.getPartition(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err
@@ -300,6 +281,7 @@ func (c *DiskCache) WithIsolation(ctx context.Context, cacheType interfaces.Cach
 	return &DiskCache{
 		env:                c.env,
 		partition:          p,
+		defaultPartition:   c.defaultPartition,
 		partitions:         c.partitions,
 		partitionMappings:  c.partitionMappings,
 		cacheType:          cacheType,
@@ -315,14 +297,34 @@ func (c *DiskCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	record, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
+func (c *DiskCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return false, err
+	}
+
+	record, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	contains := record != nil
 	return contains, err
 }
 
-func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	lruRecord, err := c.partition.lruGet(ctx, c.cacheType, c.remoteInstanceName, d)
+func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return c.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
+}
+
+func (c *DiskCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+
+	d := r.GetDigest()
+	lruRecord, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), d)
 	if err != nil {
 		return nil, err
 	}
@@ -339,22 +341,67 @@ func (c *DiskCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.C
 	lastModifyNanos := getLastModifyTimeNanos(fileInfo)
 
 	return &interfaces.CacheMetadata{
-		SizeBytes:          lruRecord.sizeBytes,
+		SizeBytes:          fileInfo.Size(),
 		LastAccessTimeUsec: lastUseNanos / 1000,
 		LastModifyTimeUsec: lastModifyNanos / 1000,
 	}, nil
 }
 
-func (c *DiskCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	return c.partition.findMissing(ctx, c.cacheType, c.remoteInstanceName, digests)
+func (c *DiskCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return c.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
 }
 
-func (c *DiskCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *DiskCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	remoteInstanceName := resources[0].GetInstanceName()
+
+	p, err := c.getPartition(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.findMissing(ctx, resources)
+}
+
+func (c *DiskCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
+	return c.FindMissing(ctx, rns)
+}
+
+func (c *DiskCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	return p.get(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+}
+
+func (c *DiskCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return c.partition.get(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 
-func (c *DiskCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	return c.partition.getMulti(ctx, c.cacheType, c.remoteInstanceName, digests)
+func (c *DiskCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	remoteInstanceName := resources[0].GetInstanceName()
+	p, err := c.getPartition(ctx, remoteInstanceName)
+	if err != nil {
+		return nil, err
+	}
+	return p.getMulti(ctx, resources)
+}
+
+func (c *DiskCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
+	return c.partition.getMulti(ctx, rns)
 }
 
 func (c *DiskCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
@@ -400,11 +447,9 @@ type partition struct {
 	lastGCTime       time.Time
 	stringLock       sync.RWMutex
 	internedStrings  map[string]string
-	addChan          chan *rfpb.FileMetadata
-	removeChan       chan *rfpb.FileMetadata
 }
 
-func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool, addChan, removeChan chan *rfpb.FileMetadata) (*partition, error) {
+func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
 	p := &partition{
 		id:               id,
 		useV2Layout:      useV2Layout,
@@ -413,8 +458,6 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		fileChannel:      make(chan *fileRecord),
 		internedStrings:  make(map[string]string, 0),
 		doneAsyncLoading: make(chan struct{}),
-		addChan:          addChan,
-		removeChan:       removeChan,
 	}
 	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: p.evictFn, SizeFn: sizeFn})
 	if err != nil {
@@ -430,8 +473,10 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 
 // fileRecord is the data struct we store in the LRU cache
 type fileRecord struct {
-	key       *fileKey
-	sizeBytes int64
+	key *fileKey
+	// Size of the data on disk. Multiple of filesystem block size.
+	// NOT the actual size of the digest.
+	sizeOnDiskBytes int64
 }
 
 // timestampedFileRecord is a wrapper for fileRecord that contains additional metadata that does not need to be
@@ -448,7 +493,7 @@ func (fr *fileRecord) FullPath() string {
 func sizeFn(value interface{}) int64 {
 	size := int64(0)
 	if v, ok := value.(*fileRecord); ok {
-		size += v.sizeBytes
+		size += v.sizeOnDiskBytes
 	}
 	return size
 }
@@ -483,10 +528,22 @@ func getLastModifyTimeNanos(info os.FileInfo) int64 {
 	return time.Unix(ts.Sec, ts.Nsec).UnixNano()
 }
 
-func makeRecord(key *fileKey, sizeBytes int64) *fileRecord {
+func makeRecordFromPath(key *fileKey, fullPath string) (*fileRecord, error) {
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	return makeRecordFromInfo(key, info), nil
+}
+
+func makeRecordFromInfo(key *fileKey, info fs.FileInfo) *fileRecord {
+	stat := info.Sys().(*syscall.Stat_t)
+	// Stat always returns number of 512 byte blocks, regardless of the FS
+	// settings.
+	sizeOnDisk := stat.Blocks * 512
 	return &fileRecord{
-		key:       key,
-		sizeBytes: sizeBytes,
+		key:             key,
+		sizeOnDiskBytes: sizeOnDisk,
 	}
 }
 
@@ -498,7 +555,9 @@ func (p *partition) evictFn(value interface{}) {
 			ageUsec := float64(time.Now().Sub(lastUse).Microseconds())
 			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id}).Set(ageUsec)
 		}
-		disk.DeleteFile(context.TODO(), v.FullPath())
+		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
+			log.Warningf("Could delete evicted file: %s", err)
+		}
 	}
 }
 
@@ -521,7 +580,7 @@ func (p *partition) makeTimestampedRecordFromPathAndFileInfo(fullPath string, in
 		return nil, err
 	}
 	return &timestampedFileRecord{
-		fileRecord:   makeRecord(fk, info.Size()),
+		fileRecord:   makeRecordFromInfo(fk, info),
 		lastUseNanos: getLastUseNanos(info),
 	}, nil
 }
@@ -555,7 +614,6 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 	}
 	if fr, ok := value.(*fileRecord); ok {
 		log.Debugf("Delete thread removed item from cache with key %v.", fr.key)
-		p.liveRemove(fr)
 	}
 	p.lastGCTime = time.Now()
 	return true
@@ -618,15 +676,23 @@ func (p *partition) initializeCache() error {
 				return err
 			}
 			if info.Size() == 0 {
-				log.Debugf("Skipping 0 length file: %q", path)
+				if isStaleFile(info) {
+					log.Debugf("Deleting 0 length file: %q", path)
+					err = os.Remove(path)
+					if err != nil {
+						log.Warningf("Could not delete 0 length file %q: %s", path, err)
+					}
+				}
 				return nil
 			}
 			timestampedRecord, err := p.makeTimestampedRecordFromPathAndFileInfo(path, info)
 			if err != nil {
 				if disk.IsWriteTempFile(path) {
-					err = os.Remove(path)
-					if err != nil {
-						log.Warningf("Could not delete stale temp file %q (size %d): %s", path, info.Size(), err)
+					if isStaleFile(info) {
+						err = os.Remove(path)
+						if err != nil {
+							log.Warningf("Could not delete stale temp file %q (size %d): %s", path, info.Size(), err)
+						}
 					}
 					return nil
 				}
@@ -653,7 +719,6 @@ func (p *partition) initializeCache() error {
 			if added := p.lru.PushBack(record.FullPath(), record); !added {
 				break
 			}
-			p.liveAdd(record)
 		}
 
 		// Add in-flight records to the LRU. These were new files
@@ -675,7 +740,11 @@ func (p *partition) initializeCache() error {
 	return nil
 }
 
-func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType interfaces.CacheType, userPrefix, remoteInstanceName string, digestBytes []byte, err error) {
+func isStaleFile(info fs.FileInfo) bool {
+	return time.Since(info.ModTime()) > staleFilePeriod
+}
+
+func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType resource.CacheType, userPrefix, remoteInstanceName string, digestBytes []byte, err error) {
 	p := strings.TrimPrefix(fullPath, rootDir+"/")
 	parts := strings.Split(p, "/")
 
@@ -724,10 +793,10 @@ func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType interf
 	// If this is an /ac/ directory, this was an actionCache item
 	// otherwise it was a CAS item.
 	if len(parts) > 0 && parts[len(parts)-1] == "ac" {
-		cacheType = interfaces.ActionCacheType
+		cacheType = resource.CacheType_AC
 		parts = parts[:len(parts)-1]
 	} else {
-		cacheType = interfaces.CASCacheType
+		cacheType = resource.CacheType_CAS
 	}
 
 	if len(parts) > 0 {
@@ -780,14 +849,7 @@ func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
 		}
 
 		isolation := &rfpb.Isolation{}
-		switch cacheType {
-		case interfaces.CASCacheType:
-			isolation.CacheType = rfpb.Isolation_CAS_CACHE
-		case interfaces.ActionCacheType:
-			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
-		default:
-			return status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
-		}
+		isolation.CacheType = cacheType
 		isolation.RemoteInstanceName = remoteInstanceName
 		isolation.PartitionId = partID
 		fm := &rfpb.FileMetadata{
@@ -821,7 +883,7 @@ func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
 
 type fileKey struct {
 	part               *partition
-	cacheType          interfaces.CacheType
+	cacheType          resource.CacheType
 	userPrefix         string
 	remoteInstanceName string
 	digestBytes        []byte
@@ -849,10 +911,10 @@ func (fk *fileKey) FullPath() string {
 	if fk.part.useV2Layout {
 		hashPrefixDir = digestHash[0:HashPrefixDirPrefixLen] + "/"
 	}
-	return filepath.Join(fk.part.rootDir, fk.userPrefix, fk.remoteInstanceName, fk.cacheType.Prefix(), hashPrefixDir+digestHash)
+	return filepath.Join(fk.part.rootDir, fk.userPrefix, fk.remoteInstanceName, digest.CacheTypeToPrefix(fk.cacheType), hashPrefixDir+digestHash)
 }
 
-func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (*fileKey, error) {
+func (p *partition) key(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) (*fileKey, error) {
 	hash, err := digest.Validate(d)
 	if err != nil {
 		return nil, err
@@ -882,7 +944,6 @@ func (p *partition) key(ctx context.Context, cacheType interfaces.CacheType, rem
 
 func (p *partition) lruAdd(record *fileRecord) {
 	p.lru.Add(record.FullPath(), record)
-	p.liveAdd(record)
 }
 
 // Adds a single file, using the provided path, to the LRU.
@@ -897,7 +958,7 @@ func (p *partition) addFileToLRUIfExists(key *fileKey) *fileRecord {
 			log.Debugf("Skipping 0 length file: %q", key.FullPath())
 			return nil
 		}
-		record := makeRecord(key, info.Size())
+		record := makeRecordFromInfo(key, info)
 		p.fileChannel <- record
 		p.lruAdd(record)
 		return record
@@ -905,7 +966,7 @@ func (p *partition) addFileToLRUIfExists(key *fileKey) *fileRecord {
 	return nil
 }
 
-func (p *partition) lruGet(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (*fileRecord, error) {
+func (p *partition) lruGet(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) (*fileRecord, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
@@ -943,15 +1004,15 @@ func (p *partition) lruGet(ctx context.Context, cacheType interfaces.CacheType, 
 	return nil, nil
 }
 
-func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (p *partition) findMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				record, err := p.lruGet(ctx, cacheType, remoteInstanceName, d)
+				record, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 				// NotFoundError is never returned from lruGet above, so
 				// we don't check for it.
 				if err != nil {
@@ -959,13 +1020,13 @@ func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheT
 				}
 				if record == nil {
 					lock.Lock()
-					missing = append(missing, d)
+					missing = append(missing, r.GetDigest())
 					lock.Unlock()
 				}
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -975,7 +1036,7 @@ func (p *partition) findMissing(ctx context.Context, cacheType interfaces.CacheT
 	return missing, nil
 }
 
-func (p *partition) get(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) ([]byte, error) {
+func (p *partition) get(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) ([]byte, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
@@ -996,15 +1057,16 @@ func (p *partition) get(ctx context.Context, cacheType interfaces.CacheType, rem
 	return buf, nil
 }
 
-func (p *partition) getMulti(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (p *partition) getMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				data, err := p.get(ctx, cacheType, remoteInstanceName, d)
+				d := r.GetDigest()
+				data, err := p.get(ctx, r.GetCacheType(), r.GetInstanceName(), d)
 				if status.IsNotFoundError(err) {
 					return nil
 				}
@@ -1017,7 +1079,7 @@ func (p *partition) getMulti(ctx context.Context, cacheType interfaces.CacheType
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -1027,59 +1089,7 @@ func (p *partition) getMulti(ctx context.Context, cacheType interfaces.CacheType
 	return foundMap, nil
 }
 
-func (p *partition) makeFileMetadata(fr *fileRecord) (*rfpb.FileMetadata, error) {
-	isolation := &rfpb.Isolation{}
-	switch fr.key.cacheType {
-	case interfaces.CASCacheType:
-		isolation.CacheType = rfpb.Isolation_CAS_CACHE
-	case interfaces.ActionCacheType:
-		isolation.CacheType = rfpb.Isolation_ACTION_CACHE
-	default:
-		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", fr.key.cacheType)
-	}
-	isolation.RemoteInstanceName = fr.key.remoteInstanceName
-	isolation.PartitionId = fr.key.part.id
-	return &rfpb.FileMetadata{
-		FileRecord: &rfpb.FileRecord{
-			Isolation: isolation,
-			Digest: &repb.Digest{
-				Hash:      hex.EncodeToString(fr.key.digestBytes),
-				SizeBytes: fr.sizeBytes,
-			},
-		},
-		StorageMetadata: &rfpb.StorageMetadata{
-			FileMetadata: &rfpb.StorageMetadata_FileMetadata{
-				Filename: fr.FullPath(),
-			},
-		},
-		SizeBytes: fr.sizeBytes,
-	}, nil
-}
-
-// callers should acquire p.mu before calling this to avoid races.
-func (p *partition) liveAdd(fr *fileRecord) {
-	if p.addChan == nil {
-		return
-	}
-	if fm, err := p.makeFileMetadata(fr); err != nil {
-		log.Warningf("Error making file metadata: %s", err)
-	} else {
-		p.addChan <- fm
-	}
-}
-
-func (p *partition) liveRemove(fr *fileRecord) {
-	if p.removeChan == nil {
-		return
-	}
-	if fm, err := p.makeFileMetadata(fr); err != nil {
-		log.Warningf("Error making file metadata: %s", err)
-	} else {
-		p.removeChan <- fm
-	}
-}
-
-func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest, data []byte) error {
+func (p *partition) set(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest, data []byte) error {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return err
@@ -1089,15 +1099,19 @@ func (p *partition) set(ctx context.Context, cacheType interfaces.CacheType, rem
 		// If we had an error writing the file, just return that.
 		return err
 	}
-	record := makeRecord(k, int64(n))
+	record, err := makeRecordFromPath(k, k.FullPath())
+	if err != nil {
+		return err
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lruAdd(record)
+	metrics.DiskCacheAddedFileSizeBytes.Observe(float64(n))
 	return err
 }
 
-func (p *partition) setMulti(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, kvs map[*repb.Digest][]byte) error {
+func (p *partition) setMulti(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, kvs map[*repb.Digest][]byte) error {
 	for d, data := range kvs {
 		if err := p.set(ctx, cacheType, remoteInstanceName, d, data); err != nil {
 			return err
@@ -1106,7 +1120,7 @@ func (p *partition) setMulti(ctx context.Context, cacheType interfaces.CacheType
 	return nil
 }
 
-func (p *partition) delete(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) error {
+func (p *partition) delete(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) error {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return err
@@ -1120,7 +1134,7 @@ func (p *partition) delete(ctx context.Context, cacheType interfaces.CacheType, 
 	return nil
 }
 
-func (p *partition) reader(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (p *partition) reader(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
@@ -1159,7 +1173,7 @@ func (d *dbWriteOnClose) Close() error {
 	return d.closeFn(d.bytesWritten)
 }
 
-func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (p *partition) writer(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
 	if err != nil {
 		return nil, err
@@ -1180,10 +1194,14 @@ func (p *partition) writer(ctx context.Context, cacheType interfaces.CacheType, 
 	}
 	cwc := ioutil.NewCustomCommitWriteCloser(fw)
 	cwc.CommitFn = func(totalBytesWritten int64) error {
-		record := makeRecord(k, totalBytesWritten)
+		record, err := makeRecordFromPath(k, k.FullPath())
+		if err != nil {
+			return err
+		}
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		p.lruAdd(record)
+		metrics.DiskCacheAddedFileSizeBytes.Observe(float64(totalBytesWritten))
 		return nil
 	}
 	return cwc, nil

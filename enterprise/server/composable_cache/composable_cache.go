@@ -4,7 +4,9 @@ import (
 	"context"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -31,7 +33,7 @@ func NewComposableCache(outer, inner interfaces.Cache, mode CacheMode) interface
 	}
 }
 
-func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	newInner, err := c.inner.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, status.WrapError(err, "WithIsolation failed on inner cache")
@@ -47,6 +49,15 @@ func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType interface
 	}, nil
 }
 
+func (c *ComposableCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	outerExists, err := c.outer.Contains(ctx, r)
+	if err == nil && outerExists {
+		return outerExists, nil
+	}
+
+	return c.inner.Contains(ctx, r)
+}
+
 func (c *ComposableCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
 	outerExists, err := c.outer.ContainsDeprecated(ctx, d)
 	if err == nil && outerExists {
@@ -56,32 +67,75 @@ func (c *ComposableCache) ContainsDeprecated(ctx context.Context, d *repb.Digest
 	return c.inner.ContainsDeprecated(ctx, d)
 }
 
-func (c *ComposableCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	md, err := c.outer.Metadata(ctx, d)
+func (c *ComposableCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	md, err := c.outer.Metadata(ctx, r)
 	if err == nil {
 		return md, nil
 	}
-	return c.inner.Metadata(ctx, d)
+	return c.inner.Metadata(ctx, r)
 }
 
-func (c *ComposableCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	missing, err := c.outer.FindMissing(ctx, digests)
+func (c *ComposableCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	md, err := c.outer.MetadataDeprecated(ctx, d)
+	if err == nil {
+		return md, nil
+	}
+	return c.inner.MetadataDeprecated(ctx, d)
+}
+
+func (c *ComposableCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	cacheType := resources[0].GetCacheType()
+	instanceName := resources[0].GetInstanceName()
+
+	missingDigests, err := c.outer.FindMissing(ctx, resources)
+	missingResources := digest.ResourceNames(cacheType, instanceName, missingDigests)
+	if err != nil {
+		missingResources = resources
+	}
+	if len(missingResources) == 0 {
+		return nil, nil
+	}
+	return c.inner.FindMissing(ctx, missingResources)
+}
+
+func (c *ComposableCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	missing, err := c.outer.FindMissingDeprecated(ctx, digests)
 	if err != nil {
 		missing = digests
 	}
 	if len(missing) == 0 {
 		return nil, nil
 	}
-	return c.inner.FindMissing(ctx, missing)
+	return c.inner.FindMissingDeprecated(ctx, missing)
 }
 
-func (c *ComposableCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	outerRsp, err := c.outer.Get(ctx, d)
+func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	outerRsp, err := c.outer.Get(ctx, r)
 	if err == nil {
 		return outerRsp, nil
 	}
 
-	innerRsp, err := c.inner.Get(ctx, d)
+	innerRsp, err := c.inner.Get(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	if c.mode&ModeReadThrough != 0 {
+		c.outer.Set(ctx, r.GetDigest(), innerRsp)
+	}
+
+	return innerRsp, nil
+}
+
+func (c *ComposableCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	outerRsp, err := c.outer.GetDeprecated(ctx, d)
+	if err == nil {
+		return outerRsp, nil
+	}
+
+	innerRsp, err := c.inner.GetDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +146,47 @@ func (c *ComposableCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	return innerRsp, nil
 }
 
-func (c *ComposableCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	cacheType := resources[0].GetCacheType()
+	instanceName := resources[0].GetInstanceName()
+
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	if outerFoundMap, err := c.outer.GetMulti(ctx, resources); err == nil {
+		for d, data := range outerFoundMap {
+			foundMap[d] = data
+		}
+	}
+	stillMissing := make([]*resource.ResourceName, 0)
+	for _, r := range resources {
+		d := r.GetDigest()
+		if _, ok := foundMap[d]; !ok {
+			stillMissing = append(stillMissing, &resource.ResourceName{
+				Digest:       d,
+				InstanceName: instanceName,
+				CacheType:    cacheType,
+			})
+		}
+	}
+	if len(stillMissing) == 0 {
+		return foundMap, nil
+	}
+
+	innerFoundMap, err := c.inner.GetMulti(ctx, stillMissing)
+	if err != nil {
+		return nil, err
+	}
+	for d, data := range innerFoundMap {
+		foundMap[d] = data
+	}
+	return foundMap, nil
+}
+
+func (c *ComposableCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	if outerFoundMap, err := c.outer.GetMulti(ctx, digests); err == nil {
+	if outerFoundMap, err := c.outer.GetMultiDeprecated(ctx, digests); err == nil {
 		for d, data := range outerFoundMap {
 			foundMap[d] = data
 		}
@@ -109,7 +201,7 @@ func (c *ComposableCache) GetMulti(ctx context.Context, digests []*repb.Digest) 
 		return foundMap, nil
 	}
 
-	innerFoundMap, err := c.inner.GetMulti(ctx, stillMissing)
+	innerFoundMap, err := c.inner.GetMultiDeprecated(ctx, stillMissing)
 	if err != nil {
 		return nil, err
 	}
@@ -188,17 +280,33 @@ func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 		return nil, err
 	}
 
-	if c.mode&ModeReadThrough != 0 && offset == 0 {
-		if outerWriter, err := c.outer.Writer(ctx, d); err == nil {
-			tr := &ReadCloser{
-				io.TeeReader(innerReader, outerWriter),
-				&MultiCloser{[]io.Closer{innerReader, outerWriter}},
-			}
-			return tr, nil
-		}
+	if c.mode&ModeReadThrough == 0 || offset != 0 {
+		return innerReader, nil
 	}
 
-	return innerReader, nil
+	// Copy the digest over to the outer cache.
+
+	outerWriter, err := c.outer.Writer(ctx, d)
+	// Directly return the inner reader if the outer cache doesn't want the
+	// blob.
+	if err != nil {
+		return innerReader, nil
+	}
+	defer outerWriter.Close()
+	if _, err := io.Copy(outerWriter, innerReader); err != nil {
+		return nil, err
+	}
+	// We're done with the inner reader at this point, we'll create a new
+	// reader below.
+	innerReader.Close()
+	if err := outerWriter.Commit(); err != nil {
+		return nil, err
+	}
+	outerReader, err := c.outer.Reader(ctx, d, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+	return outerReader, nil
 }
 
 type doubleWriter struct {
@@ -213,7 +321,9 @@ func (d *doubleWriter) Write(p []byte) (int, error) {
 		return n, err
 	}
 	if n > 0 {
-		d.outer.Write(p)
+		if n, err := d.outer.Write(p); err != nil {
+			return n, err
+		}
 	}
 	return n, err
 }
@@ -225,7 +335,9 @@ func (d *doubleWriter) Commit() error {
 }
 
 func (d *doubleWriter) Close() error {
-	return nil
+	err := d.inner.Close()
+	d.outer.Close()
+	return err
 }
 
 func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
@@ -241,7 +353,7 @@ func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interface
 				outer: outerWriter,
 				commitFn: func(err error) {
 					if err == nil {
-						outerWriter.Close()
+						outerWriter.Commit()
 					}
 				},
 			}

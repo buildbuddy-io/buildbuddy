@@ -143,6 +143,15 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 			NodeId:    sm.NodeID,
 		},
 	}
+	sm.rangeMu.RLock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.RUnlock()
+	if rd == nil {
+		return nil, status.FailedPreconditionError("range descriptor is not set")
+	}
+	ru.Generation = rd.GetGeneration()
+	ru.RangeId = rd.GetRangeId()
+
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -181,7 +190,7 @@ func rdString(rd *rfpb.RangeDescriptor) string {
 	if rd == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("Range(%d) [%q, %q)", rd.GetRangeId(), rd.GetLeft(), rd.GetRight())
+	return fmt.Sprintf("Range(%d) [%q, %q) gen %d", rd.GetRangeId(), rd.GetLeft(), rd.GetRight(), rd.GetGeneration())
 }
 
 func (sm *Replica) setRange(key, val []byte) error {
@@ -561,7 +570,9 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 
 	timeTilExpiry := time.Duration(req.GetDurationSeconds()) * time.Second
 	startNewTimer := func() {
+		sm.log.Infof("Trying to acquire split lock...")
 		sm.leaser.AcquireSplitLock()
+		sm.log.Infof("Acquired split lock")
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
 			log.Warning("Split lease expired!")
 			sm.releaseAndClearTimer()
@@ -624,41 +635,52 @@ func absInt(i int64) int64 {
 }
 
 func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSplitPointResponse, error) {
+	sm.rangeMu.Lock()
+	rangeDescriptor := sm.rangeDescriptor
+	sm.rangeMu.Unlock()
+
 	iterOpts := &pebble.IterOptions{
-		LowerBound: keys.Key([]byte{constants.MinByte}),
-		UpperBound: keys.Key([]byte{constants.MaxByte}),
+		LowerBound: rangeDescriptor.GetLeft(),
+		UpperBound: rangeDescriptor.GetRight(),
 	}
 
 	iter := sm.db.NewIter(iterOpts)
 	defer iter.Close()
 
 	totalSize := int64(0)
+	totalRows := 0
 	for iter.First(); iter.Valid(); iter.Next() {
 		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
 		totalSize += sizeBytes
+		totalRows += 1
 	}
 
 	optimalSplitSize := totalSize / 2
+	minSplitSize := totalSize / 5
+	maxSplitSize := totalSize - minSplitSize
 
 	leftSize := int64(0)
+	leftRows := 0
 	var lastKey []byte
 
 	splitSize := int64(0)
+	splitRows := 0
 	var splitKey []byte
 
 	for iter.First(); iter.Valid(); iter.Next() {
 		if canSplitKeys(lastKey, iter.Key()) {
 			splitDistance := absInt(optimalSplitSize - leftSize)
 			bestSplitDistance := absInt(optimalSplitSize - splitSize)
-			if splitDistance < bestSplitDistance {
+			if leftRows > 2 && leftSize > minSplitSize && leftSize < maxSplitSize && splitDistance < bestSplitDistance {
 				if len(splitKey) != len(lastKey) {
 					splitKey = make([]byte, len(lastKey))
 				}
 				copy(splitKey, lastKey)
 				splitSize = leftSize
+				splitRows = leftRows
 			}
 		}
 		size, err := sizeOf(iter.Key(), iter.Value())
@@ -666,6 +688,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 			return nil, err
 		}
 		leftSize += size
+		leftRows += 1
 		if len(lastKey) != len(iter.Key()) {
 			lastKey = make([]byte, len(iter.Key()))
 		}
@@ -673,9 +696,10 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 	}
 
 	if splitKey == nil {
-		sm.printRange(sm.db, "unsplittable range")
+		sm.printRange(sm.db, iterOpts, "unsplittable range")
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
 	}
+	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ClusterID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
 	return &rfpb.FindSplitPointResponse{
 		Split:          splitKey,
 		LeftSizeBytes:  splitSize,
@@ -684,15 +708,17 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 }
 
 func canSplitKeys(leftKey, rightKey []byte) bool {
-	splitStart := []byte{constants.UnsplittableMaxByte}
-	// Disallow splitting the metarange, or any range before '\x04'.
-	if bytes.Compare(rightKey, splitStart) <= 0 {
-		log.Debugf("can't split between %q and %q, end in metarange", leftKey, rightKey)
+	if len(leftKey) == 0 || len(rightKey) == 0 {
 		return false
 	}
-
+	// Disallow splitting the metarange, or any range before '\x04'.
+	splitStart := []byte{constants.UnsplittableMaxByte}
+	if bytes.Compare(rightKey, splitStart) <= 0 {
+		// left-right is before splitStart
+		return false
+	}
 	if bytes.Compare(leftKey, splitStart) <= 0 && bytes.Compare(rightKey, splitStart) > 0 {
-		log.Debugf("can't split between %q and %q, overlaps metarange", leftKey, rightKey)
+		// left-right crosses splitStart boundary
 		return false
 	}
 
@@ -707,8 +733,8 @@ func canSplitKeys(leftKey, rightKey []byte) bool {
 	return true
 }
 
-func (sm *Replica) printRange(r pebble.Reader, tag string) {
-	iter := r.NewIter(&pebble.IterOptions{})
+func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag string) {
+	iter := r.NewIter(iterOpts)
 	defer iter.Close()
 
 	totalSize := int64(0)
@@ -751,15 +777,11 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 // which must be running locally on this nodehost and available in the store.
 func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.CopyStoredFilesResponse, error) {
 	start := time.Now()
-	defer func() {
-		sm.log.Infof("Took %s to copy stored files between ranges", time.Since(start))
-	}()
 	appliesToThisReplica := sm.splitAppliesToThisReplica(req.GetSourceRange())
 	if !appliesToThisReplica {
 		sm.log.Debugf("Received copyStoredFiles cmd but it doesn't apply to this replica. Not doing anything.")
 		return &rfpb.CopyStoredFilesResponse{}, nil
 	}
-
 	targetReplica, err := sm.store.GetReplica(req.GetTargetRangeId())
 	if err != nil {
 		return nil, err
@@ -767,8 +789,10 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 	if targetReplica == sm {
 		return nil, status.FailedPreconditionErrorf("cannot copy stored files from replica (range %d) to self", req.GetTargetRangeId())
 	}
+	defer func() {
+		sm.log.Infof("Took %s to copy stored files from %+v to %+v", time.Since(start), sm, targetReplica)
+	}()
 
-	sm.log.Debugf("Copying stored files from %+v to %+v", sm, targetReplica)
 	ctx := context.Background()
 	iter := sm.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(req.GetStart()),
@@ -795,14 +819,14 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 		n, err := io.Copy(writeCloserMetadata, readCloser)
 		readCloser.Close()
 		if n != fileMetadata.GetSizeBytes() {
+			writeCloserMetadata.Close()
 			return nil, status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
 		}
 		if err := writeCloserMetadata.Commit(); err != nil {
+			writeCloserMetadata.Close()
 			return nil, err
 		}
-		if err := writeCloserMetadata.Close(); err != nil {
-			return nil, err
-		}
+		writeCloserMetadata.Close()
 		if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
 			sm.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
 			return nil, status.FailedPreconditionError("stored metadata changed when fetching file")
@@ -916,6 +940,30 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion, rsp *
 		r, err := sm.fileUpdateMetadata(wb, value.FileUpdateMetadata)
 		rsp.Value = &rfpb.ResponseUnion_FileUpdateMetadata{
 			FileUpdateMetadata: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_SplitLease:
+		r, err := sm.splitLease(value.SplitLease)
+		rsp.Value = &rfpb.ResponseUnion_SplitLease{
+			SplitLease: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_SplitRelease:
+		r, err := sm.splitRelease(value.SplitRelease)
+		rsp.Value = &rfpb.ResponseUnion_SplitRelease{
+			SplitRelease: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FindSplitPoint:
+		r, err := sm.findSplitPoint(value.FindSplitPoint)
+		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
+			FindSplitPoint: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_CopyStoredFiles:
+		r, err := sm.copyStoredFiles(value.CopyStoredFiles)
+		rsp.Value = &rfpb.ResponseUnion_CopyStoredFiles{
+			CopyStoredFiles: r,
 		}
 		rsp.Status = statusProto(err)
 	default:
@@ -1093,28 +1141,23 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
 
 	if err := sm.validateRange(header); err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	fileMetadata, err := sm.metadataForRecord(db, fileRecord)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 	sm.sendAccessTimeUpdate(fileMetadata)
-
-	// Grab another lease and pass the Close function to the reader
-	// so it will be closed when the reader is.
-	db, err = sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
 	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
 }
 
@@ -1186,28 +1229,24 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
 
 	if err := sm.validateRange(header); err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	writeCloserMetadata, err := sm.storedFileWriter(ctx, fileRecord)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
-	// Grab another lease and pass the Close function to the writer
-	// (below) so it will be closed when the writer is.
-	db, err = sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
 	wc.CloseFn = db.Close
 	wc.CommitFn = func(bytesWritten int64) error {
@@ -1227,7 +1266,7 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
 			return err
 		}
-		return batch.Commit(&pebble.WriteOptions{Sync: true})
+		return batch.Commit(pebble.NoSync)
 	}
 	return wc, nil
 }
@@ -1278,86 +1317,22 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
-	var wb *pebble.Batch
-
-	// Insert all of the data in the batch.
-	batchCmdReq := &rfpb.BatchCmdRequest{}
 	for idx, entry := range entries {
+		// Insert all of the data in the batch.
+		batchCmdReq := &rfpb.BatchCmdRequest{}
+		batchCmdRsp := &rfpb.BatchCmdResponse{}
 		if err := proto.Unmarshal(entry.Cmd, batchCmdReq); err != nil {
 			return nil, err
 		}
-		batchCmdRsp := &rfpb.BatchCmdResponse{}
+		wb := sm.db.NewIndexedBatch()
+		defer wb.Close()
+
 		for _, union := range batchCmdReq.GetUnion() {
 			rsp := &rfpb.ResponseUnion{}
-			// Special Case: SplitLease and SplitRelease don't need
-			// access to the db in the stame way, and once it's
-			// locked, accessing it would block anyway. For that
-			// reason, they are handled separately here.
-			switch value := union.Value.(type) {
-			case *rfpb.RequestUnion_SplitLease:
-				r, err := sm.splitLease(value.SplitLease)
-				rsp.Value = &rfpb.ResponseUnion_SplitLease{
-					SplitLease: r,
-				}
-				rsp.Status = statusProto(err)
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
-				continue
-			case *rfpb.RequestUnion_SplitRelease:
-				r, err := sm.splitRelease(value.SplitRelease)
-				rsp.Value = &rfpb.ResponseUnion_SplitRelease{
-					SplitRelease: r,
-				}
-				rsp.Status = statusProto(err)
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
-				continue
-			case *rfpb.RequestUnion_FindSplitPoint:
-				r, err := sm.findSplitPoint(value.FindSplitPoint)
-				rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
-					FindSplitPoint: r,
-				}
-				rsp.Status = statusProto(err)
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
-				continue
-			case *rfpb.RequestUnion_CopyStoredFiles:
-				r, err := sm.copyStoredFiles(value.CopyStoredFiles)
-				rsp.Value = &rfpb.ResponseUnion_CopyStoredFiles{
-					CopyStoredFiles: r,
-				}
-				rsp.Status = statusProto(err)
-				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
-				continue
-			}
-
-			// All other raft commands are handled normally via
-			// handlePropose below. If no write batch is currently
-			// open, open one now.
-			if wb == nil {
-				db, err := sm.leaser.DB()
-				if err != nil {
-					// This should really be an error. The
-					// reason it's not yet is because range
-					// lease requests sometimes come in
-					// during a split, and they are safe
-					// to ignore.
-					if bytes.Compare(union.GetCas().GetKv().GetKey(), constants.LocalRangeLeaseKey) == 0 {
-						log.Warningf("mid-split, dropping rangelease cmd: %+v", union)
-						continue
-					}
-					log.Errorf("Range locked but got request: %+v", union)
-					return nil, err
-				}
-				defer db.Close()
-				wb = db.NewIndexedBatch()
-				defer wb.Close()
-			}
-
-			// sm.log.Debugf("Update: request union: %+v", union)
 			sm.handlePropose(wb, union, rsp)
 			if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
 				sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
 			}
-
-			// sm.log.Debugf("Update: response union: %+v", rsp)
 			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
 
@@ -1369,32 +1344,16 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			Value: uint64(len(entries[idx].Cmd)),
 			Data:  rspBuf,
 		}
-	}
-
-	lastEntry := entries[len(entries)-1]
-	appliedIndex := uint64ToBytes(lastEntry.Index)
-	syncWriteOptions := &pebble.WriteOptions{Sync: true}
-
-	if sm.lastAppliedIndex >= lastEntry.Index {
-		return nil, status.FailedPreconditionError("lastApplied not moving forward")
-	}
-
-	// If we have an active batch, bundle the LastAppliedIndex change into it
-	// and commit it all at once. Otherwise just do a db set.
-	if wb != nil {
+		appliedIndex := uint64ToBytes(entry.Index)
 		if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
 			return nil, err
 		}
-		if err := wb.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
+		if err := wb.Commit(pebble.NoSync); err != nil {
 			return nil, err
 		}
-	} else {
-		if err := sm.db.Set(constants.LastAppliedIndexKey, appliedIndex, syncWriteOptions); err != nil {
-			return nil, err
-		}
+		sm.lastAppliedIndex = entry.Index
 	}
 
-	sm.lastAppliedIndex = lastEntry.Index
 	return entries, nil
 }
 
@@ -1457,7 +1416,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 // Sync returns an error when there is unrecoverable error for synchronizing
 // the in-core state.
 func (sm *Replica) Sync() error {
-	return nil
+	return sm.db.LogData(nil, pebble.Sync)
 }
 
 // PrepareSnapshot prepares the snapshot to be concurrently captured and
@@ -1545,6 +1504,7 @@ func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb
 	if err != nil {
 		return nil, 0, err
 	}
+	defer writeCloserMetadata.Close()
 	readCloser, err := sm.store.ReadFileFromPeer(ctx, rd, fileRecord)
 	if err != nil {
 		return nil, 0, err
@@ -1555,9 +1515,6 @@ func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb
 		return nil, 0, err
 	}
 	if err := writeCloserMetadata.Commit(); err != nil {
-		return nil, 0, err
-	}
-	if err := writeCloserMetadata.Close(); err != nil {
 		return nil, 0, err
 	}
 	return writeCloserMetadata.Metadata(), n, nil

@@ -115,7 +115,7 @@ jobs:
           cd "${GITHUB_WORKSPACE}/buildbuddy"
           "${GITHUB_WORKSPACE}/bin/bazel" build //cli/cmd/bb \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              --define version="$VERSION"
+              --//cli/version:cli_version="$VERSION"
 
           BINARY="bazel-${VERSION}-${OS}-${ARCH}"
           cp bazel-bin/cli/cmd/bb/bb_/bb "$BINARY"

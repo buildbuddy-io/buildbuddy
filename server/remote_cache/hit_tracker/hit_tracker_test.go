@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -55,7 +56,8 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	assert.Equal(t, "GoCompile", actual.ActionMnemonic)
 	assert.Equal(t, "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4", actual.ActionId)
 	assert.Equal(t, "//foo:bar", actual.TargetId)
-	assert.Equal(t, capb.CacheType_CAS, actual.CacheType)
+	assert.Equal(t, capb.CacheType_CAS, actual.CacheTypeDeprecated)
+	assert.Equal(t, resource.CacheType_CAS, actual.CacheType)
 	assert.Equal(t, capb.RequestType_READ, actual.RequestType)
 	assert.Equal(t, d.Hash, actual.GetDigest().GetHash())
 	assert.Equal(t, d.SizeBytes, actual.GetDigest().GetSizeBytes())

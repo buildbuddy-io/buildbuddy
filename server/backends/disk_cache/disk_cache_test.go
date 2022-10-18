@@ -6,9 +6,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -30,6 +32,12 @@ import (
 
 var (
 	emptyUserMap = testauth.TestUsers()
+)
+
+const (
+	// All files on disk will be a multiple of this block size, assuming a
+	// filesystem with default settings.
+	defaultExt4BlockSize = 4096
 )
 
 func getTestEnv(t *testing.T, users map[string]interfaces.UserInfo) *testenv.TestEnv {
@@ -56,7 +64,8 @@ func TestGetSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
+	instanceName := "remoteInstanceName"
+	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, instanceName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,10 +80,12 @@ func TestGetSet(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
-		rbuf, err := c.Get(ctx, d)
-		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
-		}
+		rbuf, err := dc.Get(ctx, &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_AC,
+			InstanceName: instanceName,
+		})
+		require.NoError(t, err)
 
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
@@ -94,7 +105,7 @@ func TestMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
+	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,44 +116,66 @@ func TestMetadata(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		// Set() the bytes in the cache.
 		err := c.Set(ctx, d, buf)
-		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err)
+
 		// Metadata should return true size of the blob, regardless of queried size.
-		md, err := c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-		if err != nil {
-			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
+		digestWrongSize := &repb.Digest{Hash: d.GetHash(), SizeBytes: 1}
+		rn := &resource.ResourceName{
+			Digest:       digestWrongSize,
+			CacheType:    resource.CacheType_AC,
+			InstanceName: "remoteInstanceName",
 		}
+
+		md, err := c.MetadataDeprecated(ctx, digestWrongSize)
+		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime1 := md.LastAccessTimeUsec
 		lastModifyTime1 := md.LastModifyTimeUsec
 		require.NotZero(t, lastAccessTime1)
 		require.NotZero(t, lastModifyTime1)
 
+		md, err = c.Metadata(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime1 = md.LastAccessTimeUsec
+		lastModifyTime1 = md.LastModifyTimeUsec
+		require.NotZero(t, lastAccessTime1)
+		require.NotZero(t, lastModifyTime1)
+
 		// Last access time should not update since last call to Metadata()
-		md, err = c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-		if err != nil {
-			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
-		}
+		md, err = c.MetadataDeprecated(ctx, digestWrongSize)
+		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
 		lastModifyTime2 := md.LastModifyTimeUsec
 		require.Equal(t, lastAccessTime1, lastAccessTime2)
 		require.Equal(t, lastModifyTime1, lastModifyTime2)
 
+		md, err = c.Metadata(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime2 = md.LastAccessTimeUsec
+		lastModifyTime2 = md.LastModifyTimeUsec
+		require.Equal(t, lastAccessTime1, lastAccessTime2)
+		require.Equal(t, lastModifyTime1, lastModifyTime2)
+
 		// After updating data, last access and modify time should update
 		time.Sleep(1 * time.Second) // Sleep to guarantee timestamps change
 		err = c.Set(ctx, d, buf)
-		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
-		}
-		md, err = c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-		if err != nil {
-			t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
-		}
+		require.NoError(t, err)
+		md, err = c.MetadataDeprecated(ctx, digestWrongSize)
+		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
 		lastModifyTime3 := md.LastModifyTimeUsec
+		require.Greater(t, lastAccessTime3, lastAccessTime1)
+		require.Greater(t, lastModifyTime3, lastModifyTime1)
+
+		md, err = c.Metadata(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, testSize, md.SizeBytes)
+		lastAccessTime3 = md.LastAccessTimeUsec
+		lastModifyTime3 = md.LastModifyTimeUsec
 		require.Greater(t, lastAccessTime3, lastAccessTime1)
 		require.Greater(t, lastModifyTime3, lastModifyTime1)
 	}
@@ -158,7 +191,7 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, interfaces.ActionCacheType, "remoteInstanceName")
+	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +199,7 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 	testSize := int64(100)
 	d, _ := testdigest.NewRandomDigestBuf(t, testSize)
 
-	md, err := c.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+	md, err := c.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, md)
 }
@@ -178,6 +211,38 @@ func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
 		m[d] = buf
 	}
 	return m
+}
+
+func TestFindMissing(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	rootDir := testfs.MakeTempDir(t)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	require.NoError(t, err)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
+	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	remoteInstanceName := "farFarAway"
+	dcWithIsolation, err := dc.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+	err = dcWithIsolation.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	digests := []*repb.Digest{d, notSetD1, notSetD2}
+	rns := digest.ResourceNames(resource.CacheType_AC, remoteInstanceName, digests)
+	missing, err := dc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
+
+	digests = []*repb.Digest{d}
+	rns = digest.ResourceNames(resource.CacheType_AC, remoteInstanceName, digests)
+	missing, err = dc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.Empty(t, missing)
 }
 
 func TestMultiGetSet(t *testing.T) {
@@ -193,11 +258,14 @@ func TestMultiGetSet(t *testing.T) {
 	if err := dc.SetMulti(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
-	digestKeys := make([]*repb.Digest, 0, len(digests))
+	resourceNames := make([]*resource.ResourceName, 0, len(digests))
 	for d := range digests {
-		digestKeys = append(digestKeys, d)
+		resourceNames = append(resourceNames, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 	}
-	m, err := dc.GetMulti(ctx, digestKeys)
+	m, err := dc.GetMulti(ctx, resourceNames)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
@@ -295,7 +363,7 @@ func TestReadOffset(t *testing.T) {
 func TestReadOffsetLimit(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
-	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, 1000)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, defaultExt4BlockSize)
 	require.NoError(t, err)
 
 	ctx := getAnonContext(t, te)
@@ -316,7 +384,8 @@ func TestReadOffsetLimit(t *testing.T) {
 }
 
 func TestSizeLimit(t *testing.T) {
-	maxSizeBytes := int64(1000) // 1000 bytes
+	// Enough space for 2 small digests.
+	maxSizeBytes := int64(defaultExt4BlockSize * 2)
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
@@ -333,16 +402,21 @@ func TestSizeLimit(t *testing.T) {
 		}
 		digestKeys = append(digestKeys, d)
 	}
-	// Expect the last *2* digests to be present.
-	// The first digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := dc.Get(ctx, d)
+		rbuf, err := dc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
+
+		// The first digest should have been evicted.
 		if i == 0 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())
 			}
 			continue
 		}
+
+		// Expect the last *2* digests to be present.
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -355,7 +429,8 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestLRU(t *testing.T) {
-	maxSizeBytes := int64(1000) // 1000 bytes
+	// Enough room for two small digests.
+	maxSizeBytes := int64(defaultExt4BlockSize * 2)
 	rootDir := testfs.MakeTempDir(t)
 	te := getTestEnv(t, emptyUserMap)
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
@@ -388,16 +463,21 @@ func TestLRU(t *testing.T) {
 	}
 	digestKeys = append(digestKeys, d)
 
-	// Expect the first and third digests to be present.
-	// The second digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := dc.Get(ctx, d)
+		rbuf, err := dc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
+
+		// The second digest should have been evicted.
 		if i == 1 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())
 			}
 			continue
 		}
+
+		// Expect the first and third digests to be present.
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -419,18 +499,22 @@ func TestFileAtomicity(t *testing.T) {
 	}
 	ctx := getAnonContext(t, te)
 
+	lock := sync.RWMutex{}
 	eg, gctx := errgroup.WithContext(ctx)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100000)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 100; i++ {
 		eg.Go(func() error {
-			for n := 0; n < 100; n++ {
-				if err := dc.Set(gctx, d, buf); err != nil {
-					return err
-				}
-				_, err := dc.Get(gctx, d)
-				if err != nil {
-					return err
-				}
+			lock.Lock()
+			defer lock.Unlock()
+			if err := dc.Set(gctx, d, buf); err != nil {
+				return err
+			}
+			_, err = dc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
+			if err != nil {
+				return err
 			}
 			return nil
 		})
@@ -602,13 +686,25 @@ func TestDeleteStaleTempFiles(t *testing.T) {
 
 	// Create a temp file for a write that should be deleted.
 	badDigest, _ := testdigest.NewRandomDigestBuf(t, 1000)
+	yesterday := time.Now().AddDate(0, 0, -1)
 	writeTempFile := filepath.Join(anonPath, badDigest.GetHash()+".ababababab.tmp")
 	err = os.WriteFile(writeTempFile, []byte("hello"), 0644)
+	require.NoError(t, err)
+	err = os.Chtimes(writeTempFile, yesterday, yesterday)
 	require.NoError(t, err)
 
 	// Create an unexpected file that should not be deleted.
 	unexpectedFile := filepath.Join(anonPath, "some_other_file.txt")
 	err = os.WriteFile(unexpectedFile, []byte("hello"), 0644)
+	require.NoError(t, err)
+	err = os.Chtimes(unexpectedFile, yesterday, yesterday)
+	require.NoError(t, err)
+
+	// Create a temp file that was recently modified and should not be deleted.
+	// (Could've been created for a legitimate purpose - for example, we use tmp files when writing data)
+	badDigest2, _ := testdigest.NewRandomDigestBuf(t, 1000)
+	writeTempFile2 := filepath.Join(anonPath, badDigest2.GetHash()+".ababababab.tmp")
+	err = os.WriteFile(writeTempFile2, []byte("hello"), 0644)
 	require.NoError(t, err)
 
 	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
@@ -623,6 +719,10 @@ func TestDeleteStaleTempFiles(t *testing.T) {
 	exists, err = disk.FileExists(ctx, unexpectedFile)
 	require.NoError(t, err)
 	require.True(t, exists, "unexpected file %q should not have been deleted", unexpectedFile)
+
+	exists, err = disk.FileExists(ctx, writeTempFile2)
+	require.NoError(t, err)
+	require.True(t, exists, "recent temp file %q should not have been deleted", writeTempFile2)
 }
 
 func TestNonDefaultPartition(t *testing.T) {
@@ -675,6 +775,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, interfaces.AuthAnonymousUser)
 		dPath := filepath.Join(userRoot, d.GetHash())
 		require.FileExists(t, dPath)
+
+		c, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: "",
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, c)
 	}
 
 	// Authenticated user on default partition.
@@ -690,6 +798,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, testGroup1)
 		dPath := filepath.Join(userRoot, d.GetHash())
 		require.FileExists(t, dPath)
+
+		c, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: "",
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, c)
 	}
 
 	// Authenticated user with group ID that matches custom partition, but without a matching instance name prefix.
@@ -701,7 +817,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
 		instanceName := "nonmatchingprefix"
-		c, err := dc.WithIsolation(ctx, interfaces.CASCacheType, instanceName)
+		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
 		require.NoError(t, err)
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
@@ -709,6 +825,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, testGroup2)
 		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
+
+		contains, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, contains)
 	}
 
 	// Authenticated user with group ID that matches custom partition and instance name prefix that matches non-default
@@ -721,7 +845,7 @@ func TestNonDefaultPartition(t *testing.T) {
 		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 
 		instanceName := otherPartitionPrefix + "hello"
-		c, err := dc.WithIsolation(ctx, interfaces.CASCacheType, instanceName)
+		c, err := dc.WithIsolation(ctx, resource.CacheType_CAS, instanceName)
 		require.NoError(t, err)
 		err = c.Set(ctx, d, buf)
 		require.NoError(t, err)
@@ -729,6 +853,14 @@ func TestNonDefaultPartition(t *testing.T) {
 		userRoot := filepath.Join(rootDir, disk_cache.PartitionDirectoryPrefix+otherPartitionID, testGroup2)
 		dPath := filepath.Join(userRoot, instanceName, d.GetHash())
 		require.FileExists(t, dPath)
+
+		contains, err := dc.Contains(ctx, &resource.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			CacheType:    resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		require.True(t, contains)
 	}
 }
 
@@ -754,11 +886,17 @@ func TestV2Layout(t *testing.T) {
 	dPath := filepath.Join(userRoot, d.GetHash()[0:disk_cache.HashPrefixDirPrefixLen], d.GetHash())
 	require.FileExists(t, dPath)
 
-	ok, err := dc.ContainsDeprecated(ctx, d)
+	ok, err := dc.Contains(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.Truef(t, ok, "digest should be in the cache")
 
-	_, err = dc.Get(ctx, d)
+	_, err = dc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 }
 
@@ -841,21 +979,27 @@ func TestV2LayoutMigration(t *testing.T) {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
 	testHash := "7e09daa1b85225442942ff853d45618323c56b85a553c5188cec2fd1009cd620"
 	{
-		buf, err := dc.Get(ctx, &repb.Digest{Hash: testHash, SizeBytes: 5})
+		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
+		buf, err := dc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.Equal(t, []byte("test1"), buf)
 	}
 
 	{
-		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix")
-		require.NoError(t, err)
-
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.ContainsDeprecated(ctx, d)
+		rn := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: "prefix",
+		}
+		ok, err := dc.Contains(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.Get(ctx, d)
+		buf, err := dc.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test2"), buf)
 	}
@@ -864,14 +1008,17 @@ func TestV2LayoutMigration(t *testing.T) {
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
-		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "" /*=instanceName*/)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.ContainsDeprecated(ctx, d)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		ok, err := dc.Contains(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.Get(ctx, d)
+		buf, err := dc.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test3"), buf)
 	}
@@ -880,15 +1027,18 @@ func TestV2LayoutMigration(t *testing.T) {
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		ctx, err = prefix.AttachUserPrefixToContext(ctx, te)
 		require.NoError(t, err)
-		ic, err := dc.WithIsolation(ctx, interfaces.CASCacheType, "prefix" /*=instanceName*/)
-		require.NoError(t, err)
 
 		d := &repb.Digest{Hash: testHash, SizeBytes: 5}
-		ok, err := ic.ContainsDeprecated(ctx, d)
+		rn := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: "prefix",
+		}
+		ok, err := dc.Contains(ctx, rn)
 		require.NoError(t, err)
 		require.True(t, ok, "digest should be in the cache")
 
-		buf, err := ic.Get(ctx, d)
+		buf, err := dc.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, []byte("test4"), buf)
 	}
@@ -933,31 +1083,31 @@ func TestScanDiskDirectoryV1(t *testing.T) {
 
 	tests := []struct {
 		remoteInstanceName string
-		cacheType          interfaces.CacheType
+		cacheType          resource.CacheType
 		apiKey             string
 		expectedPartition  string
 	}{
 		{
 			remoteInstanceName: "",
-			cacheType:          interfaces.CASCacheType,
+			cacheType:          resource.CacheType_CAS,
 			apiKey:             "",
 			expectedPartition:  "default",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          interfaces.ActionCacheType,
+			cacheType:          resource.CacheType_AC,
 			apiKey:             "",
 			expectedPartition:  "default",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          interfaces.CASCacheType,
+			cacheType:          resource.CacheType_CAS,
 			apiKey:             testAPIKey,
 			expectedPartition:  "FOO",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          interfaces.ActionCacheType,
+			cacheType:          resource.CacheType_AC,
 			apiKey:             testAPIKey,
 			expectedPartition:  "FOO",
 		},
@@ -989,14 +1139,7 @@ func TestScanDiskDirectoryV1(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		isolation := &rfpb.Isolation{}
-		switch test.cacheType {
-		case interfaces.CASCacheType:
-			isolation.CacheType = rfpb.Isolation_CAS_CACHE
-		case interfaces.ActionCacheType:
-			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
-		default:
-			t.Fatalf("Unknown cache type: %+v", test.cacheType)
-		}
+		isolation.CacheType = test.cacheType
 		isolation.RemoteInstanceName = test.remoteInstanceName
 		isolation.PartitionId = test.expectedPartition
 		fr := &rfpb.FileRecord{
@@ -1055,31 +1198,31 @@ func TestScanDiskDirectoryV2(t *testing.T) {
 
 	tests := []struct {
 		remoteInstanceName string
-		cacheType          interfaces.CacheType
+		cacheType          resource.CacheType
 		apiKey             string
 		expectedPartition  string
 	}{
 		{
 			remoteInstanceName: "",
-			cacheType:          interfaces.CASCacheType,
+			cacheType:          resource.CacheType_CAS,
 			apiKey:             "",
 			expectedPartition:  "default",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          interfaces.ActionCacheType,
+			cacheType:          resource.CacheType_AC,
 			apiKey:             "",
 			expectedPartition:  "default",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          interfaces.CASCacheType,
+			cacheType:          resource.CacheType_CAS,
 			apiKey:             testAPIKey,
 			expectedPartition:  "FOO",
 		},
 		{
 			remoteInstanceName: "prefix",
-			cacheType:          interfaces.ActionCacheType,
+			cacheType:          resource.CacheType_AC,
 			apiKey:             testAPIKey,
 			expectedPartition:  "FOO",
 		},
@@ -1111,14 +1254,7 @@ func TestScanDiskDirectoryV2(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		isolation := &rfpb.Isolation{}
-		switch test.cacheType {
-		case interfaces.CASCacheType:
-			isolation.CacheType = rfpb.Isolation_CAS_CACHE
-		case interfaces.ActionCacheType:
-			isolation.CacheType = rfpb.Isolation_ACTION_CACHE
-		default:
-			t.Fatalf("Unknown cache type: %+v", test.cacheType)
-		}
+		isolation.CacheType = test.cacheType
 		isolation.RemoteInstanceName = test.remoteInstanceName
 		isolation.PartitionId = test.expectedPartition
 		fr := &rfpb.FileRecord{

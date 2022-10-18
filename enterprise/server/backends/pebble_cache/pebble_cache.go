@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -41,7 +42,6 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
-	flagtypes "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
 )
 
 var (
@@ -55,7 +55,6 @@ var (
 	migrateFromDiskDir        = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
 	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
 	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
-	mirrorActiveDiskCache     = flagtypes.Alias[bool]("cache.disk.enable_live_updates", "cache.pebble.mirror_active_disk_cache")
 	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
@@ -248,21 +247,6 @@ func Register(env environment.Env) error {
 		return c.Stop()
 	})
 
-	if *mirrorActiveDiskCache {
-		dci := env.GetCache()
-		dc, ok := dci.(*disk_cache.DiskCache)
-		if !ok {
-			return status.FailedPreconditionError("Cannot mirror disk cache: none was set")
-		}
-		adds, removes := dc.LiveUpdatesChan()
-		c.ProcessLiveUpdates(adds, removes)
-		log.Printf("Pebble Cache: mirroring active disk cache")
-
-		// Return early if we're mirroring the disk cache; we don't
-		// want to override the disk cache we're mirroring in the env.
-		return nil
-	}
-
 	if env.GetCache() != nil {
 		log.Warningf("Overriding configured cache with pebble_cache.")
 	}
@@ -387,7 +371,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
 		isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: defaultPartitionID,
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -716,35 +700,6 @@ func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchE
 	return nil
 }
 
-func (p *PebbleCache) ProcessLiveUpdates(adds, removes <-chan *rfpb.FileMetadata) error {
-	for i := 0; i < 3; i++ {
-		p.eg.Go(func() error {
-			return p.batchProcessCh(adds, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
-				protoBytes, err := proto.Marshal(fileMetadata)
-				if err != nil {
-					return err
-				}
-				fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileMetadata.GetFileRecord())
-				if err != nil {
-					return err
-				}
-				return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
-			})
-		})
-		p.eg.Go(func() error {
-			return p.batchProcessCh(removes, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
-				fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileMetadata.GetFileRecord())
-				if err != nil {
-					return err
-				}
-				return batch.Delete(fileMetadataKey, nil /*ignored write options*/)
-			})
-		})
-	}
-
-	return nil
-}
-
 func (p *PebbleCache) Statusz(ctx context.Context) string {
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -796,21 +751,14 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 	return user.GetGroupID(), defaultPartitionID, nil
 }
 
-func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err
 	}
 
 	newIsolation := &rfpb.Isolation{}
-	switch cacheType {
-	case interfaces.CASCacheType:
-		newIsolation.CacheType = rfpb.Isolation_CAS_CACHE
-	case interfaces.ActionCacheType:
-		newIsolation.CacheType = rfpb.Isolation_ACTION_CACHE
-	default:
-		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
-	}
+	newIsolation.CacheType = cacheType
 	newIsolation.RemoteInstanceName = remoteInstanceName
 	newIsolation.PartitionId = partID
 	newIsolation.GroupId = groupID
@@ -819,27 +767,42 @@ func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType interfaces.Ca
 	return &clone, nil
 }
 
-func (p *PebbleCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.FileRecord, error) {
-	_, err := digest.Validate(d)
+// TODO(Maggie): Clean this up after completing refactor to deprecate WithIsolation
+func (p *PebbleCache) makeFileRecordDeprecated(ctx context.Context, d *repb.Digest) (*rfpb.FileRecord, error) {
+	return p.makeFileRecord(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.RemoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.CacheType,
+	})
+}
+
+func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
+	_, err := digest.Validate(r.GetDigest())
+	if err != nil {
+		return nil, err
+	}
+
+	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
 
 	return &rfpb.FileRecord{
-		Isolation: p.isolation,
-		Digest:    d,
+		Isolation: &rfpb.Isolation{
+			CacheType:          r.GetCacheType(),
+			RemoteInstanceName: r.GetInstanceName(),
+			PartitionId:        partID,
+			GroupId:            groupID,
+		},
+		Digest: r.GetDigest(),
 	}, nil
 }
 
+// partitionBlobDir returns a directory path under the root directory, for the specified partition, where blobs can be stored.
 func (p *PebbleCache) partitionBlobDir(partID string) string {
 	partDir := partitionDirectoryPrefix + partID
 	return filepath.Join(p.rootDirectory, "blobs", partDir)
-}
-
-// blobDir returns a directory path under the root directory, specific to the
-// configured partition, where blobs can be stored.
-func (p *PebbleCache) blobDir() string {
-	return p.partitionBlobDir(p.isolation.GetPartitionId())
 }
 
 func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
@@ -874,7 +837,7 @@ func (p *PebbleCache) handleMetadataMismatch(err error, fileMetadataKey []byte, 
 	}
 }
 
-func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return false, err
@@ -884,7 +847,7 @@ func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return false, err
 	}
@@ -896,7 +859,16 @@ func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (b
 	return found, nil
 }
 
-func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return p.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.GetCacheType(),
+	})
+}
+
+func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -906,7 +878,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -925,7 +897,16 @@ func (p *PebbleCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces
 	}, nil
 }
 
-func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return p.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.RemoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.CacheType,
+	})
+}
+
+func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -935,13 +916,13 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	sort.Slice(digests, func(i, j int) bool {
-		return digests[i].GetHash() < digests[j].GetHash()
+	sort.Slice(resources, func(i, j int) bool {
+		return resources[i].GetDigest().GetHash() < resources[j].GetDigest().GetHash()
 	})
 
 	var missing []*repb.Digest
-	for _, d := range digests {
-		fileRecord, err := p.makeFileRecord(ctx, d)
+	for _, r := range resources {
+		fileRecord, err := p.makeFileRecord(ctx, r)
 		if err != nil {
 			return nil, err
 		}
@@ -950,14 +931,19 @@ func (p *PebbleCache) FindMissing(ctx context.Context, digests []*repb.Digest) (
 			return nil, err
 		}
 		if !pebbleutil.IterHasKey(iter, fileMetadataKey) {
-			missing = append(missing, d)
+			missing = append(missing, r.GetDigest())
 		}
 	}
 	return missing, nil
 }
 
-func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	rc, err := p.Reader(ctx, d, 0, 0)
+func (p *PebbleCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), digests)
+	return p.FindMissing(ctx, rns)
+}
+
+func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	rc, err := p.reader(ctx, r, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -965,25 +951,33 @@ func (p *PebbleCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return io.ReadAll(rc)
 }
 
-func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (p *PebbleCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return p.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.GetCacheType(),
+	})
+}
+
+func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	sort.Slice(digests, func(i, j int) bool {
-		return digests[i].GetHash() < digests[j].GetHash()
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	sort.Slice(resources, func(i, j int) bool {
+		return resources[i].GetDigest().GetHash() < resources[j].GetDigest().GetHash()
 	})
 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	blobDir := p.blobDir()
 	buf := &bytes.Buffer{}
-	for _, d := range digests {
-		fileRecord, err := p.makeFileRecord(ctx, d)
+	for _, r := range resources {
+		fileRecord, err := p.makeFileRecord(ctx, r)
 		if err != nil {
 			return nil, err
 		}
@@ -995,6 +989,8 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 			continue
 		}
+		partitionID := fileRecord.GetIsolation().GetPartitionId()
+		blobDir := p.partitionBlobDir(partitionID)
 		rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
@@ -1007,10 +1003,15 @@ func (p *PebbleCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map
 		if copyErr != nil || closeErr != nil {
 			continue
 		}
-		foundMap[d] = append([]byte{}, buf.Bytes()...)
+		foundMap[r.GetDigest()] = append([]byte{}, buf.Bytes()...)
 		buf.Reset()
 	}
 	return foundMap, nil
+}
+
+func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), digests)
+	return p.GetMulti(ctx, rns)
 }
 
 func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
@@ -1018,13 +1019,11 @@ func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 	if err != nil {
 		return err
 	}
+	defer wc.Close()
 	if _, err := wc.Write(data); err != nil {
 		return err
 	}
-	if err := wc.Commit(); err != nil {
-		return err
-	}
-	return wc.Close()
+	return wc.Commit()
 }
 
 func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -1111,7 +1110,8 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 		return err
 	}
 
-	fp := p.fileStorer.FilePath(p.blobDir(), fileMetadata.GetStorageMetadata().GetFileMetadata())
+	blobDir := p.partitionBlobDir(p.isolation.GetPartitionId())
+	fp := p.fileStorer.FilePath(blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
@@ -1127,7 +1127,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 	if err != nil {
 		return err
 	}
@@ -1139,6 +1139,16 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.GetCacheType(),
+	}
+	return p.reader(ctx, rn, offset, limit)
+}
+
+func (p *PebbleCache) reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1148,7 +1158,7 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -1163,7 +1173,9 @@ func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 		return nil, err
 	}
 
-	rc, err := p.fileStorer.NewReader(ctx, p.blobDir(), fileMetadata.GetStorageMetadata(), offset, limit)
+	partitionID := fileRecord.GetIsolation().GetPartitionId()
+	blobDir := p.partitionBlobDir(partitionID)
+	rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
@@ -1212,7 +1224,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Co
 	}
 	defer db.Close()
 
-	fileRecord, err := p.makeFileRecord(ctx, d)
+	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -1233,7 +1245,8 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Co
 	if d.GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, d.GetSizeBytes())
 	} else {
-		fw, err := p.fileStorer.FileWriter(ctx, p.blobDir(), fileRecord)
+		blobDir := p.partitionBlobDir(p.isolation.GetPartitionId())
+		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)
 		if err != nil {
 			return nil, err
 		}

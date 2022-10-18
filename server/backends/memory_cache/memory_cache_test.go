@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -15,6 +15,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -49,7 +51,7 @@ func TestIsolation(t *testing.T) {
 		cache2         interfaces.Cache
 		shouldBeShared bool
 	}
-	mustIsolate := func(cacheType interfaces.CacheType, remoteInstanceName string) interfaces.Cache {
+	mustIsolate := func(cacheType resource.CacheType, remoteInstanceName string) interfaces.Cache {
 		c, err := mc.WithIsolation(ctx, cacheType, remoteInstanceName)
 		if err != nil {
 			t.Fatalf("Error isolating cache: %s", err)
@@ -59,28 +61,28 @@ func TestIsolation(t *testing.T) {
 
 	tests := []test{
 		{ // caches with the same isolation are shared.
-			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
-			cache2:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
+			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
+			cache2:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
 			shouldBeShared: true,
 		},
 		{ // action caches with the same isolation are shared.
-			cache1:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
-			cache2:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
+			cache1:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
+			cache2:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
 			shouldBeShared: true,
 		},
 		{ // CAS caches with different remote instance names are shared.
-			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
-			cache2:         mustIsolate(interfaces.CASCacheType, "otherInstanceName"),
+			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
+			cache2:         mustIsolate(resource.CacheType_CAS, "otherInstanceName"),
 			shouldBeShared: true,
 		},
 		{ // Action caches with different remote instance names are not shared.
-			cache1:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
-			cache2:         mustIsolate(interfaces.ActionCacheType, "otherInstanceName"),
+			cache1:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
+			cache2:         mustIsolate(resource.CacheType_AC, "otherInstanceName"),
 			shouldBeShared: false,
 		},
 		{ // CAS and Action caches are not shared.
-			cache1:         mustIsolate(interfaces.CASCacheType, "remoteInstanceName"),
-			cache2:         mustIsolate(interfaces.ActionCacheType, "remoteInstanceName"),
+			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
+			cache2:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
 			shouldBeShared: false,
 		},
 	}
@@ -93,7 +95,7 @@ func TestIsolation(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from cache2.
-		rbuf, err := test.cache2.Get(ctx, d)
+		rbuf, err := test.cache2.GetDeprecated(ctx, d)
 		if test.shouldBeShared {
 			// if the caches should be shared but there was an error
 			// getting the digest: fail.
@@ -138,7 +140,7 @@ func TestGetSet(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
-		rbuf, err := mc.Get(ctx, d)
+		rbuf, err := mc.GetDeprecated(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -175,7 +177,7 @@ func TestMultiGetSet(t *testing.T) {
 	for d := range digests {
 		digestKeys = append(digestKeys, d)
 	}
-	m, err := mc.GetMulti(ctx, digestKeys)
+	m, err := mc.GetMultiDeprecated(ctx, digestKeys)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
@@ -271,7 +273,7 @@ func TestSizeLimit(t *testing.T) {
 	// Expect the last *2* digests to be present.
 	// The first digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := mc.Get(ctx, d)
+		rbuf, err := mc.GetDeprecated(ctx, d)
 		if i == 0 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())
@@ -323,7 +325,7 @@ func TestLRU(t *testing.T) {
 	// Expect the first and third digests to be present.
 	// The second digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := mc.Get(ctx, d)
+		rbuf, err := mc.GetDeprecated(ctx, d)
 		if i == 1 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())

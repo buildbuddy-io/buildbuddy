@@ -66,8 +66,8 @@ message GetCacheScoreCardRequest {
     // Field mask selecting filters to be applied.
     google.protobuf.FieldMask mask = 1;
 
-    // Return only results with this cache type.
-    CacheType cache_type = 2;
+    // TODO(#1733) Clean up deprecated field and CacheType enum
+    CacheType cache_type_deprecated = 2;
 
     // Return only results with this request type.
     RequestType request_type = 3;
@@ -78,6 +78,9 @@ message GetCacheScoreCardRequest {
     // Return only results whose target ID, action mnemonic, action ID, or
     // digest hash contain this string.
     string search = 5;
+
+    // Return only results with this cache type.
+    resource.CacheType cache_type = 6;
   }
 
   // Optional filter for returned results.
@@ -132,6 +135,7 @@ message GetCacheScoreCardResponse {
   string next_page_token = 3;
 }
 
+// TODO(Maggie): Deprecate this enum - replace with the enum in resource.proto
 // CacheType represents the type of cache being written to.
 enum CacheType {
   UNKNOWN_CACHE_TYPE = 0;
@@ -177,8 +181,8 @@ message ScoreCard {
     // Action digest hash for the action relevant to the transfer.
     string action_id = 3;
 
-    // The type of cache relevant to this result.
-    CacheType cache_type = 4;
+    // TODO(#1733) Clean up deprecated field and CacheType enum
+    CacheType cache_type_deprecated = 4;
 
     // The type of cache request described by this result (read or write).
     RequestType request_type = 5;
@@ -215,6 +219,9 @@ message ScoreCard {
     // kept separate.
     // Ex: "bazel-out/k8-fastbuild/bin"
     string path_prefix = 13;
+
+    // The type of cache relevant to this result.
+    resource.CacheType cache_type = 14;
   }
 
   // In the interest of saving space, we only show cache misses.

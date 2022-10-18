@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -137,7 +138,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	for i := 0; i < b.N; i++ {
 		dbuf := digestBufs[rand.Intn(len(digestBufs))]
 		b.SetBytes(dbuf.d.GetSizeBytes())
-		_, err := c.Get(ctx, dbuf.d)
+		_, err := c.GetDeprecated(ctx, dbuf.d)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -158,7 +159,7 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 	b.SetBytes(sumBytes)
 
 	for i := 0; i < b.N; i++ {
-		_, err := c.GetMulti(ctx, digests)
+		_, err := c.GetMultiDeprecated(ctx, digests)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -177,7 +178,7 @@ func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeByt
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := c.FindMissing(ctx, digests)
+		_, err := c.FindMissingDeprecated(ctx, digests)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -198,7 +199,7 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 		{dc, "DDisk"},
 	}
 	for _, c := range caches {
-		ic, err := c.WithIsolation(context.Background(), interfaces.CASCacheType, "")
+		ic, err := c.WithIsolation(context.Background(), resource.CacheType_CAS, "")
 		require.NoError(b, err)
 		c.Cache = ic
 	}

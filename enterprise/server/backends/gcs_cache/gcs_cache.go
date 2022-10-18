@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -42,11 +43,12 @@ var (
 )
 
 type GCSCache struct {
-	gcsClient    *storage.Client
-	bucketHandle *storage.BucketHandle
-	projectID    string
-	prefix       string
-	ttlInDays    int64
+	gcsClient          *storage.Client
+	bucketHandle       *storage.BucketHandle
+	projectID          string
+	cacheType          resource.CacheType
+	remoteInstanceName string
+	ttlInDays          int64
 }
 
 func Register(env environment.Env) error {
@@ -75,9 +77,11 @@ func NewGCSCache(bucketName, projectID string, ageInDays int64, opts ...option.C
 		return nil, err
 	}
 	g := &GCSCache{
-		gcsClient: gcsClient,
-		projectID: projectID,
-		ttlInDays: ageInDays,
+		gcsClient:          gcsClient,
+		projectID:          projectID,
+		ttlInDays:          ageInDays,
+		cacheType:          resource.CacheType_CAS,
+		remoteInstanceName: "",
 	}
 	if err := g.createBucketIfNotExists(ctx, bucketName); err != nil {
 		return nil, err
@@ -141,8 +145,8 @@ func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDay
 	return err
 }
 
-func (g *GCSCache) key(ctx context.Context, d *repb.Digest) (string, error) {
-	hash, err := digest.Validate(d)
+func (g *GCSCache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
 	}
@@ -150,26 +154,26 @@ func (g *GCSCache) key(ctx context.Context, d *repb.Digest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return userPrefix + g.prefix + hash, nil
+	isolationPrefix := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()))
+	if len(isolationPrefix) > 0 && isolationPrefix[len(isolationPrefix)-1] != '/' {
+		isolationPrefix += "/"
+	}
+	return userPrefix + isolationPrefix + hash, nil
 }
 
-func (g *GCSCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	newPrefix := filepath.Join(remoteInstanceName, cacheType.Prefix())
-	if len(newPrefix) > 0 && newPrefix[len(newPrefix)-1] != '/' {
-		newPrefix += "/"
-	}
-
+func (g *GCSCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
 	return &GCSCache{
-		gcsClient:    g.gcsClient,
-		bucketHandle: g.bucketHandle,
-		projectID:    g.projectID,
-		ttlInDays:    g.ttlInDays,
-		prefix:       newPrefix,
+		gcsClient:          g.gcsClient,
+		bucketHandle:       g.bucketHandle,
+		projectID:          g.projectID,
+		ttlInDays:          g.ttlInDays,
+		cacheType:          cacheType,
+		remoteInstanceName: remoteInstanceName,
 	}, nil
 }
 
-func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := g.key(ctx, d)
+func (g *GCSCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +181,7 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	reader, err := g.bucketHandle.Object(k).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
+			d := r.GetDigest()
 			return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 		}
 		return nil, err
@@ -191,25 +196,34 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return b, err
 }
 
-func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return g.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
+}
+
+func (g *GCSCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				data, err := g.Get(ctx, d)
+				data, err := g.Get(ctx, r)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
 				defer lock.Unlock()
-				foundMap[d] = data
+				foundMap[r.GetDigest()] = data
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -217,6 +231,11 @@ func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*r
 	}
 
 	return foundMap, nil
+}
+
+func (g *GCSCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(g.cacheType, g.remoteInstanceName, digests)
+	return g.GetMulti(ctx, rns)
 }
 
 func swallowGCSAlreadyExistsError(err error) error {
@@ -242,7 +261,12 @@ func swallowGCSAlreadyExistsError(err error) error {
 }
 
 func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := g.key(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -288,7 +312,12 @@ func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) er
 }
 
 func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := g.key(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return err
 	}
@@ -322,8 +351,8 @@ func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) 
 	return true
 }
 
-func (g *GCSCache) metadata(ctx context.Context, d *repb.Digest) (*storage.ObjectAttrs, error) {
-	k, err := g.key(ctx, d)
+func (g *GCSCache) metadata(ctx context.Context, r *resource.ResourceName) (*storage.ObjectAttrs, error) {
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -351,15 +380,15 @@ func (g *GCSCache) metadata(ctx context.Context, d *repb.Digest) (*storage.Objec
 	return nil, finalErr
 }
 
-func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	metadata, err := g.metadata(ctx, d)
+func (g *GCSCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	metadata, err := g.metadata(ctx, r)
 	if err != nil || metadata == nil {
 		return false, err
 	}
 
 	// Bump TTL to ensure that referenced blobs are available and will be for some period of time afterwards,
 	// as specified by the protocol description
-	k, err := g.key(ctx, d)
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return false, err
 	}
@@ -370,13 +399,23 @@ func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool
 	return false, nil
 }
 
+func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return g.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
+}
+
 // TODO(buildbuddy-internal#1485) - Add last access time
-func (g *GCSCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	metadata, err := g.metadata(ctx, d)
+func (g *GCSCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	metadata, err := g.metadata(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	if metadata == nil {
+		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 	return &interfaces.CacheMetadata{
@@ -385,27 +424,36 @@ func (g *GCSCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.Ca
 	}, nil
 }
 
-func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (g *GCSCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return g.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
+}
+
+func (g *GCSCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				exists, err := g.ContainsDeprecated(ctx, d)
+				exists, err := g.Contains(ctx, r)
 				if err != nil {
 					return err
 				}
 				if !exists {
 					lock.Lock()
 					defer lock.Unlock()
-					missing = append(missing, d)
+					missing = append(missing, r.GetDigest())
 				}
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -415,8 +463,18 @@ func (g *GCSCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*
 	return missing, nil
 }
 
+func (g *GCSCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(g.cacheType, g.remoteInstanceName, digests)
+	return g.FindMissing(ctx, rns)
+}
+
 func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := g.key(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -495,7 +553,12 @@ func setChunkSize(d *repb.Digest, w *storage.Writer) {
 }
 
 func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	k, err := g.key(ctx, d)
+	k, err := g.key(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
 	if err != nil {
 		return nil, err
 	}

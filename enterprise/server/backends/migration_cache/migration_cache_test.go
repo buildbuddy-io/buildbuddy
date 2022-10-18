@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -25,6 +26,12 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+const (
+	// All files on disk will be a multiple of this block size, assuming a
+	// filesystem with default settings.
+	defaultExt4BlockSize = 4096
 )
 
 var (
@@ -70,7 +77,7 @@ func (c *errorCache) Set(ctx context.Context, d *repb.Digest, data []byte) error
 	return errors.New("error cache set err")
 }
 
-func (c *errorCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *errorCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	return nil, errors.New("error cache get err")
 }
 
@@ -78,15 +85,15 @@ func (c *errorCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return errors.New("error cache delete err")
 }
 
-func (c *errorCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *errorCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	return false, errors.New("error cache contains err")
 }
 
-func (c *errorCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *errorCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	return nil, errors.New("error cache metadata err")
 }
 
-func (c *errorCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (c *errorCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
 	return nil, errors.New("error cache findmissing err")
 }
 
@@ -101,7 +108,7 @@ func (c *errorCache) Reader(ctx context.Context, d *repb.Digest, offset, limit i
 func TestACIsolation(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -113,18 +120,24 @@ func TestACIsolation(t *testing.T) {
 
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
-	c1, err := mc.WithIsolation(ctx, interfaces.ActionCacheType, "")
+	c1, err := mc.WithIsolation(ctx, resource.CacheType_AC, "")
 	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	require.NoError(t, c1.Set(ctx, d1, buf1))
 
-	got1, err := c1.Get(ctx, d1)
+	got1, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d1,
+		CacheType: resource.CacheType_AC,
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
-	gotCAS, err := mc.Get(ctx, d1)
+	gotCAS, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d1,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, gotCAS)
 }
@@ -132,7 +145,7 @@ func TestACIsolation(t *testing.T) {
 func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -142,18 +155,26 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
-	c1, err := mc.WithIsolation(ctx, interfaces.ActionCacheType, "remote")
+	c1, err := mc.WithIsolation(ctx, resource.CacheType_AC, "remote")
 	require.NoError(t, err)
 
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	require.NoError(t, c1.Set(ctx, d1, buf1))
 
-	got1, err := c1.Get(ctx, d1)
+	got1, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d1,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: "remote",
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
-	gotCAS, err := mc.Get(ctx, d1)
+	gotCAS, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d1,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: "remote",
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, gotCAS)
 }
@@ -161,7 +182,7 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 func TestSet_DoubleWrite(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -176,11 +197,17 @@ func TestSet_DoubleWrite(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify data was written to both caches
-	srcData, err := srcCache.Get(ctx, d)
+	srcData, err := srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, srcData)
 
-	destData, err := destCache.Get(ctx, d)
+	destData, err := destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, destData)
 
@@ -192,7 +219,7 @@ func TestSet_DestWriteErr(t *testing.T) {
 	ctx := getAnonContext(t, te)
 	rootDirSrc := testfs.MakeTempDir(t)
 
-	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(1000))
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, int64(defaultExt4BlockSize*10))
 	require.NoError(t, err)
 	destCache := &errorCache{}
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
@@ -202,7 +229,10 @@ func TestSet_DestWriteErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify data was successfully written to src cache
-	srcData, err := srcCache.Get(ctx, d)
+	srcData, err := srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf, srcData)
 }
@@ -222,7 +252,10 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify data was deleted from the dest cache
-	destData, err := destCache.Get(ctx, d)
+	destData, err := destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, destData)
@@ -263,10 +296,11 @@ func TestGetSet(t *testing.T) {
 		require.NoError(t, err, "error setting digest in cache")
 
 		// Get() the bytes from the cache.
-		rbuf, err := mc.Get(ctx, d)
-		require.NoError(t, err, "error getting from cache")
-
-		// Compute a digest for the bytes returned.
+		rbuf, err := mc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
 		require.True(t, d.GetHash() == d2.GetHash())
 	}
@@ -275,7 +309,7 @@ func TestGetSet(t *testing.T) {
 func TestGet_DoubleRead(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -290,7 +324,10 @@ func TestGet_DoubleRead(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -298,7 +335,7 @@ func TestGet_DoubleRead(t *testing.T) {
 func TestGet_DestReadErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -312,7 +349,10 @@ func TestGet_DestReadErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -335,7 +375,10 @@ func TestGet_SrcReadErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return error
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.Error(t, err)
 	require.Nil(t, data)
 }
@@ -358,7 +401,10 @@ func TestGetSet_EmptyData(t *testing.T) {
 	err = mc.Set(ctx, d, []byte{})
 	require.NoError(t, err)
 
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal([]byte{}, data))
 }
@@ -396,7 +442,10 @@ func TestCopyDataInBackground(t *testing.T) {
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.Get(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
@@ -442,7 +491,10 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 
 			// We should exceed the copy channel size, but should not prevent us from continuing
 			// to read from the cache
-			data, err := mc.Get(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 			return nil
@@ -454,7 +506,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 func TestCopyDataInBackground_RateLimit(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -486,7 +538,10 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.Get(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
@@ -501,10 +556,94 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 	require.True(t, time.Since(start) >= 1*time.Second)
 }
 
-func TestContains(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
+func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+
+	te := getTestEnv(t, testUsers)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	pebbleOptions := &pebble_cache.Options{
+		RootDirectory:     rootDirDest,
+		MaxSizeBytes:      maxSizeBytes,
+		IsolateByGroupIDs: true,
+	}
+	destCache, err := pebble_cache.NewPebbleCache(te, pebbleOptions)
+	require.NoError(t, err)
+	destCache.Start()
+
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize: 10,
+		MaxCopiesPerSec:    10,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	authenticatedCtx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+	authenticatedCtx, err = prefix.AttachUserPrefixToContext(authenticatedCtx, te)
+	require.NoError(t, err)
+
+	// Save data to different isolations in src cache
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = srcCache.Set(authenticatedCtx, d, buf)
+	require.NoError(t, err)
+
+	instanceName2 := "dog"
+	srcIsolation2, err := srcCache.WithIsolation(authenticatedCtx, resource.CacheType_AC, instanceName2)
+	require.NoError(t, err)
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	err = srcIsolation2.Set(authenticatedCtx, d2, buf2)
+	require.NoError(t, err)
+
+	//Call get so the digests are copied to the destination cache
+	data, err := mc.Get(authenticatedCtx, &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: instanceName2,
+	})
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf2, data))
+
+	data, err = mc.Get(authenticatedCtx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: "",
+	})
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data))
+
+	// Verify data was copied to correct isolation in destination cache
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		destIsolation1, err := destCache.WithIsolation(authenticatedCtx, resource.CacheType_CAS, "")
+		require.NoError(t, err)
+		waitForCopy(t, authenticatedCtx, destIsolation1, d)
+		return nil
+	})
+	eg.Go(func() error {
+		destIsolation2, err := destCache.WithIsolation(authenticatedCtx, resource.CacheType_AC, instanceName2)
+		require.NoError(t, err)
+		waitForCopy(t, authenticatedCtx, destIsolation2, d2)
+		return nil
+	})
+	eg.Wait()
+}
+
+func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+
+	te := getTestEnv(t, testUsers)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -512,13 +651,96 @@ func TestContains(t *testing.T) {
 	require.NoError(t, err)
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
-	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize: 10,
+		MaxCopiesPerSec:    10,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	// Save data to different isolations in src cache
+	instanceName1 := "cat"
+	srcIsolation1, err := srcCache.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
+	require.NoError(t, err)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	err = srcIsolation1.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	contains, err := mc.ContainsDeprecated(ctx, d)
+	instanceName2 := "cow"
+	srcIsolation2, err := srcCache.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
+	require.NoError(t, err)
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	err = srcIsolation2.Set(ctx, d2, buf2)
+	require.NoError(t, err)
+
+	// Call get so the digests are copied to the destination cache
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: instanceName2,
+	})
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf2, data))
+
+	data, err = mc.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: instanceName1,
+	})
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, data))
+
+	// Verify data was copied to correct isolation in destination cache
+	destIsolation1, err := destCache.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
+	require.NoError(t, err)
+
+	destIsolation2, err := destCache.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
+	require.NoError(t, err)
+
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		waitForCopy(t, ctx, destIsolation1, d)
+		return nil
+	})
+	eg.Go(func() error {
+		waitForCopy(t, ctx, destIsolation2, d2)
+		return nil
+	})
+	eg.Wait()
+}
+
+func TestContains(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+	remoteInstanceName := "cloud"
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
+	mcWithIsolation, err := mc.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = mcWithIsolation.Set(ctx, d, buf)
+	require.NoError(t, err)
+
+	contains, err := mcWithIsolation.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.True(t, contains)
+
+	contains, err = mc.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: remoteInstanceName,
+		CacheType:    resource.CacheType_AC,
+	})
 	require.NoError(t, err)
 	require.True(t, contains)
 
@@ -526,12 +748,20 @@ func TestContains(t *testing.T) {
 	contains, err = mc.ContainsDeprecated(ctx, notWrittenDigest)
 	require.NoError(t, err)
 	require.False(t, contains)
+
+	contains, err = mc.Contains(ctx, &resource.ResourceName{
+		Digest:       notWrittenDigest,
+		InstanceName: "",
+		CacheType:    resource.CacheType_CAS,
+	})
+	require.NoError(t, err)
+	require.False(t, contains)
 }
 
 func TestContains_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 1)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -552,7 +782,7 @@ func TestContains_DestErr(t *testing.T) {
 func TestMetadata(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -566,12 +796,24 @@ func TestMetadata(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	md, err := mc.Metadata(ctx, d)
+	md, err := mc.MetadataDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), md.SizeBytes)
+	md, err = mc.Metadata(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.SizeBytes)
 
 	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
-	md, err = mc.Metadata(ctx, notWrittenDigest)
+	md, err = mc.MetadataDeprecated(ctx, notWrittenDigest)
+	require.True(t, status.IsNotFoundError(err))
+	require.Nil(t, md)
+	md, err = mc.Metadata(ctx, &resource.ResourceName{
+		Digest:    notWrittenDigest,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, md)
 }
@@ -579,7 +821,7 @@ func TestMetadata(t *testing.T) {
 func TestMetadata_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -592,7 +834,7 @@ func TestMetadata_DestErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	md, err := mc.Metadata(ctx, d)
+	md, err := mc.MetadataDeprecated(ctx, d)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.SizeBytes)
 }
@@ -600,7 +842,7 @@ func TestMetadata_DestErr(t *testing.T) {
 func TestFindMissing(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -617,19 +859,64 @@ func TestFindMissing(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	missing, err := mc.FindMissing(ctx, []*repb.Digest{d, notSetD1, notSetD2})
+	digests := []*repb.Digest{d, notSetD1, notSetD2}
+	missing, err := mc.FindMissingDeprecated(ctx, digests)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
 
-	missing, err = mc.FindMissing(ctx, []*repb.Digest{d})
+	rns := digest.ResourceNames(resource.CacheType_CAS, "", digests)
+	missing, err = mc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
+
+	digests = []*repb.Digest{d}
+	missing, err = mc.FindMissingDeprecated(ctx, digests)
 	require.NoError(t, err)
 	require.Empty(t, missing)
+
+	rns = digest.ResourceNames(resource.CacheType_CAS, "", digests)
+	missing, err = mc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.Empty(t, missing)
+}
+
+func TestFindMissing_DestSrcMismatch(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	d3, buf3 := testdigest.NewRandomDigestBuf(t, 100)
+
+	// Set d in both caches, but set d2 and d3 in only one of the caches
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+	err = srcCache.Set(ctx, d2, buf2)
+	require.NoError(t, err)
+	err = destCache.Set(ctx, d3, buf3)
+	require.NoError(t, err)
+
+	digests := []*repb.Digest{d, d2, d3}
+	rns := digest.ResourceNames(resource.CacheType_CAS, "", digests)
+	missing, err := mc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	// Even though d3 is written to the dest cache, expect output to reflect that it's missing from src cache
+	require.ElementsMatch(t, []*repb.Digest{d3}, missing)
 }
 
 func TestFindMissing_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
@@ -645,7 +932,7 @@ func TestFindMissing_DestErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	missing, err := mc.FindMissing(ctx, []*repb.Digest{d, notSetD1, notSetD2})
+	missing, err := mc.FindMissingDeprecated(ctx, []*repb.Digest{d, notSetD1, notSetD2})
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
 }
@@ -653,7 +940,7 @@ func TestFindMissing_DestErr(t *testing.T) {
 func TestGetMultiWithCopying(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(10000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -669,7 +956,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	lock := sync.RWMutex{}
-	digests := make([]*repb.Digest, 50)
+	resourceNames := make([]*resource.ResourceName, 50)
 	expected := make(map[*repb.Digest][]byte, 50)
 	for i := 0; i < 50; i++ {
 		idx := i
@@ -680,26 +967,29 @@ func TestGetMultiWithCopying(t *testing.T) {
 			err = srcCache.Set(ctx, d, buf)
 			require.NoError(t, err)
 
-			digests[idx] = d
+			resourceNames[idx] = &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
 			expected[d] = buf
 			return nil
 		})
 	}
 	eg.Wait()
 
-	r, err := mc.GetMulti(ctx, digests)
+	r, err := mc.GetMulti(ctx, resourceNames)
 	require.NoError(t, err)
 	require.Equal(t, expected, r)
 
-	for _, digest := range digests {
-		waitForCopy(t, ctx, destCache, digest)
+	for _, r := range resourceNames {
+		waitForCopy(t, ctx, destCache, r.GetDigest())
 	}
 }
 
 func TestSetMulti(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(10000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 100)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -729,15 +1019,24 @@ func TestSetMulti(t *testing.T) {
 	require.NoError(t, err)
 
 	for d, expected := range dataToSet {
-		data, err := mc.Get(ctx, d)
+		data, err := mc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = srcCache.Get(ctx, d)
+		data, err = srcCache.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = destCache.Get(ctx, d)
+		data, err = destCache.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 	}
@@ -747,7 +1046,7 @@ func TestSetMulti(t *testing.T) {
 func TestDelete(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
-	maxSizeBytes := int64(1000)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
 	rootDirSrc := testfs.MakeTempDir(t)
 	rootDirDest := testfs.MakeTempDir(t)
 
@@ -762,15 +1061,24 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check data exists before delete
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = srcCache.Get(ctx, d)
+	data, err = srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = destCache.Get(ctx, d)
+	data, err = destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -778,13 +1086,22 @@ func TestDelete(t *testing.T) {
 	err = mc.Delete(ctx, d)
 	require.NoError(t, err)
 
-	data, err = mc.Get(ctx, d)
+	data, err = mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = srcCache.Get(ctx, d)
+	data, err = srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = destCache.Get(ctx, d)
+	data, err = destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 }
 

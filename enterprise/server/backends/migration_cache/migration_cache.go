@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -43,6 +44,11 @@ type MigrationCache struct {
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *int64
+
+	// TODO(Maggie): Clean up these fields when removing WithIsolation
+	// These fields describe the current isolation, as set by WithIsolation
+	remoteInstanceName string
+	cacheType          resource.CacheType
 }
 
 func Register(env environment.Env) error {
@@ -88,6 +94,8 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &zero,
+		remoteInstanceName:          "",
+		cacheType:                   resource.CacheType_CAS,
 	}
 }
 
@@ -157,7 +165,11 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	return c, nil
 }
 
-func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	return mc.withIsolation(ctx, cacheType, remoteInstanceName)
+}
+
+func (mc *MigrationCache) withIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (*MigrationCache, error) {
 	srcCache, err := mc.src.WithIsolation(ctx, cacheType, remoteInstanceName)
 	if err != nil {
 		return nil, errors.WithMessage(err, "cannot get src cache with isolation")
@@ -170,24 +182,26 @@ func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType interface
 	clone := *mc
 	clone.src = srcCache
 	clone.dest = destCache
+	clone.remoteInstanceName = remoteInstanceName
+	clone.cacheType = cacheType
 
 	return &clone, nil
 }
 
-func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcContains, dstContains bool
 
 	eg.Go(func() error {
-		srcContains, srcErr = mc.src.ContainsDeprecated(gctx, d)
+		srcContains, srcErr = mc.src.Contains(gctx, r)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			dstContains, dstErr = mc.dest.ContainsDeprecated(gctx, d)
+			dstContains, dstErr = mc.dest.Contains(gctx, r)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -197,9 +211,9 @@ func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest
 	}
 
 	if dstErr != nil {
-		log.Warningf("Migration dest %v contains failed: %s", d, dstErr)
+		log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
 	} else if mc.logNotFoundErrors && srcContains != dstContains {
-		log.Warningf("Migration digest %v src contains %v, dest contains %v", d, srcContains, dstContains)
+		log.Warningf("Migration digest %v src contains %v, dest contains %v", r.GetDigest(), srcContains, dstContains)
 	}
 
 	if doubleRead && srcContains && !dstContains {
@@ -209,20 +223,29 @@ func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest
 	return srcContains, srcErr
 }
 
-func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return mc.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
+}
+
+func (mc *MigrationCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMetadata *interfaces.CacheMetadata
 
 	eg.Go(func() error {
-		srcMetadata, srcErr = mc.src.Metadata(gctx, d)
+		srcMetadata, srcErr = mc.src.Metadata(gctx, r)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.Metadata(gctx, d)
+			_, dstErr = mc.dest.Metadata(gctx, r)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -232,7 +255,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interf
 	}
 
 	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
-		log.Warningf("Migration dest %v metadata failed: %s", d, dstErr)
+		log.Warningf("Migration dest %v metadata failed: %s", r.GetDigest(), dstErr)
 	}
 	if status.IsNotFoundError(dstErr) {
 		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "metadata"}).Inc()
@@ -241,20 +264,29 @@ func (mc *MigrationCache) Metadata(ctx context.Context, d *repb.Digest) (*interf
 	return srcMetadata, srcErr
 }
 
-func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+func (mc *MigrationCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return mc.Metadata(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
+}
+
+func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMissing, dstMissing []*repb.Digest
 
 	eg.Go(func() error {
-		srcMissing, srcErr = mc.src.FindMissing(gctx, digests)
+		srcMissing, srcErr = mc.src.FindMissing(gctx, resources)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			dstMissing, dstErr = mc.dest.FindMissing(gctx, digests)
+			dstMissing, dstErr = mc.dest.FindMissing(gctx, resources)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -263,33 +295,42 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, digests []*repb.Diges
 		return nil, err
 	}
 
-	if dstErr != nil {
-		log.Warningf("Migration dest FindMissing %v failed: %s", digests, dstErr)
-	} else if !digest.ElementsMatch(srcMissing, dstMissing) {
-		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
+	if doubleRead {
+		if dstErr != nil {
+			log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
+		} else if digest.ElementsMatch(srcMissing, dstMissing) {
+			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissingMatch"}).Inc()
+		} else {
+			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
 
-		if mc.logNotFoundErrors {
-			log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", digests, srcMissing, dstMissing)
+			if mc.logNotFoundErrors {
+				log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
+			}
 		}
 	}
 
 	return srcMissing, srcErr
 }
 
-func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (mc *MigrationCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	rns := digest.ResourceNames(mc.cacheType, mc.remoteInstanceName, digests)
+	return mc.FindMissing(ctx, rns)
+}
+
+func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcData map[*repb.Digest][]byte
 
 	eg.Go(func() error {
-		srcData, srcErr = mc.src.GetMulti(gctx, digests)
+		srcData, srcErr = mc.src.GetMulti(gctx, resources)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.GetMulti(gctx, digests)
+			_, dstErr = mc.dest.GetMulti(gctx, resources)
 			return nil
 		})
 	}
@@ -300,19 +341,24 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) 
 
 	if dstErr != nil {
 		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-			log.Warningf("Migration dest GetMulti of %v failed: %s", digests, dstErr)
+			log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
 		}
 		if status.IsNotFoundError(dstErr) {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
 		}
 	}
 
-	for _, d := range digests {
-		mc.sendNonBlockingCopy(ctx, d)
+	for _, r := range resources {
+		mc.sendNonBlockingCopy(ctx, r)
 	}
 
 	// Return data from source cache
 	return srcData, srcErr
+}
+
+func (mc *MigrationCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(mc.cacheType, mc.remoteInstanceName, digests)
+	return mc.GetMulti(ctx, rns)
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -445,6 +491,9 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 			if status.IsNotFoundError(dstErr) {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
 			}
+			if dstErr == nil {
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "readerMatch"}).Inc()
+			}
 			return nil
 		})
 	}
@@ -462,7 +511,12 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 		return nil, srcErr
 	}
 
-	mc.sendNonBlockingCopy(ctx, d)
+	mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
 
 	return &doubleReader{
 		src:  srcReader,
@@ -574,13 +628,13 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 	return dw, nil
 }
 
-func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcBuf []byte
 
 	eg.Go(func() error {
-		srcBuf, srcErr = mc.src.Get(gctx, d)
+		srcBuf, srcErr = mc.src.Get(gctx, r)
 		return srcErr
 	})
 
@@ -588,7 +642,7 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.Get(gctx, d)
+			_, dstErr = mc.dest.Get(gctx, r)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -599,21 +653,30 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 
 	if dstErr != nil {
 		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-			log.Warningf("Double read of %q failed. src err %s, dest err %s", d, srcErr, dstErr)
+			log.Warningf("Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
 		}
 		if status.IsNotFoundError(dstErr) {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
 		}
 	}
 
-	mc.sendNonBlockingCopy(ctx, d)
+	mc.sendNonBlockingCopy(ctx, r)
 
 	// Return data from source cache
 	return srcBuf, srcErr
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Digest) {
-	alreadyCopied, err := mc.dest.ContainsDeprecated(ctx, d)
+func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return mc.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
+}
+
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName) {
+	alreadyCopied, err := mc.dest.Contains(ctx, r)
 	if err != nil {
 		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
 		return
@@ -626,9 +689,11 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Diges
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
-		d:         d,
-		ctx:       ctx,
-		ctxCancel: cancel,
+		d:                  r.GetDigest(),
+		ctx:                ctx,
+		ctxCancel:          cancel,
+		remoteInstanceName: r.GetInstanceName(),
+		cacheType:          r.GetCacheType(),
 	}:
 	default:
 		cancel()
@@ -670,9 +735,11 @@ func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) 
 }
 
 type copyData struct {
-	d         *repb.Digest
-	ctx       context.Context
-	ctxCancel context.CancelFunc
+	d                  *repb.Digest
+	ctx                context.Context
+	ctxCancel          context.CancelFunc
+	cacheType          resource.CacheType
+	remoteInstanceName string
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
@@ -713,7 +780,13 @@ func (mc *MigrationCache) logCopyChanFullInBackground() {
 func (mc *MigrationCache) copy(c *copyData) {
 	defer c.ctxCancel()
 
-	srcReader, err := mc.src.Reader(c.ctx, c.d, 0, 0)
+	cache, err := mc.withIsolation(c.ctx, c.cacheType, c.remoteInstanceName)
+	if err != nil {
+		log.Warningf("Migration copy err: Could not call WithIsolation for type %v instance %s: %s", c.cacheType, c.remoteInstanceName, err)
+		return
+	}
+
+	srcReader, err := cache.src.Reader(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
@@ -722,7 +795,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer srcReader.Close()
 
-	destWriter, err := mc.dest.Writer(c.ctx, c.d)
+	destWriter, err := cache.dest.Writer(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return
@@ -734,7 +807,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 
 	if err := destWriter.Commit(); err != nil {
-		log.Warningf("Migration copy err: desitination commit failed: %s", err)
+		log.Warningf("Migration copy err: destination commit failed: %s", err)
 	}
 }
 

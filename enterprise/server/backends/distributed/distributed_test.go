@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -63,7 +65,7 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 	if err != nil {
 		t.Fatal(err)
 	}
-	ic, err := c.WithIsolation(context.Background(), interfaces.CASCacheType, "" /* =remoteInstanceName */)
+	ic, err := c.WithIsolation(context.Background(), resource.CacheType_CAS, "" /* =remoteInstanceName */)
 	require.NoError(t, err)
 	c = ic.(*Cache)
 	c.StartListening()
@@ -136,6 +138,160 @@ func TestBasicReadWrite(t *testing.T) {
 			readAndCompareDigest(t, ctx, baseCache, d)
 		}
 	}
+}
+
+func TestContains_WithIsolation(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+	remoteInstanceName := "remote"
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+	dcWithIsolation1, err := dc1.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+	dcWithIsolation2, err := dc2.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+	dcWithIsolation3, err := dc3.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
+	require.NoError(t, err)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	// Do a write - should be written to all nodes
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	if err = dcWithIsolation1.Set(ctx, d, buf); err != nil {
+		require.NoError(t, err)
+	}
+
+	c, err := dcWithIsolation1.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.True(t, c)
+	c, err = dc1.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_AC,
+	})
+	require.NoError(t, err)
+	require.True(t, c)
+
+	c, err = dcWithIsolation2.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.True(t, c)
+	c, err = dc2.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_AC,
+	})
+	require.NoError(t, err)
+	require.True(t, c)
+
+	c, err = dcWithIsolation3.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.True(t, c)
+	c, err = dc3.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_AC,
+	})
+	require.NoError(t, err)
+	require.True(t, c)
+}
+
+func TestContains_NotWritten(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := CacheConfig{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	// Data is not written - no nodes should contain it
+	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+
+	c, err := dc1.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.False(t, c)
+	c, err = dc1.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: "",
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_CAS,
+	})
+	require.NoError(t, err)
+	require.False(t, c)
+
+	c, err = dc2.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.False(t, c)
+	c, err = dc2.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: "",
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_CAS,
+	})
+	require.NoError(t, err)
+	require.False(t, c)
+
+	c, err = dc3.ContainsDeprecated(ctx, d)
+	require.NoError(t, err)
+	require.False(t, c)
+	c, err = dc3.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: "",
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    resource.CacheType_CAS,
+	})
+	require.NoError(t, err)
+	require.False(t, c)
 }
 
 func TestReadMaxOffset(t *testing.T) {
@@ -517,13 +673,13 @@ func TestContainsMulti(t *testing.T) {
 	}
 
 	for _, baseCache := range baseCaches {
-		missingMap, err := baseCache.FindMissing(ctx, digestsWritten)
+		missingMap, err := baseCache.FindMissingDeprecated(ctx, digestsWritten)
 		assert.Nil(t, err)
 		assert.Equal(t, 0, len(missingMap))
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missingMap, err := distributedCache.FindMissing(ctx, digestsWritten)
+		missingMap, err := distributedCache.FindMissingDeprecated(ctx, digestsWritten)
 		assert.Nil(t, err)
 		assert.Equal(t, 0, len(missingMap))
 	}
@@ -546,21 +702,28 @@ func TestMetadata(t *testing.T) {
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
+	dcWithIsolation1, err := dc1.WithIsolation(ctx, resource.CacheType_CAS, "blah")
+	require.NoError(t, err)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
+	dcWithIsolation2, err := dc2.WithIsolation(ctx, resource.CacheType_CAS, "blah")
+	require.NoError(t, err)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
+	dcWithIsolation3, err := dc3.WithIsolation(ctx, resource.CacheType_CAS, "blah")
+	require.NoError(t, err)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
 
+	distributedCachesWithIsolation := []interfaces.Cache{dcWithIsolation1, dcWithIsolation2, dcWithIsolation3}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	testSizes := []int64{
@@ -569,17 +732,24 @@ func TestMetadata(t *testing.T) {
 	for i, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		// Set() the bytes in the cache.
-		err := distributedCaches[i%3].Set(ctx, d, buf)
-		if err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		err := distributedCachesWithIsolation[i%3].Set(ctx, d, buf)
+		require.NoError(t, err)
+
+		for _, dc := range distributedCachesWithIsolation {
+			// Metadata should return true size of the blob, regardless of queried size.
+			md, err := dc.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
+			require.NoError(t, err)
+			require.Equal(t, testSize, md.SizeBytes)
 		}
 
 		for _, dc := range distributedCaches {
 			// Metadata should return true size of the blob, regardless of queried size.
-			md, err := dc.Metadata(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-			if err != nil {
-				t.Fatalf("Error getting %q metadata from cache: %s", d.GetHash(), err.Error())
-			}
+			md, err := dc.Metadata(ctx, &resource.ResourceName{
+				Digest:       &repb.Digest{Hash: d.GetHash(), SizeBytes: 1},
+				InstanceName: "blah",
+				CacheType:    resource.CacheType_CAS,
+			})
+			require.NoError(t, err)
 			require.Equal(t, testSize, md.SizeBytes)
 		}
 	}
@@ -642,15 +812,24 @@ func TestFindMissing(t *testing.T) {
 	}
 
 	allDigests := append(digestsWritten, digestsNotWritten...)
+	rns := digest.ResourceNames(resource.CacheType_CAS, "", allDigests)
 
 	for _, baseCache := range baseCaches {
-		missing, err := baseCache.FindMissing(ctx, allDigests)
+		missing, err := baseCache.FindMissingDeprecated(ctx, allDigests)
+		require.NoError(t, err)
+		require.ElementsMatch(t, missing, digestsNotWritten)
+
+		missing, err = baseCache.FindMissing(ctx, rns)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missing, err := distributedCache.FindMissing(ctx, allDigests)
+		missing, err := distributedCache.FindMissingDeprecated(ctx, allDigests)
+		require.NoError(t, err)
+		require.ElementsMatch(t, missing, digestsNotWritten)
+
+		missing, err = distributedCache.FindMissing(ctx, rns)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
@@ -695,20 +874,24 @@ func TestGetMulti(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	digestsWritten := make([]*repb.Digest, 0)
+	resourcesWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
-		digestsWritten = append(digestsWritten, d)
+		resourcesWritten = append(resourcesWritten, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 	}
 
 	for _, baseCache := range baseCaches {
-		gotMap, err := baseCache.GetMulti(ctx, digestsWritten)
+		gotMap, err := baseCache.GetMulti(ctx, resourcesWritten)
 		assert.Nil(t, err)
-		for _, d := range digestsWritten {
+		for _, r := range resourcesWritten {
+			d := r.GetDigest()
 			buf, ok := gotMap[d]
 			assert.True(t, ok)
 			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
@@ -716,9 +899,10 @@ func TestGetMulti(t *testing.T) {
 	}
 
 	for _, distributedCache := range distributedCaches {
-		gotMap, err := distributedCache.GetMulti(ctx, digestsWritten)
+		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
 		assert.Nil(t, err)
-		for _, d := range digestsWritten {
+		for _, r := range resourcesWritten {
+			d := r.GetDigest()
 			buf, ok := gotMap[d]
 			assert.True(t, ok)
 			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))

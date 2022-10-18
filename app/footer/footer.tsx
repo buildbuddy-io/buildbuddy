@@ -1,5 +1,7 @@
 import React from "react";
 
+import capabilities from "../capabilities/capabilities";
+
 export default class FooterComponent extends React.Component {
   render() {
     return (
@@ -12,7 +14,7 @@ export default class FooterComponent extends React.Component {
           Privacy
         </a>
         <a href="https://buildbuddy.io" target="_blank">
-          BuildBuddy
+          BuildBuddy {capabilities.version != "unknown" && capabilities.version}
         </a>
         <a href="mailto:hello@buildbuddy.io" target="_blank">
           Contact us

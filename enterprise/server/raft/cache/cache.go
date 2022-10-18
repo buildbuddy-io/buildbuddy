@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -294,38 +295,14 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	})
 }
 
-func (rc *RaftCache) lookupPartitionID(ctx context.Context, remoteInstanceName string) (string, error) {
-	auth := rc.env.GetAuthenticator()
-	if auth == nil {
-		return DefaultPartitionID, nil
-	}
-	user, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return DefaultPartitionID, nil
-	}
-	for _, pm := range rc.conf.PartitionMappings {
-		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
-			return pm.PartitionID, nil
-		}
-	}
-	return DefaultPartitionID, nil
-}
-
-func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	partID, err := rc.lookupPartitionID(ctx, remoteInstanceName)
+func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
+	_, partID, err := rc.lookupGroupAndPartitionID(ctx, remoteInstanceName)
 	if err != nil {
 		return nil, err
 	}
 
 	newIsolation := &rfpb.Isolation{}
-	switch cacheType {
-	case interfaces.CASCacheType:
-		newIsolation.CacheType = rfpb.Isolation_CAS_CACHE
-	case interfaces.ActionCacheType:
-		newIsolation.CacheType = rfpb.Isolation_ACTION_CACHE
-	default:
-		return nil, status.InvalidArgumentErrorf("Unknown cache type %v", cacheType)
-	}
+	newIsolation.CacheType = cacheType
 	newIsolation.RemoteInstanceName = remoteInstanceName
 	newIsolation.PartitionId = partID
 
@@ -335,20 +312,57 @@ func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType interfaces.Cac
 	return &clone, nil
 }
 
-func (rc *RaftCache) makeFileRecord(ctx context.Context, d *repb.Digest) (*rfpb.FileRecord, error) {
-	_, err := digest.Validate(d)
+func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
+	auth := rc.env.GetAuthenticator()
+	if auth == nil {
+		return interfaces.AuthAnonymousUser, DefaultPartitionID, nil
+	}
+	user, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return interfaces.AuthAnonymousUser, DefaultPartitionID, nil
+	}
+	for _, pm := range rc.conf.PartitionMappings {
+		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+			return user.GetGroupID(), pm.PartitionID, nil
+		}
+	}
+	return user.GetGroupID(), DefaultPartitionID, nil
+}
+
+func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
+	_, err := digest.Validate(r.GetDigest())
+	if err != nil {
+		return nil, err
+	}
+
+	groupID, partID, err := rc.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
 
 	return &rfpb.FileRecord{
-		Isolation: rc.isolation,
-		Digest:    d,
+		Isolation: &rfpb.Isolation{
+			CacheType:          r.GetCacheType(),
+			RemoteInstanceName: r.GetInstanceName(),
+			PartitionId:        partID,
+			GroupId:            groupID,
+		},
+		Digest: r.GetDigest(),
 	}, nil
 }
 
 func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	fileRecord, err := rc.makeFileRecord(ctx, d)
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	}
+	return rc.reader(ctx, rn, offset, limit)
+}
+
+func (rc *RaftCache) reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +405,12 @@ func (rwc *raftWriteCloser) Close() error {
 }
 
 func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	fileRecord, err := rc.makeFileRecord(ctx, d)
+	fileRecord, err := rc.makeFileRecord(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -448,22 +467,35 @@ func (rc *RaftCache) Stop() error {
 	return nil
 }
 
-func (rc *RaftCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	missing, err := rc.FindMissing(ctx, []*repb.Digest{d})
+func (rc *RaftCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+	missing, err := rc.findMissingResourceNames(ctx, []*resource.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
 	return len(missing) == 0, nil
 }
 
-func (rc *RaftCache) Metadata(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (rc *RaftCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+	return rc.Contains(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	})
+}
+
+func (rc *RaftCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func (rc *RaftCache) digestsToKeyMetas(ctx context.Context, digests []*repb.Digest) ([]*sender.KeyMeta, error) {
+func (rc *RaftCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames []*resource.ResourceName) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
-	for _, d := range digests {
-		fileRecord, err := rc.makeFileRecord(ctx, d)
+	for _, rn := range resourceNames {
+		fileRecord, err := rc.makeFileRecord(ctx, rn)
 		if err != nil {
 			return nil, err
 		}
@@ -476,8 +508,8 @@ func (rc *RaftCache) digestsToKeyMetas(ctx context.Context, digests []*repb.Dige
 	return keys, nil
 }
 
-func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	keys, err := rc.digestsToKeyMetas(ctx, digests)
+func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames []*resource.ResourceName) ([]*repb.Digest, error) {
+	keys, err := rc.resourceNamesToKeyMetas(ctx, resourceNames)
 	if err != nil {
 		return nil, err
 	}
@@ -511,8 +543,17 @@ func (rc *RaftCache) FindMissing(ctx context.Context, digests []*repb.Digest) ([
 	return missingDigests, nil
 }
 
-func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	r, err := rc.Reader(ctx, d, 0, 0)
+func (rc *RaftCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+	return rc.findMissingResourceNames(ctx, resources)
+}
+
+func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
+	resourceNames := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
+	return rc.findMissingResourceNames(ctx, resourceNames)
+}
+
+func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
+	r, err := rc.reader(ctx, rn, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -520,8 +561,17 @@ func (rc *RaftCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	keys, err := rc.digestsToKeyMetas(ctx, digests)
+func (rc *RaftCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return rc.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	})
+}
+
+func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	keys, err := rc.resourceNamesToKeyMetas(ctx, resources)
 	if err != nil {
 		return nil, err
 	}
@@ -553,6 +603,11 @@ func (rc *RaftCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[
 	}
 
 	return dataMap, nil
+}
+
+func (rc *RaftCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
+	return rc.GetMulti(ctx, rns)
 }
 
 func (rc *RaftCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

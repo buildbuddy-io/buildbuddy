@@ -9,7 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -34,6 +34,12 @@ func TestDownloadTree(t *testing.T) {
 			&repb.FileNode{
 				Name:   "fileA.txt",
 				Digest: fileADigest,
+			},
+		},
+		Symlinks: []*repb.SymlinkNode{
+			&repb.SymlinkNode{
+				Name:   "fileA.symlink",
+				Target: "./fileA.txt",
 			},
 		},
 	}
@@ -71,6 +77,12 @@ func TestDownloadTree(t *testing.T) {
 	assert.DirExists(t, filepath.Join(tmpDir, "my-directory"), "my-directory should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "my-directory/fileA.txt"), "fileA.txt should exist")
 	assert.FileExists(t, filepath.Join(tmpDir, "fileB.txt"), "fileB.txt should exist")
+	target, err := os.Readlink(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
+	assert.NoError(t, err, "should be able to read symlink target")
+	assert.Equal(t, "./fileA.txt", target)
+	targetContents, err := os.ReadFile(filepath.Join(tmpDir, "my-directory/fileA.symlink"))
+	assert.NoError(t, err)
+	assert.Equal(t, "mytestdataA", string(targetContents), "symlinked file contents should match target file")
 }
 
 func TestDownloadTreeWithFileCache(t *testing.T) {
@@ -233,7 +245,7 @@ func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceNa
 		Hash:      hashString,
 		SizeBytes: int64(len(dataBytes)),
 	}
-	c, err := env.GetCache().WithIsolation(ctx, interfaces.CASCacheType, instanceName)
+	c, err := env.GetCache().WithIsolation(ctx, resource.CacheType_CAS, instanceName)
 	if err != nil {
 		t.Fatal(err)
 	}

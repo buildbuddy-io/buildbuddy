@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -30,9 +31,9 @@ func fileRecordSegments(r *rfpb.FileRecord) (partID string, groupID string, isol
 	partID = r.GetIsolation().GetPartitionId()
 	groupID = r.GetIsolation().GetGroupId()
 
-	if r.GetIsolation().GetCacheType() == rfpb.Isolation_CAS_CACHE {
+	if r.GetIsolation().GetCacheType() == resource.CacheType_CAS {
 		isolation = "cas"
-	} else if r.GetIsolation().GetCacheType() == rfpb.Isolation_ACTION_CACHE {
+	} else if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
 		isolation = "ac"
 		if remoteInstanceName := r.GetIsolation().GetRemoteInstanceName(); remoteInstanceName != "" {
 			remoteInstanceHash = strconv.Itoa(int(crc32.ChecksumIEEE([]byte(remoteInstanceName))))

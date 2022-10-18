@@ -222,12 +222,12 @@ func (r *commandRunner) pullCredentials() container.PullCredentials {
 }
 
 func (r *commandRunner) PrepareForTask(ctx context.Context) error {
-	r.Workspace.SetTask(r.task)
+	r.Workspace.SetTask(ctx, r.task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
 	if r.PlatformProperties.RecycleRunner {
 		if err := r.Workspace.Clean(); err != nil {
-			log.Errorf("Failed to clean workspace: %s", err)
+			log.CtxErrorf(ctx, "Failed to clean workspace: %s", err)
 			return err
 		}
 	}
@@ -437,7 +437,7 @@ func (r *commandRunner) Remove(ctx context.Context) error {
 	if r.VFSServer != nil {
 		r.VFSServer.Stop()
 	}
-	if err := r.Workspace.Remove(); err != nil {
+	if err := r.Workspace.Remove(ctx); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {

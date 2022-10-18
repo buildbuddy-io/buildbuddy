@@ -6,12 +6,14 @@ import (
 	"io"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -382,7 +384,7 @@ func TestReplicaFileWrite(t *testing.T) {
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -421,7 +423,7 @@ func TestReplicaFileWrite(t *testing.T) {
 		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
 			FileRecord: &rfpb.FileRecord{
 				Isolation: &rfpb.Isolation{
-					CacheType:   rfpb.Isolation_CAS_CACHE,
+					CacheType:   resource.CacheType_CAS,
 					PartitionId: "default",
 					GroupId:     interfaces.AuthAnonymousUser,
 				},
@@ -466,7 +468,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -534,7 +536,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 	fileRecord := &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   rfpb.Isolation_CAS_CACHE,
+			CacheType:   resource.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
@@ -608,16 +610,9 @@ func TestReplicaSplitLease(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Ensure that a direct write now fails.
+	// Ensure that trying to access the DB via the leaser now fails.
 	{
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   []byte("key-name"),
-				Value: []byte("key-value"),
-			},
-		}))
-		entries := []dbsm.Entry{entry}
-		_, err := repl.Update(entries)
+		_, err := repl.TestingDB()
 		require.Error(t, err)
 	}
 
@@ -661,6 +656,10 @@ func TestReplicaSplitLease(t *testing.T) {
 		entries := []dbsm.Entry{entry}
 		_, err := repl.Update(entries)
 		require.NoError(t, err)
+
+		// Give expiration timer a chance to fire.
+		time.Sleep(25 * time.Millisecond)
+		require.False(t, repl.IsSplitting(), "replica split should have been aborted")
 	}
 
 	// A direct write should succeed immediately without error.
@@ -700,7 +699,7 @@ func TestFindSplitPoint(t *testing.T) {
 			d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
 			fileRecord := &rfpb.FileRecord{
 				Isolation: &rfpb.Isolation{
-					CacheType:   rfpb.Isolation_CAS_CACHE,
+					CacheType:   resource.CacheType_CAS,
 					PartitionId: partitionID,
 					GroupId:     interfaces.AuthAnonymousUser,
 				},

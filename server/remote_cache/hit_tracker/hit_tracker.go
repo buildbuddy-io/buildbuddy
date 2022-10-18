@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -269,9 +270,11 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 
 	// TODO(bduffany): Use protos instead of counterType so we can avoid this
 	// translation
-	cacheType := capb.CacheType_CAS
+	cacheTypeDeprecated := capb.CacheType_CAS
+	cacheType := resource.CacheType_CAS
 	if h.actionCache {
-		cacheType = capb.CacheType_AC
+		cacheType = resource.CacheType_AC
+		cacheTypeDeprecated = capb.CacheType_AC
 	}
 	requestType := capb.RequestType_READ
 	if stats.Status == Upload {
@@ -290,6 +293,7 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		TargetId:             h.requestMetadata.TargetId,
 		ActionId:             h.requestMetadata.ActionId,
 		CacheType:            cacheType,
+		CacheTypeDeprecated:  cacheTypeDeprecated,
 		RequestType:          requestType,
 		Digest:               d,
 		Status:               &statuspb.Status{Code: int32(statusCode)},

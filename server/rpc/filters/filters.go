@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -168,6 +169,21 @@ func requestIDUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	return ContextReplacingUnaryServerInterceptor(addRequestIdToContext)
 }
 
+func addInvocationIdToLog(ctx context.Context) context.Context {
+	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
+		return log.EnrichContext(ctx, "invocation_id", iid)
+	}
+	return ctx
+}
+
+func invocationIDLoggerStreamServerInterceptor() grpc.StreamServerInterceptor {
+	return ContextReplacingStreamServerInterceptor(addInvocationIdToLog)
+}
+
+func invocationIDLoggerUnaryServerInterceptor() grpc.UnaryServerInterceptor {
+	return ContextReplacingUnaryServerInterceptor(addInvocationIdToLog)
+}
+
 // requestContextProtoUnaryServerInterceptor is a server interceptor that
 // copies the request context from the request message into the context.
 func requestContextProtoUnaryServerInterceptor() grpc.UnaryServerInterceptor {
@@ -268,6 +284,7 @@ func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
 		requestIDUnaryServerInterceptor(),
+		invocationIDLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
 		requestContextProtoUnaryServerInterceptor(),
 		authUnaryServerInterceptor(env),
@@ -280,6 +297,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
 		requestIDStreamServerInterceptor(),
+		invocationIDLoggerStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),
 		authStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),

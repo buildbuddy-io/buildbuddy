@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/uuid",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/util/log",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
     ],

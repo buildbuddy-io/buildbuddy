@@ -3,12 +3,14 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -16,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/creack/pty"
 	"gopkg.in/yaml.v2"
 )
 
@@ -69,18 +72,29 @@ func readConfig() (*BuildBuddyConfig, error) {
 // (if remote, they will be fetched).
 type Plugin struct {
 	config *PluginConfig
+	// tempDir is a directory where the plugin can store temporary files.
+	// This dir lasts only for the current CLI invocation and is visible
+	// to all hooks.
+	tempDir string
 }
 
 // LoadAll loads all plugins from the config, and ensures that any remote
 // plugins are downloaded.
-func LoadAll() ([]*Plugin, error) {
+func LoadAll(tempDir string) ([]*Plugin, error) {
 	cfg, err := readConfig()
 	if err != nil {
 		return nil, err
 	}
+	if cfg == nil {
+		return nil, nil
+	}
 	plugins := make([]*Plugin, 0, len(cfg.Plugins))
 	for _, p := range cfg.Plugins {
-		plugin := &Plugin{config: p}
+		pluginTempDir, err := os.MkdirTemp(tempDir, "plugin-tmp-*")
+		if err != nil {
+			return nil, status.InternalErrorf("failed to create plugin temp dir: %s", err)
+		}
+		plugin := &Plugin{config: p, tempDir: pluginTempDir}
 		if err := plugin.load(); err != nil {
 			return nil, err
 		}
@@ -90,6 +104,25 @@ func LoadAll() ([]*Plugin, error) {
 		plugins = append(plugins, plugin)
 	}
 	return plugins, nil
+}
+
+// PrepareEnv sets environment variables for use in plugins.
+func PrepareEnv() error {
+	ws, err := workspace.Path()
+	if err != nil {
+		return err
+	}
+	if err := os.Setenv("BUILD_WORKSPACE_DIRECTORY", ws); err != nil {
+		return err
+	}
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.Setenv("USER_CONFIG_DIR", cfg); err != nil {
+		return err
+	}
+	return nil
 }
 
 // RepoURL returns the normalized repo URL. It does not include the ref part of
@@ -222,29 +255,37 @@ func (p *Plugin) Path() (string, error) {
 	return filepath.Join(ws, p.config.Path), nil
 }
 
+func (p *Plugin) commandEnv() []string {
+	env := os.Environ()
+	env = append(env, fmt.Sprintf("PLUGIN_TEMPDIR=%s", p.tempDir))
+	return env
+}
+
 // PreBazel executes the plugin's pre-bazel hook if it exists, allowing the
 // plugin to return a set of transformed bazel arguments.
 //
-// Plugins are currently expected to output the new arguments on stdout. To
-// simplify handling of whitespace, each line is expected to contain exactly one
-// argument.
+// Plugins receive as their first argument a path to a file containing the
+// arguments to be passed to bazel. The plugin can read and write that file to
+// modify the args (most commonly, just appending to the file), which will then
+// be fed to the next plugin in the pipeline, or passed to Bazel if this is the
+// last plugin.
 //
-// Example plugin that automatically disables remote cache if it takes longer
-// than 1s to ping buildbuddy:
-//
-//     pre_bazel.sh
-//       #!/usr/bin/env bash
-//       # echo original args, one per line
-//       for arg in "$@"; do
-//         echo "$arg"
-//       done
-//       # Note: redirect ping stdout to stderr, to avoid adding ping output to
-//       # bazel args.
-//       if ! timeout 1 ping -c1 remote.buildbuddy.io >&2; then
-//           # Network is spotty; don't use cache
-//           echo "--remote_cache="
-//       fi
+// See cli/example_plugins/ping_remote/pre_bazel.sh for an example.
 func (p *Plugin) PreBazel(args []string) ([]string, error) {
+	// Write args to a file so the plugin can manipulate them.
+	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
+	}
+	defer func() {
+		argsFile.Close()
+		os.Remove(argsFile.Name())
+	}()
+	_, err = disk.WriteFile(context.TODO(), argsFile.Name(), []byte(strings.Join(args, "\n")+"\n"))
+	if err != nil {
+		return nil, err
+	}
+
 	path, err := p.Path()
 	if err != nil {
 		return nil, err
@@ -263,20 +304,21 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	// line, wrap it with "/usr/bin/env bash"
 	// TODO: support "pre_bazel.<any-extension>" as long as the file is
 	// executable and has a shebang line
-	buf := &bytes.Buffer{}
-	cmd := exec.Command(scriptPath, args...)
-	// TODO: Prefix stderr output with "output from [plugin]" ?
+	cmd := exec.Command(scriptPath, argsFile.Name())
+	// TODO: Prefix output with "output from [plugin]" ?
+	cmd.Dir = path
 	cmd.Stderr = os.Stderr
-	cmd.Stdout = buf
+	cmd.Stdout = os.Stdout
+	cmd.Env = p.commandEnv()
 	if err := cmd.Run(); err != nil {
+		return nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
+	}
+
+	newArgs, err := readArgsFile(argsFile.Name())
+	if err != nil {
 		return nil, err
 	}
-	out := buf.String()
-	// For convenience, allow output to end with a trailing newline.
-	if len(out) > 0 && out[len(out)-1] == '\n' {
-		out = out[:len(out)-1]
-	}
-	newArgs := strings.Split(out, "\n")
+
 	log.Debugf("New bazel args: %s", newArgs)
 	return newArgs, nil
 }
@@ -287,7 +329,7 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 // Currently the invocation data is fed as plain text via a file. The file path
 // is passed as the first argument.
 //
-// See cli/example_plugins/go_highlight/post_bazel.sh for an example.
+// See cli/example_plugins/go_deps/post_bazel.sh for an example.
 func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	path, err := p.Path()
 	if err != nil {
@@ -304,7 +346,140 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	log.Debugf("Running post-bazel hook for %s/%s", p.config.Repo, p.config.Path)
 	cmd := exec.Command(scriptPath, bazelOutputPath)
 	// TODO: Prefix stderr output with "output from [plugin]" ?
+	cmd.Dir = path
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
-	return cmd.Run()
+	cmd.Stdin = os.Stdin
+	cmd.Env = p.commandEnv()
+	if err := cmd.Run(); err != nil {
+		return status.InternalErrorf("Post-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
+	}
+	return nil
+}
+
+// Pipe streams the combined console output (stdout + stderr) from the previous
+// plugin in the pipeline to this plugin, returning the output of this plugin.
+// If there is no previous plugin in the pipeline then the original bazel output
+// is piped in.
+//
+// It returns the original reader if no output handler is configured for this
+// plugin.
+//
+// See cli/example_plugins/go_highlight/handle_bazel_output.sh for an example.
+func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
+	path, err := p.Path()
+	if err != nil {
+		return nil, err
+	}
+	scriptPath := filepath.Join(path, "handle_bazel_output.sh")
+	exists, err := disk.FileExists(context.TODO(), scriptPath)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return r, nil
+	}
+	cmd := exec.Command(scriptPath)
+	pr, pw := io.Pipe()
+	cmd.Dir = path
+	// Write command output to a pty to ensure line buffering.
+	ptmx, tty, err := pty.Open()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to open pty: %s", err)
+	}
+	cmd.Stdout = tty
+	cmd.Stderr = tty
+	cmd.Stdin = r
+	// Prevent output handlers from receiving Ctrl+C, to prevent things like
+	// "KeyboardInterrupt" being printed in Python plugins. Instead, plugins
+	// will just receive EOF on stdin and exit normally.
+	// TODO: Should we still have a way for plugins to listen to Ctrl+C?
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+	cmd.Env = p.commandEnv()
+	if err := cmd.Start(); err != nil {
+		return nil, status.InternalErrorf("failed to start plugin bazel output handler: %s", err)
+	}
+	go func() {
+		// Copy pty output to the next pipeline stage.
+		io.Copy(pw, ptmx)
+	}()
+	go func() {
+		defer tty.Close()
+		defer ptmx.Close()
+		defer pw.Close()
+		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
+		if err := cmd.Wait(); err != nil {
+			log.Debugf("Command failed: %s", err)
+		} else {
+			log.Debugf("Command %s completed", cmd.Args)
+		}
+		// Flush any remaining data from the preceding stage, to prevent
+		// the output writer for the preceding stage from getting stuck.
+		io.Copy(io.Discard, r)
+	}()
+	return pr, nil
+}
+
+// PipelineWriter returns a WriteCloser that sends written bytes through all the
+// plugins in the given pipeline and then finally to the given writer. It is the
+// caller's responsibility to close the returned WriteCloser. Closing the
+// returned writer will inform the first plugin in the pipeline that there is no
+// more input to be flushed, causing each plugin to terminate once it has
+// finished processing any remaining input.
+func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
+	pr, pw := io.Pipe()
+
+	var pluginOutput io.Reader = pr
+	for _, p := range plugins {
+		r, err := p.Pipe(pluginOutput)
+		if err != nil {
+			return nil, err
+		}
+		pluginOutput = r
+	}
+	doneCopying := make(chan struct{})
+	go func() {
+		defer close(doneCopying)
+		io.Copy(w, pluginOutput)
+	}()
+	out := &overrideCloser{
+		WriteCloser: pw,
+		// Make Close() block until we're done copying the plugin output,
+		// otherwise we might miss some output lines.
+		AfterClose: func() { <-doneCopying },
+	}
+	return out, nil
+}
+
+type overrideCloser struct {
+	io.WriteCloser
+	AfterClose func()
+}
+
+func (o *overrideCloser) Close() error {
+	defer o.AfterClose()
+	return o.WriteCloser.Close()
+}
+
+// readArgsFile reads the arguments from the file at the given path.
+// Each arg is expected to be placed on its own line.
+// Blank lines are ignored.
+func readArgsFile(path string) ([]string, error) {
+	b, err := disk.ReadFile(context.TODO(), path)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to read arguments: %s", err)
+	}
+
+	lines := strings.Split(string(b), "\n")
+	// Construct args from non-blank lines.
+	newArgs := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line != "" {
+			newArgs = append(newArgs, line)
+		}
+	}
+
+	return newArgs, nil
 }
