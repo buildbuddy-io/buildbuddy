@@ -136,7 +136,7 @@ const (
 	// Describes the type of cache request
 	CacheRequestType = "type"
 
-	// The name of the table in Clickhouse
+	/// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
 	/// Status of Clickhouse Operation: `ok`, `error`.
