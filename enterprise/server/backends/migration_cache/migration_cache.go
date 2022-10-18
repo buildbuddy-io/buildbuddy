@@ -277,16 +277,24 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMissing, dstMissing []*repb.Digest
+	doubleRead := rand.Float64() <= mc.doubleReadPercentage
+
+	// Some implementations of FindMissing sort the resources slice, which can cause a race condition if both
+	// the src and dest cache try to sort at the same time. Copy the slice to prevent this
+	var resourcesCopy []*resource.ResourceName
+	if doubleRead {
+		resourcesCopy = make([]*resource.ResourceName, len(resources))
+		copy(resourcesCopy, resources)
+	}
 
 	eg.Go(func() error {
 		srcMissing, srcErr = mc.src.FindMissing(gctx, resources)
 		return srcErr
 	})
 
-	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			dstMissing, dstErr = mc.dest.FindMissing(gctx, resources)
+			dstMissing, dstErr = mc.dest.FindMissing(gctx, resourcesCopy)
 			return nil // we don't care about the return error from this cache
 		})
 	}
