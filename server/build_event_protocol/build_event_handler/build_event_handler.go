@@ -120,6 +120,7 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	buildEventAccumulator := accumulator.NewBEValues(iid)
+	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
 
 	b.openChannels.Add(1)
 	onClose := func() {
@@ -626,7 +627,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	ctx, cancel := background.ExtendContextForFinalization(e.ctx, 10*time.Second)
-	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
 	defer cancel()
 
 	invocationStatus := inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
