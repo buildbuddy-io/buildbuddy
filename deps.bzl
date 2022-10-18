@@ -1234,12 +1234,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:kLcOMZeuLAJvL2BPWLMIj5oaZQobrkAqrL+WFZwQses=",
         version = "v4.9.0+incompatible",
     )
-    go_repository(
-        name = "com_github_evanphx_json_patch_v5",
-        importpath = "github.com/evanphx/json-patch/v5",
-        sum = "h1:bAmFiUJ+o0o2B4OiTFeE3MqCOtyo+jjPP9iZ0VRxYUc=",
-        version = "v5.5.0",
-    )
 
     go_repository(
         name = "com_github_fasthttp_contrib_websocket",
@@ -1305,8 +1299,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_frankban_quicktest",
         importpath = "github.com/frankban/quicktest",
-        sum = "h1:yNZif1OkDfNoDfb9zZa9aXIpejNR4F23Wely0c+Qdqk=",
-        version = "v1.13.0",
+        sum = "h1:8sXhOn0uLys67V8EsXLc6eszDs8VXWxL3iRvebPhedY=",
+        version = "v1.11.3",
     )
 
     go_repository(
@@ -1385,12 +1379,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/gliderlabs/ssh",
         sum = "h1:6zsha5zo/TWhRhwqCD3+EarCAgZ2yN28ipRnGPnwkI0=",
         version = "v0.2.2",
-    )
-    go_repository(
-        name = "com_github_go_asn1_ber_asn1_ber",
-        importpath = "github.com/go-asn1-ber/asn1-ber",
-        sum = "h1:gvPdv/Hr++TRFCl0UbPFHC54P9N9jgsRPnmnr419Uck=",
-        version = "v1.3.1",
     )
 
     go_repository(
@@ -1475,12 +1463,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/go-kit/log",
         sum = "h1:DGJh0Sm43HbOeYDNnVZFl8BvcYVvjD5bqYJvp0REbwQ=",
         version = "v0.1.0",
-    )
-    go_repository(
-        name = "com_github_go_ldap_ldap_v3",
-        importpath = "github.com/go-ldap/ldap/v3",
-        sum = "h1:7WsKqasmPThNvdl0Q5GPpbTDD/ZD98CfuawrMIuh7qQ=",
-        version = "v3.1.10",
     )
 
     go_repository(
@@ -1656,12 +1638,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/go-task/slim-sprig",
         sum = "h1:p104kn46Q8WdvHunIJ9dAyjPVtrBPhSr3KT2yUst43I=",
         version = "v0.0.0-20210107165309-348f09dbbbc0",
-    )
-    go_repository(
-        name = "com_github_go_test_deep",
-        importpath = "github.com/go-test/deep",
-        sum = "h1:onZX1rnHT3Wv6cqNgYyFOOlgVKJrksuCMCRvJStbMYw=",
-        version = "v1.0.2",
     )
 
     go_repository(
@@ -2331,12 +2307,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:DKHmCUm2hRBK510BaiZlwvpD40f8bJFeZnpfm2KLowc=",
         version = "v1.3.1",
     )
-    go_repository(
-        name = "com_github_hashicorp_go_kms_wrapping_entropy",
-        importpath = "github.com/hashicorp/go-kms-wrapping/entropy",
-        sum = "h1:xuTi5ZwjimfpvpL09jDE71smCBRpnF5xfo871BSX4gs=",
-        version = "v0.1.0",
-    )
 
     go_repository(
         name = "com_github_hashicorp_go_msgpack",
@@ -2375,12 +2345,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:jzhAVGtqPKbwpyCPELlgNWhE1znq+qwJtW5Oi2viEzc=",
         version = "v1.0.2",
     )
-    go_repository(
-        name = "com_github_hashicorp_go_secure_stdlib_base62",
-        importpath = "github.com/hashicorp/go-secure-stdlib/base62",
-        sum = "h1:6KMBnfEv0/kLAz0O76sliN5mXbCDcLfs2kP7ssP7+DQ=",
-        version = "v0.1.1",
-    )
+
     go_repository(
         name = "com_github_hashicorp_go_secure_stdlib_mlock",
         importpath = "github.com/hashicorp/go-secure-stdlib/mlock",
@@ -2393,22 +2358,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:78ki3QBevHwYrVxnyVeaEz+7WtifHhauYF23es/0KlI=",
         version = "v0.1.1",
     )
-    go_repository(
-        name = "com_github_hashicorp_go_secure_stdlib_password",
-        importpath = "github.com/hashicorp/go-secure-stdlib/password",
-        sum = "h1:6JzmBqXprakgFEHwBgdchsjaA9x3GyjdI568bXKxa60=",
-        version = "v0.1.1",
-    )
+
     go_repository(
         name = "com_github_hashicorp_go_secure_stdlib_strutil",
         importpath = "github.com/hashicorp/go-secure-stdlib/strutil",
         sum = "h1:nd0HIW15E6FG1MsnArYaHfuw9C2zgzM8LxkG5Ty/788=",
-        version = "v0.1.1",
-    )
-    go_repository(
-        name = "com_github_hashicorp_go_secure_stdlib_tlsutil",
-        importpath = "github.com/hashicorp/go-secure-stdlib/tlsutil",
-        sum = "h1:Yc026VyMyIpq1UWRnakHRG01U8fJm+nEfEmjoAb00n8=",
         version = "v0.1.1",
     )
 
