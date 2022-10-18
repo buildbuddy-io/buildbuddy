@@ -299,7 +299,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			cacheRequest = append(cacheRequest, readDigest)
 		}
 	}
-	cacheRsp, err := cache.GetMulti(ctx, cacheRequest)
+	cacheRsp, err := cache.GetMultiDeprecated(ctx, cacheRequest)
 	for _, d := range req.GetDigests() {
 		if d.GetHash() == digest.EmptySha256 {
 			rsp.Responses = append(rsp.Responses, &repb.BatchReadBlobsResponse_Response{
@@ -455,7 +455,7 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache in
 		return nil, err
 	}
 	// Fetch the "Directory" object which enumerates all the blobs in the directory
-	blob, err := cache.Get(ctx, reqDigest)
+	blob, err := cache.GetDeprecated(ctx, reqDigest)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +485,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, ca
 		}
 		subdirDigests = append(subdirDigests, d)
 	}
-	rspMap, err := cache.GetMulti(ctx, subdirDigests)
+	rspMap, err := cache.GetMultiDeprecated(ctx, subdirDigests)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +599,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 		if *enableTreeCaching {
-			if blob, err := acCache.Get(ctx, treeCacheDigest); err == nil {
+			if blob, err := acCache.GetDeprecated(ctx, treeCacheDigest); err == nil {
 				treeCache := &repb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
 					if isComplete(treeCache.GetChildren()) {

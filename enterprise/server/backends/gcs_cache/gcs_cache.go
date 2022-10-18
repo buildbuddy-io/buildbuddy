@@ -172,13 +172,8 @@ func (g *GCSCache) WithIsolation(ctx context.Context, cacheType resource.CacheTy
 	}, nil
 }
 
-func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := g.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
+func (g *GCSCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +181,7 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	reader, err := g.bucketHandle.Object(k).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
+			d := r.GetDigest()
 			return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 		}
 		return nil, err
@@ -200,25 +196,34 @@ func (g *GCSCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return b, err
 }
 
-func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return g.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	})
+}
+
+func (g *GCSCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				data, err := g.Get(ctx, d)
+				data, err := g.Get(ctx, r)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
 				defer lock.Unlock()
-				foundMap[d] = data
+				foundMap[r.GetDigest()] = data
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -226,6 +231,11 @@ func (g *GCSCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*r
 	}
 
 	return foundMap, nil
+}
+
+func (g *GCSCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(g.cacheType, g.remoteInstanceName, digests)
+	return g.GetMulti(ctx, rns)
 }
 
 func swallowGCSAlreadyExistsError(err error) error {

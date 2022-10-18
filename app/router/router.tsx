@@ -63,14 +63,16 @@ class Router {
    * - Preserves global filter params.
    */
   navigateTo(url: string) {
-    const unavailableMsg = getUnavailableMessage(url);
-    if (unavailableMsg && !capabilities.canNavigateToPath(url)) {
+    const oldUrl = new URL(window.location.href);
+    const newUrl = new URL(url, window.location.href);
+
+    const matchedPath = getMatchedPath(newUrl.pathname);
+    const unavailableMsg = getUnavailableMessage(matchedPath);
+    if (unavailableMsg && !capabilities.canNavigateToPath(matchedPath)) {
       alert(unavailableMsg);
       return;
     }
 
-    const oldUrl = new URL(window.location.href);
-    const newUrl = new URL(url, window.location.href);
     // Preserve global filter params.
     for (const key of GLOBAL_FILTER_PARAM_NAMES) {
       if (!newUrl.searchParams.get(key) && oldUrl.searchParams.get(key)) {
@@ -397,11 +399,26 @@ export class Path {
   static codePath = "/code/";
 }
 
-function getUnavailableMessage(href: string) {
-  let path = new URL(href, window.location.href).pathname;
-  if (!path.endsWith("/")) path += "/";
+/** Returns the longest path value in `Path` matching the given URL path. */
+function getMatchedPath(urlPath: string): string | null {
+  if (!urlPath.endsWith("/")) {
+    urlPath += "/";
+  }
+  let curMatch: string | null = null;
+  for (const path of Object.values(Path)) {
+    let prefix = path;
+    if (!prefix.endsWith("/")) {
+      prefix += "/";
+    }
+    if (urlPath.startsWith(prefix) && (curMatch === null || curMatch.length < path)) {
+      curMatch = path;
+    }
+  }
+  return curMatch;
+}
 
-  switch (path) {
+function getUnavailableMessage(matchedPath: string) {
+  switch (matchedPath) {
     case Path.workflowsPath:
     case Path.codePath:
     case Path.settingsPath:

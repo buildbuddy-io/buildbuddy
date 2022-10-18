@@ -874,20 +874,24 @@ func TestGetMulti(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	digestsWritten := make([]*repb.Digest, 0)
+	resourcesWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
 			t.Fatal(err)
 		}
-		digestsWritten = append(digestsWritten, d)
+		resourcesWritten = append(resourcesWritten, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 	}
 
 	for _, baseCache := range baseCaches {
-		gotMap, err := baseCache.GetMulti(ctx, digestsWritten)
+		gotMap, err := baseCache.GetMulti(ctx, resourcesWritten)
 		assert.Nil(t, err)
-		for _, d := range digestsWritten {
+		for _, r := range resourcesWritten {
+			d := r.GetDigest()
 			buf, ok := gotMap[d]
 			assert.True(t, ok)
 			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
@@ -895,9 +899,10 @@ func TestGetMulti(t *testing.T) {
 	}
 
 	for _, distributedCache := range distributedCaches {
-		gotMap, err := distributedCache.GetMulti(ctx, digestsWritten)
+		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
 		assert.Nil(t, err)
-		for _, d := range digestsWritten {
+		for _, r := range resourcesWritten {
+			d := r.GetDigest()
 			buf, ok := gotMap[d]
 			assert.True(t, ok)
 			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))

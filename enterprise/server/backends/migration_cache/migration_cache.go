@@ -295,13 +295,17 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 		return nil, err
 	}
 
-	if dstErr != nil {
-		log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
-	} else if !digest.ElementsMatch(srcMissing, dstMissing) {
-		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
+	if doubleRead {
+		if dstErr != nil {
+			log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
+		} else if digest.ElementsMatch(srcMissing, dstMissing) {
+			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissingMatch"}).Inc()
+		} else {
+			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
 
-		if mc.logNotFoundErrors {
-			log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
+			if mc.logNotFoundErrors {
+				log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
+			}
 		}
 	}
 
@@ -313,20 +317,20 @@ func (mc *MigrationCache) FindMissingDeprecated(ctx context.Context, digests []*
 	return mc.FindMissing(ctx, rns)
 }
 
-func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcData map[*repb.Digest][]byte
 
 	eg.Go(func() error {
-		srcData, srcErr = mc.src.GetMulti(gctx, digests)
+		srcData, srcErr = mc.src.GetMulti(gctx, resources)
 		return srcErr
 	})
 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.GetMulti(gctx, digests)
+			_, dstErr = mc.dest.GetMulti(gctx, resources)
 			return nil
 		})
 	}
@@ -337,19 +341,24 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, digests []*repb.Digest) 
 
 	if dstErr != nil {
 		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-			log.Warningf("Migration dest GetMulti of %v failed: %s", digests, dstErr)
+			log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
 		}
 		if status.IsNotFoundError(dstErr) {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
 		}
 	}
 
-	for _, d := range digests {
-		mc.sendNonBlockingCopy(ctx, d)
+	for _, r := range resources {
+		mc.sendNonBlockingCopy(ctx, r)
 	}
 
 	// Return data from source cache
 	return srcData, srcErr
+}
+
+func (mc *MigrationCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(mc.cacheType, mc.remoteInstanceName, digests)
+	return mc.GetMulti(ctx, rns)
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -482,6 +491,9 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 			if status.IsNotFoundError(dstErr) {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
 			}
+			if dstErr == nil {
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "readerMatch"}).Inc()
+			}
 			return nil
 		})
 	}
@@ -499,7 +511,12 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 		return nil, srcErr
 	}
 
-	mc.sendNonBlockingCopy(ctx, d)
+	mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
 
 	return &doubleReader{
 		src:  srcReader,
@@ -611,13 +628,13 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 	return dw, nil
 }
 
-func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcBuf []byte
 
 	eg.Go(func() error {
-		srcBuf, srcErr = mc.src.Get(gctx, d)
+		srcBuf, srcErr = mc.src.Get(gctx, r)
 		return srcErr
 	})
 
@@ -625,7 +642,7 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			_, dstErr = mc.dest.Get(gctx, d)
+			_, dstErr = mc.dest.Get(gctx, r)
 			return nil // we don't care about the return error from this cache
 		})
 	}
@@ -636,21 +653,30 @@ func (mc *MigrationCache) Get(ctx context.Context, d *repb.Digest) ([]byte, erro
 
 	if dstErr != nil {
 		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-			log.Warningf("Double read of %q failed. src err %s, dest err %s", d, srcErr, dstErr)
+			log.Warningf("Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
 		}
 		if status.IsNotFoundError(dstErr) {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
 		}
 	}
 
-	mc.sendNonBlockingCopy(ctx, d)
+	mc.sendNonBlockingCopy(ctx, r)
 
 	// Return data from source cache
 	return srcBuf, srcErr
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Digest) {
-	alreadyCopied, err := mc.dest.ContainsDeprecated(ctx, d)
+func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return mc.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
+}
+
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName) {
+	alreadyCopied, err := mc.dest.Contains(ctx, r)
 	if err != nil {
 		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
 		return
@@ -663,11 +689,11 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, d *repb.Diges
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
-		d:                  d,
+		d:                  r.GetDigest(),
 		ctx:                ctx,
 		ctxCancel:          cancel,
-		remoteInstanceName: mc.remoteInstanceName,
-		cacheType:          mc.cacheType,
+		remoteInstanceName: r.GetInstanceName(),
+		cacheType:          r.GetCacheType(),
 	}:
 	default:
 		cancel()

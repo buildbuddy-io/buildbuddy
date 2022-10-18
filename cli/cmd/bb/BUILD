@@ -20,6 +20,7 @@ go_library(
         "//cli/terminal",
         "//cli/tooltag",
         "//cli/version",
+        "//cli/watcher",
         "//server/util/status",
     ],
 )

@@ -4,9 +4,9 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
@@ -87,36 +87,38 @@ func Run(args []string, outputPath string, w io.Writer) (int, error) {
 
 // ConfigureRunScript adds `--script_path` to a bazel run command so that we can
 // invoke the build and the run separately.
-func ConfigureRunScript(args []string, tempDir string) (newArgs []string, scriptPath string) {
+func ConfigureRunScript(args []string) (newArgs []string, scriptPath string, err error) {
 	if arg.GetCommand(args) != "run" {
-		return args, ""
+		return args, "", nil
 	}
 	// If --script_path is already set, don't create a run script ourselves,
 	// since the caller probably has the intention to invoke it on their own.
 	existingScript := arg.Get(args, "script_path")
 	if existingScript != "" {
-		return args, ""
+		return args, "", nil
 	}
-	scriptPath = filepath.Join(tempDir, "run.sh")
+	script, err := os.CreateTemp("", "bb-run-*")
+	if err != nil {
+		return nil, "", err
+	}
+	defer script.Close()
+	scriptPath = script.Name()
 	args = append(args, "--script_path="+scriptPath)
-	return args, scriptPath
+	return args, scriptPath, nil
 }
 
 func InvokeRunScript(path string) (exitCode int, err error) {
 	if err := os.Chmod(path, 0755); err != nil {
 		return -1, err
 	}
-	cmd := exec.Command(path)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		if err, ok := err.(*exec.ExitError); ok {
-			return err.ProcessState.ExitCode(), nil
-		}
+	// TODO: Exec() replaces the current process, so it prevents us from running
+	// post-run hooks (if we decide those will be supported). If we want to use
+	// exec.Command() here instead of exec(), then we might need to manually
+	// forward signals from the parent file watcher process.
+	if err := syscall.Exec(path, nil, os.Environ()); err != nil {
 		return -1, err
 	}
-	return 0, nil
+	panic("unreachable")
 }
 
 // makePipeWriter adapts a writer to an *os.File by using an os.Pipe().

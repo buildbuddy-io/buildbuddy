@@ -619,7 +619,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	return exitCode, nil
 }
 
-func handleRemoteBazel(args []string) []string {
+func handleRemoteBazel(args, passthroughArgs []string) []string {
 	args = arg.Remove(args, "bes_backend")
 	args = arg.Remove(args, "remote_cache")
 	args = arg.Remove(args, "remote_executor")
@@ -643,7 +643,7 @@ func handleRemoteBazel(args []string) []string {
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            "grpcs://" + defaultRemoteExecutionURL,
 		APIKey:            arg.Get(args, "remote_header=x-buildbuddy-api-key"),
-		Args:              args,
+		Args:              arg.JoinPassthroughArgs(args, passthroughArgs),
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
 	if err != nil {
@@ -654,12 +654,12 @@ func handleRemoteBazel(args []string) []string {
 	return args
 }
 
-func HandleRemoteBazel(args []string) []string {
+func HandleRemoteBazel(args, passthroughArgs []string) []string {
 	if c, i := arg.GetCommandAndIndex(args); c == "remote" {
-		return handleRemoteBazel(args[i+1:])
+		return handleRemoteBazel(args[i+1:], passthroughArgs)
 	}
 	if arg, rest := arg.Pop(args, "remote"); arg == "true" {
-		return handleRemoteBazel(rest)
+		return handleRemoteBazel(rest, passthroughArgs)
 	}
 	return args
 }

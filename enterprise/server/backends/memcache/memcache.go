@@ -204,16 +204,12 @@ func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Diges
 	return c.FindMissing(ctx, rns)
 }
 
-func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	d := r.GetDigest()
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for memcache", d)
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -221,21 +217,25 @@ func (c *Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
 	return c.mcGet(k)
 }
 
-func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	keys := make([]string, 0, len(digests))
-	digestsByKey := make(map[string]*repb.Digest, len(digests))
-	for _, d := range digests {
-		k, err := c.key(ctx, &resource.ResourceName{
-			Digest:       d,
-			InstanceName: c.remoteInstanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    c.cacheType,
-		})
+func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return c.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	})
+}
+
+func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	keys := make([]string, 0, len(resources))
+	digestsByKey := make(map[string]*repb.Digest, len(resources))
+	for _, r := range resources {
+		k, err := c.key(ctx, r)
 		if err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
-		digestsByKey[k] = d
+		digestsByKey[k] = r.GetDigest()
 	}
 
 	mcMap, err := c.mc.GetMulti(keys)
@@ -253,6 +253,11 @@ func (c *Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb
 		}
 	}
 	return response, nil
+}
+
+func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
+	return c.GetMulti(ctx, rns)
 }
 
 func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {

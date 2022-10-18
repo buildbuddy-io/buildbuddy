@@ -95,7 +95,7 @@ func TestIsolation(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from cache2.
-		rbuf, err := test.cache2.Get(ctx, d)
+		rbuf, err := test.cache2.GetDeprecated(ctx, d)
 		if test.shouldBeShared {
 			// if the caches should be shared but there was an error
 			// getting the digest: fail.
@@ -140,7 +140,7 @@ func TestGetSet(t *testing.T) {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
-		rbuf, err := mc.Get(ctx, d)
+		rbuf, err := mc.GetDeprecated(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -177,7 +177,7 @@ func TestMultiGetSet(t *testing.T) {
 	for d := range digests {
 		digestKeys = append(digestKeys, d)
 	}
-	m, err := mc.GetMulti(ctx, digestKeys)
+	m, err := mc.GetMultiDeprecated(ctx, digestKeys)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
@@ -273,7 +273,7 @@ func TestSizeLimit(t *testing.T) {
 	// Expect the last *2* digests to be present.
 	// The first digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := mc.Get(ctx, d)
+		rbuf, err := mc.GetDeprecated(ctx, d)
 		if i == 0 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())
@@ -325,7 +325,7 @@ func TestLRU(t *testing.T) {
 	// Expect the first and third digests to be present.
 	// The second digest should have been evicted.
 	for i, d := range digestKeys {
-		rbuf, err := mc.Get(ctx, d)
+		rbuf, err := mc.GetDeprecated(ctx, d)
 		if i == 1 {
 			if err == nil {
 				t.Fatalf("%q should have been evicted from cache", d.GetHash())

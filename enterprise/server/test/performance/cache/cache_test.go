@@ -138,7 +138,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	for i := 0; i < b.N; i++ {
 		dbuf := digestBufs[rand.Intn(len(digestBufs))]
 		b.SetBytes(dbuf.d.GetSizeBytes())
-		_, err := c.Get(ctx, dbuf.d)
+		_, err := c.GetDeprecated(ctx, dbuf.d)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -159,7 +159,7 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 	b.SetBytes(sumBytes)
 
 	for i := 0; i < b.N; i++ {
-		_, err := c.GetMulti(ctx, digests)
+		_, err := c.GetMultiDeprecated(ctx, digests)
 		if err != nil {
 			b.Fatal(err)
 		}

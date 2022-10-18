@@ -267,20 +267,24 @@ func (s3c *S3Cache) WithIsolation(ctx context.Context, cacheType resource.CacheT
 	}, nil
 }
 
-func (s3c *S3Cache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	k, err := s3c.key(ctx, &resource.ResourceName{
+func (s3c *S3Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	k, err := s3c.key(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	timer := cache_metrics.NewCacheTimer(cacheLabels)
+	b, err := s3c.get(ctx, r.GetDigest(), k)
+	timer.ObserveGet(len(b), err)
+	return b, err
+}
+
+func (s3c *S3Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
+	return s3c.Get(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: s3c.remoteInstanceName,
 		Compressor:   repb.Compressor_IDENTITY,
 		CacheType:    s3c.cacheType,
 	})
-	if err != nil {
-		return nil, err
-	}
-	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	b, err := s3c.get(ctx, d, k)
-	timer.ObserveGet(len(b), err)
-	return b, err
 }
 
 func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte, error) {
@@ -297,25 +301,25 @@ func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte
 	return buff.Bytes(), err
 }
 
-func (s3c *S3Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+func (s3c *S3Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, d := range digests {
-		fetchFn := func(d *repb.Digest) {
+	for _, r := range resources {
+		fetchFn := func(r *resource.ResourceName) {
 			eg.Go(func() error {
-				data, err := s3c.Get(ctx, d)
+				data, err := s3c.Get(ctx, r)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
 				defer lock.Unlock()
-				foundMap[d] = data
+				foundMap[r.GetDigest()] = data
 				return nil
 			})
 		}
-		fetchFn(d)
+		fetchFn(r)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -323,6 +327,11 @@ func (s3c *S3Cache) GetMulti(ctx context.Context, digests []*repb.Digest) (map[*
 	}
 
 	return foundMap, nil
+}
+
+func (s3c *S3Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
+	rns := digest.ResourceNames(s3c.cacheType, s3c.remoteInstanceName, digests)
+	return s3c.GetMulti(ctx, rns)
 }
 func (s3c *S3Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	k, err := s3c.key(ctx, &resource.ResourceName{

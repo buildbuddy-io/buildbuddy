@@ -77,7 +77,7 @@ func (c *errorCache) Set(ctx context.Context, d *repb.Digest, data []byte) error
 	return errors.New("error cache set err")
 }
 
-func (c *errorCache) Get(ctx context.Context, d *repb.Digest) ([]byte, error) {
+func (c *errorCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	return nil, errors.New("error cache get err")
 }
 
@@ -85,7 +85,7 @@ func (c *errorCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return errors.New("error cache delete err")
 }
 
-func (c *errorCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
+func (c *errorCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	return false, errors.New("error cache contains err")
 }
 
@@ -126,12 +126,18 @@ func TestACIsolation(t *testing.T) {
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	require.NoError(t, c1.Set(ctx, d1, buf1))
 
-	got1, err := c1.Get(ctx, d1)
+	got1, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d1,
+		CacheType: resource.CacheType_AC,
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
-	gotCAS, err := mc.Get(ctx, d1)
+	gotCAS, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d1,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, gotCAS)
 }
@@ -155,12 +161,20 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
 	require.NoError(t, c1.Set(ctx, d1, buf1))
 
-	got1, err := c1.Get(ctx, d1)
+	got1, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d1,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: "remote",
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
 	// Data should not be in CAS cache
-	gotCAS, err := mc.Get(ctx, d1)
+	gotCAS, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d1,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: "remote",
+	})
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, gotCAS)
 }
@@ -183,11 +197,17 @@ func TestSet_DoubleWrite(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify data was written to both caches
-	srcData, err := srcCache.Get(ctx, d)
+	srcData, err := srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, srcData)
 
-	destData, err := destCache.Get(ctx, d)
+	destData, err := destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, destData)
 
@@ -209,7 +229,10 @@ func TestSet_DestWriteErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify data was successfully written to src cache
-	srcData, err := srcCache.Get(ctx, d)
+	srcData, err := srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.Equal(t, buf, srcData)
 }
@@ -229,7 +252,10 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify data was deleted from the dest cache
-	destData, err := destCache.Get(ctx, d)
+	destData, err := destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, destData)
@@ -270,10 +296,11 @@ func TestGetSet(t *testing.T) {
 		require.NoError(t, err, "error setting digest in cache")
 
 		// Get() the bytes from the cache.
-		rbuf, err := mc.Get(ctx, d)
-		require.NoError(t, err, "error getting from cache")
-
-		// Compute a digest for the bytes returned.
+		rbuf, err := mc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
 		require.True(t, d.GetHash() == d2.GetHash())
 	}
@@ -297,7 +324,10 @@ func TestGet_DoubleRead(t *testing.T) {
 	err = mc.Set(ctx, d, buf)
 	require.NoError(t, err)
 
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -319,7 +349,10 @@ func TestGet_DestReadErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -342,7 +375,10 @@ func TestGet_SrcReadErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return error
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.Error(t, err)
 	require.Nil(t, data)
 }
@@ -365,7 +401,10 @@ func TestGetSet_EmptyData(t *testing.T) {
 	err = mc.Set(ctx, d, []byte{})
 	require.NoError(t, err)
 
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal([]byte{}, data))
 }
@@ -403,7 +442,10 @@ func TestCopyDataInBackground(t *testing.T) {
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.Get(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
@@ -449,7 +491,10 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 
 			// We should exceed the copy channel size, but should not prevent us from continuing
 			// to read from the cache
-			data, err := mc.Get(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 			return nil
@@ -493,7 +538,10 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.Get(ctx, d)
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
@@ -555,14 +603,19 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 	require.NoError(t, err)
 
 	//Call get so the digests are copied to the destination cache
-	mcIsolation2, err := mc.WithIsolation(authenticatedCtx, resource.CacheType_AC, instanceName2)
-	require.NoError(t, err)
-	data, err := mcIsolation2.Get(authenticatedCtx, d2)
+	data, err := mc.Get(authenticatedCtx, &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: instanceName2,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf2, data))
 
-	mcIsolation, err := mc.WithIsolation(authenticatedCtx, resource.CacheType_CAS, "")
-	data, err = mcIsolation.Get(authenticatedCtx, d)
+	data, err = mc.Get(authenticatedCtx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: "",
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -624,15 +677,19 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call get so the digests are copied to the destination cache
-	mcIsolation2, err := mc.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
-	require.NoError(t, err)
-	data, err := mcIsolation2.Get(ctx, d2)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: instanceName2,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf2, data))
 
-	mcIsolation1, err := mc.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
-	require.NoError(t, err)
-	data, err = mcIsolation1.Get(ctx, d)
+	data, err = mc.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: instanceName1,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -823,6 +880,39 @@ func TestFindMissing(t *testing.T) {
 	require.Empty(t, missing)
 }
 
+func TestFindMissing_DestSrcMismatch(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	d3, buf3 := testdigest.NewRandomDigestBuf(t, 100)
+
+	// Set d in both caches, but set d2 and d3 in only one of the caches
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+	err = srcCache.Set(ctx, d2, buf2)
+	require.NoError(t, err)
+	err = destCache.Set(ctx, d3, buf3)
+	require.NoError(t, err)
+
+	digests := []*repb.Digest{d, d2, d3}
+	rns := digest.ResourceNames(resource.CacheType_CAS, "", digests)
+	missing, err := mc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	// Even though d3 is written to the dest cache, expect output to reflect that it's missing from src cache
+	require.ElementsMatch(t, []*repb.Digest{d3}, missing)
+}
+
 func TestFindMissing_DestErr(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
@@ -866,7 +956,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	lock := sync.RWMutex{}
-	digests := make([]*repb.Digest, 50)
+	resourceNames := make([]*resource.ResourceName, 50)
 	expected := make(map[*repb.Digest][]byte, 50)
 	for i := 0; i < 50; i++ {
 		idx := i
@@ -877,19 +967,22 @@ func TestGetMultiWithCopying(t *testing.T) {
 			err = srcCache.Set(ctx, d, buf)
 			require.NoError(t, err)
 
-			digests[idx] = d
+			resourceNames[idx] = &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
 			expected[d] = buf
 			return nil
 		})
 	}
 	eg.Wait()
 
-	r, err := mc.GetMulti(ctx, digests)
+	r, err := mc.GetMulti(ctx, resourceNames)
 	require.NoError(t, err)
 	require.Equal(t, expected, r)
 
-	for _, digest := range digests {
-		waitForCopy(t, ctx, destCache, digest)
+	for _, r := range resourceNames {
+		waitForCopy(t, ctx, destCache, r.GetDigest())
 	}
 }
 
@@ -926,15 +1019,24 @@ func TestSetMulti(t *testing.T) {
 	require.NoError(t, err)
 
 	for d, expected := range dataToSet {
-		data, err := mc.Get(ctx, d)
+		data, err := mc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = srcCache.Get(ctx, d)
+		data, err = srcCache.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = destCache.Get(ctx, d)
+		data, err = destCache.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 	}
@@ -959,15 +1061,24 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check data exists before delete
-	data, err := mc.Get(ctx, d)
+	data, err := mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = srcCache.Get(ctx, d)
+	data, err = srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = destCache.Get(ctx, d)
+	data, err = destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -975,13 +1086,22 @@ func TestDelete(t *testing.T) {
 	err = mc.Delete(ctx, d)
 	require.NoError(t, err)
 
-	data, err = mc.Get(ctx, d)
+	data, err = mc.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = srcCache.Get(ctx, d)
+	data, err = srcCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = destCache.Get(ctx, d)
+	data, err = destCache.Get(ctx, &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	})
 	require.True(t, status.IsNotFoundError(err))
 }
 
