@@ -52,7 +52,7 @@ func GetCommand(args []string) string {
 // Returns the first non-option found in the list of args (doesn't begin with "-") and the index at which it was found
 func GetCommandAndIndex(args []string) (string, int) {
 	for i, arg := range args {
-		if strings.HasPrefix("-", arg) {
+		if strings.HasPrefix(arg, "-") {
 			continue
 		}
 		return arg, i
@@ -114,4 +114,15 @@ func RemoveExistingArgs(args []string, existingArgs []string) []string {
 		}
 	}
 	return diff
+}
+
+// ContainsExact returns whether the slice `args` contains the literal string
+// `value`.
+func ContainsExact(args []string, value string) bool {
+	for _, v := range args {
+		if v == value {
+			return true
+		}
+	}
+	return false
 }
