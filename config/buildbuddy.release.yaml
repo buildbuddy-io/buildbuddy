@@ -5,6 +5,7 @@ storage:
   ttl_seconds: 2592000 # 30 days
   disk:
     root_directory: "/buildbuddy/blobs/"
+  enable_chunked_event_logs: true
 cache:
   disk:
     root_directory: "/buildbuddy/cache/"
