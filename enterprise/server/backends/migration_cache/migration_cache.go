@@ -212,12 +212,11 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName
 
 	if dstErr != nil {
 		log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
-	} else if mc.logNotFoundErrors && srcContains != dstContains {
-		log.Warningf("Migration digest %v src contains %v, dest contains %v", r.GetDigest(), srcContains, dstContains)
-	}
-
-	if doubleRead && srcContains && !dstContains {
+	} else if doubleRead && srcContains != dstContains {
 		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
+		if mc.logNotFoundErrors || (dstContains && !srcContains) {
+			log.Warningf("Migration digest %v src contains %v, dest contains %v", r.GetDigest(), srcContains, dstContains)
+		}
 	}
 
 	return srcContains, srcErr
@@ -694,6 +693,7 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.R
 		return
 	}
 
+	log.Debugf("Migration attempting copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
@@ -704,8 +704,9 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.R
 		cacheType:          r.GetCacheType(),
 	}:
 	default:
-		cancel()
+		log.Debugf("Migration dropping copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
 		*mc.numCopiesDropped++
+		cancel()
 	}
 }
 
@@ -817,6 +818,8 @@ func (mc *MigrationCache) copy(c *copyData) {
 	if err := destWriter.Commit(); err != nil {
 		log.Warningf("Migration copy err: destination commit failed: %s", err)
 	}
+
+	log.Debugf("Migration successfully copied to dest cache: digest %v, instance %s, cache %v", c.d, c.remoteInstanceName, c.cacheType)
 }
 
 func (mc *MigrationCache) Start() error {
