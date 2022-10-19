@@ -396,7 +396,7 @@ type raftWriteCloser struct {
 
 func (rwc *raftWriteCloser) Commit() error {
 	if err := rwc.WriteCloser.Close(); err != nil {
-		return err
+		return status.UnavailableError(err.Error())
 	}
 	return rwc.closeFn()
 }
