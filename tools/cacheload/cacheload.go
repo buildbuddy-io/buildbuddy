@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
@@ -105,10 +106,18 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 
 func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	if _, err := cachetools.UploadBlob(ctx, client, *instanceName, bytes.NewReader(buf)); err != nil {
-		return nil, status.InternalErrorf("Error writing digest: %s/%d: %s", d.GetHash(), d.GetSizeBytes(), err)
+	retrier := retry.DefaultWithContext(ctx)
+	var err error
+	for retrier.Next() {
+		_, err = cachetools.UploadBlob(ctx, client, *instanceName, bytes.NewReader(buf))
+		if err == nil {
+			return d, nil
+		} else if status.IsUnavailableError(err) {
+			continue
+		}
+		return nil, err
 	}
-	return d, nil
+	return nil, status.InternalErrorf("Error writing digest: %s/%d: %s", d.GetHash(), d.GetSizeBytes(), err)
 }
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest) error {
@@ -150,8 +159,8 @@ func main() {
 	writeQPSCounter := &Counter{}
 	readQPSCounter := &Counter{}
 
-	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), int(*writeQPS))
-	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), int(*readQPS))
+	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), 1)
+	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), 1)
 
 	eg.Go(func() error {
 		lastWriteCount := writeQPSCounter.Get()
