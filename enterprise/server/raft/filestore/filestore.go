@@ -66,6 +66,8 @@ type Store interface {
 
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
+
+	LinkFile(fileRecord *rfpb.FileRecord, srcFileDir, targetFileDir string) error
 }
 
 type fileStorer struct {
@@ -198,6 +200,19 @@ func (c *fileChunker) Metadata() *rfpb.StorageMetadata {
 func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
 	fp := fs.FilePath(fileDir, f)
 	return disk.FileReader(ctx, fp, offset, limit)
+}
+
+func (fs *fileStorer) LinkFile(fileRecord *rfpb.FileRecord, srcFileDir, targetFileDir string) error {
+	file, err := fs.FileKey(fileRecord)
+	if err != nil {
+		return err
+	}
+	original := filepath.Join(srcFileDir, string(file))
+	target := filepath.Join(targetFileDir, string(file))
+	if err := disk.EnsureDirectoryExists(filepath.Dir(target)); err != nil {
+		return err
+	}
+	return os.Link(original, target)
 }
 
 func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
