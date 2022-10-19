@@ -1166,6 +1166,7 @@ func (p *PebbleCache) reader(ctx context.Context, r *resource.ResourceName, offs
 	if err != nil {
 		return nil, err
 	}
+	log.Debugf("Attempting pebble reader %s", string(fileMetadataKey))
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
 	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
@@ -1232,6 +1233,7 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Co
 	if err != nil {
 		return nil, err
 	}
+	log.Debugf("Attempting pebble writer %s", string(fileMetadataKey))
 
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
