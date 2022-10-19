@@ -13,7 +13,6 @@ storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:
     root_directory: /tmp/buildbuddy_enterprise
-  enable_chunked_event_logs: true
 cache:
   disk:
     root_directory: /tmp/buildbuddy-enterprise-cache

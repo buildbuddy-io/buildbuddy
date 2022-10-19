@@ -44,8 +44,6 @@ app:
   build_buddy_url: "http://localhost:8080"
 database:
   data_source: "sqlite3://:memory:"
-storage:
-  enable_chunked_event_logs: true
 cache:
   max_size_bytes: 1000000000  # 1 GB
 executor:
