@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -67,7 +68,7 @@ type Store interface {
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
 
-	LinkFile(fileRecord *rfpb.FileRecord, srcFileDir, targetFileDir string) error
+	LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, srcFileDir, targetFileDir string) error
 }
 
 type fileStorer struct {
@@ -202,17 +203,38 @@ func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *rfpb.St
 	return disk.FileReader(ctx, fp, offset, limit)
 }
 
-func (fs *fileStorer) LinkFile(fileRecord *rfpb.FileRecord, srcFileDir, targetFileDir string) error {
-	file, err := fs.FileKey(fileRecord)
+func (fs *fileStorer) LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, srcFileDir, targetFileDir string) error {
+	if md.GetFileMetadata() == nil {
+		return nil
+	}
+	f := md.GetFileMetadata()
+	originalFp := fs.FilePath(srcFileDir, f)
+	targetFp := fs.FilePath(targetFileDir, f)
+	if err := disk.EnsureDirectoryExists(filepath.Dir(targetFp)); err != nil {
+		return err
+	}
+	if err := os.Link(originalFp, targetFp); err == nil {
+		return nil
+	}
+	// Linking failed :( Attempt to copy instead.
+	log.Warningf("Linking failed, copying file %q => %q (may be slow)", originalFp, targetFp)
+	rc, err := fs.FileReader(ctx, srcFileDir, f, 0, 0)
 	if err != nil {
 		return err
 	}
-	original := filepath.Join(srcFileDir, string(file))
-	target := filepath.Join(targetFileDir, string(file))
-	if err := disk.EnsureDirectoryExists(filepath.Dir(target)); err != nil {
+	defer rc.Close()
+
+	wc, err := disk.FileWriter(ctx, targetFp)
+	if err != nil {
 		return err
 	}
-	return os.Link(original, target)
+	defer wc.Close()
+
+	_, err = io.Copy(wc, rc)
+	if err != nil {
+		return err
+	}
+	return wc.Commit()
 }
 
 func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {

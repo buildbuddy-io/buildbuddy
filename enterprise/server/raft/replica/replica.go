@@ -805,31 +805,14 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			continue
 		}
-		if fileMetadata.GetStorageMetadata() == nil {
+		md := fileMetadata.GetStorageMetadata()
+		if md == nil {
 			continue
 		}
-		readCloser, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), 0, 0)
+
+		err := sm.fileStorer.LinkOrCopyFile(ctx, md, sm.fileDir, targetReplica.fileDir)
 		if err != nil {
 			return nil, err
-		}
-		writeCloserMetadata, err := targetReplica.storedFileWriter(ctx, fileMetadata.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
-		n, err := io.Copy(writeCloserMetadata, readCloser)
-		readCloser.Close()
-		if n != fileMetadata.GetSizeBytes() {
-			writeCloserMetadata.Close()
-			return nil, status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
-		}
-		if err := writeCloserMetadata.Commit(); err != nil {
-			writeCloserMetadata.Close()
-			return nil, err
-		}
-		writeCloserMetadata.Close()
-		if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
-			sm.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
-			return nil, status.FailedPreconditionError("stored metadata changed when fetching file")
 		}
 	}
 	return &rfpb.CopyStoredFilesResponse{}, nil
