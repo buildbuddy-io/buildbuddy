@@ -1237,6 +1237,12 @@ func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *
 		}
 		defer db.Close()
 
+		// Re-validate the header to ensure the range did not split before
+		// we got to Commit().
+		if err := sm.validateRange(header); err != nil {
+			return err
+		}
+
 		batch := db.NewBatch()
 		now := time.Now()
 		md := &rfpb.FileMetadata{
