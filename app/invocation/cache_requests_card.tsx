@@ -628,7 +628,7 @@ function renderCompressionSavings(result: cache.ScoreCard.IResult) {
 
 function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
   const cacheType = getCacheType(result);
-  if (result.requestType === cache.RequestType.READ && cacheType === resource.CacheType.AC) {
+  if (result.requestType === cache.RequestType.READ) {
     if (result.status.code !== 0 /*=OK*/) {
       return (
         <>
@@ -638,25 +638,22 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
         </>
       );
     }
-
     return (
       <>
-        <Check className="icon green" />
+        {cacheType === resource.CacheType.AC ? <Check className="icon green" /> : <ArrowDown className="icon green" />}
         <span>Hit</span>
       </>
     );
   }
-
-  if (result.requestType === cache.RequestType.READ) {
-    return (
-      <>
-        <ArrowDown className="icon green" />
-        <span>Hit</span>
-      </>
-    );
-  }
-
   if (result.requestType === cache.RequestType.WRITE) {
+    if (result.status.code !== 0 /*=OK*/) {
+      return (
+        <>
+          <X className="icon red" />
+          <span>Error</span>
+        </>
+      );
+    }
     return (
       <>
         <ArrowUp className="icon red" />
@@ -664,7 +661,6 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
       </>
     );
   }
-
   return "";
 }
 
