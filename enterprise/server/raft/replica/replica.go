@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -437,6 +438,8 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 		return &rfpb.FileWriteResponse{}, nil
 	}
 
+	sm.log.Warningf("Stored file did not exist. FileMetadata: %+v", fileMetadata)
+
 	storageMD, sizeBytes, err := sm.fetchFileToLocalStorage(ctx, req.GetFileRecord())
 	if err != nil {
 		return nil, err
@@ -570,9 +573,10 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 
 	timeTilExpiry := time.Duration(req.GetDurationSeconds()) * time.Second
 	startNewTimer := func() {
-		sm.log.Infof("Trying to acquire split lock...")
+		sm.log.Debugf("Trying to acquire split lock...")
+		splitAcquireStart := time.Now()
 		sm.leaser.AcquireSplitLock()
-		sm.log.Infof("Acquired split lock")
+		sm.log.Debugf("Acquired split lock in %s", time.Since(splitAcquireStart))
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
 			log.Warning("Split lease expired!")
 			sm.releaseAndClearTimer()
@@ -792,8 +796,7 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 	defer func() {
 		sm.log.Infof("Took %s to copy stored files from %+v to %+v", time.Since(start), sm, targetReplica)
 	}()
-
-	ctx := context.Background()
+	ctx := context.TODO()
 	iter := sm.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(req.GetStart()),
 		UpperBound: keys.Key(req.GetEnd()),
@@ -1120,28 +1123,27 @@ func (sm *Replica) sendAccessTimeUpdate(fileMetadata *rfpb.FileMetadata) {
 }
 
 func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
+	if err := sm.validateRange(header); err != nil {
+		return nil, err
+	}
+
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := sm.validateRange(header); err != nil {
-		db.Close()
-		return nil, err
-	}
-
 	fileMetadata, err := sm.metadataForRecord(db, fileRecord)
+	db.Close()
+
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 	sm.sendAccessTimeUpdate(fileMetadata)
-	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
+	return rc, nil
 }
 
 func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
@@ -1208,31 +1210,31 @@ func (sm *Replica) storedFileWriter(ctx context.Context, fileRecord *rfpb.FileRe
 }
 
 func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedWriteCloser, error) {
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-
 	if err := sm.validateRange(header); err != nil {
-		db.Close()
 		return nil, err
 	}
 
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 
 	writeCloserMetadata, err := sm.storedFileWriter(ctx, fileRecord)
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
-	wc.CloseFn = db.Close
 	wc.CommitFn = func(bytesWritten int64) error {
+		db, err := sm.leaser.DB()
+		if err != nil {
+			if sm.IsSplitting() {
+				return status.OutOfRangeErrorf("%s: id %d ", constants.RangeSplittingMsg, header.GetRangeId())
+			}
+			return err
+		}
+		defer db.Close()
+
 		batch := db.NewBatch()
 		now := time.Now()
 		md := &rfpb.FileMetadata{
