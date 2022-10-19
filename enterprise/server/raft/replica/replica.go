@@ -792,9 +792,8 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 	if targetReplica == sm {
 		return nil, status.FailedPreconditionErrorf("cannot copy stored files from replica (range %d) to self", req.GetTargetRangeId())
 	}
-	defer func() {
-		sm.log.Infof("Took %s to copy stored files from %+v to %+v", time.Since(start), sm, targetReplica)
-	}()
+
+	fileCount := 0
 	ctx := context.TODO()
 	iter := sm.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(req.GetStart()),
@@ -802,6 +801,9 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 	})
 	defer iter.Close()
 
+	defer func() {
+		sm.log.Infof("Took %s to copy %d stored files from %+v to %+v", time.Since(start), fileCount, sm, targetReplica)
+	}()
 	for iter.First(); iter.Valid(); iter.Next() {
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
@@ -816,6 +818,7 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 		if err != nil {
 			return nil, err
 		}
+		fileCount += 1
 	}
 	return &rfpb.CopyStoredFilesResponse{}, nil
 }
