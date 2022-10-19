@@ -9,10 +9,6 @@ AUTO_RUN_GAZELLE_PREFERENCE_KEY = "autoRunGazelle"
 
 
 def main():
-    # If not running in an interactive terminal session, don't do anything.
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        return
-
     bazel_output_path = sys.argv[1]
     with open(bazel_output_path, "r") as f:
         lines = f.readlines()
@@ -97,6 +93,10 @@ def get_package(relative_src_path):
 
 
 def prompt(msg):
+    # If not running in an interactive terminal session, assume an implicit answer of no.
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False, False
+
     while True:
         print("\x1b[34m> " + msg + "\x1b[0;90m (yes)/always/no/never: \x1b[m", end="")
         response = input().lower().strip()
