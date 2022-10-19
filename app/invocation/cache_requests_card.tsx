@@ -480,7 +480,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   private isCompressedSizeColumnVisible() {
     return (
-      this.props.model.isCacheCompressionEnabled() && filters[this.getFilterIndex()].values.cache !== resource.CacheType.AC
+      this.props.model.isCacheCompressionEnabled() &&
+      filters[this.getFilterIndex()].values.cache !== resource.CacheType.AC
     );
   }
 
@@ -717,17 +718,17 @@ function looksLikeDigest(actionId: string) {
 }
 
 function getCacheType(result: cache.ScoreCard.IResult): resource.CacheType {
-   const cacheType = result.cacheType;
-   // If the cacheType field is not set, try reading data from the older cacheTypeDeprecated field
-   // for scorecard results that were written before we added the new cacheType field
-   if (!cacheType) {
-      return toResourceCacheType(result.cacheTypeDeprecated);
-   }
-   return cacheType;
+  const cacheType = result.cacheType;
+  // If the cacheType field is not set, try reading data from the older cacheTypeDeprecated field
+  // for scorecard results that were written before we added the new cacheType field
+  if (!cacheType) {
+    return toResourceCacheType(result.cacheTypeDeprecated);
+  }
+  return cacheType;
 }
 
 function toResourceCacheType(cacheType: cache.CacheType): resource.CacheType {
-  switch(cacheType) {
+  switch (cacheType) {
     case cache.CacheType.CAS:
       return resource.CacheType.CAS;
     case cache.CacheType.AC:
@@ -737,8 +738,8 @@ function toResourceCacheType(cacheType: cache.CacheType): resource.CacheType {
   }
 }
 
-function toCacheProtoCacheType(cacheType: resource.CacheType):cache.CacheType {
-  switch(cacheType) {
+function toCacheProtoCacheType(cacheType: resource.CacheType): cache.CacheType {
+  switch (cacheType) {
     case resource.CacheType.CAS:
       return cache.CacheType.CAS;
     case resource.CacheType.AC:
