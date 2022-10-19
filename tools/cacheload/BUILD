@@ -13,6 +13,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_grpc//:go_default_library",
