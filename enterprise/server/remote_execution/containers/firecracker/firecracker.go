@@ -1680,5 +1680,8 @@ func (log *VMLog) Write(p []byte) (int, error) {
 func (log *VMLog) Tail() []byte {
 	log.mu.RLock()
 	defer log.mu.RUnlock()
-	return log.buf.Bytes()
+	b := log.buf.Bytes()
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out
 }
