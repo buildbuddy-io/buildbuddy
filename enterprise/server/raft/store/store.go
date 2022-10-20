@@ -39,10 +39,10 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 )
 
