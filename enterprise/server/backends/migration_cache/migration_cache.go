@@ -761,6 +761,10 @@ func (mc *MigrationCache) copyDataInBackground() error {
 
 		select {
 		case <-mc.quitChan:
+			// Drain copy channel on shutdown
+			for c := range mc.copyChan {
+				mc.copy(c)
+			}
 			return nil
 		case c := <-mc.copyChan:
 			mc.copy(c)
