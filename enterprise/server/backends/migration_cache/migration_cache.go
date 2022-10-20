@@ -317,6 +317,7 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 			}
 
 			for _, d := range missingOnlyInDest {
+				d := d
 				eg.Go(func() error {
 					mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
 						Digest:       d,
