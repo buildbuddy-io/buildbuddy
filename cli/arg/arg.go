@@ -1,7 +1,9 @@
 package arg
 
 import (
+	"flag"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -125,4 +127,30 @@ func ContainsExact(args []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// ParseFlagSet works like flagset.Parse(), except it allows positional
+// arguments and flags to be specified in any order.
+func ParseFlagSet(flagset *flag.FlagSet, args []string) error {
+	flagset.SetOutput(io.Discard)
+	var positionalArgs []string
+	for {
+		if err := flagset.Parse(args); err != nil {
+			return err
+		}
+		// Consume all the flags that were parsed as flags.
+		args = args[len(args)-flagset.NArg():]
+		if len(args) == 0 {
+			break
+		}
+		// There's at least one flag remaining and it must be a positional arg
+		// since we consumed all args that were parsed as flags. Consume just
+		// the first one, and retry parsing with the rest of the args, which may
+		// include flags.
+		positionalArgs = append(positionalArgs, args[0])
+		args = args[1:]
+	}
+	// Parse just the positional args so that flagset.Args() returns the
+	// expected value.
+	return flagset.Parse(positionalArgs)
 }

@@ -28,8 +28,19 @@ func main() {
 }
 
 func run() (exitCode int, err error) {
+	// Handle global args that don't apply to any specific subcommand
+	// (--verbose, etc.)
+	args := log.Configure(os.Args[1:])
+
 	// Show help if applicable.
-	exitCode, err = help.HandleHelp(os.Args[1:])
+	exitCode, err = help.HandleHelp(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+
+	// Handle CLI-specific subcommands.
+	// TODO: Refactor so that logging is configured earlier.
+	exitCode, err = plugin.HandleInstall(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
@@ -64,13 +75,12 @@ func run() (exitCode int, err error) {
 	// Parse args.
 	// Split out passthrough args and don't let plugins modify them,
 	// since those are intended to be passed to the built binary as-is.
-	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(os.Args[1:])
+	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(args)
 	rcFileArgs := parser.GetArgsFromRCFiles(bazelArgs)
-	args := append(bazelArgs, rcFileArgs...)
+	args = append(bazelArgs, rcFileArgs...)
 
 	// Fiddle with args
 	// TODO(bduffany): model these as "built-in" plugins
-	args = log.Configure(args)
 	args = tooltag.ConfigureToolTag(args)
 	args = sidecar.ConfigureSidecar(args)
 	args = login.ConfigureAPIKey(args)
