@@ -503,7 +503,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 		`},
 		OutputDirectories: []string{"outputs", "nested/outputs"},
 	}
-	ws.SetTask(&repb.ExecutionTask{Command: cmd})
+	ws.SetTask(ctx, &repb.ExecutionTask{Command: cmd})
 	err = ws.CreateOutputDirs()
 	require.NoError(t, err)
 
