@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
 	"syscall"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -28,8 +27,7 @@ var (
 	maxIdleConns    = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
 	connMaxLifetime = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
 
-	autoMigrateDB        = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
-	autoMigrateDBAndExit = flag.Bool("olap_database.auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	autoMigrateDB = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 
 	// {installation}, {cluster}, {shard}, {replica} are macros provided by
 	// Altinity/clickhouse-operator; {database}, {table} are macros provided by clickhouse.
@@ -47,11 +45,29 @@ func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 	return dbh.db.WithContext(ctx)
 }
 
+// Making a new table? Please make sure you:
+// 1) Add your table in getAllTables()
+// 2) Add the table in clickhouse_test.go TestSchemaInSync
+// 3) Make sure all the fields in the corresponding Table deinition in tables.go
+// are present in clickhouse Table definition or in ExcludedFields()
 type Table interface {
 	TableName() string
 	TableOptions() string
 	// Fields that are in the primary DB Table schema; but not in the clickhouse schema.
 	ExcludedFields() []string
+}
+
+func getAllTables() []Table {
+	return []Table{
+		&Invocation{},
+	}
+}
+
+func tableClusterOption() string {
+	if *dataReplicationEnabled {
+		return fmt.Sprintf("on cluster '%s'", *clusterName)
+	}
+	return ""
 }
 
 // Invocation constains a subset of tables.Invocations.
@@ -119,13 +135,6 @@ func (i *Invocation) TableOptions() string {
 	// Note: the sorting key need to be able to uniquely identify the invocation.
 	// ReplacingMergeTree will remove entries with the same sorting key in the background.
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", engine)
-}
-
-func (i *Invocation) TableClusterOption() string {
-	if *dataReplicationEnabled {
-		return fmt.Sprintf("on cluster '%s'", *clusterName)
-	}
-	return ""
 }
 
 // DateFromUsecTimestamp returns an SQL expression compatible with clickhouse
@@ -208,11 +217,16 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 
 func runMigrations(gdb *gorm.DB) error {
 	log.Info("Auto-migrating clickhouse DB")
-	gdb = gdb.Set("gorm:table_options", (&Invocation{}).TableOptions())
-	if clusterOpts := (&Invocation{}).TableClusterOption(); clusterOpts != "" {
+	if clusterOpts := tableClusterOption(); clusterOpts != "" {
 		gdb = gdb.Set("gorm:table_cluster_options", clusterOpts)
 	}
-	return gdb.AutoMigrate(&Invocation{})
+	for _, t := range getAllTables() {
+		gdb = gdb.Set("gorm:table_options", t.TableOptions())
+		if err := gdb.AutoMigrate(t); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func Register(env environment.Env) error {
@@ -240,13 +254,6 @@ func Register(env environment.Env) error {
 	}))
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
-	}
-	if *autoMigrateDBAndExit {
-		if err := runMigrations(db); err != nil {
-			log.Fatalf("Clickhouse Database auto-migration failed: %s", err)
-		}
-		log.Infof("Clickhouse database migration completed. Exiting due to --clickhouse.auto_migrate_db_and_exit.")
-		os.Exit(0)
 	}
 	if *autoMigrateDB {
 		if err := runMigrations(db); err != nil {
