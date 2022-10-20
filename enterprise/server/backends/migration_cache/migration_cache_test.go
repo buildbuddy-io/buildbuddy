@@ -556,6 +556,61 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 	require.True(t, time.Since(start) >= 1*time.Second)
 }
 
+func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+
+	// Set slow rate of copying
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize: 10,
+		MaxCopiesPerSec:    1,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	err = srcCache.Set(ctx, d, buf)
+	require.NoError(t, err)
+	err = srcCache.Set(ctx, d2, buf2)
+	require.NoError(t, err)
+
+	// Queue copy on read and then immediately stop the cache
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		_, err := mc.Get(ctx, &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		return nil
+	})
+	eg.Go(func() error {
+		_, err := mc.Get(ctx, &resource.ResourceName{
+			Digest:    d2,
+			CacheType: resource.CacheType_CAS,
+		})
+		require.NoError(t, err)
+		return nil
+	})
+	eg.Wait()
+	err = mc.Stop()
+	require.NoError(t, err)
+
+	// Make sure copy queue was drained after shutdown
+	waitForCopy(t, ctx, destCache, d)
+	waitForCopy(t, ctx, destCache, d2)
+}
+
 func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 	testAPIKey := "AK2222"
 	testGroup := "GR7890"

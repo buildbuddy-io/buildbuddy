@@ -762,6 +762,7 @@ func (mc *MigrationCache) copyDataInBackground() error {
 		select {
 		case <-mc.quitChan:
 			// Drain copy channel on shutdown
+			close(mc.copyChan)
 			for c := range mc.copyChan {
 				mc.copy(c)
 			}
@@ -843,7 +844,10 @@ func (mc *MigrationCache) Start() error {
 
 func (mc *MigrationCache) Stop() error {
 	log.Info("Migration cache beginning shut down")
+	defer log.Info("Migration cache successfully shut down")
+
 	close(mc.quitChan)
+
 	// Wait for migration-related channels that use cache resources (like copying) to close before shutting down
 	// the caches
 	if err := mc.eg.Wait(); err != nil {
