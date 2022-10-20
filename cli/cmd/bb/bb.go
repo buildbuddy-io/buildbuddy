@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
-	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
@@ -75,7 +74,6 @@ func run() (exitCode int, err error) {
 	args = tooltag.ConfigureToolTag(args)
 	args = sidecar.ConfigureSidecar(args)
 	args = login.ConfigureAPIKey(args)
-	args = terminal.ConfigureOutputMode(args)
 
 	// Prepare convenience env vars for plugins
 	if err := plugin.PrepareEnv(); err != nil {
