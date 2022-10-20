@@ -302,17 +302,32 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 		return nil, err
 	}
 
+	if dstErr != nil {
+		log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
+	}
 	if doubleRead {
-		if dstErr != nil {
-			log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
-		} else if digest.ElementsMatch(srcMissing, dstMissing) {
+		missingOnlyInDest, missingOnlyInSrc := digest.Diff(srcMissing, dstMissing)
+
+		if len(missingOnlyInSrc) == 0 && len(missingOnlyInDest) == 0 {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissingMatch"}).Inc()
 		} else {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
-
-			if mc.logNotFoundErrors {
+			if mc.logNotFoundErrors || len(missingOnlyInSrc) != 0 {
 				log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
 			}
+
+			for _, d := range missingOnlyInDest {
+				eg.Go(func() error {
+					mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+						Digest:       d,
+						InstanceName: mc.remoteInstanceName,
+						Compressor:   repb.Compressor_IDENTITY,
+						CacheType:    mc.cacheType,
+					})
+					return nil
+				})
+			}
+			eg.Wait()
 		}
 	}
 
