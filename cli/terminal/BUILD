@@ -5,8 +5,4 @@ go_library(
     srcs = ["terminal.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/terminal",
     visibility = ["//visibility:public"],
-    deps = [
-        "//cli/arg",
-        "//cli/log",
-    ],
 )
