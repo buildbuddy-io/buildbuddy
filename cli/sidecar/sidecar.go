@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -102,6 +103,12 @@ func restartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []str
 }
 
 func ConfigureSidecar(args []string) []string {
+	// Don't enable the sidecar on CI for now, since the runner may terminate
+	// before events have a chance to upload.
+	if strings.ToLower(os.Getenv("CI")) == "true" {
+		return args
+	}
+
 	bbHome, err := storage.Dir()
 	ctx := context.Background()
 	if err != nil {

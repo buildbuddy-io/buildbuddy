@@ -445,6 +445,8 @@ func run() error {
 		forcedInvocationID: *invocationID,
 	}
 
+	os.Setenv("CI", "true")
+
 	ctx := context.Background()
 	if ws.buildbuddyAPIKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, auth.APIKeyHeader, ws.buildbuddyAPIKey)
