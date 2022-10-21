@@ -422,7 +422,7 @@ func (c *DiskCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []by
 	return c.Set(ctx, r, data)
 }
 
-func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *DiskCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	return c.partition.setMulti(ctx, c.cacheType, c.remoteInstanceName, kvs)
 }
 

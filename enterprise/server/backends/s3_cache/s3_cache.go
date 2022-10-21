@@ -362,7 +362,7 @@ func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []by
 	return s3c.Set(ctx, r, data)
 }
 
-func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for d, data := range kvs {

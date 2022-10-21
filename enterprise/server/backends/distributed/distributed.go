@@ -1062,7 +1062,7 @@ func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) 
 	return wc.Commit()
 }
 
-func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for d, data := range kvs {

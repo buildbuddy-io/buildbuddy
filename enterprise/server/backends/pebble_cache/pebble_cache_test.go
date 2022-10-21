@@ -400,7 +400,7 @@ func TestMultiGetSet(t *testing.T) {
 	defer pc.Stop()
 
 	digests := randomDigests(t, 10, 20, 11, 30, 40)
-	if err := pc.SetMulti(ctx, digests); err != nil {
+	if err := pc.SetMultiDeprecated(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
 	resourceNames := make([]*resource.ResourceName, 0, len(digests))

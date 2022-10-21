@@ -340,7 +340,7 @@ func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) 
 	return c.Set(ctx, r, data)
 }
 
-func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	if len(kvs) == 0 {
 		return nil
 	}

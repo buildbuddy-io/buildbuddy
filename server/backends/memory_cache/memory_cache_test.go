@@ -170,7 +170,7 @@ func TestMultiGetSet(t *testing.T) {
 	}
 	ctx := getAnonContext(t)
 	digests := randomDigests(t, 10, 20, 11, 30, 40)
-	if err := mc.SetMulti(ctx, digests); err != nil {
+	if err := mc.SetMultiDeprecated(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
 	digestKeys := make([]*repb.Digest, 0, len(digests))

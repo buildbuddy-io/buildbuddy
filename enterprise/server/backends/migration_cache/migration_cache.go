@@ -382,18 +382,18 @@ func (mc *MigrationCache) GetMultiDeprecated(ctx context.Context, digests []*rep
 	return mc.GetMulti(ctx, rns)
 }
 
-func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (mc *MigrationCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	// Double write data to both caches
 	eg.Go(func() error {
-		srcErr = mc.src.SetMulti(gctx, kvs)
+		srcErr = mc.src.SetMultiDeprecated(gctx, kvs)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = mc.dest.SetMulti(gctx, kvs)
+		dstErr = mc.dest.SetMultiDeprecated(gctx, kvs)
 		return nil // don't fail if there's an error from this cache
 	})
 

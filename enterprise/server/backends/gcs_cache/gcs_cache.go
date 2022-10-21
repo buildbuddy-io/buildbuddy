@@ -297,7 +297,7 @@ func (g *GCSCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byt
 	return g.Set(ctx, rn, data)
 }
 
-func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (g *GCSCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for d, data := range kvs {

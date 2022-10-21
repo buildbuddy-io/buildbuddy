@@ -1156,7 +1156,7 @@ func TestSetMulti(t *testing.T) {
 	}
 	eg.Wait()
 
-	err = mc.SetMulti(ctx, dataToSet)
+	err = mc.SetMultiDeprecated(ctx, dataToSet)
 	require.NoError(t, err)
 
 	for d, expected := range dataToSet {
