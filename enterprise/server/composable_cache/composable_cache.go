@@ -211,6 +211,18 @@ func (c *ComposableCache) GetMultiDeprecated(ctx context.Context, digests []*rep
 	return foundMap, nil
 }
 
+func (c *ComposableCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	// Special case -- we call set on the inner cache first (in case of
+	// error) and then if no error we'll maybe set on the outer.
+	if err := c.inner.Set(ctx, r, data); err != nil {
+		return err
+	}
+	if c.mode&ModeWriteThrough != 0 {
+		c.outer.Set(ctx, r, data)
+	}
+	return nil
+}
+
 func (c *ComposableCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
 	// Special case -- we call set on the inner cache first (in case of
 	// error) and then if no error we'll maybe set on the outer.

@@ -333,13 +333,9 @@ func (s3c *S3Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Dige
 	rns := digest.ResourceNames(s3c.cacheType, s3c.remoteInstanceName, digests)
 	return s3c.GetMulti(ctx, rns)
 }
-func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := s3c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
+
+func (s3c *S3Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -354,6 +350,16 @@ func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []by
 	spn.End()
 	timer.ObserveSet(len(data), err)
 	return err
+}
+
+func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	}
+	return s3c.Set(ctx, r, data)
 }
 
 func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {

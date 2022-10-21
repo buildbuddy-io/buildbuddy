@@ -31,11 +31,6 @@ type MemoryCache struct {
 	remoteInstanceName string
 }
 
-func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
-	//TODO implement me
-	panic("implement me")
-}
-
 func sizeFn(value interface{}) int64 {
 	size := int64(0)
 	if v, ok := value.([]byte); ok {
@@ -224,13 +219,8 @@ func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Di
 	return m.GetMulti(ctx, rns)
 }
 
-func (m *MemoryCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := m.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
+func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -238,6 +228,16 @@ func (m *MemoryCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []
 	m.l.Add(k, data)
 	m.lock.Unlock()
 	return nil
+}
+
+func (m *MemoryCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	}
+	return m.Set(ctx, r, data)
 }
 
 func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {

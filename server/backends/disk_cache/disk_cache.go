@@ -165,11 +165,6 @@ type DiskCache struct {
 	remoteInstanceName string
 }
 
-func (c *DiskCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
-	//TODO implement me
-	panic("implement me")
-}
-
 func Register(env environment.Env) error {
 	if *rootDirectoryFlag == "" {
 		return nil
@@ -409,8 +404,22 @@ func (c *DiskCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Dige
 	return c.partition.getMulti(ctx, rns)
 }
 
+func (c *DiskCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return err
+	}
+	return p.set(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest(), data)
+}
+
 func (c *DiskCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	return c.partition.set(ctx, c.cacheType, c.remoteInstanceName, d, data)
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Set(ctx, r, data)
 }
 
 func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
