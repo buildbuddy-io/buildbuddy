@@ -13,5 +13,5 @@ _normal="\x1b[m"
 invocation_url=$(cat "$PLUGIN_TEMPDIR/invocation_url.txt")
 
 echo -e "${_gray}> Opening ${_underline}${invocation_url}${_normal}"
-open_command=$(which xdg-open open | head -n1)
+open_command=$( (which xdg-open open | head -n1) || true)
 "$open_command" "$invocation_url" &>/dev/null
