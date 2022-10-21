@@ -351,7 +351,7 @@ func (p *Plugin) splitRepoRef() (string, string) {
 }
 
 func (p *Plugin) repoClonePath() (string, error) {
-	storagePath, err := storage.Dir()
+	storagePath, err := storage.CacheDir()
 	if err != nil {
 		return "", err
 	}

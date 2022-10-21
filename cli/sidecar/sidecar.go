@@ -102,12 +102,12 @@ func restartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []str
 }
 
 func ConfigureSidecar(args []string) []string {
-	bbHome, err := storage.Dir()
+	cacheDir, err := storage.CacheDir()
 	ctx := context.Background()
 	if err != nil {
 		log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
 	}
-	if err := extractBundledSidecar(ctx, bbHome); err != nil {
+	if err := extractBundledSidecar(ctx, cacheDir); err != nil {
 		log.Printf("Error extracting sidecar: %s", err)
 	}
 
@@ -123,12 +123,12 @@ func ConfigureSidecar(args []string) []string {
 	if remoteCacheFlag != "" && remoteExecFlag == "" {
 		sidecarArgs = append(sidecarArgs, "--remote_cache="+remoteCacheFlag)
 		// Also specify as disk cache directory.
-		diskCacheDir := filepath.Join(bbHome, "filecache")
+		diskCacheDir := filepath.Join(cacheDir, "filecache")
 		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
 	}
 
 	if len(sidecarArgs) > 0 {
-		sidecarSocket, err := restartSidecarIfNecessary(ctx, bbHome, sidecarArgs)
+		sidecarSocket, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
 		if err == nil {
 			err = keepaliveSidecar(ctx, sidecarSocket)
 		}
