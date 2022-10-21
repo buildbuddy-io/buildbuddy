@@ -61,7 +61,8 @@ func run() (exitCode int, err error) {
 		// (if applicable), since the run script will replace this process.
 		os.RemoveAll(tempDir)
 
-		if scriptPath != "" {
+		// Invoke the run script only if the build succeeded.
+		if exitCode == 0 && scriptPath != "" {
 			exitCode, err = bazelisk.InvokeRunScript(scriptPath)
 		}
 	}()
