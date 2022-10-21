@@ -1062,16 +1062,16 @@ func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) 
 	return wc.Commit()
 }
 
-func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for d, data := range kvs {
-		setFn := func(d *repb.Digest, data []byte) {
+	for r, data := range kvs {
+		setFn := func(r *resource.ResourceName, data []byte) {
 			eg.Go(func() error {
-				return c.SetDeprecated(ctx, d, data)
+				return c.Set(ctx, r, data)
 			})
 		}
-		setFn(d, data)
+		setFn(r, data)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -1079,6 +1079,11 @@ func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]b
 	}
 
 	return nil
+}
+
+func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(c.isolation.CacheType, c.isolation.RemoteInstanceName, kvs)
+	return c.SetMulti(ctx, rnMap)
 }
 
 func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {

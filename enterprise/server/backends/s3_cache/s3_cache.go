@@ -362,16 +362,16 @@ func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []by
 	return s3c.Set(ctx, r, data)
 }
 
-func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for d, data := range kvs {
+	for r, data := range kvs {
 		setFn := func(d *repb.Digest, data []byte) {
 			eg.Go(func() error {
-				return s3c.SetDeprecated(ctx, d, data)
+				return s3c.Set(ctx, r, data)
 			})
 		}
-		setFn(d, data)
+		setFn(r, data)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -379,6 +379,11 @@ func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest
 	}
 
 	return nil
+}
+
+func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(s3c.cacheType, s3c.remoteInstanceName, kvs)
+	return s3c.SetMulti(ctx, rnMap)
 }
 
 func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {

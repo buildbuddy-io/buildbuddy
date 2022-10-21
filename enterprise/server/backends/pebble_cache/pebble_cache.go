@@ -1035,13 +1035,18 @@ func (p *PebbleCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []
 	}, data)
 }
 
-func (p *PebbleCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	for d, data := range kvs {
-		if err := p.SetDeprecated(ctx, d, data); err != nil {
+func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	for r, data := range kvs {
+		if err := p.Set(ctx, r, data); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (p *PebbleCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), kvs)
+	return p.SetMulti(ctx, rnMap)
 }
 
 func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delta int64) {

@@ -240,13 +240,18 @@ func (m *MemoryCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []
 	return m.Set(ctx, r, data)
 }
 
-func (m *MemoryCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	for d, data := range kvs {
-		if err := m.SetDeprecated(ctx, d, data); err != nil {
+func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	for r, data := range kvs {
+		if err := m.Set(ctx, r, data); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (m *MemoryCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(m.cacheType, m.remoteInstanceName, kvs)
+	return m.SetMulti(ctx, rnMap)
 }
 
 func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {

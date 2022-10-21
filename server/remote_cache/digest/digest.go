@@ -130,6 +130,20 @@ func ResourceNames(cacheType rspb.CacheType, remoteInstanceName string, digests 
 	return rns
 }
 
+func ResourceNameMap(cacheType rspb.CacheType, remoteInstanceName string, digestMap map[*repb.Digest][]byte) map[*rspb.ResourceName][]byte {
+	rnMap := make(map[*rspb.ResourceName][]byte, len(digestMap))
+	for d, data := range digestMap {
+		rn := &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: remoteInstanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    cacheType,
+		}
+		rnMap[rn] = data
+	}
+	return rnMap
+}
+
 // Key is a representation of a digest that can be used as a map key.
 type Key struct {
 	Hash      string
