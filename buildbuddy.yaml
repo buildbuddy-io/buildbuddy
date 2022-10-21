@@ -53,7 +53,7 @@ actions:
       - test //... --config=workflows --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
 
 plugins:
-  - path: cli/example_plugins/go_deps
+  - path: cli/plugins/go_deps
+  - path: cli/plugins/open_invocation
   - path: cli/example_plugins/go_highlight
-  - path: cli/example_plugins/open_invocation
   - path: cli/example_plugins/ping_remote
