@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -731,7 +732,7 @@ func TestFindSplitPoint(t *testing.T) {
 		require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
 	}
 	{
-		// 1000 digests of the same size, split point should be half way between
+		// 10 digests of the same size, split point should be half way between
 		writeFiles("default", 10, 100000)
 		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FindSplitPointRequest{}))
 		rsp, err := repl.Update([]dbsm.Entry{entry})
@@ -741,9 +742,10 @@ func TestFindSplitPoint(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, splitRsp)
 
+		log.Printf("splitRsp: %+v", splitRsp)
 		// Left and right side of split should both be approximately 50%
-		require.Equal(t, splitRsp.GetLeftSizeBytes()/100000, int64(5))
-		require.Equal(t, splitRsp.GetRightSizeBytes()/100000, int64(5))
+		require.Equal(t, int64(5), splitRsp.GetLeftSizeBytes()/100000)
+		require.Equal(t, int64(5), splitRsp.GetRightSizeBytes()/100000)
 	}
 	{
 		// Write one more big blob; expect split point to be right before it.
@@ -757,7 +759,7 @@ func TestFindSplitPoint(t *testing.T) {
 		require.NotNil(t, splitRsp)
 
 		// Left and right side of split should both be approximately 50%
-		require.Equal(t, splitRsp.GetLeftSizeBytes()/100000, int64(10))
-		require.Equal(t, splitRsp.GetRightSizeBytes()/100000, int64(10))
+		require.Equal(t, int64(10), splitRsp.GetLeftSizeBytes()/100000)
+		require.Equal(t, int64(10), splitRsp.GetRightSizeBytes()/100000)
 	}
 }
