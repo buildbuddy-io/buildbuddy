@@ -1,26 +1,26 @@
 package keystore
 
 import (
-	//	"context"
 	"crypto/rand"
 	"encoding/base64"
-	// "log"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/nacl/box"
 )
 
-type secretBoxKey [32]byte
-
-// GenerateSealedBoxKey returns a new publicKey, privateKey, and error.
+// GenerateSealedBoxKes returns a new publicKey, privateKey, and error.
 // The publicKey is base64encoded. It can be used (by clients) to sign new
 // secret boxes that can be verified and opened by us (using our private key).
 //
 // The privateKey is encrypted with the master key and base64encoded. It should
 // not be exposed directly to users, just stored and passed back to this
 // library when opening boxes.
-func GenerateSealedBoxKey(env environment.Env) (string, string, error) {
+//
+// This method should generally only be called once per customer -- to generate
+// the initial keys which are then stored and used to decrypt secrets provided
+// by that customer.
+func GenerateSealedBoxKeys(env environment.Env) (string, string, error) {
 	kms := env.GetKMS()
 	if kms == nil {
 		return "", "", status.FailedPreconditionError("No KMS was configured")
@@ -52,7 +52,7 @@ func OpenAnonymousSealedBoxes(env environment.Env, b64PublicKey, b64EncryptedPri
 	}
 	masterKey, err := kms.FetchMasterKey()
 	if err != nil {
-		return nil,  err
+		return nil, err
 	}
 	pubKeySlice, err := base64.StdEncoding.DecodeString(b64PublicKey)
 	if err != nil {
@@ -62,16 +62,16 @@ func OpenAnonymousSealedBoxes(env environment.Env, b64PublicKey, b64EncryptedPri
 	if err != nil {
 		return nil, err
 	}
-	
+
 	privKeySlice, err := masterKey.Decrypt(encryptedPrivateKey, pubKeySlice)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var pubKey, privKey [32]byte
 	copy(pubKey[:], pubKeySlice[:32])
 	copy(privKey[:], privKeySlice[:32])
-	
+
 	decoded := make([]string, 0, len(b64CipherTexts))
 	for _, b64CipherText := range b64CipherTexts {
 		ct, err := base64.StdEncoding.DecodeString(b64CipherText)
@@ -95,4 +95,25 @@ func OpenAnonymousSealedBox(env environment.Env, b64PublicKey, b64EncryptedPriva
 		return "", err
 	}
 	return decoded[0], nil
+}
+
+// NewAnonymousSealedBox creates a sealed box using the provided public key.
+// The returned value is a base64 encoded secret box.
+// The secret box is only decodable by someone in posession of the public and
+// private key.
+func NewAnonymousSealedBox(b64PublicKey, plaintext string) (string, error) {
+	pubKeySlice, err := base64.StdEncoding.DecodeString(b64PublicKey)
+	if err != nil {
+		return "", err
+	}
+
+	var pubKey [32]byte
+	copy(pubKey[:], pubKeySlice[:32])
+
+	ciphertextBytes, err := box.SealAnonymous(nil, []byte(plaintext), &pubKey, rand.Reader)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(ciphertextBytes), nil
 }
