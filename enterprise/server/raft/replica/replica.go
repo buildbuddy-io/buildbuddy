@@ -129,11 +129,15 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 		return int64(len(val)), nil
 	}
 
-	fileMetadata := &rfpb.FileMetadata{}
-	if err := proto.Unmarshal(val, fileMetadata); err != nil {
+	md := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(val, md); err != nil {
 		return 0, err
 	}
-	return fileMetadata.GetSizeBytes() + int64(len(val)), nil
+	size := int64(len(val))
+	if md.GetStorageMetadata().GetFileMetadata() != nil {
+		size += md.GetSizeBytes()
+	}
+	return size, nil
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
