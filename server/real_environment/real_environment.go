@@ -99,6 +99,7 @@ type RealEnv struct {
 	registryServer                   rgpb.RegistryServer
 	olapDBHandle                     interfaces.OLAPDBHandle
 	kms                              interfaces.KMS
+	secretService                    interfaces.SecretService
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -554,4 +555,11 @@ func (r *RealEnv) GetKMS() interfaces.KMS {
 
 func (r *RealEnv) SetKMS(k interfaces.KMS) {
 	r.kms = k
+}
+
+func (r *RealEnv) GetSecretService() interfaces.SecretService {
+	return r.secretService
+}
+func (r *RealEnv) SetSecretService(s interfaces.SecretService) {
+	r.secretService = s
 }

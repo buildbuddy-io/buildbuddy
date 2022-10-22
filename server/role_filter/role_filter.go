@@ -86,6 +86,11 @@ var (
 		"DeleteWorkflow",
 		"GetWorkflows",
 		"GetRepos",
+		// Secret management
+		"GetPublicKey",
+		"ListSecrets",
+		"UpdateSecret",
+		"DeleteSecret",
 		// RBE deployment view
 		"GetExecutionNodes",
 		// BuildBuddy usage data

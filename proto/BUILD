@@ -163,6 +163,14 @@ proto_library(
 )
 
 proto_library(
+    name = "secrets_proto",
+    srcs = ["secrets.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "target_proto",
     srcs = [
         "target.proto",
@@ -349,6 +357,7 @@ proto_library(
         ":resource_proto",
         ":runner_proto",
         ":scheduler_proto",
+        ":secrets_proto",
         ":target_proto",
         ":usage_proto",
         ":user_proto",
@@ -561,6 +570,15 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "secrets_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/secrets",
+    proto = ":secrets_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "target_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/target",
     proto = ":target_proto",
@@ -721,6 +739,7 @@ go_proto_library(
         ":resource_go_proto",
         ":runner_go_proto",
         ":scheduler_go_proto",
+        ":secrets_go_proto",
         ":target_go_proto",
         ":usage_go_proto",
         ":user_go_proto",
