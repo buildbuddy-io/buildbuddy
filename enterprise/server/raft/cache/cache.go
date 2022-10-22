@@ -29,12 +29,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/google/uuid"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
+	"google.golang.org/protobuf/proto"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -418,30 +420,27 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Com
 	if err != nil {
 		return nil, err
 	}
+	writeCloserMetadata := rc.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
 
-	var mwc io.WriteCloser
-	err = rc.sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
-		w, err := rc.apiClient.MultiWriter(ctx, peers, fileRecord)
+	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
+	wc.CommitFn = func(bytesWritten int64) error {
+		now := time.Now()
+		md := &rfpb.FileMetadata{
+			FileRecord:      fileRecord,
+			StorageMetadata: writeCloserMetadata.Metadata(),
+			SizeBytes:       bytesWritten,
+			LastModifyUsec:  now.UnixMicro(),
+			LastAccessUsec:  now.UnixMicro(),
+		}
+		protoBytes, err := proto.Marshal(md)
 		if err != nil {
 			return err
 		}
-		// Attempt the first write to see if all the peers will accept
-		// it. If the range information is stale, the write will fail
-		// here and the entire operation will be retried via RunAll.
-		_, err = w.Write([]byte{})
-		if err != nil {
-			return err
-		}
-		mwc = w
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	rwc := &raftWriteCloser{mwc, func() error {
-		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-			FileRecord: fileRecord,
+		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   fileMetadataKey,
+				Value: protoBytes,
+			},
 		}).ToProto()
 		if err != nil {
 			return err
@@ -451,8 +450,8 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Com
 			return err
 		}
 		return rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
-	}}
-	return rwc, nil
+	}
+	return wc, nil
 }
 
 func (rc *RaftCache) Stop() error {
