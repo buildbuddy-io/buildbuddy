@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
-// GenerateSealedBoxKes returns a new publicKey, privateKey, and error.
+// GenerateSealedBoxKeys returns a new publicKey, privateKey, and error.
 // The publicKey is base64encoded. It can be used (by clients) to sign new
 // secret boxes that can be verified and opened by us (using our private key).
 //
