@@ -12,10 +12,12 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/plugin",
+        "//cli/terminal",
         "//cli/workspace",
         "//server/util/disk",
         "//server/util/status",
         "@com_github_bazelbuild_bazelisk//core:go_default_library",
         "@com_github_bazelbuild_bazelisk//repositories:go_default_library",
+        "@com_github_creack_pty//:pty",
     ],
 )

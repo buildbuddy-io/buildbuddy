@@ -15,3 +15,7 @@ func HandleVersion(args []string) []string {
 	fmt.Printf("bb %s\n", cliVersionFlag)
 	return args
 }
+
+func String() string {
+	return cliVersionFlag
+}

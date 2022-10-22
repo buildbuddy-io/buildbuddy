@@ -26,9 +26,9 @@ func HandleLogin(args []string) []string {
 
 	log.Printf("You are now logged in!")
 
-	dir, err := storage.Dir()
+	dir, err := storage.ConfigDir()
 	if err != nil {
-		log.Fatalf("error getting storage directory: %s", err)
+		log.Fatalf("error getting config directory: %s", err)
 	}
 	apiKeyFile := filepath.Join(dir, apiKeyFileName)
 	err = os.WriteFile(apiKeyFile, []byte(apiKey), 0644)
@@ -44,9 +44,9 @@ func ConfigureAPIKey(args []string) []string {
 		return args
 	}
 
-	dir, err := storage.Dir()
+	dir, err := storage.ConfigDir()
 	if err != nil {
-		log.Fatalf("error getting storage directory: %s", err)
+		log.Fatalf("error getting config directory: %s", err)
 	}
 	apiKeyFile := filepath.Join(dir, apiKeyFileName)
 	apiKeyBytes, err := os.ReadFile(apiKeyFile)

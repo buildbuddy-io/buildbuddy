@@ -10,6 +10,7 @@ go_library(
         "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/util/disk",
+        "//server/util/log",
         "//server/util/status",
     ],
 )

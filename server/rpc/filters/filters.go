@@ -171,7 +171,7 @@ func requestIDUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 
 func addInvocationIdToLog(ctx context.Context) context.Context {
 	if iid := bazel_request.GetInvocationID(ctx); iid != "" {
-		return log.EnrichContext(ctx, "invocation_id", iid)
+		return log.EnrichContext(ctx, log.InvocationIDKey, iid)
 	}
 	return ctx
 }

@@ -437,6 +437,8 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 		return &rfpb.FileWriteResponse{}, nil
 	}
 
+	sm.log.Warningf("Stored file did not exist. FileMetadata: %+v", fileMetadata)
+
 	storageMD, sizeBytes, err := sm.fetchFileToLocalStorage(ctx, req.GetFileRecord())
 	if err != nil {
 		return nil, err
@@ -570,9 +572,10 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 
 	timeTilExpiry := time.Duration(req.GetDurationSeconds()) * time.Second
 	startNewTimer := func() {
-		sm.log.Infof("Trying to acquire split lock...")
+		sm.log.Debugf("Trying to acquire split lock...")
+		splitAcquireStart := time.Now()
 		sm.leaser.AcquireSplitLock()
-		sm.log.Infof("Acquired split lock")
+		sm.log.Debugf("Acquired split lock in %s", time.Since(splitAcquireStart))
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
 			log.Warning("Split lease expired!")
 			sm.releaseAndClearTimer()
@@ -789,48 +792,33 @@ func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.Copy
 	if targetReplica == sm {
 		return nil, status.FailedPreconditionErrorf("cannot copy stored files from replica (range %d) to self", req.GetTargetRangeId())
 	}
-	defer func() {
-		sm.log.Infof("Took %s to copy stored files from %+v to %+v", time.Since(start), sm, targetReplica)
-	}()
 
-	ctx := context.Background()
+	fileCount := 0
+	ctx := context.TODO()
 	iter := sm.db.NewIter(&pebble.IterOptions{
 		LowerBound: keys.Key(req.GetStart()),
 		UpperBound: keys.Key(req.GetEnd()),
 	})
 	defer iter.Close()
 
+	defer func() {
+		sm.log.Infof("Took %s to copy %d stored files from %+v to %+v", time.Since(start), fileCount, sm, targetReplica)
+	}()
 	for iter.First(); iter.Valid(); iter.Next() {
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			continue
 		}
-		if fileMetadata.GetStorageMetadata() == nil {
+		md := fileMetadata.GetStorageMetadata()
+		if md == nil {
 			continue
 		}
-		readCloser, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), 0, 0)
+
+		err := sm.fileStorer.LinkOrCopyFile(ctx, md, sm.fileDir, targetReplica.fileDir)
 		if err != nil {
 			return nil, err
 		}
-		writeCloserMetadata, err := targetReplica.storedFileWriter(ctx, fileMetadata.GetFileRecord())
-		if err != nil {
-			return nil, err
-		}
-		n, err := io.Copy(writeCloserMetadata, readCloser)
-		readCloser.Close()
-		if n != fileMetadata.GetSizeBytes() {
-			writeCloserMetadata.Close()
-			return nil, status.FailedPreconditionErrorf("read %d bytes but expected %d", n, fileMetadata.GetSizeBytes())
-		}
-		if err := writeCloserMetadata.Commit(); err != nil {
-			writeCloserMetadata.Close()
-			return nil, err
-		}
-		writeCloserMetadata.Close()
-		if !proto.Equal(writeCloserMetadata.Metadata(), fileMetadata.GetStorageMetadata()) {
-			sm.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), writeCloserMetadata.Metadata())
-			return nil, status.FailedPreconditionError("stored metadata changed when fetching file")
-		}
+		fileCount += 1
 	}
 	return &rfpb.CopyStoredFilesResponse{}, nil
 }
@@ -1137,28 +1125,27 @@ func (sm *Replica) sendAccessTimeUpdate(fileMetadata *rfpb.FileMetadata) {
 }
 
 func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
+	if err := sm.validateRange(header); err != nil {
+		return nil, err
+	}
+
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := sm.validateRange(header); err != nil {
-		db.Close()
-		return nil, err
-	}
-
 	fileMetadata, err := sm.metadataForRecord(db, fileRecord)
+	db.Close()
+
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 	rc, err := sm.fileStorer.NewReader(ctx, sm.fileDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 	sm.sendAccessTimeUpdate(fileMetadata)
-	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
+	return rc, nil
 }
 
 func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
@@ -1225,31 +1212,37 @@ func (sm *Replica) storedFileWriter(ctx context.Context, fileRecord *rfpb.FileRe
 }
 
 func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedWriteCloser, error) {
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-
 	if err := sm.validateRange(header); err != nil {
-		db.Close()
 		return nil, err
 	}
 
 	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 
 	writeCloserMetadata, err := sm.storedFileWriter(ctx, fileRecord)
 	if err != nil {
-		db.Close()
 		return nil, err
 	}
 
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
-	wc.CloseFn = db.Close
 	wc.CommitFn = func(bytesWritten int64) error {
+		db, err := sm.leaser.DB()
+		if err != nil {
+			if sm.IsSplitting() {
+				return status.OutOfRangeErrorf("%s: id %d ", constants.RangeSplittingMsg, header.GetRangeId())
+			}
+			return err
+		}
+		defer db.Close()
+
+		// Re-validate the header to ensure the range did not split before
+		// we got to Commit().
+		if err := sm.validateRange(header); err != nil {
+			return err
+		}
+
 		batch := db.NewBatch()
 		now := time.Now()
 		md := &rfpb.FileMetadata{

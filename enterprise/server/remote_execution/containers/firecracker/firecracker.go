@@ -305,6 +305,9 @@ type FirecrackerContainer struct {
 	externalJailerCmd *exec.Cmd
 
 	cleanupVethPair func(context.Context) error
+	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
+	// already been stopped manually.
+	cancelVmCtx context.CancelFunc
 }
 
 // ConfigurationHash returns a digest that can be used to look up or save a
@@ -373,6 +376,7 @@ func NewContainer(env environment.Env, imageCacheAuth *container.ImageCacheAuthe
 		imageCacheAuth:     imageCacheAuth,
 		allowSnapshotStart: opts.AllowSnapshotStart,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
+		cancelVmCtx:        func() {},
 	}
 
 	if err := c.newID(); err != nil {
@@ -642,7 +646,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	vmCtx := context.Background()
+	vmCtx, cancel := context.WithCancel(context.Background())
+	c.cancelVmCtx = cancel
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
 		fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName),
@@ -1268,7 +1273,8 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 
-	vmCtx := context.Background()
+	vmCtx, cancel := context.WithCancel(context.Background())
+	c.cancelVmCtx = cancel
 
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
@@ -1511,6 +1517,8 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) remove(ctx context.Context) error {
+	defer c.cancelVmCtx()
+
 	var lastErr error
 
 	if err := c.machine.Shutdown(ctx); err != nil {
@@ -1680,5 +1688,8 @@ func (log *VMLog) Write(p []byte) (int, error) {
 func (log *VMLog) Tail() []byte {
 	log.mu.RLock()
 	defer log.mu.RUnlock()
-	return log.buf.Bytes()
+	b := log.buf.Bytes()
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out
 }

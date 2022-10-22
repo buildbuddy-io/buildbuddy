@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -66,6 +67,8 @@ type Store interface {
 
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
+
+	LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, srcFileDir, targetFileDir string) error
 }
 
 type fileStorer struct {
@@ -198,6 +201,40 @@ func (c *fileChunker) Metadata() *rfpb.StorageMetadata {
 func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
 	fp := fs.FilePath(fileDir, f)
 	return disk.FileReader(ctx, fp, offset, limit)
+}
+
+func (fs *fileStorer) LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, srcFileDir, targetFileDir string) error {
+	if md.GetFileMetadata() == nil {
+		return nil
+	}
+	f := md.GetFileMetadata()
+	originalFp := fs.FilePath(srcFileDir, f)
+	targetFp := fs.FilePath(targetFileDir, f)
+	if err := disk.EnsureDirectoryExists(filepath.Dir(targetFp)); err != nil {
+		return err
+	}
+	if err := os.Link(originalFp, targetFp); err == nil {
+		return nil
+	}
+	// Linking failed :( Attempt to copy instead.
+	log.Warningf("Linking failed, copying file %q => %q (may be slow)", originalFp, targetFp)
+	rc, err := fs.FileReader(ctx, srcFileDir, f, 0, 0)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	wc, err := disk.FileWriter(ctx, targetFp)
+	if err != nil {
+		return err
+	}
+	defer wc.Close()
+
+	_, err = io.Copy(wc, rc)
+	if err != nil {
+		return err
+	}
+	return wc.Commit()
 }
 
 func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {

@@ -480,7 +480,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 
   private isCompressedSizeColumnVisible() {
     return (
-      this.props.model.isCacheCompressionEnabled() && filters[this.getFilterIndex()].values.cache !== resource.CacheType.AC
+      this.props.model.isCacheCompressionEnabled() &&
+      filters[this.getFilterIndex()].values.cache !== resource.CacheType.AC
     );
   }
 
@@ -627,7 +628,7 @@ function renderCompressionSavings(result: cache.ScoreCard.IResult) {
 
 function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
   const cacheType = getCacheType(result);
-  if (result.requestType === cache.RequestType.READ && cacheType === resource.CacheType.AC) {
+  if (result.requestType === cache.RequestType.READ) {
     if (result.status.code !== 0 /*=OK*/) {
       return (
         <>
@@ -637,25 +638,22 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
         </>
       );
     }
-
     return (
       <>
-        <Check className="icon green" />
+        {cacheType === resource.CacheType.AC ? <Check className="icon green" /> : <ArrowDown className="icon green" />}
         <span>Hit</span>
       </>
     );
   }
-
-  if (result.requestType === cache.RequestType.READ) {
-    return (
-      <>
-        <ArrowDown className="icon green" />
-        <span>Hit</span>
-      </>
-    );
-  }
-
   if (result.requestType === cache.RequestType.WRITE) {
+    if (result.status.code !== 0 /*=OK*/) {
+      return (
+        <>
+          <X className="icon red" />
+          <span>Error</span>
+        </>
+      );
+    }
     return (
       <>
         <ArrowUp className="icon red" />
@@ -663,7 +661,6 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
       </>
     );
   }
-
   return "";
 }
 
@@ -717,17 +714,17 @@ function looksLikeDigest(actionId: string) {
 }
 
 function getCacheType(result: cache.ScoreCard.IResult): resource.CacheType {
-   const cacheType = result.cacheType;
-   // If the cacheType field is not set, try reading data from the older cacheTypeDeprecated field
-   // for scorecard results that were written before we added the new cacheType field
-   if (!cacheType) {
-      return toResourceCacheType(result.cacheTypeDeprecated);
-   }
-   return cacheType;
+  const cacheType = result.cacheType;
+  // If the cacheType field is not set, try reading data from the older cacheTypeDeprecated field
+  // for scorecard results that were written before we added the new cacheType field
+  if (!cacheType) {
+    return toResourceCacheType(result.cacheTypeDeprecated);
+  }
+  return cacheType;
 }
 
 function toResourceCacheType(cacheType: cache.CacheType): resource.CacheType {
-  switch(cacheType) {
+  switch (cacheType) {
     case cache.CacheType.CAS:
       return resource.CacheType.CAS;
     case cache.CacheType.AC:
@@ -737,8 +734,8 @@ function toResourceCacheType(cacheType: cache.CacheType): resource.CacheType {
   }
 }
 
-function toCacheProtoCacheType(cacheType: resource.CacheType):cache.CacheType {
-  switch(cacheType) {
+function toCacheProtoCacheType(cacheType: resource.CacheType): cache.CacheType {
+  switch (cacheType) {
     case resource.CacheType.CAS:
       return cache.CacheType.CAS;
     case resource.CacheType.AC:

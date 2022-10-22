@@ -135,6 +135,12 @@ const (
 
 	// Describes the type of cache request
 	CacheRequestType = "type"
+
+	/// The name of the table in Clickhouse
+	ClickhouseTableName = "clickhouse_table_name"
+
+	/// Status of the Clickhouse operation: `ok`, `error`.
+	ClickhouseStatusLabel = "status"
 )
 
 const (
@@ -1388,6 +1394,16 @@ var (
 		Name:      "blob_range_latency_usec",
 		Help:      "Latency of serving layer blob ranges.",
 		Buckets:   coarseMicrosecondToHour,
+	})
+
+	ClickhouseInsertedCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "clickhouse",
+		Name:      "insert_count",
+		Help:      "Num of rows inserted into clickhouse",
+	}, []string{
+		ClickhouseTableName,
+		ClickhouseStatusLabel,
 	})
 )
 

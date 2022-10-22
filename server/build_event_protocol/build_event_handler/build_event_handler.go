@@ -81,7 +81,7 @@ const (
 
 var (
 	chunkFileSizeBytes                = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
-	enableChunkedEventLogs            = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	enableChunkedEventLogs            = flag.Bool("storage.enable_chunked_event_logs", true, "If true, Event logs will be stored separately from the invocation proto in chunks.")
 	requireInvocationEventParseOnRead = flag.Bool("app.require_invocation_event_parse_on_read", false, "If true, invocation responses will be filled from database values and then by parsing the events on read.")
 	writeToOLAPDBEnabled              = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
 
@@ -120,6 +120,7 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	buildEventAccumulator := accumulator.NewBEValues(iid)
+	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
 
 	b.openChannels.Add(1)
 	onClose := func() {
@@ -265,7 +266,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
 	// Temporary logging for debugging clickhouse missing data.
 	if err == nil {
-		log.Infof("successfully wrote invocation %q to clickhouse", inv.InvocationID)
+		log.CtxInfo(ctx, "successfully wrote invocation to clickhouse")
 	}
 	return err
 }
@@ -281,36 +282,39 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	// unnecessarily throttled.
 	time.Sleep(time.Until(task.createdAt.Add(*cacheStatsFinalizationDelay)))
 	ti := &tables.Invocation{InvocationID: task.invocationJWT.id, Attempt: task.invocationJWT.attempt}
+	ctx = log.EnrichContext(ctx, log.InvocationIDKey, task.invocationJWT.id)
 	if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 		fillInvocationFromCacheStats(stats, ti)
+	} else {
+		log.CtxInfo(ctx, "cache stats is not available.")
 	}
 	if sc := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); sc != nil {
 		scorecard.FillBESMetadata(sc, task.files)
 		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, task.invocationJWT.attempt, sc); err != nil {
-			log.Errorf("Error writing scorecard blob: %s", err)
+			log.CtxErrorf(ctx, "Error writing scorecard blob: %s", err)
 		}
 	}
 
 	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
-		log.Errorf("Failed to write cache stats for invocation %q to primaryDB: %s", ti.InvocationID, err)
+		log.CtxErrorf(ctx, "Failed to write cache stats to primaryDB: %s", err)
 	}
 
 	if task.invocationStatus == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
 		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationJWT)
 		if err != nil {
-			log.Errorf("Failed to flush stats for invocation %s to clickhouse: %s", ti.InvocationID, err)
+			log.CtxErrorf(ctx, "Failed to flush stats to clickhouse: %s", err)
 		}
 	} else {
-		log.Infof("skipped writing stats for invocation %s to clickhouse, invocationStatus = %s", ti.InvocationID, task.invocationStatus)
+		log.CtxInfof(ctx, "skipped writing stats to clickhouse, invocationStatus = %s", task.invocationStatus)
 	}
 	// Cleanup regardless of whether the stats are flushed successfully to
 	// the DB (since we won't retry the flush and we don't need these stats
 	// for any other purpose).
 	hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationJWT.id)
 	if !updated {
-		log.Warningf("Attempt %d of invocation %s pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt, task.invocationJWT.id)
+		log.CtxWarningf(ctx, "Attempt %d of invocation pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt)
 		// Don't notify the webhook; the more recent attempt should trigger
 		// the notification when it is finalized.
 		return
@@ -679,11 +683,12 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	// This reduces the likelihood that the disconnected invocation's status
 	// will overwrite any statuses written by a more recent attempt.
 	if invocationStatus == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
-		log.Warningf("Reporting disconnected status for invocation %s.", iid)
+		log.CtxWarning(ctx, "Reporting disconnected status for invocation")
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
 	e.statsRecorder.Enqueue(ctx, invocation)
+	log.CtxInfof(ctx, "Updated invocation to primaryDB and Enqueued invocation, invocation_status: %s", invocationStatus)
 	return nil
 }
 

@@ -6,13 +6,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
-	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
@@ -28,6 +28,23 @@ func main() {
 }
 
 func run() (exitCode int, err error) {
+	// Handle global args that don't apply to any specific subcommand
+	// (--verbose, etc.)
+	args := log.Configure(os.Args[1:])
+
+	// Show help if applicable.
+	exitCode, err = help.HandleHelp(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+
+	// Handle CLI-specific subcommands.
+	// TODO: Refactor so that logging is configured earlier.
+	exitCode, err = plugin.HandleInstall(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+
 	// Maybe run interactively (watching for changes to files).
 	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {
 		return exitCode, err
@@ -44,7 +61,8 @@ func run() (exitCode int, err error) {
 		// (if applicable), since the run script will replace this process.
 		os.RemoveAll(tempDir)
 
-		if scriptPath != "" {
+		// Invoke the run script only if the build succeeded.
+		if exitCode == 0 && scriptPath != "" {
 			exitCode, err = bazelisk.InvokeRunScript(scriptPath)
 		}
 	}()
@@ -58,17 +76,15 @@ func run() (exitCode int, err error) {
 	// Parse args.
 	// Split out passthrough args and don't let plugins modify them,
 	// since those are intended to be passed to the built binary as-is.
-	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(os.Args[1:])
+	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(args)
 	rcFileArgs := parser.GetArgsFromRCFiles(bazelArgs)
-	args := append(bazelArgs, rcFileArgs...)
+	args = append(bazelArgs, rcFileArgs...)
 
 	// Fiddle with args
 	// TODO(bduffany): model these as "built-in" plugins
-	args = log.Configure(args)
 	args = tooltag.ConfigureToolTag(args)
 	args = sidecar.ConfigureSidecar(args)
 	args = login.ConfigureAPIKey(args)
-	args = terminal.ConfigureOutputMode(args)
 
 	// Prepare convenience env vars for plugins
 	if err := plugin.PrepareEnv(); err != nil {

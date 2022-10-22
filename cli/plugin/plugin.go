@@ -3,15 +3,18 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
@@ -29,20 +32,214 @@ const (
 
 	// Path under the CLI storage dir where plugins are saved.
 	pluginsStorageDirName = "plugins"
+
+	installCommandUsage = `
+Usage: bb install [REPO@VERSION] [--path=PATH]
+
+Installs a remote or local CLI plugin.
+
+If [repo] is not present, then --path is required, and must point to a local
+directory.
+
+Examples:
+  # Install "github.com/example-inc/example-bb-plugin" at version tag "v1.2.3"
+  bb install example-inc/example-bb-plugin@v1.2.3
+
+  # Install "example.com/example-bb-plugin" at commit SHA "abc123",
+  # where the plugin is located in the "src" directory in that repo.
+  bb install example.com/example-bb-plugin@abc123 --path=src
+
+  # Use the local plugin in "./plugins/local_plugin".
+  bb install --path=./plugins/local_plugin
+`
 )
 
+var (
+	installCmd  = flag.NewFlagSet("install", flag.ContinueOnError)
+	installPath = installCmd.String("path", "", "Path under the repo root where the plugin directory is located.")
+)
+
+// HandleInstall handles the "bb install" subcommand, which allows adding
+// plugins to buildbuddy.yaml.
+func HandleInstall(args []string) (exitCode int, err error) {
+	command, idx := arg.GetCommandAndIndex(args)
+	if command != "install" {
+		return -1, nil
+	}
+	if idx != 0 {
+		log.Debugf("Unexpected flag: %s", args[0])
+		log.Print(installCommandUsage)
+		return 1, nil
+	}
+	if err := arg.ParseFlagSet(installCmd, args[1:]); err != nil {
+		if err != flag.ErrHelp {
+			log.Printf("Failed to parse flags: %s", err)
+		}
+		log.Print(installCommandUsage)
+		return 1, nil
+	}
+	if len(installCmd.Args()) == 0 && *installPath == "" {
+		log.Print("Error: either a repo or a --path= is expected.")
+		log.Print(installCommandUsage)
+		return 1, nil
+	}
+	if len(installCmd.Args()) > 1 {
+		log.Print("Error: unexpected positional arguments")
+		log.Print(installCommandUsage)
+		return 1, nil
+	}
+	var repo string
+	if len(installCmd.Args()) == 1 {
+		repo = installCmd.Args()[0]
+		if !strings.Contains(repo, "@") {
+			log.Print("Error: repo is missing @VERSION suffix")
+			log.Print(installCommandUsage)
+			return 1, nil
+		}
+	}
+
+	pluginCfg := &PluginConfig{
+		Repo: repo,
+		Path: *installPath,
+	}
+	if err := installPlugin(pluginCfg); err != nil {
+		log.Printf("Failed to install plugin: %s", err)
+		return 1, nil
+	}
+	log.Printf("Plugin installed successfully and added to %s", configPath)
+	return 0, nil
+}
+
+func installPlugin(plugin *PluginConfig) error {
+	config, err := readConfig()
+	if err != nil {
+		return err
+	}
+	if config == nil {
+		config = &BuildBuddyConfig{}
+	}
+
+	// Load the plugin so that an invalid version, path etc. doesn't wind
+	// up getting added to buildbuddy.yaml.
+	p := &Plugin{config: plugin}
+	if err := p.load(); err != nil {
+		return err
+	}
+
+	// Make sure the plugin is not already installed.
+	pluginPath, err := p.Path()
+	if err != nil {
+		return err
+	}
+	for _, p := range config.Plugins {
+		existingPath, err := (&Plugin{config: p}).Path()
+		if err != nil {
+			return err
+		}
+		if pluginPath == existingPath {
+			return fmt.Errorf("plugin is already installed")
+		}
+	}
+
+	// Init the config file if it doesn't exist already.
+	ws, err := workspace.Path()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(ws, configPath)
+	if _, err := os.Stat(path); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		f, err := os.Create(path)
+		if err != nil {
+			return err
+		}
+		f.Close()
+	}
+
+	// Getting go-yaml to update a YAML file while still preserving formatting
+	// is currently a pain; see: https://github.com/go-yaml/yaml/issues/899
+	// To avoid messing with buildbuddy.yaml too much,
+	// look for the "plugins:" section of the yaml file and mutate only that
+	// part.
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(b), "\n")
+	pluginSection := struct{ start, end int }{-1, -1}
+	anyMapKeyRE := regexp.MustCompile(`^\w.*?:`)
+	for i, line := range lines {
+		if strings.HasPrefix(line, "plugins:") {
+			pluginSection.start = i
+			continue
+		}
+		if pluginSection.start >= 0 && anyMapKeyRE.MatchString(line) {
+			pluginSection.end = i
+			break
+		}
+	}
+	if pluginSection.start >= 0 && pluginSection.end == -1 {
+		pluginSection.end = len(lines)
+	}
+
+	// Compute the updated config file contents.
+	// head, tail are the original config lines before/after the plugins
+	// section.
+	var head, tail []string
+	if pluginSection.start >= 0 {
+		head, tail = lines[:pluginSection.start], lines[pluginSection.end:]
+	}
+	config.Plugins = append(config.Plugins, plugin)
+	b, err = yaml.Marshal(config)
+	if err != nil {
+		return err
+	}
+	pluginSectionLines := strings.Split(string(b), "\n")
+	// go-yaml doesn't properly indent lists :'(
+	// Apply a fix for that here.
+	for i := 1; i < len(pluginSectionLines); i++ {
+		pluginSectionLines[i] = "  " + pluginSectionLines[i]
+	}
+	var newCfgLines []string
+	newCfgLines = append(newCfgLines, head...)
+	newCfgLines = append(newCfgLines, pluginSectionLines...)
+	newCfgLines = append(newCfgLines, tail...)
+
+	// Write the new config to a temp file then replace the old config once it's
+	// fully written.
+	tmp, err := os.CreateTemp("", "buildbuddy-*.yaml")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		tmp.Close()
+		os.Remove(tmp.Name())
+	}()
+	for _, line := range newCfgLines {
+		if _, err := io.WriteString(tmp, line+"\n"); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	return nil
+}
+
 type BuildBuddyConfig struct {
-	Plugins []*PluginConfig `yaml:"plugins"`
+	Plugins []*PluginConfig `yaml:"plugins,omitempty"`
 }
 
 type PluginConfig struct {
 	// Repo where the plugin should be loaded from.
 	// If empty, use the local workspace.
-	Repo string `yaml:"repo"`
+	Repo string `yaml:"repo,omitempty"`
 
 	// Path relative to the repo where the plugin is defined.
 	// Optional. If unspecified, it behaves the same as "." (the repo root).
-	Path string `yaml:"path"`
+	Path string `yaml:"path,omitempty"`
 }
 
 func readConfig() (*BuildBuddyConfig, error) {
@@ -96,9 +293,6 @@ func LoadAll(tempDir string) ([]*Plugin, error) {
 		}
 		plugin := &Plugin{config: p, tempDir: pluginTempDir}
 		if err := plugin.load(); err != nil {
-			return nil, err
-		}
-		if err := plugin.validate(); err != nil {
 			return nil, err
 		}
 		plugins = append(plugins, plugin)
@@ -157,7 +351,7 @@ func (p *Plugin) splitRepoRef() (string, string) {
 }
 
 func (p *Plugin) repoClonePath() (string, error) {
-	storagePath, err := storage.Dir()
+	storagePath, err := storage.CacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -215,6 +409,11 @@ func (p *Plugin) load() error {
 			return err
 		}
 	}
+
+	if err := p.validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 

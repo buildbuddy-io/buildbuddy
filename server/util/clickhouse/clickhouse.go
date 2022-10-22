@@ -6,16 +6,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"os"
 	"syscall"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	gormclickhouse "gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
 )
@@ -26,8 +27,7 @@ var (
 	maxIdleConns    = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
 	connMaxLifetime = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
 
-	autoMigrateDB        = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
-	autoMigrateDBAndExit = flag.Bool("olap_database.auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	autoMigrateDB = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 
 	// {installation}, {cluster}, {shard}, {replica} are macros provided by
 	// Altinity/clickhouse-operator; {database}, {table} are macros provided by clickhouse.
@@ -45,11 +45,29 @@ func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
 	return dbh.db.WithContext(ctx)
 }
 
+// Making a new table? Please make sure you:
+// 1) Add your table in getAllTables()
+// 2) Add the table in clickhouse_test.go TestSchemaInSync
+// 3) Make sure all the fields in the corresponding Table deinition in tables.go
+// are present in clickhouse Table definition or in ExcludedFields()
 type Table interface {
 	TableName() string
 	TableOptions() string
 	// Fields that are in the primary DB Table schema; but not in the clickhouse schema.
 	ExcludedFields() []string
+}
+
+func getAllTables() []Table {
+	return []Table{
+		&Invocation{},
+	}
+}
+
+func tableClusterOption() string {
+	if *dataReplicationEnabled {
+		return fmt.Sprintf("on cluster '%s'", *clusterName)
+	}
+	return ""
 }
 
 // Invocation constains a subset of tables.Invocations.
@@ -119,13 +137,6 @@ func (i *Invocation) TableOptions() string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid)", engine)
 }
 
-func (i *Invocation) TableClusterOption() string {
-	if *dataReplicationEnabled {
-		return fmt.Sprintf("on cluster '%s'", *clusterName)
-	}
-	return ""
-}
-
 // DateFromUsecTimestamp returns an SQL expression compatible with clickhouse
 // that converts the value of the given field from a Unix timestamp (in
 // microseconds since the Unix Epoch) to a date offset by the given UTC offset.
@@ -182,28 +193,40 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	var lastError error
 	for retrier.Next() {
 		res := h.DB(ctx).Create(inv)
-		if res.Error == nil {
-			return nil
-		}
-		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) {
+		lastError = res.Error
+		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || errors.Is(res.Error, context.DeadlineExceeded) {
 			// Retry since it's an transient error.
-			lastError = res.Error
-			log.Infof("attempt to write invocation (id: %q) to clickhouse failed: %s", res.Error, ti.InvocationID)
+			log.CtxInfof(ctx, "attempt to write invocation to clickhouse failed: %s", res.Error)
 			continue
-		} else {
-			return res.Error
 		}
+		break
 	}
-	return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
+	statusLabel := "ok"
+	if lastError != nil {
+		statusLabel = "error"
+	}
+	metrics.ClickhouseInsertedCount.With(prometheus.Labels{
+		metrics.ClickhouseTableName:   inv.TableName(),
+		metrics.ClickhouseStatusLabel: statusLabel,
+	}).Inc()
+	if lastError != nil {
+		return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
+	}
+	return nil
 }
 
 func runMigrations(gdb *gorm.DB) error {
 	log.Info("Auto-migrating clickhouse DB")
-	gdb = gdb.Set("gorm:table_options", (&Invocation{}).TableOptions())
-	if clusterOpts := (&Invocation{}).TableClusterOption(); clusterOpts != "" {
+	if clusterOpts := tableClusterOption(); clusterOpts != "" {
 		gdb = gdb.Set("gorm:table_cluster_options", clusterOpts)
 	}
-	return gdb.AutoMigrate(&Invocation{})
+	for _, t := range getAllTables() {
+		gdb = gdb.Set("gorm:table_options", t.TableOptions())
+		if err := gdb.AutoMigrate(t); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func Register(env environment.Env) error {
@@ -214,30 +237,23 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return status.InternalErrorf("failed to parse clickhouse data source (%q): %s", *dataSource, err)
 	}
-	if *maxOpenConns != 0 {
-		options.MaxOpenConns = *maxOpenConns
-	}
-	if *maxIdleConns != 0 {
-		options.MaxIdleConns = *maxIdleConns
-	}
-	if *connMaxLifetime != 0 {
-		options.ConnMaxLifetime = *connMaxLifetime
-	}
 
 	sqlDB := clickhouse.OpenDB(options)
+	if *maxOpenConns != 0 {
+		sqlDB.SetMaxOpenConns(*maxOpenConns)
+	}
+	if *maxIdleConns != 0 {
+		sqlDB.SetMaxIdleConns(*maxIdleConns)
+	}
+	if *connMaxLifetime != 0 {
+		sqlDB.SetConnMaxLifetime(*connMaxLifetime)
+	}
 
 	db, err := gorm.Open(gormclickhouse.New(gormclickhouse.Config{
 		Conn: sqlDB,
 	}))
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
-	}
-	if *autoMigrateDBAndExit {
-		if err := runMigrations(db); err != nil {
-			log.Fatalf("Clickhouse Database auto-migration failed: %s", err)
-		}
-		log.Infof("Clickhouse database migration completed. Exiting due to --clickhouse.auto_migrate_db_and_exit.")
-		os.Exit(0)
 	}
 	if *autoMigrateDB {
 		if err := runMigrations(db); err != nil {

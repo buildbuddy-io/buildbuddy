@@ -13,9 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/creack/pty"
 )
 
 func RunWithPlugins(args []string, outputPath string, plugins []*plugin.Plugin) (int, error) {
@@ -50,7 +52,7 @@ func Run(args []string, outputPath string, w io.Writer) (int, error) {
 
 	output, err := os.Create(outputPath)
 	if err != nil {
-		return 0, status.FailedPreconditionErrorf("failed to create output file: %s", err)
+		return -1, status.FailedPreconditionErrorf("failed to create output file: %s", err)
 	}
 	defer output.Close()
 
@@ -61,22 +63,52 @@ func Run(args []string, outputPath string, w io.Writer) (int, error) {
 	// command is run concurrently (since it will clear out command.log as
 	// soon as our bazelisk invocation below is complete and it is able to
 	// grab the workspace lock).
-	originalStdout, originalStderr := os.Stdout, os.Stderr
+	realStdout, realStderr := os.Stdout, os.Stderr
 	defer func() {
-		os.Stdout, os.Stderr = originalStdout, originalStderr
+		os.Stdout, os.Stderr = realStdout, realStderr
 	}()
-	stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, w))
+
+	// If bb's output is connected to a terminal, then allocate a pty so that
+	// bazel thinks it's writing to a terminal, even though we're capturing its
+	// output via a Writer that is not a terminal. This enables ANSI colors,
+	// proper truncation of progress messages, etc.
+	isStdoutTTY, err := terminal.IsTTY(realStdout)
 	if err != nil {
-		return 0, err
+		return -1, status.UnknownErrorf("failed to determine whether stdout is a terminal: %s", err)
 	}
-	defer closeStdoutPipe()
-	os.Stdout = stdoutPipe
-	stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, w))
-	if err != nil {
-		return 0, err
+	if isStdoutTTY {
+		ptmx, tty, err := pty.Open()
+		if err != nil {
+			return -1, status.UnknownErrorf("failed to allocate pty: %s", err)
+		}
+		defer func() {
+			// 	Close pty/tty (best effort).
+			_ = tty.Close()
+			_ = ptmx.Close()
+		}()
+		if err := pty.InheritSize(os.Stdout, tty); err != nil {
+			return -1, status.UnknownErrorf("failed to inherit terminal size: %s", err)
+		}
+		// Note: we don't listen to resize events (SIGWINCH) and re-inherit the
+		// size, because Bazel itself doesn't do that currently. So it wouldn't
+		// make a difference either way.
+		os.Stdout = tty
+		os.Stderr = tty
+		go io.Copy(io.MultiWriter(output, w), ptmx)
+	} else {
+		stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, w))
+		if err != nil {
+			return -1, err
+		}
+		defer closeStdoutPipe()
+		stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, w))
+		if err != nil {
+			return -1, err
+		}
+		defer closeStderrPipe()
+		os.Stdout = stdoutPipe
+		os.Stderr = stderrPipe
 	}
-	defer closeStderrPipe()
-	os.Stderr = stderrPipe
 
 	exitCode, err := core.RunBazelisk(args, repos)
 	if err != nil {

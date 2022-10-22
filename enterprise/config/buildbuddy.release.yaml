@@ -3,6 +3,7 @@
 app:
   events_api_url: "grpc://localhost:1985"
   cache_api_url: "grpc://localhost:1985"
+  default_redis_target: "localhost:6379"
 storage:
   ttl_seconds: 0 # No TTL (yet).
   disk:
@@ -10,3 +11,5 @@ storage:
 cache:
   disk:
     root_directory: "/buildbuddy/cache/"
+auth:
+  enable_self_auth: true
