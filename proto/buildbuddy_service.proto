@@ -15,6 +15,7 @@ import "proto/scheduler.proto";
 import "proto/usage.proto";
 import "proto/github.proto";
 import "proto/quota.proto";
+import "proto/secrets.proto";
 
 package buildbuddy.service;
 
@@ -120,4 +121,14 @@ service BuildBuddyService {
       returns (quota.ModifyNamespaceResponse);
 
   rpc ApplyBucket(quota.ApplyBucketRequest) returns (quota.ApplyBucketResponse);
+
+  // Secrets API
+  rpc GetPublicKey(secrets.GetPublicKeyRequest)
+      returns (secrets.GetPublicKeyResponse);
+  rpc ListSecrets(secrets.ListSecretsRequest)
+      returns (secrets.ListSecretsResponse);
+  rpc UpdateSecret(secrets.UpdateSecretRequest)
+      returns (secrets.UpdateSecretResponse);
+  rpc DeleteSecret(secrets.DeleteSecretRequest)
+      returns (secrets.DeleteSecretResponse);
 }

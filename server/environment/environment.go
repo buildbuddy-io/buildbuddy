@@ -144,4 +144,6 @@ type Env interface {
 	SetOLAPDBHandle(dbh interfaces.OLAPDBHandle)
 	GetKMS() interfaces.KMS
 	SetKMS(k interfaces.KMS)
+	GetSecretService() interfaces.SecretService
+	SetSecretService(s interfaces.SecretService)
 }

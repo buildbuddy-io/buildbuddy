@@ -43,6 +43,7 @@ import (
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
@@ -958,6 +959,31 @@ func (s *BuildBuddyServer) ModifyNamespace(ctx context.Context, req *qpb.ModifyN
 func (s *BuildBuddyServer) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketRequest) (*qpb.ApplyBucketResponse, error) {
 	if qm := s.env.GetQuotaManager(); qm != nil {
 		return qm.ApplyBucket(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetPublicKey(ctx context.Context, req *skpb.GetPublicKeyRequest) (*skpb.GetPublicKeyResponse, error) {
+	if secretService := s.env.GetSecretService(); secretService != nil {
+		return secretService.GetPublicKey(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+func (s *BuildBuddyServer) ListSecrets(ctx context.Context, req *skpb.ListSecretsRequest) (*skpb.ListSecretsResponse, error) {
+	if secretService := s.env.GetSecretService(); secretService != nil {
+		return secretService.ListSecrets(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+func (s *BuildBuddyServer) UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, error) {
+	if secretService := s.env.GetSecretService(); secretService != nil {
+		return secretService.UpdateSecret(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+func (s *BuildBuddyServer) DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error) {
+	if secretService := s.env.GetSecretService(); secretService != nil {
+		return secretService.DeleteSecret(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

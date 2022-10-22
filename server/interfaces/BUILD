@@ -20,6 +20,7 @@ go_library(
         "//proto:resource_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
+        "//proto:secrets_go_proto",
         "//proto:telemetry_go_proto",
         "//proto:usage_go_proto",
         "//proto:workflow_go_proto",
