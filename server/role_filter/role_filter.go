@@ -64,6 +64,11 @@ var (
 		"ExecuteWorkflow",
 		// Setup
 		"GetApiKeys",
+		// Secret management
+		"GetPublicKey",
+		"ListSecrets",
+		"UpdateSecret",
+		"DeleteSecret",
 		// Remote Bazel
 		"Run",
 	}
@@ -86,11 +91,6 @@ var (
 		"DeleteWorkflow",
 		"GetWorkflows",
 		"GetRepos",
-		// Secret management
-		"GetPublicKey",
-		"ListSecrets",
-		"UpdateSecret",
-		"DeleteSecret",
 		// RBE deployment view
 		"GetExecutionNodes",
 		// BuildBuddy usage data

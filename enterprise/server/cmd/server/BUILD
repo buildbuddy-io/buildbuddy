@@ -36,6 +36,7 @@ go_library(
         "//enterprise/server/saml",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/scheduling/task_router",
+        "//enterprise/server/secrets",
         "//enterprise/server/selfauth",
         "//enterprise/server/splash",
         "//enterprise/server/tasksize",

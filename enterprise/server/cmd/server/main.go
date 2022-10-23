@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/saml"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -250,6 +251,9 @@ func main() {
 	}
 
 	if err := kms.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := secrets.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

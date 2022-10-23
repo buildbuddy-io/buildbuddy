@@ -72,6 +72,7 @@ const (
 	extraArgsPropertyName                = "extra-args"
 	envOverridesPropertyName             = "env-overrides"
 	podmanImageStreamingPropertyName     = "podman-enable-image-streaming"
+	includeSecretsPropertyName           = "include-secrets"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -121,15 +122,19 @@ type Properties struct {
 	RecycleRunner              bool
 	EnableVFS                  bool
 	EnablePodmanImageStreaming bool
+	IncludeSecrets             bool
+
 	// InitDockerd specifies whether to initialize dockerd within the execution
 	// environment if it is available in the execution image, allowing Docker
 	// containers to be spawned by actions. Only available with
 	// `workload-isolation-type=firecracker`.
 	InitDockerd bool
+
 	// PreserveWorkspace specifies whether to delete all files in the workspace
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
 	PreserveWorkspace bool
+
 	// NonrootWorkspace specifies whether workspace directories should be made
 	// writable by users other than the executor user (which is the root user for
 	// production workloads). This is required to be set when running actions
@@ -146,6 +151,7 @@ type Properties struct {
 	WorkflowID               string
 	HostedBazelAffinityKey   string
 	UseSelfHostedExecutors   bool
+
 	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
 	// it is enabled via flag, and instead uses the default / platform based
 	// sizing. Intended for debugging purposes only and should not generally
@@ -153,12 +159,15 @@ type Properties struct {
 	// TODO(bduffany): remove this once measured task sizing is battle-tested
 	// and this is no longer needed for debugging
 	DisableMeasuredTaskSize bool
+
 	// DisablePredictedTaskSize disables model-based task sizing, even if it
 	// is enabled via flag, and instead uses the default / platform based
 	// sizing.
 	DisablePredictedTaskSize bool
+
 	// ExtraArgs contains arguments to append to the action.
 	ExtraArgs []string
+
 	// EnvOverrides contains environment variables in the form NAME=VALUE to be
 	// applied as overrides to the action.
 	EnvOverrides []string
@@ -212,6 +221,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		RecycleRunner:              boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                  vfsEnabled,
 		EnablePodmanImageStreaming: boolProp(m, podmanImageStreamingPropertyName, false),
+		IncludeSecrets:             boolProp(m, includeSecretsPropertyName, false),
 		PreserveWorkspace:          boolProp(m, preserveWorkspacePropertyName, false),
 		NonrootWorkspace:           boolProp(m, nonrootWorkspacePropertyName, false),
 		CleanWorkspaceInputs:       stringProp(m, cleanWorkspaceInputsPropertyName, ""),
