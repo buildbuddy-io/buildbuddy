@@ -183,7 +183,9 @@ func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string) ([
 		return nil, err
 	}
 
-	if len(rsp.GetSecret()) == 0 {
+	// No secrets, or public key not set up? Let's exit early instead of throwing
+	// an error later.
+	if len(rsp.GetSecret()) == 0 || grp.PublicKey == "" {
 		return []*repb.Command_EnvironmentVariable{}, nil
 	}
 
