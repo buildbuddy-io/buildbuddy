@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "secrets",
@@ -15,18 +15,5 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
-    ],
-)
-
-go_test(
-    name = "secrets_test",
-    srcs = ["secrets_test.go"],
-    deps = [
-        ":secrets",
-        "//enterprise/server/backends/userdb",
-        "//proto:secrets_go_proto",
-        "//server/tables",
-        "//server/testutil/testenv",
-        "@com_github_stretchr_testify//require",
     ],
 )
