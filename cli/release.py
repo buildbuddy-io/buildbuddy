@@ -25,7 +25,7 @@ def _main(version):
     p = sh("git fetch --tags")
 
     # Get latest tag
-    p = sh("git tag -l 'cli-*' | tail -n1", stream_stdout=False)
+    p = sh("git tag -l 'cli-*' --sort=creatordate | tail -n1", stream_stdout=False)
     latest_tag = p.stdout.strip()
 
     # If version is unset, bump the latest patch version
