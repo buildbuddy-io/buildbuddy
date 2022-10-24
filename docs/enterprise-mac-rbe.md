@@ -283,4 +283,4 @@ This will produce automatically rotated log files with stdout and stderr interle
 
 for the `ProgramArguments`, though generally this is not recommended, as the streams are more clear when left chronologically interleaved.
 
-Read more about `multilog` [here](https://cr.yp.to/daemontools/multilog.html). 
+Read more about `multilog` [here](https://cr.yp.to/daemontools/multilog.html).
