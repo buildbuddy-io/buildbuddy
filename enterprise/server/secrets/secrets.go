@@ -3,6 +3,7 @@ package secrets
 import (
 	"context"
 	"flag"
+	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -18,6 +19,8 @@ import (
 
 var (
 	enableSecretService = flag.Bool("app.enable_secret_service", false, "If set, secret service will be enabled")
+
+	secretNameRegexp = regexp.MustCompile(`^[a-zA-Z_]+[a-zA-Z0-9_]*$`)
 )
 
 type SecretService struct {
@@ -115,7 +118,9 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 	if req.GetSecret().GetValue() == "" {
 		return nil, status.InvalidArgumentError("A non-empty secret value is required")
 	}
-
+	if !secretNameRegexp.MatchString(req.GetSecret().GetName()) {
+		return nil, status.InvalidArgumentError("Secret names may only contain: [a-zA-Z0-9_]")
+	}
 	udb := s.env.GetUserDB()
 	if udb == nil {
 		return nil, status.FailedPreconditionError("No UserDB configured")
