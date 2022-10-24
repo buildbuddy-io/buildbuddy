@@ -762,6 +762,9 @@ func (mc *MigrationCache) copyDataInBackground() error {
 		select {
 		case <-mc.quitChan:
 			// Drain copy channel on shutdown
+			// We cannot close the channel before draining because there's a chance some cache requests may be
+			// concurrently queued as the cache is shutting down, and if we try to enqueue a copy to the closed
+			// channel it will panic
 			for len(mc.copyChan) > 0 {
 				c := <-mc.copyChan
 				mc.copy(c)
