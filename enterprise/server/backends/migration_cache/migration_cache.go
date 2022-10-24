@@ -319,12 +319,13 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 			for _, d := range missingOnlyInDest {
 				d := d
 				eg.Go(func() error {
-					mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+					r := &resource.ResourceName{
 						Digest:       d,
 						InstanceName: mc.remoteInstanceName,
 						Compressor:   repb.Compressor_IDENTITY,
 						CacheType:    mc.cacheType,
-					})
+					}
+					mc.sendNonBlockingCopy(ctx, r, false)
 					return nil
 				})
 			}
@@ -372,7 +373,7 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.Re
 	}
 
 	for _, r := range resources {
-		mc.sendNonBlockingCopy(ctx, r)
+		mc.sendNonBlockingCopy(ctx, r, true)
 	}
 
 	// Return data from source cache
@@ -534,12 +535,13 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 		return nil, srcErr
 	}
 
-	mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+	r := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: mc.remoteInstanceName,
 		Compressor:   repb.Compressor_IDENTITY,
 		CacheType:    mc.cacheType,
-	})
+	}
+	mc.sendNonBlockingCopy(ctx, r, true)
 
 	return &doubleReader{
 		src:  srcReader,
@@ -683,7 +685,7 @@ func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 		}
 	}
 
-	mc.sendNonBlockingCopy(ctx, r)
+	mc.sendNonBlockingCopy(ctx, r, true)
 
 	// Return data from source cache
 	return srcBuf, srcErr
@@ -698,15 +700,18 @@ func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]
 	})
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName) {
-	alreadyCopied, err := mc.dest.Contains(ctx, r)
-	if err != nil {
-		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
-		return
-	}
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName, onlyCopyMissing bool) {
+	if onlyCopyMissing {
+		alreadyCopied, err := mc.dest.Contains(ctx, r)
+		if err != nil {
+			log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
+			return
+		}
 
-	if alreadyCopied {
-		return
+		if alreadyCopied {
+			log.Debugf("Migration skipping copy digest %v, instance %s, cache %v - already copied", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
+			return
+		}
 	}
 
 	log.Debugf("Migration attempting copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
