@@ -422,7 +422,7 @@ func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.Res
 	for r, _ := range kvs {
 		d := r.GetDigest()
 		eg.Go(func() error {
-			deleteErr := mc.dest.Delete(gctx, d)
+			deleteErr := mc.dest.DeleteDeprecated(gctx, d)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
 				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
 			}
@@ -432,17 +432,17 @@ func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.Res
 	eg.Wait()
 }
 
-func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (mc *MigrationCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	eg.Go(func() error {
-		srcErr = mc.src.Delete(gctx, d)
+		srcErr = mc.src.DeleteDeprecated(gctx, d)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = mc.dest.Delete(gctx, d)
+		dstErr = mc.dest.DeleteDeprecated(gctx, d)
 		return nil // don't fail if there's an error from this cache
 	})
 
@@ -650,7 +650,7 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 		src:  srcWriter,
 		dest: destWriter,
 		destDeleteFn: func() {
-			deleteErr := mc.dest.Delete(ctx, d)
+			deleteErr := mc.dest.DeleteDeprecated(ctx, d)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
 				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", d, deleteErr)
 			}
@@ -755,7 +755,7 @@ func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, dat
 	if err := eg.Wait(); err != nil {
 		if dstErr == nil {
 			// If error during write to source cache (source of truth), must delete from destination cache
-			deleteErr := mc.dest.Delete(ctx, r.GetDigest())
+			deleteErr := mc.dest.DeleteDeprecated(ctx, r.GetDigest())
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
 				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}

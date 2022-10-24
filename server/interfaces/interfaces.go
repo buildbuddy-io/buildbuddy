@@ -226,7 +226,7 @@ type Cache interface {
 	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
 	SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error
 	SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error
-	Delete(ctx context.Context, d *repb.Digest) error
+	DeleteDeprecated(ctx context.Context, d *repb.Digest) error
 
 	// Normal cache-like operations
 	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)

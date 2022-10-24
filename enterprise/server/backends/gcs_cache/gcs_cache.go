@@ -321,7 +321,7 @@ func (g *GCSCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest]
 	return g.SetMulti(ctx, rnMap)
 }
 
-func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (g *GCSCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	k, err := g.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: g.remoteInstanceName,

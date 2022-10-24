@@ -360,7 +360,7 @@ func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]b
 	return c.SetMulti(ctx, rnMap)
 }
 
-func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
+func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	k, err := c.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: c.remoteInstanceName,

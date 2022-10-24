@@ -1140,7 +1140,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 	return nil
 }
 
-func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
 	if err != nil {
 		return err

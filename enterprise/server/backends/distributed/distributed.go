@@ -436,7 +436,7 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isol
 func (c *Cache) remoteDelete(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) error {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix (remote instance name + cache type) necessary -- it's already set on the local cache.
-		return c.local.Delete(ctx, d)
+		return c.local.DeleteDeprecated(ctx, d)
 	}
 	return c.cacheProxy.RemoteDelete(ctx, peer, isolation, d)
 }
@@ -1086,7 +1086,7 @@ func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]b
 	return c.SetMulti(ctx, rnMap)
 }
 
-func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
+func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	ps := c.readPeers(d)
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		err := c.remoteDelete(ctx, peer, c.isolation, d)

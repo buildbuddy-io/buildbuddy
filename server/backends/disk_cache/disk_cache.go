@@ -444,7 +444,7 @@ func (c *DiskCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest
 	return c.partition.setMulti(ctx, rnMap)
 }
 
-func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (c *DiskCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	return c.partition.delete(ctx, c.cacheType, c.remoteInstanceName, d)
 }
 

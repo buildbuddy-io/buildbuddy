@@ -1061,7 +1061,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	for _, d := range digests {
 		c, err := pc.WithIsolation(ctx, resource.CacheType_CAS, "remoteInstanceName")
 		require.NoError(t, err)
-		err = c.Delete(ctx, d)
+		err = c.DeleteDeprecated(ctx, d)
 		require.NoError(t, err)
 	}
 

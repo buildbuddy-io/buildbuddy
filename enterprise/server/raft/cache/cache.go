@@ -644,6 +644,6 @@ func (rc *RaftCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Diges
 	return nil
 }
 
-func (rc *RaftCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (rc *RaftCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	return nil
 }

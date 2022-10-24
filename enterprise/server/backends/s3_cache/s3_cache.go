@@ -386,7 +386,7 @@ func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest
 	return s3c.SetMulti(ctx, rnMap)
 }
 
-func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
+func (s3c *S3Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	k, err := s3c.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: s3c.remoteInstanceName,
