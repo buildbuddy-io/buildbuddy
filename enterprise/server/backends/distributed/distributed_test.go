@@ -788,7 +788,7 @@ func TestFindMissing(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	digestsWritten := make([]*resource.ResourceName, 0)
+	resourcesWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -799,29 +799,31 @@ func TestFindMissing(t *testing.T) {
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
-		digestsWritten = append(digestsWritten, rn)
+		resourcesWritten = append(resourcesWritten, rn)
 	}
 
 	// Generate some more digests, but don't write them to the cache.
-	digestsNotWritten := make([]*resource.ResourceName, 0)
+	resourcesNotWritten := make([]*resource.ResourceName, 0)
+	digestsNotWritten := make([]*repb.Digest, 0)
 	for i := 0; i < 100; i++ {
 		d, _ := testdigest.NewRandomDigestBuf(t, 100)
 		rn := &resource.ResourceName{
 			Digest:    d,
 			CacheType: resource.CacheType_CAS,
 		}
-		digestsNotWritten = append(digestsNotWritten, rn)
+		resourcesNotWritten = append(resourcesNotWritten, rn)
+		digestsNotWritten = append(digestsNotWritten, d)
 	}
 
-	allDigests := append(digestsWritten, digestsNotWritten...)
+	allResources := append(resourcesWritten, resourcesNotWritten...)
 	for _, baseCache := range baseCaches {
-		missing, err := baseCache.FindMissing(ctx, allDigests)
+		missing, err := baseCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missing, err := distributedCache.FindMissing(ctx, allDigests)
+		missing, err := distributedCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
