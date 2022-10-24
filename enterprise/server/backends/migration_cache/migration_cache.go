@@ -532,6 +532,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 				log.Warningf("Migration dest reader close err: %s", err)
 			}
 		}
+		log.Warningf("Migration %v src reader err, doubleRead is %v: %s", d, doubleRead, srcErr)
 		return nil, srcErr
 	}
 
