@@ -162,23 +162,11 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	}
 	defer db.Close()
 
-	iterOpts := &pebble.IterOptions{
-		LowerBound: keys.Key([]byte{constants.MinByte}),
-		UpperBound: keys.Key([]byte{constants.MaxByte}),
+	estimatedBytesUsed, err := db.EstimateDiskUsage(rd.GetLeft(), rd.GetRight())
+	if err != nil {
+		return nil, err
 	}
-
-	iter := db.NewIter(iterOpts)
-	defer iter.Close()
-
-	estimatedBytesUsed := int64(0)
-	for iter.First(); iter.Valid(); iter.Next() {
-		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
-		if err != nil {
-			return nil, err
-		}
-		estimatedBytesUsed += sizeBytes
-	}
-	ru.EstimatedDiskBytesUsed = estimatedBytesUsed
+	ru.EstimatedDiskBytesUsed = int64(estimatedBytesUsed)
 	return ru, nil
 }
 
@@ -1413,7 +1401,12 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 // Sync returns an error when there is unrecoverable error for synchronizing
 // the in-core state.
 func (sm *Replica) Sync() error {
-	return sm.db.LogData(nil, pebble.Sync)
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.Flush()
 }
 
 // PrepareSnapshot prepares the snapshot to be concurrently captured and
