@@ -21,7 +21,7 @@ require (
 	github.com/bazelbuild/bazelisk v1.11.0
 	github.com/bazelbuild/rules_go v0.29.0
 	github.com/bazelbuild/rules_webtesting v0.2.0
-	github.com/bduffany/godemon v0.0.0-20221018141343-3bc43fa8b810
+	github.com/bduffany/godemon v0.0.0-20221022171016-b1a022d2f9c2
 	github.com/bojand/ghz v0.95.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6

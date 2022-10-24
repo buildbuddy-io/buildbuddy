@@ -222,8 +222,8 @@ github.com/bazelbuild/rules_go v0.29.0 h1:SfxjyO/V68rVnzOHop92fB0gv/Aa75KNLAN0PM
 github.com/bazelbuild/rules_go v0.29.0/go.mod h1:MC23Dc/wkXEyk3Wpq6lCqz0ZAYOZDw2DR5y3N1q2i7M=
 github.com/bazelbuild/rules_webtesting v0.2.0 h1:nhqjA2IslEOLViRBF5djQCiOD//7VyyHNKrqAZ1AuYA=
 github.com/bazelbuild/rules_webtesting v0.2.0/go.mod h1:M+vCvqp/1BViNuVL630BoiGqld9Q1vQzvf9bN/dWTeg=
-github.com/bduffany/godemon v0.0.0-20221018141343-3bc43fa8b810 h1:GTXHG34z1pHcS4rAM1H//o4KhZaGlE00rELhoHRNU7w=
-github.com/bduffany/godemon v0.0.0-20221018141343-3bc43fa8b810/go.mod h1:ZgV2Qp9QIB1+SQmZYwrBfpWShscIYjlT/X39fhLl628=
+github.com/bduffany/godemon v0.0.0-20221022171016-b1a022d2f9c2 h1:swhDsEzgaYy2dKQ9FCrbmYrGvk7+dZRvvHOUu2rZvR0=
+github.com/bduffany/godemon v0.0.0-20221022171016-b1a022d2f9c2/go.mod h1:led5f4NrGeXrUKOlQA36mgNtNs7gVo86eZUOX42q5+8=
 github.com/bduffany/redsync/v4 v4.4.1-minimal h1:wyBDr+ApDWybbLGMSsepl30KzPAl+HlIQMhJSoLdRKg=
 github.com/bduffany/redsync/v4 v4.4.1-minimal/go.mod h1:9+8jiPGz2n9ZaN8znvOqjyeXP/acSo6VAFPaG5Xdb2M=
 github.com/beevik/etree v1.1.0 h1:T0xke/WvNtMoCqgzPhkX2r4rjY3GDZFi+FjpRZY2Jbs=
