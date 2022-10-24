@@ -424,7 +424,7 @@ func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.Res
 		eg.Go(func() error {
 			deleteErr := mc.dest.Delete(gctx, d)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", dCopy, deleteErr)
+				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
 			}
 			return nil
 		})
