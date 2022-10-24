@@ -422,7 +422,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Reader(ctx, d, offset, limit)
+		return c.local.ReaderDeprecated(ctx, d, offset, limit)
 	}
 	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset, limit)
 }
@@ -452,7 +452,7 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 	if err != nil {
 		return err
 	}
-	r, err := localCache.Reader(ctx, d, 0, 0)
+	r, err := localCache.ReaderDeprecated(ctx, d, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -1113,7 +1113,7 @@ func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	return c.Delete(ctx, rn)
 }
 
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	rn := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: c.isolation.GetRemoteInstanceName(),

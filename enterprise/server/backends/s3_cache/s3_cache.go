@@ -563,7 +563,7 @@ func (s3c *S3Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.D
 	return s3c.FindMissing(ctx, rns)
 }
 
-func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (s3c *S3Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	k, err := s3c.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: s3c.remoteInstanceName,

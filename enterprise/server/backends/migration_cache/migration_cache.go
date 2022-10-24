@@ -512,7 +512,7 @@ func (d *doubleReader) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (mc *MigrationCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
@@ -531,7 +531,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 		})
 	}
 
-	srcReader, srcErr := mc.src.Reader(ctx, d, offset, limit)
+	srcReader, srcErr := mc.src.ReaderDeprecated(ctx, d, offset, limit)
 	eg.Wait()
 
 	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
@@ -848,7 +848,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 		return
 	}
 
-	srcReader, err := cache.src.Reader(c.ctx, c.d, 0, 0)
+	srcReader, err := cache.src.ReaderDeprecated(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)

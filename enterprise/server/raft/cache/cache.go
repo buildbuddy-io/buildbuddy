@@ -351,7 +351,7 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceNam
 	}, nil
 }
 
-func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (rc *RaftCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	rn := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: rc.isolation.GetRemoteInstanceName(),

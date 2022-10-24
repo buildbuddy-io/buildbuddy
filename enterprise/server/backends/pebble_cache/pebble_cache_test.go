@@ -463,8 +463,8 @@ func TestReadWrite(t *testing.T) {
 		if err := wc.Close(); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
-		// Use Reader() to get the bytes from the cache.
-		reader, err := pc.Reader(ctx, d, 0, 0)
+		// Use ReaderDeprecated() to get the bytes from the cache.
+		reader, err := pc.ReaderDeprecated(ctx, d, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}

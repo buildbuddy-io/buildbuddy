@@ -77,7 +77,7 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
-	reader, err := c.Reader(ctx, d, 0, 0)
+	reader, err := c.ReaderDeprecated(ctx, d, 0, 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
@@ -317,7 +317,7 @@ func TestReadMaxOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := distributedCaches[1].Reader(ctx, d, d.GetSizeBytes(), 0)
+	reader, err := distributedCaches[1].ReaderDeprecated(ctx, d, d.GetSizeBytes(), 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", distributedCaches[1]), err)
 	}
@@ -371,7 +371,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	offset := int64(2)
 	limit := int64(3)
-	reader, err := distributedCaches[1].Reader(ctx, d, offset, limit)
+	reader, err := distributedCaches[1].ReaderDeprecated(ctx, d, offset, limit)
 	require.NoError(t, err)
 
 	readBuf := make([]byte, d.GetSizeBytes())

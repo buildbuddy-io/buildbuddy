@@ -304,12 +304,12 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
-func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	if outerReader, err := c.outer.Reader(ctx, d, offset, limit); err == nil {
+func (c *ComposableCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	if outerReader, err := c.outer.ReaderDeprecated(ctx, d, offset, limit); err == nil {
 		return outerReader, nil
 	}
 
-	innerReader, err := c.inner.Reader(ctx, d, offset, limit)
+	innerReader, err := c.inner.ReaderDeprecated(ctx, d, offset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +336,7 @@ func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	if err := outerWriter.Commit(); err != nil {
 		return nil, err
 	}
-	outerReader, err := c.outer.Reader(ctx, d, offset, limit)
+	outerReader, err := c.outer.ReaderDeprecated(ctx, d, offset, limit)
 	if err != nil {
 		return nil, err
 	}

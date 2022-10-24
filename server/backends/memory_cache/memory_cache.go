@@ -280,7 +280,7 @@ func (m *MemoryCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) erro
 }
 
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (m *MemoryCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
 	buf, err := m.GetDeprecated(ctx, d)
 	if err != nil {

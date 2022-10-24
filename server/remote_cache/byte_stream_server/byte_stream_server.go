@@ -130,7 +130,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackEmptyHit()
 		return nil
 	}
-	reader, err := cache.Reader(ctx, r.GetDigest(), req.ReadOffset, req.ReadLimit)
+	reader, err := cache.ReaderDeprecated(ctx, r.GetDigest(), req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		ht.TrackMiss(r.GetDigest())
 		return err

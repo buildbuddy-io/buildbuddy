@@ -331,7 +331,7 @@ func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", d)
 	}

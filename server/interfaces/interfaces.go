@@ -239,7 +239,7 @@ type Cache interface {
 	Delete(ctx context.Context, r *resource.ResourceName) error
 
 	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
+	ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
 	Writer(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
 }
 

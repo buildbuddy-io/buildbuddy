@@ -1162,7 +1162,7 @@ func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) erro
 	return p.Delete(ctx, rn)
 }
 
-func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	rn := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: p.isolation.GetRemoteInstanceName(),

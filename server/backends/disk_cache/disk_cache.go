@@ -462,7 +462,7 @@ func (c *DiskCache) Delete(ctx context.Context, r *resource.ResourceName) error 
 	return p.delete(ctx, r)
 }
 
-func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (c *DiskCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset, limit)
 }
 

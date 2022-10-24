@@ -101,7 +101,7 @@ func (c *errorCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Com
 	return nil, errors.New("error cache writer err")
 }
 
-func (c *errorCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (c *errorCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	return nil, errors.New("error cache reader err")
 }
 
@@ -1262,7 +1262,7 @@ func TestReadWrite(t *testing.T) {
 		err = w.Close()
 		require.NoError(t, err)
 
-		reader, err := mc.Reader(ctx, d, 0, 0)
+		reader, err := mc.ReaderDeprecated(ctx, d, 0, 0)
 		require.NoError(t, err)
 
 		actualBuf := make([]byte, len(buf))
@@ -1275,7 +1275,7 @@ func TestReadWrite(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify data was written to both caches
-		srcReader, err := srcCache.Reader(ctx, d, 0, 0)
+		srcReader, err := srcCache.ReaderDeprecated(ctx, d, 0, 0)
 		require.NoError(t, err)
 
 		actualBuf = make([]byte, len(buf))
@@ -1287,7 +1287,7 @@ func TestReadWrite(t *testing.T) {
 		err = srcReader.Close()
 		require.NoError(t, err)
 
-		destReader, err := destCache.Reader(ctx, d, 0, 0)
+		destReader, err := destCache.ReaderDeprecated(ctx, d, 0, 0)
 		require.NoError(t, err)
 
 		actualBuf = make([]byte, len(buf))
@@ -1332,7 +1332,7 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	require.NoError(t, err)
 
 	// Will fail to set a dest reader
-	reader, err := mc.Reader(ctx, d, 0, 0)
+	reader, err := mc.ReaderDeprecated(ctx, d, 0, 0)
 	require.NoError(t, err)
 
 	// Should still read from src cache without error
