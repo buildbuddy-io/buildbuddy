@@ -236,6 +236,7 @@ type Cache interface {
 	GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error)
 	Set(ctx context.Context, r *resource.ResourceName, data []byte) error
 	SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error
+	Delete(ctx context.Context, r *resource.ResourceName) error
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)

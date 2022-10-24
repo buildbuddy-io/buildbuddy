@@ -445,7 +445,21 @@ func (c *DiskCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest
 }
 
 func (c *DiskCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	return c.partition.delete(ctx, c.cacheType, c.remoteInstanceName, d)
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Delete(ctx, r)
+}
+
+func (c *DiskCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return err
+	}
+	return p.delete(ctx, r)
 }
 
 func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
@@ -1152,8 +1166,8 @@ func (p *partition) setMulti(ctx context.Context, kvs map[*resource.ResourceName
 	return nil
 }
 
-func (p *partition) delete(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) error {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	if err != nil {
 		return err
 	}
@@ -1161,6 +1175,7 @@ func (p *partition) delete(ctx context.Context, cacheType resource.CacheType, re
 	defer p.mu.Unlock()
 	removed := p.lru.Remove(k.FullPath())
 	if !removed {
+		d := r.GetDigest()
 		return status.NotFoundErrorf("digest %s/%d not found in disk cache", d.GetHash(), d.GetSizeBytes())
 	}
 	return nil

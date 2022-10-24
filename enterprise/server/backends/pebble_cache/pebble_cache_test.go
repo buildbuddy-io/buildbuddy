@@ -1046,7 +1046,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 	pc.Start()
-	digests := make(map[string]*repb.Digest, 0)
+	resources := make([]*resource.ResourceName, 0)
 	for i := 0; i < 1000; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
 		r := &resource.ResourceName{
@@ -1056,16 +1056,14 @@ func TestDeleteEmptyDirs(t *testing.T) {
 		}
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
-		digests[d.GetHash()] = d
+		resources = append(resources, r)
 	}
-	for _, d := range digests {
-		c, err := pc.WithIsolation(ctx, resource.CacheType_CAS, "remoteInstanceName")
-		require.NoError(t, err)
-		err = c.DeleteDeprecated(ctx, d)
+	for _, r := range resources {
+		err = pc.Delete(ctx, r)
 		require.NoError(t, err)
 	}
 
-	log.Printf("Wrote and deleted %d digests", len(digests))
+	log.Printf("Wrote and deleted %d resources", len(resources))
 	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
 	pc.Stop()

@@ -433,12 +433,15 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isol
 	}
 	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, isolation, d)
 }
-func (c *Cache) remoteDelete(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) error {
+func (c *Cache) remoteDelete(ctx context.Context, peer string, r *resource.ResourceName) error {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix (remote instance name + cache type) necessary -- it's already set on the local cache.
-		return c.local.DeleteDeprecated(ctx, d)
+		return c.local.Delete(ctx, r)
 	}
-	return c.cacheProxy.RemoteDelete(ctx, peer, isolation, d)
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
+	return c.cacheProxy.RemoteDelete(ctx, peer, isolation, r.GetDigest())
 }
 func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Isolation, dest string) error {
 	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, isolation, d); err == nil && exists {
@@ -1086,10 +1089,10 @@ func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]b
 	return c.SetMulti(ctx, rnMap)
 }
 
-func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	ps := c.readPeers(d)
+func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	ps := c.readPeers(r.GetDigest())
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		err := c.remoteDelete(ctx, peer, c.isolation, d)
+		err := c.remoteDelete(ctx, peer, r)
 		if err != nil {
 			if status.IsNotFoundError(err) {
 				continue
@@ -1098,6 +1101,16 @@ func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 		}
 	}
 	return nil
+}
+
+func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.isolation.GetCacheType(),
+	}
+	return c.Delete(ctx, rn)
 }
 
 func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {

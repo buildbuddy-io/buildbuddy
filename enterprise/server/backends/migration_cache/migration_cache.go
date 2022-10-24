@@ -420,11 +420,11 @@ func (mc *MigrationCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.
 func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) {
 	eg, gctx := errgroup.WithContext(ctx)
 	for r, _ := range kvs {
-		d := r.GetDigest()
+		r := r
 		eg.Go(func() error {
-			deleteErr := mc.dest.DeleteDeprecated(gctx, d)
+			deleteErr := mc.dest.Delete(gctx, r)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
+				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}
 			return nil
 		})
@@ -432,17 +432,17 @@ func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.Res
 	eg.Wait()
 }
 
-func (mc *MigrationCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+func (mc *MigrationCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	eg.Go(func() error {
-		srcErr = mc.src.DeleteDeprecated(gctx, d)
+		srcErr = mc.src.Delete(gctx, r)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = mc.dest.DeleteDeprecated(gctx, d)
+		dstErr = mc.dest.Delete(gctx, r)
 		return nil // don't fail if there's an error from this cache
 	})
 
@@ -451,10 +451,20 @@ func (mc *MigrationCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) 
 	}
 
 	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
-		log.Warningf("Migration could not delete %v from dest cache: %s", d, dstErr)
+		log.Warningf("Migration could not delete %v from dest cache: %s", r.GetDigest(), dstErr)
 	}
 
 	return srcErr
+}
+
+func (mc *MigrationCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	}
+	return mc.Delete(ctx, rn)
 }
 
 type doubleReader struct {

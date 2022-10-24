@@ -254,13 +254,8 @@ func (m *MemoryCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Dige
 	return m.SetMulti(ctx, rnMap)
 }
 
-func (m *MemoryCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	k, err := m.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
+func (m *MemoryCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -268,9 +263,20 @@ func (m *MemoryCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) erro
 	removed := m.l.Remove(k)
 	m.lock.Unlock()
 	if !removed {
+		d := r.GetDigest()
 		return status.NotFoundErrorf("digest %s/%d not found in memory cache", d.GetHash(), d.GetSizeBytes())
 	}
 	return nil
+}
+
+func (m *MemoryCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	}
+	return m.Delete(ctx, rn)
 }
 
 // Low level interface used for seeking and stream-writing.

@@ -1140,8 +1140,8 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 	return nil
 }
 
-func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
+func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -1150,6 +1150,16 @@ func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) erro
 		return err
 	}
 	return p.deleteRecord(ctx, fileMetadataKey)
+}
+
+func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.GetCacheType(),
+	}
+	return p.Delete(ctx, rn)
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
