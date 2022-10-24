@@ -160,6 +160,7 @@ jobs:
 
           export DEVELOPER_DIR=/Applications/Xcode_12.4.app/Contents/Developer
           cd "${GITHUB_WORKSPACE}/buildbuddy"
+          "${GITHUB_WORKSPACE}/bin/bazel" clean --expunge
           "${GITHUB_WORKSPACE}/bin/bazel" build //cli/cmd/bb \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --//cli/version:cli_version="$VERSION"
