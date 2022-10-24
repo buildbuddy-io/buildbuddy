@@ -361,15 +361,13 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 	for _, d := range s2 {
 		s2Set[d] = struct{}{}
 
-		_, inS1 := s1Set[d]
-		if !inS1 {
+		if _, inS1 := s1Set[d]; !inS1 {
 			missingFromS1 = append(missingFromS1, d)
 		}
 	}
 
 	for d := range s1Set {
-		_, inS2 := s2Set[d]
-		if !inS2 {
+		if _, inS2 := s2Set[d]; !inS2 {
 			missingFromS2 = append(missingFromS2, d)
 		}
 	}
