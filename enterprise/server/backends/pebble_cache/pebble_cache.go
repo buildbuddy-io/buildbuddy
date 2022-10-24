@@ -856,6 +856,7 @@ func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 		return false, err
 	}
 	found := pebbleutil.IterHasKey(iter, fileMetadataKey)
+	log.Debugf("Pebble contains %s is %v", string(fileMetadataKey), found)
 	return found, nil
 }
 

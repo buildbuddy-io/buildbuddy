@@ -302,16 +302,30 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 		return nil, err
 	}
 
+	if dstErr != nil {
+		log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
+	}
 	if doubleRead {
-		if dstErr != nil {
-			log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
-		} else if digest.ElementsMatch(srcMissing, dstMissing) {
+		missingOnlyInDest, missingOnlyInSrc := digest.Diff(srcMissing, dstMissing)
+
+		if len(missingOnlyInSrc) == 0 && len(missingOnlyInDest) == 0 {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissingMatch"}).Inc()
 		} else {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
-
-			if mc.logNotFoundErrors {
+			if mc.logNotFoundErrors || len(missingOnlyInSrc) != 0 {
 				log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
+			}
+
+			instanceName := resources[0].GetInstanceName()
+			cacheType := resources[0].GetCacheType()
+			for _, d := range missingOnlyInDest {
+				r := &resource.ResourceName{
+					Digest:       d,
+					InstanceName: instanceName,
+					Compressor:   repb.Compressor_IDENTITY,
+					CacheType:    cacheType,
+				}
+				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
 			}
 		}
 	}
@@ -356,7 +370,7 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.Re
 	}
 
 	for _, r := range resources {
-		mc.sendNonBlockingCopy(ctx, r)
+		mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 	}
 
 	// Return data from source cache
@@ -515,15 +529,17 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 				log.Warningf("Migration dest reader close err: %s", err)
 			}
 		}
+		log.Warningf("Migration %v src reader err, doubleRead is %v: %s", d, doubleRead, srcErr)
 		return nil, srcErr
 	}
 
-	mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+	r := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: mc.remoteInstanceName,
 		Compressor:   repb.Compressor_IDENTITY,
 		CacheType:    mc.cacheType,
-	})
+	}
+	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	return &doubleReader{
 		src:  srcReader,
@@ -667,7 +683,7 @@ func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 		}
 	}
 
-	mc.sendNonBlockingCopy(ctx, r)
+	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	// Return data from source cache
 	return srcBuf, srcErr
@@ -682,15 +698,18 @@ func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]
 	})
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName) {
-	alreadyCopied, err := mc.dest.Contains(ctx, r)
-	if err != nil {
-		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
-		return
-	}
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName, onlyCopyMissing bool) {
+	if onlyCopyMissing {
+		alreadyCopied, err := mc.dest.Contains(ctx, r)
+		if err != nil {
+			log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
+			return
+		}
 
-	if alreadyCopied {
-		return
+		if alreadyCopied {
+			log.Debugf("Migration skipping copy digest %v, instance %s, cache %v - already copied", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
+			return
+		}
 	}
 
 	log.Debugf("Migration attempting copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())

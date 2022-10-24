@@ -767,6 +767,65 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 	eg.Wait()
 }
 
+func TestCopyDataInBackground_FindMissing(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize:   10,
+		DoubleReadPercentage: 1.0,
+		LogNotFoundErrors:    true,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	// Save digest to both caches - does not need to be copied to dest, but should be there
+	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	err = mc.Set(ctx, d, buf)
+	require.NoError(t, err)
+	r1 := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+
+	// Save digest to only src cache - should be copied to dest cache
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	err = srcCache.Set(ctx, d2, buf2)
+	require.NoError(t, err)
+	r2 := &resource.ResourceName{
+		Digest:    d2,
+		CacheType: resource.CacheType_CAS,
+	}
+
+	// Save digest to only dest cache - should not be copied to src cache
+	d3, buf3 := testdigest.NewRandomDigestBuf(t, 100)
+	err = destCache.Set(ctx, d3, buf3)
+	require.NoError(t, err)
+	r3 := &resource.ResourceName{
+		Digest:    d3,
+		CacheType: resource.CacheType_CAS,
+	}
+
+	// FindMissing should queue copies in background
+	missing, err := mc.FindMissing(ctx, []*resource.ResourceName{r1, r2, r3})
+	require.NoError(t, err)
+	require.Equal(t, []*repb.Digest{d3}, missing)
+
+	// Expect data to have been copied
+	waitForCopy(t, ctx, destCache, d)
+	waitForCopy(t, ctx, destCache, d2)
+}
+
 func TestContains(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)

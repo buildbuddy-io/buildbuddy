@@ -343,6 +343,38 @@ func ElementsMatch(s1 []*repb.Digest, s2 []*repb.Digest) bool {
 	return true
 }
 
+// Diff returns the differences between two slices of digests. If the slices differ in the count of a non-unique element,
+// that does not count as a difference
+//
+// missingFromS1 contains the digests that are in S2 but not S1
+// missingFromS2 contains the digests that are in S1 but not S2
+func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, missingFromS2 []*repb.Digest) {
+	missingFromS1 = make([]*repb.Digest, 0)
+	missingFromS2 = make([]*repb.Digest, 0)
+
+	s1Set := make(map[*repb.Digest]struct{}, len(s1))
+	for _, d := range s1 {
+		s1Set[d] = struct{}{}
+	}
+
+	s2Set := make(map[*repb.Digest]struct{}, len(s2))
+	for _, d := range s2 {
+		s2Set[d] = struct{}{}
+
+		if _, inS1 := s1Set[d]; !inS1 {
+			missingFromS1 = append(missingFromS1, d)
+		}
+	}
+
+	for d := range s1Set {
+		if _, inS2 := s2Set[d]; !inS2 {
+			missingFromS2 = append(missingFromS2, d)
+		}
+	}
+
+	return missingFromS1, missingFromS2
+}
+
 type randomDataMaker struct {
 	src rand.Source
 }
