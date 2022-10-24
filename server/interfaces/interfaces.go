@@ -345,6 +345,9 @@ type UserDB interface {
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
 	DeleteAPIKey(ctx context.Context, apiKeyID string) error
+
+	// To support secrets API
+	GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error)
 }
 
 // A webhook can be called when a build is completed.
@@ -920,4 +923,7 @@ type SecretService interface {
 	ListSecrets(ctx context.Context, req *skpb.ListSecretsRequest) (*skpb.ListSecretsResponse, error)
 	UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, error)
 	DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error)
+
+	// Internal use only -- fetches decoded secrets for use in running a command.
+	GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error)
 }

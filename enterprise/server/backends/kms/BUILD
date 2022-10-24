@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms",
     visibility = [
         "//enterprise:__subpackages__",
+        "//tools:__subpackages__",
         "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
