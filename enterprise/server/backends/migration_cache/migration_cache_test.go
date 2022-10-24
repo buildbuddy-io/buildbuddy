@@ -601,27 +601,29 @@ func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
 	mc.Start() // Starts copying in background
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcCache.Set(ctx, d, buf)
+	r2 := &resource.ResourceName{
+		Digest:    d2,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = srcCache.Set(ctx, r, buf)
 	require.NoError(t, err)
-	err = srcCache.Set(ctx, d2, buf2)
+	err = srcCache.Set(ctx, r2, buf2)
 	require.NoError(t, err)
 
 	// Queue copy on read and then immediately stop the cache
 	eg := errgroup.Group{}
 	eg.Go(func() error {
-		_, err := mc.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+		_, err := mc.Get(ctx, r)
 		require.NoError(t, err)
 		return nil
 	})
 	eg.Go(func() error {
-		_, err := mc.Get(ctx, &resource.ResourceName{
-			Digest:    d2,
-			CacheType: resource.CacheType_CAS,
-		})
+		_, err := mc.Get(ctx, r2)
 		require.NoError(t, err)
 		return nil
 	})
@@ -630,8 +632,8 @@ func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	// Make sure copy queue was drained after shutdown
-	waitForCopy(t, ctx, destCache, d)
-	waitForCopy(t, ctx, destCache, d2)
+	waitForCopy(t, ctx, destCache, r)
+	waitForCopy(t, ctx, destCache, r2)
 }
 
 func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
@@ -798,30 +800,30 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 
 	// Save digest to both caches - does not need to be copied to dest, but should be there
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
-	require.NoError(t, err)
 	r1 := &resource.ResourceName{
 		Digest:    d,
 		CacheType: resource.CacheType_CAS,
 	}
+	err = mc.Set(ctx, r1, buf)
+	require.NoError(t, err)
 
 	// Save digest to only src cache - should be copied to dest cache
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcCache.Set(ctx, d2, buf2)
-	require.NoError(t, err)
 	r2 := &resource.ResourceName{
 		Digest:    d2,
 		CacheType: resource.CacheType_CAS,
 	}
+	err = srcCache.Set(ctx, r2, buf2)
+	require.NoError(t, err)
 
 	// Save digest to only dest cache - should not be copied to src cache
 	d3, buf3 := testdigest.NewRandomDigestBuf(t, 100)
-	err = destCache.Set(ctx, d3, buf3)
-	require.NoError(t, err)
 	r3 := &resource.ResourceName{
 		Digest:    d3,
 		CacheType: resource.CacheType_CAS,
 	}
+	err = destCache.Set(ctx, r3, buf3)
+	require.NoError(t, err)
 
 	// FindMissing should queue copies in background
 	missing, err := mc.FindMissing(ctx, []*resource.ResourceName{r1, r2, r3})
@@ -829,8 +831,8 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 	require.Equal(t, []*repb.Digest{d3}, missing)
 
 	// Expect data to have been copied
-	waitForCopy(t, ctx, destCache, d)
-	waitForCopy(t, ctx, destCache, d2)
+	waitForCopy(t, ctx, destCache, r1)
+	waitForCopy(t, ctx, destCache, r2)
 }
 
 func TestContains(t *testing.T) {
