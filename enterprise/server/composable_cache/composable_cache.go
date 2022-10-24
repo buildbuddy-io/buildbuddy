@@ -304,6 +304,11 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
+func (c *ComposableCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (c *ComposableCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	if outerReader, err := c.outer.ReaderDeprecated(ctx, d, offset, limit); err == nil {
 		return outerReader, nil

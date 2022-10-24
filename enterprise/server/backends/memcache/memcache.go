@@ -330,17 +330,11 @@ func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	return c.Delete(ctx, rn)
 }
 
-// Low level interface used for seeking and stream-writing.
-func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	if !eligibleForMc(d) {
-		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", d)
+func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	if !eligibleForMc(rn.GetDigest()) {
+		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", rn.GetDigest())
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +345,7 @@ func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, li
 
 	r := bytes.NewReader(buf)
 	r.Seek(offset, 0)
-	length := d.GetSizeBytes()
+	length := rn.GetDigest().GetSizeBytes()
 	if limit != 0 && limit < length {
 		length = limit
 	}
@@ -359,6 +353,17 @@ func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, li
 		return io.NopCloser(io.LimitReader(r, length)), nil
 	}
 	return io.NopCloser(r), nil
+}
+
+// Low level interface used for seeking and stream-writing.
+func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Reader(ctx, rn, offset, limit)
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {

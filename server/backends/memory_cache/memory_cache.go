@@ -280,9 +280,9 @@ func (m *MemoryCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) erro
 }
 
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
-	buf, err := m.GetDeprecated(ctx, d)
+	buf, err := m.Get(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +296,16 @@ func (m *MemoryCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offs
 		return io.NopCloser(io.LimitReader(r, length)), nil
 	}
 	return io.NopCloser(r), nil
+}
+
+func (m *MemoryCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	}
+	return m.Reader(ctx, rn, offset, limit)
 }
 
 func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
