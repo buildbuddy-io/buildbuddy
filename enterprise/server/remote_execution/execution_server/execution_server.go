@@ -1026,6 +1026,7 @@ func statsUnset(md *repb.ExecutedActionMetadata) bool {
 		md.GetEstimatedTaskSize().GetEstimatedMemoryBytes() == 0 &&
 		md.GetEstimatedTaskSize().GetEstimatedMilliCpu() == 0 &&
 		md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes() == 0)
+
 }
 
 func decodeMetadataFromExecutionSummary(resp *repb.ExecuteResponse) (*repb.ExecutedActionMetadata, error) {
