@@ -123,7 +123,7 @@ func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 		return nil, err
 	}
 	if c.mode&ModeReadThrough != 0 {
-		c.outer.SetDeprecated(ctx, r.GetDigest(), innerRsp)
+		c.outer.Set(ctx, r, innerRsp)
 	}
 
 	return innerRsp, nil
@@ -319,7 +319,7 @@ func (c *ComposableCache) Reader(ctx context.Context, r *resource.ResourceName, 
 	}
 
 	// Copy the digest over to the outer cache.
-	outerWriter, err := c.outer.Writer(ctx, r.GetDigest())
+	outerWriter, err := c.outer.Writer(ctx, r)
 	// Directly return the inner reader if the outer cache doesn't want the
 	// blob.
 	if err != nil {
@@ -410,6 +410,30 @@ func (d *doubleWriter) Close() error {
 	err := d.inner.Close()
 	d.outer.Close()
 	return err
+}
+
+func (c *ComposableCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	innerWriter, err := c.inner.Writer(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if c.mode&ModeWriteThrough != 0 {
+		if outerWriter, err := c.outer.Writer(ctx, r); err == nil {
+			dw := &doubleWriter{
+				inner: innerWriter,
+				outer: outerWriter,
+				commitFn: func(err error) {
+					if err == nil {
+						outerWriter.Commit()
+					}
+				},
+			}
+			return dw, nil
+		}
+	}
+
+	return innerWriter, nil
 }
 
 func (c *ComposableCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {

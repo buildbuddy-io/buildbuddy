@@ -97,7 +97,7 @@ func (c *errorCache) FindMissingDeprecated(ctx context.Context, digests []*repb.
 	return nil, errors.New("error cache findmissing err")
 }
 
-func (c *errorCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (c *errorCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	return nil, errors.New("error cache writer err")
 }
 
@@ -1254,7 +1254,7 @@ func TestReadWrite(t *testing.T) {
 			Digest:    d,
 			CacheType: resource.CacheType_CAS,
 		}
-		w, err := mc.Writer(ctx, d)
+		w, err := mc.Writer(ctx, r)
 		require.NoError(t, err)
 
 		_, err = w.Write(buf)
@@ -1327,7 +1327,7 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	}
 
 	// Will fail to set a dest writer
-	w, err := mc.Writer(ctx, d)
+	w, err := mc.Writer(ctx, r)
 	require.NoError(t, err)
 
 	// Should still write data to src cache without error

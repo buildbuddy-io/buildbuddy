@@ -308,14 +308,24 @@ func (m *MemoryCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offs
 	return m.Reader(ctx, rn, offset, limit)
 }
 
-func (m *MemoryCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (m *MemoryCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
 	wc.CommitFn = func(int64) error {
 		// Locking and key prefixing are handled in SetDeprecated.
-		return m.SetDeprecated(ctx, d, buffer.Bytes())
+		return m.Set(ctx, r, buffer.Bytes())
 	}
 	return wc, nil
+}
+
+func (m *MemoryCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	}
+	return m.Writer(ctx, rn)
 }
 
 func (m *MemoryCache) Start() error {

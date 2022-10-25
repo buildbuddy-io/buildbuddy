@@ -480,8 +480,22 @@ func (c *DiskCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset
 	return c.Reader(ctx, r, offset, limit)
 }
 
-func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	return c.partition.writer(ctx, c.cacheType, c.remoteInstanceName, d)
+func (c *DiskCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	return p.writer(ctx, r)
+}
+
+func (c *DiskCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Writer(ctx, r)
 }
 
 func (c *DiskCache) WaitUntilMapped() {
@@ -1234,8 +1248,8 @@ func (d *dbWriteOnClose) Close() error {
 	return d.closeFn(d.bytesWritten)
 }
 
-func (p *partition) writer(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	if err != nil {
 		return nil, err
 	}
@@ -1246,7 +1260,7 @@ func (p *partition) writer(ctx context.Context, cacheType resource.CacheType, re
 
 	if alreadyExists {
 		metrics.DiskCacheDuplicateWrites.Inc()
-		metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
+		metrics.DiskCacheDuplicateWritesBytes.Add(float64(r.GetDigest().GetSizeBytes()))
 	}
 
 	fw, err := disk.FileWriter(ctx, k.FullPath())

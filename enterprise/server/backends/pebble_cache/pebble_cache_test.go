@@ -454,7 +454,7 @@ func TestReadWrite(t *testing.T) {
 			CacheType: resource.CacheType_CAS,
 		}
 		// Use Writer() to set the bytes in the cache.
-		wc, err := pc.Writer(ctx, d)
+		wc, err := pc.Writer(ctx, rn)
 		if err != nil {
 			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 		}

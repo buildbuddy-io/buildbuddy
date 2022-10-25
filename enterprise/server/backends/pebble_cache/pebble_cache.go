@@ -1016,7 +1016,7 @@ func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Di
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
-	wc, err := p.writer(ctx, r)
+	wc, err := p.Writer(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -1242,15 +1242,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	return p.writer(ctx, &resource.ResourceName{
-		Digest:       d,
-		CacheType:    p.isolation.GetCacheType(),
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-	})
-}
-
-func (p *PebbleCache) writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1318,6 +1310,14 @@ func (p *PebbleCache) writer(ctx context.Context, r *resource.ResourceName) (int
 		return err
 	}
 	return wc, nil
+}
+
+func (p *PebbleCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	return p.Writer(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    p.isolation.GetCacheType(),
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+	})
 }
 
 func (p *PebbleCache) DoneScanning() bool {
