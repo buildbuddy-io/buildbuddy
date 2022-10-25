@@ -189,6 +189,9 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 }
 
 func isTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
 	return strings.Contains(err.Error(), "i/o timeout")
 }
 
