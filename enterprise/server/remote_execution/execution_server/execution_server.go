@@ -399,11 +399,9 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	props := platform.ParseProperties(executionTask)
 
-	// Add in secrets for any action explicitly requesting secrets, and all workflows.
-	// TODO(tylerw): once secrets service is launched, remove the
-	// '&& secretService != nil' part of the check below.
-	secretService := s.env.GetSecretService()
-	if props.IncludeSecrets || (props.WorkflowID != "" && secretService != nil) {
+	// Add in secrets for any action explicitly requesting secrets.
+	if props.IncludeSecrets {
+		secretService := s.env.GetSecretService()
 		if secretService == nil {
 			return "", status.FailedPreconditionError("Secrets requested but secret service not available")
 		}
@@ -1028,7 +1026,6 @@ func statsUnset(md *repb.ExecutedActionMetadata) bool {
 		md.GetEstimatedTaskSize().GetEstimatedMemoryBytes() == 0 &&
 		md.GetEstimatedTaskSize().GetEstimatedMilliCpu() == 0 &&
 		md.GetEstimatedTaskSize().GetEstimatedFreeDiskBytes() == 0)
-
 }
 
 func decodeMetadataFromExecutionSummary(resp *repb.ExecuteResponse) (*repb.ExecutedActionMetadata, error) {

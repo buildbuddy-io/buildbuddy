@@ -146,6 +146,7 @@ func (ws *workflowService) checkPreconditions(ctx context.Context) error {
 
 	return nil
 }
+
 func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
 	// Validate the request.
 	if err := ws.checkPreconditions(ctx); err != nil {
@@ -713,6 +714,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
 				{Name: "workflow-id", Value: wf.WorkflowID},
+				{Name: platform.IncludeSecretsPropertyName, Value: fmt.Sprint(isTrusted)},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: fmt.Sprintf("%d", computeUnits)},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 			},
