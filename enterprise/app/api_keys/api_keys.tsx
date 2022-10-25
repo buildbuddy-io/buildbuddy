@@ -409,7 +409,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       <div className="api-keys">
         {this.props.user.canCall("createApiKey") && (
           <div>
-            <FilledButton className="create-new-button" onClick={this.onClickCreateNew.bind(this)}>
+            <FilledButton className="big-button" onClick={this.onClickCreateNew.bind(this)}>
               Create new API key
             </FilledButton>
           </div>

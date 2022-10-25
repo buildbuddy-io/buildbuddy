@@ -89,8 +89,8 @@ func TestIsolation(t *testing.T) {
 
 	for _, test := range tests {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		// Set() the bytes in cache1.
-		err := test.cache1.Set(ctx, d, buf)
+		// SetDeprecated() the bytes in cache1.
+		err := test.cache1.SetDeprecated(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
@@ -134,8 +134,8 @@ func TestGetSet(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		// Set() the bytes in the cache.
-		err := mc.Set(ctx, d, buf)
+		// SetDeprecated() the bytes in the cache.
+		err := mc.SetDeprecated(ctx, d, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
@@ -241,7 +241,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	ctx := getAnonContext(t)
 	size := int64(10)
 	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	err = mc.Set(ctx, d, buf)
+	err = mc.SetDeprecated(ctx, d, buf)
 	require.NoError(t, err)
 
 	offset := int64(2)
@@ -265,7 +265,7 @@ func TestSizeLimit(t *testing.T) {
 	digestBufs := randomDigests(t, 400, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		if err := mc.Set(ctx, d, buf); err != nil {
+		if err := mc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		digestKeys = append(digestKeys, d)
@@ -301,7 +301,7 @@ func TestLRU(t *testing.T) {
 	digestBufs := randomDigests(t, 400, 400)
 	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		if err := mc.Set(ctx, d, buf); err != nil {
+		if err := mc.SetDeprecated(ctx, d, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		digestKeys = append(digestKeys, d)
@@ -317,7 +317,7 @@ func TestLRU(t *testing.T) {
 	// Now write one more digest, which should evict the oldest digest,
 	// (the second one we wrote).
 	d, buf := testdigest.NewRandomDigestBuf(t, 400)
-	if err := mc.Set(ctx, d, buf); err != nil {
+	if err := mc.SetDeprecated(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
 	digestKeys = append(digestKeys, d)

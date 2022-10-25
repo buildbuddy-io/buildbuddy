@@ -24,6 +24,7 @@ ts_library(
         "//enterprise/app/api_keys",
         "//enterprise/app/org",
         "//enterprise/app/quota",
+        "//enterprise/app/secrets",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",

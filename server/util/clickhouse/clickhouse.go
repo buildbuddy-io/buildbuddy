@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strings"
 	"syscall"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -187,6 +188,13 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	}
 }
 
+func isTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "i/o timeout")
+}
+
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := ToInvocationFromPrimaryDB(ti)
 	retrier := retry.DefaultWithContext(ctx)
@@ -194,9 +202,9 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	for retrier.Next() {
 		res := h.DB(ctx).Create(inv)
 		lastError = res.Error
-		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || errors.Is(res.Error, context.DeadlineExceeded) {
+		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) {
 			// Retry since it's an transient error.
-			log.CtxInfof(ctx, "attempt to write invocation to clickhouse failed: %s", res.Error)
+			log.CtxInfof(ctx, "attempt (n=%d) to write invocation to clickhouse failed: %s", retrier.AttemptNumber(), res.Error)
 			continue
 		}
 		break
@@ -210,7 +218,7 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 		metrics.ClickhouseStatusLabel: statusLabel,
 	}).Inc()
 	if lastError != nil {
-		return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
+		return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries (n=%d) for invocation id %q, err: %s", retrier.AttemptNumber(), ti.InvocationID, lastError)
 	}
 	return nil
 }

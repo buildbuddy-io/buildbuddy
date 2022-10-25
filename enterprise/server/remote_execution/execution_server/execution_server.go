@@ -392,6 +392,28 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.PlatformOverrides = &repb.Platform{Properties: platformPropOverrides}
 	}
 
+	taskGroupID := interfaces.AuthAnonymousUser
+	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
+		taskGroupID = user.GetGroupID()
+	}
+
+	props := platform.ParseProperties(executionTask)
+
+	// Add in secrets for any action explicitly requesting secrets, and all workflows.
+	// TODO(tylerw): once secrets service is launched, remove the
+	// '&& secretService != nil' part of the check below.
+	secretService := s.env.GetSecretService()
+	if props.IncludeSecrets || (props.WorkflowID != "" && secretService != nil) {
+		if secretService == nil {
+			return "", status.FailedPreconditionError("Secrets requested but secret service not available")
+		}
+		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID)
+		if err != nil {
+			return "", err
+		}
+		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
+	}
+
 	executionTask.QueuedTimestamp = timestamppb.Now()
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
@@ -406,8 +428,6 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		predictedSize = sizer.Predict(ctx, executionTask)
 	}
 
-	props := platform.ParseProperties(executionTask)
-
 	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, props.OS, props.UseSelfHostedExecutors)
 	if err != nil {
 		return "", err
@@ -415,11 +435,6 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	if props.Pool == "" {
 		props.Pool = defaultPool
-	}
-
-	taskGroupID := interfaces.AuthAnonymousUser
-	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
-		taskGroupID = user.GetGroupID()
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()

@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -128,11 +127,15 @@ func TestBasicReadWrite(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.ContainsDeprecated(ctx, d)
+			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -158,22 +161,16 @@ func TestContains_WithIsolation(t *testing.T) {
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
-	dcWithIsolation1, err := dc1.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
-	require.NoError(t, err)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
-	dcWithIsolation2, err := dc2.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
-	require.NoError(t, err)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
-	dcWithIsolation3, err := dc3.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
-	require.NoError(t, err)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
@@ -181,43 +178,24 @@ func TestContains_WithIsolation(t *testing.T) {
 
 	// Do a write - should be written to all nodes
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err = dcWithIsolation1.Set(ctx, d, buf); err != nil {
+	rn1 := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: remoteInstanceName,
+		CacheType:    resource.CacheType_AC,
+	}
+	if err := dc1.Set(ctx, rn1, buf); err != nil {
 		require.NoError(t, err)
 	}
 
-	c, err := dcWithIsolation1.ContainsDeprecated(ctx, d)
-	require.NoError(t, err)
-	require.True(t, c)
-	c, err = dc1.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    resource.CacheType_AC,
-	})
+	c, err := dc1.Contains(ctx, rn1)
 	require.NoError(t, err)
 	require.True(t, c)
 
-	c, err = dcWithIsolation2.ContainsDeprecated(ctx, d)
-	require.NoError(t, err)
-	require.True(t, c)
-	c, err = dc2.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    resource.CacheType_AC,
-	})
+	c, err = dc2.Contains(ctx, rn1)
 	require.NoError(t, err)
 	require.True(t, c)
 
-	c, err = dcWithIsolation3.ContainsDeprecated(ctx, d)
-	require.NoError(t, err)
-	require.True(t, c)
-	c, err = dc3.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    resource.CacheType_AC,
-	})
+	c, err = dc3.Contains(ctx, rn1)
 	require.NoError(t, err)
 	require.True(t, c)
 }
@@ -330,7 +308,12 @@ func TestReadMaxOffset(t *testing.T) {
 
 	// Do a write, and ensure it was written to all nodes.
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err := distributedCaches[0].Set(ctx, d, buf); err != nil {
+	rn := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+
+	if err := distributedCaches[0].Set(ctx, rn, buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -378,7 +361,11 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	// Do a write, and ensure it was written to all nodes.
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err := distributedCaches[0].Set(ctx, d, buf); err != nil {
+	rn := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	if err := distributedCaches[0].Set(ctx, rn, buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -448,12 +435,16 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.ContainsDeprecated(ctx, d)
+			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -513,17 +504,21 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	cancel()
 	assert.Nil(t, err)
 
-	digestsWritten := make([]*repb.Digest, 0)
+	resourcesWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
-		digestsWritten = append(digestsWritten, d)
+		resourcesWritten = append(resourcesWritten, rn)
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.ContainsDeprecated(ctx, d)
+			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -534,12 +529,12 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	distributedCaches = append(distributedCaches, dc3)
 	dc3.StartListening()
 	waitForReady(t, config3.ListenAddr)
-	for _, d := range digestsWritten {
+	for _, r := range resourcesWritten {
 		for _, distributedCache := range distributedCaches {
-			exists, err := distributedCache.ContainsDeprecated(ctx, d)
+			exists, err := distributedCache.Contains(ctx, r)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, distributedCache, d)
+			readAndCompareDigest(t, ctx, distributedCache, r.GetDigest())
 		}
 	}
 }
@@ -580,17 +575,21 @@ func TestBackfill(t *testing.T) {
 	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	digestsWritten := make([]*repb.Digest, 0)
+	resourcesWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
-		digestsWritten = append(digestsWritten, d)
+		resourcesWritten = append(resourcesWritten, rn)
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.ContainsDeprecated(ctx, d)
+			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -598,8 +597,8 @@ func TestBackfill(t *testing.T) {
 	}
 
 	// Now zero out one of the base caches.
-	for _, d := range digestsWritten {
-		if err := memoryCache3.Delete(ctx, d); err != nil {
+	for _, r := range resourcesWritten {
+		if err := memoryCache3.Delete(ctx, r.GetDigest()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -607,18 +606,18 @@ func TestBackfill(t *testing.T) {
 	// Read our digests, and ensure that after each read, the digest
 	// is *also* present in the base cache of the zeroed-out node,
 	// because it has been backfilled.
-	for _, d := range digestsWritten {
+	for _, r := range resourcesWritten {
 		for _, distributedCache := range distributedCaches {
-			exists, err := distributedCache.ContainsDeprecated(ctx, d)
+			exists, err := distributedCache.Contains(ctx, r)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, distributedCache, d)
+			readAndCompareDigest(t, ctx, distributedCache, r.GetDigest())
 		}
 		for i, baseCache := range baseCaches {
-			exists, err := baseCache.ContainsDeprecated(ctx, d)
+			exists, err := baseCache.Contains(ctx, r)
 			assert.Nil(t, err, fmt.Sprintf("basecache %dmissing digest", i))
 			assert.True(t, exists, fmt.Sprintf("basecache %dmissing digest", i))
-			readAndCompareDigest(t, ctx, baseCache, d)
+			readAndCompareDigest(t, ctx, baseCache, r.GetDigest())
 		}
 	}
 }
@@ -662,24 +661,28 @@ func TestContainsMulti(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	digestsWritten := make([]*repb.Digest, 0)
+	resourcesWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
-		digestsWritten = append(digestsWritten, d)
+		resourcesWritten = append(resourcesWritten, rn)
 	}
 
 	for _, baseCache := range baseCaches {
-		missingMap, err := baseCache.FindMissingDeprecated(ctx, digestsWritten)
+		missingMap, err := baseCache.FindMissing(ctx, resourcesWritten)
 		assert.Nil(t, err)
 		assert.Equal(t, 0, len(missingMap))
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missingMap, err := distributedCache.FindMissingDeprecated(ctx, digestsWritten)
+		missingMap, err := distributedCache.FindMissing(ctx, resourcesWritten)
 		assert.Nil(t, err)
 		assert.Equal(t, 0, len(missingMap))
 	}
@@ -702,28 +705,21 @@ func TestMetadata(t *testing.T) {
 	config1 := baseConfig
 	config1.ListenAddr = peer1
 	dc1 := startNewDCache(t, env, config1, memoryCache1)
-	dcWithIsolation1, err := dc1.WithIsolation(ctx, resource.CacheType_CAS, "blah")
-	require.NoError(t, err)
 
 	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
 	config2 := baseConfig
 	config2.ListenAddr = peer2
 	dc2 := startNewDCache(t, env, config2, memoryCache2)
-	dcWithIsolation2, err := dc2.WithIsolation(ctx, resource.CacheType_CAS, "blah")
-	require.NoError(t, err)
 
 	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
 	config3 := baseConfig
 	config3.ListenAddr = peer3
 	dc3 := startNewDCache(t, env, config3, memoryCache3)
-	dcWithIsolation3, err := dc3.WithIsolation(ctx, resource.CacheType_CAS, "blah")
-	require.NoError(t, err)
 
 	waitForReady(t, config1.ListenAddr)
 	waitForReady(t, config2.ListenAddr)
 	waitForReady(t, config3.ListenAddr)
 
-	distributedCachesWithIsolation := []interfaces.Cache{dcWithIsolation1, dcWithIsolation2, dcWithIsolation3}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	testSizes := []int64{
@@ -731,16 +727,14 @@ func TestMetadata(t *testing.T) {
 	}
 	for i, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		// Set() the bytes in the cache.
-		err := distributedCachesWithIsolation[i%3].Set(ctx, d, buf)
-		require.NoError(t, err)
-
-		for _, dc := range distributedCachesWithIsolation {
-			// Metadata should return true size of the blob, regardless of queried size.
-			md, err := dc.MetadataDeprecated(ctx, &repb.Digest{Hash: d.GetHash(), SizeBytes: 1})
-			require.NoError(t, err)
-			require.Equal(t, testSize, md.SizeBytes)
+		rn := &resource.ResourceName{
+			InstanceName: "blah",
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
 		}
+		// Set() the bytes in the cache.
+		err := distributedCaches[i%3].Set(ctx, rn, buf)
+		require.NoError(t, err)
 
 		for _, dc := range distributedCaches {
 			// Metadata should return true size of the blob, regardless of queried size.
@@ -794,42 +788,42 @@ func TestFindMissing(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	digestsWritten := make([]*repb.Digest, 0)
+	resourcesWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
-		digestsWritten = append(digestsWritten, d)
+		resourcesWritten = append(resourcesWritten, rn)
 	}
 
 	// Generate some more digests, but don't write them to the cache.
+	resourcesNotWritten := make([]*resource.ResourceName, 0)
 	digestsNotWritten := make([]*repb.Digest, 0)
 	for i := 0; i < 100; i++ {
 		d, _ := testdigest.NewRandomDigestBuf(t, 100)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		resourcesNotWritten = append(resourcesNotWritten, rn)
 		digestsNotWritten = append(digestsNotWritten, d)
 	}
 
-	allDigests := append(digestsWritten, digestsNotWritten...)
-	rns := digest.ResourceNames(resource.CacheType_CAS, "", allDigests)
-
+	allResources := append(resourcesWritten, resourcesNotWritten...)
 	for _, baseCache := range baseCaches {
-		missing, err := baseCache.FindMissingDeprecated(ctx, allDigests)
-		require.NoError(t, err)
-		require.ElementsMatch(t, missing, digestsNotWritten)
-
-		missing, err = baseCache.FindMissing(ctx, rns)
+		missing, err := baseCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
 
 	for _, distributedCache := range distributedCaches {
-		missing, err := distributedCache.FindMissingDeprecated(ctx, allDigests)
-		require.NoError(t, err)
-		require.ElementsMatch(t, missing, digestsNotWritten)
-
-		missing, err = distributedCache.FindMissing(ctx, rns)
+		missing, err := distributedCache.FindMissing(ctx, allResources)
 		require.NoError(t, err)
 		require.ElementsMatch(t, missing, digestsNotWritten)
 	}
@@ -878,7 +872,11 @@ func TestGetMulti(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
 		resourcesWritten = append(resourcesWritten, &resource.ResourceName{
@@ -973,17 +971,21 @@ func TestHintedHandoff(t *testing.T) {
 	cancel()
 	assert.Nil(t, err)
 
-	digestsWritten := make([]*repb.Digest, 0)
+	digestsWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		j := i % len(distributedCaches)
-		if err := distributedCaches[j].Set(ctx, d, buf); err != nil {
+		if err := distributedCaches[j].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
-		digestsWritten = append(digestsWritten, d)
+		digestsWritten = append(digestsWritten, rn)
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.ContainsDeprecated(ctx, d)
+			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, d)
@@ -1011,9 +1013,9 @@ func TestHintedHandoff(t *testing.T) {
 
 	// Figure out the set of digests that were hinted-handoffs. We'll verify
 	// that these were successfully handed off below.
-	hintedHandoffs := make([]*repb.Digest, 0)
+	hintedHandoffs := make([]*resource.ResourceName, 0)
 	for _, d := range digestsWritten {
-		ps := dc3.readPeers(d)
+		ps := dc3.readPeers(d.Digest)
 		for _, p := range ps.PreferredPeers {
 			if p == peer3 {
 				hintedHandoffs = append(hintedHandoffs, d)
@@ -1023,11 +1025,11 @@ func TestHintedHandoff(t *testing.T) {
 	}
 
 	// Ensure that dc3 successfully received all the hinted handoffs.
-	for _, d := range hintedHandoffs {
-		exists, err := memoryCache3.ContainsDeprecated(ctx, d)
+	for _, r := range hintedHandoffs {
+		exists, err := memoryCache3.Contains(ctx, r)
 		assert.Nil(t, err)
 		assert.True(t, exists)
-		readAndCompareDigest(t, ctx, dc3, d)
+		readAndCompareDigest(t, ctx, dc3, r.GetDigest())
 	}
 }
 
@@ -1073,11 +1075,15 @@ func TestDelete(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		// Do a write, and ensure it was written to all nodes.
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		if err := distributedCaches[i%3].Set(ctx, d, buf); err != nil {
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.ContainsDeprecated(ctx, d)
+			exists, err := baseCache.Contains(ctx, rn)
 			assert.NoError(t, err)
 			assert.True(t, exists)
 		}
@@ -1087,7 +1093,7 @@ func TestDelete(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
-			exists, err := baseCache.ContainsDeprecated(ctx, d)
+			exists, err := baseCache.Contains(ctx, rn)
 			assert.NoError(t, err)
 			assert.False(t, exists)
 		}

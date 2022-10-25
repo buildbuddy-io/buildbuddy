@@ -150,6 +150,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		DetailedCacheStatsEnabled:     hit_tracker.DetailedStatsEnabled(),
 		ExpandedSuggestionsEnabled:    *expandedSuggestionsEnabled,
 		QuotaManagementEnabled:        env.GetQuotaManager() != nil,
+		SecretsEnabled:                env.GetSecretService() != nil,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

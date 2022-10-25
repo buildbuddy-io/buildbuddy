@@ -65,4 +65,7 @@ message FrontendConfig {
 
   // Whether to enable quota management in the settings UI.
   bool quota_management_enabled = 21;
+
+  // Whether to enable the secrets UI.
+  bool secrets_enabled = 22;
 }

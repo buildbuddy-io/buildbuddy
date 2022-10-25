@@ -652,7 +652,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				if err != nil {
 					return nil, err
 				}
-				if err := acCache.Set(ctx, treeCacheDigest, buf); err != nil {
+				if err := acCache.SetDeprecated(ctx, treeCacheDigest, buf); err != nil {
 					log.Warningf("Error setting treeCache blob: %s", err)
 				}
 			} else {

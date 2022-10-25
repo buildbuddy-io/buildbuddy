@@ -230,3 +230,57 @@ You can increase this limit by running the following command:
 ```
 sudo launchctl limit maxfiles 5000000 5000000
 ```
+
+### Optional: Log rotation
+
+If you find your logs are taking up too much space on disk, you may wish to implement log rotation. For this, we recommend `multilog` from `daemontools`:
+
+```
+brew install daemontools
+```
+
+Now that `multilog` is installed, in `~/Library/LaunchAgents/buildbuddy-executor.plist` change:
+
+```
+        <key>ProgramArguments</key>
+        <array>
+            <string>./buildbuddy-executor</string>
+            <string>--config_file</string>
+            <string>config.yaml</string>
+        </array>
+```
+
+to:
+
+```
+        <key>ProgramArguments</key>
+        <array>
+            <string>bash</string>
+            <string>-c</string>
+            <string><![CDATA[./buildbuddy-executor --config_file config.yaml 2>&1 | /usr/local/bin/multilog t s2147483648 n25 /Users/YOUR_USERNAME/buildbuddy.log]]></string>
+        </array>
+```
+
+and remove:
+
+```
+        <key>StandardErrorPath</key>
+        <string>/Users/YOUR_USERNAME/buildbuddy_stderr.log</string>
+        <key>StandardOutPath</key>
+        <string>/Users/YOUR_USERNAME/buildbuddy_stdout.log</string>
+```
+
+This will produce automatically rotated log files with stdout and stderr interleaved. If you wish to preserve the separation of the out and error streams, you may instead use:
+
+```
+        <key>ProgramArguments</key>
+        <array>
+            <string>bash</string>
+            <string>-c</string>
+            <string><![CDATA[{ ./buildbuddy-executor --config_file config.yaml 2>&1 1>&3 3>&- | /usr/local/bin/multilog t s2147483648 n25 /Users/YOUR_USERNAME/buildbuddy_stderr.log; } 3>&1 1>&2 | /usr/local/bin/multilog t s2147483648 n25 /Users/YOUR_USERNAME/buildbuddy_stdout.log]]></string>
+        </array>
+```
+
+for the `ProgramArguments`, though generally this is not recommended, as the streams are more clear when left chronologically interleaved.
+
+Read more about `multilog` [here](https://cr.yp.to/daemontools/multilog.html).

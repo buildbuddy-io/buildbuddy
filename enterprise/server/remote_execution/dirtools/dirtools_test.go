@@ -249,7 +249,7 @@ func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceNa
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Set(ctx, d, dataBytes)
+	c.SetDeprecated(ctx, d, dataBytes)
 	t.Logf("Added digest %s/%d to cache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
 	return d
 }

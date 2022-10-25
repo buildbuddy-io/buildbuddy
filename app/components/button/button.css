@@ -140,3 +140,7 @@
   justify-content: center;
   flex-shrink: 0;
 }
+
+.big-button {
+  padding: 16px 32px;
+}

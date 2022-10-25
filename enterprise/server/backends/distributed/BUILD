@@ -47,7 +47,6 @@ go_test(
         "//server/backends/memory_cache",
         "//server/environment",
         "//server/interfaces",
-        "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",

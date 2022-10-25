@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -847,4 +848,29 @@ func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
 func (d *UserDB) DeleteGroup(ctx context.Context, groupID string) error {
 	u := &tables.Group{GroupID: groupID}
 	return d.h.DB(ctx).Delete(u).Error
+}
+
+func (d *UserDB) GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error) {
+	tg, err := d.GetGroupByID(ctx, groupID)
+	if err != nil {
+		return "", err
+	}
+	if tg.PublicKey != "" {
+		return tg.PublicKey, nil
+	}
+
+	// Still here? Group may not have a public key yet. Let's add one.
+	pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(d.env)
+	if err != nil {
+		return "", err
+	}
+
+	err = d.h.DB(ctx).Exec(
+		`UPDATE`+"`Groups`"+` SET public_key = ?, encrypted_private_key = ? WHERE group_id = ?`,
+		pubKey, encPrivKey, groupID).Error
+	if err != nil {
+		return "", err
+	}
+
+	return pubKey, nil
 }

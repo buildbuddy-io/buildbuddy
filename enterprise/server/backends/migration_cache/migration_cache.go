@@ -302,16 +302,30 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 		return nil, err
 	}
 
+	if dstErr != nil {
+		log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
+	}
 	if doubleRead {
-		if dstErr != nil {
-			log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
-		} else if digest.ElementsMatch(srcMissing, dstMissing) {
+		missingOnlyInDest, missingOnlyInSrc := digest.Diff(srcMissing, dstMissing)
+
+		if len(missingOnlyInSrc) == 0 && len(missingOnlyInDest) == 0 {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissingMatch"}).Inc()
 		} else {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
-
-			if mc.logNotFoundErrors {
+			if mc.logNotFoundErrors || len(missingOnlyInSrc) != 0 {
 				log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
+			}
+
+			instanceName := resources[0].GetInstanceName()
+			cacheType := resources[0].GetCacheType()
+			for _, d := range missingOnlyInDest {
+				r := &resource.ResourceName{
+					Digest:       d,
+					InstanceName: instanceName,
+					Compressor:   repb.Compressor_IDENTITY,
+					CacheType:    cacheType,
+				}
+				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
 			}
 		}
 	}
@@ -356,7 +370,7 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.Re
 	}
 
 	for _, r := range resources {
-		mc.sendNonBlockingCopy(ctx, r)
+		mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 	}
 
 	// Return data from source cache
@@ -515,15 +529,17 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 				log.Warningf("Migration dest reader close err: %s", err)
 			}
 		}
+		log.Warningf("Migration %v src reader err, doubleRead is %v: %s", d, doubleRead, srcErr)
 		return nil, srcErr
 	}
 
-	mc.sendNonBlockingCopy(ctx, &resource.ResourceName{
+	r := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: mc.remoteInstanceName,
 		Compressor:   repb.Compressor_IDENTITY,
 		CacheType:    mc.cacheType,
-	})
+	}
+	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	return &doubleReader{
 		src:  srcReader,
@@ -667,7 +683,7 @@ func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 		}
 	}
 
-	mc.sendNonBlockingCopy(ctx, r)
+	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	// Return data from source cache
 	return srcBuf, srcErr
@@ -682,15 +698,18 @@ func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]
 	})
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName) {
-	alreadyCopied, err := mc.dest.Contains(ctx, r)
-	if err != nil {
-		log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
-		return
-	}
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName, onlyCopyMissing bool) {
+	if onlyCopyMissing {
+		alreadyCopied, err := mc.dest.Contains(ctx, r)
+		if err != nil {
+			log.Warningf("Migration copy err, could not call Contains on dest cache: %s", err)
+			return
+		}
 
-	if alreadyCopied {
-		return
+		if alreadyCopied {
+			log.Debugf("Migration skipping copy digest %v, instance %s, cache %v - already copied", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
+			return
+		}
 	}
 
 	log.Debugf("Migration attempting copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
@@ -710,37 +729,45 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.R
 	}
 }
 
-func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	// Double write data to both caches
 	eg.Go(func() error {
-		srcErr = mc.src.Set(gctx, d, data)
+		srcErr = mc.src.Set(gctx, r, data)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = mc.dest.Set(gctx, d, data)
+		dstErr = mc.dest.Set(gctx, r, data)
 		return nil // don't fail if there's an error from this cache
 	})
 
 	if err := eg.Wait(); err != nil {
 		if dstErr == nil {
 			// If error during write to source cache (source of truth), must delete from destination cache
-			deleteErr := mc.dest.Delete(ctx, d)
+			deleteErr := mc.dest.Delete(ctx, r.GetDigest())
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
+				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}
 		}
 		return err
 	}
 
 	if dstErr != nil {
-		log.Warningf("Migration double write err: failure writing digest %v to dest cache: %s", d, dstErr)
+		log.Warningf("Migration double write err: failure writing digest %v to dest cache: %s", r.GetDigest(), dstErr)
 	}
 
 	return srcErr
+}
+
+func (mc *MigrationCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	return mc.Set(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		CacheType:    mc.cacheType,
+	}, data)
 }
 
 type copyData struct {
@@ -761,6 +788,14 @@ func (mc *MigrationCache) copyDataInBackground() error {
 
 		select {
 		case <-mc.quitChan:
+			// Drain copy channel on shutdown
+			// We cannot close the channel before draining because there's a chance some cache requests may be
+			// concurrently queued as the cache is shutting down, and if we try to enqueue a copy to the closed
+			// channel it will panic
+			for len(mc.copyChan) > 0 {
+				c := <-mc.copyChan
+				mc.copy(c)
+			}
 			return nil
 		case c := <-mc.copyChan:
 			mc.copy(c)
@@ -839,7 +874,10 @@ func (mc *MigrationCache) Start() error {
 
 func (mc *MigrationCache) Stop() error {
 	log.Info("Migration cache beginning shut down")
+	defer log.Info("Migration cache successfully shut down")
+
 	close(mc.quitChan)
+
 	// Wait for migration-related channels that use cache resources (like copying) to close before shutting down
 	// the caches
 	if err := mc.eg.Wait(); err != nil {

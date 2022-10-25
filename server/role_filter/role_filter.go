@@ -64,6 +64,11 @@ var (
 		"ExecuteWorkflow",
 		// Setup
 		"GetApiKeys",
+		// Secret management
+		"GetPublicKey",
+		"ListSecrets",
+		"UpdateSecret",
+		"DeleteSecret",
 		// Remote Bazel
 		"Run",
 	}

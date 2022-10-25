@@ -16,7 +16,7 @@ jobs:
         id: version
         # Strip "cli-v" prefix from the tag to get the CLI version.
         # e.g. cli-v1.2.3 sets VERSION to 1.2.3
-        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\/cli-v/}
+        run: echo "VERSION=${GITHUB_REF/refs\/tags\/cli-v/}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout buildbuddy-io/bazel
         uses: actions/checkout@v3
@@ -51,13 +51,60 @@ jobs:
           gh release create "$TAG" \
             --repo=buildbuddy-io/bazel --title="$TAG" --draft --notes="Release version $TAG"
 
+  sync-plugins:
+    runs-on: ubuntu-latest
+    needs: create-release
+    steps:
+      - name: Checkout buildbuddy-io/buildbuddy
+        uses: actions/checkout@v3
+        with:
+          path: buildbuddy
+          ref: cli-v${{ needs.create-release.outputs.VERSION }}
+      - name: Checkout buildbuddy-io/plugins
+        uses: actions/checkout@v3
+        with:
+          repository: buildbuddy-io/plugins
+          path: plugins
+          token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+      - name: Sync plugins and push version tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          VERSION: ${{ needs.create-release.outputs.VERSION }}
+        run: |
+          set -e
+          cd "${GITHUB_WORKSPACE}/plugins"
+          git checkout main
+          git pull
+
+          git config --local user.name "BuildBuddy Bot"
+          git config --local user.email "hello@buildbuddy.io"
+
+          # Commit and push changes to cli/plugins dir from buildbuddy repo
+          rm -rf ./plugins
+          cp -r "${GITHUB_WORKSPACE}/buildbuddy/cli/plugins" ./plugins
+          git add plugins
+          commit_output=$(mktemp)
+          if git commit -m "Update plugins to v${VERSION}" 2>&1 | tee "${commit_output}"; then
+            git push
+          elif grep 'nothing to commit' "${commit_output}" &>/dev/null; then
+            echo "No plugin changes in version $VERSION"
+          else
+            echo "Commit failed; exiting"
+            exit 1
+          fi
+
+          # Push new tag to match CLI release.
+          TAG="v${VERSION}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
   build-artifacts:
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             shell: bash
-          - os: macos-latest
+          - os: macos-11
             shell: bash
           - os: m1
             # TODO: Can we remove this if we upgrade our m1 runner to native arm64?
@@ -120,7 +167,7 @@ jobs:
           BINARY="bazel-${VERSION}-${OS}-${ARCH}"
           cp bazel-bin/cli/cmd/bb/bb_/bb "$BINARY"
           shasum -a 256 "$BINARY" > "${BINARY}.sha256"
-          echo ::set-output name=BINARY::"${BINARY}"
+          echo "BINARY=${BINARY}" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts
         env:
