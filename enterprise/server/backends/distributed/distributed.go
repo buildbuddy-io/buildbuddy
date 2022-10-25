@@ -452,11 +452,12 @@ func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Is
 		return nil
 	}
 
-	localCache, err := c.local.WithIsolation(ctx, isolation.GetCacheType(), isolation.GetRemoteInstanceName())
-	if err != nil {
-		return err
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: isolation.GetRemoteInstanceName(),
+		CacheType:    isolation.GetCacheType(),
 	}
-	r, err := localCache.ReaderDeprecated(ctx, d, 0, 0)
+	r, err := c.local.Reader(ctx, rn, 0, 0)
 	if err != nil {
 		return err
 	}
