@@ -4,9 +4,17 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Mon, 11 Jul 2022 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 26 Oct 2022 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
+        <item>
+            <title><![CDATA[Welcoming Iain Macdonald]]></title>
+            <link>https://www.buildbuddy.io/blog/welcoming-iain-macdonald</link>
+            <guid>welcoming-iain-macdonald</guid>
+            <pubDate>Wed, 26 Oct 2022 12:00:00 GMT</pubDate>
+            <description><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, we're intensely focused on hiring outstanding Software Engineers. That's why we're excited to share today that Iain Macdonald is joining BuildBuddy's engineering team!]]></description>
+            <content:encoded><![CDATA[<p>To fulfill our mission of bringing the world&#x27;s best developer tools to every company, we&#x27;re intensely focused on hiring outstanding Software Engineers. That&#x27;s why we&#x27;re excited to share today that <a href="https://www.linkedin.com/in/macdonaldi/"><strong>Iain Macdonald</strong></a> is joining BuildBuddy&#x27;s engineering team!</p><p>Iain joins us from Google, where he spent over 10 years as an engineer working across the company from Gmail to Google Maps.</p><p><img src="../static/img/blog/welcome_iain.png"/></p><p>We look forward to working alongside Iain to build the future of developer tools.</p><p>Welcome to BuildBuddy, Iain!</p>]]></content:encoded>
+        </item>
         <item>
             <title><![CDATA[Welcoming Maggie Lou]]></title>
             <link>https://www.buildbuddy.io/blog/welcoming-maggie-lou</link>
