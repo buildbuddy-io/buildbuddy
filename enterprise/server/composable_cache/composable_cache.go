@@ -305,8 +305,41 @@ func (m *MultiCloser) Close() error {
 }
 
 func (c *ComposableCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	//TODO implement me
-	panic("implement me")
+	if outerReader, err := c.outer.Reader(ctx, r, offset, limit); err == nil {
+		return outerReader, nil
+	}
+
+	innerReader, err := c.inner.Reader(ctx, r, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	if c.mode&ModeReadThrough == 0 || offset != 0 {
+		return innerReader, nil
+	}
+
+	// Copy the digest over to the outer cache.
+	outerWriter, err := c.outer.Writer(ctx, r.GetDigest())
+	// Directly return the inner reader if the outer cache doesn't want the
+	// blob.
+	if err != nil {
+		return innerReader, nil
+	}
+	defer outerWriter.Close()
+	if _, err := io.Copy(outerWriter, innerReader); err != nil {
+		return nil, err
+	}
+	// We're done with the inner reader at this point, we'll create a new
+	// reader below.
+	innerReader.Close()
+	if err := outerWriter.Commit(); err != nil {
+		return nil, err
+	}
+	outerReader, err := c.outer.Reader(ctx, r, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+	return outerReader, nil
 }
 
 func (c *ComposableCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {

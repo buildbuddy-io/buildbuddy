@@ -512,7 +512,7 @@ func (d *doubleReader) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
@@ -520,7 +520,7 @@ func (mc *MigrationCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			destReader, dstErr = mc.dest.Reader(ctx, d, offset, limit)
+			destReader, dstErr = mc.dest.Reader(ctx, r, offset, limit)
 			if status.IsNotFoundError(dstErr) {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
 			}
@@ -531,13 +531,13 @@ func (mc *MigrationCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, 
 		})
 	}
 
-	srcReader, srcErr := mc.src.ReaderDeprecated(ctx, d, offset, limit)
+	srcReader, srcErr := mc.src.Reader(ctx, r, offset, limit)
 	eg.Wait()
 
 	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
 	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
 	if dstErr != nil && !bothCacheNotFound && shouldLogErr {
-		log.Warningf("%v reader failed for dest cache: %s", d, dstErr)
+		log.Warningf("%v reader failed for dest cache: %s", r.GetDigest(), dstErr)
 	}
 
 	if srcErr != nil {
@@ -547,22 +547,26 @@ func (mc *MigrationCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, 
 				log.Warningf("Migration dest reader close err: %s", err)
 			}
 		}
-		log.Debugf("Migration %v src reader err, doubleRead is %v: %s", d, doubleRead, srcErr)
+		log.Debugf("Migration %v src reader err, doubleRead is %v: %s", r.GetDigest(), doubleRead, srcErr)
 		return nil, srcErr
 	}
 
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	}
 	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	return &doubleReader{
 		src:  srcReader,
 		dest: destReader,
 	}, nil
+}
+
+func (mc *MigrationCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	}
+	return mc.Reader(ctx, r, offset, limit)
 }
 
 type doubleWriter struct {

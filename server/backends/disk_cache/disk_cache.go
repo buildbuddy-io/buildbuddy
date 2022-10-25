@@ -462,8 +462,22 @@ func (c *DiskCache) Delete(ctx context.Context, r *resource.ResourceName) error 
 	return p.delete(ctx, r)
 }
 
+func (c *DiskCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	return p.reader(ctx, r, offset, limit)
+}
+
 func (c *DiskCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset, limit)
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Reader(ctx, r, offset, limit)
 }
 
 func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
@@ -1181,8 +1195,8 @@ func (p *partition) delete(ctx context.Context, r *resource.ResourceName) error 
 	return nil
 }
 
-func (p *partition) reader(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	k, err := p.key(ctx, rn.GetCacheType(), rn.GetInstanceName(), rn.GetDigest())
 	if err != nil {
 		return nil, err
 	}

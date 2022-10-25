@@ -305,6 +305,10 @@ func TestReadWrite(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t, te)
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		// Use Writer() to set the bytes in the cache.
 		wc, err := dc.Writer(ctx, d)
 		if err != nil {
@@ -319,8 +323,8 @@ func TestReadWrite(t *testing.T) {
 		if err := wc.Close(); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
-		// Use ReaderDeprecated() to get the bytes from the cache.
-		reader, err := dc.ReaderDeprecated(ctx, d, 0, 0)
+		// Use Reader() to get the bytes from the cache.
+		reader, err := dc.Reader(ctx, rn, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
@@ -341,6 +345,10 @@ func TestReadOffset(t *testing.T) {
 	}
 	ctx := getAnonContext(t, te)
 	d, r := testdigest.NewRandomDigestReader(t, 100)
+	rn := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 	// Use Writer() to set the bytes in the cache.
 	wc, err := dc.Writer(ctx, d)
 	if err != nil {
@@ -355,8 +363,8 @@ func TestReadOffset(t *testing.T) {
 	if err := wc.Close(); err != nil {
 		t.Fatalf("Error closing writer: %s", err.Error())
 	}
-	// Use ReaderDeprecated() to get the bytes from the cache.
-	reader, err := dc.ReaderDeprecated(ctx, d, d.GetSizeBytes(), 0)
+	// Use Reader() to get the bytes from the cache.
+	reader, err := dc.Reader(ctx, rn, d.GetSizeBytes(), 0)
 	if err != nil {
 		t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 	}
@@ -385,7 +393,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	offset := int64(2)
 	limit := int64(3)
-	reader, err := dc.ReaderDeprecated(ctx, d, offset, limit)
+	reader, err := dc.Reader(ctx, r, offset, limit)
 	require.NoError(t, err)
 
 	readBuf := make([]byte, size)

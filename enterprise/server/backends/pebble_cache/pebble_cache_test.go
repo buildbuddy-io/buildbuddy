@@ -449,6 +449,10 @@ func TestReadWrite(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		// Use Writer() to set the bytes in the cache.
 		wc, err := pc.Writer(ctx, d)
 		if err != nil {
@@ -463,8 +467,8 @@ func TestReadWrite(t *testing.T) {
 		if err := wc.Close(); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
-		// Use ReaderDeprecated() to get the bytes from the cache.
-		reader, err := pc.ReaderDeprecated(ctx, d, 0, 0)
+		// Use Reader() to get the bytes from the cache.
+		reader, err := pc.Reader(ctx, rn, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
