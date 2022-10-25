@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/evictor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagegossiper"
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
@@ -91,7 +93,9 @@ type RaftCache struct {
 	rangeCache     *rangecache.RangeCache
 	sender         *sender.Sender
 	clusterStarter *bringup.ClusterStarter
+	usageGossiper  *usagegossiper.Gossiper
 	driver         *driver.Driver
+	evictor        *evictor.Evictor
 
 	isolation    *rfpb.Isolation
 	shutdown     chan struct{}
@@ -229,16 +233,26 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// start the driver once bringup is complete.
 	driverOpts := driver.DefaultOpts()
+	gossipOpts := usagegossiper.DefaultOpts()
 	if *testMode {
 		driverOpts = driver.TestingOpts()
+		gossipOpts = usagegossiper.TestingOpts()
 	}
-	rc.driver = driver.New(rc.store, rc.gossipManager, driverOpts)
+	rc.usageGossiper = usagegossiper.New(rc.store, rc.gossipManager, gossipOpts)
+	rc.driver = driver.New(rc.store, rc.usageGossiper, driverOpts)
+	rc.evictor = evictor.New(rc.store, rc.usageGossiper)
 	go func() {
 		for !rc.clusterStarter.Done() {
 			time.Sleep(100 * time.Millisecond)
 		}
+		if err := rc.usageGossiper.Start(); err != nil {
+			log.Errorf("Error starting usage gossiper: %s", err)
+		}
 		if err := rc.driver.Start(); err != nil {
 			log.Errorf("Error starting driver: %s", err)
+		}
+		if err := rc.evictor.Start(); err != nil {
+			log.Errorf("Error starting evictor: %s", err)
 		}
 	}()
 
@@ -459,6 +473,8 @@ func (rc *RaftCache) Stop() error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)
 		rc.driver.Stop()
+		rc.evictor.Stop()
+		rc.usageGossiper.Stop()
 		rc.store.Stop(context.Background())
 		rc.nodeHost.Stop()
 		rc.gossipManager.Leave()

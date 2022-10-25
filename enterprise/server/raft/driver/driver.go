@@ -11,16 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagegossiper"
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/hashicorp/serf/serf"
-	"google.golang.org/protobuf/proto"
-
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
 var (
@@ -33,9 +29,6 @@ const (
 	// If a replica has not been seen for longer than this, a new replica
 	// should be started on a new node.
 	defaultReplicaTimeout = 5 * time.Minute
-
-	// Broadcast this nodes set of active replicas after this period.
-	defaultBroadcastPeriod = 30 * time.Second
 
 	// Attempt to reconcile / manage clusters after this period.
 	defaultManagePeriod = 60 * time.Second
@@ -52,10 +45,6 @@ type Opts struct {
 	// ReplicaTimeout is how long a replica must go-unseen before being
 	// marked dead.
 	ReplicaTimeout time.Duration
-
-	// BroadcastPeriod is how often this node will broadcast its set of
-	// active replicas.
-	BroadcastPeriod time.Duration
 
 	// ManagePeriod is how often to attempt to re-spawn, clean-up, or
 	// split dead or oversize replicas / clusters.
@@ -385,7 +374,6 @@ func (cm *clusterMap) FitScore(potentialMoves ...moveInstruction) float64 {
 func DefaultOpts() Opts {
 	return Opts{
 		ReplicaTimeout:      defaultReplicaTimeout,
-		BroadcastPeriod:     defaultBroadcastPeriod,
 		ManagePeriod:        defaultManagePeriod,
 		MaxReplicaSizeBytes: defaultMaxReplicaSizeBytes,
 	}
@@ -394,7 +382,6 @@ func DefaultOpts() Opts {
 func TestingOpts() Opts {
 	return Opts{
 		ReplicaTimeout:      5 * time.Second,
-		BroadcastPeriod:     2 * time.Second,
 		ManagePeriod:        5 * time.Second,
 		MaxReplicaSizeBytes: 10 * 1e6, // 10MB
 	}
@@ -403,27 +390,26 @@ func TestingOpts() Opts {
 type Driver struct {
 	opts          Opts
 	store         rfspb.ApiServer
-	gossipManager *gossip.GossipManager
+	usageGossiper *usagegossiper.Gossiper
 	mu            *sync.Mutex
 	started       bool
-	broadcastQuit chan struct{}
 	manageQuit    chan struct{}
 	clusterMap    *clusterMap
 	numSamples    int64
 }
 
-func New(store rfspb.ApiServer, gossipManager *gossip.GossipManager, opts Opts) *Driver {
+func New(store rfspb.ApiServer, usageGossiper *usagegossiper.Gossiper, opts Opts) *Driver {
 	d := &Driver{
 		opts:          opts,
 		store:         store,
-		gossipManager: gossipManager,
+		usageGossiper: usageGossiper,
 		mu:            &sync.Mutex{},
 		started:       false,
 		clusterMap:    NewClusterMap(),
 	}
 	// Register the node registry as a gossip listener so that it receives
 	// gossip callbacks.
-	gossipManager.AddListener(d)
+	usageGossiper.AddObserver(d)
 	statusz.AddSection("raft_driver", "Placement Driver", d)
 	return d
 }
@@ -434,8 +420,6 @@ func (d *Driver) Start() error {
 	if d.started {
 		return nil
 	}
-	d.broadcastQuit = make(chan struct{})
-	go d.broadcastLoop()
 
 	d.manageQuit = make(chan struct{})
 	go d.manageLoop()
@@ -451,26 +435,10 @@ func (d *Driver) Stop() error {
 	if !d.started {
 		return nil
 	}
-	close(d.broadcastQuit)
 	close(d.manageQuit)
 	d.started = false
 	log.Debugf("Driver stopped")
 	return nil
-}
-
-// broadcastLoop does not return; call it from a goroutine.
-func (d *Driver) broadcastLoop() {
-	for {
-		select {
-		case <-d.broadcastQuit:
-			return
-		case <-time.After(d.opts.BroadcastPeriod):
-			err := d.broadcast()
-			if err != nil {
-				log.Errorf("Broadcast error: %s", err)
-			}
-		}
-	}
 }
 
 // manageLoop does not return; call it from a goroutine.
@@ -488,85 +456,7 @@ func (d *Driver) manageLoop() {
 	}
 }
 
-// broadcasts a proto containing usage information about this store's
-// replicas.
-func (d *Driver) broadcast() error {
-	ctx := context.Background()
-	rsp, err := d.store.ListCluster(ctx, &rfpb.ListClusterRequest{})
-	if err != nil {
-		return err
-	}
-
-	// Need to be very careful about what is broadcast here because the max
-	// allowed UserEvent size is 9K, and broadcasting too much could cause
-	// slow rebalancing etc.
-
-	// A max ReplicaUsage should be around 8 bytes * 3 = 24 bytes. So 375
-	// replica usages should fit in a single gossip message. Use 350 as the
-	// target size so there is room for the NHID and a small margin of
-	// safety.
-	batchSize := 350
-	numReplicas := len(rsp.GetRangeReplicas())
-	gossiped := false
-	for start := 0; start < numReplicas; start += batchSize {
-		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
-		end := start + batchSize
-		if end > numReplicas {
-			end = numReplicas
-		}
-		for _, rr := range rsp.GetRangeReplicas()[start:end] {
-			nu.ReplicaUsage = append(nu.ReplicaUsage, rr.GetReplicaUsage())
-		}
-		buf, err := proto.Marshal(nu)
-		if err != nil {
-			return err
-		}
-		if err := d.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
-			return err
-		}
-		gossiped = true
-	}
-
-	// If a node does not yet have any replicas, the loop above will not
-	// have gossiped anything. In that case, gossip an "empty" usage event
-	// now.
-	if !gossiped {
-		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
-		buf, err := proto.Marshal(nu)
-		if err != nil {
-			return err
-		}
-		if err := d.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// OnEvent listens for other nodes' gossip events and handles them.
-func (d *Driver) OnEvent(updateType serf.EventType, event serf.Event) {
-	switch updateType {
-	case serf.EventUser:
-		userEvent, _ := event.(serf.UserEvent)
-		d.handleEvent(&userEvent)
-	default:
-		break
-	}
-}
-
-// handleEvent parses and ingests the data from other nodes' gossip events.
-func (d *Driver) handleEvent(event *serf.UserEvent) {
-	if event.Name != constants.NodeUsageEvent {
-		return
-	}
-	nu := &rfpb.NodeUsage{}
-	if err := proto.Unmarshal(event.Payload, nu); err != nil {
-		return
-	}
-	if nu.GetNode() == nil {
-		log.Warningf("Ignoring malformed driver node usage: %+v", nu)
-		return
-	}
+func (d *Driver) OnNodeUsage(nu *rfpb.NodeUsage) {
 	node := nu.GetNode()
 	d.clusterMap.ObserveNode(node)
 	for _, ru := range nu.GetReplicaUsage() {

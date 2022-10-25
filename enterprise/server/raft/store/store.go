@@ -110,7 +110,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 }
 
 func (s *Store) replicaString(r *replica.Replica) string {
-	ru, err := r.Usage()
+	_, ru, err := r.Usage()
 	if err != nil {
 		return "UNKNOWN"
 	}
@@ -1283,6 +1283,9 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 	rsp := &rfpb.ListClusterResponse{
 		Node: s.MyNodeDescriptor(),
 	}
+
+	usageByPartition := make(map[string]*rfpb.PartitionMetadata)
+
 	for _, rd := range openRanges {
 		if req.GetLeasedOnly() {
 			header := &rfpb.Header{
@@ -1296,14 +1299,30 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 		rr := &rfpb.RangeReplica{
 			Range: rd,
 		}
-		if replica, err := s.GetReplica(rd.GetRangeId()); err == nil {
-			usage, err := replica.Usage()
+		if r, err := s.GetReplica(rd.GetRangeId()); err == nil {
+			pus, ru, err := r.Usage()
 			if err == nil {
-				rr.ReplicaUsage = usage
+				rr.ReplicaUsage = ru
+			}
+			for _, pu := range pus {
+				existingUsage := usageByPartition[pu.GetPartitionId()]
+				if existingUsage == nil {
+					usageByPartition[pu.GetPartitionId()] = pu
+				} else {
+					existingUsage.CasCount += pu.GetCasCount()
+					existingUsage.AcCount += pu.GetAcCount()
+					existingUsage.SizeBytes += pu.GetSizeBytes()
+				}
 			}
 		}
 		rsp.RangeReplicas = append(rsp.RangeReplicas, rr)
 	}
+
+	var partitionUsages []*rfpb.PartitionMetadata
+	for _, u := range usageByPartition {
+		partitionUsages = append(partitionUsages, u)
+	}
+	rsp.PartitionUsage = partitionUsages
 	return rsp, nil
 }
 

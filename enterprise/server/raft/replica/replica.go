@@ -45,6 +45,9 @@ var (
 	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
 	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
+
+	acDir  = []byte("/ac/")
+	casDir = []byte("/cas/")
 )
 
 // Replicas need a reference back to the Store that holds them in order to
@@ -124,37 +127,35 @@ func isLocalKey(key []byte) bool {
 		bytes.HasPrefix(key, constants.MetaRangePrefix)
 }
 
-func sizeOf(key []byte, val []byte) (int64, error) {
+func sizeOf(key []byte, val []byte) (string, int64, error) {
 	if isLocalKey(key) {
-		return int64(len(val)), nil
+		return "system", int64(len(val)), nil
 	}
 
 	fileMetadata := &rfpb.FileMetadata{}
 	if err := proto.Unmarshal(val, fileMetadata); err != nil {
-		return 0, err
+		return "", 0, err
 	}
-	return fileMetadata.GetSizeBytes() + int64(len(val)), nil
+	partId := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
+	return partId, fileMetadata.GetSizeBytes() + int64(len(val)), nil
 }
 
-func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
-	ru := &rfpb.ReplicaUsage{
-		Replica: &rfpb.ReplicaDescriptor{
-			ClusterId: sm.ClusterID,
-			NodeId:    sm.NodeID,
-		},
-	}
+func (sm *Replica) RangeDescriptor() (*rfpb.RangeDescriptor, error) {
 	sm.rangeMu.RLock()
+	defer sm.rangeMu.RUnlock()
 	rd := sm.rangeDescriptor
-	sm.rangeMu.RUnlock()
 	if rd == nil {
 		return nil, status.FailedPreconditionError("range descriptor is not set")
 	}
-	ru.Generation = rd.GetGeneration()
-	ru.RangeId = rd.GetRangeId()
+	return rd, nil
+}
+
+func (sm *Replica) Usage() ([]*rfpb.PartitionMetadata, *rfpb.ReplicaUsage, error) {
+	usageByPartition := make(map[string]*rfpb.PartitionMetadata)
 
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer db.Close()
 
@@ -166,16 +167,49 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	iter := db.NewIter(iterOpts)
 	defer iter.Close()
 
-	estimatedBytesUsed := int64(0)
 	for iter.First(); iter.Valid(); iter.Next() {
-		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
+		partID, sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		estimatedBytesUsed += sizeBytes
+		pu := usageByPartition[partID]
+		if pu == nil {
+			pu = &rfpb.PartitionMetadata{PartitionId: partID}
+			usageByPartition[partID] = pu
+		}
+		pu.SizeBytes += sizeBytes
+		if bytes.Contains(iter.Key(), casDir) {
+			pu.CasCount += 1
+		} else if bytes.Contains(iter.Key(), acDir) {
+			pu.AcCount += 1
+		}
 	}
-	ru.EstimatedDiskBytesUsed = estimatedBytesUsed
-	return ru, nil
+
+	var partitionUsages []*rfpb.PartitionMetadata
+	for _, u := range usageByPartition {
+		partitionUsages = append(partitionUsages, u)
+	}
+
+	ru := &rfpb.ReplicaUsage{
+		Replica: &rfpb.ReplicaDescriptor{
+			ClusterId: sm.ClusterID,
+			NodeId:    sm.NodeID,
+		},
+	}
+	sm.rangeMu.RLock()
+	rd := sm.rangeDescriptor
+	sm.rangeMu.RUnlock()
+	if rd == nil {
+		return nil, nil, status.FailedPreconditionError("range descriptor is not set")
+	}
+	ru.Generation = rd.GetGeneration()
+	ru.RangeId = rd.GetRangeId()
+
+	for _, pu := range usageByPartition {
+		ru.EstimatedDiskBytesUsed += pu.SizeBytes
+	}
+
+	return partitionUsages, ru, nil
 }
 
 func (sm *Replica) String() string {
@@ -653,7 +687,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 	totalSize := int64(0)
 	totalRows := 0
 	for iter.First(); iter.Valid(); iter.Next() {
-		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
+		_, sizeBytes, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -686,7 +720,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 				splitRows = leftRows
 			}
 		}
-		size, err := sizeOf(iter.Key(), iter.Value())
+		_, size, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -742,7 +776,7 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 
 	totalSize := int64(0)
 	for iter.First(); iter.Valid(); iter.Next() {
-		size, err := sizeOf(iter.Key(), iter.Value())
+		_, size, err := sizeOf(iter.Key(), iter.Value())
 		if err != nil {
 			sm.log.Errorf("Error computing size of %s: %s", iter.Key(), err)
 			continue

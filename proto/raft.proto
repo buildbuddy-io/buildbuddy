@@ -78,6 +78,7 @@ message PartitionMetadata {
   int64 size_bytes = 1;
   int64 cas_count = 2;
   int64 ac_count = 3;
+  string partition_id = 4;
 }
 
 message FileWriteRequest {
@@ -358,6 +359,7 @@ message NodeUsage {
   int64 disk_bytes_used = 4;
 
   repeated ReplicaUsage replica_usage = 5;
+  repeated PartitionMetadata partition_usage = 6;
 }
 
 message NodeDescriptor {
@@ -474,6 +476,7 @@ message RangeReplica {
 message ListClusterResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
+  repeated PartitionMetadata partition_usage = 3;
 }
 
 message CreateSnapshotRequest {
