@@ -228,6 +228,7 @@ type Cache interface {
 	SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	DeleteDeprecated(ctx context.Context, d *repb.Digest) error
 	ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
+	WriterDeprecated(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
 
 	// Normal cache-like operations
 	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
@@ -241,7 +242,7 @@ type Cache interface {
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error)
-	WriterDeprecated(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
+	Writer(ctx context.Context, r *resource.ResourceName) (CommittedWriteCloser, error)
 }
 
 type StoppableCache interface {
