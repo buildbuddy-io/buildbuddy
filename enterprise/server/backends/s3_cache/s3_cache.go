@@ -563,13 +563,8 @@ func (s3c *S3Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.D
 	return s3c.FindMissing(ctx, rns)
 }
 
-func (s3c *S3Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := s3c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
+func (s3c *S3Cache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -591,10 +586,21 @@ func (s3c *S3Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset
 	})
 	spn.End()
 	if isNotFoundErr(err) {
+		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	return io.NopCloser(timer.NewInstrumentedReader(result.Body, d.GetSizeBytes())), err
+	return io.NopCloser(timer.NewInstrumentedReader(result.Body, r.GetDigest().GetSizeBytes())), err
+}
+
+func (s3c *S3Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	}
+	return s3c.Reader(ctx, r, offset, limit)
 }
 
 type waitForUploadWriteCloser struct {
