@@ -640,11 +640,11 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 	var destWriter interfaces.CommittedWriteCloser
 
 	eg.Go(func() error {
-		destWriter, dstErr = mc.dest.Writer(ctx, d)
+		destWriter, dstErr = mc.dest.WriterDeprecated(ctx, d)
 		return nil
 	})
 
-	srcWriter, srcErr := mc.src.Writer(ctx, d)
+	srcWriter, srcErr := mc.src.WriterDeprecated(ctx, d)
 	eg.Wait()
 
 	if srcErr != nil {
@@ -664,6 +664,7 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 		src:  srcWriter,
 		dest: destWriter,
 		destDeleteFn: func() {
+			// TODO: Replace with Delete()
 			deleteErr := mc.dest.DeleteDeprecated(ctx, d)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
 				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", d, deleteErr)
@@ -861,7 +862,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer srcReader.Close()
 
-	destWriter, err := cache.dest.Writer(c.ctx, c.d)
+	destWriter, err := cache.dest.WriterDeprecated(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return

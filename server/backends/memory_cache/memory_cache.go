@@ -308,7 +308,7 @@ func (m *MemoryCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offs
 	return m.Reader(ctx, rn, offset, limit)
 }
 
-func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (m *MemoryCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
 	wc.CommitFn = func(int64) error {

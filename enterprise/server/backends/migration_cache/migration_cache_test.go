@@ -97,7 +97,7 @@ func (c *errorCache) FindMissingDeprecated(ctx context.Context, digests []*repb.
 	return nil, errors.New("error cache findmissing err")
 }
 
-func (c *errorCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (c *errorCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	return nil, errors.New("error cache writer err")
 }
 

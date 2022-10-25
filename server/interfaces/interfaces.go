@@ -241,7 +241,7 @@ type Cache interface {
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error)
-	Writer(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
+	WriterDeprecated(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
 }
 
 type StoppableCache interface {

@@ -208,8 +208,8 @@ func TestReadWrite(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
-		// Use Writer() to set the bytes in the cache.
-		wc, err := mc.Writer(ctx, d)
+		// Use WriterDeprecated() to set the bytes in the cache.
+		wc, err := mc.WriterDeprecated(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 		}

@@ -366,7 +366,7 @@ func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, li
 	return c.Reader(ctx, rn, offset, limit)
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for memcache", d)
 	}

@@ -358,7 +358,7 @@ func (c *ComposableCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, 
 
 	// Copy the digest over to the outer cache.
 
-	outerWriter, err := c.outer.Writer(ctx, d)
+	outerWriter, err := c.outer.WriterDeprecated(ctx, d)
 	// Directly return the inner reader if the outer cache doesn't want the
 	// blob.
 	if err != nil {
@@ -412,14 +412,14 @@ func (d *doubleWriter) Close() error {
 	return err
 }
 
-func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	innerWriter, err := c.inner.Writer(ctx, d)
+func (c *ComposableCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	innerWriter, err := c.inner.WriterDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
 
 	if c.mode&ModeWriteThrough != 0 {
-		if outerWriter, err := c.outer.Writer(ctx, d); err == nil {
+		if outerWriter, err := c.outer.WriterDeprecated(ctx, d); err == nil {
 			dw := &doubleWriter{
 				inner: innerWriter,
 				outer: outerWriter,

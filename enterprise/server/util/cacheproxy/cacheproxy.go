@@ -345,7 +345,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			wc, err := cache.Writer(ctx, d)
+			wc, err := cache.WriterDeprecated(ctx, d)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 				return err

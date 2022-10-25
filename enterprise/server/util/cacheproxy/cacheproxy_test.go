@@ -151,8 +151,8 @@ func (s *snitchCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 		s.writeCount,
 	}, nil
 }
-func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	wc, err := s.Cache.Writer(ctx, d)
+func (s *snitchCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	wc, err := s.Cache.WriterDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}

@@ -574,7 +574,7 @@ func setChunkSize(d *repb.Digest, w *storage.Writer) {
 	}
 }
 
-func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (g *GCSCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	k, err := g.key(ctx, &resource.ResourceName{
 		Digest:       d,
 		InstanceName: g.remoteInstanceName,

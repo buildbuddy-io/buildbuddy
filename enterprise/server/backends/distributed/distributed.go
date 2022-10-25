@@ -433,7 +433,7 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.I
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
 		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Writer(ctx, d)
+		return c.local.WriterDeprecated(ctx, d)
 	}
 	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, isolation, d)
 }
@@ -1132,7 +1132,7 @@ func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, li
 	return c.Reader(ctx, rn, offset, limit)
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	rn := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: c.isolation.GetRemoteInstanceName(),
