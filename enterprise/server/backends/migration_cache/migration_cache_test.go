@@ -52,9 +52,9 @@ func getAnonContext(t *testing.T, env environment.Env) context.Context {
 
 // waitForCopy keeps checking the destination cache to see whether the background process has
 // copied the given digest over
-func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, digest *repb.Digest) {
+func waitForCopy(t *testing.T, ctx context.Context, destCache interfaces.Cache, r *resource.ResourceName) {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
-		contains, err := destCache.ContainsDeprecated(ctx, digest)
+		contains, err := destCache.Contains(ctx, r)
 		require.NoError(t, err, "error calling contains on dest cache")
 
 		if contains {
@@ -73,7 +73,7 @@ type errorCache struct {
 	interfaces.Cache
 }
 
-func (c *errorCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *errorCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	return errors.New("error cache set err")
 }
 
@@ -120,16 +120,14 @@ func TestACIsolation(t *testing.T) {
 
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
-	c1, err := mc.WithIsolation(ctx, resource.CacheType_AC, "")
-	require.NoError(t, err)
-
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
-	require.NoError(t, c1.Set(ctx, d1, buf1))
-
-	got1, err := mc.Get(ctx, &resource.ResourceName{
+	r1 := &resource.ResourceName{
 		Digest:    d1,
 		CacheType: resource.CacheType_AC,
-	})
+	}
+	require.NoError(t, mc.Set(ctx, r1, buf1))
+
+	got1, err := mc.Get(ctx, r1)
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
@@ -155,17 +153,15 @@ func TestACIsolation_RemoteInstanceName(t *testing.T) {
 	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
-	c1, err := mc.WithIsolation(ctx, resource.CacheType_AC, "remote")
-	require.NoError(t, err)
-
 	d1, buf1 := testdigest.NewRandomDigestBuf(t, 100)
-	require.NoError(t, c1.Set(ctx, d1, buf1))
-
-	got1, err := mc.Get(ctx, &resource.ResourceName{
+	r := &resource.ResourceName{
 		Digest:       d1,
 		CacheType:    resource.CacheType_AC,
 		InstanceName: "remote",
-	})
+	}
+	require.NoError(t, mc.Set(ctx, r, buf1))
+
+	got1, err := mc.Get(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, buf1, got1)
 
@@ -193,21 +189,19 @@ func TestSet_DoubleWrite(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	// Verify data was written to both caches
-	srcData, err := srcCache.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	srcData, err := srcCache.Get(ctx, r)
 	require.NoError(t, err)
 	require.NotNil(t, srcData)
 
-	destData, err := destCache.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	destData, err := destCache.Get(ctx, r)
 	require.NoError(t, err)
 	require.NotNil(t, destData)
 
@@ -225,14 +219,15 @@ func TestSet_DestWriteErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	// Verify data was successfully written to src cache
-	srcData, err := srcCache.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	srcData, err := srcCache.Get(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, buf, srcData)
 }
@@ -248,14 +243,15 @@ func TestSet_SrcWriteErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, buf)
 	require.Error(t, err)
 
 	// Verify data was deleted from the dest cache
-	destData, err := destCache.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	destData, err := destCache.Get(ctx, r)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, destData)
@@ -270,7 +266,11 @@ func TestSet_SrcAndDestWriteErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err := mc.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err := mc.Set(ctx, r, buf)
 	require.Error(t, err)
 }
 
@@ -292,14 +292,15 @@ func TestGetSet(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		err = mc.Set(ctx, d, buf)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		err = mc.Set(ctx, r, buf)
 		require.NoError(t, err, "error setting digest in cache")
 
 		// Get() the bytes from the cache.
-		rbuf, err := mc.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+		rbuf, err := mc.Get(ctx, r)
 		require.NoError(t, err)
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
 		require.True(t, d.GetHash() == d2.GetHash())
@@ -321,13 +322,14 @@ func TestGet_DoubleRead(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
-	require.NoError(t, err)
-
-	data, err := mc.Get(ctx, &resource.ResourceName{
+	r := &resource.ResourceName{
 		Digest:    d,
 		CacheType: resource.CacheType_CAS,
-	})
+	}
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	data, err := mc.Get(ctx, r)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 }
@@ -345,7 +347,11 @@ func TestGet_DestReadErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
@@ -371,7 +377,11 @@ func TestGet_SrcReadErr(t *testing.T) {
 
 	// Write data to dest cache only
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = destCache.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = destCache.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	// Should return error
@@ -398,7 +408,11 @@ func TestGetSet_EmptyData(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{DoubleReadPercentage: 1.0}, srcCache, destCache)
 
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, []byte{})
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, []byte{})
 	require.NoError(t, err)
 
 	data, err := mc.Get(ctx, &resource.ResourceName{
@@ -435,22 +449,23 @@ func TestCopyDataInBackground(t *testing.T) {
 	for i := 0; i < numTests; i++ {
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			r := &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
 			lock.Lock()
 			defer lock.Unlock()
 
-			err = srcCache.Set(ctx, d, buf)
+			err = srcCache.Set(ctx, r, buf)
 			require.NoError(t, err)
 
 			// Get should queue copy in background
-			data, err := mc.Get(ctx, &resource.ResourceName{
-				Digest:    d,
-				CacheType: resource.CacheType_CAS,
-			})
+			data, err := mc.Get(ctx, r)
 			require.NoError(t, err)
 			require.True(t, bytes.Equal(buf, data))
 
 			// Expect copy
-			waitForCopy(t, ctx, destCache, d)
+			waitForCopy(t, ctx, destCache, r)
 			return nil
 		})
 	}
@@ -483,10 +498,14 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			r := &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
 			lock.Lock()
 			defer lock.Unlock()
 
-			err = srcCache.Set(ctx, d, buf)
+			err = srcCache.Set(ctx, r, buf)
 			require.NoError(t, err)
 
 			// We should exceed the copy channel size, but should not prevent us from continuing
@@ -531,10 +550,14 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			r := &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
 			lock.Lock()
 			defer lock.Unlock()
 
-			err = srcCache.Set(ctx, d, buf)
+			err = srcCache.Set(ctx, r, buf)
 			require.NoError(t, err)
 
 			// Get should queue copy in background
@@ -546,7 +569,7 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 			require.True(t, bytes.Equal(buf, data))
 
 			// Expect copy
-			waitForCopy(t, ctx, destCache, d)
+			waitForCopy(t, ctx, destCache, r)
 			return nil
 		})
 	}
@@ -578,27 +601,29 @@ func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
 	mc.Start() // Starts copying in background
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcCache.Set(ctx, d, buf)
+	r2 := &resource.ResourceName{
+		Digest:    d2,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = srcCache.Set(ctx, r, buf)
 	require.NoError(t, err)
-	err = srcCache.Set(ctx, d2, buf2)
+	err = srcCache.Set(ctx, r2, buf2)
 	require.NoError(t, err)
 
 	// Queue copy on read and then immediately stop the cache
 	eg := errgroup.Group{}
 	eg.Go(func() error {
-		_, err := mc.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+		_, err := mc.Get(ctx, r)
 		require.NoError(t, err)
 		return nil
 	})
 	eg.Go(func() error {
-		_, err := mc.Get(ctx, &resource.ResourceName{
-			Digest:    d2,
-			CacheType: resource.CacheType_CAS,
-		})
+		_, err := mc.Get(ctx, r2)
 		require.NoError(t, err)
 		return nil
 	})
@@ -607,8 +632,8 @@ func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	// Make sure copy queue was drained after shutdown
-	waitForCopy(t, ctx, destCache, d)
-	waitForCopy(t, ctx, destCache, d2)
+	waitForCopy(t, ctx, destCache, r)
+	waitForCopy(t, ctx, destCache, r2)
 }
 
 func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
@@ -647,45 +672,39 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 
 	// Save data to different isolations in src cache
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcCache.Set(authenticatedCtx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = srcCache.Set(authenticatedCtx, r, buf)
 	require.NoError(t, err)
 
-	instanceName2 := "dog"
-	srcIsolation2, err := srcCache.WithIsolation(authenticatedCtx, resource.CacheType_AC, instanceName2)
-	require.NoError(t, err)
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcIsolation2.Set(authenticatedCtx, d2, buf2)
+	r2 := &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: "dog",
+	}
+	err = srcCache.Set(authenticatedCtx, r2, buf2)
 	require.NoError(t, err)
 
 	//Call get so the digests are copied to the destination cache
-	data, err := mc.Get(authenticatedCtx, &resource.ResourceName{
-		Digest:       d2,
-		CacheType:    resource.CacheType_AC,
-		InstanceName: instanceName2,
-	})
+	data, err := mc.Get(authenticatedCtx, r2)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf2, data))
 
-	data, err = mc.Get(authenticatedCtx, &resource.ResourceName{
-		Digest:       d,
-		CacheType:    resource.CacheType_CAS,
-		InstanceName: "",
-	})
+	data, err = mc.Get(authenticatedCtx, r)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
 	// Verify data was copied to correct isolation in destination cache
 	eg := errgroup.Group{}
 	eg.Go(func() error {
-		destIsolation1, err := destCache.WithIsolation(authenticatedCtx, resource.CacheType_CAS, "")
-		require.NoError(t, err)
-		waitForCopy(t, authenticatedCtx, destIsolation1, d)
+		waitForCopy(t, authenticatedCtx, destCache, r)
 		return nil
 	})
 	eg.Go(func() error {
-		destIsolation2, err := destCache.WithIsolation(authenticatedCtx, resource.CacheType_AC, instanceName2)
-		require.NoError(t, err)
-		waitForCopy(t, authenticatedCtx, destIsolation2, d2)
+		waitForCopy(t, authenticatedCtx, destCache, r2)
 		return nil
 	})
 	eg.Wait()
@@ -717,51 +736,41 @@ func TestCopyDataInBackground_MultipleIsolations(t *testing.T) {
 	defer mc.Stop()
 
 	// Save data to different isolations in src cache
-	instanceName1 := "cat"
-	srcIsolation1, err := srcCache.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
-	require.NoError(t, err)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcIsolation1.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: "cat",
+	}
+	err = srcCache.Set(ctx, r, buf)
 	require.NoError(t, err)
 
-	instanceName2 := "cow"
-	srcIsolation2, err := srcCache.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
-	require.NoError(t, err)
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcIsolation2.Set(ctx, d2, buf2)
+	r2 := &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: "cow",
+	}
+	err = srcCache.Set(ctx, r2, buf2)
 	require.NoError(t, err)
 
 	// Call get so the digests are copied to the destination cache
-	data, err := mc.Get(ctx, &resource.ResourceName{
-		Digest:       d2,
-		CacheType:    resource.CacheType_CAS,
-		InstanceName: instanceName2,
-	})
+	data, err := mc.Get(ctx, r2)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf2, data))
 
-	data, err = mc.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		CacheType:    resource.CacheType_AC,
-		InstanceName: instanceName1,
-	})
+	data, err = mc.Get(ctx, r)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
 	// Verify data was copied to correct isolation in destination cache
-	destIsolation1, err := destCache.WithIsolation(ctx, resource.CacheType_AC, instanceName1)
-	require.NoError(t, err)
-
-	destIsolation2, err := destCache.WithIsolation(ctx, resource.CacheType_CAS, instanceName2)
-	require.NoError(t, err)
-
 	eg := errgroup.Group{}
 	eg.Go(func() error {
-		waitForCopy(t, ctx, destIsolation1, d)
+		waitForCopy(t, ctx, destCache, r)
 		return nil
 	})
 	eg.Go(func() error {
-		waitForCopy(t, ctx, destIsolation2, d2)
+		waitForCopy(t, ctx, destCache, r2)
 		return nil
 	})
 	eg.Wait()
@@ -791,30 +800,30 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 
 	// Save digest to both caches - does not need to be copied to dest, but should be there
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
-	require.NoError(t, err)
 	r1 := &resource.ResourceName{
 		Digest:    d,
 		CacheType: resource.CacheType_CAS,
 	}
+	err = mc.Set(ctx, r1, buf)
+	require.NoError(t, err)
 
 	// Save digest to only src cache - should be copied to dest cache
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
-	err = srcCache.Set(ctx, d2, buf2)
-	require.NoError(t, err)
 	r2 := &resource.ResourceName{
 		Digest:    d2,
 		CacheType: resource.CacheType_CAS,
 	}
+	err = srcCache.Set(ctx, r2, buf2)
+	require.NoError(t, err)
 
 	// Save digest to only dest cache - should not be copied to src cache
 	d3, buf3 := testdigest.NewRandomDigestBuf(t, 100)
-	err = destCache.Set(ctx, d3, buf3)
-	require.NoError(t, err)
 	r3 := &resource.ResourceName{
 		Digest:    d3,
 		CacheType: resource.CacheType_CAS,
 	}
+	err = destCache.Set(ctx, r3, buf3)
+	require.NoError(t, err)
 
 	// FindMissing should queue copies in background
 	missing, err := mc.FindMissing(ctx, []*resource.ResourceName{r1, r2, r3})
@@ -822,8 +831,8 @@ func TestCopyDataInBackground_FindMissing(t *testing.T) {
 	require.Equal(t, []*repb.Digest{d3}, missing)
 
 	// Expect data to have been copied
-	waitForCopy(t, ctx, destCache, d)
-	waitForCopy(t, ctx, destCache, d2)
+	waitForCopy(t, ctx, destCache, r1)
+	waitForCopy(t, ctx, destCache, r2)
 }
 
 func TestContains(t *testing.T) {
@@ -839,30 +848,21 @@ func TestContains(t *testing.T) {
 	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
 	require.NoError(t, err)
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
-	mcWithIsolation, err := mc.WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
-	require.NoError(t, err)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mcWithIsolation.Set(ctx, d, buf)
-	require.NoError(t, err)
-
-	contains, err := mcWithIsolation.ContainsDeprecated(ctx, d)
-	require.NoError(t, err)
-	require.True(t, contains)
-
-	contains, err = mc.Contains(ctx, &resource.ResourceName{
+	r := &resource.ResourceName{
 		Digest:       d,
-		InstanceName: remoteInstanceName,
 		CacheType:    resource.CacheType_AC,
-	})
+		InstanceName: remoteInstanceName,
+	}
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	contains, err := mc.Contains(ctx, r)
 	require.NoError(t, err)
 	require.True(t, contains)
 
 	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
-	contains, err = mc.ContainsDeprecated(ctx, notWrittenDigest)
-	require.NoError(t, err)
-	require.False(t, contains)
-
 	contains, err = mc.Contains(ctx, &resource.ResourceName{
 		Digest:       notWrittenDigest,
 		InstanceName: "",
@@ -884,7 +884,11 @@ func TestContains_DestErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
@@ -907,23 +911,18 @@ func TestMetadata(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
-	require.NoError(t, err)
-
-	md, err := mc.MetadataDeprecated(ctx, d)
-	require.NoError(t, err)
-	require.Equal(t, int64(100), md.SizeBytes)
-	md, err = mc.Metadata(ctx, &resource.ResourceName{
+	r := &resource.ResourceName{
 		Digest:    d,
 		CacheType: resource.CacheType_CAS,
-	})
+	}
+	err = mc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	md, err := mc.Metadata(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.SizeBytes)
 
 	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
-	md, err = mc.MetadataDeprecated(ctx, notWrittenDigest)
-	require.True(t, status.IsNotFoundError(err))
-	require.Nil(t, md)
 	md, err = mc.Metadata(ctx, &resource.ResourceName{
 		Digest:    notWrittenDigest,
 		CacheType: resource.CacheType_CAS,
@@ -944,11 +943,15 @@ func TestMetadata_DestErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	md, err := mc.MetadataDeprecated(ctx, d)
+	md, err := mc.Metadata(ctx, r)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), md.SizeBytes)
 }
@@ -967,10 +970,14 @@ func TestFindMissing(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
 	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
 
-	err = mc.Set(ctx, d, buf)
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
@@ -1008,15 +1015,27 @@ func TestFindMissing_DestSrcMismatch(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{LogNotFoundErrors: true, DoubleReadPercentage: 1}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 	d2, buf2 := testdigest.NewRandomDigestBuf(t, 100)
+	r2 := &resource.ResourceName{
+		Digest:    d2,
+		CacheType: resource.CacheType_CAS,
+	}
 	d3, buf3 := testdigest.NewRandomDigestBuf(t, 100)
+	r3 := &resource.ResourceName{
+		Digest:    d3,
+		CacheType: resource.CacheType_CAS,
+	}
 
 	// Set d in both caches, but set d2 and d3 in only one of the caches
-	err = mc.Set(ctx, d, buf)
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
-	err = srcCache.Set(ctx, d2, buf2)
+	err = srcCache.Set(ctx, r2, buf2)
 	require.NoError(t, err)
-	err = destCache.Set(ctx, d3, buf3)
+	err = destCache.Set(ctx, r3, buf3)
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, d2, d3}
@@ -1039,10 +1058,14 @@ func TestFindMissing_DestErr(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 	notSetD1, _ := testdigest.NewRandomDigestBuf(t, 100)
 	notSetD2, _ := testdigest.NewRandomDigestBuf(t, 100)
 
-	err = mc.Set(ctx, d, buf)
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
@@ -1076,9 +1099,13 @@ func TestGetMultiWithCopying(t *testing.T) {
 		idx := i
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			r := &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
 			lock.Lock()
 			defer lock.Unlock()
-			err = srcCache.Set(ctx, d, buf)
+			err = srcCache.Set(ctx, r, buf)
 			require.NoError(t, err)
 
 			resourceNames[idx] = &resource.ResourceName{
@@ -1095,8 +1122,8 @@ func TestGetMultiWithCopying(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected, r)
 
-	for _, r := range resourceNames {
-		waitForCopy(t, ctx, destCache, r.GetDigest())
+	for _, rn := range resourceNames {
+		waitForCopy(t, ctx, destCache, rn)
 	}
 }
 
@@ -1171,28 +1198,23 @@ func TestDelete(t *testing.T) {
 	mc := migration_cache.NewMigrationCache(&migration_cache.MigrationConfig{}, srcCache, destCache)
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	err = mc.Set(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	// Check data exists before delete
-	data, err := mc.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	data, err := mc.Get(ctx, r)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = srcCache.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	data, err = srcCache.Get(ctx, r)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
-	data, err = destCache.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	data, err = destCache.Get(ctx, r)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, data))
 
@@ -1200,22 +1222,13 @@ func TestDelete(t *testing.T) {
 	err = mc.Delete(ctx, d)
 	require.NoError(t, err)
 
-	data, err = mc.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	data, err = mc.Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = srcCache.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	data, err = srcCache.Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 
-	data, err = destCache.Get(ctx, &resource.ResourceName{
-		Digest:    d,
-		CacheType: resource.CacheType_CAS,
-	})
+	data, err = destCache.Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 }
 

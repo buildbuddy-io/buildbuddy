@@ -73,7 +73,7 @@ func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestB
 
 func setDigestsInCache(t testing.TB, ctx context.Context, c interfaces.Cache, dbufs []*digestBuf) {
 	for _, dbuf := range dbufs {
-		if err := c.Set(ctx, dbuf.d, dbuf.buf); err != nil {
+		if err := c.SetDeprecated(ctx, dbuf.d, dbuf.buf); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -122,7 +122,7 @@ func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	for i := 0; i < b.N; i++ {
 		dbuf := digestBufs[rand.Intn(len(digestBufs))]
 		b.SetBytes(dbuf.d.GetSizeBytes())
-		err := c.Set(ctx, dbuf.d, dbuf.buf)
+		err := c.SetDeprecated(ctx, dbuf.d, dbuf.buf)
 		if err != nil {
 			b.Fatal(err)
 		}

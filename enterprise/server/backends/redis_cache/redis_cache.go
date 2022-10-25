@@ -315,16 +315,11 @@ func stringToBytes(s string) []byte {
 	))
 }
 
-func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	if !c.eligibleForCache(d) {
-		return status.ResourceExhaustedErrorf("Set: Digest %v too big for redis", d)
+func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	if !c.eligibleForCache(r.GetDigest()) {
+		return status.ResourceExhaustedErrorf("Set: Digest %v too big for redis", r.GetDigest())
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -333,6 +328,16 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	err = c.rdbSet(ctx, k, data)
 	timer.ObserveSet(len(data), err)
 	return err
+}
+
+func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Set(ctx, r, data)
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {

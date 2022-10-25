@@ -234,7 +234,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	if err := cache.Set(ctx, d, blob); err != nil {
+	if err := cache.SetDeprecated(ctx, d, blob); err != nil {
 		return nil, err
 	}
 	uploadTracker.Close()

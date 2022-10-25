@@ -260,21 +260,26 @@ func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) 
 	return c.GetMulti(ctx, rns)
 }
 
-func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	if !eligibleForMc(d) {
-		return status.ResourceExhaustedErrorf("Set: Digest %v too big for memcache", d)
+func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	if !eligibleForMc(r.GetDigest()) {
+		return status.ResourceExhaustedErrorf("Set: Digest %v too big for memcache", r.GetDigest())
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return err
 	}
 
 	return c.mcSet(k, data)
+}
+
+func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Set(ctx, r, data)
 }
 
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
@@ -283,7 +288,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	for d, data := range kvs {
 		setFn := func(d *repb.Digest, data []byte) {
 			eg.Go(func() error {
-				return c.Set(ctx, d, data)
+				return c.SetDeprecated(ctx, d, data)
 			})
 		}
 		setFn(d, data)

@@ -1015,8 +1015,8 @@ func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Di
 	return p.GetMulti(ctx, rns)
 }
 
-func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	wc, err := p.Writer(ctx, d)
+func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	wc, err := p.writer(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -1027,9 +1027,17 @@ func (p *PebbleCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 	return wc.Commit()
 }
 
+func (p *PebbleCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	return p.Set(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+		CacheType:    p.isolation.GetCacheType(),
+	}, data)
+}
+
 func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	for d, data := range kvs {
-		if err := p.Set(ctx, d, data); err != nil {
+		if err := p.SetDeprecated(ctx, d, data); err != nil {
 			return err
 		}
 	}
@@ -1220,13 +1228,21 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	return p.writer(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    p.isolation.GetCacheType(),
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+	})
+}
+
+func (p *PebbleCache) writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
+	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -1241,14 +1257,15 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Co
 	alreadyExists := pebbleutil.IterHasKey(iter, fileMetadataKey)
 	if alreadyExists {
 		metrics.DiskCacheDuplicateWrites.Inc()
-		metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
+		metrics.DiskCacheDuplicateWritesBytes.Add(float64(r.GetDigest().GetSizeBytes()))
 	}
 
 	var wcm interfaces.MetadataWriteCloser
-	if d.GetSizeBytes() < p.maxInlineFileSizeBytes {
-		wcm = p.fileStorer.InlineWriter(ctx, d.GetSizeBytes())
+	if r.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
+		wcm = p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
 	} else {
-		blobDir := p.partitionBlobDir(p.isolation.GetPartitionId())
+		partitionID := fileRecord.GetIsolation().GetPartitionId()
+		blobDir := p.partitionBlobDir(partitionID)
 		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)
 		if err != nil {
 			return nil, err
@@ -1279,7 +1296,8 @@ func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Co
 		}
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		if err == nil {
-			p.sendSizeUpdate(p.isolation.GetPartitionId(), fileMetadataKey, bytesWritten)
+			partitionID := fileRecord.GetIsolation().GetPartitionId()
+			p.sendSizeUpdate(partitionID, fileMetadataKey, bytesWritten)
 			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
 		}
 		return err

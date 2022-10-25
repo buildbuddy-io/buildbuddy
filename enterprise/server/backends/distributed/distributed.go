@@ -997,22 +997,26 @@ func (mc *multiWriteCloser) Close() error {
 // written to.
 //
 // This is like setting WRITE_CONSISTENCY = QUORUM.
-func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	ps := c.peers(d)
+func (c *Cache) multiWriter(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	ps := c.peers(r.GetDigest())
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
-		d:           d,
+		d:           r.GetDigest(),
 		peerClosers: make(map[string]interfaces.CommittedWriteCloser, 0),
 		mu:          &sync.Mutex{},
 		listenAddr:  c.config.ListenAddr,
-		isolation:   c.isolation,
+		isolation:   isolation,
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
-		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, c.isolation, d)
+		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, isolation, r.GetDigest())
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
-			log.Infof("Error opening remote writer for %q to peer %q: %s", d.GetHash(), peer, err)
+			log.Infof("Error opening remote writer for %q to peer %q: %s", r.GetDigest().GetHash(), peer, err)
 			continue
 		}
 		mwc.peerClosers[peer] = rwc
@@ -1023,14 +1027,31 @@ func (c *Cache) multiWriter(ctx context.Context, d *repb.Digest) (interfaces.Com
 			openPeers = append(openPeers, peer)
 		}
 		allPeers := append(ps.PreferredPeers, ps.FallbackPeers...)
-		log.Infof("Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", d.GetHash(), allPeers, openPeers, ps)
+		log.Infof("Could not open enough remoteWriters for digest %s. All peers: %s, opened: %s (peerset: %+v)", r.Digest.GetHash(), allPeers, openPeers, ps)
 		return nil, status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", len(mwc.peerClosers), c.config.ReplicationFactor)
 	}
 	return mwc, nil
 }
 
-func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	wc, err := c.multiWriter(ctx, d)
+func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	wc, err := c.multiWriter(ctx, r)
+	if err != nil {
+		return err
+	}
+	defer wc.Close()
+	if _, err := wc.Write(data); err != nil {
+		return err
+	}
+	return wc.Commit()
+}
+
+func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		CacheType:    c.isolation.GetCacheType(),
+	}
+	wc, err := c.multiWriter(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -1047,7 +1068,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	for d, data := range kvs {
 		setFn := func(d *repb.Digest, data []byte) {
 			eg.Go(func() error {
-				return c.Set(ctx, d, data)
+				return c.SetDeprecated(ctx, d, data)
 			})
 		}
 		setFn(d, data)
@@ -1085,7 +1106,12 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64)
 }
 
 func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	mwc, err := c.multiWriter(ctx, d)
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		CacheType:    c.isolation.GetCacheType(),
+	}
+	mwc, err := c.multiWriter(ctx, rn)
 	if err != nil {
 		return nil, err
 	}

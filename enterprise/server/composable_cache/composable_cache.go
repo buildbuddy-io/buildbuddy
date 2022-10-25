@@ -123,7 +123,7 @@ func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 		return nil, err
 	}
 	if c.mode&ModeReadThrough != 0 {
-		c.outer.Set(ctx, r.GetDigest(), innerRsp)
+		c.outer.SetDeprecated(ctx, r.GetDigest(), innerRsp)
 	}
 
 	return innerRsp, nil
@@ -140,7 +140,7 @@ func (c *ComposableCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]
 		return nil, err
 	}
 	if c.mode&ModeReadThrough != 0 {
-		c.outer.Set(ctx, d, innerRsp)
+		c.outer.SetDeprecated(ctx, d, innerRsp)
 	}
 
 	return innerRsp, nil
@@ -211,14 +211,26 @@ func (c *ComposableCache) GetMultiDeprecated(ctx context.Context, digests []*rep
 	return foundMap, nil
 }
 
-func (c *ComposableCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *ComposableCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	// Special case -- we call set on the inner cache first (in case of
 	// error) and then if no error we'll maybe set on the outer.
-	if err := c.inner.Set(ctx, d, data); err != nil {
+	if err := c.inner.Set(ctx, r, data); err != nil {
 		return err
 	}
 	if c.mode&ModeWriteThrough != 0 {
-		c.outer.Set(ctx, d, data)
+		c.outer.Set(ctx, r, data)
+	}
+	return nil
+}
+
+func (c *ComposableCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	// Special case -- we call set on the inner cache first (in case of
+	// error) and then if no error we'll maybe set on the outer.
+	if err := c.inner.SetDeprecated(ctx, d, data); err != nil {
+		return err
+	}
+	if c.mode&ModeWriteThrough != 0 {
+		c.outer.SetDeprecated(ctx, d, data)
 	}
 	return nil
 }

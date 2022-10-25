@@ -260,13 +260,8 @@ func swallowGCSAlreadyExistsError(err error) error {
 	return err
 }
 
-func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := g.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
+func (g *GCSCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -274,7 +269,7 @@ func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	for {
 		obj := g.bucketHandle.Object(k)
 		writer := obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
-		setChunkSize(d, writer)
+		setChunkSize(r.GetDigest(), writer)
 		timer := cache_metrics.NewCacheTimer(cacheLabels)
 		_, spn := tracing.StartSpan(ctx)
 		_, err = writer.Write(data)
@@ -292,13 +287,23 @@ func (g *GCSCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	return err
 }
 
+func (g *GCSCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	}
+	return g.Set(ctx, rn, data)
+}
+
 func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for d, data := range kvs {
 		setFn := func(d *repb.Digest, data []byte) {
 			eg.Go(func() error {
-				return g.Set(ctx, d, data)
+				return g.SetDeprecated(ctx, d, data)
 			})
 		}
 		setFn(d, data)

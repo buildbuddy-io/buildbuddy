@@ -729,37 +729,45 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.R
 	}
 }
 
-func (mc *MigrationCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	// Double write data to both caches
 	eg.Go(func() error {
-		srcErr = mc.src.Set(gctx, d, data)
+		srcErr = mc.src.Set(gctx, r, data)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = mc.dest.Set(gctx, d, data)
+		dstErr = mc.dest.Set(gctx, r, data)
 		return nil // don't fail if there's an error from this cache
 	})
 
 	if err := eg.Wait(); err != nil {
 		if dstErr == nil {
 			// If error during write to source cache (source of truth), must delete from destination cache
-			deleteErr := mc.dest.Delete(ctx, d)
+			deleteErr := mc.dest.Delete(ctx, r.GetDigest())
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
+				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}
 		}
 		return err
 	}
 
 	if dstErr != nil {
-		log.Warningf("Migration double write err: failure writing digest %v to dest cache: %s", d, dstErr)
+		log.Warningf("Migration double write err: failure writing digest %v to dest cache: %s", r.GetDigest(), dstErr)
 	}
 
 	return srcErr
+}
+
+func (mc *MigrationCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
+	return mc.Set(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		CacheType:    mc.cacheType,
+	}, data)
 }
 
 type copyData struct {

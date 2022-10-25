@@ -234,7 +234,7 @@ func TestDeleteFile_CAS(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err := s.env.GetCache().Set(ctx, d, buf); err != nil {
+	if err := s.env.GetCache().SetDeprecated(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
 	data, err := s.env.GetCache().GetDeprecated(ctx, d)
@@ -268,7 +268,7 @@ func TestDeleteFile_AC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = actionCache.Set(ctx, d, buf); err != nil {
+	if err = actionCache.SetDeprecated(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
 	data, err := actionCache.GetDeprecated(ctx, d)
@@ -303,7 +303,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = actionCache.Set(ctx, d, buf); err != nil {
+	if err = actionCache.SetDeprecated(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
 	data, err := actionCache.GetDeprecated(ctx, d)
@@ -356,7 +356,7 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err = s.env.GetCache().Set(ctx, d, buf); err != nil {
+	if err = s.env.GetCache().SetDeprecated(ctx, d, buf); err != nil {
 		t.Fatal(err)
 	}
 	data, err := s.env.GetCache().GetDeprecated(ctx, d)

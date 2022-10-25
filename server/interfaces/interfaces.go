@@ -224,7 +224,7 @@ type Cache interface {
 	FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
 	GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error)
 	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
-	Set(ctx context.Context, d *repb.Digest, data []byte) error
+	SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error
 	SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	Delete(ctx context.Context, d *repb.Digest) error
 
@@ -234,6 +234,7 @@ type Cache interface {
 	FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error)
 	Get(ctx context.Context, r *resource.ResourceName) ([]byte, error)
 	GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error)
+	Set(ctx context.Context, r *resource.ResourceName, data []byte) error
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
