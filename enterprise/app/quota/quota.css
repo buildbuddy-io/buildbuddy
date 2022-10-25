@@ -25,10 +25,6 @@
   content: "›";
 }
 
-.quota .create-new-button {
-  padding: 16px 32px;
-}
-
 .quota-namespaces .ns-list {
   display: flex;
   flex-direction: column;
