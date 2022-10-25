@@ -366,7 +366,7 @@ func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for r, data := range kvs {
-		setFn := func(d *repb.Digest, data []byte) {
+		setFn := func(r *resource.ResourceName, data []byte) {
 			eg.Go(func() error {
 				return s3c.Set(ctx, r, data)
 			})
