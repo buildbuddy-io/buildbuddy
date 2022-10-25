@@ -943,6 +943,11 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "secrets_ts_proto",
+    proto = ":secrets_proto",
+)
+
+ts_proto_library(
     name = "scheduler_ts_proto",
     proto = ":scheduler_proto",
 )
