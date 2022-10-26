@@ -598,7 +598,7 @@ func TestBackfill(t *testing.T) {
 
 	// Now zero out one of the base caches.
 	for _, r := range resourcesWritten {
-		if err := memoryCache3.Delete(ctx, r.GetDigest()); err != nil {
+		if err := memoryCache3.Delete(ctx, r); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1089,7 +1089,7 @@ func TestDelete(t *testing.T) {
 		}
 
 		// Do a delete, and verify no nodes still have the data.
-		if err := distributedCaches[i%3].Delete(ctx, d); err != nil {
+		if err := distributedCaches[i%3].Delete(ctx, rn); err != nil {
 			t.Fatal(err)
 		}
 		for _, baseCache := range baseCaches {
@@ -1136,9 +1136,13 @@ func TestDelete_NonExistentFile(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		d, _ := testdigest.NewRandomDigestBuf(t, 100)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 
 		// Do a delete on a file that does not exist.
-		err := distributedCaches[i%3].Delete(ctx, d)
+		err := distributedCaches[i%3].Delete(ctx, rn)
 		assert.NoError(t, err)
 	}
 }

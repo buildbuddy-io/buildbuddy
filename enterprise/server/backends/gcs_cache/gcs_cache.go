@@ -321,13 +321,8 @@ func (g *GCSCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest]
 	return g.SetMulti(ctx, rnMap)
 }
 
-func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := g.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
+func (g *GCSCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -339,9 +334,20 @@ func (g *GCSCache) Delete(ctx context.Context, d *repb.Digest) error {
 	// Note, if we decide to retry deletions in the future, be sure to
 	// add a new metric for retry count.
 	if errors.Is(err, storage.ErrObjectNotExist) {
+		d := r.GetDigest()
 		return status.NotFoundErrorf("digest %s/%d not found in gcs_cache: %s", d.GetHash(), d.GetSizeBytes(), err.Error())
 	}
 	return err
+}
+
+func (g *GCSCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	}
+	return g.Delete(ctx, rn)
 }
 
 func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) bool {
