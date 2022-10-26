@@ -250,6 +250,10 @@ const matchers: SuggestionMatcher[] = [
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("remote_download_outputs")) return null;
 
+    // TODO(https://github.com/bazelbuild/bazel/issues/10880): Show for non-CI
+    // builds as well.
+    if (model.invocations[0]?.role !== "CI") return null;
+
     return {
       level: SuggestionLevel.INFO,
       message: (
