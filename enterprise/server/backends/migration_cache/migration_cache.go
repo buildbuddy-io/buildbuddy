@@ -506,9 +506,6 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	if doubleRead {
 		eg.Go(func() error {
 			destReader, dstErr = mc.dest.Reader(ctx, d, offset, limit)
-			if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
-				log.Warningf("%v reader failed for dest cache: %s", d, dstErr)
-			}
 			if status.IsNotFoundError(dstErr) {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
 			}
@@ -522,6 +519,12 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	srcReader, srcErr := mc.src.Reader(ctx, d, offset, limit)
 	eg.Wait()
 
+	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
+	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
+	if dstErr != nil && !bothCacheNotFound && shouldLogErr {
+		log.Warningf("%v reader failed for dest cache: %s", d, dstErr)
+	}
+
 	if srcErr != nil {
 		if destReader != nil {
 			err := destReader.Close()
@@ -529,7 +532,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 				log.Warningf("Migration dest reader close err: %s", err)
 			}
 		}
-		log.Warningf("Migration %v src reader err, doubleRead is %v: %s", d, doubleRead, srcErr)
+		log.Debugf("Migration %v src reader err, doubleRead is %v: %s", d, doubleRead, srcErr)
 		return nil, srcErr
 	}
 
