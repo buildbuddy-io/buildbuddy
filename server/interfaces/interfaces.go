@@ -220,7 +220,6 @@ type Cache interface {
 
 	// [Deprecated] Normal cache-like operations that act in conjunction with WithIsolation
 	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)
-	MetadataDeprecated(ctx context.Context, d *repb.Digest) (*CacheMetadata, error)
 	FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
 	GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error)
 	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)

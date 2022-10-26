@@ -8,6 +8,7 @@ import (
 	"hash"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -447,18 +448,14 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 			Complete:      false,
 		}, nil
 	}
+	rn.SetCacheType(resource.CacheType_CAS)
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
 
-	cache, err := s.getCache(ctx, rn.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-
-	md, err := cache.MetadataDeprecated(ctx, rn.GetDigest())
+	md, err := s.cache.Metadata(ctx, rn.ToProto())
 	if err != nil {
 		// If the data has not been committed to the cache, then just tell the
 		// client that we don't have anything and let them retry it.

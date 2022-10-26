@@ -896,16 +896,7 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 	}
 
 	resourceName := req.GetResourceName()
-	cacheType, err := ProtoCacheTypeToCacheType(resourceName.GetCacheType())
-	if err != nil {
-		return nil, err
-	}
-	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, resourceName.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-
-	metadata, err := cache.MetadataDeprecated(ctx, resourceName.GetDigest())
+	metadata, err := s.env.GetCache().Metadata(ctx, resourceName)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
