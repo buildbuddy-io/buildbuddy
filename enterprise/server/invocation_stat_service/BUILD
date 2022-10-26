@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service",
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
         "//proto:context_go_proto",

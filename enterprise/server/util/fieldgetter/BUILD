@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter",
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
 )
 

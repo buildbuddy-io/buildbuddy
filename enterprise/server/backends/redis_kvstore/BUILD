@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_kvstore",
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
         "//server/environment",

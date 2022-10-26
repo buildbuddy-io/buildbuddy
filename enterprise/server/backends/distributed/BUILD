@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed",
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
         "//enterprise/server/backends/pubsub",
@@ -39,7 +38,6 @@ go_test(
     shard_count = 10,
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
         "//proto:remote_execution_go_proto",

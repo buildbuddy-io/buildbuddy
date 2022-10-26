@@ -13,7 +13,6 @@ container_push(
     tags = ["manual"],  # Don't include this target in wildcard patterns
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
 )
 
@@ -27,6 +26,5 @@ container_push(
     tags = ["manual"],  # Don't include this target in wildcard patterns
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
 )

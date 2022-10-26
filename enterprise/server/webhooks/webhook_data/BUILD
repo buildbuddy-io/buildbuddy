@@ -6,6 +6,5 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data",
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
 )

@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github",
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
         "//enterprise/server/util/fieldgetter",
@@ -25,7 +24,6 @@ go_test(
     srcs = ["github_test.go"],
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
         ":github",

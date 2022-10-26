@@ -7,7 +7,6 @@ go_library(
     visibility = [
         "//enterprise:__subpackages__",
         "//tools:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
         "//server/environment",

@@ -15,7 +15,6 @@ go_test(
     shard_count = 11,
     visibility = [
         "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
     ],
     deps = [
         "//enterprise/server/testutil/testgit",
