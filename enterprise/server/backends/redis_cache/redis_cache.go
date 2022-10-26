@@ -360,13 +360,8 @@ func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]b
 	return c.SetMulti(ctx, rnMap)
 }
 
-func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -374,6 +369,17 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	err = c.rdb.Del(ctx, k).Err()
 	timer.ObserveDelete(err)
 	return err
+
+}
+
+func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Delete(ctx, r)
 }
 
 // Low level interface used for seeking and stream-writing.

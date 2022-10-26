@@ -238,7 +238,7 @@ func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb
 		return nil, err
 	}
 	d := digestFromKey(req.GetKey())
-	err = cache.Delete(ctx, d)
+	err = cache.DeleteDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}

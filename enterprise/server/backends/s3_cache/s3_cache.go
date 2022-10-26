@@ -386,13 +386,8 @@ func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest
 	return s3c.SetMulti(ctx, rnMap)
 }
 
-func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := s3c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
+func (s3c *S3Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -400,6 +395,17 @@ func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	err = s3c.delete(ctx, k)
 	timer.ObserveDelete(err)
 	return err
+
+}
+
+func (s3c *S3Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	}
+	return s3c.Delete(ctx, r)
 }
 
 func (s3c *S3Cache) delete(ctx context.Context, key string) error {

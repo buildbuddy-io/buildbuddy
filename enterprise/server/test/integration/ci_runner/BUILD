@@ -14,7 +14,7 @@ go_test(
     exec_properties = {
         "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.9",
     },
-    shard_count = 11,
+    shard_count = 12,
     deps = [
         "//enterprise/server/testutil/testgit",
         "//proto:eventlog_go_proto",

@@ -383,7 +383,7 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 		return nil, err
 	}
 
-	err = cache.Delete(ctx, parsedResourceName.GetDigest())
+	err = cache.DeleteDeprecated(ctx, parsedResourceName.GetDigest())
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
 	}

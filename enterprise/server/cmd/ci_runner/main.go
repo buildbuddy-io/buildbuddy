@@ -820,7 +820,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
-		runErr := runCommand(ctx, *bazelCommand, args, nil /*=env*/, ar.action.BazelWorkspaceDir, ar.reporter)
+		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), nil /*=env*/, ar.action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
@@ -1588,6 +1588,7 @@ func gitRemoteName(repoURL string) string {
 
 func runCommand(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) error {
 	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Env = os.Environ()
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
@@ -1607,6 +1608,14 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	err = cmd.Wait()
 	<-copyOutputDone
 	return err
+}
+
+func expandEnv(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		out = append(out, os.ExpandEnv(arg))
+	}
+	return out
 }
 
 func getExitCode(err error) int {
