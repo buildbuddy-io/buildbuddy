@@ -400,10 +400,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	props := platform.ParseProperties(executionTask)
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
-	// TODO(tylerw): once secrets service is launched, remove the
-	// '&& secretService != nil' part of the check below.
 	secretService := s.env.GetSecretService()
-	if props.IncludeSecrets || (props.WorkflowID != "" && secretService != nil) {
+	if props.IncludeSecrets {
 		if secretService == nil {
 			return "", status.FailedPreconditionError("Secrets requested but secret service not available")
 		}
