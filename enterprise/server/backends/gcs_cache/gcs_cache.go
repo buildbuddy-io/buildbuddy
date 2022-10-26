@@ -484,13 +484,8 @@ func (g *GCSCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Di
 	return g.FindMissing(ctx, rns)
 }
 
-func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := g.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
+func (g *GCSCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -502,13 +497,24 @@ func (g *GCSCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int
 	spn.End()
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
+			d := r.GetDigest()
 			return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 		}
 		return nil, err
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	// rely on google's internal tracing to capture read calls from the returned reader
-	return io.NopCloser(timer.NewInstrumentedReader(reader, d.GetSizeBytes())), nil
+	return io.NopCloser(timer.NewInstrumentedReader(reader, r.GetDigest().GetSizeBytes())), nil
+}
+
+func (g *GCSCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	}
+	return g.Reader(ctx, rn, offset, limit)
 }
 
 func isRetryableGCSError(err error) bool {

@@ -76,13 +76,13 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 	return c
 }
 
-func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
-	reader, err := c.Reader(ctx, d, 0, 0)
+func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, r *resource.ResourceName) {
+	reader, err := c.Reader(ctx, r, 0, 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
 	d1 := testdigest.ReadDigestAndClose(t, reader)
-	assert.Equal(t, d.GetHash(), d1.GetHash())
+	assert.Equal(t, r.GetDigest().GetHash(), d1.GetHash())
 }
 
 func TestBasicReadWrite(t *testing.T) {
@@ -138,7 +138,7 @@ func TestBasicReadWrite(t *testing.T) {
 			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, baseCache, d)
+			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
 }
@@ -317,7 +317,7 @@ func TestReadMaxOffset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := distributedCaches[1].Reader(ctx, d, d.GetSizeBytes(), 0)
+	reader, err := distributedCaches[1].Reader(ctx, rn, d.GetSizeBytes(), 0)
 	if err != nil {
 		assert.FailNow(t, fmt.Sprintf("cache: %+v", distributedCaches[1]), err)
 	}
@@ -371,7 +371,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	offset := int64(2)
 	limit := int64(3)
-	reader, err := distributedCaches[1].Reader(ctx, d, offset, limit)
+	reader, err := distributedCaches[1].Reader(ctx, rn, offset, limit)
 	require.NoError(t, err)
 
 	readBuf := make([]byte, d.GetSizeBytes())
@@ -447,7 +447,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, baseCache, d)
+			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
 }
@@ -521,7 +521,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, baseCache, d)
+			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
 
@@ -534,7 +534,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 			exists, err := distributedCache.Contains(ctx, r)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, distributedCache, r.GetDigest())
+			readAndCompareDigest(t, ctx, distributedCache, r)
 		}
 	}
 }
@@ -592,7 +592,7 @@ func TestBackfill(t *testing.T) {
 			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, baseCache, d)
+			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
 
@@ -611,13 +611,13 @@ func TestBackfill(t *testing.T) {
 			exists, err := distributedCache.Contains(ctx, r)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, distributedCache, r.GetDigest())
+			readAndCompareDigest(t, ctx, distributedCache, r)
 		}
 		for i, baseCache := range baseCaches {
 			exists, err := baseCache.Contains(ctx, r)
 			assert.Nil(t, err, fmt.Sprintf("basecache %dmissing digest", i))
 			assert.True(t, exists, fmt.Sprintf("basecache %dmissing digest", i))
-			readAndCompareDigest(t, ctx, baseCache, r.GetDigest())
+			readAndCompareDigest(t, ctx, baseCache, r)
 		}
 	}
 }
@@ -988,7 +988,7 @@ func TestHintedHandoff(t *testing.T) {
 			exists, err := baseCache.Contains(ctx, rn)
 			assert.Nil(t, err)
 			assert.True(t, exists)
-			readAndCompareDigest(t, ctx, baseCache, d)
+			readAndCompareDigest(t, ctx, baseCache, rn)
 		}
 	}
 
@@ -1029,7 +1029,7 @@ func TestHintedHandoff(t *testing.T) {
 		exists, err := memoryCache3.Contains(ctx, r)
 		assert.Nil(t, err)
 		assert.True(t, exists)
-		readAndCompareDigest(t, ctx, dc3, r.GetDigest())
+		readAndCompareDigest(t, ctx, dc3, r)
 	}
 }
 

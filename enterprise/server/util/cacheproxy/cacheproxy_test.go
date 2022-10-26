@@ -408,7 +408,7 @@ func TestWriter(t *testing.T) {
 		// they match..
 		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 		require.NoError(t, err)
-		r, err := cache.Reader(ctx, d, 0, 0)
+		r, err := cache.ReaderDeprecated(ctx, d, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

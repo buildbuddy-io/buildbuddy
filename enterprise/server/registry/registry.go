@@ -282,7 +282,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		http.Error(w, fmt.Sprintf("could not get cache: %s", err), http.StatusInternalServerError)
 		return
 	}
-	rc, err := c.Reader(ctx, rn.GetDigest(), opts.Offset, opts.Limit)
+	rc, err := c.ReaderDeprecated(ctx, rn.GetDigest(), opts.Offset, opts.Limit)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
 		return

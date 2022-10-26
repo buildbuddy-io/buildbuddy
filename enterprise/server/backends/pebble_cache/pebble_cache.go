@@ -944,7 +944,7 @@ func (p *PebbleCache) FindMissingDeprecated(ctx context.Context, digests []*repb
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
-	rc, err := p.reader(ctx, r, 0, 0)
+	rc, err := p.Reader(ctx, r, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1162,17 +1162,7 @@ func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) erro
 	return p.Delete(ctx, rn)
 }
 
-func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.GetCacheType(),
-	}
-	return p.reader(ctx, rn, offset, limit)
-}
-
-func (p *PebbleCache) reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1218,6 +1208,16 @@ func (p *PebbleCache) reader(ctx context.Context, r *resource.ResourceName, offs
 		return nil, err
 	}
 	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
+}
+
+func (p *PebbleCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.GetCacheType(),
+	}
+	return p.Reader(ctx, rn, offset, limit)
 }
 
 type writeCloser struct {

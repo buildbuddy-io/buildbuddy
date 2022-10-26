@@ -40,7 +40,7 @@ func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeByte
 }
 
 func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *repb.Digest) {
-	r, err := c.Reader(ctx, d, 0, 0)
+	r, err := c.ReaderDeprecated(ctx, d, 0, 0)
 	require.NoError(t, err)
 	rd, err := digest.Compute(r)
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestReadThrough(t *testing.T) {
 	{
 		d := writeDigest(ctx, t, inner, 99)
 
-		r, err := c.Reader(ctx, d, 0, 0)
+		r, err := c.ReaderDeprecated(ctx, d, 0, 0)
 		require.NoError(t, err)
 
 		buf := make([]byte, 50)

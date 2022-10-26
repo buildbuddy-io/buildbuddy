@@ -297,7 +297,7 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if err != nil {
 		return err
 	}
-	reader, err := cache.Reader(ctx, d, req.GetOffset(), req.GetLimit())
+	reader, err := cache.ReaderDeprecated(ctx, d, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 		return err
