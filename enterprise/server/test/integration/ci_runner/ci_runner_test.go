@@ -85,6 +85,33 @@ actions:
 `,
 	}
 
+	workspaceContentsWithEnvVars = map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD":     `sh_test(name = "check_env", srcs = ["check_env.sh"])`,
+		"check_env.sh": `
+		
+		if [[ "$TEST_SECRET_1" != "test_secret_1_value" ]]; then
+				echo "TEST_SECRET_1 env var: expected 'test_secret_1_value', got $TEST_SECRET_1"
+				exit 1
+			fi
+			if [[ "$1" != "test_secret_2_value" ]]; then
+				echo "test arg #1: expected 'test_secret_2_value', got $1"
+				exit 1
+			fi
+
+			echo "env checks passed"
+		`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test env expansion"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    bazel_commands:
+      - test :check_env --test_env=TEST_SECRET_1 --test_arg=$TEST_SECRET_2 --test_output=all
+`,
+	}
+
 	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
@@ -509,6 +536,35 @@ func TestRunAction_RespectsArgs(t *testing.T) {
 	checkRunnerResult(t, result)
 
 	assert.Contains(t, result.Output, "args: {{ Hello world }}")
+}
+
+func TestEnvExpansion(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithEnvVars)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test env expansion",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	env := []string{
+		"TEST_SECRET_1=test_secret_1_value",
+		"TEST_SECRET_2=test_secret_2_value",
+	}
+	result := invokeRunner(t, runnerFlags, env, wsPath)
+
+	checkRunnerResult(t, result)
+
+	assert.Contains(t, result.Output, "env checks passed")
 }
 
 func TestGitCleanExclude(t *testing.T) {
