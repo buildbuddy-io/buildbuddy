@@ -3,9 +3,9 @@ package action_cache_server
 import (
 	"context"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"

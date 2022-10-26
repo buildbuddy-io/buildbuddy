@@ -564,7 +564,7 @@ func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte
 	return io.ReadAll(r)
 }
 
-3unc (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	keys, err := rc.resourceNamesToKeyMetas(ctx, resources)
 	if err != nil {
 		return nil, err
