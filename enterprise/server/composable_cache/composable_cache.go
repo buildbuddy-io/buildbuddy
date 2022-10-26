@@ -255,14 +255,26 @@ func (c *ComposableCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.
 	return nil
 }
 
-func (c *ComposableCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (c *ComposableCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	// Special case -- we call delete on the inner cache first (in case of
 	// error) and then if no error we'll maybe delete from the outer.
-	if err := c.inner.Delete(ctx, d); err != nil {
+	if err := c.inner.Delete(ctx, r); err != nil {
 		return err
 	}
 	if c.mode&ModeWriteThrough != 0 {
-		c.outer.Delete(ctx, d)
+		c.outer.Delete(ctx, r)
+	}
+	return nil
+}
+
+func (c *ComposableCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	// Special case -- we call delete on the inner cache first (in case of
+	// error) and then if no error we'll maybe delete from the outer.
+	if err := c.inner.DeleteDeprecated(ctx, d); err != nil {
+		return err
+	}
+	if c.mode&ModeWriteThrough != 0 {
+		c.outer.DeleteDeprecated(ctx, d)
 	}
 	return nil
 }

@@ -525,8 +525,8 @@ func TestContains(t *testing.T) {
 			t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
 		}
 
-		// Delete the key.
-		err = cache.Delete(ctx, d)
+		// DeleteDeprecated the key.
+		err = cache.DeleteDeprecated(ctx, d)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -81,7 +81,7 @@ func (c *errorCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte,
 	return nil, errors.New("error cache get err")
 }
 
-func (c *errorCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (c *errorCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	return errors.New("error cache delete err")
 }
 
@@ -1213,7 +1213,7 @@ func TestDelete(t *testing.T) {
 	require.True(t, bytes.Equal(buf, data))
 
 	// After delete, data should no longer exist
-	err = mc.Delete(ctx, d)
+	err = mc.DeleteDeprecated(ctx, d)
 	require.NoError(t, err)
 
 	data, err = mc.Get(ctx, r)

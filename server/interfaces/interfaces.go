@@ -226,7 +226,7 @@ type Cache interface {
 	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
 	SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error
 	SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error
-	Delete(ctx context.Context, d *repb.Digest) error
+	DeleteDeprecated(ctx context.Context, d *repb.Digest) error
 
 	// Normal cache-like operations
 	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
@@ -236,6 +236,7 @@ type Cache interface {
 	GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error)
 	Set(ctx context.Context, r *resource.ResourceName, data []byte) error
 	SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error
+	Delete(ctx context.Context, r *resource.ResourceName) error
 
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
