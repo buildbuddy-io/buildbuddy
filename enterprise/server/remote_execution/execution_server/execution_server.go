@@ -399,9 +399,9 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	props := platform.ParseProperties(executionTask)
 
-	// Add in secrets for any action explicitly requesting secrets.
+	// Add in secrets for any action explicitly requesting secrets, and all workflows.
+	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets {
-		secretService := s.env.GetSecretService()
 		if secretService == nil {
 			return "", status.FailedPreconditionError("Secrets requested but secret service not available")
 		}

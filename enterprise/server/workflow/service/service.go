@@ -64,7 +64,6 @@ var (
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
-	workflowsEnableSecrets        = flag.Bool("remote_execution.workflows_enable_secrets", false, "Whether to include secrets for trusted workflows.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -674,6 +673,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if wd.IsTargetRepoPublic {
 		visibility = "PUBLIC"
 	}
+	includeSecretsPropertyValue := "false"
+	if isTrusted && ws.env.GetSecretService() != nil {
+		includeSecretsPropertyValue = "true"
+	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -714,7 +717,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
 				{Name: "workflow-id", Value: wf.WorkflowID},
-				{Name: platform.IncludeSecretsPropertyName, Value: fmt.Sprint(*workflowsEnableSecrets && isTrusted)},
+				{Name: platform.IncludeSecretsPropertyName, Value: includeSecretsPropertyValue},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: fmt.Sprintf("%d", computeUnits)},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 			},
