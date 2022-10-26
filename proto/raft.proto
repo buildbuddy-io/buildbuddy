@@ -183,6 +183,11 @@ message SplitLeaseRequest {
   // How long the lease should be valid for. If the lease is already valid, it
   // will be extended by this much.
   int64 duration_seconds = 2;
+
+  // A unique SplitTag. Subsequent commands to the statemachine after a
+  // successful SplitLease will fail to apply *unless* they carry this tag in
+  // the header.
+  string split_tag = 3;
 }
 
 message SplitLeaseResponse {}
@@ -257,10 +262,23 @@ message ResponseUnion {
 
 message BatchCmdRequest {
   repeated RequestUnion union = 1;
+
+  // Header will be validated by the state machine if set.
+  Header header = 2;
+
+  // Normally unset. During a region split, if the split_tag is set to a value
+  // matching the current split lease tag, requests will be processed by the
+  // statemachine. Otherwise they will return an OutOfRange (splitting) error.
+  string split_tag = 3;
 }
 
 message BatchCmdResponse {
-  repeated ResponseUnion union = 2;
+  repeated ResponseUnion union = 1;
+
+  // Normally unused (errors should be returned per-request in the
+  // ResponseUnion). This may be set when a request cannot be processed because
+  // a region is splitting.
+  google.rpc.Status status = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

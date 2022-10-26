@@ -274,33 +274,38 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 		},
 		Digest: d,
 	}
-	fileMetadataKey, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
+	fs := filestore.New(true /*=isolateByGroupIDs*/)
+	fileMetadataKey, err := fs.FileMetadataKey(fr)
 	require.NoError(t, err)
 
 	_, err = ts.APIClient.Get(ctx, ts.GRPCAddress)
 	require.NoError(t, err)
 
-	err = ts.Sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
-		mwc, err := ts.APIClient.MultiWriter(ctx, peers, fr)
-		if err != nil {
-			return err
-		}
-		if _, err := mwc.Write(buf); err != nil {
-			return err
-		}
-		if err := mwc.Close(); err != nil {
-			return err
-		}
-		return nil
-	})
+	writeCloserMetadata := fs.InlineWriter(ctx, d.GetSizeBytes())
+	bytesWritten, err := writeCloserMetadata.Write(buf)
 	require.NoError(t, err)
 
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-		FileRecord: fr,
+	now := time.Now()
+	md := &rfpb.FileMetadata{
+		FileRecord:      fr,
+		StorageMetadata: writeCloserMetadata.Metadata(),
+		SizeBytes:       int64(bytesWritten),
+		LastModifyUsec:  now.UnixMicro(),
+		LastAccessUsec:  now.UnixMicro(),
+	}
+	protoBytes, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   fileMetadataKey,
+			Value: protoBytes,
+		},
 	}).ToProto()
 	require.NoError(t, err)
-
-	_, err = ts.Sender.SyncPropose(ctx, fileMetadataKey, writeReq)
+	writeRsp, err := ts.Sender.SyncPropose(ctx, fileMetadataKey, writeReq)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
 	return fr

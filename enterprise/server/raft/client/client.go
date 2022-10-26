@@ -4,19 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v3"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
@@ -123,6 +121,8 @@ type streamWriteCloser struct {
 	header         *rfpb.Header
 	fileRecord     *rfpb.FileRecord
 	firstWriteDone bool
+	closed         bool
+	cancelFunc     context.CancelFunc
 }
 
 func (wc *streamWriteCloser) Write(data []byte) (int, error) {
@@ -147,7 +147,7 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (wc *streamWriteCloser) Close() error {
+func (wc *streamWriteCloser) Commit() error {
 	req := &rfpb.WriteRequest{
 		Header:      wc.header,
 		FileRecord:  wc.fileRecord,
@@ -163,109 +163,35 @@ func (wc *streamWriteCloser) Close() error {
 	return err
 }
 
-func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Header, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
+func (wc *streamWriteCloser) Close() error {
+	if !wc.closed {
+		wc.cancelFunc()
+		wc.closed = true
+	}
+	return nil
+}
+
+func RemoteWriter(ctx context.Context, client rfspb.ApiClient, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedWriteCloser, error) {
+	ctx, cancel := context.WithCancel(ctx)
+
 	stream, err := client.Write(ctx)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	wc := &streamWriteCloser{
 		header:     header,
 		fileRecord: fileRecord,
 		stream:     stream,
+		cancelFunc: cancel,
 	}
 	return wc, nil
-}
-
-type multiWriteCloser struct {
-	ctx           context.Context
-	fileRecord    *rfpb.FileRecord
-	log           log.Logger
-	closers       map[string]io.WriteCloser
-	mu            sync.Mutex
-	totalNumPeers int
-}
-
-func fileRecordLogString(f *rfpb.FileRecord) string {
-	fmk, _ := filestore.New(false).FileMetadataKey(f)
-	return string(fmk)
-}
-
-func (mc *multiWriteCloser) Write(data []byte) (int, error) {
-	eg, _ := errgroup.WithContext(mc.ctx)
-	for _, wc := range mc.closers {
-		wc := wc
-		eg.Go(func() error {
-			n, err := wc.Write(data)
-			if err != nil {
-				return err
-			}
-			if n != len(data) {
-				return io.ErrShortWrite
-			}
-			return nil
-		})
-	}
-
-	return len(data), eg.Wait()
-}
-
-func (mc *multiWriteCloser) Close() error {
-	eg, _ := errgroup.WithContext(mc.ctx)
-	for _, wc := range mc.closers {
-		wc := wc
-		eg.Go(func() error {
-			if err := wc.Close(); err != nil {
-				return err
-			}
-			return nil
-		})
-	}
-	err := eg.Wait()
-	if err == nil {
-		peers := make([]string, len(mc.closers))
-		for peer := range mc.closers {
-			peers = append(peers, peer)
-		}
-	} else {
-		log.Errorf("MWC is returning err: %s", err)
-	}
-	return err
 }
 
 type PeerHeader struct {
 	Header    *rfpb.Header
 	GRPCAddr  string
 	GRPClient rfspb.ApiClient
-}
-
-func (c *APIClient) MultiWriter(ctx context.Context, peerHeaders []*PeerHeader, fileRecord *rfpb.FileRecord) (io.WriteCloser, error) {
-	mwc := &multiWriteCloser{
-		ctx:        ctx,
-		log:        c.log,
-		fileRecord: fileRecord,
-		closers:    make(map[string]io.WriteCloser, 0),
-	}
-	for _, peerHeader := range peerHeaders {
-		rwc, err := RemoteWriter(ctx, peerHeader.GRPClient, peerHeader.Header, fileRecord)
-		if err != nil {
-			log.Debugf("Skipping write %q to peer %q because: %s", fileRecordLogString(fileRecord), peerHeader.GRPCAddr, err)
-			continue
-		}
-		mwc.closers[peerHeader.GRPCAddr] = rwc
-	}
-	if len(mwc.closers) < int(math.Ceil(float64(len(peerHeaders))/2)) {
-		openPeers := make([]string, len(mwc.closers))
-		for peer := range mwc.closers {
-			openPeers = append(openPeers, peer)
-		}
-		allPeers := make([]string, len(peerHeaders))
-		for _, peerHeader := range peerHeaders {
-			allPeers = append(allPeers, peerHeader.GRPCAddr)
-		}
-		log.Debugf("Could not open enough remoteWriters for fileRecord %s. All peers: %s, opened: %s", fileRecordLogString(fileRecord), allPeers, openPeers)
-		return nil, status.UnavailableErrorf("Not enough peers (%d) available.", len(mwc.closers))
-	}
-	return mwc, nil
 }
 
 func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {

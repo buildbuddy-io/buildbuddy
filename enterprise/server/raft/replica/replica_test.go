@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
@@ -98,6 +100,45 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 	writeRsp, err := r.Update(entries)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(writeRsp))
+}
+
+func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) interfaces.CommittedWriteCloser {
+	fs := filestore.New(true /*=isolateByGroupIDs*/)
+	fileMetadataKey, err := fs.FileMetadataKey(fileRecord)
+	require.NoError(t, err)
+
+	writeCloserMetadata := fs.InlineWriter(context.TODO(), fileRecord.GetDigest().GetSizeBytes())
+
+	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
+	wc.CommitFn = func(bytesWritten int64) error {
+		now := time.Now()
+		md := &rfpb.FileMetadata{
+			FileRecord:      fileRecord,
+			StorageMetadata: writeCloserMetadata.Metadata(),
+			SizeBytes:       bytesWritten,
+			LastModifyUsec:  now.UnixMicro(),
+			LastAccessUsec:  now.UnixMicro(),
+		}
+		protoBytes, err := proto.Marshal(md)
+		if err != nil {
+			return err
+		}
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   fileMetadataKey,
+				Value: protoBytes,
+			},
+		}))
+		entries := []dbsm.Entry{entry}
+		writeRsp, err := r.Update(entries)
+		if err != nil {
+			return err
+		}
+		require.Equal(t, 1, len(writeRsp))
+
+		return rbuilder.NewBatchResponse(writeRsp[0].Result.Data).AnyError()
+	}
+	return wc
 }
 
 func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
@@ -367,82 +408,6 @@ func TestReplicaScan(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestReplicaFileWrite(t *testing.T) {
-	ctx := context.Background()
-	rootDir := testfs.MakeTempDir(t)
-	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
-	require.NotNil(t, repl)
-
-	stopc := make(chan struct{})
-	_, err := repl.Open(stopc)
-	require.NoError(t, err)
-
-	em := newEntryMaker(t)
-	writeDefaultRangeDescriptor(t, em, repl)
-
-	// Write a file to the replica's data dir.
-	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-	fileRecord := &rfpb.FileRecord{
-		Isolation: &rfpb.Isolation{
-			CacheType:   resource.CacheType_CAS,
-			PartitionId: "default",
-			GroupId:     interfaces.AuthAnonymousUser,
-		},
-		Digest: d,
-	}
-
-	// Mismatched generation should fail with an OutOfRange error.
-	_, err = repl.Writer(ctx, &rfpb.Header{RangeId: 1, Generation: 2}, fileRecord)
-	require.ErrorContains(t, err, constants.RangeNotCurrentMsg)
-	require.True(t, status.IsOutOfRangeError(err))
-
-	header := &rfpb.Header{RangeId: 1, Generation: 1}
-
-	writeCommitter, err := repl.Writer(ctx, header, fileRecord)
-	require.NoError(t, err)
-
-	_, err = writeCommitter.Write(buf)
-	require.NoError(t, err)
-	require.Nil(t, writeCommitter.Commit())
-	require.Nil(t, writeCommitter.Close())
-
-	// Do a FileWrite for the just written file: it should succeed.
-	{
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-			FileRecord: fileRecord,
-		}))
-		entries := []dbsm.Entry{entry}
-		writeRsp, err := repl.Update(entries)
-		require.NoError(t, err)
-		require.Equal(t, 1, len(writeRsp))
-	}
-
-	// Do a FileWrite for a file that does not exist: it should fail.
-	{
-		d, _ := testdigest.NewRandomDigestBuf(t, 1000)
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-			FileRecord: &rfpb.FileRecord{
-				Isolation: &rfpb.Isolation{
-					CacheType:   resource.CacheType_CAS,
-					PartitionId: "default",
-					GroupId:     interfaces.AuthAnonymousUser,
-				},
-				Digest: d,
-			},
-		}))
-		entries := []dbsm.Entry{entry}
-		writeRsp, err := repl.Update(entries)
-		require.NoError(t, err)
-		require.Equal(t, 1, len(writeRsp))
-
-		writeBatch := rbuilder.NewBatchResponse(writeRsp)
-		_, err = writeBatch.FileWriteResponse(0)
-		require.NotNil(t, err)
-		require.True(t, status.IsFailedPreconditionError(err), err)
-	}
-}
-
 func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
@@ -477,8 +442,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	}
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
 
-	writeCommitter, err := repl.Writer(ctx, header, fileRecord)
-	require.NoError(t, err)
+	writeCommitter := writer(t, em, repl, header, fileRecord)
 
 	_, err = writeCommitter.Write(buf)
 	require.NoError(t, err)
@@ -545,24 +509,13 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	}
 
 	header := &rfpb.Header{RangeId: 1, Generation: 1}
-	writeCommitter, err := repl.Writer(ctx, header, fileRecord)
-	require.NoError(t, err)
+	writeCommitter := writer(t, em, repl, header, fileRecord)
 
 	_, err = writeCommitter.Write(buf)
 	require.NoError(t, err)
 	require.Nil(t, writeCommitter.Commit())
 	require.Nil(t, writeCommitter.Close())
 
-	// Do a FileWrite for the just written file: it should succeed.
-	{
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-			FileRecord: fileRecord,
-		}))
-		entries := []dbsm.Entry{entry}
-		writeRsp, err := repl.Update(entries)
-		require.NoError(t, err)
-		require.Equal(t, 1, len(writeRsp))
-	}
 	// Verify that the file is readable.
 	{
 		readCloser, err := repl.Reader(ctx, header, fileRecord, 0, 0)
@@ -681,7 +634,6 @@ func TestReplicaSplitLease(t *testing.T) {
 }
 
 func TestFindSplitPoint(t *testing.T) {
-	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
 	repl := replica.New(rootDir, 1, 1, store)
@@ -707,20 +659,11 @@ func TestFindSplitPoint(t *testing.T) {
 				Digest: d,
 			}
 			header := &rfpb.Header{RangeId: 1, Generation: 1}
-			writeCommitter, err := repl.Writer(ctx, header, fileRecord)
-			require.NoError(t, err)
+			writeCommitter := writer(t, em, repl, header, fileRecord)
 			_, err = writeCommitter.Write(buf)
 			require.NoError(t, err)
 			require.Nil(t, writeCommitter.Commit())
 			require.Nil(t, writeCommitter.Close())
-
-			entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-				FileRecord: fileRecord,
-			}))
-			entries := []dbsm.Entry{entry}
-			writeRsp, err := repl.Update(entries)
-			require.NoError(t, err)
-			require.Equal(t, 1, len(writeRsp))
 		}
 	}
 
