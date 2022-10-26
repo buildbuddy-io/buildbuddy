@@ -38,6 +38,7 @@ import (
 	gosqlite "github.com/mattn/go-sqlite3"
 )
 
+// Test change
 const (
 	sqliteDialect = "sqlite3"
 	mysqlDialect  = "mysql"
