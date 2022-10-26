@@ -235,12 +235,22 @@ func (c *ComposableCache) SetDeprecated(ctx context.Context, d *repb.Digest, dat
 	return nil
 }
 
-func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	if err := c.inner.SetMulti(ctx, kvs); err != nil {
 		return err
 	}
 	if c.mode&ModeWriteThrough != 0 {
 		c.outer.SetMulti(ctx, kvs)
+	}
+	return nil
+}
+
+func (c *ComposableCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	if err := c.inner.SetMultiDeprecated(ctx, kvs); err != nil {
+		return err
+	}
+	if c.mode&ModeWriteThrough != 0 {
+		c.outer.SetMultiDeprecated(ctx, kvs)
 	}
 	return nil
 }

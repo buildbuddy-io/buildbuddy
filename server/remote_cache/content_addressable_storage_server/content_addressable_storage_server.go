@@ -238,7 +238,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		kvs[uploadDigest] = data
 	}
 
-	if err := cache.SetMulti(ctx, kvs); err != nil {
+	if err := cache.SetMultiDeprecated(ctx, kvs); err != nil {
 		return nil, err
 	}
 	for uploadDigest := range kvs {

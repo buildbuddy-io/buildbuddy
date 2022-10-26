@@ -382,7 +382,7 @@ func (mc *MigrationCache) GetMultiDeprecated(ctx context.Context, digests []*rep
 	return mc.GetMulti(ctx, rns)
 }
 
-func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -412,14 +412,19 @@ func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]b
 	return srcErr
 }
 
-func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*repb.Digest][]byte) {
+func (mc *MigrationCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(mc.cacheType, mc.remoteInstanceName, kvs)
+	return mc.SetMulti(ctx, rnMap)
+}
+
+func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) {
 	eg, gctx := errgroup.WithContext(ctx)
-	for d, _ := range kvs {
-		dCopy := d
+	for r, _ := range kvs {
+		d := r.GetDigest()
 		eg.Go(func() error {
-			deleteErr := mc.dest.Delete(gctx, dCopy)
+			deleteErr := mc.dest.Delete(gctx, d)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", dCopy, deleteErr)
+				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", d, deleteErr)
 			}
 			return nil
 		})

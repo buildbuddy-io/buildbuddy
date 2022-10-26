@@ -377,11 +377,15 @@ func TestMetadata(t *testing.T) {
 	}
 }
 
-func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
-	m := make(map[*repb.Digest][]byte)
+func randomDigests(t *testing.T, sizes ...int64) map[*resource.ResourceName][]byte {
+	m := make(map[*resource.ResourceName][]byte)
 	for _, size := range sizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, size)
-		m[d] = buf
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		m[rn] = buf
 	}
 	return m
 }
@@ -405,17 +409,14 @@ func TestMultiGetSet(t *testing.T) {
 	}
 	resourceNames := make([]*resource.ResourceName, 0, len(digests))
 	for d := range digests {
-		resourceNames = append(resourceNames, &resource.ResourceName{
-			Digest:     d,
-			Compressor: repb.Compressor_IDENTITY,
-			CacheType:  resource.CacheType_CAS,
-		})
+		resourceNames = append(resourceNames, d)
 	}
 	m, err := pc.GetMulti(ctx, resourceNames)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
-	for d := range digests {
+	for rn := range digests {
+		d := rn.GetDigest()
 		rbuf, ok := m[d]
 		if !ok {
 			t.Fatalf("Multi-get failed to return expected digest: %q", d.GetHash())

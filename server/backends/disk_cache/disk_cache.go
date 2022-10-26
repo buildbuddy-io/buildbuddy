@@ -409,7 +409,7 @@ func (c *DiskCache) Set(ctx context.Context, r *resource.ResourceName, data []by
 	if err != nil {
 		return err
 	}
-	return p.set(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest(), data)
+	return p.set(ctx, r, data)
 }
 
 func (c *DiskCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
@@ -422,8 +422,26 @@ func (c *DiskCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []by
 	return c.Set(ctx, r, data)
 }
 
-func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	return c.partition.setMulti(ctx, c.cacheType, c.remoteInstanceName, kvs)
+func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	if len(kvs) == 0 {
+		return nil
+	}
+	var instanceName string
+	for rn := range kvs {
+		instanceName = rn.GetInstanceName()
+		break
+	}
+
+	p, err := c.getPartition(ctx, instanceName)
+	if err != nil {
+		return err
+	}
+	return p.setMulti(ctx, kvs)
+}
+
+func (c *DiskCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(c.cacheType, c.remoteInstanceName, kvs)
+	return c.partition.setMulti(ctx, rnMap)
 }
 
 func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
@@ -1103,8 +1121,8 @@ func (p *partition) getMulti(ctx context.Context, resources []*resource.Resource
 	return foundMap, nil
 }
 
-func (p *partition) set(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest, data []byte) error {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	if err != nil {
 		return err
 	}
@@ -1125,9 +1143,9 @@ func (p *partition) set(ctx context.Context, cacheType resource.CacheType, remot
 	return err
 }
 
-func (p *partition) setMulti(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, kvs map[*repb.Digest][]byte) error {
-	for d, data := range kvs {
-		if err := p.set(ctx, cacheType, remoteInstanceName, d, data); err != nil {
+func (p *partition) setMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	for rn, data := range kvs {
+		if err := p.set(ctx, rn, data); err != nil {
 			return err
 		}
 	}
