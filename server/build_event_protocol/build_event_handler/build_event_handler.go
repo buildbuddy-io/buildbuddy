@@ -95,7 +95,7 @@ type BuildEventHandler struct {
 	env              environment.Env
 	statsRecorder    *statsRecorder
 	openChannels     *sync.WaitGroup
-	cancelFnsByInvID map[string]func()
+	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
@@ -107,12 +107,11 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 	statsRecorder.Start()
 	webhookNotifier.Start()
 
-	cancelFnsByInvID := make(map[string]func())
 	h := &BuildEventHandler{
 		env:              env,
 		statsRecorder:    statsRecorder,
 		openChannels:     openChannels,
-		cancelFnsByInvID: cancelFnsByInvID,
+		cancelFnsByInvID: sync.Map{},
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		h.Stop()
@@ -126,13 +125,19 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	buildEventAccumulator := accumulator.NewBEValues(iid)
 	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
-	ctx, cancelFn := context.WithCancel(ctx)
-	b.cancelFnsByInvID[iid] = cancelFn
+	val, ok := b.cancelFnsByInvID.Load(iid)
+	if ok {
+		cancelFn := val.(context.CancelFunc)
+		cancelFn()
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	b.cancelFnsByInvID.Store(iid, cancel)
 
 	b.openChannels.Add(1)
 	onClose := func() {
 		b.openChannels.Done()
-		delete(b.cancelFnsByInvID, iid)
+		b.cancelFnsByInvID.Delete(iid)
 	}
 
 	return &EventChannel{
@@ -158,10 +163,13 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 }
 
 func (b *BuildEventHandler) Stop() {
-	for iid, cancelFn := range b.cancelFnsByInvID {
-		log.Infof("Cancel Event Channel for invocation %q", iid)
+	b.cancelFnsByInvID.Range(func(key, val interface{}) bool {
+		iid := key.(string)
+		cancelFn := val.(context.CancelFunc)
+		log.Infof("Cancelling invocation %q because server received shutdown signal", iid)
 		cancelFn()
-	}
+		return true
+	})
 }
 
 // invocationJWT represents an invocation ID as well as the JWT granting access

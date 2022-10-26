@@ -89,25 +89,43 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		return e
 	}
 
-	for {
-		in, err := stream.Recv()
-		if err == io.EOF {
-			break
+	errCh := make(chan error)
+	inCh := make(chan *pepb.PublishBuildToolEventStreamRequest)
+	eofCh := make(chan bool)
+
+	// Listen on request stream in the background
+	go func() {
+		for {
+			in, err := stream.Recv()
+			if err == io.EOF {
+				eofCh <- true
+				return
+			}
+			if err != nil {
+				errCh <- err
+				return
+			}
+			inCh <- in
 		}
-		if err != nil {
+	}()
+
+	var channelDone <-chan struct{}
+	for {
+		select {
+		case <-channelDone:
+			return disconnectWithErr(status.UnavailableError("context cancelled due to server shut down"))
+		case err := <-errCh:
 			log.Warningf("Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
-		}
-		if streamID == nil {
-			streamID = in.OrderedBuildEvent.StreamId
-			channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
-			defer channel.Close()
-		}
+		case <-eofCh:
+			return postProcessStream(channel, streamID, acks, stream)
+		case in := <-inCh:
+			if streamID == nil {
+				streamID = in.OrderedBuildEvent.StreamId
+				channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
+				defer channel.Close()
+			}
 
-		select {
-		case <-channel.Context().Done():
-			return status.UnavailableError("context cancelled")
-		default:
 			if err := channel.HandleEvent(in); err != nil {
 				if status.IsAlreadyExistsError(err) {
 					log.Warningf("AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
@@ -124,7 +142,9 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
 		}
 	}
+}
 
+func postProcessStream(channel interfaces.BuildEventChannel, streamID *bepb.StreamId, acks []int, stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	if channel != nil && channel.GetNumDroppedEvents() > 0 {
 		log.Warningf("We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
 			streamID.InvocationId, channel.GetNumDroppedEvents())
