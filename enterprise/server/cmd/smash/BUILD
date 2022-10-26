@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "smash_lib",
     srcs = ["smash.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/smash",
-    visibility = ["//visibility:private"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
@@ -24,5 +25,4 @@ go_library(
 go_binary(
     name = "smash",
     embed = [":smash_lib"],
-    visibility = ["//visibility:public"],
 )

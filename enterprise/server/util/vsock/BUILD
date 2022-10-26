@@ -1,10 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "//tools/vmexec_client:__pkg__",
+])
+
 go_library(
     name = "vsock",
     srcs = ["vsock.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock",
-    visibility = ["//visibility:public"],
     deps = [
         "//server/util/log",
         "//server/util/status",

@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "driver",
     srcs = ["driver.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",

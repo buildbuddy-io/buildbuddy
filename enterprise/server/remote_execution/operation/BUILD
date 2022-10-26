@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "operation",
     srcs = ["operation.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",

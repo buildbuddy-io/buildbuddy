@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "registry",
     srcs = ["registry.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",

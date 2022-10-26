@@ -1,13 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "pebble_cache",
     srcs = ["pebble_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache",
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/filestore",

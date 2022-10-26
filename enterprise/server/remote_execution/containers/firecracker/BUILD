@@ -1,5 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "//tools/vmstart:__pkg__",
+])
+
 go_library(
     name = "firecracker",
     srcs = [
@@ -15,7 +20,6 @@ go_library(
         "//conditions:default": [],
     }),
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
-    visibility = ["//visibility:public"],
     deps = [
         "@com_github_docker_docker//client",
     ] + select({
