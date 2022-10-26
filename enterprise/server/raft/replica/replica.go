@@ -1380,12 +1380,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 // Sync returns an error when there is unrecoverable error for synchronizing
 // the in-core state.
 func (sm *Replica) Sync() error {
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	return db.Flush()
+	return sm.db.LogData(nil, pebble.Sync)
 }
 
 // PrepareSnapshot prepares the snapshot to be concurrently captured and
