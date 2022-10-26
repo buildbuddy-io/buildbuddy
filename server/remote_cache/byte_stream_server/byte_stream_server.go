@@ -448,14 +448,14 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 			Complete:      false,
 		}, nil
 	}
-	rn.SetCacheType(resource.CacheType_CAS)
+	cacheRN := digest.NewCacheResourceName(rn.GetDigest(), rn.GetInstanceName(), resource.CacheType_CAS)
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
 
-	md, err := s.cache.Metadata(ctx, rn.ToProto())
+	md, err := s.cache.Metadata(ctx, cacheRN.ToProto())
 	if err != nil {
 		// If the data has not been committed to the cache, then just tell the
 		// client that we don't have anything and let them retry it.

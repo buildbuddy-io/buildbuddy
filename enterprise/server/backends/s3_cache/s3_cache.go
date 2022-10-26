@@ -278,15 +278,6 @@ func (s3c *S3Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, 
 	return b, err
 }
 
-func (s3c *S3Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return s3c.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
-}
-
 func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte, error) {
 	buff := &aws.WriteAtBuffer{}
 	ctx, spn := tracing.StartSpan(ctx)

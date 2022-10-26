@@ -564,16 +564,7 @@ func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte
 	return io.ReadAll(r)
 }
 
-func (rc *RaftCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return rc.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	})
-}
-
-func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+3unc (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	keys, err := rc.resourceNamesToKeyMetas(ctx, resources)
 	if err != nil {
 		return nil, err

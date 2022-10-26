@@ -180,15 +180,6 @@ func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	return value, nil
 }
 
-func (m *MemoryCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return m.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	// No parallelism here either. Not necessary for an in-memory cache.

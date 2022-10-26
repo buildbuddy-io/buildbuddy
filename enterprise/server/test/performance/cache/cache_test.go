@@ -137,8 +137,12 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 
 	for i := 0; i < b.N; i++ {
 		dbuf := digestBufs[rand.Intn(len(digestBufs))]
+		r := &resource.ResourceName{
+			Digest:    dbuf.d,
+			CacheType: resource.CacheType_CAS,
+		}
 		b.SetBytes(dbuf.d.GetSizeBytes())
-		_, err := c.GetDeprecated(ctx, dbuf.d)
+		_, err := c.Get(ctx, r)
 		if err != nil {
 			b.Fatal(err)
 		}

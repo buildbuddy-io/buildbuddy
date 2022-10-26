@@ -943,15 +943,6 @@ func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	return io.ReadAll(rc)
 }
 
-func (p *PebbleCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return p.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.GetCacheType(),
-	})
-}
-
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
