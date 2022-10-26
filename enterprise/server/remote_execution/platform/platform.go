@@ -72,7 +72,7 @@ const (
 	extraArgsPropertyName                = "extra-args"
 	envOverridesPropertyName             = "env-overrides"
 	podmanImageStreamingPropertyName     = "podman-enable-image-streaming"
-	includeSecretsPropertyName           = "include-secrets"
+	IncludeSecretsPropertyName           = "include-secrets"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -221,7 +221,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		RecycleRunner:              boolProp(m, RecycleRunnerPropertyName, false),
 		EnableVFS:                  vfsEnabled,
 		EnablePodmanImageStreaming: boolProp(m, podmanImageStreamingPropertyName, false),
-		IncludeSecrets:             boolProp(m, includeSecretsPropertyName, false),
+		IncludeSecrets:             boolProp(m, IncludeSecretsPropertyName, false),
 		PreserveWorkspace:          boolProp(m, preserveWorkspacePropertyName, false),
 		NonrootWorkspace:           boolProp(m, nonrootWorkspacePropertyName, false),
 		CleanWorkspaceInputs:       stringProp(m, cleanWorkspaceInputsPropertyName, ""),

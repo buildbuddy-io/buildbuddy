@@ -673,6 +673,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if wd.IsTargetRepoPublic {
 		visibility = "PUBLIC"
 	}
+	includeSecretsPropertyValue := "false"
+	if isTrusted && ws.env.GetSecretService() != nil {
+		includeSecretsPropertyValue = "true"
+	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -713,6 +717,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
 				{Name: "workflow-id", Value: wf.WorkflowID},
+				{Name: platform.IncludeSecretsPropertyName, Value: includeSecretsPropertyValue},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: fmt.Sprintf("%d", computeUnits)},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 			},
