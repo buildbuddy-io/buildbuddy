@@ -92,9 +92,10 @@ var (
 )
 
 type BuildEventHandler struct {
-	env           environment.Env
-	statsRecorder *statsRecorder
-	openChannels  *sync.WaitGroup
+	env              environment.Env
+	statsRecorder    *statsRecorder
+	openChannels     *sync.WaitGroup
+	cancelFnsByInvID map[string]func()
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
@@ -105,26 +106,33 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 
 	statsRecorder.Start()
 	webhookNotifier.Start()
+
+	cancelFnsByInvID := make(map[string]func())
+	h := &BuildEventHandler{
+		env:              env,
+		statsRecorder:    statsRecorder,
+		openChannels:     openChannels,
+		cancelFnsByInvID: cancelFnsByInvID,
+	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		h.Stop()
 		statsRecorder.Stop()
 		webhookNotifier.Stop()
 		return nil
 	})
-
-	return &BuildEventHandler{
-		env:           env,
-		statsRecorder: statsRecorder,
-		openChannels:  openChannels,
-	}
+	return h
 }
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	buildEventAccumulator := accumulator.NewBEValues(iid)
 	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
+	ctx, cancelFn := context.WithCancel(ctx)
+	b.cancelFnsByInvID[iid] = cancelFn
 
 	b.openChannels.Add(1)
 	onClose := func() {
 		b.openChannels.Done()
+		delete(b.cancelFnsByInvID, iid)
 	}
 
 	return &EventChannel{
@@ -146,6 +154,13 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		logWriter:                   nil,
 		onClose:                     onClose,
 		attempt:                     1,
+	}
+}
+
+func (b *BuildEventHandler) Stop() {
+	for iid, cancelFn := range b.cancelFnsByInvID {
+		log.Infof("Cancel Event Channel for invocation %q", iid)
+		cancelFn()
 	}
 }
 
@@ -615,6 +630,10 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 	}
 	_, err = e.env.GetBlobstore().WriteBlob(ctx, blobID, protoBytes)
 	return err
+}
+
+func (e *EventChannel) Context() context.Context {
+	return e.ctx
 }
 
 func (e *EventChannel) Close() {

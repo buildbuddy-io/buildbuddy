@@ -104,20 +104,25 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			defer channel.Close()
 		}
 
-		if err := channel.HandleEvent(in); err != nil {
-			if status.IsAlreadyExistsError(err) {
-				log.Warningf("AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
-				return err
+		select {
+		case <-channel.Context().Done():
+			return status.UnavailableError("context cancelled")
+		default:
+			if err := channel.HandleEvent(in); err != nil {
+				if status.IsAlreadyExistsError(err) {
+					log.Warningf("AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
+					return err
+				}
+				log.Warningf("Error handling event; this means a broken build command: %s", err)
+				return disconnectWithErr(err)
 			}
-			log.Warningf("Error handling event; this means a broken build command: %s", err)
-			return disconnectWithErr(err)
-		}
-		for _, stream := range forwardingStreams {
-			// Intentionally ignore errors here -- proxying is best effort.
-			stream.Send(in)
-		}
+			for _, stream := range forwardingStreams {
+				// Intentionally ignore errors here -- proxying is best effort.
+				stream.Send(in)
+			}
 
-		acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
+			acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
+		}
 	}
 
 	if channel != nil && channel.GetNumDroppedEvents() > 0 {
