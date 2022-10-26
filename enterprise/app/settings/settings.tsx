@@ -100,7 +100,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <SettingsTab id={TabId.OrgApiKeys} activeTabId={activeTabId}>
                   API keys
                 </SettingsTab>
-                {capabilities.config.secretsEnabled && (
+                {capabilities.config.secretsEnabled && router.canAccessOrgSecretsPage(this.props.user) && (
                   <SettingsTab id={TabId.OrgSecrets} activeTabId={activeTabId}>
                     Secrets
                   </SettingsTab>
