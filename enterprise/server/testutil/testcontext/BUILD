@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "testcontext",
     srcs = ["test_context.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/util/bazel_request",

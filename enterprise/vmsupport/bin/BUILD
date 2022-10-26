@@ -1,3 +1,5 @@
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 exports_files([
     "vmlinux",
 ])
@@ -21,5 +23,4 @@ genrule(
         "mkinitrd.sh",
         "//enterprise/tools/cpio",
     ],
-    visibility = ["//visibility:public"],
 )

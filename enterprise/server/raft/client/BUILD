@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "client",
     srcs = ["client.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/rbuilder",

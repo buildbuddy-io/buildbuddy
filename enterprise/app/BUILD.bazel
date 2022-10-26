@@ -2,7 +2,7 @@ load("//rules/typescript:index.bzl", "ts_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild", "esbuild_config")
 load("//rules/sha:index.bzl", "sha")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 config_setting(
     name = "fastbuild",

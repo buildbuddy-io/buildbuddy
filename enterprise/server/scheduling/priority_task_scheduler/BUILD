@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "priority_task_scheduler",
     srcs = ["priority_task_scheduler.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/runner",
