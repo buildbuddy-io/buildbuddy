@@ -35,6 +35,28 @@ export type ThreadTimeline = {
 // non-numeric prefix and numeric suffix into separate match groups.
 const NUMBERED_THREAD_NAME_PATTERN = /^(?<prefix>[^\d]+)(?<number>\d+)$/;
 
+export function parseProfile(data: string): Profile {
+  // Note, the trace profile format specifies that the "]" at the end of the
+  // list is optional:
+  // https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview#heading=h.f2f0yd51wi15
+  // Bazel uses the JSON Object Format, which means the trailing "]}" is
+  // optional.
+  if (trailingNonWhitespaceCharacters(data, 2) !== "]}") {
+    data += "]}";
+  }
+  return JSON.parse(data) as Profile;
+}
+
+function trailingNonWhitespaceCharacters(text: string, numTrailingChars: number) {
+  let out = "";
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (text[i].trim() !== "") out += text[i];
+
+    if (out.length >= numTrailingChars) break;
+  }
+  return out;
+}
+
 function eventComparator(a: TraceEvent, b: TraceEvent) {
   // Group by thread ID.
   const threadIdDiff = a.tid - b.tid;
