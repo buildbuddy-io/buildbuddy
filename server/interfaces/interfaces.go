@@ -221,7 +221,6 @@ type Cache interface {
 	// [Deprecated] Normal cache-like operations that act in conjunction with WithIsolation
 	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)
 	FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
-	GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error)
 	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
 	SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error
 	SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error

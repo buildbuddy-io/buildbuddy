@@ -47,55 +47,70 @@ func TestIsolation(t *testing.T) {
 	ctx := getAnonContext(t)
 
 	type test struct {
-		cache1         interfaces.Cache
-		cache2         interfaces.Cache
+		cacheType1     resource.CacheType
+		instanceName1  string
+		cacheType2     resource.CacheType
+		instanceName2  string
 		shouldBeShared bool
-	}
-	mustIsolate := func(cacheType resource.CacheType, remoteInstanceName string) interfaces.Cache {
-		c, err := mc.WithIsolation(ctx, cacheType, remoteInstanceName)
-		if err != nil {
-			t.Fatalf("Error isolating cache: %s", err)
-		}
-		return c
 	}
 
 	tests := []test{
 		{ // caches with the same isolation are shared.
-			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
+			cacheType1:     resource.CacheType_CAS,
+			instanceName1:  "remoteInstanceName",
+			cacheType2:     resource.CacheType_CAS,
+			instanceName2:  "remoteInstanceName",
 			shouldBeShared: true,
 		},
 		{ // action caches with the same isolation are shared.
-			cache1:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
+			cacheType1:     resource.CacheType_AC,
+			instanceName1:  "remoteInstanceName",
+			cacheType2:     resource.CacheType_AC,
+			instanceName2:  "remoteInstanceName",
 			shouldBeShared: true,
 		},
 		{ // CAS caches with different remote instance names are shared.
-			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_CAS, "otherInstanceName"),
+			cacheType1:     resource.CacheType_CAS,
+			instanceName1:  "remoteInstanceName",
+			cacheType2:     resource.CacheType_CAS,
+			instanceName2:  "otherInstanceName",
 			shouldBeShared: true,
 		},
 		{ // Action caches with different remote instance names are not shared.
-			cache1:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_AC, "otherInstanceName"),
+			cacheType1:     resource.CacheType_AC,
+			instanceName1:  "remoteInstanceName",
+			cacheType2:     resource.CacheType_AC,
+			instanceName2:  "otherInstanceName",
 			shouldBeShared: false,
 		},
 		{ // CAS and Action caches are not shared.
-			cache1:         mustIsolate(resource.CacheType_CAS, "remoteInstanceName"),
-			cache2:         mustIsolate(resource.CacheType_AC, "remoteInstanceName"),
+			cacheType1:     resource.CacheType_CAS,
+			instanceName1:  "remoteInstanceName",
+			cacheType2:     resource.CacheType_AC,
+			instanceName2:  "remoteInstanceName",
 			shouldBeShared: false,
 		},
 	}
 
 	for _, test := range tests {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		// SetDeprecated() the bytes in cache1.
-		err := test.cache1.SetDeprecated(ctx, d, buf)
+		r1 := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    test.cacheType1,
+			InstanceName: test.instanceName1,
+		}
+		r2 := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    test.cacheType2,
+			InstanceName: test.instanceName2,
+		}
+		// Set() the bytes in cache1.
+		err := mc.Set(ctx, r1, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from cache2.
-		rbuf, err := test.cache2.GetDeprecated(ctx, d)
+		rbuf, err := mc.Get(ctx, r2)
 		if test.shouldBeShared {
 			// if the caches should be shared but there was an error
 			// getting the digest: fail.
@@ -134,13 +149,17 @@ func TestGetSet(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		// SetDeprecated() the bytes in the cache.
-		err := mc.SetDeprecated(ctx, d, buf)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		// Set() the bytes in the cache.
+		err := mc.Set(ctx, r, buf)
 		if err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 		// Get() the bytes from the cache.
-		rbuf, err := mc.GetDeprecated(ctx, d)
+		rbuf, err := mc.Get(ctx, r)
 		if err != nil {
 			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
 		}
@@ -263,30 +282,34 @@ func TestSizeLimit(t *testing.T) {
 	}
 	ctx := getAnonContext(t)
 	digestBufs := randomDigests(t, 400, 400, 400)
-	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
+	digestKeys := make([]*resource.ResourceName, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		if err := mc.SetDeprecated(ctx, d, buf); err != nil {
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		if err := mc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
-		digestKeys = append(digestKeys, d)
+		digestKeys = append(digestKeys, r)
 	}
 	// Expect the last *2* digests to be present.
 	// The first digest should have been evicted.
-	for i, d := range digestKeys {
-		rbuf, err := mc.GetDeprecated(ctx, d)
+	for i, r := range digestKeys {
+		rbuf, err := mc.Get(ctx, r)
 		if i == 0 {
 			if err == nil {
-				t.Fatalf("%q should have been evicted from cache", d.GetHash())
+				t.Fatalf("%q should have been evicted from cache", r.GetDigest().GetHash())
 			}
 			continue
 		}
 		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error getting %q from cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
-		if d.GetHash() != d2.GetHash() {
-			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+		if r.GetDigest().GetHash() != d2.GetHash() {
+			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), r.GetDigest().GetHash())
 		}
 	}
 }
@@ -299,45 +322,53 @@ func TestLRU(t *testing.T) {
 	}
 	ctx := getAnonContext(t)
 	digestBufs := randomDigests(t, 400, 400)
-	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
+	digestKeys := make([]*resource.ResourceName, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		if err := mc.SetDeprecated(ctx, d, buf); err != nil {
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		if err := mc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
-		digestKeys = append(digestKeys, d)
+		digestKeys = append(digestKeys, r)
 	}
 	// Now "use" the first digest written so it is most recently used.
-	ok, err := mc.ContainsDeprecated(ctx, digestKeys[0])
+	ok, err := mc.Contains(ctx, digestKeys[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok {
-		t.Fatalf("Key %q was not present in cache, it should have been.", digestKeys[0].GetHash())
+		t.Fatalf("Key %q was not present in cache, it should have been.", digestKeys[0].GetDigest().GetHash())
 	}
 	// Now write one more digest, which should evict the oldest digest,
 	// (the second one we wrote).
 	d, buf := testdigest.NewRandomDigestBuf(t, 400)
-	if err := mc.SetDeprecated(ctx, d, buf); err != nil {
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	if err := mc.Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
-	digestKeys = append(digestKeys, d)
+	digestKeys = append(digestKeys, r)
 
 	// Expect the first and third digests to be present.
 	// The second digest should have been evicted.
-	for i, d := range digestKeys {
-		rbuf, err := mc.GetDeprecated(ctx, d)
+	for i, r := range digestKeys {
+		rbuf, err := mc.Get(ctx, r)
 		if i == 1 {
 			if err == nil {
-				t.Fatalf("%q should have been evicted from cache", d.GetHash())
+				t.Fatalf("%q should have been evicted from cache", r.GetDigest().GetHash())
 			}
 			continue
 		}
 		if err != nil {
-			t.Fatalf("Error getting %q from cache: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error getting %q from cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
 		// Compute a digest for the bytes returned.
 		d2, err := digest.Compute(bytes.NewReader(rbuf))
-		if d.GetHash() != d2.GetHash() {
+		if r.GetDigest().GetHash() != d2.GetHash() {
 			t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 		}
 	}
