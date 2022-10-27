@@ -186,7 +186,7 @@ type multiWriteCloser struct {
 }
 
 func fileRecordLogString(f *rfpb.FileRecord) string {
-	fmk, _ := filestore.New(false).FileMetadataKey(f)
+	fmk, _ := filestore.New(filestore.Opts{}).FileMetadataKey(f)
 	return string(fmk)
 }
 
