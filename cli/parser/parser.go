@@ -123,7 +123,7 @@ func GetArgsFromRCFiles(commandLineArgs []string) []string {
 	rcFiles := make([]string, 0)
 	if arg.Get(commandLineArgs, "system_rc") != "true" {
 		rcFiles = append(rcFiles, "/etc/bazel.bazelrc")
-		rcFiles = append(rcFiles, "%ProgramData%\bazel.bazelrc")
+		rcFiles = append(rcFiles, `%ProgramData%\bazel.bazelrc`)
 	}
 	if arg.Get(commandLineArgs, "workspace_rc") != "true" {
 		rcFiles = append(rcFiles, ".bazelrc")
@@ -138,6 +138,7 @@ func GetArgsFromRCFiles(commandLineArgs []string) []string {
 	if b := arg.Get(commandLineArgs, "bazelrc"); b != "" {
 		rcFiles = append(rcFiles, b)
 	}
+	log.Debugf("Parsing bazelrc files: %s", rcFiles)
 	opts, err := ParseRCFiles(rcFiles...)
 	if err != nil {
 		log.Debugf("Error parsing .bazelrc file: %s", err.Error())

@@ -12,5 +12,6 @@ go_library(
         "//cli/storage",
         "//proto:sidecar_go_proto",
         "//server/util/grpc_client",
+        "@com_github_google_shlex//:shlex",
     ],
 )

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -25,8 +26,8 @@ import (
 )
 
 var (
-	readThrough  = flag.Bool("read_through", true, "If true, cache remote reads locally")
-	writeThrough = flag.Bool("write_through", true, "If true, upload writes to remote cache too")
+	readThrough  = flag.Bool("cache_proxy.read_through", true, "If true, cache remote reads locally")
+	writeThrough = flag.Bool("cache_proxy.write_through", true, "If true, upload writes to remote cache too")
 )
 
 const (
@@ -110,6 +111,21 @@ func NewCacheProxy(ctx context.Context, env environment.Env, conn *grpc.ClientCo
 		localBSSClient: localBSSClient,
 		qWorker:        NewQueueWorker(ctx, localBSSClient, remoteBSSClient),
 	}, nil
+}
+
+// Wait waits for the queue worker to flush all currently enqueued requests.
+func (p *CacheProxy) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.qWorker.Wait()
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
 }
 
 func (p *CacheProxy) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
@@ -272,6 +288,7 @@ type queueWorker struct {
 	workQ        chan queueReq
 	localClient  bspb.ByteStreamClient
 	remoteClient bspb.ByteStreamClient
+	wg           sync.WaitGroup
 }
 
 func NewQueueWorker(ctx context.Context, localClient, remoteClient bspb.ByteStreamClient) *queueWorker {
@@ -294,10 +311,16 @@ func (qw *queueWorker) Start() {
 				if err := qw.handleWriteRequest(req); err != nil {
 					log.Printf("Error handling write request: %s", err.Error())
 				}
+				qw.wg.Done()
 			}
 		}
 	}()
 }
+
+func (qw *queueWorker) Wait() {
+	qw.wg.Wait()
+}
+
 func (qw *queueWorker) handleWriteRequest(qreq queueReq) error {
 	start := time.Now()
 	resourceName, err := digest.ParseUploadResourceName(qreq.writeResourceName)
@@ -330,6 +353,7 @@ func (qw *queueWorker) EnqueueRemoteWrite(wreq *bspb.WriteRequest) error {
 	}
 	select {
 	case qw.workQ <- req:
+		qw.wg.Add(1)
 		return nil
 	default:
 		return status.ResourceExhaustedError("Queue was at capacity.")

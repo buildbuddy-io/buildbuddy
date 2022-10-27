@@ -83,7 +83,8 @@ func run() (exitCode int, err error) {
 	// Fiddle with args
 	// TODO(bduffany): model these as "built-in" plugins
 	args = tooltag.ConfigureToolTag(args)
-	args = sidecar.ConfigureSidecar(args)
+	var sc *sidecar.Handle
+	sc, args = sidecar.ConfigureSidecar(args)
 	args = login.ConfigureAPIKey(args)
 
 	// Prepare convenience env vars for plugins
@@ -132,6 +133,13 @@ func run() (exitCode int, err error) {
 	// Run plugin post-bazel hooks
 	for _, p := range plugins {
 		if err := p.PostBazel(outputPath); err != nil {
+			return -1, err
+		}
+	}
+
+	// Run sidecar post-Bazel logic if applicable
+	if sc != nil {
+		if err := sc.PostBazel(); err != nil {
 			return -1, err
 		}
 	}

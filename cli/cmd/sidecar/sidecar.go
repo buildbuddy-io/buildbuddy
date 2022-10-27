@@ -3,22 +3,25 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc/metadata"
 
 	"google.golang.org/grpc"
@@ -162,7 +165,7 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	pepb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
 }
 
-func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpcServer *grpc.Server) {
+func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpcServer *grpc.Server) *cache_proxy.CacheProxy {
 	cacheTarget := normalizeGrpcTarget(*remoteCache)
 	conn, err := grpc_client.DialTarget(cacheTarget)
 	if err != nil {
@@ -176,12 +179,28 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 	repb.RegisterActionCacheServer(grpcServer, cacheProxy)
 	repb.RegisterContentAddressableStorageServer(grpcServer, cacheProxy)
 	repb.RegisterCapabilitiesServer(grpcServer, cacheProxy)
+	return cacheProxy
 }
 
-type sidecarService struct{}
+type sidecarService struct {
+	env        environment.Env
+	cacheProxy *cache_proxy.CacheProxy
+}
 
 func (s *sidecarService) Ping(ctx context.Context, req *scpb.PingRequest) (*scpb.PingResponse, error) {
 	return &scpb.PingResponse{}, nil
+}
+
+func (s *sidecarService) Wait(ctx context.Context, req *scpb.WaitRequest) (*scpb.WaitResponse, error) {
+	for _, client := range s.env.GetBuildEventProxyClients() {
+		if client, ok := client.(*build_event_proxy.BuildEventProxyClient); ok {
+			client.Wait(ctx)
+		}
+	}
+	if s.cacheProxy != nil {
+		s.cacheProxy.Wait(ctx)
+	}
+	return &scpb.WaitResponse{}, nil
 }
 
 func normalizeGrpcTarget(target string) string {
@@ -208,6 +227,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	if err := log.Configure(); err != nil {
+		fmt.Printf("Failed to configure logging: %s\n", err)
+		os.Exit(1)
+	}
+
 	env := initializeEnv()
 	grpcServer, lis := initializeGRPCServer(env)
 	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(grpcServer))
@@ -224,14 +248,18 @@ func main() {
 	if *besBackend != "" {
 		registerBESProxy(env, grpcServer)
 	}
+	var cacheProxy *cache_proxy.CacheProxy
 	if *remoteCache != "" {
-		registerCacheProxy(ctx, env, grpcServer)
+		cacheProxy = registerCacheProxy(ctx, env, grpcServer)
 	}
 	if *besBackend == "" && *remoteCache == "" {
 		log.Fatal("No services configured. At least one of --bes_backend or --remote_cache must be provided!")
 	}
 
-	scpb.RegisterSidecarServer(grpcServer, &sidecarService{})
+	scc := &sidecarService{env: env, cacheProxy: cacheProxy}
+	scpb.RegisterSidecarServer(grpcServer, scc)
 
-	grpcServer.Serve(lis)
+	go grpcServer.Serve(lis)
+
+	env.GetHealthChecker().WaitForGracefulShutdown()
 }

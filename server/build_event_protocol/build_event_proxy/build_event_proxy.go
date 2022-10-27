@@ -22,10 +22,11 @@ var (
 )
 
 type BuildEventProxyClient struct {
-	client    pepb.PublishBuildEventClient
-	rootCtx   context.Context
-	target    string
-	clientMux sync.Mutex // PROTECTS(client)
+	client        pepb.PublishBuildEventClient
+	rootCtx       context.Context
+	target        string
+	clientMux     sync.Mutex // PROTECTS(client)
+	ackGoroutines sync.WaitGroup
 }
 
 func (c *BuildEventProxyClient) reconnectIfNecessary() {
@@ -64,6 +65,22 @@ func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventPro
 	return c
 }
 
+// Wait waits for all currently outstanding client streams to be fully
+// acknowledged by the server.
+func (c *BuildEventProxyClient) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.ackGoroutines.Wait()
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
+}
+
 func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pepb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	c.reconnectIfNecessary()
 	go func() {
@@ -77,6 +94,7 @@ func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pe
 
 type asyncStreamProxy struct {
 	pepb.PublishBuildEvent_PublishBuildToolEventStreamClient
+
 	ctx    context.Context
 	events chan *pepb.PublishBuildToolEventStreamRequest
 }
@@ -97,7 +115,9 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 
 		// Receive all responses (ACKs) from the proxy, but ignore those.
 		// Without this step the channel maybe blocked with outstanding messages.
+		c.ackGoroutines.Add(1)
 		go func() {
+			defer c.ackGoroutines.Done()
 			for {
 				_, err := stream.Recv()
 				if err == io.EOF {

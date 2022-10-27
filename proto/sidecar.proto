@@ -5,7 +5,14 @@ package sidecar;
 message PingRequest {}
 message PingResponse {}
 
+message WaitRequest {}
+message WaitResponse {}
+
 service Sidecar {
   // Checks if the sidecar is alive and resets the inactivity timer.
   rpc Ping(PingRequest) returns (PingResponse);
+
+  // Waits for all enqueued async proxy requests (BES stream, cache uploads) to
+  // be completed.
+  rpc Wait(WaitRequest) returns (WaitResponse);
 }
