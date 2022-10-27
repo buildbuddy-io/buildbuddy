@@ -8,10 +8,10 @@ go_library(
     deps = [
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
-        "//server/remote_cache/namespace",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
