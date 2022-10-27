@@ -341,6 +341,7 @@ func TestMetadata(t *testing.T) {
 		require.Equal(t, lastModifyTime1, lastModifyTime2)
 
 		// After updating data, last access and modify time should update
+		err = pc.Set(ctx, r, buf)
 		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)

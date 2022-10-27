@@ -146,6 +146,8 @@ func TestMetadata(t *testing.T) {
 		require.Equal(t, lastModifyTime1, lastModifyTime2)
 
 		// After updating data, last access and modify time should update
+		time.Sleep(1 * time.Second) // Sleep to guarantee timestamps change
+		err = c.Set(ctx, rn, buf)
 		md, err = c.Metadata(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
