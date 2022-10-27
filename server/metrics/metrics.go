@@ -433,7 +433,7 @@ var (
 		Subsystem: "remote_cache",
 		Name:      "migration_copy_chan_size",
 		Help:      "Number of digests queued to be copied during a cache migration.",
-	}))
+	})
 
 	/// ## Remote execution metrics
 
