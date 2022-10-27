@@ -134,7 +134,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	for i, ack := range acks {
 		if ack != i+1 {
 			log.CtxWarningf(ctx, "Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
-			return io.EOF
+			return status.UnknownErrorf("event sequence number mismatch: received %d, wanted %d", ack, i+1)
 		}
 	}
 
