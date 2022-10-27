@@ -1,4 +1,4 @@
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 cc_library(
     name = "libtensorflow",

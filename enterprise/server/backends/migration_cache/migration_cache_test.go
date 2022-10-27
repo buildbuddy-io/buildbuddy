@@ -81,7 +81,7 @@ func (c *errorCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte,
 	return nil, errors.New("error cache get err")
 }
 
-func (c *errorCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (c *errorCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	return errors.New("error cache delete err")
 }
 
@@ -97,11 +97,11 @@ func (c *errorCache) FindMissingDeprecated(ctx context.Context, digests []*repb.
 	return nil, errors.New("error cache findmissing err")
 }
 
-func (c *errorCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (c *errorCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	return nil, errors.New("error cache writer err")
 }
 
-func (c *errorCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (c *errorCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	return nil, errors.New("error cache reader err")
 }
 
@@ -1144,13 +1144,17 @@ func TestSetMulti(t *testing.T) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	lock := sync.RWMutex{}
-	dataToSet := make(map[*repb.Digest][]byte, 50)
+	dataToSet := make(map[*resource.ResourceName][]byte, 50)
 	for i := 0; i < 50; i++ {
 		eg.Go(func() error {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			rn := &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
 			lock.Lock()
 			defer lock.Unlock()
-			dataToSet[d] = buf
+			dataToSet[rn] = buf
 			return nil
 		})
 	}
@@ -1159,29 +1163,19 @@ func TestSetMulti(t *testing.T) {
 	err = mc.SetMulti(ctx, dataToSet)
 	require.NoError(t, err)
 
-	for d, expected := range dataToSet {
-		data, err := mc.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+	for r, expected := range dataToSet {
+		data, err := mc.Get(ctx, r)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = srcCache.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+		data, err = srcCache.Get(ctx, r)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 
-		data, err = destCache.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+		data, err = destCache.Get(ctx, r)
 		require.NoError(t, err)
 		require.True(t, bytes.Equal(expected, data))
 	}
-
 }
 
 func TestDelete(t *testing.T) {
@@ -1219,7 +1213,7 @@ func TestDelete(t *testing.T) {
 	require.True(t, bytes.Equal(buf, data))
 
 	// After delete, data should no longer exist
-	err = mc.Delete(ctx, d)
+	err = mc.DeleteDeprecated(ctx, d)
 	require.NoError(t, err)
 
 	data, err = mc.Get(ctx, r)
@@ -1256,7 +1250,11 @@ func TestReadWrite(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		w, err := mc.Writer(ctx, d)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		w, err := mc.Writer(ctx, r)
 		require.NoError(t, err)
 
 		_, err = w.Write(buf)
@@ -1268,7 +1266,7 @@ func TestReadWrite(t *testing.T) {
 		err = w.Close()
 		require.NoError(t, err)
 
-		reader, err := mc.Reader(ctx, d, 0, 0)
+		reader, err := mc.Reader(ctx, r, 0, 0)
 		require.NoError(t, err)
 
 		actualBuf := make([]byte, len(buf))
@@ -1281,7 +1279,7 @@ func TestReadWrite(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify data was written to both caches
-		srcReader, err := srcCache.Reader(ctx, d, 0, 0)
+		srcReader, err := srcCache.Reader(ctx, r, 0, 0)
 		require.NoError(t, err)
 
 		actualBuf = make([]byte, len(buf))
@@ -1293,7 +1291,7 @@ func TestReadWrite(t *testing.T) {
 		err = srcReader.Close()
 		require.NoError(t, err)
 
-		destReader, err := destCache.Reader(ctx, d, 0, 0)
+		destReader, err := destCache.Reader(ctx, r, 0, 0)
 		require.NoError(t, err)
 
 		actualBuf = make([]byte, len(buf))
@@ -1323,8 +1321,13 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	defer mc.Stop()
 
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+
 	// Will fail to set a dest writer
-	w, err := mc.Writer(ctx, d)
+	w, err := mc.Writer(ctx, r)
 	require.NoError(t, err)
 
 	// Should still write data to src cache without error
@@ -1338,7 +1341,7 @@ func TestReaderWriter_DestFails(t *testing.T) {
 	require.NoError(t, err)
 
 	// Will fail to set a dest reader
-	reader, err := mc.Reader(ctx, d, 0, 0)
+	reader, err := mc.Reader(ctx, r, 0, 0)
 	require.NoError(t, err)
 
 	// Should still read from src cache without error

@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "testexecutor",
     srcs = ["testexecutor.go"],
@@ -7,7 +9,6 @@ go_library(
         "//enterprise/server/cmd/executor",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor",
-    visibility = ["//visibility:public"],
     deps = [
         "//server/testutil/testport",
         "//server/testutil/testserver",

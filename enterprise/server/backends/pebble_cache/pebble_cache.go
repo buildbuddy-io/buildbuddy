@@ -944,7 +944,7 @@ func (p *PebbleCache) FindMissingDeprecated(ctx context.Context, digests []*repb
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
-	rc, err := p.reader(ctx, r, 0, 0)
+	rc, err := p.Reader(ctx, r, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -1016,7 +1016,7 @@ func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Di
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
-	wc, err := p.writer(ctx, r)
+	wc, err := p.Writer(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -1035,13 +1035,18 @@ func (p *PebbleCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []
 	}, data)
 }
 
-func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	for d, data := range kvs {
-		if err := p.SetDeprecated(ctx, d, data); err != nil {
+func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	for r, data := range kvs {
+		if err := p.Set(ctx, r, data); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (p *PebbleCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), kvs)
+	return p.SetMulti(ctx, rnMap)
 }
 
 func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delta int64) {
@@ -1135,8 +1140,8 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 	return nil
 }
 
-func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
-	fileRecord, err := p.makeFileRecordDeprecated(ctx, d)
+func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -1147,17 +1152,17 @@ func (p *PebbleCache) Delete(ctx context.Context, d *repb.Digest) error {
 	return p.deleteRecord(ctx, fileMetadataKey)
 }
 
-func (p *PebbleCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	rn := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: p.isolation.GetRemoteInstanceName(),
 		Compressor:   repb.Compressor_IDENTITY,
 		CacheType:    p.isolation.GetCacheType(),
 	}
-	return p.reader(ctx, rn, offset, limit)
+	return p.Delete(ctx, rn)
 }
 
-func (p *PebbleCache) reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1205,6 +1210,16 @@ func (p *PebbleCache) reader(ctx context.Context, r *resource.ResourceName, offs
 	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
 }
 
+func (p *PebbleCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    p.isolation.GetCacheType(),
+	}
+	return p.Reader(ctx, rn, offset, limit)
+}
+
 type writeCloser struct {
 	interfaces.MetadataWriteCloser
 	closeFn      func(n int64) error
@@ -1227,15 +1242,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (p *PebbleCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	return p.writer(ctx, &resource.ResourceName{
-		Digest:       d,
-		CacheType:    p.isolation.GetCacheType(),
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-	})
-}
-
-func (p *PebbleCache) writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1303,6 +1310,14 @@ func (p *PebbleCache) writer(ctx context.Context, r *resource.ResourceName) (int
 		return err
 	}
 	return wc, nil
+}
+
+func (p *PebbleCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	return p.Writer(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    p.isolation.GetCacheType(),
+		InstanceName: p.isolation.GetRemoteInstanceName(),
+	})
 }
 
 func (p *PebbleCache) DoneScanning() bool {

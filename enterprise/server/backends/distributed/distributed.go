@@ -421,35 +421,47 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb
 }
 func (c *Cache) remoteReader(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Reader(ctx, d, offset, limit)
+		r := &resource.ResourceName{
+			Digest:       d,
+			InstanceName: isolation.GetRemoteInstanceName(),
+			CacheType:    isolation.GetCacheType(),
+		}
+		return c.local.Reader(ctx, r, offset, limit)
 	}
 	return c.cacheProxy.RemoteReader(ctx, peer, isolation, d, offset, limit)
 }
 func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, isolation *dcpb.Isolation, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
-		// No prefix necessary -- it's already set on the local cache.
-		return c.local.Writer(ctx, d)
+		r := &resource.ResourceName{
+			Digest:       d,
+			InstanceName: isolation.GetRemoteInstanceName(),
+			CacheType:    isolation.GetCacheType(),
+		}
+		return c.local.Writer(ctx, r)
 	}
 	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, isolation, d)
 }
-func (c *Cache) remoteDelete(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) error {
+func (c *Cache) remoteDelete(ctx context.Context, peer string, r *resource.ResourceName) error {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		// No prefix (remote instance name + cache type) necessary -- it's already set on the local cache.
-		return c.local.Delete(ctx, d)
+		return c.local.Delete(ctx, r)
 	}
-	return c.cacheProxy.RemoteDelete(ctx, peer, isolation, d)
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
+	return c.cacheProxy.RemoteDelete(ctx, peer, isolation, r.GetDigest())
 }
 func (c *Cache) sendFile(ctx context.Context, d *repb.Digest, isolation *dcpb.Isolation, dest string) error {
 	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, isolation, d); err == nil && exists {
 		return nil
 	}
 
-	localCache, err := c.local.WithIsolation(ctx, isolation.GetCacheType(), isolation.GetRemoteInstanceName())
-	if err != nil {
-		return err
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: isolation.GetRemoteInstanceName(),
+		CacheType:    isolation.GetCacheType(),
 	}
-	r, err := localCache.Reader(ctx, d, 0, 0)
+	r, err := c.local.Reader(ctx, rn, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -1062,16 +1074,16 @@ func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) 
 	return wc.Commit()
 }
 
-func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for d, data := range kvs {
-		setFn := func(d *repb.Digest, data []byte) {
+	for r, data := range kvs {
+		setFn := func(r *resource.ResourceName, data []byte) {
 			eg.Go(func() error {
-				return c.SetDeprecated(ctx, d, data)
+				return c.Set(ctx, r, data)
 			})
 		}
-		setFn(d, data)
+		setFn(r, data)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -1081,10 +1093,15 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	return nil
 }
 
-func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
-	ps := c.readPeers(d)
+func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(c.isolation.CacheType, c.isolation.RemoteInstanceName, kvs)
+	return c.SetMulti(ctx, rnMap)
+}
+
+func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	ps := c.readPeers(r.GetDigest())
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		err := c.remoteDelete(ctx, peer, c.isolation, d)
+		err := c.remoteDelete(ctx, peer, r)
 		if err != nil {
 			if status.IsNotFoundError(err) {
 				continue
@@ -1095,25 +1112,43 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	return nil
 }
 
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	rn := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: c.isolation.GetRemoteInstanceName(),
 		Compressor:   repb.Compressor_IDENTITY,
 		CacheType:    c.isolation.GetCacheType(),
 	}
-	return c.distributedReader(ctx, rn, offset, limit)
+	return c.Delete(ctx, rn)
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	return c.distributedReader(ctx, r, offset, limit)
+}
+
+func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.isolation.GetCacheType(),
+	}
+	return c.Reader(ctx, rn, offset, limit)
+}
+
+func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	mwc, err := c.multiWriter(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return mwc, nil
+}
+
+func (c *Cache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
 	rn := &resource.ResourceName{
 		Digest:       d,
 		InstanceName: c.isolation.GetRemoteInstanceName(),
 		CacheType:    c.isolation.GetCacheType(),
 	}
-	mwc, err := c.multiWriter(ctx, rn)
-	if err != nil {
-		return nil, err
-	}
-	return mwc, nil
+	return c.Writer(ctx, rn)
 }

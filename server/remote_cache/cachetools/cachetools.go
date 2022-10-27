@@ -314,7 +314,7 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	wc, err := cache.Writer(ctx, d)
+	wc, err := cache.WriterDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}

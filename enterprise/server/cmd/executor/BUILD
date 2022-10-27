@@ -2,11 +2,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
+package(default_visibility = ["//visibility:public"])
+
 go_library(
     name = "executor_lib",
     srcs = ["executor.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/auth",
@@ -67,7 +68,6 @@ go_binary(
         "//enterprise:licenses",
     ],
     embed = [":executor_lib"],
-    visibility = ["//visibility:public"],
 )
 
 container_image(
@@ -77,7 +77,6 @@ container_image(
         "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
     },
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )
 
 # Build a docker image similar to the go_binary above, but use the "go_image"
@@ -87,7 +86,6 @@ go_image(
     base = ":base_image",
     binary = ":executor",
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )
 
 # This image is the docker image used by the executor to run actions that do not
@@ -96,5 +94,4 @@ container_image(
     name = "default_base_image",
     base = "@default_execution_image//image:dockerfile_image.tar",
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )

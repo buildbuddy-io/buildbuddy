@@ -1,13 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "distributed",
     srcs = ["distributed.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed",
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         "//enterprise/server/backends/pubsub",
         "//enterprise/server/util/cacheproxy",
@@ -37,10 +35,6 @@ go_test(
     srcs = ["distributed_test.go"],
     embed = [":distributed"],
     shard_count = 10,
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

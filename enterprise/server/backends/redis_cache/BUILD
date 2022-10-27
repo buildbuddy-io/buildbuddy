@@ -1,13 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "redis_cache",
     srcs = ["redis_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache",
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         "//enterprise/server/backends/redis_client",
         "//enterprise/server/composable_cache",

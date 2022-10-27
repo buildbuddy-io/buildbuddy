@@ -1,9 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_binary(
     name = "yaml_doc",
     embed = [":yaml_doc_lib"],
-    visibility = ["//visibility:public"],
 )
 
 go_library(
@@ -33,5 +34,4 @@ genrule(
         cat $(location :generate_yaml) >> "$@" &&
         echo "\\`\\`\\`" >> "$@"
     """,
-    visibility = ["//visibility:public"],
 )

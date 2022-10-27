@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "scheduler_client",
     srcs = ["scheduler_client.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/scheduling/priority_task_scheduler",

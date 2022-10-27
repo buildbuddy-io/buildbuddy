@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "telemetry",
     srcs = ["telemetry_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:telemetry_go_proto",
         "//server/environment",

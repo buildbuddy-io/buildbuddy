@@ -2,7 +2,7 @@ load("//rules/typescript:index.bzl", "ts_library")
 load("@npm//@bazel/esbuild:index.bzl", "esbuild", "esbuild_config")
 load("//rules/sha:index.bzl", "sha")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 config_setting(
     name = "fastbuild",
@@ -39,6 +39,7 @@ esbuild(
         ":fastbuild": False,
         "//conditions:default": True,
     }),
+    visibility = ["//visibility:public"],
     deps = [
         ":enterprise_app",
     ],
@@ -87,6 +88,7 @@ genrule(
         done;
         cat out > $@;
     """,
+    visibility = ["//visibility:public"],
 )
 
 sha(
@@ -95,4 +97,5 @@ sha(
         ":style.css",
         "//enterprise/app:app_bundle",
     ],
+    visibility = ["//visibility:public"],
 )

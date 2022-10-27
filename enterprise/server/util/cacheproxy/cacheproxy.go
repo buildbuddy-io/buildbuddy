@@ -238,7 +238,7 @@ func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb
 		return nil, err
 	}
 	d := digestFromKey(req.GetKey())
-	err = cache.Delete(ctx, d)
+	err = cache.DeleteDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,7 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if err != nil {
 		return err
 	}
-	reader, err := cache.Reader(ctx, d, req.GetOffset(), req.GetLimit())
+	reader, err := cache.ReaderDeprecated(ctx, d, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 		return err
@@ -345,7 +345,7 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if err != nil {
 				return err
 			}
-			wc, err := cache.Writer(ctx, d)
+			wc, err := cache.WriterDeprecated(ctx, d)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 				return err

@@ -2,7 +2,7 @@ import pako from "pako";
 import React from "react";
 import SetupCodeComponent from "../docs/setup_code";
 import FlameChart from "../flame_chart/flame_chart";
-import { Profile } from "../flame_chart/profile_model";
+import { Profile, parseProfile } from "../flame_chart/profile_model";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
@@ -87,7 +87,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       .fetchBytestreamFile(profileFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
       .then((contents: any) => {
         if (isGzipped) {
-          contents = JSON.parse(pako.inflate(contents, { to: "string" })) as Profile;
+          contents = parseProfile(pako.inflate(contents, { to: "string" }));
         }
         this.updateProfile(contents);
       })

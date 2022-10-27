@@ -1,11 +1,12 @@
 load("//rules/typescript:index.bzl", "ts_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 exports_files(["secrets.css"])
 
 ts_library(
     name = "secrets",
     srcs = glob(["*.tsx"]),
-    visibility = ["//visibility:public"],
     deps = [
         "//app/alert",
         "//app/components/button",

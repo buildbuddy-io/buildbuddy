@@ -206,11 +206,15 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 	require.Nil(t, md)
 }
 
-func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
-	m := make(map[*repb.Digest][]byte)
+func randomDigests(t *testing.T, sizes ...int64) map[*resource.ResourceName][]byte {
+	m := make(map[*resource.ResourceName][]byte)
 	for _, size := range sizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, size)
-		m[d] = buf
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		m[rn] = buf
 	}
 	return m
 }
@@ -265,16 +269,14 @@ func TestMultiGetSet(t *testing.T) {
 	}
 	resourceNames := make([]*resource.ResourceName, 0, len(digests))
 	for d := range digests {
-		resourceNames = append(resourceNames, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+		resourceNames = append(resourceNames, d)
 	}
 	m, err := dc.GetMulti(ctx, resourceNames)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
-	for d := range digests {
+	for r := range digests {
+		d := r.GetDigest()
 		rbuf, ok := m[d]
 		if !ok {
 			t.Fatalf("Multi-get failed to return expected digest: %q", d.GetHash())
@@ -303,8 +305,12 @@ func TestReadWrite(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t, te)
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		// Use Writer() to set the bytes in the cache.
-		wc, err := dc.Writer(ctx, d)
+		wc, err := dc.Writer(ctx, rn)
 		if err != nil {
 			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 		}
@@ -318,7 +324,7 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
 		// Use Reader() to get the bytes from the cache.
-		reader, err := dc.Reader(ctx, d, 0, 0)
+		reader, err := dc.Reader(ctx, rn, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
@@ -339,8 +345,12 @@ func TestReadOffset(t *testing.T) {
 	}
 	ctx := getAnonContext(t, te)
 	d, r := testdigest.NewRandomDigestReader(t, 100)
+	rn := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 	// Use Writer() to set the bytes in the cache.
-	wc, err := dc.Writer(ctx, d)
+	wc, err := dc.Writer(ctx, rn)
 	if err != nil {
 		t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 	}
@@ -354,7 +364,7 @@ func TestReadOffset(t *testing.T) {
 		t.Fatalf("Error closing writer: %s", err.Error())
 	}
 	// Use Reader() to get the bytes from the cache.
-	reader, err := dc.Reader(ctx, d, d.GetSizeBytes(), 0)
+	reader, err := dc.Reader(ctx, rn, d.GetSizeBytes(), 0)
 	if err != nil {
 		t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 	}
@@ -383,7 +393,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	offset := int64(2)
 	limit := int64(3)
-	reader, err := dc.Reader(ctx, d, offset, limit)
+	reader, err := dc.Reader(ctx, r, offset, limit)
 	require.NoError(t, err)
 
 	readBuf := make([]byte, size)
@@ -404,22 +414,16 @@ func TestSizeLimit(t *testing.T) {
 	dc.WaitUntilMapped()
 	ctx := getAnonContext(t, te)
 	digestBufs := randomDigests(t, 400, 400, 400)
-	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
+	digestKeys := make([]*resource.ResourceName, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		r := &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		}
-		if err := dc.Set(ctx, r, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+		if err := dc.Set(ctx, d, buf); err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetDigest().GetHash(), err.Error())
 		}
 		digestKeys = append(digestKeys, d)
 	}
-	for i, d := range digestKeys {
-		rbuf, err := dc.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+	for i, r := range digestKeys {
+		d := r.GetDigest()
+		rbuf, err := dc.Get(ctx, r)
 
 		// The first digest should have been evicted.
 		if i == 0 {
@@ -453,24 +457,20 @@ func TestLRU(t *testing.T) {
 	dc.WaitUntilMapped()
 	ctx := getAnonContext(t, te)
 	digestBufs := randomDigests(t, 400, 400)
-	digestKeys := make([]*repb.Digest, 0, len(digestBufs))
-	for d, buf := range digestBufs {
-		r := &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		}
+	digestKeys := make([]*resource.ResourceName, 0, len(digestBufs))
+	for r, buf := range digestBufs {
 		if err := dc.Set(ctx, r, buf); err != nil {
-			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
+			t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 		}
-		digestKeys = append(digestKeys, d)
+		digestKeys = append(digestKeys, r)
 	}
 	// Now "use" the first digest written so it is most recently used.
-	ok, err := dc.ContainsDeprecated(ctx, digestKeys[0])
+	ok, err := dc.Contains(ctx, digestKeys[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok {
-		t.Fatalf("Key %q was not present in cache, it should have been.", digestKeys[0].GetHash())
+		t.Fatalf("Key %q was not present in cache, it should have been.", digestKeys[0].GetDigest().GetHash())
 	}
 	// Now write one more digest, which should evict the oldest digest,
 	// (the second one we wrote).
@@ -482,13 +482,11 @@ func TestLRU(t *testing.T) {
 	if err := dc.Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
-	digestKeys = append(digestKeys, d)
+	digestKeys = append(digestKeys, r)
 
-	for i, d := range digestKeys {
-		rbuf, err := dc.Get(ctx, &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
-		})
+	for i, r := range digestKeys {
+		d := r.GetDigest()
+		rbuf, err := dc.Get(ctx, r)
 
 		// The second digest should have been evicted.
 		if i == 1 {

@@ -353,17 +353,7 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceNam
 	}, nil
 }
 
-func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	}
-	return rc.reader(ctx, rn, offset, limit)
-}
-
-func (rc *RaftCache) reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -391,6 +381,16 @@ func (rc *RaftCache) reader(ctx context.Context, r *resource.ResourceName, offse
 	return readCloser, err
 }
 
+func (rc *RaftCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	}
+	return rc.Reader(ctx, rn, offset, limit)
+}
+
 type raftWriteCloser struct {
 	io.WriteCloser
 	closeFn func() error
@@ -406,17 +406,7 @@ func (rwc *raftWriteCloser) Close() error {
 	return nil
 }
 
-func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	}
-	return rc.writer(ctx, r)
-}
-
-func (rc *RaftCache) writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (rc *RaftCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -457,6 +447,16 @@ func (rc *RaftCache) writer(ctx context.Context, r *resource.ResourceName) (inte
 		return rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	}
 	return wc, nil
+}
+
+func (rc *RaftCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: rc.isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    rc.isolation.GetCacheType(),
+	}
+	return rc.Writer(ctx, r)
 }
 
 func (rc *RaftCache) Stop() error {
@@ -557,7 +557,7 @@ func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.
 }
 
 func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
-	r, err := rc.reader(ctx, rn, 0, 0)
+	r, err := rc.Reader(ctx, rn, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +615,7 @@ func (rc *RaftCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Dig
 }
 
 func (rc *RaftCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
-	wc, err := rc.writer(ctx, r)
+	wc, err := rc.Writer(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -635,10 +635,18 @@ func (rc *RaftCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []b
 	return rc.Set(ctx, rn, data)
 }
 
-func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	return nil
 }
 
-func (rc *RaftCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (rc *RaftCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	return nil
+}
+
+func (rc *RaftCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	return nil
+}
+
+func (rc *RaftCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	return nil
 }
