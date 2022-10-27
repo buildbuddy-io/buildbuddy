@@ -818,11 +818,11 @@ func (mc *MigrationCache) copyDataInBackground() error {
 	}
 }
 
-func (mc *MigrationCache) logCopyChanInfoInBackground() {
+func (mc *MigrationCache) monitorCopyChanFullness() {
 	copyChanFullTicker := time.NewTicker(mc.copyChanFullWarningInterval)
 	defer copyChanFullTicker.Stop()
 
-	metricTicker := time.NewTicker(5 * time.Minute)
+	metricTicker := time.NewTicker(5 * time.Second)
 	defer metricTicker.Stop()
 
 	for {
@@ -886,7 +886,7 @@ func (mc *MigrationCache) Start() error {
 	})
 	if mc.copyChanFullWarningInterval > 0 {
 		mc.eg.Go(func() error {
-			mc.logCopyChanInfoInBackground()
+			mc.monitorCopyChanFullness()
 			return nil
 		})
 	}
