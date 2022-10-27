@@ -366,16 +366,11 @@ func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, li
 	return c.Reader(ctx, rn, offset, limit)
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	if !eligibleForMc(d) {
-		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for memcache", d)
+func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	if !eligibleForMc(r.GetDigest()) {
+		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for memcache", r.GetDigest())
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -386,6 +381,17 @@ func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Committe
 		return c.mcSet(k, buffer.Bytes())
 	}
 	return wc, nil
+
+}
+
+func (c *Cache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Writer(ctx, r)
 }
 
 func (c *Cache) Start() error {

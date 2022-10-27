@@ -634,17 +634,17 @@ func (d *doubleWriter) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (mc *MigrationCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destWriter interfaces.CommittedWriteCloser
 
 	eg.Go(func() error {
-		destWriter, dstErr = mc.dest.Writer(ctx, d)
+		destWriter, dstErr = mc.dest.Writer(ctx, r)
 		return nil
 	})
 
-	srcWriter, srcErr := mc.src.Writer(ctx, d)
+	srcWriter, srcErr := mc.src.Writer(ctx, r)
 	eg.Wait()
 
 	if srcErr != nil {
@@ -657,20 +657,29 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 		return nil, srcErr
 	}
 	if dstErr != nil {
-		log.Warningf("Migration failure creating dest %v writer: %s", d, dstErr)
+		log.Warningf("Migration failure creating dest %v writer: %s", r.GetDigest(), dstErr)
 	}
 
 	dw := &doubleWriter{
 		src:  srcWriter,
 		dest: destWriter,
 		destDeleteFn: func() {
-			deleteErr := mc.dest.DeleteDeprecated(ctx, d)
+			deleteErr := mc.dest.Delete(ctx, r)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", d, deleteErr)
+				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}
 		},
 	}
 	return dw, nil
+}
+
+func (mc *MigrationCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	return mc.Writer(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
@@ -861,7 +870,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer srcReader.Close()
 
-	destWriter, err := cache.dest.Writer(c.ctx, c.d)
+	destWriter, err := cache.dest.WriterDeprecated(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return

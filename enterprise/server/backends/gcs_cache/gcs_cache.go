@@ -574,28 +574,34 @@ func setChunkSize(d *repb.Digest, w *storage.Writer) {
 	}
 }
 
-func (g *GCSCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	k, err := g.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
+func (g *GCSCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	obj := g.bucketHandle.Object(k)
 	writer := obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
-	setChunkSize(d, writer)
+	setChunkSize(r.GetDigest(), writer)
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
 	ctx, cancel := context.WithCancel(ctx)
 	dwc := &gcsDedupingWriteCloser{
 		cancelFunc:  cancel,
 		WriteCloser: writer,
 		timer:       timer,
-		size:        d.GetSizeBytes(),
+		size:        r.GetDigest().GetSizeBytes(),
 	}
 	return dwc, nil
+
+}
+
+func (g *GCSCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: g.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    g.cacheType,
+	}
+	return g.Writer(ctx, r)
 }
 
 func (g *GCSCache) Start() error {
