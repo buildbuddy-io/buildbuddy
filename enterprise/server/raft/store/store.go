@@ -98,8 +98,11 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		replicas: sync.Map{},
 
 		metaRangeData: "",
-		fileStorer:    filestore.New(true /*=isolateByGroupIDs*/),
-		splitMu:       sync.Mutex{},
+		fileStorer: filestore.New(filestore.Opts{
+			IsolateByGroupIDs:           true,
+			PrioritizeHashInMetadataKey: true,
+		}),
+		splitMu: sync.Mutex{},
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)

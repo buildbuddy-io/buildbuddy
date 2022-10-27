@@ -375,7 +375,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			PartitionId: defaultPartitionID,
 			GroupId:     interfaces.AuthAnonymousUser,
 		},
-		fileStorer: filestore.New(opts.IsolateByGroupIDs),
+		fileStorer: filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
 	}
 
 	peMu := sync.Mutex{}
