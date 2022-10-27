@@ -147,7 +147,11 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 		return nil, err
 	}
 
-	parts := make([]string, 0, 5)
+	numParts := 4
+	if fs.isolateByGroupIDs {
+		numParts = 5
+	}
+	parts := make([]string, 0, numParts)
 	parts = append(parts, partID)
 	if fs.isolateByGroupIDs {
 		parts = append(parts, groupID)
