@@ -34,4 +34,7 @@ genrule(
         cat $(location :generate_yaml) >> "$@" &&
         echo "\\`\\`\\`" >> "$@"
     """,
+    visibility = [
+        "//website:__pkg__",
+    ],
 )
