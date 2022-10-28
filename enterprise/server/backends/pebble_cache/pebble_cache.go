@@ -920,11 +920,6 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.Res
 	return missing, nil
 }
 
-func (p *PebbleCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), digests)
-	return p.FindMissing(ctx, rns)
-}
-
 func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	rc, err := p.Reader(ctx, r, 0, 0)
 	if err != nil {

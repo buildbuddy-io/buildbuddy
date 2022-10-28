@@ -100,11 +100,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	cache, err := s.getCache(ctx, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-	digestsToLookup := make([]*repb.Digest, 0, len(req.GetBlobDigests()))
+	digestsToLookup := make([]*resource.ResourceName, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
 		if d.GetHash() == digest.EmptySha256 {
 			continue
@@ -112,9 +108,10 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		if d.GetHash() == digest.EmptyHash {
 			continue
 		}
-		digestsToLookup = append(digestsToLookup, d)
+		rn := digest.NewCASResourceName(d, req.GetInstanceName()).ToProto()
+		digestsToLookup = append(digestsToLookup, rn)
 	}
-	missing, err := cache.FindMissingDeprecated(ctx, digestsToLookup)
+	missing, err := s.cache.FindMissing(ctx, digestsToLookup)
 	if err != nil {
 		return nil, err
 	}

@@ -541,11 +541,6 @@ func (rc *RaftCache) FindMissing(ctx context.Context, resources []*resource.Reso
 	return rc.findMissingResourceNames(ctx, resources)
 }
 
-func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	resourceNames := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
-	return rc.findMissingResourceNames(ctx, resourceNames)
-}
-
 func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
 	r, err := rc.Reader(ctx, rn, 0, 0)
 	if err != nil {

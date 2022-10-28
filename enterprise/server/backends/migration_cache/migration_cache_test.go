@@ -93,10 +93,6 @@ func (c *errorCache) Metadata(ctx context.Context, r *resource.ResourceName) (*i
 	return nil, errors.New("error cache metadata err")
 }
 
-func (c *errorCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	return nil, errors.New("error cache findmissing err")
-}
-
 func (c *errorCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	return nil, errors.New("error cache writer err")
 }
@@ -981,20 +977,12 @@ func TestFindMissing(t *testing.T) {
 	require.NoError(t, err)
 
 	digests := []*repb.Digest{d, notSetD1, notSetD2}
-	missing, err := mc.FindMissingDeprecated(ctx, digests)
-	require.NoError(t, err)
-	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
-
 	rns := digest.ResourceNames(resource.CacheType_CAS, "", digests)
-	missing, err = mc.FindMissing(ctx, rns)
+	missing, err := mc.FindMissing(ctx, rns)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
 
 	digests = []*repb.Digest{d}
-	missing, err = mc.FindMissingDeprecated(ctx, digests)
-	require.NoError(t, err)
-	require.Empty(t, missing)
-
 	rns = digest.ResourceNames(resource.CacheType_CAS, "", digests)
 	missing, err = mc.FindMissing(ctx, rns)
 	require.NoError(t, err)
@@ -1069,7 +1057,8 @@ func TestFindMissing_DestErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	missing, err := mc.FindMissingDeprecated(ctx, []*repb.Digest{d, notSetD1, notSetD2})
+	rns := digest.ResourceNames(resource.CacheType_CAS, "", []*repb.Digest{d, notSetD1, notSetD2})
+	missing, err := mc.FindMissing(ctx, rns)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []*repb.Digest{notSetD1, notSetD2}, missing)
 }

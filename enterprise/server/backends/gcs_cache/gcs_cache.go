@@ -442,11 +442,6 @@ func (g *GCSCache) FindMissing(ctx context.Context, resources []*resource.Resour
 	return missing, nil
 }
 
-func (g *GCSCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(g.cacheType, g.remoteInstanceName, digests)
-	return g.FindMissing(ctx, rns)
-}
-
 func (g *GCSCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	k, err := g.key(ctx, r)
 	if err != nil {

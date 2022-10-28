@@ -315,11 +315,6 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 	return srcMissing, srcErr
 }
 
-func (mc *MigrationCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(mc.cacheType, mc.remoteInstanceName, digests)
-	return mc.FindMissing(ctx, rns)
-}
-
 func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error

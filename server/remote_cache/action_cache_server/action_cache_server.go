@@ -50,8 +50,8 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
-	missing, err := cache.FindMissingDeprecated(ctx, digests)
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*resource.ResourceName) error {
+	missing, err := cache.FindMissing(ctx, digests)
 	if err != nil {
 		return err
 	}
@@ -62,12 +62,13 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*rep
 }
 
 func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, r *repb.ActionResult) error {
-	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
+	outputFileDigests := make([]*resource.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
 		if d != nil && d.GetSizeBytes() > 0 {
 			mu.Lock()
-			outputFileDigests = append(outputFileDigests, d)
+			rn := digest.NewCASResourceName(d, remoteInstanceName).ToProto()
+			outputFileDigests = append(outputFileDigests, rn)
 			mu.Unlock()
 		}
 	}
@@ -79,11 +80,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			rn := &resource.ResourceName{
-				Digest:       dc.GetTreeDigest(),
-				CacheType:    resource.CacheType_CAS,
-				InstanceName: remoteInstanceName,
-			}
+			rn := digest.NewCASResourceName(dc.GetTreeDigest(), remoteInstanceName).ToProto()
 			blob, err := cache.Get(gCtx, rn)
 			if err != nil {
 				return err
