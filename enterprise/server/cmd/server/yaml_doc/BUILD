@@ -35,7 +35,6 @@ genrule(
         echo "\\`\\`\\`" >> "$@"
     """,
     visibility = [
-        "//enterprise:__subpackages__",
         "//website:__pkg__",
     ],
 )
