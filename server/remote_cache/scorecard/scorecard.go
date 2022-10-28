@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -164,17 +163,6 @@ func filterResults(results []*capb.ScoreCard_Result, req *capb.GetCacheScoreCard
 	}
 
 	return out, nil
-}
-
-func toResourceCacheType(cacheType capb.CacheType) resource.CacheType {
-	switch cacheType {
-	case capb.CacheType_AC:
-		return resource.CacheType_AC
-	case capb.CacheType_CAS:
-		return resource.CacheType_CAS
-	default:
-		return resource.CacheType_UNKNOWN_CACHE_TYPE
-	}
 }
 
 type sortOpts struct {
