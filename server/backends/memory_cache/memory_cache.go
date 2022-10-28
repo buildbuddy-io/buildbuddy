@@ -142,15 +142,6 @@ func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	return &interfaces.CacheMetadata{SizeBytes: int64(len(vb))}, nil
 }
 
-func (m *MemoryCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return m.Metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	var missing []*repb.Digest
 	// No parallelism here either. Not necessary for an in-memory cache.
@@ -240,22 +231,22 @@ func (m *MemoryCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []
 	return m.Set(ctx, r, data)
 }
 
-func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	for d, data := range kvs {
-		if err := m.SetDeprecated(ctx, d, data); err != nil {
+func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	for r, data := range kvs {
+		if err := m.Set(ctx, r, data); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := m.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
+func (m *MemoryCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(m.cacheType, m.remoteInstanceName, kvs)
+	return m.SetMulti(ctx, rnMap)
+}
+
+func (m *MemoryCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -263,15 +254,26 @@ func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 	removed := m.l.Remove(k)
 	m.lock.Unlock()
 	if !removed {
+		d := r.GetDigest()
 		return status.NotFoundErrorf("digest %s/%d not found in memory cache", d.GetHash(), d.GetSizeBytes())
 	}
 	return nil
 }
 
+func (m *MemoryCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	}
+	return m.Delete(ctx, rn)
+}
+
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
-	buf, err := m.GetDeprecated(ctx, d)
+	buf, err := m.Get(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -287,14 +289,34 @@ func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	return io.NopCloser(r), nil
 }
 
-func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (m *MemoryCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	}
+	return m.Reader(ctx, rn, offset, limit)
+}
+
+func (m *MemoryCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
 	wc.CommitFn = func(int64) error {
 		// Locking and key prefixing are handled in SetDeprecated.
-		return m.SetDeprecated(ctx, d, buffer.Bytes())
+		return m.Set(ctx, r, buffer.Bytes())
 	}
 	return wc, nil
+}
+
+func (m *MemoryCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: m.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    m.cacheType,
+	}
+	return m.Writer(ctx, rn)
 }
 
 func (m *MemoryCache) Start() error {

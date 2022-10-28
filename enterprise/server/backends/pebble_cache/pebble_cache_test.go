@@ -323,7 +323,7 @@ func TestMetadata(t *testing.T) {
 			CacheType: resource.CacheType_CAS,
 		}
 
-		md, err := pc.MetadataDeprecated(ctx, digestWrongSize)
+		md, err := pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime1 := md.LastAccessTimeUsec
@@ -331,16 +331,8 @@ func TestMetadata(t *testing.T) {
 		require.NotZero(t, lastAccessTime1)
 		require.NotZero(t, lastModifyTime1)
 
-		md, err = pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime1 = md.LastAccessTimeUsec
-		lastModifyTime1 = md.LastModifyTimeUsec
-		require.NotZero(t, lastAccessTime1)
-		require.NotZero(t, lastModifyTime1)
-
 		// Last access time should not update since last call to Metadata()
-		md, err = pc.MetadataDeprecated(ctx, digestWrongSize)
+		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
@@ -348,40 +340,27 @@ func TestMetadata(t *testing.T) {
 		require.Equal(t, lastAccessTime1, lastAccessTime2)
 		require.Equal(t, lastModifyTime1, lastModifyTime2)
 
-		md, err = pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime2 = md.LastAccessTimeUsec
-		lastModifyTime2 = md.LastModifyTimeUsec
-		require.Equal(t, lastAccessTime1, lastAccessTime2)
-		require.Equal(t, lastModifyTime1, lastModifyTime2)
-
 		// After updating data, last access and modify time should update
 		err = pc.Set(ctx, r, buf)
-		require.NoError(t, err)
-		md, err = pc.MetadataDeprecated(ctx, digestWrongSize)
+		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
 		lastModifyTime3 := md.LastModifyTimeUsec
 		require.Greater(t, lastAccessTime3, lastAccessTime1)
 		require.Greater(t, lastModifyTime3, lastModifyTime2)
-
-		md, err = pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime3 = md.LastAccessTimeUsec
-		lastModifyTime3 = md.LastModifyTimeUsec
-		require.Greater(t, lastAccessTime3, lastAccessTime1)
-		require.Greater(t, lastModifyTime3, lastModifyTime2)
 	}
 }
 
-func randomDigests(t *testing.T, sizes ...int64) map[*repb.Digest][]byte {
-	m := make(map[*repb.Digest][]byte)
+func randomDigests(t *testing.T, sizes ...int64) map[*resource.ResourceName][]byte {
+	m := make(map[*resource.ResourceName][]byte)
 	for _, size := range sizes {
 		d, buf := testdigest.NewRandomDigestBuf(t, size)
-		m[d] = buf
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		m[rn] = buf
 	}
 	return m
 }
@@ -405,17 +384,14 @@ func TestMultiGetSet(t *testing.T) {
 	}
 	resourceNames := make([]*resource.ResourceName, 0, len(digests))
 	for d := range digests {
-		resourceNames = append(resourceNames, &resource.ResourceName{
-			Digest:     d,
-			Compressor: repb.Compressor_IDENTITY,
-			CacheType:  resource.CacheType_CAS,
-		})
+		resourceNames = append(resourceNames, d)
 	}
 	m, err := pc.GetMulti(ctx, resourceNames)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}
-	for d := range digests {
+	for rn := range digests {
+		d := rn.GetDigest()
 		rbuf, ok := m[d]
 		if !ok {
 			t.Fatalf("Multi-get failed to return expected digest: %q", d.GetHash())
@@ -448,8 +424,12 @@ func TestReadWrite(t *testing.T) {
 	}
 	for _, testSize := range testSizes {
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		// Use Writer() to set the bytes in the cache.
-		wc, err := pc.Writer(ctx, d)
+		wc, err := pc.Writer(ctx, rn)
 		if err != nil {
 			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 		}
@@ -463,7 +443,7 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
 		// Use Reader() to get the bytes from the cache.
-		reader, err := pc.Reader(ctx, d, 0, 0)
+		reader, err := pc.Reader(ctx, rn, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
@@ -1045,7 +1025,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 	pc.Start()
-	digests := make(map[string]*repb.Digest, 0)
+	resources := make([]*resource.ResourceName, 0)
 	for i := 0; i < 1000; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
 		r := &resource.ResourceName{
@@ -1055,16 +1035,14 @@ func TestDeleteEmptyDirs(t *testing.T) {
 		}
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
-		digests[d.GetHash()] = d
+		resources = append(resources, r)
 	}
-	for _, d := range digests {
-		c, err := pc.WithIsolation(ctx, resource.CacheType_CAS, "remoteInstanceName")
-		require.NoError(t, err)
-		err = c.Delete(ctx, d)
+	for _, r := range resources {
+		err = pc.Delete(ctx, r)
 		require.NoError(t, err)
 	}
 
-	log.Printf("Wrote and deleted %d digests", len(digests))
+	log.Printf("Wrote and deleted %d resources", len(resources))
 	time.Sleep(pebble_cache.JanitorCheckPeriod)
 	pc.TestingWaitForGC()
 	pc.Stop()

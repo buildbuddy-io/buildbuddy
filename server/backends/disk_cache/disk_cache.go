@@ -347,15 +347,6 @@ func (c *DiskCache) Metadata(ctx context.Context, r *resource.ResourceName) (*in
 	}, nil
 }
 
-func (c *DiskCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return c.Metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
-}
-
 func (c *DiskCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
@@ -409,7 +400,7 @@ func (c *DiskCache) Set(ctx context.Context, r *resource.ResourceName, data []by
 	if err != nil {
 		return err
 	}
-	return p.set(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest(), data)
+	return p.set(ctx, r, data)
 }
 
 func (c *DiskCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
@@ -422,20 +413,80 @@ func (c *DiskCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []by
 	return c.Set(ctx, r, data)
 }
 
-func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	return c.partition.setMulti(ctx, c.cacheType, c.remoteInstanceName, kvs)
+func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	if len(kvs) == 0 {
+		return nil
+	}
+	var instanceName string
+	for rn := range kvs {
+		instanceName = rn.GetInstanceName()
+		break
+	}
+
+	p, err := c.getPartition(ctx, instanceName)
+	if err != nil {
+		return err
+	}
+	return p.setMulti(ctx, kvs)
 }
 
-func (c *DiskCache) Delete(ctx context.Context, d *repb.Digest) error {
-	return c.partition.delete(ctx, c.cacheType, c.remoteInstanceName, d)
+func (c *DiskCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(c.cacheType, c.remoteInstanceName, kvs)
+	return c.partition.setMulti(ctx, rnMap)
 }
 
-func (c *DiskCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	return c.partition.reader(ctx, c.cacheType, c.remoteInstanceName, d, offset, limit)
+func (c *DiskCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Delete(ctx, r)
 }
 
-func (c *DiskCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	return c.partition.writer(ctx, c.cacheType, c.remoteInstanceName, d)
+func (c *DiskCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return err
+	}
+	return p.delete(ctx, r)
+}
+
+func (c *DiskCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	return p.reader(ctx, r, offset, limit)
+}
+
+func (c *DiskCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Reader(ctx, r, offset, limit)
+}
+
+func (c *DiskCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	p, err := c.getPartition(ctx, r.GetInstanceName())
+	if err != nil {
+		return nil, err
+	}
+	return p.writer(ctx, r)
+}
+
+func (c *DiskCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    c.cacheType,
+	}
+	return c.Writer(ctx, r)
 }
 
 func (c *DiskCache) WaitUntilMapped() {
@@ -1103,8 +1154,8 @@ func (p *partition) getMulti(ctx context.Context, resources []*resource.Resource
 	return foundMap, nil
 }
 
-func (p *partition) set(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest, data []byte) error {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	if err != nil {
 		return err
 	}
@@ -1125,17 +1176,17 @@ func (p *partition) set(ctx context.Context, cacheType resource.CacheType, remot
 	return err
 }
 
-func (p *partition) setMulti(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, kvs map[*repb.Digest][]byte) error {
-	for d, data := range kvs {
-		if err := p.set(ctx, cacheType, remoteInstanceName, d, data); err != nil {
+func (p *partition) setMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	for rn, data := range kvs {
+		if err := p.set(ctx, rn, data); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (p *partition) delete(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) error {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	if err != nil {
 		return err
 	}
@@ -1143,13 +1194,14 @@ func (p *partition) delete(ctx context.Context, cacheType resource.CacheType, re
 	defer p.mu.Unlock()
 	removed := p.lru.Remove(k.FullPath())
 	if !removed {
+		d := r.GetDigest()
 		return status.NotFoundErrorf("digest %s/%d not found in disk cache", d.GetHash(), d.GetSizeBytes())
 	}
 	return nil
 }
 
-func (p *partition) reader(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	k, err := p.key(ctx, rn.GetCacheType(), rn.GetInstanceName(), rn.GetDigest())
 	if err != nil {
 		return nil, err
 	}
@@ -1187,8 +1239,8 @@ func (d *dbWriteOnClose) Close() error {
 	return d.closeFn(d.bytesWritten)
 }
 
-func (p *partition) writer(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
 	if err != nil {
 		return nil, err
 	}
@@ -1199,7 +1251,7 @@ func (p *partition) writer(ctx context.Context, cacheType resource.CacheType, re
 
 	if alreadyExists {
 		metrics.DiskCacheDuplicateWrites.Inc()
-		metrics.DiskCacheDuplicateWritesBytes.Add(float64(d.GetSizeBytes()))
+		metrics.DiskCacheDuplicateWritesBytes.Add(float64(r.GetDigest().GetSizeBytes()))
 	}
 
 	fw, err := disk.FileWriter(ctx, k.FullPath())

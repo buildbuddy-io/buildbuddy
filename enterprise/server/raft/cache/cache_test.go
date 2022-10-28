@@ -42,7 +42,7 @@ func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticat
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
-	reader, err := c.Reader(ctx, d, 0)
+	reader, err := c.ReaderDeprecated(ctx, d, 0)
 	if err != nil {
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
@@ -51,7 +51,7 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 }
 
 func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest, buf []byte) {
-	writeCloser, err := c.Writer(ctx, d)
+	writeCloser, err := c.WriterDeprecated(ctx, d)
 	if err != nil {
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}

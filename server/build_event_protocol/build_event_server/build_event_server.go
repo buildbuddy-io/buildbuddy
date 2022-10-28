@@ -72,7 +72,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	for _, client := range s.env.GetBuildEventProxyClients() {
 		stream, err := client.PublishBuildToolEventStream(ctx, grpc.WaitForReady(false))
 		if err != nil {
-			log.Warningf("Unable to proxy stream: %s", err)
+			log.CtxWarningf(ctx, "Unable to proxy stream: %s", err)
 			continue
 		}
 		defer stream.CloseSend()
@@ -81,9 +81,9 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
-			log.Warningf("Disconnecting invocation %q: %s", streamID.InvocationId, e)
+			log.CtxWarningf(ctx, "Disconnecting invocation %q: %s", streamID.InvocationId, e)
 			if err := channel.FinalizeInvocation(streamID.InvocationId); err != nil {
-				log.Warningf("Error finalizing invocation %q during disconnect: %s", streamID.InvocationId, err)
+				log.CtxWarningf(ctx, "Error finalizing invocation %q during disconnect: %s", streamID.InvocationId, err)
 			}
 		}
 		return e
@@ -138,7 +138,6 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 				// Intentionally ignore errors here -- proxying is best effort.
 				stream.Send(in)
 			}
-
 			acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
 		}
 	}
@@ -146,7 +145,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 func postProcessStream(channel interfaces.BuildEventChannel, streamID *bepb.StreamId, acks []int, stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	if channel != nil && channel.GetNumDroppedEvents() > 0 {
-		log.Warningf("We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
+		log.CtxWarningf(ctx, "We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
 			streamID.InvocationId, channel.GetNumDroppedEvents())
 	}
 
@@ -157,14 +156,14 @@ func postProcessStream(channel interfaces.BuildEventChannel, streamID *bepb.Stre
 	sort.Sort(sort.IntSlice(acks))
 	for i, ack := range acks {
 		if ack != i+1 {
-			log.Warningf("Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
-			return io.EOF
+			log.CtxWarningf(ctx, "Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
+			return status.UnknownErrorf("event sequence number mismatch: received %d, wanted %d", ack, i+1)
 		}
 	}
 
 	if channel != nil {
 		if err := channel.FinalizeInvocation(streamID.GetInvocationId()); err != nil {
-			log.Warningf("Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
+			log.CtxWarningf(ctx, "Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
 			return err
 		}
 	}
@@ -176,7 +175,7 @@ func postProcessStream(channel interfaces.BuildEventChannel, streamID *bepb.Stre
 			SequenceNumber: int64(ack),
 		}
 		if err := stream.Send(rsp); err != nil {
-			log.Warningf("Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
+			log.CtxWarningf(ctx, "Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
 			return err
 		}
 	}

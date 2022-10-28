@@ -1,11 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "rbetest",
     testonly = 1,
     srcs = ["rbetest.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/remote_execution/execution_server",

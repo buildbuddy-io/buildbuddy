@@ -2,11 +2,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
+package(default_visibility = ["//visibility:public"])
+
 go_library(
     name = "image_converter_lib",
     srcs = ["image_converter.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/image_converter",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/backends/redis_client",
         "//proto:registry_go_proto",
@@ -43,14 +44,12 @@ go_library(
 go_binary(
     name = "image_converter",
     embed = [":image_converter_lib"],
-    visibility = ["//visibility:public"],
 )
 
 container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )
 
 # Build a docker image similar to the go_binary above, but use the "go_image"
@@ -60,5 +59,4 @@ go_image(
     base = ":base_image",
     binary = ":image_converter",
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )

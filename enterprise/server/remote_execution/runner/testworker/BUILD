@@ -6,7 +6,6 @@ go_library(
     name = "testworker_lib",
     srcs = ["testworker.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner/testworker",
-    visibility = ["//visibility:public"],
     deps = ["//server/util/log"],
 )
 

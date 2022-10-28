@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//visibility:public"])
+
 go_library(
     name = "vfs_server",
     srcs = [
@@ -8,7 +10,6 @@ go_library(
         "vfs_server_linux.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",

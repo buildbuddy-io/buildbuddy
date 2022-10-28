@@ -151,8 +151,8 @@ func (s *snitchCache) WithIsolation(ctx context.Context, cacheType resource.Cach
 		s.writeCount,
 	}, nil
 }
-func (s *snitchCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	wc, err := s.Cache.Writer(ctx, d)
+func (s *snitchCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	wc, err := s.Cache.WriterDeprecated(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +408,7 @@ func TestWriter(t *testing.T) {
 		// they match..
 		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 		require.NoError(t, err)
-		r, err := cache.Reader(ctx, d, 0, 0)
+		r, err := cache.ReaderDeprecated(ctx, d, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -525,8 +525,8 @@ func TestContains(t *testing.T) {
 			t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
 		}
 
-		// Delete the key.
-		err = cache.Delete(ctx, d)
+		// DeleteDeprecated the key.
+		err = cache.DeleteDeprecated(ctx, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -842,14 +842,18 @@ func TestMetadata(t *testing.T) {
 
 	remoteInstanceName := "remote/instance"
 	isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 
 	// Write to the cache
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: remoteInstanceName,
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = cache.SetDeprecated(ctx, d, buf)
+	err = te.GetCache().Set(ctx, r, buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -865,7 +869,7 @@ func TestMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error fetching metadata from cacheproxy: %s", err)
 	}
-	cacheMetadata, err := cache.MetadataDeprecated(ctx, d)
+	cacheMetadata, err := te.GetCache().Metadata(ctx, r)
 	if err != nil {
 		t.Fatalf("Error fetching metadata from underlying cache: %s", err)
 	}

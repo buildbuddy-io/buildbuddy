@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "vmexec",
     srcs = ["vmexec.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//proto:remote_execution_go_proto",

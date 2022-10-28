@@ -1,13 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "redisutil",
     srcs = ["redisutil.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil",
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         "//server/interfaces",
         "//server/util/log",
@@ -23,10 +21,6 @@ go_test(
     name = "redisutil_test",
     size = "small",
     srcs = ["redisutil_test.go"],
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         ":redisutil",
         "//enterprise/server/testutil/testredis",

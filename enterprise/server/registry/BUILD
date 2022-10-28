@@ -2,11 +2,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "registry_lib",
     srcs = ["registry.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/registry",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
@@ -37,7 +38,6 @@ container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )
 
 # Build a docker image similar to the go_binary above, but use the "go_image"
@@ -47,5 +47,4 @@ go_image(
     base = ":base_image",
     binary = ":registry",
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )

@@ -170,7 +170,7 @@ func TestMultiGetSet(t *testing.T) {
 	}
 	ctx := getAnonContext(t)
 	digests := randomDigests(t, 10, 20, 11, 30, 40)
-	if err := mc.SetMulti(ctx, digests); err != nil {
+	if err := mc.SetMultiDeprecated(ctx, digests); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
 	digestKeys := make([]*repb.Digest, 0, len(digests))
@@ -208,8 +208,8 @@ func TestReadWrite(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
-		// Use Writer() to set the bytes in the cache.
-		wc, err := mc.Writer(ctx, d)
+		// Use WriterDeprecated() to set the bytes in the cache.
+		wc, err := mc.WriterDeprecated(ctx, d)
 		if err != nil {
 			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 		}
@@ -222,8 +222,8 @@ func TestReadWrite(t *testing.T) {
 		if err := wc.Close(); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
-		// Use Reader() to get the bytes from the cache.
-		reader, err := mc.Reader(ctx, d, 0, 0)
+		// Use ReaderDeprecated() to get the bytes from the cache.
+		reader, err := mc.ReaderDeprecated(ctx, d, 0, 0)
 		if err != nil {
 			t.Fatalf("Error getting %q reader: %s", d.GetHash(), err.Error())
 		}
@@ -246,7 +246,7 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	offset := int64(2)
 	limit := int64(3)
-	reader, err := mc.Reader(ctx, d, offset, limit)
+	reader, err := mc.ReaderDeprecated(ctx, d, offset, limit)
 	require.NoError(t, err)
 
 	readBuf := make([]byte, size)

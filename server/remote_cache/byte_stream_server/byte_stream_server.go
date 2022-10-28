@@ -8,6 +8,7 @@ import (
 	"hash"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -130,7 +131,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackEmptyHit()
 		return nil
 	}
-	reader, err := cache.Reader(ctx, r.GetDigest(), req.ReadOffset, req.ReadLimit)
+	reader, err := cache.ReaderDeprecated(ctx, r.GetDigest(), req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		ht.TrackMiss(r.GetDigest())
 		return err
@@ -265,7 +266,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	var committedWriteCloser interfaces.CommittedWriteCloser
 
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
-		cacheWriter, err := cache.Writer(ctx, r.GetDigest())
+		cacheWriter, err := cache.WriterDeprecated(ctx, r.GetDigest())
 		if err != nil {
 			return nil, err
 		}
@@ -447,18 +448,14 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 			Complete:      false,
 		}, nil
 	}
+	rn.SetCacheType(resource.CacheType_CAS)
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
 
-	cache, err := s.getCache(ctx, rn.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-
-	md, err := cache.MetadataDeprecated(ctx, rn.GetDigest())
+	md, err := s.cache.Metadata(ctx, rn.ToProto())
 	if err != nil {
 		// If the data has not been committed to the cache, then just tell the
 		// client that we don't have anything and let them retry it.

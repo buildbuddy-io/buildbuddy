@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "userdb",
     srcs = ["userdb.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/util/keystore",
         "//proto:api_key_go_proto",

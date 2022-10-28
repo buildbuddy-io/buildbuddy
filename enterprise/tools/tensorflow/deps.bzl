@@ -7,5 +7,5 @@ def tensorflow_cgo_deps():
         urls = [
             "https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-${TENSORFLOW_VERSION}.tar.gz",
         ],
-        build_file_content = "filegroup(name = \"libtensorflow\", srcs = glob([\"lib/*\"]), visibility = [\"//visibility:public\"])",
+        build_file_content = "filegroup(name = \"libtensorflow\", srcs = glob([\"lib/*\"]), visibility = [\"//enterprise:__subpackages__\"])",
     )

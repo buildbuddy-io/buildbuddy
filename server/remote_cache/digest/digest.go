@@ -62,6 +62,10 @@ func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	}
 }
 
+func (r *ResourceName) ToProto() *rspb.ResourceName {
+	return r.rn
+}
+
 func (r *ResourceName) GetDigest() *repb.Digest {
 	return r.rn.GetDigest()
 }
@@ -76,6 +80,14 @@ func (r *ResourceName) GetCompressor() repb.Compressor_Value {
 
 func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 	r.rn.Compressor = compressor
+}
+
+func (r *ResourceName) GetCacheType() rspb.CacheType {
+	return r.rn.GetCacheType()
+}
+
+func (r *ResourceName) SetCacheType(cacheType rspb.CacheType) {
+	r.rn.CacheType = cacheType
 }
 
 // DownloadString returns a string representing the resource name for download
@@ -128,6 +140,20 @@ func ResourceNames(cacheType rspb.CacheType, remoteInstanceName string, digests 
 		})
 	}
 	return rns
+}
+
+func ResourceNameMap(cacheType rspb.CacheType, remoteInstanceName string, digestMap map[*repb.Digest][]byte) map[*rspb.ResourceName][]byte {
+	rnMap := make(map[*rspb.ResourceName][]byte, len(digestMap))
+	for d, data := range digestMap {
+		rn := &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: remoteInstanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    cacheType,
+		}
+		rnMap[rn] = data
+	}
+	return rnMap
 }
 
 // Key is a representation of a digest that can be used as a map key.

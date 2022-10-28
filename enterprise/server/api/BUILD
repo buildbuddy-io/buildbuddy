@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "api",
     srcs = ["api_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/api",
-    visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",
         "//proto:eventlog_go_proto",

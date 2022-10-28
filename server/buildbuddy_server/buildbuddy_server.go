@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -896,16 +895,7 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 	}
 
 	resourceName := req.GetResourceName()
-	cacheType, err := ProtoCacheTypeToCacheType(resourceName.GetCacheType())
-	if err != nil {
-		return nil, err
-	}
-	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, resourceName.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-
-	metadata, err := cache.MetadataDeprecated(ctx, resourceName.GetDigest())
+	metadata, err := s.env.GetCache().Metadata(ctx, resourceName)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
@@ -918,17 +908,6 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 		LastAccessUsec: metadata.LastAccessTimeUsec,
 		LastModifyUsec: metadata.LastModifyTimeUsec,
 	}, nil
-}
-
-func ProtoCacheTypeToCacheType(cacheType resource.CacheType) (resource.CacheType, error) {
-	switch cacheType {
-	case resource.CacheType_AC:
-		return resource.CacheType_AC, nil
-	case resource.CacheType_CAS:
-		return resource.CacheType_CAS, nil
-	default:
-		return resource.CacheType_UNKNOWN_CACHE_TYPE, status.InvalidArgumentErrorf("unknown cache type %v", cacheType)
-	}
 }
 
 func (s *BuildBuddyServer) GetCacheScoreCard(ctx context.Context, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {

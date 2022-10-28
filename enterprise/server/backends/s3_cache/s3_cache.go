@@ -362,16 +362,16 @@ func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []by
 	return s3c.Set(ctx, r, data)
 }
 
-func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	for d, data := range kvs {
-		setFn := func(d *repb.Digest, data []byte) {
+	for r, data := range kvs {
+		setFn := func(r *resource.ResourceName, data []byte) {
 			eg.Go(func() error {
-				return s3c.SetDeprecated(ctx, d, data)
+				return s3c.Set(ctx, r, data)
 			})
 		}
-		setFn(d, data)
+		setFn(r, data)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -381,13 +381,13 @@ func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) e
 	return nil
 }
 
-func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := s3c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
+func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(s3c.cacheType, s3c.remoteInstanceName, kvs)
+	return s3c.SetMulti(ctx, rnMap)
+}
+
+func (s3c *S3Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -395,6 +395,17 @@ func (s3c *S3Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	err = s3c.delete(ctx, k)
 	timer.ObserveDelete(err)
 	return err
+
+}
+
+func (s3c *S3Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	}
+	return s3c.Delete(ctx, r)
 }
 
 func (s3c *S3Cache) delete(ctx context.Context, key string) error {
@@ -485,15 +496,6 @@ func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*in
 	}, nil
 }
 
-func (s3c *S3Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return s3c.Metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
-}
-
 func (s3c *S3Cache) metadata(ctx context.Context, r *resource.ResourceName) (*s3.HeadObjectOutput, error) {
 	key, err := s3c.key(ctx, r)
 	if err != nil {
@@ -552,13 +554,8 @@ func (s3c *S3Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.D
 	return s3c.FindMissing(ctx, rns)
 }
 
-func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	k, err := s3c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
+func (s3c *S3Cache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -580,10 +577,21 @@ func (s3c *S3Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit in
 	})
 	spn.End()
 	if isNotFoundErr(err) {
+		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	return io.NopCloser(timer.NewInstrumentedReader(result.Body, d.GetSizeBytes())), err
+	return io.NopCloser(timer.NewInstrumentedReader(result.Body, r.GetDigest().GetSizeBytes())), err
+}
+
+func (s3c *S3Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	}
+	return s3c.Reader(ctx, r, offset, limit)
 }
 
 type waitForUploadWriteCloser struct {
@@ -614,13 +622,9 @@ func (w *waitForUploadWriteCloser) Close() error {
 	w.cancelFunc()
 	return nil
 }
-func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	k, err := s3c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
+
+func (s3c *S3Cache) Writer(ctx context.Context, rn *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	k, err := s3c.key(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -639,7 +643,7 @@ func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Comm
 		cancelFunc:    cancel,
 		finishedWrite: make(chan struct{}),
 		timer:         timer,
-		size:          d.GetSizeBytes(),
+		size:          rn.GetDigest().GetSizeBytes(),
 	}
 	go func() {
 		if _, err = s3c.uploader.UploadWithContext(ctx, uploadParams); err != nil {
@@ -648,6 +652,16 @@ func (s3c *S3Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Comm
 		close(closer.finishedWrite)
 	}()
 	return closer, nil
+}
+
+func (s3c *S3Cache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: s3c.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    s3c.cacheType,
+	}
+	return s3c.Writer(ctx, r)
 }
 
 func (s3c *S3Cache) Start() error {

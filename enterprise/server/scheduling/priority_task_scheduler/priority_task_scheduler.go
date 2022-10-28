@@ -419,7 +419,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 		if err != nil {
 			// NotFound means the task is already claimed.
 			if status.IsNotFoundError(err) {
-				log.CtxInfof(ctx, "Could not claim task %q, it was likely claimed by another executor: %s", reservation.GetTaskId(), err)
+				log.CtxInfof(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
 			} else {
 				log.CtxWarningf(ctx, "Error leasing task %q: %s", reservation.GetTaskId(), err)
 			}

@@ -172,7 +172,7 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
           items={[{ label: "Quota namespaces", href: "/settings/server/quota" }, { label: this.getNamespaceName() }]}
         />
         <div>
-          <LinkButton className="create-new-button" href={this.getAddBucketURL()}>
+          <LinkButton className="big-button" href={this.getAddBucketURL()}>
             Add bucket
           </LinkButton>
         </div>

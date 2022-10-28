@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
@@ -98,8 +99,11 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		replicas: sync.Map{},
 
 		metaRangeData: "",
-		fileStorer:    filestore.New(true /*=isolateByGroupIDs*/),
-		splitMu:       sync.Mutex{},
+		fileStorer: filestore.New(filestore.Opts{
+			IsolateByGroupIDs:           true,
+			PrioritizeHashInMetadataKey: true,
+		}),
+		splitMu: sync.Mutex{},
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)
@@ -513,7 +517,10 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeSplittingMsg, clusterID)
 	}
 
-	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, req.GetBatch())
+	batch := req.GetBatch()
+	batch.Header = req.GetHeader()
+
+	batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, clusterID, batch)
 	if err != nil {
 		if err == dragonboat.ErrClusterNotFound {
 			return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeLeaseInvalidMsg, clusterID)
@@ -603,7 +610,8 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 
 func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 	var bytesWritten int64
-	var writeCloser interfaces.CommittedWriteCloser
+	var writeCloser interfaces.MetadataWriteCloser
+	var clusterID uint64
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -613,14 +621,12 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 			return err
 		}
 		if writeCloser == nil {
-			// It's expected that clients will directly write bytes
-			// to all replicas in a range and then syncpropose a
-			// write which confirms the data is in place. For that
-			// reason, we don't check if the range is leased here.
-			r, _, err := s.validatedRange(req.GetHeader())
+			r, err := s.LeasedRange(req.GetHeader())
 			if err != nil {
+				s.log.Errorf("Error while calling LeasedRange: %s", err)
 				return err
 			}
+			clusterID = r.ClusterID
 			writeCloser, err = r.Writer(stream.Context(), req.GetHeader(), req.GetFileRecord())
 			if err != nil {
 				return err
@@ -638,7 +644,29 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 		}
 		bytesWritten += int64(n)
 		if req.FinishWrite {
-			if err := writeCloser.Commit(); err != nil {
+			now := time.Now()
+			md := &rfpb.FileMetadata{
+				FileRecord:      req.GetFileRecord(),
+				StorageMetadata: writeCloser.Metadata(),
+				SizeBytes:       bytesWritten,
+				LastModifyUsec:  now.UnixMicro(),
+				LastAccessUsec:  now.UnixMicro(),
+			}
+			fileMetadataKey, err := s.fileStorer.FileMetadataKey(req.GetFileRecord())
+			if err != nil {
+				return err
+			}
+			protoBytes, err := proto.Marshal(md)
+			if err != nil {
+				return err
+			}
+			writeReq := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+				Kv: &rfpb.KV{
+					Key:   fileMetadataKey,
+					Value: protoBytes,
+				},
+			})
+			if err := client.SyncProposeLocalBatchNoRsp(stream.Context(), s.nodeHost, clusterID, writeReq); err != nil {
 				return err
 			}
 			return stream.Send(&rfpb.WriteResponse{
@@ -908,6 +936,11 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, status.FailedPreconditionErrorf("Range %d not found on this node", req.GetHeader().GetRangeId())
 	}
 
+	u, err := uuid.NewRandom()
+	if err != nil {
+		return nil, status.InternalErrorf("Error generating split tag: %s", err)
+	}
+	splitTag := u.String()
 	s.log.Infof("splitlog: checking if cluster %d has a viable split point", clusterID)
 
 	// Before proceeding, see if this cluster has a split point. If it does not; we can
@@ -988,6 +1021,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	// preventing Reader and Writer access once all Reads/Writes have finished.
 	leaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitLeaseRequest{
 		DurationSeconds: 60,
+		SplitTag:        splitTag,
 	})
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, leaseReq); err != nil {
 		return nil, status.InternalErrorf("could not obtain split lease: %s", err)
@@ -1008,16 +1042,6 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	}
 
 	s.log.Infof("splitlog: snapshotted existing cluster metadata %+v", createSnapshotRsp)
-	copyStoredFiles := rbuilder.NewBatchBuilder().Add(&rfpb.CopyStoredFilesRequest{
-		SourceRange:   oldLeft,
-		TargetRangeId: newIDs.rangeID,
-		Start:         findSplitRsp.GetSplit(),
-		End:           oldLeft.GetRight(),
-	})
-	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, copyStoredFiles); err != nil {
-		return nil, status.InternalErrorf("could not copy data to right side: %s", err)
-	}
-	s.log.Infof("splitlog: copied stored file data to new cluster")
 	loadSnapReq := &rfpb.LoadSnapshotRequest{
 		Header: &rfpb.Header{
 			RangeId:    newIDs.rangeID,
@@ -1036,7 +1060,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	// about to be activated.
 	oldRight := proto.Clone(newRight).(*rfpb.RangeDescriptor)
 	newRight.Replicas = bootStrapInfo.Replicas
-	b := rbuilder.NewBatchBuilder()
+	b := rbuilder.NewBatchBuilder().SetSplitTag(splitTag)
 	if err := addLocalRangeEdits(oldRight, newRight, b); err != nil {
 		return nil, err
 	}
@@ -1065,7 +1089,7 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	}
 	releaseReq := rbuilder.NewBatchBuilder().Add(&rfpb.SplitReleaseRequest{
 		Batch: batchProto,
-	})
+	}).SetSplitTag(splitTag)
 
 	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, clusterID, releaseReq); err != nil {
 		return nil, status.InternalErrorf("could not release split lease: %s", err)

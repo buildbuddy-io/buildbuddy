@@ -72,13 +72,26 @@ type Store interface {
 }
 
 type fileStorer struct {
-	isolateByGroupIDs bool
+	isolateByGroupIDs           bool
+	prioritizeHashInMetadataKey bool
 }
 
-// New creates a new filestorer interface. If isolateByGroupIDs is set, then
-// filepaths and filekeys will include groupIDs.
-func New(isolateByGroupIDs bool) Store {
-	return &fileStorer{isolateByGroupIDs}
+type Opts struct {
+	// IsolateByGroupIDs includes the caller group ID in the metadata and file
+	// keys.
+	IsolateByGroupIDs bool
+	// PrioritizeHashInMetadataKey controls the placement of the digest within the metadata
+	// key. When enabled, the digest is placed before the cache type & isolation
+	// parts.
+	PrioritizeHashInMetadataKey bool
+}
+
+// New creates a new filestorer interface.
+func New(opts Opts) Store {
+	return &fileStorer{
+		isolateByGroupIDs:           opts.IsolateByGroupIDs,
+		prioritizeHashInMetadataKey: opts.PrioritizeHashInMetadataKey,
+	}
 }
 
 func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
@@ -117,20 +130,42 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 //   - baz/bap
 func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
-	// Metadata keys look like this:
-	//   // {groupID}/{ac|cas}/{hash}
-	//   // for example:
-	//   //   PART123456/ac/44321/abcd12345asdasdasd123123123asdasdasd
-	//   //   PART123456/cas/abcd12345asdasdasd123123123asdasdasd
+	//
+	// Metadata keys look like this when PrioritizeHashInMetadataKey is off:
+	//    {partID}/{groupID}/{ac|cas}/{hash}
+	//    for example:
+	//      PART123456/GR123/ac/44321/abcd12345asdasdasd123123123asdasdasd
+	//      PART123456/GR123/cas/abcd12345asdasdasd123123123asdasdasd
+	//
+	// Metadata keys look like this when PrioritizeHashInMetadataKey is on:
+	//    {partID}/{groupID}/{hash}/{ac|cas}
+	//    for example:
+	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/ac/44321
+	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/cas
 	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err
 	}
+
+	numParts := 4
 	if fs.isolateByGroupIDs {
-		return []byte(filepath.Join(partID, groupID, isolation, remoteInstanceHash, hash)), nil
-	} else {
-		return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash)), nil
+		numParts = 5
 	}
+	parts := make([]string, 0, numParts)
+	parts = append(parts, partID)
+	if fs.isolateByGroupIDs {
+		parts = append(parts, groupID)
+	}
+	if fs.prioritizeHashInMetadataKey {
+		parts = append(parts, hash)
+	}
+	parts = append(parts, isolation)
+	parts = append(parts, remoteInstanceHash)
+	if !fs.prioritizeHashInMetadataKey {
+		parts = append(parts, hash)
+	}
+
+	return []byte(filepath.Join(parts...)), nil
 }
 
 func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {

@@ -263,15 +263,6 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *resource.ResourceName
 	return srcMetadata, srcErr
 }
 
-func (mc *MigrationCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return mc.Metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	})
-}
-
 func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
@@ -382,7 +373,7 @@ func (mc *MigrationCache) GetMultiDeprecated(ctx context.Context, digests []*rep
 	return mc.GetMulti(ctx, rns)
 }
 
-func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -412,14 +403,19 @@ func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]b
 	return srcErr
 }
 
-func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*repb.Digest][]byte) {
+func (mc *MigrationCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+	rnMap := digest.ResourceNameMap(mc.cacheType, mc.remoteInstanceName, kvs)
+	return mc.SetMulti(ctx, rnMap)
+}
+
+func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) {
 	eg, gctx := errgroup.WithContext(ctx)
-	for d, _ := range kvs {
-		dCopy := d
+	for r, _ := range kvs {
+		r := r
 		eg.Go(func() error {
-			deleteErr := mc.dest.Delete(gctx, dCopy)
+			deleteErr := mc.dest.Delete(gctx, r)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", dCopy, deleteErr)
+				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}
 			return nil
 		})
@@ -427,17 +423,17 @@ func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*repb.Digest]
 	eg.Wait()
 }
 
-func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (mc *MigrationCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
 	eg.Go(func() error {
-		srcErr = mc.src.Delete(gctx, d)
+		srcErr = mc.src.Delete(gctx, r)
 		return srcErr
 	})
 
 	eg.Go(func() error {
-		dstErr = mc.dest.Delete(gctx, d)
+		dstErr = mc.dest.Delete(gctx, r)
 		return nil // don't fail if there's an error from this cache
 	})
 
@@ -446,10 +442,20 @@ func (mc *MigrationCache) Delete(ctx context.Context, d *repb.Digest) error {
 	}
 
 	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
-		log.Warningf("Migration could not delete %v from dest cache: %s", d, dstErr)
+		log.Warningf("Migration could not delete %v from dest cache: %s", r.GetDigest(), dstErr)
 	}
 
 	return srcErr
+}
+
+func (mc *MigrationCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
+	rn := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	}
+	return mc.Delete(ctx, rn)
 }
 
 type doubleReader struct {
@@ -497,7 +503,7 @@ func (d *doubleReader) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
@@ -505,10 +511,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			destReader, dstErr = mc.dest.Reader(ctx, d, offset, limit)
-			if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
-				log.Warningf("%v reader failed for dest cache: %s", d, dstErr)
-			}
+			destReader, dstErr = mc.dest.Reader(ctx, r, offset, limit)
 			if status.IsNotFoundError(dstErr) {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
 			}
@@ -519,8 +522,14 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 		})
 	}
 
-	srcReader, srcErr := mc.src.Reader(ctx, d, offset, limit)
+	srcReader, srcErr := mc.src.Reader(ctx, r, offset, limit)
 	eg.Wait()
+
+	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
+	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
+	if dstErr != nil && !bothCacheNotFound && shouldLogErr {
+		log.Warningf("%v reader failed for dest cache: %s", r.GetDigest(), dstErr)
+	}
 
 	if srcErr != nil {
 		if destReader != nil {
@@ -529,22 +538,26 @@ func (mc *MigrationCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 				log.Warningf("Migration dest reader close err: %s", err)
 			}
 		}
-		log.Warningf("Migration %v src reader err, doubleRead is %v: %s", d, doubleRead, srcErr)
+		log.Debugf("Migration %v src reader err, doubleRead is %v: %s", r.GetDigest(), doubleRead, srcErr)
 		return nil, srcErr
 	}
 
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	}
 	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	return &doubleReader{
 		src:  srcReader,
 		dest: destReader,
 	}, nil
+}
+
+func (mc *MigrationCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	}
+	return mc.Reader(ctx, r, offset, limit)
 }
 
 type doubleWriter struct {
@@ -612,17 +625,17 @@ func (d *doubleWriter) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (mc *MigrationCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destWriter interfaces.CommittedWriteCloser
 
 	eg.Go(func() error {
-		destWriter, dstErr = mc.dest.Writer(ctx, d)
+		destWriter, dstErr = mc.dest.Writer(ctx, r)
 		return nil
 	})
 
-	srcWriter, srcErr := mc.src.Writer(ctx, d)
+	srcWriter, srcErr := mc.src.Writer(ctx, r)
 	eg.Wait()
 
 	if srcErr != nil {
@@ -635,20 +648,29 @@ func (mc *MigrationCache) Writer(ctx context.Context, d *repb.Digest) (interface
 		return nil, srcErr
 	}
 	if dstErr != nil {
-		log.Warningf("Migration failure creating dest %v writer: %s", d, dstErr)
+		log.Warningf("Migration failure creating dest %v writer: %s", r.GetDigest(), dstErr)
 	}
 
 	dw := &doubleWriter{
 		src:  srcWriter,
 		dest: destWriter,
 		destDeleteFn: func() {
-			deleteErr := mc.dest.Delete(ctx, d)
+			deleteErr := mc.dest.Delete(ctx, r)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
-				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", d, deleteErr)
+				log.Warningf("Migration src write of %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}
 		},
 	}
 	return dw, nil
+}
+
+func (mc *MigrationCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+	return mc.Writer(ctx, &resource.ResourceName{
+		Digest:       d,
+		InstanceName: mc.remoteInstanceName,
+		Compressor:   repb.Compressor_IDENTITY,
+		CacheType:    mc.cacheType,
+	})
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
@@ -747,7 +769,7 @@ func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, dat
 	if err := eg.Wait(); err != nil {
 		if dstErr == nil {
 			// If error during write to source cache (source of truth), must delete from destination cache
-			deleteErr := mc.dest.Delete(ctx, r.GetDigest())
+			deleteErr := mc.dest.DeleteDeprecated(ctx, r.GetDigest())
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
 				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}
@@ -830,7 +852,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 		return
 	}
 
-	srcReader, err := cache.src.Reader(c.ctx, c.d, 0, 0)
+	srcReader, err := cache.src.ReaderDeprecated(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
@@ -839,7 +861,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer srcReader.Close()
 
-	destWriter, err := cache.dest.Writer(c.ctx, c.d)
+	destWriter, err := cache.dest.WriterDeprecated(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return

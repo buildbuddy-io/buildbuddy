@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -93,6 +92,7 @@ type Replica struct {
 	NodeID    uint64
 	timer     *time.Timer
 	timerMu   *sync.Mutex
+	splitTag  string
 
 	store            IStore
 	lastAppliedIndex uint64
@@ -129,11 +129,15 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 		return int64(len(val)), nil
 	}
 
-	fileMetadata := &rfpb.FileMetadata{}
-	if err := proto.Unmarshal(val, fileMetadata); err != nil {
+	md := &rfpb.FileMetadata{}
+	if err := proto.Unmarshal(val, md); err != nil {
 		return 0, err
 	}
-	return fileMetadata.GetSizeBytes() + int64(len(val)), nil
+	size := int64(len(val))
+	if md.GetStorageMetadata().GetFileMetadata() != nil {
+		size += md.GetSizeBytes()
+	}
+	return size, nil
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
@@ -158,23 +162,11 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	}
 	defer db.Close()
 
-	iterOpts := &pebble.IterOptions{
-		LowerBound: keys.Key([]byte{constants.MinByte}),
-		UpperBound: keys.Key([]byte{constants.MaxByte}),
+	estimatedBytesUsed, err := db.EstimateDiskUsage(rd.GetLeft(), rd.GetRight())
+	if err != nil {
+		return nil, err
 	}
-
-	iter := db.NewIter(iterOpts)
-	defer iter.Close()
-
-	estimatedBytesUsed := int64(0)
-	for iter.First(); iter.Valid(); iter.Next() {
-		sizeBytes, err := sizeOf(iter.Key(), iter.Value())
-		if err != nil {
-			return nil, err
-		}
-		estimatedBytesUsed += sizeBytes
-	}
-	ru.EstimatedDiskBytesUsed = estimatedBytesUsed
+	ru.EstimatedDiskBytesUsed = int64(estimatedBytesUsed)
 	return ru, nil
 }
 
@@ -462,7 +454,8 @@ func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfp
 
 func (sm *Replica) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
-	return &rfpb.DirectWriteResponse{}, sm.rangeCheckedSet(wb, kv.Key, kv.Value)
+	err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
+	return &rfpb.DirectWriteResponse{}, err
 }
 
 func (sm *Replica) directRead(db ReplicaReader, req *rfpb.DirectReadRequest) (*rfpb.DirectReadResponse, error) {
@@ -550,6 +543,7 @@ func (sm *Replica) releaseAndClearTimer() {
 	sm.leaser.ReleaseSplitLock()
 	sm.timer.Stop()
 	sm.timer = nil
+	sm.splitTag = ""
 }
 
 func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
@@ -570,14 +564,18 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 	sm.timerMu.Lock()
 	defer sm.timerMu.Unlock()
 
+	if sm.splitTag != "" && req.GetSplitTag() != sm.splitTag {
+		return nil, status.FailedPreconditionErrorf("Region already leased by split %q", sm.splitTag)
+	}
 	timeTilExpiry := time.Duration(req.GetDurationSeconds()) * time.Second
 	startNewTimer := func() {
-		sm.log.Debugf("Trying to acquire split lock...")
+		sm.log.Debugf("Trying to acquire split lock %q...", req.GetSplitTag())
 		splitAcquireStart := time.Now()
 		sm.leaser.AcquireSplitLock()
-		sm.log.Debugf("Acquired split lock in %s", time.Since(splitAcquireStart))
+		sm.log.Debugf("Acquired split lock %q in %s", req.GetSplitTag(), time.Since(splitAcquireStart))
+		sm.splitTag = req.GetSplitTag()
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
-			log.Warning("Split lease expired!")
+			log.Warningf("Split lease %q expired!", req.GetSplitTag())
 			sm.releaseAndClearTimer()
 			if err := sm.oneshotCAS(req.GetCasOnExpiry()); err != nil {
 				log.Errorf("Error reverting lease: %s", err)
@@ -1125,12 +1123,13 @@ func (sm *Replica) sendAccessTimeUpdate(fileMetadata *rfpb.FileMetadata) {
 }
 
 func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
-	if err := sm.validateRange(header); err != nil {
+	db, err := sm.leaser.DB()
+	if err != nil {
 		return nil, err
 	}
 
-	db, err := sm.leaser.DB()
-	if err != nil {
+	if err := sm.validateRange(header); err != nil {
+		db.Close()
 		return nil, err
 	}
 
@@ -1207,61 +1206,13 @@ func (sm *Replica) GetMulti(ctx context.Context, header *rfpb.Header, fileRecord
 	return rsp, nil
 }
 
-func (sm *Replica) storedFileWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
-	return sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
-}
-
-func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.CommittedWriteCloser, error) {
+func (sm *Replica) Writer(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (interfaces.MetadataWriteCloser, error) {
 	if err := sm.validateRange(header); err != nil {
 		return nil, err
 	}
 
-	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
-	if err != nil {
-		return nil, err
-	}
-
-	writeCloserMetadata, err := sm.storedFileWriter(ctx, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-
-	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
-	wc.CommitFn = func(bytesWritten int64) error {
-		db, err := sm.leaser.DB()
-		if err != nil {
-			if sm.IsSplitting() {
-				return status.OutOfRangeErrorf("%s: id %d ", constants.RangeSplittingMsg, header.GetRangeId())
-			}
-			return err
-		}
-		defer db.Close()
-
-		// Re-validate the header to ensure the range did not split before
-		// we got to Commit().
-		if err := sm.validateRange(header); err != nil {
-			return err
-		}
-
-		batch := db.NewBatch()
-		now := time.Now()
-		md := &rfpb.FileMetadata{
-			FileRecord:      fileRecord,
-			StorageMetadata: writeCloserMetadata.Metadata(),
-			SizeBytes:       bytesWritten,
-			LastModifyUsec:  now.UnixMicro(),
-			LastAccessUsec:  now.UnixMicro(),
-		}
-		protoBytes, err := proto.Marshal(md)
-		if err != nil {
-			return err
-		}
-		if err := batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/); err != nil {
-			return err
-		}
-		return batch.Commit(pebble.NoSync)
-	}
-	return wc, nil
+	writeCloserMetadata := sm.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
+	return writeCloserMetadata, nil
 }
 
 // Update updates the IOnDiskStateMachine instance. The input Entry slice
@@ -1317,16 +1268,36 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err := proto.Unmarshal(entry.Cmd, batchCmdReq); err != nil {
 			return nil, err
 		}
+
+		sm.timerMu.Lock()
+		denyRequestBecauseSplitting := false
+		if sm.splitTag != "" && sm.splitTag != batchCmdReq.GetSplitTag() {
+			denyRequestBecauseSplitting = true
+		}
+		sm.timerMu.Unlock()
+
 		wb := sm.db.NewIndexedBatch()
 		defer wb.Close()
 
-		for _, union := range batchCmdReq.GetUnion() {
-			rsp := &rfpb.ResponseUnion{}
-			sm.handlePropose(wb, union, rsp)
-			if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
-				sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
+		var headerErr error
+		if batchCmdReq.GetHeader() != nil {
+			headerErr = sm.validateRange(batchCmdReq.GetHeader())
+		}
+
+		if denyRequestBecauseSplitting {
+			splittingErr := status.OutOfRangeErrorf("%s: region is locked during split", constants.RangeSplittingMsg)
+			batchCmdRsp.Status = statusProto(splittingErr)
+		} else if headerErr != nil {
+			batchCmdRsp.Status = statusProto(headerErr)
+		} else {
+			for _, union := range batchCmdReq.GetUnion() {
+				rsp := &rfpb.ResponseUnion{}
+				sm.handlePropose(wb, union, rsp)
+				if union.GetCas() == nil && rsp.GetStatus().GetCode() != 0 {
+					sm.log.Errorf("error processing update %+v: %s", union, rsp.GetStatus())
+				}
+				batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 			}
-			batchCmdRsp.Union = append(batchCmdRsp.Union, rsp)
 		}
 
 		rspBuf, err := proto.Marshal(batchCmdRsp)
@@ -1514,7 +1485,6 @@ func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb
 }
 
 func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
-	ctx := context.TODO()
 	wb := db.NewBatch()
 	defer wb.Close()
 
@@ -1546,20 +1516,6 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		}
 		if err := wb.Set(kv.Key, kv.Value, nil /*ignored write options*/); err != nil {
 			return err
-		}
-		if !isLocalKey(kv.GetKey()) {
-			fileMetadata := &rfpb.FileMetadata{}
-			if err := proto.Unmarshal(kv.GetValue(), fileMetadata); err != nil {
-				return err
-			}
-			newMetadata, _, err := sm.fetchFileToLocalStorage(ctx, fileMetadata.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			if !proto.Equal(newMetadata, fileMetadata.GetStorageMetadata()) {
-				sm.log.Errorf("Stored metadata differs after fetching file locally. Before %+v, after: %+v", fileMetadata.GetStorageMetadata(), newMetadata)
-				return status.FailedPreconditionError("stored metadata changed when fetching file")
-			}
 		}
 	}
 	if err := db.Apply(wb, &pebble.WriteOptions{Sync: true}); err != nil {
@@ -1764,17 +1720,20 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 		log.Errorf("Error creating fileDir %q for replica: %s", fileDir, err)
 	}
 	r := &Replica{
-		leaser:     nil,
-		rootDir:    rootDir,
-		fileDir:    fileDir,
-		ClusterID:  clusterID,
-		NodeID:     nodeID,
-		timerMu:    &sync.Mutex{},
-		store:      store,
-		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
-		fileStorer: filestore.New(true /*=isolateByGroupIDs*/),
-		quitChan:   make(chan struct{}),
-		accesses:   make(chan *accessTimeUpdate, *atimeBufferSize),
+		leaser:    nil,
+		rootDir:   rootDir,
+		fileDir:   fileDir,
+		ClusterID: clusterID,
+		NodeID:    nodeID,
+		timerMu:   &sync.Mutex{},
+		store:     store,
+		log:       log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		fileStorer: filestore.New(filestore.Opts{
+			IsolateByGroupIDs:           true,
+			PrioritizeHashInMetadataKey: true,
+		}),
+		quitChan: make(chan struct{}),
+		accesses: make(chan *accessTimeUpdate, *atimeBufferSize),
 	}
 	go r.processAccessTimeUpdates()
 	return r

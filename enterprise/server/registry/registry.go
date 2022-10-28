@@ -203,17 +203,14 @@ func blobResourceName(h v1.Hash) *digest.ResourceName {
 		// to be large. The server uses this to determine the buffer size.
 		SizeBytes: 1024 * 1024 * 4,
 	}
-	return digest.NewResourceName(d, registryInstanceName)
+	rn := digest.NewResourceName(d, registryInstanceName)
+	rn.SetCacheType(resource.CacheType_CAS)
+	return rn
 }
 
 func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 	rn := blobResourceName(h)
-
-	c, err := r.cache.WithIsolation(ctx, resource.CacheType_CAS, registryInstanceName)
-	if err != nil {
-		return 0, err
-	}
-	md, err := c.MetadataDeprecated(ctx, rn.GetDigest())
+	md, err := r.cache.Metadata(ctx, rn.ToProto())
 	if err != nil {
 		return 0, err
 	}
@@ -282,7 +279,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		http.Error(w, fmt.Sprintf("could not get cache: %s", err), http.StatusInternalServerError)
 		return
 	}
-	rc, err := c.Reader(ctx, rn.GetDigest(), opts.Offset, opts.Limit)
+	rc, err := c.ReaderDeprecated(ctx, rn.GetDigest(), opts.Offset, opts.Limit)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
 		return
