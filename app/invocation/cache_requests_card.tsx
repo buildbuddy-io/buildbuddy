@@ -711,27 +711,6 @@ function looksLikeDigest(actionId: string) {
   return actionId.length === 64;
 }
 
-function getCacheType(result: cache.ScoreCard.IResult): resource.CacheType {
-  const cacheType = result.cacheType;
-  // If the cacheType field is not set, try reading data from the older cacheTypeDeprecated field
-  // for scorecard results that were written before we added the new cacheType field
-  if (!cacheType) {
-    return toResourceCacheType(result.cacheTypeDeprecated);
-  }
-  return cacheType;
-}
-
-function toResourceCacheType(cacheType: cache.CacheType): resource.CacheType {
-  switch (cacheType) {
-    case cache.CacheType.CAS:
-      return resource.CacheType.CAS;
-    case cache.CacheType.AC:
-      return resource.CacheType.AC;
-    default:
-      return resource.CacheType.UNKNOWN_CACHE_TYPE;
-  }
-}
-
 function toCacheProtoCacheType(cacheType: resource.CacheType): cache.CacheType {
   switch (cacheType) {
     case resource.CacheType.CAS:
