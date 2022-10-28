@@ -362,8 +362,10 @@ func (r *statsRecorder) Stop() {
 	// just after the stream request is accepted by the server but before calling
 	// openChannels.Add(1). Can fix this by explicitly waiting for the gRPC server
 	// shutdown to finish, which ensures all streaming requests have terminated.
+	log.Info("StatsRecorder: waiting for EventChannels to be closed before shutting down")
 	r.openChannels.Wait()
 
+	log.Info("StatsRecorder: shutting down")
 	r.mu.Lock()
 	r.stopped = true
 	close(r.tasks)
