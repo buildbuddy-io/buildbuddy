@@ -638,7 +638,11 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
     }
     return (
       <>
-        {result.cacheType === resource.CacheType.AC ? <Check className="icon green" /> : <ArrowDown className="icon green" />}
+        {result.cacheType === resource.CacheType.AC ? (
+          <Check className="icon green" />
+        ) : (
+          <ArrowDown className="icon green" />
+        )}
         <span>Hit</span>
       </>
     );
