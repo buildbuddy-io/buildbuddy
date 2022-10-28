@@ -8,7 +8,6 @@ import (
 	"hash"
 	"io"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -448,14 +447,14 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 			Complete:      false,
 		}, nil
 	}
-	rn.SetCacheType(resource.CacheType_CAS)
+	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName())
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
 
-	md, err := s.cache.Metadata(ctx, rn.ToProto())
+	md, err := s.cache.Metadata(ctx, casRN.ToProto())
 	if err != nil {
 		// If the data has not been committed to the cache, then just tell the
 		// client that we don't have anything and let them retry it.

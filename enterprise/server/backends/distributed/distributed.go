@@ -802,15 +802,6 @@ func (c *Cache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, err
 	return io.ReadAll(r)
 }
 
-func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return c.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.isolation.GetCacheType(),
-	})
-}
-
 func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	isolation := getIsolation(resources)
 	if isolation == nil {

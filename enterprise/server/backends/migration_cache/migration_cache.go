@@ -711,15 +711,6 @@ func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 	return srcBuf, srcErr
 }
 
-func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return mc.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	})
-}
-
 func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName, onlyCopyMissing bool) {
 	if onlyCopyMissing {
 		alreadyCopied, err := mc.dest.Contains(ctx, r)

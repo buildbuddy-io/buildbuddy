@@ -121,23 +121,6 @@ func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 	return innerRsp, nil
 }
 
-func (c *ComposableCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	outerRsp, err := c.outer.GetDeprecated(ctx, d)
-	if err == nil {
-		return outerRsp, nil
-	}
-
-	innerRsp, err := c.inner.GetDeprecated(ctx, d)
-	if err != nil {
-		return nil, err
-	}
-	if c.mode&ModeReadThrough != 0 {
-		c.outer.SetDeprecated(ctx, d, innerRsp)
-	}
-
-	return innerRsp, nil
-}
-
 func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	if len(resources) == 0 {
 		return nil, nil

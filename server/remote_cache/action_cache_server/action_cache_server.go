@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -61,7 +62,7 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*rep
 	return nil
 }
 
-func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
+func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, r *repb.ActionResult) error {
 	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -79,7 +80,12 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.A
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			blob, err := cache.GetDeprecated(gCtx, dc.GetTreeDigest())
+			rn := &resource.ResourceName{
+				Digest:       dc.GetTreeDigest(),
+				CacheType:    resource.CacheType_CAS,
+				InstanceName: remoteInstanceName,
+			}
+			blob, err := cache.Get(gCtx, rn)
 			if err != nil {
 				return err
 			}
@@ -144,20 +150,15 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
-	cache, err := namespace.ActionCache(ctx, s.cache, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-	casCache, err := namespace.CASCache(ctx, s.cache, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
-	blob, err := cache.GetDeprecated(ctx, d)
+	blob, err := s.cache.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: req.GetInstanceName(),
+	})
 	if err != nil {
 		ht.TrackMiss(d)
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
@@ -168,7 +169,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
-	if err := ValidateActionResult(ctx, casCache, rsp); err != nil {
+	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
 	return rsp, nil

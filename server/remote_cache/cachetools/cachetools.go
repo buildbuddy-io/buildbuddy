@@ -276,7 +276,7 @@ func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 }
 
 func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.ResourceName, out proto.Message) error {
-	data, err := cache.GetDeprecated(ctx, r.GetDigest())
+	data, err := cache.Get(ctx, r.ToProto())
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
 			return digest.MissingDigestError(r.GetDigest())
@@ -287,19 +287,13 @@ func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.R
 }
 
 func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	cas, err := namespace.CASCache(ctx, cache, d.GetInstanceName())
-	if err != nil {
-		return err
-	}
-	return readProtoFromCache(ctx, cas, d, out)
+	casRN := digest.NewCASResourceName(d.GetDigest(), d.GetInstanceName())
+	return readProtoFromCache(ctx, cache, casRN, out)
 }
 
 func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	ac, err := namespace.ActionCache(ctx, cache, d.GetInstanceName())
-	if err != nil {
-		return err
-	}
-	return readProtoFromCache(ctx, ac, d, out)
+	acRN := digest.NewACResourceName(d.GetDigest(), d.GetInstanceName())
+	return readProtoFromCache(ctx, cache, acRN, out)
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadSeeker) (*repb.Digest, error) {

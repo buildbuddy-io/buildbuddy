@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -100,10 +100,6 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if err != nil {
 		return nil, err
 	}
-	cache, err := namespace.CASCache(ctx, p.cache, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
 
 	var expectedSHA256 string
 
@@ -119,7 +115,8 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				SizeBytes: int64(-1),
 			}
 			expectedSHA256 = blobDigest.Hash
-			if data, err := cache.GetDeprecated(ctx, blobDigest); err == nil {
+			cacheRN := digest.NewCASResourceName(blobDigest, req.GetInstanceName())
+			if data, err := p.cache.Get(ctx, cacheRN.ToProto()); err == nil {
 				blobDigest.SizeBytes = int64(len(data)) // set the actual correct size.
 				return &rapb.FetchBlobResponse{
 					Status:     &statuspb.Status{Code: int32(gcodes.OK)},
@@ -139,7 +136,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
 		}
-		blobDigest, err := mirrorToCache(ctx, cache, httpClient, uri, expectedSHA256)
+		blobDigest, err := mirrorToCache(ctx, p.cache, resource.CacheType_CAS, req.GetInstanceName(), httpClient, uri, expectedSHA256)
 		if err != nil {
 			lastFetchErr = err
 			log.Warningf("Failed to mirror %q to cache: %s", uri, err)
@@ -173,7 +170,7 @@ func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirecto
 // returning the digest. The fetched contents are checked against the given
 // expectedSHA256 (if non-empty), and if there is a mismatch then an error is
 // returned.
-func mirrorToCache(ctx context.Context, cache interfaces.Cache, httpClient *http.Client, uri, expectedSHA256 string) (*repb.Digest, error) {
+func mirrorToCache(ctx context.Context, cache interfaces.Cache, cacheType resource.CacheType, remoteInstanceName string, httpClient *http.Client, uri, expectedSHA256 string) (*repb.Digest, error) {
 	rsp, err := httpClient.Get(uri)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
@@ -193,7 +190,8 @@ func mirrorToCache(ctx context.Context, cache interfaces.Cache, httpClient *http
 	if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256)
 	}
-	if err := cache.SetDeprecated(ctx, blobDigest, data); err != nil {
+	cacheRN := digest.NewCacheResourceName(blobDigest, remoteInstanceName, cacheType).ToProto()
+	if err := cache.Set(ctx, cacheRN, data); err != nil {
 		return nil, status.InternalErrorf("failed to add object to cache: %s", err)
 	}
 	return blobDigest, nil

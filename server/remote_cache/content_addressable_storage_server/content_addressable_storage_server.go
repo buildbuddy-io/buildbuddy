@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -449,13 +450,13 @@ func (d *dirStack) SerializeToToken() (string, error) {
 	return token, nil
 }
 
-func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, cache interfaces.Cache, reqDigest *repb.Digest) (*repb.Directory, error) {
-	_, err := digest.Validate(reqDigest)
+func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName *resource.ResourceName) (*repb.Directory, error) {
+	_, err := digest.Validate(dirName.GetDigest())
 	if err != nil {
 		return nil, err
 	}
 	// Fetch the "Directory" object which enumerates all the blobs in the directory
-	blob, err := cache.GetDeprecated(ctx, reqDigest)
+	blob, err := s.cache.Get(ctx, dirName)
 	if err != nil {
 		return nil, err
 	}
@@ -556,7 +557,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if err != nil {
 		return err
 	}
-	rootDir, err := s.fetchDir(ctx, cache, req.GetRootDigest())
+	rootDirRN := digest.NewCASResourceName(req.GetRootDigest(), req.GetInstanceName()).ToProto()
+	rootDir, err := s.fetchDir(ctx, rootDirRN)
 	if err != nil {
 		return err
 	}
@@ -599,7 +601,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 		if *enableTreeCaching {
-			if blob, err := acCache.GetDeprecated(ctx, treeCacheDigest); err == nil {
+			treeCacheRN := digest.NewACResourceName(treeCacheDigest, req.GetInstanceName()).ToProto()
+			if blob, err := s.cache.Get(ctx, treeCacheRN); err == nil {
 				treeCache := &repb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
 					if isComplete(treeCache.GetChildren()) {

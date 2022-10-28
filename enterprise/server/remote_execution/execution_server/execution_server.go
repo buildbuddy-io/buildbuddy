@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -293,11 +292,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
 func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.ResourceName) (*repb.ActionResult, error) {
-	cache, err := namespace.ActionCache(ctx, s.cache, r.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-	data, err := cache.GetDeprecated(ctx, r.GetDigest())
+	cacheResource := digest.NewACResourceName(r.GetDigest(), r.GetInstanceName())
+	data, err := s.cache.Get(ctx, cacheResource.ToProto())
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, digest.MissingDigestError(r.GetDigest())
@@ -316,11 +312,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 	if err != nil {
 		return nil, err
 	}
-	casCache, err := namespace.CASCache(ctx, s.cache, d.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-	if err := action_cache_server.ValidateActionResult(ctx, casCache, actionResult); err != nil {
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
