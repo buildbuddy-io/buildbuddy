@@ -41,4 +41,7 @@ message Usage {
 
   // The number of bytes downloaded from the CAS.
   int64 total_download_size_bytes = 5;
+
+  // The total execution duration for Linux executors, in microseconds.
+  int64 linux_execution_duration_usec = 6;
 }
