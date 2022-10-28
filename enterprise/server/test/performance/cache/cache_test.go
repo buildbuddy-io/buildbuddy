@@ -21,8 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -55,7 +53,7 @@ func getAnonContext(t testing.TB, te *testenv.TestEnv) context.Context {
 }
 
 type digestBuf struct {
-	d   *repb.Digest
+	d   *resource.ResourceName
 	buf []byte
 }
 
@@ -63,8 +61,12 @@ func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestB
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, digestSizeBytes)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 		digestBufs = append(digestBufs, &digestBuf{
-			d:   d,
+			d:   r,
 			buf: buf,
 		})
 	}
@@ -73,7 +75,7 @@ func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestB
 
 func setDigestsInCache(t testing.TB, ctx context.Context, c interfaces.Cache, dbufs []*digestBuf) {
 	for _, dbuf := range dbufs {
-		if err := c.SetDeprecated(ctx, dbuf.d, dbuf.buf); err != nil {
+		if err := c.Set(ctx, dbuf.d, dbuf.buf); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -121,8 +123,8 @@ func benchmarkSet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		dbuf := digestBufs[rand.Intn(len(digestBufs))]
-		b.SetBytes(dbuf.d.GetSizeBytes())
-		err := c.SetDeprecated(ctx, dbuf.d, dbuf.buf)
+		b.SetBytes(dbuf.d.GetDigest().GetSizeBytes())
+		err := c.Set(ctx, dbuf.d, dbuf.buf)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -137,12 +139,8 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 
 	for i := 0; i < b.N; i++ {
 		dbuf := digestBufs[rand.Intn(len(digestBufs))]
-		r := &resource.ResourceName{
-			Digest:    dbuf.d,
-			CacheType: resource.CacheType_CAS,
-		}
-		b.SetBytes(dbuf.d.GetSizeBytes())
-		_, err := c.Get(ctx, r)
+		b.SetBytes(dbuf.d.GetDigest().GetSizeBytes())
+		_, err := c.Get(ctx, dbuf.d)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -152,18 +150,18 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
-	digests := make([]*repb.Digest, 0, len(digestBufs))
+	digests := make([]*resource.ResourceName, 0, len(digestBufs))
 	var sumBytes int64
 	for _, dbuf := range digestBufs {
 		digests = append(digests, dbuf.d)
-		sumBytes += dbuf.d.GetSizeBytes()
+		sumBytes += dbuf.d.GetDigest().GetSizeBytes()
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.SetBytes(sumBytes)
 
 	for i := 0; i < b.N; i++ {
-		_, err := c.GetMultiDeprecated(ctx, digests)
+		_, err := c.GetMulti(ctx, digests)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -173,7 +171,7 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
-	digests := make([]*repb.Digest, 0, len(digestBufs))
+	digests := make([]*resource.ResourceName, 0, len(digestBufs))
 	for _, dbuf := range digestBufs {
 		digests = append(digests, dbuf.d)
 	}
@@ -182,7 +180,7 @@ func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeByt
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := c.FindMissingDeprecated(ctx, digests)
+		_, err := c.FindMissing(ctx, digests)
 		if err != nil {
 			b.Fatal(err)
 		}

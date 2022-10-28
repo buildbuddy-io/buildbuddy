@@ -1039,23 +1039,6 @@ func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) 
 	return wc.Commit()
 }
 
-func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.isolation.GetRemoteInstanceName(),
-		CacheType:    c.isolation.GetCacheType(),
-	}
-	wc, err := c.multiWriter(ctx, r)
-	if err != nil {
-		return err
-	}
-	defer wc.Close()
-	if _, err := wc.Write(data); err != nil {
-		return err
-	}
-	return wc.Commit()
-}
-
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 

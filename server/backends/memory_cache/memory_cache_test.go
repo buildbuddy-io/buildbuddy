@@ -260,7 +260,11 @@ func TestReadOffsetLimit(t *testing.T) {
 	ctx := getAnonContext(t)
 	size := int64(10)
 	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	err = mc.SetDeprecated(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	offset := int64(2)

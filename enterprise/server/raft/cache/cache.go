@@ -615,16 +615,6 @@ func (rc *RaftCache) Set(ctx context.Context, r *resource.ResourceName, data []b
 	return wc.Close()
 }
 
-func (rc *RaftCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	}
-	return rc.Set(ctx, rn, data)
-}
-
 func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	return nil
 }

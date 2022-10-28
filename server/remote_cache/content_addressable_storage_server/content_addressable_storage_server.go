@@ -553,10 +553,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if err != nil {
 		return err
 	}
-	acCache, err := s.getACCache(ctx, req.GetInstanceName())
-	if err != nil {
-		return err
-	}
 	rootDirRN := digest.NewCASResourceName(req.GetRootDigest(), req.GetInstanceName()).ToProto()
 	rootDir, err := s.fetchDir(ctx, rootDirRN)
 	if err != nil {
@@ -655,7 +651,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				if err != nil {
 					return nil, err
 				}
-				if err := acCache.SetDeprecated(ctx, treeCacheDigest, buf); err != nil {
+				treeCacheRN := digest.NewACResourceName(treeCacheDigest, req.GetInstanceName()).ToProto()
+				if err := s.cache.Set(ctx, treeCacheRN, buf); err != nil {
 					log.Warningf("Error setting treeCache blob: %s", err)
 				}
 			} else {

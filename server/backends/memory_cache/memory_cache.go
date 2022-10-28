@@ -212,16 +212,6 @@ func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []
 	return nil
 }
 
-func (m *MemoryCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	}
-	return m.Set(ctx, r, data)
-}
-
 func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	for r, data := range kvs {
 		if err := m.Set(ctx, r, data); err != nil {

@@ -775,14 +775,6 @@ func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, dat
 	return srcErr
 }
 
-func (mc *MigrationCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	return mc.Set(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		CacheType:    mc.cacheType,
-	}, data)
-}
-
 type copyData struct {
 	d                  *repb.Digest
 	ctx                context.Context

@@ -343,16 +343,6 @@ func (s3c *S3Cache) Set(ctx context.Context, r *resource.ResourceName, data []by
 	return err
 }
 
-func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	}
-	return s3c.Set(ctx, r, data)
-}
-
 func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 

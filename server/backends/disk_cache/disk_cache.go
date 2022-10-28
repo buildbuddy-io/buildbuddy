@@ -399,16 +399,6 @@ func (c *DiskCache) Set(ctx context.Context, r *resource.ResourceName, data []by
 	return p.set(ctx, r, data)
 }
 
-func (c *DiskCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Set(ctx, r, data)
-}
-
 func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	if len(kvs) == 0 {
 		return nil
