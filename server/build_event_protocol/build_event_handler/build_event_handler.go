@@ -120,7 +120,6 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	buildEventAccumulator := accumulator.NewBEValues(iid)
-	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
 
 	b.openChannels.Add(1)
 	onClose := func() {
@@ -600,7 +599,7 @@ func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID st
 		} else if err == io.EOF {
 			break
 		} else {
-			log.Warningf("Error reading proto from log: %s", err)
+			log.CtxWarningf(ctx, "Error reading proto from log: %s", err)
 			return err
 		}
 	}
@@ -768,7 +767,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	var bazelBuildEvent build_event_stream.BuildEvent
 	if err := readBazelEvent(event.OrderedBuildEvent, &bazelBuildEvent); err != nil {
-		log.Warningf("error reading bazel event: %s", err)
+		log.CtxWarningf(e.ctx, "error reading bazel event: %s", err)
 		return err
 	}
 
@@ -783,12 +782,12 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	if f, ok := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Finished); ok {
 		if f.Finished.GetExitCode().GetCode() == InterruptedExitCode && e.env.GetRemoteExecutionService() != nil {
 			if err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
-				log.Warningf("Could not cancel executions for invocation %q: %s", iid, err)
+				log.CtxWarningf(e.ctx, "Could not cancel executions for invocation %q: %s", iid, err)
 			}
 		}
 	}
 	if seqNo == 1 {
-		log.Debugf("First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
+		log.CtxDebugf(e.ctx, "First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 	}
 
 	if e.isFirstStartedEvent(&bazelBuildEvent) {
@@ -812,7 +811,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	// If this is the first event with options, keep track of the project ID and save any notification keywords.
 	if e.isFirstEventWithOptions(&bazelBuildEvent) {
 		e.hasReceivedEventWithOptions = true
-		log.Debugf("Received options! sequence: %d invocation_id: %s", seqNo, iid)
+		log.CtxDebugf(e.ctx, "Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
 			options, err := extractOptions(&bazelBuildEvent)
@@ -856,7 +855,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 		if !created {
 			// We failed to retry an existing invocation
-			log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
+			log.CtxWarningf(e.ctx, "Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
 			e.isVoid = true
 			return nil
 		}
@@ -892,7 +891,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		// don't increment the usage on invocation retries.
 		if ut := e.env.GetUsageTracker(); ut != nil && ti.Attempt == 1 {
 			if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
-				log.Warningf("Failed to record invocation usage: %s", err)
+				log.CtxWarningf(e.ctx, "Failed to record invocation usage: %s", err)
 			}
 		}
 	} else if !e.hasReceivedEventWithOptions || !e.hasReceivedStartedEvent {
@@ -939,7 +938,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	e.statusReporter.ReportStatusForEvent(e.ctx, event.BuildEvent)
 
 	if err := e.collectAPIFacets(iid, event.BuildEvent); err != nil {
-		log.Warningf("Error collecting API facets: %s", err)
+		log.CtxWarningf(e.ctx, "Error collecting API facets: %s", err)
 	}
 
 	// For everything else, just save the event to our buffer and keep on chugging.

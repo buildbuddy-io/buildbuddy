@@ -72,7 +72,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	for _, client := range s.env.GetBuildEventProxyClients() {
 		stream, err := client.PublishBuildToolEventStream(ctx, grpc.WaitForReady(false))
 		if err != nil {
-			log.Warningf("Unable to proxy stream: %s", err)
+			log.CtxWarningf(ctx, "Unable to proxy stream: %s", err)
 			continue
 		}
 		defer stream.CloseSend()
@@ -81,9 +81,9 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
-			log.Warningf("Disconnecting invocation %q: %s", streamID.InvocationId, e)
+			log.CtxWarningf(ctx, "Disconnecting invocation %q: %s", streamID.InvocationId, e)
 			if err := channel.FinalizeInvocation(streamID.InvocationId); err != nil {
-				log.Warningf("Error finalizing invocation %q during disconnect: %s", streamID.InvocationId, err)
+				log.CtxWarningf(ctx, "Error finalizing invocation %q during disconnect: %s", streamID.InvocationId, err)
 			}
 		}
 		return e
@@ -95,21 +95,22 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			break
 		}
 		if err != nil {
-			log.Warningf("Error receiving build event stream %+v: %s", streamID, err)
+			log.CtxWarningf(ctx, "Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
 		}
 		if streamID == nil {
 			streamID = in.OrderedBuildEvent.StreamId
+			ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.InvocationId)
 			channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
 			defer channel.Close()
 		}
 
 		if err := channel.HandleEvent(in); err != nil {
 			if status.IsAlreadyExistsError(err) {
-				log.Warningf("AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
+				log.CtxWarningf(ctx, "AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
 				return err
 			}
-			log.Warningf("Error handling event; this means a broken build command: %s", err)
+			log.CtxWarningf(ctx, "Error handling event; this means a broken build command: %s", err)
 			return disconnectWithErr(err)
 		}
 		for _, stream := range forwardingStreams {
@@ -121,7 +122,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	}
 
 	if channel != nil && channel.GetNumDroppedEvents() > 0 {
-		log.Warningf("We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
+		log.CtxWarningf(ctx, "We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
 			streamID.InvocationId, channel.GetNumDroppedEvents())
 	}
 
@@ -132,14 +133,14 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	sort.Sort(sort.IntSlice(acks))
 	for i, ack := range acks {
 		if ack != i+1 {
-			log.Warningf("Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
-			return io.EOF
+			log.CtxWarningf(ctx, "Missing ack: saw %d and wanted %d. Bailing!", ack, i+1)
+			return status.UnknownErrorf("event sequence number mismatch: received %d, wanted %d", ack, i+1)
 		}
 	}
 
 	if channel != nil {
 		if err := channel.FinalizeInvocation(streamID.GetInvocationId()); err != nil {
-			log.Warningf("Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
+			log.CtxWarningf(ctx, "Error finalizing invocation %q: %s", streamID.GetInvocationId(), err)
 			return err
 		}
 	}
@@ -151,7 +152,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			SequenceNumber: int64(ack),
 		}
 		if err := stream.Send(rsp); err != nil {
-			log.Warningf("Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
+			log.CtxWarningf(ctx, "Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
 			return err
 		}
 	}

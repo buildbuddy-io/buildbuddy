@@ -1720,17 +1720,20 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 		log.Errorf("Error creating fileDir %q for replica: %s", fileDir, err)
 	}
 	r := &Replica{
-		leaser:     nil,
-		rootDir:    rootDir,
-		fileDir:    fileDir,
-		ClusterID:  clusterID,
-		NodeID:     nodeID,
-		timerMu:    &sync.Mutex{},
-		store:      store,
-		log:        log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
-		fileStorer: filestore.New(true /*=isolateByGroupIDs*/),
-		quitChan:   make(chan struct{}),
-		accesses:   make(chan *accessTimeUpdate, *atimeBufferSize),
+		leaser:    nil,
+		rootDir:   rootDir,
+		fileDir:   fileDir,
+		ClusterID: clusterID,
+		NodeID:    nodeID,
+		timerMu:   &sync.Mutex{},
+		store:     store,
+		log:       log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		fileStorer: filestore.New(filestore.Opts{
+			IsolateByGroupIDs:           true,
+			PrioritizeHashInMetadataKey: true,
+		}),
+		quitChan: make(chan struct{}),
+		accesses: make(chan *accessTimeUpdate, *atimeBufferSize),
 	}
 	go r.processAccessTimeUpdates()
 	return r

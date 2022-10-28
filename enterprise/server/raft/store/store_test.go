@@ -274,11 +274,14 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 		},
 		Digest: d,
 	}
-	fs := filestore.New(true /*=isolateByGroupIDs*/)
-	fileMetadataKey, err := fs.FileMetadataKey(fr)
-	require.NoError(t, err)
 
-	_, err = ts.APIClient.Get(ctx, ts.GRPCAddress)
+	fs := filestore.New(filestore.Opts{
+		IsolateByGroupIDs:           true,
+		PrioritizeHashInMetadataKey: true,
+	})
+	fileMetadataKey := metadataKey(t, fr)
+
+	_, err := ts.APIClient.Get(ctx, ts.GRPCAddress)
 	require.NoError(t, err)
 
 	writeCloserMetadata := fs.InlineWriter(ctx, d.GetSizeBytes())
@@ -311,11 +314,20 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	return fr
 }
 
-func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.FileRecord) {
-	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
+func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
+	fs := filestore.New(filestore.Opts{
+		IsolateByGroupIDs:           true,
+		PrioritizeHashInMetadataKey: true,
+	})
+	fk, err := fs.FileMetadataKey(fr)
 	require.NoError(t, err)
+	return fk
+}
 
-	err = ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {
+func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.FileRecord) {
+	fk := metadataKey(t, fr)
+
+	err := ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		rc, err := client.RemoteReader(ctx, c, &rfpb.ReadRequest{
 			Header:     h,
 			FileRecord: fr,
@@ -565,8 +577,7 @@ func TestPostFactoSplit(t *testing.T) {
 
 	// Now verify that all keys that should be on the new node are present.
 	for _, fr := range written {
-		fmk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
-		require.NoError(t, err)
+		fmk := metadataKey(t, fr)
 		if bytes.Compare(fmk, splitResponse.GetLeft().GetRight()) >= 0 {
 			continue
 		}
