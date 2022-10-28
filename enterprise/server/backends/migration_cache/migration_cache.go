@@ -512,9 +512,6 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 	if doubleRead {
 		eg.Go(func() error {
 			destReader, dstErr = mc.dest.Reader(ctx, r, offset, limit)
-			if status.IsNotFoundError(dstErr) {
-				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
-			}
 			if dstErr == nil {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "readerMatch"}).Inc()
 			}
@@ -527,8 +524,13 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 
 	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
 	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
-	if dstErr != nil && !bothCacheNotFound && shouldLogErr {
-		log.Warningf("%v reader failed for dest cache: %s", r.GetDigest(), dstErr)
+	if dstErr != nil && !bothCacheNotFound {
+		if status.IsNotFoundError(dstErr) {
+			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
+		}
+		if shouldLogErr {
+			log.Warningf("%v reader failed for dest cache: %s", r.GetDigest(), dstErr)
+		}
 	}
 
 	if srcErr != nil {
@@ -816,20 +818,26 @@ func (mc *MigrationCache) copyDataInBackground() error {
 	}
 }
 
-func (mc *MigrationCache) logCopyChanFullInBackground() {
-	ticker := time.NewTicker(mc.copyChanFullWarningInterval)
-	defer ticker.Stop()
+func (mc *MigrationCache) monitorCopyChanFullness() {
+	copyChanFullTicker := time.NewTicker(mc.copyChanFullWarningInterval)
+	defer copyChanFullTicker.Stop()
+
+	metricTicker := time.NewTicker(5 * time.Second)
+	defer metricTicker.Stop()
 
 	for {
 		select {
 		case <-mc.quitChan:
 			return
-		case <-ticker.C:
+		case <-copyChanFullTicker.C:
 			if *mc.numCopiesDropped != 0 {
 				log.Warningf("Migration copy chan was full and dropped %d copies in %v. May need to increase buffer size", *mc.numCopiesDropped, mc.copyChanFullWarningInterval)
 				zero := int64(0)
 				mc.numCopiesDropped = &zero
 			}
+		case <-metricTicker.C:
+			copyChanSize := len(mc.copyChan)
+			metrics.MigrationCopyChanSize.Set(float64(copyChanSize))
 		}
 	}
 }
@@ -878,7 +886,7 @@ func (mc *MigrationCache) Start() error {
 	})
 	if mc.copyChanFullWarningInterval > 0 {
 		mc.eg.Go(func() error {
-			mc.logCopyChanFullInBackground()
+			mc.monitorCopyChanFullness()
 			return nil
 		})
 	}
