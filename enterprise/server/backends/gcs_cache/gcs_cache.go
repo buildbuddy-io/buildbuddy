@@ -278,16 +278,6 @@ func (g *GCSCache) Set(ctx context.Context, r *resource.ResourceName, data []byt
 	return err
 }
 
-func (g *GCSCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	}
-	return g.Set(ctx, rn, data)
-}
-
 func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 

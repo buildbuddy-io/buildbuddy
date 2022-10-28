@@ -1009,14 +1009,6 @@ func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []
 	return wc.Commit()
 }
 
-func (p *PebbleCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	return p.Set(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		CacheType:    p.isolation.GetCacheType(),
-	}, data)
-}
-
 func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	for r, data := range kvs {
 		if err := p.Set(ctx, r, data); err != nil {

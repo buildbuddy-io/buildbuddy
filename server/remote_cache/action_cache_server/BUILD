@@ -13,7 +13,6 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
-        "//server/remote_cache/namespace",
         "//server/util/capabilities",
         "//server/util/prefix",
         "//server/util/status",

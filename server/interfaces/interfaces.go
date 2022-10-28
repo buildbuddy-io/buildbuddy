@@ -222,7 +222,6 @@ type Cache interface {
 	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)
 	FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
 	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
-	SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error
 	SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	DeleteDeprecated(ctx context.Context, d *repb.Digest) error
 	ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)

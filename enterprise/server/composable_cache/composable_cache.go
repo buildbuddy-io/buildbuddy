@@ -198,18 +198,6 @@ func (c *ComposableCache) Set(ctx context.Context, r *resource.ResourceName, dat
 	return nil
 }
 
-func (c *ComposableCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	// Special case -- we call set on the inner cache first (in case of
-	// error) and then if no error we'll maybe set on the outer.
-	if err := c.inner.SetDeprecated(ctx, d, data); err != nil {
-		return err
-	}
-	if c.mode&ModeWriteThrough != 0 {
-		c.outer.SetDeprecated(ctx, d, data)
-	}
-	return nil
-}
-
 func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	if err := c.inner.SetMulti(ctx, kvs); err != nil {
 		return err

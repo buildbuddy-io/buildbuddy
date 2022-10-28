@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -218,11 +217,8 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
+	acResource := digest.NewACResourceName(d, req.GetInstanceName())
 	uploadTracker := ht.TrackUpload(d)
-	cache, err := namespace.ActionCache(ctx, s.cache, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
@@ -235,7 +231,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	if err := cache.SetDeprecated(ctx, d, blob); err != nil {
+	if err := s.cache.Set(ctx, acResource.ToProto(), blob); err != nil {
 		return nil, err
 	}
 	uploadTracker.Close()
