@@ -147,8 +147,6 @@ func TestRPCRead(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		// Need instance name?
-
 		// Set the value in the cache.
 		if err := te.GetCache().Set(ctx, tc.resourceName.ToProto(), []byte(tc.wantData)); err != nil {
 			t.Fatal(err)
