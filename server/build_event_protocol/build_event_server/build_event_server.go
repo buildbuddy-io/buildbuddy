@@ -118,7 +118,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			log.Warningf("Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
 		case <-eofCh:
-			return postProcessStream(channel, streamID, acks, stream)
+			return postProcessStream(ctx, channel, streamID, acks, stream)
 		case in := <-inCh:
 			if streamID == nil {
 				streamID = in.OrderedBuildEvent.StreamId
@@ -143,7 +143,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	}
 }
 
-func postProcessStream(channel interfaces.BuildEventChannel, streamID *bepb.StreamId, acks []int, stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
+func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel, streamID *bepb.StreamId, acks []int, stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	if channel != nil && channel.GetNumDroppedEvents() > 0 {
 		log.CtxWarningf(ctx, "We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
 			streamID.InvocationId, channel.GetNumDroppedEvents())
