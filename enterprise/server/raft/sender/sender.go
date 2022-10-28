@@ -18,6 +18,7 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -155,7 +156,8 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
 
 func isRangeSplittingError(err error) bool {
-	return strings.HasPrefix(status.Message(err), constants.RangeSplittingMsg)
+	t := strings.HasPrefix(status.Message(err), constants.RangeSplittingMsg)
+	return t
 }
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc) (int, error) {
@@ -397,6 +399,9 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 			Batch:  batchCmd,
 		})
 		if err != nil {
+			return err
+		}
+		if err := gstatus.FromProto(r.GetBatch().GetStatus()).Err(); err != nil {
 			return err
 		}
 		rsp = r

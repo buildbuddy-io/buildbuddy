@@ -18,6 +18,7 @@ go_library(
         "//server/util/log",
         "//server/util/retry",
         "//server/util/status",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
 )

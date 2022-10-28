@@ -31,6 +31,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "//server/util/statusz",
+        "@com_github_google_uuid//:uuid",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//:dragonboat",

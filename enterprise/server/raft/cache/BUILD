@@ -29,6 +29,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/flagutil",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
@@ -36,6 +37,7 @@ go_library(
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//config",
         "@com_github_lni_dragonboat_v3//raftio",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
