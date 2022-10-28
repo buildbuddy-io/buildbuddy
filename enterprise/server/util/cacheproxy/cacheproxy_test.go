@@ -842,14 +842,18 @@ func TestMetadata(t *testing.T) {
 
 	remoteInstanceName := "remote/instance"
 	isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
 
 	// Write to the cache
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: remoteInstanceName,
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = cache.SetDeprecated(ctx, d, buf)
+	err = te.GetCache().Set(ctx, r, buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -865,7 +869,7 @@ func TestMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error fetching metadata from cacheproxy: %s", err)
 	}
-	cacheMetadata, err := cache.MetadataDeprecated(ctx, d)
+	cacheMetadata, err := te.GetCache().Metadata(ctx, r)
 	if err != nil {
 		t.Fatalf("Error fetching metadata from underlying cache: %s", err)
 	}

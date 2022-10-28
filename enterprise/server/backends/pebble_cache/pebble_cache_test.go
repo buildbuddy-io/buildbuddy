@@ -323,7 +323,7 @@ func TestMetadata(t *testing.T) {
 			CacheType: resource.CacheType_CAS,
 		}
 
-		md, err := pc.MetadataDeprecated(ctx, digestWrongSize)
+		md, err := pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime1 := md.LastAccessTimeUsec
@@ -331,16 +331,8 @@ func TestMetadata(t *testing.T) {
 		require.NotZero(t, lastAccessTime1)
 		require.NotZero(t, lastModifyTime1)
 
-		md, err = pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime1 = md.LastAccessTimeUsec
-		lastModifyTime1 = md.LastModifyTimeUsec
-		require.NotZero(t, lastAccessTime1)
-		require.NotZero(t, lastModifyTime1)
-
 		// Last access time should not update since last call to Metadata()
-		md, err = pc.MetadataDeprecated(ctx, digestWrongSize)
+		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
@@ -348,30 +340,13 @@ func TestMetadata(t *testing.T) {
 		require.Equal(t, lastAccessTime1, lastAccessTime2)
 		require.Equal(t, lastModifyTime1, lastModifyTime2)
 
-		md, err = pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime2 = md.LastAccessTimeUsec
-		lastModifyTime2 = md.LastModifyTimeUsec
-		require.Equal(t, lastAccessTime1, lastAccessTime2)
-		require.Equal(t, lastModifyTime1, lastModifyTime2)
-
 		// After updating data, last access and modify time should update
 		err = pc.Set(ctx, r, buf)
-		require.NoError(t, err)
-		md, err = pc.MetadataDeprecated(ctx, digestWrongSize)
+		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
 		lastModifyTime3 := md.LastModifyTimeUsec
-		require.Greater(t, lastAccessTime3, lastAccessTime1)
-		require.Greater(t, lastModifyTime3, lastModifyTime2)
-
-		md, err = pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime3 = md.LastAccessTimeUsec
-		lastModifyTime3 = md.LastModifyTimeUsec
 		require.Greater(t, lastAccessTime3, lastAccessTime1)
 		require.Greater(t, lastModifyTime3, lastModifyTime2)
 	}

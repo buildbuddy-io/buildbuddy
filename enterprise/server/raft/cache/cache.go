@@ -495,10 +495,6 @@ func (rc *RaftCache) Metadata(ctx context.Context, r *resource.ResourceName) (*i
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func (rc *RaftCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return nil, status.UnimplementedError("not implemented")
-}
-
 func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames []*resource.ResourceName) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
 	for _, rn := range resourceNames {

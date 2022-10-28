@@ -62,6 +62,10 @@ func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	}
 }
 
+func (r *ResourceName) ToProto() *rspb.ResourceName {
+	return r.rn
+}
+
 func (r *ResourceName) GetDigest() *repb.Digest {
 	return r.rn.GetDigest()
 }
@@ -76,6 +80,14 @@ func (r *ResourceName) GetCompressor() repb.Compressor_Value {
 
 func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 	r.rn.Compressor = compressor
+}
+
+func (r *ResourceName) GetCacheType() rspb.CacheType {
+	return r.rn.GetCacheType()
+}
+
+func (r *ResourceName) SetCacheType(cacheType rspb.CacheType) {
+	r.rn.CacheType = cacheType
 }
 
 // DownloadString returns a string representing the resource name for download

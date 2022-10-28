@@ -496,15 +496,6 @@ func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*in
 	}, nil
 }
 
-func (s3c *S3Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return s3c.Metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
-}
-
 func (s3c *S3Cache) metadata(ctx context.Context, r *resource.ResourceName) (*s3.HeadObjectOutput, error) {
 	key, err := s3c.key(ctx, r)
 	if err != nil {

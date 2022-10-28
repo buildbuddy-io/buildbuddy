@@ -898,15 +898,6 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	}, nil
 }
 
-func (p *PebbleCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return p.Metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.RemoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.CacheType,
-	})
-}
-
 func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	db, err := p.leaser.DB()
 	if err != nil {

@@ -89,7 +89,7 @@ func (c *errorCache) Contains(ctx context.Context, r *resource.ResourceName) (bo
 	return false, errors.New("error cache contains err")
 }
 
-func (c *errorCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *errorCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	return nil, errors.New("error cache metadata err")
 }
 

@@ -203,12 +203,14 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return nil, err
-	}
 	d := digestFromKey(req.GetKey())
-	md, err := cache.MetadataDeprecated(ctx, d)
+	isolation := req.GetIsolation()
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    isolation.GetCacheType(),
+		InstanceName: isolation.GetRemoteInstanceName(),
+	}
+	md, err := c.cache.Metadata(ctx, r)
 	if err != nil {
 		return nil, err
 	}
