@@ -588,6 +588,96 @@ func TestAsyncLoading(t *testing.T) {
 	}
 }
 
+func waitForEviction(t *testing.T, dc *disk_cache.DiskCache) {
+	start := time.Now()
+	for time.Since(start) < 1*time.Second {
+		if dc.WithinTargetSize() {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.FailNow(t, "eviction did not happen in time")
+}
+
+func expectedDefaultV1DiskPath(rootDir string, r *resource.ResourceName) string {
+	return filepath.Join(rootDir, interfaces.AuthAnonymousUser, r.GetDigest().GetHash())
+}
+
+func testEviction(t *testing.T, rootDir string) {
+	maxSizeBytes := int64(5_000_000) // 10MB
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	require.NoError(t, err)
+
+	// Fill the cache.
+	resources := make([]*resource.ResourceName, 0)
+	for i := 0; i < 999; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		err := dc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		resources = append(resources, r)
+	}
+
+	waitForEviction(t, dc)
+
+	for i, r := range resources {
+		if i > 500 {
+			break
+		}
+		contains, err := dc.Contains(ctx, r)
+		require.NoError(t, err)
+		if contains {
+			t.Fatalf("Expected oldest digest %+v to be deleted", r)
+		}
+		fp := expectedDefaultV1DiskPath(rootDir, r)
+		if _, err := os.Stat(fp); err == nil || !os.IsNotExist(err) {
+			require.FailNow(t, "file should not exist", "%q should not exist", fp)
+		}
+	}
+
+	// Simulate a "restart" of the cache by creating a new instance.
+
+	dc, err = disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	require.NoError(t, err)
+	dc.WaitUntilMapped()
+
+	// Write more data to push out what's left of the original digests.
+
+	for i := 0; i < 500; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		r := &resource.ResourceName{Digest: d, CacheType: resource.CacheType_CAS}
+		err := dc.Set(ctx, r, buf)
+		require.NoError(t, err)
+	}
+
+	for _, r := range resources {
+		contains, err := dc.Contains(ctx, r)
+		require.NoError(t, err)
+		if contains {
+			t.Fatalf("Expected oldest digest %+v to be deleted", r)
+		}
+		fp := expectedDefaultV1DiskPath(rootDir, r)
+		if _, err := os.Stat(fp); err == nil || !os.IsNotExist(err) {
+			require.FailNow(t, "file should not exist", "%q should not exist", fp)
+		}
+	}
+}
+
+func TestEviction(t *testing.T) {
+	rootDir := filepath.Clean(testfs.MakeTempDir(t))
+	testEviction(t, rootDir)
+}
+
+func TestEviction_RootDirEndsInSlash(t *testing.T) {
+	rootDir := filepath.Clean(testfs.MakeTempDir(t))
+	testEviction(t, rootDir+"/")
+}
+
 func TestJanitorThread(t *testing.T) {
 	maxSizeBytes := int64(10_000_000) // 10MB
 	te := getTestEnv(t, emptyUserMap)

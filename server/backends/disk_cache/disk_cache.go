@@ -495,6 +495,15 @@ func (c *DiskCache) WaitUntilMapped() {
 	}
 }
 
+func (c *DiskCache) WithinTargetSize() bool {
+	for _, p := range c.partitions {
+		if !p.withinTargetSize() {
+			return false
+		}
+	}
+	return true
+}
+
 // We keep a record (in memory) of file atime (Last Access Time) and size, and
 // when our cache reaches maxSize we remove the oldest files. Rather than
 // serialize this ledger, we regenerate it from scratch on startup by looking
@@ -505,6 +514,7 @@ type partition struct {
 	mu               sync.RWMutex
 	rootDir          string
 	maxSizeBytes     int64
+	targetSizeBytes  int64
 	lru              interfaces.LRU
 	fileChannel      chan *fileRecord
 	diskIsMapped     bool
@@ -515,11 +525,13 @@ type partition struct {
 }
 
 func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
+	targetSizeBytes := int64(float64(maxSizeBytes) * janitorCutoffThreshold)
 	p := &partition{
 		id:               id,
 		useV2Layout:      useV2Layout,
 		maxSizeBytes:     maxSizeBytes,
-		rootDir:          rootDir,
+		targetSizeBytes:  targetSizeBytes,
+		rootDir:          filepath.Clean(rootDir),
 		fileChannel:      make(chan *fileRecord),
 		internedStrings:  make(map[string]string, 0),
 		doneAsyncLoading: make(chan struct{}),
@@ -621,7 +633,7 @@ func (p *partition) evictFn(value interface{}) {
 			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id}).Set(ageUsec)
 		}
 		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
-			log.Warningf("Could delete evicted file: %s", err)
+			log.Warningf("Could not delete evicted file: %s", err)
 		}
 	}
 }
@@ -667,12 +679,18 @@ func (p *partition) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (p *partition) reduceCacheSize(targetSize int64) bool {
+func (p *partition) withinTargetSize() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.lru.Size() < targetSize {
+	return p.lru.Size() < p.targetSizeBytes
+}
+
+func (p *partition) reduceCacheSize() bool {
+	if p.withinTargetSize() {
 		return false
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	value, ok := p.lru.RemoveOldest()
 	if !ok {
 		return false // should never happen
@@ -685,13 +703,12 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 }
 
 func (p *partition) startJanitor() {
-	targetSize := int64(float64(p.maxSizeBytes) * janitorCutoffThreshold)
 	go func() {
 		for {
 			select {
 			case <-time.After(janitorCheckPeriod):
 				for {
-					if !p.reduceCacheSize(targetSize) {
+					if !p.reduceCacheSize() {
 						break
 					}
 				}
