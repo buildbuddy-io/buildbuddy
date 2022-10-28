@@ -234,40 +234,20 @@ func TestContains_NotWritten(t *testing.T) {
 
 	// Data is not written - no nodes should contain it
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 
-	c, err := dc1.ContainsDeprecated(ctx, d)
-	require.NoError(t, err)
-	require.False(t, c)
-	c, err = dc1.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: "",
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    resource.CacheType_CAS,
-	})
+	c, err := dc1.Contains(ctx, r)
 	require.NoError(t, err)
 	require.False(t, c)
 
-	c, err = dc2.ContainsDeprecated(ctx, d)
-	require.NoError(t, err)
-	require.False(t, c)
-	c, err = dc2.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: "",
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    resource.CacheType_CAS,
-	})
+	c, err = dc2.Contains(ctx, r)
 	require.NoError(t, err)
 	require.False(t, c)
 
-	c, err = dc3.ContainsDeprecated(ctx, d)
-	require.NoError(t, err)
-	require.False(t, c)
-	c, err = dc3.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: "",
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    resource.CacheType_CAS,
-	})
+	c, err = dc3.Contains(ctx, r)
 	require.NoError(t, err)
 	require.False(t, c)
 }

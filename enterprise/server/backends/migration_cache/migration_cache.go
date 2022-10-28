@@ -222,15 +222,6 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName
 	return srcContains, srcErr
 }
 
-func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return mc.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	})
-}
-
 func (mc *MigrationCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error

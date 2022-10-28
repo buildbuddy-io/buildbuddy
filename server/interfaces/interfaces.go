@@ -219,7 +219,6 @@ type Cache interface {
 	WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (Cache, error)
 
 	// [Deprecated] Normal cache-like operations that act in conjunction with WithIsolation
-	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)
 	FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
 	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
 	SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error

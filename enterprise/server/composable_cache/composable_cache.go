@@ -58,15 +58,6 @@ func (c *ComposableCache) Contains(ctx context.Context, r *resource.ResourceName
 	return c.inner.Contains(ctx, r)
 }
 
-func (c *ComposableCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	outerExists, err := c.outer.ContainsDeprecated(ctx, d)
-	if err == nil && outerExists {
-		return outerExists, nil
-	}
-
-	return c.inner.ContainsDeprecated(ctx, d)
-}
-
 func (c *ComposableCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	md, err := c.outer.Metadata(ctx, r)
 	if err == nil {
