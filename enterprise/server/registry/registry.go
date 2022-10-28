@@ -203,7 +203,7 @@ func blobResourceName(h v1.Hash) *digest.ResourceName {
 		// to be large. The server uses this to determine the buffer size.
 		SizeBytes: 1024 * 1024 * 4,
 	}
-	rn := digest.NewCacheResourceName(d, registryInstanceName, resource.CacheType_CAS)
+	rn := digest.NewCASResourceName(d, registryInstanceName)
 	return rn
 }
 

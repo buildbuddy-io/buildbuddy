@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -293,7 +292,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
 func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.ResourceName) (*repb.ActionResult, error) {
-	cacheResource := digest.NewCacheResourceName(r.GetDigest(), r.GetInstanceName(), resource.CacheType_AC)
+	cacheResource := digest.NewACResourceName(r.GetDigest(), r.GetInstanceName())
 	data, err := s.cache.Get(ctx, cacheResource.ToProto())
 	if err != nil {
 		if status.IsNotFoundError(err) {

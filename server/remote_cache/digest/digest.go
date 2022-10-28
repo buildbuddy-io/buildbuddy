@@ -73,6 +73,28 @@ func NewCacheResourceName(d *repb.Digest, instanceName string, cacheType rspb.Ca
 	}
 }
 
+func NewCASResourceName(d *repb.Digest, instanceName string) *ResourceName {
+	return &ResourceName{
+		rn: &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    rspb.CacheType_CAS,
+		},
+	}
+}
+
+func NewACResourceName(d *repb.Digest, instanceName string) *ResourceName {
+	return &ResourceName{
+		rn: &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    rspb.CacheType_AC,
+		},
+	}
+}
+
 func (r *ResourceName) ToProto() *rspb.ResourceName {
 	return r.rn
 }

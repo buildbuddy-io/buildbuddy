@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -288,13 +287,13 @@ func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.R
 }
 
 func ReadProtoFromCAS(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	cacheRN := digest.NewCacheResourceName(d.GetDigest(), d.GetInstanceName(), resource.CacheType_CAS)
-	return readProtoFromCache(ctx, cache, cacheRN, out)
+	casRN := digest.NewCASResourceName(d.GetDigest(), d.GetInstanceName())
+	return readProtoFromCache(ctx, cache, casRN, out)
 }
 
 func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.ResourceName, out proto.Message) error {
-	cacheRN := digest.NewCacheResourceName(d.GetDigest(), d.GetInstanceName(), resource.CacheType_AC)
-	return readProtoFromCache(ctx, cache, cacheRN, out)
+	acRN := digest.NewACResourceName(d.GetDigest(), d.GetInstanceName())
+	return readProtoFromCache(ctx, cache, acRN, out)
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadSeeker) (*repb.Digest, error) {

@@ -115,7 +115,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				SizeBytes: int64(-1),
 			}
 			expectedSHA256 = blobDigest.Hash
-			cacheRN := digest.NewCacheResourceName(blobDigest, req.GetInstanceName(), resource.CacheType_CAS)
+			cacheRN := digest.NewCASResourceName(blobDigest, req.GetInstanceName())
 			if data, err := p.cache.Get(ctx, cacheRN.ToProto()); err == nil {
 				blobDigest.SizeBytes = int64(len(data)) // set the actual correct size.
 				return &rapb.FetchBlobResponse{
