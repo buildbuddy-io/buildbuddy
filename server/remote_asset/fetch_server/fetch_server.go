@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -22,25 +21,26 @@ import (
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 const (
-	checksumQualifier = "checksum.sri"
-	sha256Prefix      = "sha256-"
-	maxHTTPTimeout    = 60 * time.Minute
+	checksumQualifier     = "checksum.sri"
+	sha256Prefix          = "sha256-"
+	maxHTTPTimeout        = 60 * time.Minute
+	bytestreamReadBufSize = 4e6 // 4 MB
 )
 
 type FetchServer struct {
-	env   environment.Env
-	cache interfaces.Cache
+	env environment.Env
 }
 
 func Register(env environment.Env) error {
 	// OPTIONAL CACHE API -- only enable if configured.
-	if env.GetCache() == nil {
+	if env.GetByteStreamClient() == nil {
 		return nil
 	}
 	fetchServer, err := NewFetchServer(env)
@@ -56,10 +56,7 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 	if cache == nil {
 		return nil, status.FailedPreconditionError("A cache is required to enable the ByteStreamServer")
 	}
-	return &FetchServer{
-		env:   env,
-		cache: cache,
-	}, nil
+	return &FetchServer{env: env}, nil
 }
 
 func timeoutFromContext(ctx context.Context) (time.Duration, bool) {
@@ -111,18 +108,36 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				return nil, status.FailedPreconditionErrorf("Error decoding qualifier %q: %s", qualifier.GetName(), err.Error())
 			}
 			blobDigest := &repb.Digest{
-				Hash:      fmt.Sprintf("%x", sha256),
-				SizeBytes: int64(-1),
+				Hash: fmt.Sprintf("%x", sha256),
+				// We don't know the digest size (yet), but we have to specify
+				// something here or the bytestream API will return an
+				// InvalidArgument error. The bytestream server doesn't actually
+				// check this value; it just needs something greater than 0.
+				//
+				// Note, the value we specify here is used as the max size of
+				// each chunk sent back in the stream, so want something
+				// relatively large here or else the streaming will be too slow.
+				SizeBytes: bytestreamReadBufSize,
 			}
 			expectedSHA256 = blobDigest.Hash
 			cacheRN := digest.NewCASResourceName(blobDigest, req.GetInstanceName())
-			if data, err := p.cache.Get(ctx, cacheRN.ToProto()); err == nil {
-				blobDigest.SizeBytes = int64(len(data)) // set the actual correct size.
-				return &rapb.FetchBlobResponse{
-					Status:     &statuspb.Status{Code: int32(gcodes.OK)},
-					BlobDigest: blobDigest,
-				}, nil
+
+			// TODO: Find a way to get the correct digest size without
+			// downloading the full blob from cache.
+			log.CtxInfof(ctx, "Looking up %s in cache", blobDigest.Hash)
+			buf := bytes.NewBuffer(nil)
+
+			if err := cachetools.GetBlob(ctx, p.env.GetByteStreamClient(), cacheRN, buf); err != nil {
+				log.CtxInfof(ctx, "FetchServer failed to get %s from cache: %s", expectedSHA256, err)
+				continue
 			}
+
+			log.CtxInfof(ctx, "FetchServer successfully read %s from cache", expectedSHA256)
+			blobDigest.SizeBytes = int64(buf.Len()) // set the actual correct size.
+			return &rapb.FetchBlobResponse{
+				Status:     &statuspb.Status{Code: int32(gcodes.OK)},
+				BlobDigest: blobDigest,
+			}, nil
 		}
 	}
 	httpClient := timeoutHTTPClient(ctx, req.GetTimeout())
@@ -136,10 +151,10 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
 		}
-		blobDigest, err := mirrorToCache(ctx, p.cache, resource.CacheType_CAS, req.GetInstanceName(), httpClient, uri, expectedSHA256)
+		blobDigest, err := mirrorToCache(ctx, p.env.GetByteStreamClient(), req.GetInstanceName(), httpClient, uri, expectedSHA256)
 		if err != nil {
 			lastFetchErr = err
-			log.Warningf("Failed to mirror %q to cache: %s", uri, err)
+			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", uri, err)
 			continue
 		}
 		return &rapb.FetchBlobResponse{
@@ -149,6 +164,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}, nil
 	}
 
+	log.CtxInfof(ctx, "Fetch: returning NotFound for %s", req.GetUris())
 	return &rapb.FetchBlobResponse{
 		Status: &statuspb.Status{
 			// Note: returning NotFound here because the other error codes in
@@ -170,7 +186,8 @@ func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirecto
 // returning the digest. The fetched contents are checked against the given
 // expectedSHA256 (if non-empty), and if there is a mismatch then an error is
 // returned.
-func mirrorToCache(ctx context.Context, cache interfaces.Cache, cacheType resource.CacheType, remoteInstanceName string, httpClient *http.Client, uri, expectedSHA256 string) (*repb.Digest, error) {
+func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteInstanceName string, httpClient *http.Client, uri, expectedSHA256 string) (*repb.Digest, error) {
+	log.CtxInfof(ctx, "Fetching %s", uri)
 	rsp, err := httpClient.Get(uri)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
@@ -179,6 +196,9 @@ func mirrorToCache(ctx context.Context, cache interfaces.Cache, cacheType resour
 	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, err)
 	}
+	// TODO: Support cache uploads with unknown digest length, so that we can
+	// pipe directly from the HTTP response to the cache and avoid buffering
+	// the entire fetched contents in memory.
 	data, err := io.ReadAll(rsp.Body)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to read response body from %q: %s", uri, err)
@@ -190,9 +210,14 @@ func mirrorToCache(ctx context.Context, cache interfaces.Cache, cacheType resour
 	if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256)
 	}
-	cacheRN := digest.NewCacheResourceName(blobDigest, remoteInstanceName, cacheType).ToProto()
-	if err := cache.Set(ctx, cacheRN, data); err != nil {
-		return nil, status.InternalErrorf("failed to add object to cache: %s", err)
+	cacheRN := digest.NewCASResourceName(blobDigest, remoteInstanceName)
+	uploadDigest, err := cachetools.UploadFromReader(ctx, bsClient, cacheRN, bytes.NewReader(data))
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
 	}
+	if uploadDigest.Hash != expectedSHA256 {
+		return nil, status.UnavailableErrorf("unexpected hash mismatch: expected %s, got %s", expectedSHA256, uploadDigest.Hash)
+	}
+	log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s/%d)", uri, blobDigest.Hash, blobDigest.SizeBytes)
 	return blobDigest, nil
 }

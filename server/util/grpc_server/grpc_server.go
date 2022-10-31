@@ -41,6 +41,10 @@ var (
 	enablePrometheusHistograms = flag.Bool("app.enable_prometheus_histograms", true, "If true, collect prometheus histograms for all RPCs")
 )
 
+func Port() int {
+	return *gRPCPort
+}
+
 type RegisterServices func(server *grpc.Server, env environment.Env)
 
 func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error {

@@ -39,11 +39,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/static"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	"google.golang.org/grpc"
@@ -249,6 +251,17 @@ func registerGRPCServices(grpcServer *grpc.Server, env environment.Env) {
 	}
 }
 
+func registerLocalGRPCClients(env environment.Env) error {
+	conn, err := grpc_client.DialTarget(fmt.Sprintf("grpc://localhost:%d", grpc_server.Port()))
+	if err != nil {
+		return status.InternalErrorf("Error initializing ByteStreamClient: %s", err)
+	}
+	if env.GetByteStreamServer() != nil {
+		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+	}
+	return nil
+}
+
 func StartAndRunServices(env environment.Env) {
 	env.SetListenAddr(*listen)
 
@@ -303,6 +316,9 @@ func StartAndRunServices(env environment.Env) {
 	}
 	if err := push_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
+	}
+	if err := registerLocalGRPCClients(env); err != nil {
+		log.Fatal(err.Error())
 	}
 	if err := fetch_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
