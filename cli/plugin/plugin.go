@@ -390,8 +390,16 @@ func (p *Plugin) load() error {
 	}
 
 	log.Printf("Downloading %q", p.RepoURL())
+	// Clone into a temp dir so that if the ref does not exist, we don't
+	// actually create the plugin directory.
+	tempPath, err := os.MkdirTemp("", "buildbuddy-git-clone-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %s", err)
+	}
+	defer os.RemoveAll(tempPath) // intentionally ignoring error
+
 	stderr := &bytes.Buffer{}
-	clone := exec.Command("git", "clone", p.RepoURL(), path)
+	clone := exec.Command("git", "clone", p.RepoURL(), tempPath)
 	clone.Stderr = stderr
 	clone.Stdout = io.Discard
 	if err := clone.Run(); err != nil {
@@ -404,10 +412,20 @@ func (p *Plugin) load() error {
 		checkout := exec.Command("git", "checkout", ref)
 		checkout.Stderr = stderr
 		checkout.Stdout = io.Discard
+		checkout.Dir = tempPath
 		if err := checkout.Run(); err != nil {
 			log.Printf("%s", stderr.String())
 			return err
 		}
+	}
+
+	// We cloned the repo and checked out the ref successfully; move it to
+	// the cache dir.
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("failed to create repo dir: %s", err)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return fmt.Errorf("failed to add cloned repo to plugins dir: %s", err)
 	}
 
 	if err := p.validate(); err != nil {
