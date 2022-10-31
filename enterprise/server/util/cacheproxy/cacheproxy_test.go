@@ -402,6 +402,11 @@ func TestWriter(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		rn := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: remoteInstanceName,
+		}
 		readSeeker.Seek(0, 0)
 
 		// Remote-write the random bytes to the cache (with a prefix).
@@ -415,9 +420,7 @@ func TestWriter(t *testing.T) {
 
 		// Read the bytes back directly from the cache and check that
 		// they match..
-		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
-		require.NoError(t, err)
-		r, err := cache.ReaderDeprecated(ctx, d, 0, 0)
+		r, err := te.GetCache().Reader(ctx, rn, 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}

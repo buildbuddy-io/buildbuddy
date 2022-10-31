@@ -413,16 +413,6 @@ func (c *DiskCache) Reader(ctx context.Context, r *resource.ResourceName, offset
 	return p.reader(ctx, r, offset, limit)
 }
 
-func (c *DiskCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Reader(ctx, r, offset, limit)
-}
-
 func (c *DiskCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	p, err := c.getPartition(ctx, r.GetInstanceName())
 	if err != nil {

@@ -697,11 +697,9 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.R
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 	select {
 	case mc.copyChan <- &copyData{
-		d:                  r.GetDigest(),
-		ctx:                ctx,
-		ctxCancel:          cancel,
-		remoteInstanceName: r.GetInstanceName(),
-		cacheType:          r.GetCacheType(),
+		d:         r,
+		ctx:       ctx,
+		ctxCancel: cancel,
 	}:
 	default:
 		log.Debugf("Migration dropping copy digest %v, instance %s, cache %v", r.GetDigest(), r.GetInstanceName(), r.GetCacheType())
@@ -744,11 +742,9 @@ func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, dat
 }
 
 type copyData struct {
-	d                  *repb.Digest
-	ctx                context.Context
-	ctxCancel          context.CancelFunc
-	cacheType          resource.CacheType
-	remoteInstanceName string
+	d         *resource.ResourceName
+	ctx       context.Context
+	ctxCancel context.CancelFunc
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
@@ -803,13 +799,7 @@ func (mc *MigrationCache) monitorCopyChanFullness() {
 func (mc *MigrationCache) copy(c *copyData) {
 	defer c.ctxCancel()
 
-	cache, err := mc.withIsolation(c.ctx, c.cacheType, c.remoteInstanceName)
-	if err != nil {
-		log.Warningf("Migration copy err: Could not call WithIsolation for type %v instance %s: %s", c.cacheType, c.remoteInstanceName, err)
-		return
-	}
-
-	srcReader, err := cache.src.ReaderDeprecated(c.ctx, c.d, 0, 0)
+	srcReader, err := mc.src.Reader(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			log.Warningf("Migration copy err: Could not create %v reader from src cache: %s", c.d, err)
@@ -818,7 +808,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer srcReader.Close()
 
-	destWriter, err := cache.dest.WriterDeprecated(c.ctx, c.d)
+	destWriter, err := mc.dest.Writer(c.ctx, c.d)
 	if err != nil {
 		log.Warningf("Migration copy err: Could not create %v writer for dest cache: %s", c.d, err)
 		return
@@ -833,7 +823,7 @@ func (mc *MigrationCache) copy(c *copyData) {
 		log.Warningf("Migration copy err: destination commit failed: %s", err)
 	}
 
-	log.Debugf("Migration successfully copied to dest cache: digest %v, instance %s, cache %v", c.d, c.remoteInstanceName, c.cacheType)
+	log.Debugf("Migration successfully copied to dest cache: digest %v", c.d)
 }
 
 func (mc *MigrationCache) Start() error {

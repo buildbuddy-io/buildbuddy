@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -39,14 +40,14 @@ func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeByte
 	return d
 }
 
-func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *repb.Digest) {
-	r, err := c.ReaderDeprecated(ctx, d, 0, 0)
+func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *resource.ResourceName) {
+	r, err := c.Reader(ctx, d, 0, 0)
 	require.NoError(t, err)
 	rd, err := digest.Compute(r)
 	require.NoError(t, err)
 	err = r.Close()
 	require.NoError(t, err)
-	require.Equal(t, digest.NewKey(d), digest.NewKey(rd))
+	require.Equal(t, digest.NewKey(d.GetDigest()), digest.NewKey(rd))
 }
 
 func TestReadThrough(t *testing.T) {
@@ -64,28 +65,40 @@ func TestReadThrough(t *testing.T) {
 	// outer cache on read.
 	{
 		d := writeDigest(ctx, t, inner, 99)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 
 		// Check that we can read the digest through the composable cache.
-		readAndVerifyDigest(ctx, t, c, d)
+		readAndVerifyDigest(ctx, t, c, r)
 
 		// Verify that the outer cache has the digest data.
-		readAndVerifyDigest(ctx, t, outer, d)
+		readAndVerifyDigest(ctx, t, outer, r)
 	}
 
 	// Write a digest that doesn't fit into the outer cache and test that we can
 	// still read it from the composable cache.
 	{
 		d := writeDigest(ctx, t, inner, 100)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 
 		// Check that we can read the digest through the composable cache.
-		readAndVerifyDigest(ctx, t, c, d)
+		readAndVerifyDigest(ctx, t, c, r)
 	}
 
 	// Perform a partial read and check that outer has the correct (full) blob.
 	{
 		d := writeDigest(ctx, t, inner, 99)
+		rn := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
 
-		r, err := c.ReaderDeprecated(ctx, d, 0, 0)
+		r, err := c.Reader(ctx, rn, 0, 0)
 		require.NoError(t, err)
 
 		buf := make([]byte, 50)
@@ -93,6 +106,6 @@ func TestReadThrough(t *testing.T) {
 		require.NoError(t, err)
 		r.Close()
 
-		readAndVerifyDigest(ctx, t, outer, d)
+		readAndVerifyDigest(ctx, t, outer, rn)
 	}
 }

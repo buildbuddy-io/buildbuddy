@@ -192,7 +192,7 @@ func parseRangeHeader(val string) ([]byteRange, error) {
 	return parsedRanges, nil
 }
 
-func blobResourceName(h v1.Hash) *digest.ResourceName {
+func blobResourceName(h v1.Hash) *resource.ResourceName {
 	d := &repb.Digest{
 		Hash: h.Hex,
 		// We don't actually know the blob size.
@@ -200,13 +200,13 @@ func blobResourceName(h v1.Hash) *digest.ResourceName {
 		// to be large. The server uses this to determine the buffer size.
 		SizeBytes: 1024 * 1024 * 4,
 	}
-	rn := digest.NewCASResourceName(d, registryInstanceName)
+	rn := digest.NewCASResourceName(d, registryInstanceName).ToProto()
 	return rn
 }
 
 func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 	rn := blobResourceName(h)
-	md, err := r.cache.Metadata(ctx, rn.ToProto())
+	md, err := r.cache.Metadata(ctx, rn)
 	if err != nil {
 		return 0, err
 	}
@@ -270,12 +270,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		}()
 	}
 	rn := blobResourceName(h)
-	c, err := r.cache.WithIsolation(ctx, resource.CacheType_CAS, registryInstanceName)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not get cache: %s", err), http.StatusInternalServerError)
-		return
-	}
-	rc, err := c.ReaderDeprecated(ctx, rn.GetDigest(), opts.Offset, opts.Limit)
+	rc, err := r.cache.Reader(ctx, rn, opts.Offset, opts.Limit)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
 		return

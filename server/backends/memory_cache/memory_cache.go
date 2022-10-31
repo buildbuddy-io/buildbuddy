@@ -236,16 +236,6 @@ func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, off
 	return io.NopCloser(r), nil
 }
 
-func (m *MemoryCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	}
-	return m.Reader(ctx, rn, offset, limit)
-}
-
 func (m *MemoryCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
