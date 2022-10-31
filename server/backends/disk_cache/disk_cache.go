@@ -397,11 +397,6 @@ func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName
 	return p.setMulti(ctx, kvs)
 }
 
-func (c *DiskCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(c.cacheType, c.remoteInstanceName, kvs)
-	return c.partition.setMulti(ctx, rnMap)
-}
-
 func (c *DiskCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
 	r := &resource.ResourceName{
 		Digest:       d,

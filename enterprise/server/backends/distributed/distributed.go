@@ -1039,11 +1039,6 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]b
 	return nil
 }
 
-func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(c.isolation.CacheType, c.isolation.RemoteInstanceName, kvs)
-	return c.SetMulti(ctx, rnMap)
-}
-
 func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	ps := c.readPeers(r.GetDigest())
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {

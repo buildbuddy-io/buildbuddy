@@ -357,11 +357,6 @@ func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName
 	return nil
 }
 
-func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(s3c.cacheType, s3c.remoteInstanceName, kvs)
-	return s3c.SetMulti(ctx, rnMap)
-}
-
 func (s3c *S3Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	k, err := s3c.key(ctx, r)
 	if err != nil {
