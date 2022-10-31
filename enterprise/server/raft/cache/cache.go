@@ -482,15 +482,6 @@ func (rc *RaftCache) Contains(ctx context.Context, r *resource.ResourceName) (bo
 	return len(missing) == 0, nil
 }
 
-func (rc *RaftCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return rc.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	})
-}
-
 func (rc *RaftCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	return nil, status.UnimplementedError("not implemented")
 }

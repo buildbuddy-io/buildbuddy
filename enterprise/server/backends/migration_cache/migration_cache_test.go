@@ -892,7 +892,7 @@ func TestContains_DestErr(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should return data from src cache without error
-	contains, err := mc.ContainsDeprecated(ctx, d)
+	contains, err := mc.Contains(ctx, r)
 	require.NoError(t, err)
 	require.True(t, contains)
 }

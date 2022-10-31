@@ -151,15 +151,6 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType,
 	}, nil
 }
 
-func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
-}
-
 func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	key, err := c.key(ctx, r)
 	if err != nil {

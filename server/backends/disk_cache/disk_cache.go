@@ -308,15 +308,6 @@ func (c *DiskCache) Contains(ctx context.Context, r *resource.ResourceName) (boo
 	return contains, err
 }
 
-func (c *DiskCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
-}
-
 func (c *DiskCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	p, err := c.getPartition(ctx, r.GetInstanceName())
 	if err != nil {

@@ -553,7 +553,11 @@ func TestAsyncLoading(t *testing.T) {
 	// Ensure that files on disk exist *immediately*, even though
 	// they may not have been async processed yet.
 	for _, d := range digests {
-		exists, err := dc.ContainsDeprecated(ctx, d)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		exists, err := dc.Contains(ctx, r)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -578,7 +582,11 @@ func TestAsyncLoading(t *testing.T) {
 
 	// Check that everything still exists.
 	for _, d := range digests {
-		exists, err := dc.ContainsDeprecated(ctx, d)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		exists, err := dc.Contains(ctx, r)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -598,7 +606,7 @@ func TestJanitorThread(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Fill the cache.
-	digests := make([]*repb.Digest, 0)
+	digests := make([]*resource.ResourceName, 0)
 	for i := 0; i < 999; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
 		r := &resource.ResourceName{
@@ -609,7 +617,7 @@ func TestJanitorThread(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		digests = append(digests, d)
+		digests = append(digests, r)
 	}
 
 	// Make a new disk cache with a smaller size. The
@@ -624,12 +632,12 @@ func TestJanitorThread(t *testing.T) {
 		if i > 500 {
 			break
 		}
-		contains, err := dc.ContainsDeprecated(ctx, d)
+		contains, err := dc.Contains(ctx, d)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if contains {
-			t.Fatalf("Expected oldest digest %+v to be deleted", d)
+			t.Fatalf("Expected oldest digest %+v to be deleted", d.GetDigest())
 		}
 	}
 }
@@ -665,7 +673,7 @@ func TestZeroLengthFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Ensure that the goodDigest exists and the zero length one does not.
-	exists, err := dc.ContainsDeprecated(ctx, badDigest)
+	exists, err := dc.Contains(ctx, digest.NewCASResourceName(badDigest, "").ToProto())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,7 +681,7 @@ func TestZeroLengthFiles(t *testing.T) {
 		t.Fatalf("%q (empty file) should not be mapped in cache.", badDigest.GetHash())
 	}
 
-	exists, err = dc.ContainsDeprecated(ctx, goodDigest)
+	exists, err = dc.Contains(ctx, digest.NewCASResourceName(goodDigest, "").ToProto())
 	if err != nil {
 		t.Fatal(err)
 	}

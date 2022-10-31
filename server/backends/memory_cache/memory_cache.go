@@ -111,15 +111,6 @@ func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	return contains, nil
 }
 
-func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return m.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()

@@ -234,10 +234,6 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	cache, err := s.getCache(ctx, r.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
 
 	ws := &writeState{
 		resourceName:       r,
@@ -252,7 +248,8 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
-	exists, err := cache.ContainsDeprecated(ctx, r.GetDigest())
+	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName()).ToProto()
+	exists, err := s.cache.Contains(ctx, casRN)
 	if err != nil {
 		return nil, err
 	}
@@ -265,6 +262,10 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	var committedWriteCloser interfaces.CommittedWriteCloser
 
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
+		cache, err := s.getCache(ctx, r.GetInstanceName())
+		if err != nil {
+			return nil, err
+		}
 		cacheWriter, err := cache.WriterDeprecated(ctx, r.GetDigest())
 		if err != nil {
 			return nil, err

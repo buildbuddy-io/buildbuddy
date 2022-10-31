@@ -452,15 +452,6 @@ func (s3c *S3Cache) Contains(ctx context.Context, r *resource.ResourceName) (boo
 	return false, err
 }
 
-func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return s3c.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
-}
-
 // TODO(buildbuddy-internal#1485) - Add last access time
 func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	metadata, err := s3c.metadata(ctx, r)

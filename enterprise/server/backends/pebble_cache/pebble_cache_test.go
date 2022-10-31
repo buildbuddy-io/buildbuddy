@@ -1183,14 +1183,14 @@ func BenchmarkContains1(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
-	digestKeys := make([]*repb.Digest, 0, 100000)
+	digestKeys := make([]*resource.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
 		r := &resource.ResourceName{
 			Digest:    d,
 			CacheType: resource.CacheType_CAS,
 		}
-		digestKeys = append(digestKeys, d)
+		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
@@ -1200,7 +1200,7 @@ func BenchmarkContains1(b *testing.B) {
 	b.StopTimer()
 	for n := 0; n < b.N; n++ {
 		b.StartTimer()
-		found, err := pc.ContainsDeprecated(ctx, digestKeys[rand.Intn(len(digestKeys))])
+		found, err := pc.Contains(ctx, digestKeys[rand.Intn(len(digestKeys))])
 		b.StopTimer()
 		if err != nil {
 			b.Fatal(err)
