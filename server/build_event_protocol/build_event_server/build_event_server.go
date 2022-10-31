@@ -91,16 +91,11 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	errCh := make(chan error)
 	inCh := make(chan *pepb.PublishBuildToolEventStreamRequest)
-	eofCh := make(chan bool)
 
 	// Listen on request stream in the background
 	go func() {
 		for {
 			in, err := stream.Recv()
-			if err == io.EOF {
-				eofCh <- true
-				return
-			}
 			if err != nil {
 				errCh <- err
 				return
@@ -113,16 +108,18 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	for {
 		select {
 		case <-channelDone:
-			return disconnectWithErr(status.UnavailableError("context cancelled due to server shut down"))
+			return disconnectWithErr(status.FromContextError(ctx))
 		case err := <-errCh:
+			if err == io.EOF {
+				return postProcessStream(ctx, channel, streamID, acks, stream)
+			}
 			log.Warningf("Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
-		case <-eofCh:
-			return postProcessStream(ctx, channel, streamID, acks, stream)
 		case in := <-inCh:
 			if streamID == nil {
 				streamID = in.OrderedBuildEvent.StreamId
 				channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
+				channelDone = channel.Context().Done()
 				defer channel.Close()
 			}
 
