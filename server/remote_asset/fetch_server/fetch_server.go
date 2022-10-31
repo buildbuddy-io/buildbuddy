@@ -35,8 +35,7 @@ const (
 )
 
 type FetchServer struct {
-	env      environment.Env
-	bsClient bspb.ByteStreamClient
+	env environment.Env
 }
 
 func Register(env environment.Env) error {
@@ -57,10 +56,7 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 	if cache == nil {
 		return nil, status.FailedPreconditionError("A cache is required to enable the ByteStreamServer")
 	}
-	return &FetchServer{
-		env:      env,
-		bsClient: env.GetByteStreamClient(),
-	}, nil
+	return &FetchServer{env: env}, nil
 }
 
 func timeoutFromContext(ctx context.Context) (time.Duration, bool) {
@@ -118,8 +114,9 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				// InvalidArgument error. The bytestream server doesn't actually
 				// check this value; it just needs something greater than 0.
 				//
-				// Note, the value we specify here is used as the max read
-				// buffer size, so want something relatively large here.
+				// Note, the value we specify here is used as the max size of
+				// each chunk sent back in the stream, so want something
+				// relatively large here or else the streaming will be too slow.
 				SizeBytes: bytestreamReadBufSize,
 			}
 			expectedSHA256 = blobDigest.Hash
@@ -130,7 +127,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			log.CtxInfof(ctx, "Looking up %s in cache", blobDigest.Hash)
 			buf := bytes.NewBuffer(nil)
 
-			if err := cachetools.GetBlob(ctx, p.bsClient, cacheRN, buf); err != nil {
+			if err := cachetools.GetBlob(ctx, p.env.GetByteStreamClient(), cacheRN, buf); err != nil {
 				log.CtxInfof(ctx, "FetchServer failed to get %s from cache: %s", expectedSHA256, err)
 				continue
 			}
@@ -154,7 +151,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
 		}
-		blobDigest, err := mirrorToCache(ctx, p.bsClient, req.GetInstanceName(), httpClient, uri, expectedSHA256)
+		blobDigest, err := mirrorToCache(ctx, p.env.GetByteStreamClient(), req.GetInstanceName(), httpClient, uri, expectedSHA256)
 		if err != nil {
 			lastFetchErr = err
 			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", uri, err)

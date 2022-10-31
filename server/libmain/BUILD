@@ -46,7 +46,6 @@ go_library(
         "//server/static",
         "//server/util/db",
         "//server/util/fileresolver",
-        "//server/util/flagutil",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
