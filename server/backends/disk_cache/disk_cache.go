@@ -397,16 +397,6 @@ func (c *DiskCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName
 	return p.setMulti(ctx, kvs)
 }
 
-func (c *DiskCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Delete(ctx, r)
-}
-
 func (c *DiskCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	p, err := c.getPartition(ctx, r.GetInstanceName())
 	if err != nil {

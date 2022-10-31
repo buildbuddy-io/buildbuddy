@@ -603,7 +603,3 @@ func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceNam
 func (rc *RaftCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	return nil
 }
-
-func (rc *RaftCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	return nil
-}

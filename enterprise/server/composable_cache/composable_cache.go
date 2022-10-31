@@ -173,18 +173,6 @@ func (c *ComposableCache) Delete(ctx context.Context, r *resource.ResourceName) 
 	return nil
 }
 
-func (c *ComposableCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	// Special case -- we call delete on the inner cache first (in case of
-	// error) and then if no error we'll maybe delete from the outer.
-	if err := c.inner.DeleteDeprecated(ctx, d); err != nil {
-		return err
-	}
-	if c.mode&ModeWriteThrough != 0 {
-		c.outer.DeleteDeprecated(ctx, d)
-	}
-	return nil
-}
-
 // TeeReader returns a Reader that writes to w what it reads from r.
 // All reads from r performed through it are matched with
 // corresponding writes to w. There is no internal buffering -

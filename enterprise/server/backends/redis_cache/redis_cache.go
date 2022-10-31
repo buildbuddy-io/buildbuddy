@@ -330,16 +330,6 @@ func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 
 }
 
-func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Delete(ctx, r)
-}
-
 // Low level interface used for seeking and stream-writing.
 func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	if !c.eligibleForCache(rn.GetDigest()) {

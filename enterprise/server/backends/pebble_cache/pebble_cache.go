@@ -1102,16 +1102,6 @@ func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 	return p.deleteRecord(ctx, fileMetadataKey)
 }
 
-func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.GetCacheType(),
-	}
-	return p.Delete(ctx, rn)
-}
-
 func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {

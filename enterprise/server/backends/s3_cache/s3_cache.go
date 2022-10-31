@@ -369,16 +369,6 @@ func (s3c *S3Cache) Delete(ctx context.Context, r *resource.ResourceName) error 
 
 }
 
-func (s3c *S3Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	}
-	return s3c.Delete(ctx, r)
-}
-
 func (s3c *S3Cache) delete(ctx context.Context, key string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: s3c.bucket,

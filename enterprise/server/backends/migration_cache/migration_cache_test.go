@@ -1202,7 +1202,7 @@ func TestDelete(t *testing.T) {
 	require.True(t, bytes.Equal(buf, data))
 
 	// After delete, data should no longer exist
-	err = mc.DeleteDeprecated(ctx, d)
+	err = mc.Delete(ctx, r)
 	require.NoError(t, err)
 
 	data, err = mc.Get(ctx, r)

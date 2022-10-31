@@ -1053,16 +1053,6 @@ func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	return nil
 }
 
-func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.isolation.GetCacheType(),
-	}
-	return c.Delete(ctx, rn)
-}
-
 func (c *Cache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	return c.distributedReader(ctx, r, offset, limit)
 }

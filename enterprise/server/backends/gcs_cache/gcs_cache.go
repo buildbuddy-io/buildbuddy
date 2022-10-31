@@ -311,16 +311,6 @@ func (g *GCSCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	return err
 }
 
-func (g *GCSCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	}
-	return g.Delete(ctx, rn)
-}
-
 func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) bool {
 	if g.ttlInDays == 0 || int64(time.Since(t).Hours()) < 24*g.ttlInDays/2 {
 		return true
