@@ -189,14 +189,15 @@ func TestMultiGetSet(t *testing.T) {
 	}
 	ctx := getAnonContext(t)
 	digests := randomDigests(t, 10, 20, 11, 30, 40)
-	if err := mc.SetMultiDeprecated(ctx, digests); err != nil {
+	rns := digest.ResourceNameMap(resource.CacheType_CAS, "", digests)
+	if err := mc.SetMulti(ctx, rns); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
-	digestKeys := make([]*repb.Digest, 0, len(digests))
-	for d := range digests {
+	digestKeys := make([]*resource.ResourceName, 0, len(digests))
+	for d := range rns {
 		digestKeys = append(digestKeys, d)
 	}
-	m, err := mc.GetMultiDeprecated(ctx, digestKeys)
+	m, err := mc.GetMulti(ctx, digestKeys)
 	if err != nil {
 		t.Fatalf("Error multi-getting digests: %s", err.Error())
 	}

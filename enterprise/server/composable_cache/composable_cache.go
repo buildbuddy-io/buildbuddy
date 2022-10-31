@@ -139,33 +139,6 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.Re
 	return foundMap, nil
 }
 
-func (c *ComposableCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	if outerFoundMap, err := c.outer.GetMultiDeprecated(ctx, digests); err == nil {
-		for d, data := range outerFoundMap {
-			foundMap[d] = data
-		}
-	}
-	stillMissing := make([]*repb.Digest, 0)
-	for _, d := range digests {
-		if _, ok := foundMap[d]; !ok {
-			stillMissing = append(stillMissing, d)
-		}
-	}
-	if len(stillMissing) == 0 {
-		return foundMap, nil
-	}
-
-	innerFoundMap, err := c.inner.GetMultiDeprecated(ctx, stillMissing)
-	if err != nil {
-		return nil, err
-	}
-	for d, data := range innerFoundMap {
-		foundMap[d] = data
-	}
-	return foundMap, nil
-}
-
 func (c *ComposableCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	// Special case -- we call set on the inner cache first (in case of
 	// error) and then if no error we'll maybe set on the outer.

@@ -897,11 +897,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 	return rsp, nil
 }
 
-func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(c.isolation.GetCacheType(), c.isolation.GetRemoteInstanceName(), digests)
-	return c.GetMulti(ctx, rns)
-}
-
 type multiWriteCloser struct {
 	ctx           context.Context
 	log           log.Logger

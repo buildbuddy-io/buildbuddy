@@ -223,11 +223,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 	return response, nil
 }
 
-func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.GetMulti(ctx, rns)
-}
-
 func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	if !eligibleForMc(r.GetDigest()) {
 		return status.ResourceExhaustedErrorf("Set: Digest %v too big for memcache", r.GetDigest())
