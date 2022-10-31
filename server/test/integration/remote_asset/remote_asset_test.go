@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +22,22 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+var (
+	testAppTarget = flag.String("test_app_target", "", "App target to try using as the fetch backend.")
+	testURL       = flag.String("test_url", "", "URL to try fetching manually.")
+	testSHA256    = flag.String("test_sha256", "", "Digest of the contents at --test_url")
+)
+
+func TestRemoteAsset_ManualTest(t *testing.T) {
+	if *testAppTarget == "" {
+		t.Skip()
+	}
+
+	res := fetchWithBazel(t, *testAppTarget, []string{*testURL}, *testSHA256)
+
+	require.NoError(t, res.Error)
+}
 
 func TestRemoteAsset_OKResponse_FetchesSuccessfully(t *testing.T) {
 	app := buildbuddy.Run(t)
