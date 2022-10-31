@@ -50,7 +50,7 @@ export function parseProfile(data: string): Profile {
 function trailingNonWhitespaceCharacters(text: string, numTrailingChars: number) {
   let out = "";
   for (let i = text.length - 1; i >= 0; i--) {
-    if (text[i].trim() !== "") out += text[i];
+    if (text[i].trim() !== "") out = text[i] + out;
 
     if (out.length >= numTrailingChars) break;
   }
