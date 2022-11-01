@@ -92,9 +92,10 @@ var (
 )
 
 type BuildEventHandler struct {
-	env           environment.Env
-	statsRecorder *statsRecorder
-	openChannels  *sync.WaitGroup
+	env              environment.Env
+	statsRecorder    *statsRecorder
+	openChannels     *sync.WaitGroup
+	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
@@ -105,25 +106,38 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 
 	statsRecorder.Start()
 	webhookNotifier.Start()
+
+	h := &BuildEventHandler{
+		env:              env,
+		statsRecorder:    statsRecorder,
+		openChannels:     openChannels,
+		cancelFnsByInvID: sync.Map{},
+	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		h.Stop()
 		statsRecorder.Stop()
 		webhookNotifier.Stop()
 		return nil
 	})
-
-	return &BuildEventHandler{
-		env:           env,
-		statsRecorder: statsRecorder,
-		openChannels:  openChannels,
-	}
+	return h
 }
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	buildEventAccumulator := accumulator.NewBEValues(iid)
+	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
+	val, ok := b.cancelFnsByInvID.Load(iid)
+	if ok {
+		cancelFn := val.(context.CancelFunc)
+		cancelFn()
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	b.cancelFnsByInvID.Store(iid, cancel)
 
 	b.openChannels.Add(1)
 	onClose := func() {
 		b.openChannels.Done()
+		b.cancelFnsByInvID.Delete(iid)
 	}
 
 	return &EventChannel{
@@ -146,6 +160,16 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		onClose:                     onClose,
 		attempt:                     1,
 	}
+}
+
+func (b *BuildEventHandler) Stop() {
+	b.cancelFnsByInvID.Range(func(key, val interface{}) bool {
+		iid := key.(string)
+		cancelFn := val.(context.CancelFunc)
+		log.Infof("Cancelling invocation %q because server received shutdown signal", iid)
+		cancelFn()
+		return true
+	})
 }
 
 // invocationJWT represents an invocation ID as well as the JWT granting access
@@ -338,8 +362,10 @@ func (r *statsRecorder) Stop() {
 	// just after the stream request is accepted by the server but before calling
 	// openChannels.Add(1). Can fix this by explicitly waiting for the gRPC server
 	// shutdown to finish, which ensures all streaming requests have terminated.
+	log.Info("StatsRecorder: waiting for EventChannels to be closed before shutting down")
 	r.openChannels.Wait()
 
+	log.Info("StatsRecorder: shutting down")
 	r.mu.Lock()
 	r.stopped = true
 	close(r.tasks)
@@ -614,6 +640,10 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 	}
 	_, err = e.env.GetBlobstore().WriteBlob(ctx, blobID, protoBytes)
 	return err
+}
+
+func (e *EventChannel) Context() context.Context {
+	return e.ctx
 }
 
 func (e *EventChannel) Close() {

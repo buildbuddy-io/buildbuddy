@@ -89,38 +89,58 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		return e
 	}
 
-	for {
-		in, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.CtxWarningf(ctx, "Error receiving build event stream %+v: %s", streamID, err)
-			return disconnectWithErr(err)
-		}
-		if streamID == nil {
-			streamID = in.OrderedBuildEvent.StreamId
-			ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.InvocationId)
-			channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
-			defer channel.Close()
-		}
+	errCh := make(chan error)
+	inCh := make(chan *pepb.PublishBuildToolEventStreamRequest)
 
-		if err := channel.HandleEvent(in); err != nil {
-			if status.IsAlreadyExistsError(err) {
-				log.CtxWarningf(ctx, "AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
-				return err
+	// Listen on request stream in the background
+	go func() {
+		for {
+			in, err := stream.Recv()
+			if err != nil {
+				errCh <- err
+				return
 			}
-			log.CtxWarningf(ctx, "Error handling event; this means a broken build command: %s", err)
+			inCh <- in
+		}
+	}()
+
+	var channelDone <-chan struct{}
+	for {
+		select {
+		case <-channelDone:
+			return disconnectWithErr(status.FromContextError(channel.Context()))
+		case err := <-errCh:
+			if err == io.EOF {
+				return postProcessStream(ctx, channel, streamID, acks, stream)
+			}
+			log.Warningf("Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
-		}
-		for _, stream := range forwardingStreams {
-			// Intentionally ignore errors here -- proxying is best effort.
-			stream.Send(in)
-		}
+		case in := <-inCh:
+			if streamID == nil {
+				streamID = in.OrderedBuildEvent.StreamId
+				channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
+				channelDone = channel.Context().Done()
+				defer channel.Close()
+			}
 
-		acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
+			if err := channel.HandleEvent(in); err != nil {
+				if status.IsAlreadyExistsError(err) {
+					log.Warningf("AlreadyExistsError handling event; this means the invocation already exists and may not be retried: %s", err)
+					return err
+				}
+				log.Warningf("Error handling event; this means a broken build command: %s", err)
+				return disconnectWithErr(err)
+			}
+			for _, stream := range forwardingStreams {
+				// Intentionally ignore errors here -- proxying is best effort.
+				stream.Send(in)
+			}
+			acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
+		}
 	}
+}
 
+func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel, streamID *bepb.StreamId, acks []int, stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	if channel != nil && channel.GetNumDroppedEvents() > 0 {
 		log.CtxWarningf(ctx, "We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
 			streamID.InvocationId, channel.GetNumDroppedEvents())

@@ -176,6 +176,7 @@ type SSLService interface {
 }
 
 type BuildEventChannel interface {
+	Context() context.Context
 	FinalizeInvocation(iid string) error
 	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
 	GetNumDroppedEvents() uint64
