@@ -235,16 +235,6 @@ func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) 
 	return c.mcSet(k, data)
 }
 
-func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Set(ctx, r, data)
-}
-
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -320,16 +310,6 @@ func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interface
 	}
 	return wc, nil
 
-}
-
-func (c *Cache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Writer(ctx, r)
 }
 
 func (c *Cache) Start() error {

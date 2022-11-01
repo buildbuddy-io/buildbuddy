@@ -143,22 +143,12 @@ type snitchCache struct {
 	writeCount map[string]int
 }
 
-func (s *snitchCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	c, err := s.Cache.WithIsolation(ctx, cacheType, remoteInstanceName)
+func (s *snitchCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	wc, err := s.Cache.Writer(ctx, r)
 	if err != nil {
 		return nil, err
 	}
-	return &snitchCache{
-		c,
-		s.writeCount,
-	}, nil
-}
-func (s *snitchCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	wc, err := s.Cache.WriterDeprecated(ctx, d)
-	if err != nil {
-		return nil, err
-	}
-	s.writeCount[d.GetHash()] += 1
+	s.writeCount[r.GetDigest().GetHash()] += 1
 	return wc, nil
 }
 

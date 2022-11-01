@@ -442,16 +442,6 @@ func (rc *RaftCache) Writer(ctx context.Context, r *resource.ResourceName) (inte
 	return wc, nil
 }
 
-func (rc *RaftCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	}
-	return rc.Writer(ctx, r)
-}
-
 func (rc *RaftCache) Stop() error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)

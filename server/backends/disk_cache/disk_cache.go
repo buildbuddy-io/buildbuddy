@@ -421,16 +421,6 @@ func (c *DiskCache) Writer(ctx context.Context, r *resource.ResourceName) (inter
 	return p.writer(ctx, r)
 }
 
-func (c *DiskCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Writer(ctx, r)
-}
-
 func (c *DiskCache) WaitUntilMapped() {
 	for _, p := range c.partitions {
 		p.WaitUntilMapped()

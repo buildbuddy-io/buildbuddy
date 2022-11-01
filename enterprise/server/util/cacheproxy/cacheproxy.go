@@ -155,10 +155,6 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	return client, nil
 }
 
-func (c *CacheProxy) getCache(ctx context.Context, isolation *dcpb.Isolation) (interfaces.Cache, error) {
-	return c.cache.WithIsolation(ctx, isolation.GetCacheType(), isolation.GetRemoteInstanceName())
-}
-
 func (c *CacheProxy) prepareContext(ctx context.Context) context.Context {
 	if c.zone != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, resources.ZoneHeader, c.zone)
@@ -340,11 +336,9 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		if writeCloser == nil {
 			d := digestFromKey(req.GetKey())
-			cache, err := c.getCache(ctx, req.GetIsolation())
-			if err != nil {
-				return err
-			}
-			wc, err := cache.WriterDeprecated(ctx, d)
+			i := req.GetIsolation()
+			rn := digest.NewCacheResourceName(d, i.GetRemoteInstanceName(), i.GetCacheType()).ToProto()
+			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 				return err

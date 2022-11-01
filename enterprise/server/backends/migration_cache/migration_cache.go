@@ -622,15 +622,6 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *resource.ResourceName) 
 	return dw, nil
 }
 
-func (mc *MigrationCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	return mc.Writer(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	})
-}
-
 func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error

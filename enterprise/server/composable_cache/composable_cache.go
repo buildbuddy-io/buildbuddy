@@ -290,27 +290,3 @@ func (c *ComposableCache) Writer(ctx context.Context, r *resource.ResourceName) 
 
 	return innerWriter, nil
 }
-
-func (c *ComposableCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	innerWriter, err := c.inner.WriterDeprecated(ctx, d)
-	if err != nil {
-		return nil, err
-	}
-
-	if c.mode&ModeWriteThrough != 0 {
-		if outerWriter, err := c.outer.WriterDeprecated(ctx, d); err == nil {
-			dw := &doubleWriter{
-				inner: innerWriter,
-				outer: outerWriter,
-				commitFn: func(err error) {
-					if err == nil {
-						outerWriter.Commit()
-					}
-				},
-			}
-			return dw, nil
-		}
-	}
-
-	return innerWriter, nil
-}

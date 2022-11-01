@@ -591,16 +591,6 @@ func (s3c *S3Cache) Writer(ctx context.Context, rn *resource.ResourceName) (inte
 	return closer, nil
 }
 
-func (s3c *S3Cache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	}
-	return s3c.Writer(ctx, r)
-}
-
 func (s3c *S3Cache) Start() error {
 	return nil
 }

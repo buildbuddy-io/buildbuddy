@@ -29,7 +29,11 @@ func testEnvAndContext(t *testing.T) (environment.Env, context.Context) {
 
 func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeBytes int64) *repb.Digest {
 	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
-	w, err := c.WriterDeprecated(ctx, d)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	w, err := c.Writer(ctx, r)
 	require.NoError(t, err)
 	_, err = w.Write(buf)
 	require.NoError(t, err)

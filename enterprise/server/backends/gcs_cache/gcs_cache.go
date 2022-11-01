@@ -522,16 +522,6 @@ func (g *GCSCache) Writer(ctx context.Context, r *resource.ResourceName) (interf
 
 }
 
-func (g *GCSCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	}
-	return g.Writer(ctx, r)
-}
-
 func (g *GCSCache) Start() error {
 	return nil
 }
