@@ -108,7 +108,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 	for {
 		select {
 		case <-channelDone:
-			return disconnectWithErr(status.FromContextError(ctx))
+			return disconnectWithErr(status.FromContextError(channel.Context()))
 		case err := <-errCh:
 			if err == io.EOF {
 				return postProcessStream(ctx, channel, streamID, acks, stream)
