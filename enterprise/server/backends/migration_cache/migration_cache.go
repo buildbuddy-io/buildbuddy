@@ -518,16 +518,6 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 	}, nil
 }
 
-func (mc *MigrationCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	}
-	return mc.Reader(ctx, r, offset, limit)
-}
-
 type doubleWriter struct {
 	src          interfaces.CommittedWriteCloser
 	dest         interfaces.CommittedWriteCloser
