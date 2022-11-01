@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -65,10 +64,6 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 		cache:      cache,
 		bufferPool: bytebufferpool.New(readBufSizeBytes),
 	}, nil
-}
-
-func (s *ByteStreamServer) getCache(ctx context.Context, instanceName string) (interfaces.Cache, error) {
-	return namespace.CASCache(ctx, s.cache, instanceName)
 }
 
 func minInt64(a, b int64) int64 {

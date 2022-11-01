@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -78,14 +77,6 @@ func NewContentAddressableStorageServer(env environment.Env) (*ContentAddressabl
 		env:   env,
 		cache: cache,
 	}, nil
-}
-
-func (s *ContentAddressableStorageServer) getCache(ctx context.Context, instanceName string) (interfaces.Cache, error) {
-	return namespace.CASCache(ctx, s.cache, instanceName)
-}
-
-func (s *ContentAddressableStorageServer) getACCache(ctx context.Context, instanceName string) (interfaces.Cache, error) {
-	return namespace.ActionCache(ctx, s.cache, instanceName)
 }
 
 // Determine if blobs are present in the CAS.
