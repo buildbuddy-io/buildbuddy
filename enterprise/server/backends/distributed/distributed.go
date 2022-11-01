@@ -1057,16 +1057,6 @@ func (c *Cache) Reader(ctx context.Context, r *resource.ResourceName, offset, li
 	return c.distributedReader(ctx, r, offset, limit)
 }
 
-func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.isolation.GetCacheType(),
-	}
-	return c.Reader(ctx, rn, offset, limit)
-}
-
 func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	mwc, err := c.multiWriter(ctx, r)
 	if err != nil {

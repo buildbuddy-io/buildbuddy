@@ -1151,16 +1151,6 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offs
 	return pebbleutil.ReadCloserWithFunc(rc, db.Close), nil
 }
 
-func (p *PebbleCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.GetCacheType(),
-	}
-	return p.Reader(ctx, rn, offset, limit)
-}
-
 type writeCloser struct {
 	interfaces.MetadataWriteCloser
 	closeFn      func(n int64) error

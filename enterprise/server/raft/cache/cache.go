@@ -384,16 +384,6 @@ func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, offse
 	return readCloser, err
 }
 
-func (rc *RaftCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	}
-	return rc.Reader(ctx, rn, offset, limit)
-}
-
 type raftWriteCloser struct {
 	io.WriteCloser
 	closeFn func() error

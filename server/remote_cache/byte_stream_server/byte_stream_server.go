@@ -122,15 +122,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	cache, err := s.getCache(ctx, r.GetInstanceName())
-	if err != nil {
-		return err
-	}
 	if r.GetDigest().GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
 	}
-	reader, err := cache.ReaderDeprecated(ctx, r.GetDigest(), req.ReadOffset, req.ReadLimit)
+	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName()).ToProto()
+	reader, err := s.cache.Reader(ctx, cacheRN, req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		ht.TrackMiss(r.GetDigest())
 		return err

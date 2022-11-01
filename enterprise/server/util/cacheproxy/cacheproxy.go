@@ -293,12 +293,10 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 		return err
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
+	i := req.GetIsolation()
 	d := digestFromKey(req.GetKey())
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return err
-	}
-	reader, err := cache.ReaderDeprecated(ctx, d, req.GetOffset(), req.GetLimit())
+	rn := digest.NewCacheResourceName(d, i.GetRemoteInstanceName(), i.GetCacheType()).ToProto()
+	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 		return err

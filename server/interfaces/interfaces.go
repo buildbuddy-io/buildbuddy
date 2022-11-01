@@ -220,7 +220,6 @@ type Cache interface {
 	WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (Cache, error)
 
 	// [Deprecated] Normal cache-like operations that act in conjunction with WithIsolation
-	ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
 	WriterDeprecated(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
 
 	// Normal cache-like operations

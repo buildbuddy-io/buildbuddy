@@ -24,6 +24,7 @@ go_test(
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testredis",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",

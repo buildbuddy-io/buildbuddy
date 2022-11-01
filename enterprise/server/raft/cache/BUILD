@@ -47,7 +47,6 @@ go_test(
     tags = ["manual"],
     deps = [
         ":cache",
-        "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
         "//server/remote_cache/digest",

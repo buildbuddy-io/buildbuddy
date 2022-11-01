@@ -23,7 +23,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -42,17 +41,17 @@ func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticat
 	return te, ta, ctx
 }
 
-func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest) {
-	reader, err := c.ReaderDeprecated(ctx, d, 0)
+func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *resource.ResourceName) {
+	reader, err := c.Reader(ctx, d, 0, 0)
 	if err != nil {
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
 	d1 := testdigest.ReadDigestAndClose(t, reader)
-	require.Equal(t, d.GetHash(), d1.GetHash())
+	require.Equal(t, d.GetDigest().GetHash(), d1.GetHash())
 }
 
-func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *repb.Digest, buf []byte) {
-	writeCloser, err := c.WriterDeprecated(ctx, d)
+func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *resource.ResourceName, buf []byte) {
+	writeCloser, err := c.Writer(ctx, d)
 	if err != nil {
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
 	}
@@ -206,15 +205,17 @@ func TestReaderAndWriter(t *testing.T) {
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
 
-	cache, err := rc1.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
-	require.NoError(t, err)
-
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		writeDigest(t, ctx, cache, d, buf)
-		readAndCompareDigest(t, ctx, cache, d)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: "remote/instance/name",
+		}
+		writeDigest(t, ctx, rc1, r, buf)
+		readAndCompareDigest(t, ctx, rc1, r)
 	}
 	waitForShutdown(t, rc1, rc2, rc3)
 }
@@ -254,17 +255,15 @@ func TestCacheShutdown(t *testing.T) {
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
 
-	cache, err := rc1.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
-	require.NoError(t, err)
-
 	cacheRPCTimeout := 5 * time.Second
-	digestsWritten := make([]*repb.Digest, 0)
+	digestsWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		writeDigest(t, ctx, cache, d, buf)
-		digestsWritten = append(digestsWritten, d)
+		rn := digest.NewCASResourceName(d, "remote/instance/name").ToProto()
+		writeDigest(t, ctx, rc1, rn, buf)
+		digestsWritten = append(digestsWritten, rn)
 	}
 
 	// shutdown one node
@@ -274,21 +273,19 @@ func TestCacheShutdown(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		writeDigest(t, ctx, cache, d, buf)
-		digestsWritten = append(digestsWritten, d)
+		rn := digest.NewCASResourceName(d, "remote/instance/name").ToProto()
+		writeDigest(t, ctx, rc1, rn, buf)
+		digestsWritten = append(digestsWritten, rn)
 	}
 
 	rc3, err = raft_cache.NewRaftCache(env, rc3Config)
 	require.NoError(t, err)
 	waitForHealthy(t, rc3)
 
-	cache, err = rc3.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
-	require.NoError(t, err)
-
 	for _, d := range digestsWritten {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
-		readAndCompareDigest(t, ctx, cache, d)
+		readAndCompareDigest(t, ctx, rc3, d)
 	}
 
 	waitForShutdown(t, rc1, rc2, rc3)
@@ -326,26 +323,26 @@ func TestDistributedRanges(t *testing.T) {
 	}
 	waitForHealthy(t, raftCaches...)
 
-	digests := make([]*repb.Digest, 0)
+	digests := make([]*resource.ResourceName, 0)
 	for i := 0; i < 10; i++ {
 		rc := raftCaches[rand.Intn(len(raftCaches))]
-		cache, err := rc.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
-		require.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		writeDigest(t, ctx, cache, d, buf)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: "remote/instance/name",
+		}
+		writeDigest(t, ctx, rc, r, buf)
 	}
 
 	for _, d := range digests {
 		rc := raftCaches[rand.Intn(len(raftCaches))]
-		cache, err := rc.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
-		require.NoError(t, err)
-
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		readAndCompareDigest(t, ctx, cache, d)
+		readAndCompareDigest(t, ctx, rc, d)
 	}
 
 	waitForShutdown(t, raftCaches...)
@@ -383,28 +380,36 @@ func TestFindMissingBlobs(t *testing.T) {
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
 
-	cache, err := rc1.WithIsolation(ctx, resource.CacheType_CAS, "remote/instance/name")
-	require.NoError(t, err)
-
-	digestsWritten := make([]*repb.Digest, 0)
+	digestsWritten := make([]*resource.ResourceName, 0)
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		digestsWritten = append(digestsWritten, d)
-		writeDigest(t, ctx, cache, d, buf)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: "remote/instance/name",
+		}
+		digestsWritten = append(digestsWritten, r)
+		writeDigest(t, ctx, rc1, r, buf)
 	}
 
-	missingDigests := make([]*repb.Digest, 0)
+	missingDigests := make([]*resource.ResourceName, 0)
 	expectedMissingHashes := make([]string, 0)
 	for i := 0; i < 10; i++ {
 		d, _ := testdigest.NewRandomDigestBuf(t, 100)
-		missingDigests = append(missingDigests, d)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: "remote/instance/name",
+		}
+
+		missingDigests = append(missingDigests, r)
 		expectedMissingHashes = append(expectedMissingHashes, d.GetHash())
 	}
 
-	rns := digest.ResourceNames(resource.CacheType_CAS, "remote/instance/name", append(digestsWritten, missingDigests...))
-	missing, err := cache.FindMissing(ctx, rns)
+	rns := append(digestsWritten, missingDigests...)
+	missing, err := rc1.FindMissing(ctx, rns)
 	require.NoError(t, err)
 
 	missingHashes := make([]string, 0)

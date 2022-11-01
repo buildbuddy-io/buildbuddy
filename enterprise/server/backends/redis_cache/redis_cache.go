@@ -357,16 +357,6 @@ func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, offset, l
 	return io.NopCloser(timer.NewInstrumentedReader(r, length)), nil
 }
 
-func (c *Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Reader(ctx, r, offset, limit)
-}
-
 func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	if !c.eligibleForCache(r.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for redis", r.GetDigest())

@@ -531,16 +531,6 @@ func (s3c *S3Cache) Reader(ctx context.Context, r *resource.ResourceName, offset
 	return io.NopCloser(timer.NewInstrumentedReader(result.Body, r.GetDigest().GetSizeBytes())), err
 }
 
-func (s3c *S3Cache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	}
-	return s3c.Reader(ctx, r, offset, limit)
-}
-
 type waitForUploadWriteCloser struct {
 	io.WriteCloser
 	ctx           context.Context

@@ -445,16 +445,6 @@ func (g *GCSCache) Reader(ctx context.Context, r *resource.ResourceName, offset,
 	return io.NopCloser(timer.NewInstrumentedReader(reader, r.GetDigest().GetSizeBytes())), nil
 }
 
-func (g *GCSCache) ReaderDeprecated(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	}
-	return g.Reader(ctx, rn, offset, limit)
-}
-
 func isRetryableGCSError(err error) bool {
 	if err != nil {
 		if gerr, ok := err.(*googleapi.Error); ok {
