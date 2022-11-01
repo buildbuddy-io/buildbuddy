@@ -217,16 +217,6 @@ func (m *MemoryCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 	return nil
 }
 
-func (m *MemoryCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	}
-	return m.Delete(ctx, rn)
-}
-
 // Low level interface used for seeking and stream-writing.
 func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.

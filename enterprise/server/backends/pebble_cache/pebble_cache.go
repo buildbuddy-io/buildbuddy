@@ -1058,7 +1058,7 @@ func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 	return nil
 }
 
-func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) error {
+func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRecord) error {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -1069,17 +1069,22 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileMetadataKey []byte) 
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
+	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
+	if err != nil {
+		return err
+	}
 	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
 	if err != nil {
 		return err
 	}
 
-	blobDir := p.partitionBlobDir(p.isolation.GetPartitionId())
+	partitionID := fileRecord.GetIsolation().GetPartitionId()
+	blobDir := p.partitionBlobDir(partitionID)
 	fp := p.fileStorer.FilePath(blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(p.isolation.GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetSizeBytes())
+	p.sendSizeUpdate(partitionID, fileMetadataKey, -1*fileMetadata.GetSizeBytes())
 	if err := disk.DeleteFile(ctx, fp); err != nil {
 		return err
 	}
@@ -1095,21 +1100,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 	if err != nil {
 		return err
 	}
-	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
-	if err != nil {
-		return err
-	}
-	return p.deleteRecord(ctx, fileMetadataKey)
-}
-
-func (p *PebbleCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.GetCacheType(),
-	}
-	return p.Delete(ctx, rn)
+	return p.deleteRecord(ctx, fileRecord)
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {

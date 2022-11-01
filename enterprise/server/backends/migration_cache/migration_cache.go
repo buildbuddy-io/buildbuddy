@@ -424,16 +424,6 @@ func (mc *MigrationCache) Delete(ctx context.Context, r *resource.ResourceName) 
 	return srcErr
 }
 
-func (mc *MigrationCache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	}
-	return mc.Delete(ctx, rn)
-}
-
 type doubleReader struct {
 	src  io.ReadCloser
 	dest io.ReadCloser
@@ -738,7 +728,7 @@ func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, dat
 	if err := eg.Wait(); err != nil {
 		if dstErr == nil {
 			// If error during write to source cache (source of truth), must delete from destination cache
-			deleteErr := mc.dest.DeleteDeprecated(ctx, r.GetDigest())
+			deleteErr := mc.dest.Delete(ctx, r)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
 				log.Warningf("Migration double write err: src write of digest %v failed, but could not delete from dest cache: %s", r.GetDigest(), deleteErr)
 			}

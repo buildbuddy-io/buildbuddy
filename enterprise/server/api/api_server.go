@@ -360,30 +360,24 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	}
 	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
 
-	var parsedResourceName *digest.ResourceName
-	var cacheType resource.CacheType
+	var resourceName *resource.ResourceName
 	if digest.IsActionCacheResourceName(urlStr) {
-		parsedResourceName, err = digest.ParseActionCacheResourceName(urlStr)
+		parsedRN, err := digest.ParseActionCacheResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
 		}
-		cacheType = resource.CacheType_AC
+		resourceName = digest.NewACResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName()).ToProto()
 	} else if digest.IsDownloadResourceName(urlStr) {
-		parsedResourceName, err = digest.ParseDownloadResourceName(urlStr)
+		parsedRN, err := digest.ParseDownloadResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
 		}
-		cacheType = resource.CacheType_CAS
+		resourceName = digest.NewCASResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName()).ToProto()
 	} else {
 		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
 	}
 
-	cache, err := s.env.GetCache().WithIsolation(ctx, cacheType, parsedResourceName.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-
-	err = cache.DeleteDeprecated(ctx, parsedResourceName.GetDigest())
+	err = s.env.GetCache().Delete(ctx, resourceName)
 	if err != nil && !status.IsNotFoundError(err) {
 		return nil, err
 	}

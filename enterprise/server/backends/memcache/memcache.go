@@ -278,16 +278,6 @@ func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 
 }
 
-func (c *Cache) DeleteDeprecated(ctx context.Context, d *repb.Digest) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	}
-	return c.Delete(ctx, rn)
-}
-
 func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	if !eligibleForMc(rn.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", rn.GetDigest())
