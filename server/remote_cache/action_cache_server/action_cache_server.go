@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -50,8 +50,8 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*repb.Digest) error {
-	missing, err := cache.FindMissingDeprecated(ctx, digests)
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*resource.ResourceName) error {
+	missing, err := cache.FindMissing(ctx, digests)
 	if err != nil {
 		return err
 	}
@@ -61,13 +61,14 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*rep
 	return nil
 }
 
-func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.ActionResult) error {
-	outputFileDigests := make([]*repb.Digest, 0, len(r.OutputFiles))
+func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, r *repb.ActionResult) error {
+	outputFileDigests := make([]*resource.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
 		if d != nil && d.GetSizeBytes() > 0 {
 			mu.Lock()
-			outputFileDigests = append(outputFileDigests, d)
+			rn := digest.NewCASResourceName(d, remoteInstanceName).ToProto()
+			outputFileDigests = append(outputFileDigests, rn)
 			mu.Unlock()
 		}
 	}
@@ -79,7 +80,8 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, r *repb.A
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			blob, err := cache.GetDeprecated(gCtx, dc.GetTreeDigest())
+			rn := digest.NewCASResourceName(dc.GetTreeDigest(), remoteInstanceName).ToProto()
+			blob, err := cache.Get(gCtx, rn)
 			if err != nil {
 				return err
 			}
@@ -144,20 +146,15 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
-	cache, err := namespace.ActionCache(ctx, s.cache, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-	casCache, err := namespace.CASCache(ctx, s.cache, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
-	blob, err := cache.GetDeprecated(ctx, d)
+	blob, err := s.cache.Get(ctx, &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: req.GetInstanceName(),
+	})
 	if err != nil {
 		ht.TrackMiss(d)
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
@@ -168,7 +165,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
-	if err := ValidateActionResult(ctx, casCache, rsp); err != nil {
+	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
 	return rsp, nil
@@ -217,11 +214,8 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
+	acResource := digest.NewACResourceName(d, req.GetInstanceName())
 	uploadTracker := ht.TrackUpload(d)
-	cache, err := namespace.ActionCache(ctx, s.cache, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
@@ -234,7 +228,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return nil, err
 	}
 
-	if err := cache.SetDeprecated(ctx, d, blob); err != nil {
+	if err := s.cache.Set(ctx, acResource.ToProto(), blob); err != nil {
 		return nil, err
 	}
 	uploadTracker.Close()

@@ -62,6 +62,39 @@ func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	}
 }
 
+func NewCacheResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType) *ResourceName {
+	return &ResourceName{
+		rn: &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    cacheType,
+		},
+	}
+}
+
+func NewCASResourceName(d *repb.Digest, instanceName string) *ResourceName {
+	return &ResourceName{
+		rn: &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    rspb.CacheType_CAS,
+		},
+	}
+}
+
+func NewACResourceName(d *repb.Digest, instanceName string) *ResourceName {
+	return &ResourceName{
+		rn: &rspb.ResourceName{
+			Digest:       d,
+			InstanceName: instanceName,
+			Compressor:   repb.Compressor_IDENTITY,
+			CacheType:    rspb.CacheType_AC,
+		},
+	}
+}
+
 func (r *ResourceName) ToProto() *rspb.ResourceName {
 	return r.rn
 }
@@ -80,14 +113,6 @@ func (r *ResourceName) GetCompressor() repb.Compressor_Value {
 
 func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 	r.rn.Compressor = compressor
-}
-
-func (r *ResourceName) GetCacheType() rspb.CacheType {
-	return r.rn.GetCacheType()
-}
-
-func (r *ResourceName) SetCacheType(cacheType rspb.CacheType) {
-	r.rn.CacheType = cacheType
 }
 
 // DownloadString returns a string representing the resource name for download

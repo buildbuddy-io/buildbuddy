@@ -179,15 +179,16 @@ func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingReque
 	if err != nil {
 		return nil, err
 	}
-	digests := make([]*repb.Digest, 0)
+
+	instanceName := req.GetIsolation().GetRemoteInstanceName()
+	cacheType := req.GetIsolation().GetCacheType()
+	digests := make([]*resource.ResourceName, 0)
 	for _, k := range req.GetKey() {
-		digests = append(digests, digestFromKey(k))
+		d := digestFromKey(k)
+		rn := digest.NewCacheResourceName(d, instanceName, cacheType).ToProto()
+		digests = append(digests, rn)
 	}
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return nil, err
-	}
-	missing, err := cache.FindMissingDeprecated(ctx, digests)
+	missing, err := c.cache.FindMissing(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -252,15 +253,15 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	digests := make([]*repb.Digest, 0)
+	digests := make([]*resource.ResourceName, 0)
+	remoteInstanceName := req.GetIsolation().GetRemoteInstanceName()
+	cacheType := req.GetIsolation().GetCacheType()
 	for _, k := range req.GetKey() {
-		digests = append(digests, digestFromKey(k))
+		d := digestFromKey(k)
+		rn := digest.NewCacheResourceName(d, remoteInstanceName, cacheType).ToProto()
+		digests = append(digests, rn)
 	}
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return nil, err
-	}
-	found, err := cache.GetMultiDeprecated(ctx, digests)
+	found, err := c.cache.GetMulti(ctx, digests)
 	if err != nil {
 		return nil, err
 	}

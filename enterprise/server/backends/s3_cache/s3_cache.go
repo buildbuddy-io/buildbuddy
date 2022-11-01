@@ -278,15 +278,6 @@ func (s3c *S3Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, 
 	return b, err
 }
 
-func (s3c *S3Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return s3c.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
-}
-
 func (s3c *S3Cache) get(ctx context.Context, d *repb.Digest, key string) ([]byte, error) {
 	buff := &aws.WriteAtBuffer{}
 	ctx, spn := tracing.StartSpan(ctx)
@@ -329,11 +320,6 @@ func (s3c *S3Cache) GetMulti(ctx context.Context, resources []*resource.Resource
 	return foundMap, nil
 }
 
-func (s3c *S3Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(s3c.cacheType, s3c.remoteInstanceName, digests)
-	return s3c.GetMulti(ctx, rns)
-}
-
 func (s3c *S3Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	k, err := s3c.key(ctx, r)
 	if err != nil {
@@ -350,16 +336,6 @@ func (s3c *S3Cache) Set(ctx context.Context, r *resource.ResourceName, data []by
 	spn.End()
 	timer.ObserveSet(len(data), err)
 	return err
-}
-
-func (s3c *S3Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	}
-	return s3c.Set(ctx, r, data)
 }
 
 func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
@@ -379,11 +355,6 @@ func (s3c *S3Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName
 	}
 
 	return nil
-}
-
-func (s3c *S3Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(s3c.cacheType, s3c.remoteInstanceName, kvs)
-	return s3c.SetMulti(ctx, rnMap)
 }
 
 func (s3c *S3Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
@@ -471,15 +442,6 @@ func (s3c *S3Cache) Contains(ctx context.Context, r *resource.ResourceName) (boo
 	return false, err
 }
 
-func (s3c *S3Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return s3c.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: s3c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    s3c.cacheType,
-	})
-}
-
 // TODO(buildbuddy-internal#1485) - Add last access time
 func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	metadata, err := s3c.metadata(ctx, r)
@@ -547,11 +509,6 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*resource.Resou
 	}
 
 	return missing, nil
-}
-
-func (s3c *S3Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(s3c.cacheType, s3c.remoteInstanceName, digests)
-	return s3c.FindMissing(ctx, rns)
 }
 
 func (s3c *S3Cache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {

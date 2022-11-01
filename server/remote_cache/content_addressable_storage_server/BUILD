@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:api_key_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/config",
@@ -35,6 +36,7 @@ go_test(
     deps = [
         ":content_addressable_storage_server",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/backends/memory_cache",
         "//server/backends/memory_metrics_collector",
         "//server/interfaces",

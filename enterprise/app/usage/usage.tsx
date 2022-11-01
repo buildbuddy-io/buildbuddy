@@ -84,6 +84,8 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
                   <div className="usage-value" title={formatWithCommas(usage.totalDownloadSizeBytes)}>
                     {formatBytes(usage.totalDownloadSizeBytes)}
                   </div>
+                  <div className="usage-resource-name">Linux remote execution duration</div>
+                  <div className="usage-value">{formatMinutes(Number(usage.linuxExecutionDurationUsec))}</div>
                 </div>
               </div>
             </div>
@@ -92,4 +94,8 @@ export default class UsageComponent extends React.Component<UsageProps, State> {
       </div>
     );
   }
+}
+
+function formatMinutes(usec: number): string {
+  return `${formatWithCommas(usec / 60e6)} minutes`;
 }

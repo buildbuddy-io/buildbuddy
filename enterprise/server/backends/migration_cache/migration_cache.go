@@ -222,15 +222,6 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName
 	return srcContains, srcErr
 }
 
-func (mc *MigrationCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return mc.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	})
-}
-
 func (mc *MigrationCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
@@ -324,11 +315,6 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 	return srcMissing, srcErr
 }
 
-func (mc *MigrationCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(mc.cacheType, mc.remoteInstanceName, digests)
-	return mc.FindMissing(ctx, rns)
-}
-
 func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
@@ -368,11 +354,6 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.Re
 	return srcData, srcErr
 }
 
-func (mc *MigrationCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(mc.cacheType, mc.remoteInstanceName, digests)
-	return mc.GetMulti(ctx, rns)
-}
-
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
@@ -401,11 +382,6 @@ func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*resource.Resour
 	}
 
 	return srcErr
-}
-
-func (mc *MigrationCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(mc.cacheType, mc.remoteInstanceName, kvs)
-	return mc.SetMulti(ctx, rnMap)
 }
 
 func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) {
@@ -512,9 +488,6 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 	if doubleRead {
 		eg.Go(func() error {
 			destReader, dstErr = mc.dest.Reader(ctx, r, offset, limit)
-			if status.IsNotFoundError(dstErr) {
-				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
-			}
 			if dstErr == nil {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "readerMatch"}).Inc()
 			}
@@ -527,8 +500,13 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 
 	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)
 	shouldLogErr := mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)
-	if dstErr != nil && !bothCacheNotFound && shouldLogErr {
-		log.Warningf("%v reader failed for dest cache: %s", r.GetDigest(), dstErr)
+	if dstErr != nil && !bothCacheNotFound {
+		if status.IsNotFoundError(dstErr) {
+			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
+		}
+		if shouldLogErr {
+			log.Warningf("%v reader failed for dest cache: %s", r.GetDigest(), dstErr)
+		}
 	}
 
 	if srcErr != nil {
@@ -711,15 +689,6 @@ func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 	return srcBuf, srcErr
 }
 
-func (mc *MigrationCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return mc.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    mc.cacheType,
-	})
-}
-
 func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName, onlyCopyMissing bool) {
 	if onlyCopyMissing {
 		alreadyCopied, err := mc.dest.Contains(ctx, r)
@@ -784,14 +753,6 @@ func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, dat
 	return srcErr
 }
 
-func (mc *MigrationCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	return mc.Set(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: mc.remoteInstanceName,
-		CacheType:    mc.cacheType,
-	}, data)
-}
-
 type copyData struct {
 	d                  *repb.Digest
 	ctx                context.Context
@@ -825,20 +786,26 @@ func (mc *MigrationCache) copyDataInBackground() error {
 	}
 }
 
-func (mc *MigrationCache) logCopyChanFullInBackground() {
-	ticker := time.NewTicker(mc.copyChanFullWarningInterval)
-	defer ticker.Stop()
+func (mc *MigrationCache) monitorCopyChanFullness() {
+	copyChanFullTicker := time.NewTicker(mc.copyChanFullWarningInterval)
+	defer copyChanFullTicker.Stop()
+
+	metricTicker := time.NewTicker(5 * time.Second)
+	defer metricTicker.Stop()
 
 	for {
 		select {
 		case <-mc.quitChan:
 			return
-		case <-ticker.C:
+		case <-copyChanFullTicker.C:
 			if *mc.numCopiesDropped != 0 {
 				log.Warningf("Migration copy chan was full and dropped %d copies in %v. May need to increase buffer size", *mc.numCopiesDropped, mc.copyChanFullWarningInterval)
 				zero := int64(0)
 				mc.numCopiesDropped = &zero
 			}
+		case <-metricTicker.C:
+			copyChanSize := len(mc.copyChan)
+			metrics.MigrationCopyChanSize.Set(float64(copyChanSize))
 		}
 	}
 }
@@ -887,7 +854,7 @@ func (mc *MigrationCache) Start() error {
 	})
 	if mc.copyChanFullWarningInterval > 0 {
 		mc.eg.Go(func() error {
-			mc.logCopyChanFullInBackground()
+			mc.monitorCopyChanFullness()
 			return nil
 		})
 	}

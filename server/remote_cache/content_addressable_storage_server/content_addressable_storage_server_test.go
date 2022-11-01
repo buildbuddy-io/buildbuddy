@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -61,8 +62,8 @@ type evilCache struct {
 	interfaces.Cache
 }
 
-func (e *evilCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rsp, err := e.Cache.GetMultiDeprecated(ctx, digests)
+func (e *evilCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+	rsp, err := e.Cache.GetMulti(ctx, resources)
 	for d := range rsp {
 		rsp[d] = []byte{}
 	}

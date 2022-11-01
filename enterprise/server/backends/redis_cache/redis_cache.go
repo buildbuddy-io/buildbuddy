@@ -151,15 +151,6 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType,
 	}, nil
 }
 
-func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
-}
-
 func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	key, err := c.key(ctx, r)
 	if err != nil {
@@ -229,11 +220,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceN
 	return missing, nil
 }
 
-func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.FindMissing(ctx, rns)
-}
-
 func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	if !c.eligibleForCache(r.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for redis", r.GetDigest())
@@ -247,15 +233,6 @@ func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, erro
 	b, err := c.rdbGet(ctx, k)
 	timer.ObserveGet(len(b), err)
 	return b, err
-}
-
-func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return c.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -288,11 +265,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 		}
 	}
 	return response, nil
-}
-
-func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.GetMulti(ctx, rns)
 }
 
 // Efficiently convert string to byte slice: https://github.com/go-redis/redis/pull/1106
@@ -344,11 +316,6 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]b
 		setMap[k] = v
 	}
 	return c.rdbMultiSet(ctx, setMap)
-}
-
-func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(c.cacheType, c.remoteInstanceName, kvs)
-	return c.SetMulti(ctx, rnMap)
 }
 
 func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {

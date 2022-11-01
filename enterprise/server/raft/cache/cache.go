@@ -482,15 +482,6 @@ func (rc *RaftCache) Contains(ctx context.Context, r *resource.ResourceName) (bo
 	return len(missing) == 0, nil
 }
 
-func (rc *RaftCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return rc.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	})
-}
-
 func (rc *RaftCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
@@ -550,11 +541,6 @@ func (rc *RaftCache) FindMissing(ctx context.Context, resources []*resource.Reso
 	return rc.findMissingResourceNames(ctx, resources)
 }
 
-func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	resourceNames := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
-	return rc.findMissingResourceNames(ctx, resourceNames)
-}
-
 func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
 	r, err := rc.Reader(ctx, rn, 0, 0)
 	if err != nil {
@@ -562,15 +548,6 @@ func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte
 	}
 	defer r.Close()
 	return io.ReadAll(r)
-}
-
-func (rc *RaftCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return rc.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	})
 }
 
 func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -608,11 +585,6 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.Resourc
 	return dataMap, nil
 }
 
-func (rc *RaftCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
-	return rc.GetMulti(ctx, rns)
-}
-
 func (rc *RaftCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	wc, err := rc.Writer(ctx, r)
 	if err != nil {
@@ -624,21 +596,7 @@ func (rc *RaftCache) Set(ctx context.Context, r *resource.ResourceName, data []b
 	return wc.Close()
 }
 
-func (rc *RaftCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	}
-	return rc.Set(ctx, rn, data)
-}
-
 func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
-	return nil
-}
-
-func (rc *RaftCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
 	return nil
 }
 

@@ -245,11 +245,12 @@ func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceNa
 		Hash:      hashString,
 		SizeBytes: int64(len(dataBytes)),
 	}
-	c, err := env.GetCache().WithIsolation(ctx, resource.CacheType_CAS, instanceName)
-	if err != nil {
-		t.Fatal(err)
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: instanceName,
 	}
-	c.SetDeprecated(ctx, d, dataBytes)
+	env.GetCache().Set(ctx, r, dataBytes)
 	t.Logf("Added digest %s/%d to cache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
 	return d
 }

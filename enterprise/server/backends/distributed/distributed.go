@@ -584,15 +584,6 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 	return false, nil
 }
 
-func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.isolation.GetCacheType(),
-	})
-}
-
 func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	isolation := &dcpb.Isolation{
@@ -749,11 +740,6 @@ func getIsolation(resources []*resource.ResourceName) *dcpb.Isolation {
 	}
 }
 
-func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(c.isolation.GetCacheType(), c.isolation.GetRemoteInstanceName(), digests)
-	return c.FindMissing(ctx, rns)
-}
-
 // The first reader with a non-empty value will be returned. If all potential
 // peers for the digest are exhausted, then return a NotFoundError.
 //
@@ -800,15 +786,6 @@ func (c *Cache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, err
 	}
 	defer r.Close()
 	return io.ReadAll(r)
-}
-
-func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return c.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.isolation.GetCacheType(),
-	})
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -918,11 +895,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 		}
 	}
 	return rsp, nil
-}
-
-func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(c.isolation.GetCacheType(), c.isolation.GetRemoteInstanceName(), digests)
-	return c.GetMulti(ctx, rns)
 }
 
 type multiWriteCloser struct {
@@ -1048,23 +1020,6 @@ func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) 
 	return wc.Commit()
 }
 
-func (c *Cache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.isolation.GetRemoteInstanceName(),
-		CacheType:    c.isolation.GetCacheType(),
-	}
-	wc, err := c.multiWriter(ctx, r)
-	if err != nil {
-		return err
-	}
-	defer wc.Close()
-	if _, err := wc.Write(data); err != nil {
-		return err
-	}
-	return wc.Commit()
-}
-
 func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -1082,11 +1037,6 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]b
 	}
 
 	return nil
-}
-
-func (c *Cache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(c.isolation.CacheType, c.isolation.RemoteInstanceName, kvs)
-	return c.SetMulti(ctx, rnMap)
 }
 
 func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {

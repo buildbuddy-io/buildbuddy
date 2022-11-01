@@ -234,10 +234,14 @@ func TestDeleteFile_CAS(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err := s.env.GetCache().SetDeprecated(ctx, d, buf); err != nil {
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	if err := s.env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
-	data, err := s.env.GetCache().GetDeprecated(ctx, d)
+	data, err := s.env.GetCache().Get(ctx, r)
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
@@ -247,7 +251,7 @@ func TestDeleteFile_CAS(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file was deleted
-	data, err = s.env.GetCache().GetDeprecated(ctx, d)
+	data, err = s.env.GetCache().Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }
@@ -264,14 +268,14 @@ func TestDeleteFile_AC(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	actionCache, err := s.env.GetCache().WithIsolation(ctx, resource.CacheType_AC, "")
-	if err != nil {
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_AC,
+	}
+	if err = env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
-	if err = actionCache.SetDeprecated(ctx, d, buf); err != nil {
-		t.Fatal(err)
-	}
-	data, err := actionCache.GetDeprecated(ctx, d)
+	data, err := env.GetCache().Get(ctx, r)
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
@@ -281,7 +285,7 @@ func TestDeleteFile_AC(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file was deleted
-	data, err = actionCache.GetDeprecated(ctx, d)
+	data, err = env.GetCache().Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }
@@ -299,14 +303,15 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	// Save file
 	remoteInstanceName := "remote/instance"
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	actionCache, err := s.env.GetCache().WithIsolation(ctx, resource.CacheType_AC, remoteInstanceName)
-	if err != nil {
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_AC,
+		InstanceName: remoteInstanceName,
+	}
+	if err = env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
-	if err = actionCache.SetDeprecated(ctx, d, buf); err != nil {
-		t.Fatal(err)
-	}
-	data, err := actionCache.GetDeprecated(ctx, d)
+	data, err := env.GetCache().Get(ctx, r)
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
@@ -316,7 +321,7 @@ func TestDeleteFile_AC_RemoteInstanceName(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file was deleted
-	data, err = actionCache.GetDeprecated(ctx, d)
+	data, err = env.GetCache().Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }
@@ -332,6 +337,10 @@ func TestDeleteFile_NonExistentFile(t *testing.T) {
 
 	// Do not write data to the cache
 	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
 
 	casURI := fmt.Sprintf("blobs/%s/%d", d.GetHash(), d.GetSizeBytes())
 	resp, err := s.DeleteFile(ctx, &apipb.DeleteFileRequest{Uri: casURI})
@@ -339,7 +348,7 @@ func TestDeleteFile_NonExistentFile(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file still does not exist - no side effects
-	data, err := s.env.GetCache().GetDeprecated(ctx, d)
+	data, err := s.env.GetCache().Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }
@@ -356,10 +365,14 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 
 	// Save file
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	if err = s.env.GetCache().SetDeprecated(ctx, d, buf); err != nil {
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	if err = s.env.GetCache().Set(ctx, r, buf); err != nil {
 		t.Fatal(err)
 	}
-	data, err := s.env.GetCache().GetDeprecated(ctx, d)
+	data, err := s.env.GetCache().Get(ctx, r)
 	require.NoError(t, err)
 	require.NotNil(t, data)
 
@@ -369,7 +382,7 @@ func TestDeleteFile_LeadingSlash(t *testing.T) {
 	require.NotNil(t, resp)
 
 	// Verify file was deleted
-	data, err = s.env.GetCache().GetDeprecated(ctx, d)
+	data, err = s.env.GetCache().Get(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, data)
 }

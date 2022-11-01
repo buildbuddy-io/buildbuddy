@@ -114,11 +114,13 @@ func TestReaderMaxOffset(t *testing.T) {
 		RemoteInstanceName: instanceName,
 		CacheType:          resource.CacheType_CAS,
 	}
+	rn := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: instanceName,
+	}
 	// Set the random bytes in the cache (with a prefix)
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, instanceName)
-	require.NoError(t, err)
-
-	err = cache.SetDeprecated(ctx, d, buf.Bytes())
+	err = te.GetCache().Set(ctx, rn, buf.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,12 +306,15 @@ func TestReader(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		rn := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: remoteInstanceName,
+		}
 		readSeeker.Seek(0, 0)
 
 		// Set the random bytes in the cache (with a prefix)
-		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
-		require.NoError(t, err)
-		err = cache.SetDeprecated(ctx, d, buf.Bytes())
+		err = te.GetCache().Set(ctx, rn, buf.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -342,7 +347,11 @@ func TestReadOffsetLimit(t *testing.T) {
 
 	size := int64(10)
 	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	err = te.GetCache().SetDeprecated(ctx, d, buf)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = te.GetCache().Set(ctx, r, buf)
 	require.NoError(t, err)
 
 	offset := int64(2)
@@ -507,11 +516,14 @@ func TestContains(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: remoteInstanceName,
+		}
 
 		// Set the random bytes in the cache (with a prefix)
-		cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
-		require.NoError(t, err)
-		err = cache.SetDeprecated(ctx, d, buf.Bytes())
+		err = te.GetCache().Set(ctx, r, buf.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -525,8 +537,8 @@ func TestContains(t *testing.T) {
 			t.Fatalf("Digest %q was uploaded but is not contained in cache", d.GetHash())
 		}
 
-		// DeleteDeprecated the key.
-		err = cache.DeleteDeprecated(ctx, d)
+		// Delete the key.
+		err = te.GetCache().Delete(ctx, r)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -658,11 +670,14 @@ func TestFindMissing(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			r := &resource.ResourceName{
+				Digest:       d,
+				CacheType:    resource.CacheType_CAS,
+				InstanceName: remoteInstanceName,
+			}
 			existingDigests = append(existingDigests, d)
 			// Set the random bytes in the cache (with a prefix)
-			cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
-			require.NoError(t, err)
-			err = cache.SetDeprecated(ctx, d, buf.Bytes())
+			err = te.GetCache().Set(ctx, r, buf.Bytes())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -717,11 +732,14 @@ func TestGetMulti(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			r := &resource.ResourceName{
+				Digest:       d,
+				CacheType:    resource.CacheType_CAS,
+				InstanceName: remoteInstanceName,
+			}
 			digests = append(digests, d)
 			// Set the random bytes in the cache (with a prefix)
-			cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
-			require.NoError(t, err)
-			err = cache.SetDeprecated(ctx, d, buf.Bytes())
+			err = te.GetCache().Set(ctx, r, buf.Bytes())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -763,9 +781,12 @@ func TestEmptyRead(t *testing.T) {
 		Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		SizeBytes: 0,
 	}
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
-	require.NoError(t, err)
-	err = cache.SetDeprecated(ctx, d, []byte{})
+	rn := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: remoteInstanceName,
+	}
+	err = te.GetCache().Set(ctx, rn, []byte{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -803,11 +824,12 @@ func TestDelete(t *testing.T) {
 
 	// Write to the cache (with a prefix)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
-	cache, err := te.GetCache().WithIsolation(ctx, resource.CacheType_CAS, remoteInstanceName)
-	if err != nil {
-		t.Fatal(err)
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: remoteInstanceName,
 	}
-	err = cache.SetDeprecated(ctx, d, buf)
+	err = te.GetCache().Set(ctx, r, buf)
 	if err != nil {
 		t.Fatal(err)
 	}

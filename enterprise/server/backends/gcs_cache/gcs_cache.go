@@ -196,15 +196,6 @@ func (g *GCSCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, e
 	return b, err
 }
 
-func (g *GCSCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return g.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
-}
-
 func (g *GCSCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
@@ -231,11 +222,6 @@ func (g *GCSCache) GetMulti(ctx context.Context, resources []*resource.ResourceN
 	}
 
 	return foundMap, nil
-}
-
-func (g *GCSCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(g.cacheType, g.remoteInstanceName, digests)
-	return g.GetMulti(ctx, rns)
 }
 
 func swallowGCSAlreadyExistsError(err error) error {
@@ -287,16 +273,6 @@ func (g *GCSCache) Set(ctx context.Context, r *resource.ResourceName, data []byt
 	return err
 }
 
-func (g *GCSCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	}
-	return g.Set(ctx, rn, data)
-}
-
 func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -314,11 +290,6 @@ func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName]
 	}
 
 	return nil
-}
-
-func (g *GCSCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(g.cacheType, g.remoteInstanceName, kvs)
-	return g.SetMulti(ctx, rnMap)
 }
 
 func (g *GCSCache) Delete(ctx context.Context, r *resource.ResourceName) error {
@@ -415,15 +386,6 @@ func (g *GCSCache) Contains(ctx context.Context, r *resource.ResourceName) (bool
 	return false, nil
 }
 
-func (g *GCSCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return g.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: g.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    g.cacheType,
-	})
-}
-
 // TODO(buildbuddy-internal#1485) - Add last access time
 func (g *GCSCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	metadata, err := g.metadata(ctx, r)
@@ -468,11 +430,6 @@ func (g *GCSCache) FindMissing(ctx context.Context, resources []*resource.Resour
 	}
 
 	return missing, nil
-}
-
-func (g *GCSCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(g.cacheType, g.remoteInstanceName, digests)
-	return g.FindMissing(ctx, rns)
 }
 
 func (g *GCSCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {

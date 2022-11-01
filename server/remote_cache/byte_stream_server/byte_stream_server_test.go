@@ -95,7 +95,7 @@ func TestRPCRead(t *testing.T) {
 		offset       int64
 	}{
 		{ // Simple Read
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -104,7 +104,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // Large Read
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "ffd14ebb6c1b2701ac793ea1aff6dddf8540e734bd6d051ac2a24aa3ec062781",
 				SizeBytes: 1000 * 1000 * 100,
 			}, ""),
@@ -113,7 +113,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // 0 length read
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 				SizeBytes: 0,
 			}, ""),
@@ -122,7 +122,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    0,
 		},
 		{ // Offset
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -131,7 +131,7 @@ func TestRPCRead(t *testing.T) {
 			offset:    1,
 		},
 		{ // Max offset
-			resourceName: digest.NewResourceName(&repb.Digest{
+			resourceName: digest.NewCASResourceName(&repb.Digest{
 				Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
 				SizeBytes: 1234,
 			}, ""),
@@ -147,8 +147,8 @@ func TestRPCRead(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		// SetDeprecated the value in the cache.
-		if err := te.GetCache().SetDeprecated(ctx, tc.resourceName.GetDigest(), []byte(tc.wantData)); err != nil {
+		// Set the value in the cache.
+		if err := te.GetCache().Set(ctx, tc.resourceName.ToProto(), []byte(tc.wantData)); err != nil {
 			t.Fatal(err)
 		}
 

@@ -860,15 +860,6 @@ func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	return found, nil
 }
 
-func (p *PebbleCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return p.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.GetCacheType(),
-	})
-}
-
 func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -929,11 +920,6 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.Res
 	return missing, nil
 }
 
-func (p *PebbleCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), digests)
-	return p.FindMissing(ctx, rns)
-}
-
 func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	rc, err := p.Reader(ctx, r, 0, 0)
 	if err != nil {
@@ -941,15 +927,6 @@ func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	}
 	defer rc.Close()
 	return io.ReadAll(rc)
-}
-
-func (p *PebbleCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return p.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.GetCacheType(),
-	})
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1001,11 +978,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 	return foundMap, nil
 }
 
-func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), digests)
-	return p.GetMulti(ctx, rns)
-}
-
 func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	wc, err := p.Writer(ctx, r)
 	if err != nil {
@@ -1018,14 +990,6 @@ func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []
 	return wc.Commit()
 }
 
-func (p *PebbleCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	return p.Set(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-		CacheType:    p.isolation.GetCacheType(),
-	}, data)
-}
-
 func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	for r, data := range kvs {
 		if err := p.Set(ctx, r, data); err != nil {
@@ -1033,11 +997,6 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceNa
 		}
 	}
 	return nil
-}
-
-func (p *PebbleCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), kvs)
-	return p.SetMulti(ctx, rnMap)
 }
 
 func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delta int64) {

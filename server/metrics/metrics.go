@@ -419,13 +419,6 @@ var (
 		Help:      "Number of bytes written that already existed in the cache.",
 	})
 
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Total number of duplicate write bytes.
-	/// sum(buildbuddy_remote_cache_duplicate_writes_bytes)
-	/// ```
-
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -433,6 +426,13 @@ var (
 		Help:      "Number of not found errors from the destination cache during a cache migration.",
 	}, []string{
 		CacheRequestType,
+	})
+
+	MigrationCopyChanSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "migration_copy_chan_size",
+		Help:      "Number of digests queued to be copied during a cache migration.",
 	})
 
 	/// ## Remote execution metrics

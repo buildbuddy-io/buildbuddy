@@ -1077,21 +1077,21 @@ func BenchmarkGetMulti(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
-	digestKeys := make([]*repb.Digest, 0, 100000)
+	digestKeys := make([]*resource.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
 		r := &resource.ResourceName{
 			Digest:    d,
 			CacheType: resource.CacheType_CAS,
 		}
-		digestKeys = append(digestKeys, d)
+		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 	}
 
-	randomDigests := func(n int) []*repb.Digest {
-		r := make([]*repb.Digest, 0, n)
+	randomDigests := func(n int) []*resource.ResourceName {
+		r := make([]*resource.ResourceName, 0, n)
 		offset := rand.Intn(len(digestKeys))
 		for i := 0; i < n; i++ {
 			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
@@ -1105,7 +1105,7 @@ func BenchmarkGetMulti(b *testing.B) {
 		keys := randomDigests(100)
 
 		b.StartTimer()
-		m, err := pc.GetMultiDeprecated(ctx, keys)
+		m, err := pc.GetMulti(ctx, keys)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1130,21 +1130,21 @@ func BenchmarkFindMissing(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
-	digestKeys := make([]*repb.Digest, 0, 100000)
+	digestKeys := make([]*resource.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
 		r := &resource.ResourceName{
 			Digest:    d,
 			CacheType: resource.CacheType_CAS,
 		}
-		digestKeys = append(digestKeys, d)
+		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
 	}
 
-	randomDigests := func(n int) []*repb.Digest {
-		r := make([]*repb.Digest, 0, n)
+	randomDigests := func(n int) []*resource.ResourceName {
+		r := make([]*resource.ResourceName, 0, n)
 		offset := rand.Intn(len(digestKeys))
 		for i := 0; i < n; i++ {
 			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
@@ -1158,7 +1158,7 @@ func BenchmarkFindMissing(b *testing.B) {
 		keys := randomDigests(100)
 
 		b.StartTimer()
-		missing, err := pc.FindMissingDeprecated(ctx, keys)
+		missing, err := pc.FindMissing(ctx, keys)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1183,14 +1183,14 @@ func BenchmarkContains1(b *testing.B) {
 	pc.Start()
 	defer pc.Stop()
 
-	digestKeys := make([]*repb.Digest, 0, 100000)
+	digestKeys := make([]*resource.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(b, 1000)
 		r := &resource.ResourceName{
 			Digest:    d,
 			CacheType: resource.CacheType_CAS,
 		}
-		digestKeys = append(digestKeys, d)
+		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
 		}
@@ -1200,7 +1200,7 @@ func BenchmarkContains1(b *testing.B) {
 	b.StopTimer()
 	for n := 0; n < b.N; n++ {
 		b.StartTimer()
-		found, err := pc.ContainsDeprecated(ctx, digestKeys[rand.Intn(len(digestKeys))])
+		found, err := pc.Contains(ctx, digestKeys[rand.Intn(len(digestKeys))])
 		b.StopTimer()
 		if err != nil {
 			b.Fatal(err)

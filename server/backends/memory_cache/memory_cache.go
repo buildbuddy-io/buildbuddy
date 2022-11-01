@@ -111,15 +111,6 @@ func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	return contains, nil
 }
 
-func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return m.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
@@ -157,11 +148,6 @@ func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.Res
 	return missing, nil
 }
 
-func (m *MemoryCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
-	return m.FindMissing(ctx, rns)
-}
-
 func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	k, err := m.key(ctx, r)
 	if err != nil {
@@ -180,15 +166,6 @@ func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	return value, nil
 }
 
-func (m *MemoryCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return m.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	// No parallelism here either. Not necessary for an in-memory cache.
@@ -205,11 +182,6 @@ func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.Resour
 	return foundMap, nil
 }
 
-func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
-	return m.GetMulti(ctx, rns)
-}
-
 func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	k, err := m.key(ctx, r)
 	if err != nil {
@@ -221,16 +193,6 @@ func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []
 	return nil
 }
 
-func (m *MemoryCache) SetDeprecated(ctx context.Context, d *repb.Digest, data []byte) error {
-	r := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	}
-	return m.Set(ctx, r, data)
-}
-
 func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	for r, data := range kvs {
 		if err := m.Set(ctx, r, data); err != nil {
@@ -238,11 +200,6 @@ func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceNa
 		}
 	}
 	return nil
-}
-
-func (m *MemoryCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(m.cacheType, m.remoteInstanceName, kvs)
-	return m.SetMulti(ctx, rnMap)
 }
 
 func (m *MemoryCache) Delete(ctx context.Context, r *resource.ResourceName) error {
