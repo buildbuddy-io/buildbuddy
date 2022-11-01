@@ -292,11 +292,6 @@ func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName]
 	return nil
 }
 
-func (g *GCSCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(g.cacheType, g.remoteInstanceName, kvs)
-	return g.SetMulti(ctx, rnMap)
-}
-
 func (g *GCSCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	k, err := g.key(ctx, r)
 	if err != nil {

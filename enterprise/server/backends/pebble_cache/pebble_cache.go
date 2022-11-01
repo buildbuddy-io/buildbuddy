@@ -999,11 +999,6 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceNa
 	return nil
 }
 
-func (p *PebbleCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), kvs)
-	return p.SetMulti(ctx, rnMap)
-}
-
 func (p *PebbleCache) sendSizeUpdate(partID string, fileMetadataKey []byte, delta int64) {
 	fileMetadataKeyCopy := make([]byte, len(fileMetadataKey))
 	copy(fileMetadataKeyCopy, fileMetadataKey)

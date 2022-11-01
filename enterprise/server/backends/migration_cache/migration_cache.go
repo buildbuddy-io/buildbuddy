@@ -384,11 +384,6 @@ func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*resource.Resour
 	return srcErr
 }
 
-func (mc *MigrationCache) SetMultiDeprecated(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	rnMap := digest.ResourceNameMap(mc.cacheType, mc.remoteInstanceName, kvs)
-	return mc.SetMulti(ctx, rnMap)
-}
-
 func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) {
 	eg, gctx := errgroup.WithContext(ctx)
 	for r, _ := range kvs {

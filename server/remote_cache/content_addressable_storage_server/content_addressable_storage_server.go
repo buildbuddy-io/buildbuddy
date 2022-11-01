@@ -167,14 +167,10 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return rsp, nil
 	}
 
-	cache, err := s.getCache(ctx, req.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	kvs := make(map[*repb.Digest][]byte, len(req.Requests))
+	kvs := make(map[*resource.ResourceName][]byte, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
 		uploadDigest := uploadRequest.GetDigest()
 		_, err := digest.Validate(uploadDigest)
@@ -233,15 +229,16 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			})
 			continue
 		}
-		kvs[uploadDigest] = data
+		rn := digest.NewCASResourceName(uploadDigest, req.GetInstanceName()).ToProto()
+		kvs[rn] = data
 	}
 
-	if err := cache.SetMultiDeprecated(ctx, kvs); err != nil {
+	if err := s.cache.SetMulti(ctx, kvs); err != nil {
 		return nil, err
 	}
 	for uploadDigest := range kvs {
 		rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
-			Digest: uploadDigest,
+			Digest: uploadDigest.GetDigest(),
 			Status: &statuspb.Status{Code: int32(codes.OK)},
 		})
 	}
