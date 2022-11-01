@@ -121,8 +121,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackEmptyHit()
 		return nil
 	}
-	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName()).ToProto()
-	reader, err := s.cache.Reader(ctx, cacheRN, req.ReadOffset, req.ReadLimit)
+
+	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
+	if s.cache.SupportsCompressor(r.GetCompressor()) {
+		cacheRN.SetCompressor(r.GetCompressor())
+	}
+	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		ht.TrackMiss(r.GetDigest())
 		return err
@@ -134,7 +138,9 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		bufSize = r.GetDigest().GetSizeBytes()
 	}
 
-	if r.GetCompressor() == repb.Compressor_ZSTD {
+	// If the cache doesn't support the requested compression, it will cache decompressed bytes and the server
+	// is in charge of compressing it
+	if r.GetCompressor() == repb.Compressor_ZSTD && !s.cache.SupportsCompressor(r.GetCompressor()) {
 		rbuf := s.bufferPool.Get(bufSize)
 		defer s.bufferPool.Put(rbuf)
 		cbuf := s.bufferPool.Get(bufSize)

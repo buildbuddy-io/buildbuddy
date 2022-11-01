@@ -151,6 +151,34 @@ func NewZstdChunkingCompressor(reader io.Reader, readBuf []byte, compressBuf []b
 	return pr, nil
 }
 
+// NewZstdDecompressingReader reads chunks of zstd-compressed data from the given
+// reader and makes the decompressed data available on the output reader
+func NewZstdDecompressingReader(reader io.Reader, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
+	pr, pw := io.Pipe()
+	go func() {
+		for {
+			n, err := reader.Read(readBuf)
+			if n > 0 {
+				compressBuf, err = DecompressZstd(compressBuf[:0], readBuf[:n])
+				if err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+
+				if _, err := pw.Write(compressBuf); err != nil {
+					pw.CloseWithError(err)
+					return
+				}
+			}
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+	}()
+	return pr, nil
+}
+
 // DecoderRef wraps a *zstd.Decoder. Since it does not directly start any
 // goroutines, it can be garbage collected before the wrapped decoder can.
 // When garbage collected, a finalizer automatically closes the wrapped decoder,

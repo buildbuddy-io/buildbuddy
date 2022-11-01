@@ -191,9 +191,9 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			continue
 		}
 		checksum := sha256.New()
-		data := uploadRequest.GetData()
+		decompressedData := uploadRequest.GetData()
 		if uploadRequest.Compressor == repb.Compressor_ZSTD {
-			data, err = zstdDecompress(uploadRequest.GetData(), uploadRequest.GetDigest().GetSizeBytes())
+			decompressedData, err = zstdDecompress(uploadRequest.GetData(), uploadRequest.GetDigest().GetSizeBytes())
 			if err != nil {
 				rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 					Digest: uploadDigest,
@@ -202,7 +202,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 				continue
 			}
 		}
-		checksum.Write(data)
+		checksum.Write(decompressedData)
 		computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
 		if computedDigest != uploadDigest.GetHash() {
 			err := status.DataLossErrorf("Uploaded bytes checksum (%q) did not match digest (%q).", computedDigest, uploadDigest.GetHash())
@@ -212,16 +212,24 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			})
 			continue
 		}
-		if int64(len(data)) != uploadDigest.GetSizeBytes() {
-			err := status.DataLossErrorf("Uploaded blob size (%d) did not match expected size (%d).", len(data), uploadDigest.GetSizeBytes())
+		if int64(len(decompressedData)) != uploadDigest.GetSizeBytes() {
+			err := status.DataLossErrorf("Uploaded blob size (%d) did not match expected size (%d).", len(decompressedData), uploadDigest.GetSizeBytes())
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: uploadDigest,
 				Status: gstatus.Convert(err).Proto(),
 			})
 			continue
 		}
-		rn := digest.NewCASResourceName(uploadDigest, req.GetInstanceName()).ToProto()
-		kvs[rn] = data
+
+		rn := digest.NewCASResourceName(uploadDigest, req.GetInstanceName())
+		// If cache doesn't support compression type, store decompressed data
+		dataToCache := decompressedData
+		if s.cache.SupportsCompressor(uploadRequest.GetCompressor()) {
+			rn.SetCompressor(uploadRequest.GetCompressor())
+			// If cache supports saving compressed data, pass through compressed data from client
+			dataToCache = uploadRequest.GetData()
+		}
+		kvs[rn.ToProto()] = dataToCache
 	}
 
 	if err := s.cache.SetMulti(ctx, kvs); err != nil {

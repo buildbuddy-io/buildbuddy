@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -948,6 +949,11 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 		}
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
 
+		rc, err = readerForCompressionType(rc, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+		if err != nil {
+			return nil, err
+		}
+
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
 		if copyErr != nil || closeErr != nil {
@@ -1119,6 +1125,11 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offs
 		p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
 	}
 
+	if err != nil {
+		return nil, err
+	}
+
+	rc, err = readerForCompressionType(rc, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
 	if err != nil {
 		return nil, err
 	}
@@ -1834,6 +1845,29 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 			}
 		}
 	}
+}
+
+func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	switch compressor {
+	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
+		return true
+	default:
+		return false
+	}
+}
+
+func readerForCompressionType(reader io.ReadCloser, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
+	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
+		// TODO: What should the buffer sizes be?
+		readBuf := make([]byte, 1000)
+		compressBuf := make([]byte, 1000)
+		return compression.NewZstdChunkingCompressor(reader, readBuf, compressBuf)
+	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
+		readBuf := make([]byte, 1000)
+		compressBuf := make([]byte, 1000)
+		return compression.NewZstdDecompressingReader(reader, readBuf, compressBuf)
+	}
+	return reader, nil
 }
 
 func (p *PebbleCache) Start() error {
