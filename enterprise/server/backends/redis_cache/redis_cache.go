@@ -267,11 +267,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 	return response, nil
 }
 
-func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.GetMulti(ctx, rns)
-}
-
 // Efficiently convert string to byte slice: https://github.com/go-redis/redis/pull/1106
 // Copied from: https://github.com/go-redis/redis/blob/b965d69fc9defa439a46d8178b60fc1d44f8fe29/internal/util/unsafe.go#L15
 func stringToBytes(s string) []byte {

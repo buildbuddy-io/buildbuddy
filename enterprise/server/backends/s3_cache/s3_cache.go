@@ -320,11 +320,6 @@ func (s3c *S3Cache) GetMulti(ctx context.Context, resources []*resource.Resource
 	return foundMap, nil
 }
 
-func (s3c *S3Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(s3c.cacheType, s3c.remoteInstanceName, digests)
-	return s3c.GetMulti(ctx, rns)
-}
-
 func (s3c *S3Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	k, err := s3c.key(ctx, r)
 	if err != nil {

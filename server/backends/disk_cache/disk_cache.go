@@ -372,11 +372,6 @@ func (c *DiskCache) GetMulti(ctx context.Context, resources []*resource.Resource
 	return p.getMulti(ctx, resources)
 }
 
-func (c *DiskCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.partition.getMulti(ctx, rns)
-}
-
 func (c *DiskCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	p, err := c.getPartition(ctx, r.GetInstanceName())
 	if err != nil {

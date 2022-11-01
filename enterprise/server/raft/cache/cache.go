@@ -585,11 +585,6 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.Resourc
 	return dataMap, nil
 }
 
-func (rc *RaftCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
-	return rc.GetMulti(ctx, rns)
-}
-
 func (rc *RaftCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	wc, err := rc.Writer(ctx, r)
 	if err != nil {

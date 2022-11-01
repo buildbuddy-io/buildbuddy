@@ -36,6 +36,7 @@ go_test(
     deps = [
         ":content_addressable_storage_server",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/backends/memory_cache",
         "//server/backends/memory_metrics_collector",
         "//server/interfaces",

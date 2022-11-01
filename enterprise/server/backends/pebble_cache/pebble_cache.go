@@ -978,11 +978,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 	return foundMap, nil
 }
 
-func (p *PebbleCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(p.isolation.GetCacheType(), p.isolation.GetRemoteInstanceName(), digests)
-	return p.GetMulti(ctx, rns)
-}
-
 func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	wc, err := p.Writer(ctx, r)
 	if err != nil {

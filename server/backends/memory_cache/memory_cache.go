@@ -182,11 +182,6 @@ func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.Resour
 	return foundMap, nil
 }
 
-func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
-	return m.GetMulti(ctx, rns)
-}
-
 func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	k, err := m.key(ctx, r)
 	if err != nil {

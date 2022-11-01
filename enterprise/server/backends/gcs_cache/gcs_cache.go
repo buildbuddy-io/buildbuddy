@@ -224,11 +224,6 @@ func (g *GCSCache) GetMulti(ctx context.Context, resources []*resource.ResourceN
 	return foundMap, nil
 }
 
-func (g *GCSCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(g.cacheType, g.remoteInstanceName, digests)
-	return g.GetMulti(ctx, rns)
-}
-
 func swallowGCSAlreadyExistsError(err error) error {
 	if err != nil {
 		if gerr, ok := err.(*googleapi.Error); ok {
