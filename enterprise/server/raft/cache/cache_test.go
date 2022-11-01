@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -402,7 +403,8 @@ func TestFindMissingBlobs(t *testing.T) {
 		expectedMissingHashes = append(expectedMissingHashes, d.GetHash())
 	}
 
-	missing, err := cache.FindMissingDeprecated(ctx, append(digestsWritten, missingDigests...))
+	rns := digest.ResourceNames(resource.CacheType_CAS, "remote/instance/name", append(digestsWritten, missingDigests...))
+	missing, err := cache.FindMissing(ctx, rns)
 	require.NoError(t, err)
 
 	missingHashes := make([]string, 0)

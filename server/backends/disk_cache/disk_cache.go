@@ -352,11 +352,6 @@ func (c *DiskCache) FindMissing(ctx context.Context, resources []*resource.Resou
 	return p.findMissing(ctx, resources)
 }
 
-func (c *DiskCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.FindMissing(ctx, rns)
-}
-
 func (c *DiskCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	p, err := c.getPartition(ctx, r.GetInstanceName())
 	if err != nil {

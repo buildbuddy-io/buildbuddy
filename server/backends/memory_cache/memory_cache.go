@@ -148,11 +148,6 @@ func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.Res
 	return missing, nil
 }
 
-func (m *MemoryCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
-	return m.FindMissing(ctx, rns)
-}
-
 func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	k, err := m.key(ctx, r)
 	if err != nil {

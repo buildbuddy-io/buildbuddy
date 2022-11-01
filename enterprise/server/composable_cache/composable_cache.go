@@ -84,17 +84,6 @@ func (c *ComposableCache) FindMissing(ctx context.Context, resources []*resource
 	return c.inner.FindMissing(ctx, missingResources)
 }
 
-func (c *ComposableCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	missing, err := c.outer.FindMissingDeprecated(ctx, digests)
-	if err != nil {
-		missing = digests
-	}
-	if len(missing) == 0 {
-		return nil, nil
-	}
-	return c.inner.FindMissingDeprecated(ctx, missing)
-}
-
 func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	outerRsp, err := c.outer.Get(ctx, r)
 	if err == nil {

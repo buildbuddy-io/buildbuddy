@@ -181,11 +181,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceN
 	return missing, nil
 }
 
-func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.FindMissing(ctx, rns)
-}
-
 func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	d := r.GetDigest()
 	if !eligibleForMc(d) {

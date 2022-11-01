@@ -740,11 +740,6 @@ func getIsolation(resources []*resource.ResourceName) *dcpb.Isolation {
 	}
 }
 
-func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(c.isolation.GetCacheType(), c.isolation.GetRemoteInstanceName(), digests)
-	return c.FindMissing(ctx, rns)
-}
-
 // The first reader with a non-empty value will be returned. If all potential
 // peers for the digest are exhausted, then return a NotFoundError.
 //
