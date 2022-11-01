@@ -1861,7 +1861,7 @@ func readerForCompressionType(reader io.ReadCloser, requestedCompression repb.Co
 		// TODO: What should the buffer sizes be?
 		readBuf := make([]byte, 1000)
 		compressBuf := make([]byte, 1000)
-		return compression.NewZstdChunkingCompressor(reader, readBuf, compressBuf)
+		return compression.NewZstdCompressingReader(reader, readBuf, compressBuf)
 	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
 		readBuf := make([]byte, 1000)
 		compressBuf := make([]byte, 1000)

@@ -226,7 +226,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		dataToCache := decompressedData
 		if s.cache.SupportsCompressor(uploadRequest.GetCompressor()) {
 			rn.SetCompressor(uploadRequest.GetCompressor())
-			// If cache supports saving compressed data, pass through compressed data from client
+			// If cache supports saving compressed data, pass through compressed data from the request
 			dataToCache = uploadRequest.GetData()
 		}
 		kvs[rn.ToProto()] = dataToCache
