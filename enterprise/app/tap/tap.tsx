@@ -30,15 +30,18 @@ interface State extends CommitGrouping {
   targetHistory: target.ITargetHistory[];
   nextPageToken: string;
   loading: boolean;
-  coloring: "status" | "timing";
-  sort: "target" | "count" | "pass" | "avgDuration" | "maxDuration";
-  direction: "asc" | "desc";
   targetLimit: number;
   invocationLimit: number;
   stats: Map<string, Stat>;
   maxInvocations: number;
   maxDuration: number;
 }
+
+type ColorMode = "status" | "timing";
+
+type SortMode = "target" | "count" | "pass" | "avgDuration" | "maxDuration";
+
+type SortDirection = "asc" | "desc";
 
 interface CommitGrouping {
   commits: string[] | null;
@@ -64,6 +67,9 @@ const Status = api.v1.Status;
 const MIN_OPACITY = 0.1;
 const DAYS_OF_DATA_TO_FETCH = 7;
 const LAST_SELECTED_REPO_LOCALSTORAGE_KEY = "tests__last_selected_repo";
+const SORT_MODE_PARAM = "sort";
+const SORT_DIRECTION_PARAM = "direction";
+const COLOR_MODE_PARAM = "color";
 
 export default class TapComponent extends React.Component<Props, State> {
   state: State = {
@@ -74,9 +80,6 @@ export default class TapComponent extends React.Component<Props, State> {
     commitToTargetIdToStatus: null,
     commitToMaxInvocationCreatedAtUsec: null,
     loading: true,
-    sort: "target",
-    direction: "asc",
-    coloring: "status",
     targetLimit: 100,
     invocationLimit: capabilities.config.testGridV2Enabled
       ? Number.MAX_SAFE_INTEGER
@@ -92,7 +95,6 @@ export default class TapComponent extends React.Component<Props, State> {
 
   componentWillMount() {
     document.title = `Tests | BuildBuddy`;
-    this.updateColoring();
 
     this.fetchRepos().then(() => this.fetchTargets(/*initial=*/ true));
 
@@ -106,18 +108,11 @@ export default class TapComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.hash !== prevProps.hash) {
-      this.updateColoring();
-    }
     if (this.props.search.get("repo") !== prevProps.search.get("repo")) {
       // Repo-changed; re-fetch targets starting from scratch.
       this.fetchTargets(/*initial=*/ true);
     }
     localStorage[LAST_SELECTED_REPO_LOCALSTORAGE_KEY] = this.selectedRepo();
-  }
-
-  updateColoring() {
-    this.setState({ coloring: this.props.hash == "#timing" ? "timing" : "status" });
   }
 
   fetchRepos(): Promise<void> {
@@ -317,30 +312,38 @@ export default class TapComponent extends React.Component<Props, State> {
     router.replaceParams({ repo });
   }
 
-  handleSortChange(event: any) {
-    this.setState({
-      sort: event.target.value,
-    });
+  handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    router.setQueryParam("sort", event.target.value);
   }
 
-  handleDirectionChange(event: any) {
-    this.setState({
-      direction: event.target.value,
-    });
+  handleDirectionChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    router.setQueryParam("direction", event.target.value);
   }
 
-  handleColorChange(event: any) {
-    window.location.hash = event?.target?.value;
+  handleColorChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    router.setQueryParam("color", event.target.value);
+  }
+
+  getSortMode(): SortMode {
+    return (this.props.search.get(SORT_MODE_PARAM) as SortMode) || "pass";
+  }
+
+  getSortDirection(): SortDirection {
+    return (this.props.search.get(SORT_DIRECTION_PARAM) as SortDirection) || "asc";
+  }
+
+  getColorMode(): ColorMode {
+    return (this.props.search.get(COLOR_MODE_PARAM) as ColorMode) || "status";
   }
 
   sort(a: target.ITargetHistory, b: target.ITargetHistory) {
-    let first = this.state.direction == "asc" ? a : b;
-    let second = this.state.direction == "asc" ? b : a;
+    let first = this.getSortDirection() == "asc" ? a : b;
+    let second = this.getSortDirection() == "asc" ? b : a;
 
     let firstStats = this.state.stats.get(first?.target?.id);
     let secondStats = this.state.stats.get(second?.target?.id);
 
-    switch (this.state.sort) {
+    switch (this.getSortMode()) {
       case "target":
         return first?.target?.label.localeCompare(second?.target?.label);
       case "count":
@@ -466,7 +469,7 @@ export default class TapComponent extends React.Component<Props, State> {
                 <div className="tap-sort-controls">
                   <div className="tap-sort-control">
                     <span className="tap-sort-title">Sort by</span>
-                    <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                    <Select onChange={this.handleSortChange.bind(this)} value={this.getSortMode()}>
                       <Option value="target">Target name</Option>
                       <Option value="count">Invocation count</Option>
                       <Option value="pass">Pass percentage</Option>
@@ -476,14 +479,14 @@ export default class TapComponent extends React.Component<Props, State> {
                   </div>
                   <div className="tap-sort-control">
                     <span className="tap-sort-title">Direction</span>
-                    <Select onChange={this.handleDirectionChange.bind(this)} value={this.state.direction}>
+                    <Select onChange={this.handleDirectionChange.bind(this)} value={this.getSortDirection()}>
                       <Option value="asc">Asc</Option>
                       <Option value="desc">Desc</Option>
                     </Select>
                   </div>
                   <div className="tap-sort-control">
                     <span className="tap-sort-title">Color</span>
-                    <Select onChange={this.handleColorChange.bind(this)} value={this.state.coloring}>
+                    <Select onChange={this.handleColorChange.bind(this)} value={this.getColorMode()}>
                       <Option value="status">Status</Option>
                       <Option value="timing">Duration</Option>
                     </Select>
@@ -547,7 +550,7 @@ export default class TapComponent extends React.Component<Props, State> {
                           targetHistory.target.label
                         )}`;
                         let title =
-                          this.state.coloring == "timing"
+                          this.getColorMode() == "timing"
                             ? `${this.durationToNum(status.timing.duration).toFixed(2)}s`
                             : this.statusToString(status.status);
                         if (this.isV2 && commitSha) {
@@ -561,7 +564,7 @@ export default class TapComponent extends React.Component<Props, State> {
                             title={title}
                             style={{
                               opacity:
-                                this.state.coloring == "timing"
+                                this.getColorMode() == "timing"
                                   ? Math.max(
                                       MIN_OPACITY,
                                       (1.0 * this.durationToNum(status.timing.duration)) / stats.maxDuration
@@ -569,7 +572,7 @@ export default class TapComponent extends React.Component<Props, State> {
                                   : undefined,
                             }}
                             className={`tap-block ${
-                              this.state.coloring == "status" ? `status-${status.status}` : "timing"
+                              this.getColorMode() == "status" ? `status-${status.status}` : "timing"
                             } clickable`}></a>
                         );
                       })}
