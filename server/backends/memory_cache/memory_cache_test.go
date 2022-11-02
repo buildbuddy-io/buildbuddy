@@ -232,8 +232,8 @@ func TestReadWrite(t *testing.T) {
 			Digest:    d,
 			CacheType: resource.CacheType_CAS,
 		}
-		// Use WriterDeprecated() to set the bytes in the cache.
-		wc, err := mc.WriterDeprecated(ctx, d)
+		// Use Writer() to set the bytes in the cache.
+		wc, err := mc.Writer(ctx, rn)
 		if err != nil {
 			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 		}

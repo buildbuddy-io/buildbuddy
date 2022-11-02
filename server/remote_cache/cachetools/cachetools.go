@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -296,7 +296,7 @@ func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.Reso
 	return readProtoFromCache(ctx, cache, acRN, out)
 }
 
-func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType resource.CacheType, remoteInstanceName string, in io.ReadSeeker) (*repb.Digest, error) {
 	d, err := digest.Compute(in)
 	if err != nil {
 		return nil, err
@@ -308,7 +308,8 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	wc, err := cache.WriterDeprecated(ctx, d)
+	resourceName := digest.NewCacheResourceName(d, remoteInstanceName, cacheType).ToProto()
+	wc, err := cache.Writer(ctx, resourceName)
 	if err != nil {
 		return nil, err
 	}
@@ -321,37 +322,25 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, in io.ReadS
 }
 
 func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	cas, err := namespace.CASCache(ctx, cache, instanceName)
-	if err != nil {
-		return nil, err
-	}
-	return UploadBytesToCache(ctx, cas, in)
+	return UploadBytesToCache(ctx, cache, resource.CacheType_CAS, instanceName, in)
 }
 
-func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
+func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType resource.CacheType, instanceName string, in proto.Message) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	return UploadBytesToCache(ctx, cache, reader)
+	return UploadBytesToCache(ctx, cache, cacheType, instanceName, reader)
 }
 
 func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, blob []byte) (*repb.Digest, error) {
 	reader := bytes.NewReader(blob)
-	cas, err := namespace.CASCache(ctx, cache, instanceName)
-	if err != nil {
-		return nil, err
-	}
-	return UploadBytesToCache(ctx, cas, reader)
+	return UploadBytesToCache(ctx, cache, resource.CacheType_CAS, instanceName, reader)
 }
 
 func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
-	cas, err := namespace.CASCache(ctx, cache, instanceName)
-	if err != nil {
-		return nil, err
-	}
-	return uploadProtoToCache(ctx, cas, instanceName, in)
+	return uploadProtoToCache(ctx, cache, resource.CacheType_CAS, instanceName, in)
 }
 
 func SupportsCompression(ctx context.Context, capabilitiesClient repb.CapabilitiesClient) (bool, error) {
@@ -657,11 +646,7 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 }
 
 func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
-	ac, err := namespace.ActionCache(ctx, cache, instanceName)
-	if err != nil {
-		return nil, err
-	}
-	return uploadProtoToCache(ctx, ac, instanceName, in)
+	return uploadProtoToCache(ctx, cache, resource.CacheType_AC, instanceName, in)
 }
 
 func isExecutable(info os.FileInfo) bool {

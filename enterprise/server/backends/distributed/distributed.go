@@ -1064,12 +1064,3 @@ func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interface
 	}
 	return mwc, nil
 }
-
-func (c *Cache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.isolation.GetRemoteInstanceName(),
-		CacheType:    c.isolation.GetCacheType(),
-	}
-	return c.Writer(ctx, rn)
-}

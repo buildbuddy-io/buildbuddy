@@ -259,11 +259,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	var committedWriteCloser interfaces.CommittedWriteCloser
 
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
-		cache, err := s.getCache(ctx, r.GetInstanceName())
-		if err != nil {
-			return nil, err
-		}
-		cacheWriter, err := cache.WriterDeprecated(ctx, r.GetDigest())
+		cacheWriter, err := s.cache.Writer(ctx, casRN)
 		if err != nil {
 			return nil, err
 		}

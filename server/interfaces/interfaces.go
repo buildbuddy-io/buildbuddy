@@ -219,9 +219,6 @@ type Cache interface {
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
 	WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (Cache, error)
 
-	// [Deprecated] Normal cache-like operations that act in conjunction with WithIsolation
-	WriterDeprecated(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
-
 	// Normal cache-like operations
 	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
 	Metadata(ctx context.Context, r *resource.ResourceName) (*CacheMetadata, error)

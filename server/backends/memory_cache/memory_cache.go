@@ -246,16 +246,6 @@ func (m *MemoryCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	return wc, nil
 }
 
-func (m *MemoryCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	}
-	return m.Writer(ctx, rn)
-}
-
 func (m *MemoryCache) Start() error {
 	return nil
 }

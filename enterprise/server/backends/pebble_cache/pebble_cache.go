@@ -1243,14 +1243,6 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	return wc, nil
 }
 
-func (p *PebbleCache) WriterDeprecated(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	return p.Writer(ctx, &resource.ResourceName{
-		Digest:       d,
-		CacheType:    p.isolation.GetCacheType(),
-		InstanceName: p.isolation.GetRemoteInstanceName(),
-	})
-}
-
 func (p *PebbleCache) DoneScanning() bool {
 	var brokenFilesDone, orphanedFilesDone bool
 
