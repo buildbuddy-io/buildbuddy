@@ -160,14 +160,15 @@ func (i *Invocation) TableOptions() string {
 }
 
 type Execution struct {
-	GroupID        string `gorm:"primaryKey;"`
-	UpdatedAtUsec  int64  `gorm:"primaryKey;"`
-	InvocationUUID string `gorm:"primaryKey;"`
-	ExecutionID    string `gorm:"primaryKey;"`
+	// Sort keys
+	GroupID       string
+	UpdatedAtUsec int64
+	ExecutionID   string
 
-	CreatedAtUsec int64
-	UserID        string
-	Worker        string
+	InvocationUUID string
+	CreatedAtUsec  int64
+	UserID         string
+	Worker         string
 
 	Stage int64
 
@@ -203,6 +204,16 @@ type Execution struct {
 
 	CachedResult bool
 	DoNotCache   bool
+
+	// Fields from Invocations
+	User       string
+	Host       string
+	Pattern    string
+	Role       string
+	BranchName string
+	CommitSHA  string
+	RepoURL    string
+	Command    string
 }
 
 func (e *Execution) TableName() string {
@@ -210,7 +221,7 @@ func (e *Execution) TableName() string {
 }
 
 func (e *Execution) TableOptions() string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid, execution_id)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, execution_id)", getEngine())
 }
 
 func (e *Execution) ExcludedFields() []string {
@@ -227,6 +238,14 @@ func (e *Execution) ExcludedFields() []string {
 func (e *Execution) AdditionalFields() []string {
 	return []string{
 		"InvocationUUID",
+		"User",
+		"Host",
+		"Pattern",
+		"Role",
+		"BranchName",
+		"CommitSHA",
+		"RepoURL",
+		"Command",
 	}
 }
 
