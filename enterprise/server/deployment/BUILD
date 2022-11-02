@@ -1,5 +1,7 @@
 load("@io_bazel_rules_docker//container:push.bzl", "container_push")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 container_push(
     name = "push_ci_runner",
     format = "Docker",
@@ -11,10 +13,6 @@ container_push(
     repository = "flame-public/buildbuddy-ci-runner",
     tag = "$(version)",
     tags = ["manual"],  # Don't include this target in wildcard patterns
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
 )
 
 container_push(
@@ -25,8 +23,4 @@ container_push(
     repository = "flame-public/buildbuddy-ci-runner",
     tag = "debug",
     tags = ["manual"],  # Don't include this target in wildcard patterns
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
 )

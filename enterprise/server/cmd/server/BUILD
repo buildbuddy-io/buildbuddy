@@ -2,11 +2,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
+package(default_visibility = ["//visibility:public"])
+
 go_library(
     name = "server_lib",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/server",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/api",
@@ -36,6 +37,7 @@ go_library(
         "//enterprise/server/saml",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/scheduling/task_router",
+        "//enterprise/server/secrets",
         "//enterprise/server/selfauth",
         "//enterprise/server/splash",
         "//enterprise/server/tasksize",
@@ -80,7 +82,6 @@ go_binary(
         "//static",
     ],
     embed = [":server_lib"],
-    visibility = ["//visibility:public"],
 )
 
 container_image(
@@ -88,9 +89,9 @@ container_image(
     base = "@buildbuddy_go_image_base//image",
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml",
+        "buildbuddy": "tmp",
     },
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )
 
 # Build a docker image similar to the go_binary above, but use the "go_image"
@@ -100,5 +101,4 @@ go_image(
     base = ":base_image",
     binary = ":buildbuddy",
     tags = ["manual"],
-    visibility = ["//visibility:public"],
 )

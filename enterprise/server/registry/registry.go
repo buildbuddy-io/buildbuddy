@@ -91,8 +91,8 @@ func (r *registry) writeManifest(ctx context.Context, oldDigest string, newManif
 	return nil
 }
 
-func (r *registry) getCachedManifest(ctx context.Context, digest string) (*rgpb.Manifest, error) {
-	mfBytes, err := r.manifestStore.ReadBlob(ctx, blobKey(digest))
+func (r *registry) getCachedManifest(ctx context.Context, d string) (*rgpb.Manifest, error) {
+	mfBytes, err := r.manifestStore.ReadBlob(ctx, blobKey(d))
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, nil
@@ -101,14 +101,11 @@ func (r *registry) getCachedManifest(ctx context.Context, digest string) (*rgpb.
 	}
 	mfProto := &rgpb.Manifest{}
 	if err := proto.Unmarshal(mfBytes, mfProto); err != nil {
-		return nil, status.UnknownErrorf("could not unmarshal manifest proto %s: %s", digest, err)
+		return nil, status.UnknownErrorf("could not unmarshal manifest proto %s: %s", d, err)
 	}
 
-	c, err := r.cache.WithIsolation(ctx, resource.CacheType_CAS, registryInstanceName)
-	if err != nil {
-		return nil, err
-	}
-	missing, err := c.FindMissingDeprecated(ctx, mfProto.CasDependencies)
+	cacheResources := digest.ResourceNames(resource.CacheType_CAS, registryInstanceName, mfProto.CasDependencies)
+	missing, err := r.cache.FindMissing(ctx, cacheResources)
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not check blob existence in CAS: %s", err)
 	}
@@ -116,7 +113,7 @@ func (r *registry) getCachedManifest(ctx context.Context, digest string) (*rgpb.
 	// manifest so that we trigger a new conversion and repopulate the data in
 	// the CAS.
 	if len(missing) > 0 {
-		log.CtxInfof(ctx, "Some blobs are missing from CAS for manifest %q, ignoring cached manifest", digest)
+		log.CtxInfof(ctx, "Some blobs are missing from CAS for manifest %q, ignoring cached manifest", d)
 		return nil, nil
 	}
 	return mfProto, nil
@@ -195,7 +192,7 @@ func parseRangeHeader(val string) ([]byteRange, error) {
 	return parsedRanges, nil
 }
 
-func blobResourceName(h v1.Hash) *digest.ResourceName {
+func blobResourceName(h v1.Hash) *resource.ResourceName {
 	d := &repb.Digest{
 		Hash: h.Hex,
 		// We don't actually know the blob size.
@@ -203,17 +200,13 @@ func blobResourceName(h v1.Hash) *digest.ResourceName {
 		// to be large. The server uses this to determine the buffer size.
 		SizeBytes: 1024 * 1024 * 4,
 	}
-	return digest.NewResourceName(d, registryInstanceName)
+	rn := digest.NewCASResourceName(d, registryInstanceName).ToProto()
+	return rn
 }
 
 func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 	rn := blobResourceName(h)
-
-	c, err := r.cache.WithIsolation(ctx, resource.CacheType_CAS, registryInstanceName)
-	if err != nil {
-		return 0, err
-	}
-	md, err := c.MetadataDeprecated(ctx, rn.GetDigest())
+	md, err := r.cache.Metadata(ctx, rn)
 	if err != nil {
 		return 0, err
 	}
@@ -277,12 +270,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		}()
 	}
 	rn := blobResourceName(h)
-	c, err := r.cache.WithIsolation(ctx, resource.CacheType_CAS, registryInstanceName)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not get cache: %s", err), http.StatusInternalServerError)
-		return
-	}
-	rc, err := c.Reader(ctx, rn.GetDigest(), opts.Offset, opts.Limit)
+	rc, err := r.cache.Reader(ctx, rn, opts.Offset, opts.Limit)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
 		return

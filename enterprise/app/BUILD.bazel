@@ -1,12 +1,17 @@
 load("//rules/typescript:index.bzl", "ts_library")
-load("@npm//@bazel/esbuild:index.bzl", "esbuild")
+load("@npm//@bazel/esbuild:index.bzl", "esbuild", "esbuild_config")
 load("//rules/sha:index.bzl", "sha")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 config_setting(
     name = "fastbuild",
     values = {"compilation_mode": "fastbuild"},
+)
+
+esbuild_config(
+    name = "esbuild_config",
+    config_file = "esbuild.config.mjs",
 )
 
 esbuild(
@@ -24,6 +29,7 @@ esbuild(
             "@octokit/webhooks",
         ],
     },
+    config = ":esbuild_config",
     define = {"process.env.NODE_ENV": '"production"'},
     entry_points = [
         "app.tsx",
@@ -33,6 +39,7 @@ esbuild(
         ":fastbuild": False,
         "//conditions:default": True,
     }),
+    visibility = ["//visibility:public"],
     deps = [
         ":enterprise_app",
     ],
@@ -58,6 +65,7 @@ genrule(
         "//enterprise/app/org:org.css",
         "//enterprise/app/settings:settings.css",
         "//enterprise/app/quota:quota.css",
+        "//enterprise/app/secrets:secrets.css",
         "//enterprise/app/workflows:workflows.css",
         "//enterprise/app/sidebar:sidebar.css",
         "//enterprise/app/tap:tap.css",
@@ -80,6 +88,7 @@ genrule(
         done;
         cat out > $@;
     """,
+    visibility = ["//visibility:public"],
 )
 
 sha(
@@ -88,4 +97,5 @@ sha(
         ":style.css",
         "//enterprise/app:app_bundle",
     ],
+    visibility = ["//visibility:public"],
 )

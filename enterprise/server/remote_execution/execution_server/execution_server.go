@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/namespace"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -293,11 +292,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
 func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.ResourceName) (*repb.ActionResult, error) {
-	cache, err := namespace.ActionCache(ctx, s.cache, r.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-	data, err := cache.GetDeprecated(ctx, r.GetDigest())
+	cacheResource := digest.NewACResourceName(r.GetDigest(), r.GetInstanceName())
+	data, err := s.cache.Get(ctx, cacheResource.ToProto())
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return nil, digest.MissingDigestError(r.GetDigest())
@@ -316,11 +312,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 	if err != nil {
 		return nil, err
 	}
-	casCache, err := namespace.CASCache(ctx, s.cache, d.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-	if err := action_cache_server.ValidateActionResult(ctx, casCache, actionResult); err != nil {
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
@@ -392,6 +384,26 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.PlatformOverrides = &repb.Platform{Properties: platformPropOverrides}
 	}
 
+	taskGroupID := interfaces.AuthAnonymousUser
+	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
+		taskGroupID = user.GetGroupID()
+	}
+
+	props := platform.ParseProperties(executionTask)
+
+	// Add in secrets for any action explicitly requesting secrets, and all workflows.
+	secretService := s.env.GetSecretService()
+	if props.IncludeSecrets {
+		if secretService == nil {
+			return "", status.FailedPreconditionError("Secrets requested but secret service not available")
+		}
+		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID)
+		if err != nil {
+			return "", err
+		}
+		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
+	}
+
 	executionTask.QueuedTimestamp = timestamppb.Now()
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {
@@ -406,8 +418,6 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		predictedSize = sizer.Predict(ctx, executionTask)
 	}
 
-	props := platform.ParseProperties(executionTask)
-
 	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, props.OS, props.UseSelfHostedExecutors)
 	if err != nil {
 		return "", err
@@ -415,11 +425,6 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 
 	if props.Pool == "" {
 		props.Pool = defaultPool
-	}
-
-	taskGroupID := interfaces.AuthAnonymousUser
-	if user, err := perms.AuthenticatedUser(ctx, s.env); err == nil {
-		taskGroupID = user.GetGroupID()
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()

@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "execution_server",
     srcs = ["execution_server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/backends/pubsub",
         "//enterprise/server/remote_execution/config",
@@ -20,7 +21,6 @@ go_library(
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
-        "//server/remote_cache/namespace",
         "//server/tables",
         "//server/util/bazel_request",
         "//server/util/db",

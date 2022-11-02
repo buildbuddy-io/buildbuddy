@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "buildbuddy_enterprise",
     testonly = 1,
@@ -9,7 +11,6 @@ go_library(
         "//enterprise/server/cmd/server:buildbuddy",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/testutil/testredis",
         "//proto:context_go_proto",

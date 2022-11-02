@@ -1,6 +1,6 @@
 load("//rules/typescript:index.bzl", "ts_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//enterprise:__subpackages__"])
 
 exports_files(["settings.css"])
 
@@ -24,6 +24,7 @@ ts_library(
         "//enterprise/app/api_keys",
         "//enterprise/app/org",
         "//enterprise/app/quota",
+        "//enterprise/app/secrets",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",

@@ -1,11 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "enterprise_testenv",
     testonly = 1,
     srcs = ["enterprise_testenv.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/backends/authdb",
         "//enterprise/server/backends/redis_cache",

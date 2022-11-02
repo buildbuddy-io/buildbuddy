@@ -28,6 +28,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -175,6 +176,7 @@ type SSLService interface {
 }
 
 type BuildEventChannel interface {
+	Context() context.Context
 	FinalizeInvocation(iid string) error
 	HandleEvent(event *pepb.PublishBuildToolEventStreamRequest) error
 	GetNumDroppedEvents() uint64
@@ -217,26 +219,19 @@ type Cache interface {
 	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
 	WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (Cache, error)
 
-	// [Deprecated] Normal cache-like operations that act in conjunction with WithIsolation
-	ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error)
-	MetadataDeprecated(ctx context.Context, d *repb.Digest) (*CacheMetadata, error)
-	FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error)
-	GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error)
-	GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error)
-	Set(ctx context.Context, d *repb.Digest, data []byte) error
-	SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
-	Delete(ctx context.Context, d *repb.Digest) error
-
 	// Normal cache-like operations
 	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
 	Metadata(ctx context.Context, r *resource.ResourceName) (*CacheMetadata, error)
 	FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error)
 	Get(ctx context.Context, r *resource.ResourceName) ([]byte, error)
 	GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error)
+	Set(ctx context.Context, r *resource.ResourceName, data []byte) error
+	SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error
+	Delete(ctx context.Context, r *resource.ResourceName) error
 
 	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error)
-	Writer(ctx context.Context, d *repb.Digest) (CommittedWriteCloser, error)
+	Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error)
+	Writer(ctx context.Context, r *resource.ResourceName) (CommittedWriteCloser, error)
 }
 
 type StoppableCache interface {
@@ -344,6 +339,9 @@ type UserDB interface {
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
 	DeleteAPIKey(ctx context.Context, apiKeyID string) error
+
+	// To support secrets API
+	GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error)
 }
 
 // A webhook can be called when a build is completed.
@@ -906,6 +904,20 @@ type AEAD interface {
 	Decrypt(ciphertext, associatedData []byte) ([]byte, error)
 }
 
+// A KMS is a Key Managment Service (typically a cloud provider or external
+// service) that manages keys that can be fetched and used to encrypt/decrypt
+// data.
 type KMS interface {
 	FetchMasterKey() (AEAD, error)
+}
+
+// SecretService manages secrets for an org.
+type SecretService interface {
+	GetPublicKey(ctx context.Context, req *skpb.GetPublicKeyRequest) (*skpb.GetPublicKeyResponse, error)
+	ListSecrets(ctx context.Context, req *skpb.ListSecretsRequest) (*skpb.ListSecretsResponse, error)
+	UpdateSecret(ctx context.Context, req *skpb.UpdateSecretRequest) (*skpb.UpdateSecretResponse, error)
+	DeleteSecret(ctx context.Context, req *skpb.DeleteSecretRequest) (*skpb.DeleteSecretResponse, error)
+
+	// Internal use only -- fetches decoded secrets for use in running a command.
+	GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error)
 }

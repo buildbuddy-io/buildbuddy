@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "store",
     srcs = ["store.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
@@ -30,6 +31,8 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "//server/util/statusz",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@com_github_hashicorp_serf//serf",
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//raftio",

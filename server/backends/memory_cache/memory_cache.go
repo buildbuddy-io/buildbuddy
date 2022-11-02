@@ -111,15 +111,6 @@ func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	return contains, nil
 }
 
-func (m *MemoryCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return m.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
@@ -142,15 +133,6 @@ func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	return &interfaces.CacheMetadata{SizeBytes: int64(len(vb))}, nil
 }
 
-func (m *MemoryCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return m.Metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	var missing []*repb.Digest
 	// No parallelism here either. Not necessary for an in-memory cache.
@@ -164,11 +146,6 @@ func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.Res
 		}
 	}
 	return missing, nil
-}
-
-func (m *MemoryCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
-	return m.FindMissing(ctx, rns)
 }
 
 func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
@@ -189,15 +166,6 @@ func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	return value, nil
 }
 
-func (m *MemoryCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return m.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
-}
-
 func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	// No parallelism here either. Not necessary for an in-memory cache.
@@ -214,18 +182,8 @@ func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.Resour
 	return foundMap, nil
 }
 
-func (m *MemoryCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(m.cacheType, m.remoteInstanceName, digests)
-	return m.GetMulti(ctx, rns)
-}
-
-func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	k, err := m.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
+func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -235,22 +193,17 @@ func (m *MemoryCache) Set(ctx context.Context, d *repb.Digest, data []byte) erro
 	return nil
 }
 
-func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
-	for d, data := range kvs {
-		if err := m.Set(ctx, d, data); err != nil {
+func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+	for r, data := range kvs {
+		if err := m.Set(ctx, r, data); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := m.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: m.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    m.cacheType,
-	})
+func (m *MemoryCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := m.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -258,15 +211,16 @@ func (m *MemoryCache) Delete(ctx context.Context, d *repb.Digest) error {
 	removed := m.l.Remove(k)
 	m.lock.Unlock()
 	if !removed {
+		d := r.GetDigest()
 		return status.NotFoundErrorf("digest %s/%d not found in memory cache", d.GetHash(), d.GetSizeBytes())
 	}
 	return nil
 }
 
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
+func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
-	buf, err := m.GetDeprecated(ctx, d)
+	buf, err := m.Get(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -282,12 +236,12 @@ func (m *MemoryCache) Reader(ctx context.Context, d *repb.Digest, offset, limit 
 	return io.NopCloser(r), nil
 }
 
-func (m *MemoryCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
+func (m *MemoryCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
 	wc.CommitFn = func(int64) error {
-		// Locking and key prefixing are handled in Set.
-		return m.Set(ctx, d, buffer.Bytes())
+		// Locking and key prefixing are handled in SetDeprecated.
+		return m.Set(ctx, r, buffer.Bytes())
 	}
 	return wc, nil
 }

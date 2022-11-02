@@ -18,7 +18,6 @@ go_library(
         "//cli/plugin",
         "//cli/remotebazel",
         "//cli/sidecar",
-        "//cli/terminal",
         "//cli/tooltag",
         "//cli/version",
         "//cli/watcher",

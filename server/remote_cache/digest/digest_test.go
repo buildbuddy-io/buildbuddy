@@ -136,3 +136,65 @@ func TestElementsMatch(t *testing.T) {
 		require.Equal(t, tc.want, got)
 	}
 }
+
+func TestDiff(t *testing.T) {
+	d1 := &repb.Digest{Hash: "1234", SizeBytes: 100}
+	d2 := &repb.Digest{Hash: "1111", SizeBytes: 10}
+	d3 := &repb.Digest{Hash: "1234", SizeBytes: 1}
+
+	cases := []struct {
+		s1 []*repb.Digest
+		s2 []*repb.Digest
+
+		expectedMissingFromS1 []*repb.Digest
+		expectedMissingFromS2 []*repb.Digest
+	}{
+		{
+			s1:                    []*repb.Digest{},
+			s2:                    []*repb.Digest{},
+			expectedMissingFromS1: []*repb.Digest{},
+			expectedMissingFromS2: []*repb.Digest{},
+		},
+		{
+			s1:                    []*repb.Digest{d1, d2},
+			s2:                    []*repb.Digest{d1, d2},
+			expectedMissingFromS1: []*repb.Digest{},
+			expectedMissingFromS2: []*repb.Digest{},
+		},
+		{
+			s1:                    []*repb.Digest{d1, d2},
+			s2:                    []*repb.Digest{d2, d1},
+			expectedMissingFromS1: []*repb.Digest{},
+			expectedMissingFromS2: []*repb.Digest{},
+		},
+		{
+			s1:                    []*repb.Digest{d1, d2, d3},
+			s2:                    []*repb.Digest{d2, d1},
+			expectedMissingFromS1: []*repb.Digest{},
+			expectedMissingFromS2: []*repb.Digest{d3},
+		},
+		{
+			s1:                    []*repb.Digest{d1, d2},
+			s2:                    []*repb.Digest{d2, d1, d3},
+			expectedMissingFromS1: []*repb.Digest{d3},
+			expectedMissingFromS2: []*repb.Digest{},
+		},
+		{
+			s1:                    []*repb.Digest{d1, d2, d1},
+			s2:                    []*repb.Digest{d2, d2, d1},
+			expectedMissingFromS1: []*repb.Digest{},
+			expectedMissingFromS2: []*repb.Digest{},
+		},
+		{
+			s1:                    []*repb.Digest{d1, d2, d1},
+			s2:                    []*repb.Digest{d2, d1, d3},
+			expectedMissingFromS1: []*repb.Digest{d3},
+			expectedMissingFromS2: []*repb.Digest{},
+		},
+	}
+	for _, tc := range cases {
+		got1, got2 := Diff(tc.s1, tc.s2)
+		require.ElementsMatch(t, tc.expectedMissingFromS1, got1)
+		require.ElementsMatch(t, tc.expectedMissingFromS2, got2)
+	}
+}

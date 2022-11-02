@@ -33,7 +33,7 @@ jobs:
 
       - name: Get Tag
         id: tag
-        run: echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
+        run: echo "TAG=${GITHUB_REF/refs\/tags\//}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Artifacts
         env:

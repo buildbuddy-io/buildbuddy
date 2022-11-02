@@ -274,43 +274,60 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 		},
 		Digest: d,
 	}
-	fileMetadataKey, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
-	require.NoError(t, err)
 
-	_, err = ts.APIClient.Get(ctx, ts.GRPCAddress)
-	require.NoError(t, err)
-
-	err = ts.Sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
-		mwc, err := ts.APIClient.MultiWriter(ctx, peers, fr)
-		if err != nil {
-			return err
-		}
-		if _, err := mwc.Write(buf); err != nil {
-			return err
-		}
-		if err := mwc.Close(); err != nil {
-			return err
-		}
-		return nil
+	fs := filestore.New(filestore.Opts{
+		IsolateByGroupIDs:           true,
+		PrioritizeHashInMetadataKey: true,
 	})
+	fileMetadataKey := metadataKey(t, fr)
+
+	_, err := ts.APIClient.Get(ctx, ts.GRPCAddress)
 	require.NoError(t, err)
 
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-		FileRecord: fr,
+	writeCloserMetadata := fs.InlineWriter(ctx, d.GetSizeBytes())
+	bytesWritten, err := writeCloserMetadata.Write(buf)
+	require.NoError(t, err)
+
+	now := time.Now()
+	md := &rfpb.FileMetadata{
+		FileRecord:      fr,
+		StorageMetadata: writeCloserMetadata.Metadata(),
+		SizeBytes:       int64(bytesWritten),
+		LastModifyUsec:  now.UnixMicro(),
+		LastAccessUsec:  now.UnixMicro(),
+	}
+	protoBytes, err := proto.Marshal(md)
+	require.NoError(t, err)
+
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   fileMetadataKey,
+			Value: protoBytes,
+		},
 	}).ToProto()
 	require.NoError(t, err)
-
-	_, err = ts.Sender.SyncPropose(ctx, fileMetadataKey, writeReq)
+	writeRsp, err := ts.Sender.SyncPropose(ctx, fileMetadataKey, writeReq)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
 	return fr
 }
 
-func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.FileRecord) {
-	fk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
+func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
+	fs := filestore.New(filestore.Opts{
+		IsolateByGroupIDs:           true,
+		PrioritizeHashInMetadataKey: true,
+	})
+	fk, err := fs.FileMetadataKey(fr)
 	require.NoError(t, err)
+	return fk
+}
 
-	err = ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {
+func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.FileRecord) {
+	fk := metadataKey(t, fr)
+
+	err := ts.Sender.Run(ctx, fk, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		rc, err := client.RemoteReader(ctx, c, &rfpb.ReadRequest{
 			Header:     h,
 			FileRecord: fr,
@@ -560,8 +577,7 @@ func TestPostFactoSplit(t *testing.T) {
 
 	// Now verify that all keys that should be on the new node are present.
 	for _, fr := range written {
-		fmk, err := filestore.New(true /*=isolateByGroupIDs*/).FileMetadataKey(fr)
-		require.NoError(t, err)
+		fmk := metadataKey(t, fr)
 		if bytes.Compare(fmk, splitResponse.GetLeft().GetRight()) >= 0 {
 			continue
 		}

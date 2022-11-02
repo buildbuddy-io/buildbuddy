@@ -122,15 +122,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	cache, err := s.getCache(ctx, r.GetInstanceName())
-	if err != nil {
-		return err
-	}
 	if r.GetDigest().GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
 	}
-	reader, err := cache.Reader(ctx, r.GetDigest(), req.ReadOffset, req.ReadLimit)
+	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName()).ToProto()
+	reader, err := s.cache.Reader(ctx, cacheRN, req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		ht.TrackMiss(r.GetDigest())
 		return err
@@ -234,10 +231,6 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if err != nil {
 		return nil, err
 	}
-	cache, err := s.getCache(ctx, r.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
 
 	ws := &writeState{
 		resourceName:       r,
@@ -252,7 +245,8 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
-	exists, err := cache.ContainsDeprecated(ctx, r.GetDigest())
+	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName()).ToProto()
+	exists, err := s.cache.Contains(ctx, casRN)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +259,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	var committedWriteCloser interfaces.CommittedWriteCloser
 
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
-		cacheWriter, err := cache.Writer(ctx, r.GetDigest())
+		cacheWriter, err := s.cache.Writer(ctx, casRN)
 		if err != nil {
 			return nil, err
 		}
@@ -447,18 +441,14 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 			Complete:      false,
 		}, nil
 	}
+	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName())
 
 	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
 
-	cache, err := s.getCache(ctx, rn.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
-
-	md, err := cache.MetadataDeprecated(ctx, rn.GetDigest())
+	md, err := s.cache.Metadata(ctx, casRN.ToProto())
 	if err != nil {
 		// If the data has not been committed to the cache, then just tell the
 		// client that we don't have anything and let them retry it.

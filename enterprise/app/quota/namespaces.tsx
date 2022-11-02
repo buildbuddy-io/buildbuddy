@@ -60,7 +60,7 @@ export default class NamespacesComponent extends React.Component<{}, State> {
       <div className="quota-namespaces quota-column-layout">
         <div className="settings-option-title">Quota namespaces</div>
         <div className="ns-controls">
-          <LinkButton href="/settings/server/quota/bucket" className="create-new-button">
+          <LinkButton href="/settings/server/quota/bucket" className="big-button">
             Create new namespace
           </LinkButton>
         </div>

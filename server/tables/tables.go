@@ -211,6 +211,10 @@ type Group struct {
 	InvocationWebhookURL string `gorm:"not null;default:''"`
 
 	SuggestionPreference grpb.SuggestionPreference `gorm:"not null;default:1"`
+
+	// The public key and encrypted private key. Used to upload secrets.
+	PublicKey           string
+	EncryptedPrivateKey string
 }
 
 func (g *Group) TableName() string {
@@ -331,6 +335,18 @@ type APIKey struct {
 
 func (k *APIKey) TableName() string {
 	return "APIKeys"
+}
+
+type Secret struct {
+	UserID  string `gorm:"primaryKey"`
+	GroupID string `gorm:"primaryKey"`
+	Name    string `gorm:"primaryKey"`
+	Value   string
+	Perms   int `gorm:"type:int(11);default:NULL"`
+}
+
+func (s *Secret) TableName() string {
+	return "Secrets"
 }
 
 type Execution struct {
@@ -992,6 +1008,7 @@ func init() {
 	registerTable("IE", &InvocationExecution{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("CL", &CacheLog{})
+	registerTable("SK", &Secret{})
 	registerTable("TA", &Target{})
 	registerTable("TS", &TargetStatus{})
 	registerTable("WF", &Workflow{})

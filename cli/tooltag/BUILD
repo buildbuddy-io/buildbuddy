@@ -5,8 +5,5 @@ go_library(
     srcs = ["tooltag.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/tooltag",
     visibility = ["//visibility:public"],
-    deps = [
-        "//cli/arg",
-        "//cli/log",
-    ],
+    deps = ["//cli/arg"],
 )

@@ -155,10 +155,6 @@ func (c *CacheProxy) getClient(ctx context.Context, peer string) (dcpb.Distribut
 	return client, nil
 }
 
-func (c *CacheProxy) getCache(ctx context.Context, isolation *dcpb.Isolation) (interfaces.Cache, error) {
-	return c.cache.WithIsolation(ctx, isolation.GetCacheType(), isolation.GetRemoteInstanceName())
-}
-
 func (c *CacheProxy) prepareContext(ctx context.Context) context.Context {
 	if c.zone != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, resources.ZoneHeader, c.zone)
@@ -179,15 +175,16 @@ func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingReque
 	if err != nil {
 		return nil, err
 	}
-	digests := make([]*repb.Digest, 0)
+
+	instanceName := req.GetIsolation().GetRemoteInstanceName()
+	cacheType := req.GetIsolation().GetCacheType()
+	digests := make([]*resource.ResourceName, 0)
 	for _, k := range req.GetKey() {
-		digests = append(digests, digestFromKey(k))
+		d := digestFromKey(k)
+		rn := digest.NewCacheResourceName(d, instanceName, cacheType).ToProto()
+		digests = append(digests, rn)
 	}
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return nil, err
-	}
-	missing, err := cache.FindMissingDeprecated(ctx, digests)
+	missing, err := c.cache.FindMissing(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -203,12 +200,14 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return nil, err
-	}
 	d := digestFromKey(req.GetKey())
-	md, err := cache.MetadataDeprecated(ctx, d)
+	isolation := req.GetIsolation()
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    isolation.GetCacheType(),
+		InstanceName: isolation.GetRemoteInstanceName(),
+	}
+	md, err := c.cache.Metadata(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -233,12 +232,10 @@ func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb
 	if err != nil {
 		return nil, err
 	}
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return nil, err
-	}
 	d := digestFromKey(req.GetKey())
-	err = cache.Delete(ctx, d)
+	i := req.GetIsolation()
+	rn := digest.NewCacheResourceName(d, i.GetRemoteInstanceName(), i.GetCacheType()).ToProto()
+	err = c.cache.Delete(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -250,15 +247,15 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	digests := make([]*repb.Digest, 0)
+	digests := make([]*resource.ResourceName, 0)
+	remoteInstanceName := req.GetIsolation().GetRemoteInstanceName()
+	cacheType := req.GetIsolation().GetCacheType()
 	for _, k := range req.GetKey() {
-		digests = append(digests, digestFromKey(k))
+		d := digestFromKey(k)
+		rn := digest.NewCacheResourceName(d, remoteInstanceName, cacheType).ToProto()
+		digests = append(digests, rn)
 	}
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return nil, err
-	}
-	found, err := cache.GetMultiDeprecated(ctx, digests)
+	found, err := c.cache.GetMulti(ctx, digests)
 	if err != nil {
 		return nil, err
 	}
@@ -292,12 +289,10 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 		return err
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
+	i := req.GetIsolation()
 	d := digestFromKey(req.GetKey())
-	cache, err := c.getCache(ctx, req.GetIsolation())
-	if err != nil {
-		return err
-	}
-	reader, err := cache.Reader(ctx, d, req.GetOffset(), req.GetLimit())
+	rn := digest.NewCacheResourceName(d, i.GetRemoteInstanceName(), i.GetCacheType()).ToProto()
+	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 		return err
@@ -341,11 +336,9 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		}
 		if writeCloser == nil {
 			d := digestFromKey(req.GetKey())
-			cache, err := c.getCache(ctx, req.GetIsolation())
-			if err != nil {
-				return err
-			}
-			wc, err := cache.Writer(ctx, d)
+			i := req.GetIsolation()
+			rn := digest.NewCacheResourceName(d, i.GetRemoteInstanceName(), i.GetCacheType()).ToProto()
+			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", IsolationToString(req.GetIsolation())+d.GetHash(), up, err)
 				return err

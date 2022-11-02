@@ -44,7 +44,7 @@
           "fillGradient": 0,
           "gridPos": {
             "h": 7,
-            "w": 8,
+            "w": 12,
             "x": 0,
             "y": 1
           },
@@ -5071,7 +5071,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 9
       },
       "id": 264,
       "panels": [
@@ -5659,7 +5659,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 10
       },
       "id": 38,
       "panels": [
@@ -6167,7 +6167,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 11
       },
       "id": 458,
       "panels": [
@@ -6770,7 +6770,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 12
       },
       "id": 48,
       "panels": [
@@ -7153,7 +7153,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 13
       },
       "id": 107,
       "panels": [
@@ -7731,7 +7731,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 14
       },
       "id": 83,
       "panels": [
@@ -8100,7 +8100,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 16
       },
       "id": 71,
       "panels": [
@@ -8307,7 +8307,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 17
       },
       "id": 1088,
       "panels": [
@@ -8602,7 +8602,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 18
       },
       "id": 962,
       "panels": [
@@ -8695,7 +8695,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 19
           },
           "id": 992,
           "options": {
@@ -8906,7 +8906,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 26
+            "y": 27
           },
           "id": 1257,
           "maxPerRow": 2,
@@ -9075,7 +9075,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 34
+            "y": 35
           },
           "id": 1261,
           "options": {
@@ -9128,7 +9128,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 19
       },
       "id": 8,
       "panels": [
@@ -9406,6 +9406,110 @@
         }
       ],
       "title": "Internal",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 1346,
+      "panels": [
+        {
+          "description": "The number of rows Buildbuddy app writes to clickhouse.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 21
+          },
+          "id": 1353,
+          "links": [
+            {
+              "title": "Detailed Graphs on Clickhouse",
+              "url": "/d/clickhouse-operator/clickhouse-operator-dashboard"
+            }
+          ],
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "sum(rate(buildbuddy_clickhouse_insert_count{region=\"${region}\"}[${window}])) by (clickhouse_table_name, status)",
+              "interval": "",
+              "legendFormat": "{{clickhouse_table_name}}, {{status}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Clickhouse Insert Count by Table and Status",
+          "type": "timeseries"
+        }
+      ],
+      "title": "Clickhouse",
       "type": "row"
     }
   ],

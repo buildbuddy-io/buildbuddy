@@ -29,12 +29,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/google/uuid"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
+	"google.golang.org/protobuf/proto"
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -144,7 +146,10 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		rangeCache:   rangecache.New(),
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
-		fileStorer:   filestore.New(true /*=isolateByGroupIDs*/),
+		fileStorer: filestore.New(filestore.Opts{
+			IsolateByGroupIDs:           true,
+			PrioritizeHashInMetadataKey: true,
+		}),
 	}
 
 	if len(conf.Join) < 3 {
@@ -351,17 +356,7 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceNam
 	}, nil
 }
 
-func (rc *RaftCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	rn := &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	}
-	return rc.reader(ctx, rn, offset, limit)
-}
-
-func (rc *RaftCache) reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -396,7 +391,7 @@ type raftWriteCloser struct {
 
 func (rwc *raftWriteCloser) Commit() error {
 	if err := rwc.WriteCloser.Close(); err != nil {
-		return err
+		return status.UnavailableError(err.Error())
 	}
 	return rwc.closeFn()
 }
@@ -404,13 +399,8 @@ func (rwc *raftWriteCloser) Close() error {
 	return nil
 }
 
-func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	fileRecord, err := rc.makeFileRecord(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	})
+func (rc *RaftCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -418,30 +408,27 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Com
 	if err != nil {
 		return nil, err
 	}
+	writeCloserMetadata := rc.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
 
-	var mwc io.WriteCloser
-	err = rc.sender.RunAll(ctx, fileMetadataKey, func(peers []*client.PeerHeader) error {
-		w, err := rc.apiClient.MultiWriter(ctx, peers, fileRecord)
+	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
+	wc.CommitFn = func(bytesWritten int64) error {
+		now := time.Now()
+		md := &rfpb.FileMetadata{
+			FileRecord:      fileRecord,
+			StorageMetadata: writeCloserMetadata.Metadata(),
+			SizeBytes:       bytesWritten,
+			LastModifyUsec:  now.UnixMicro(),
+			LastAccessUsec:  now.UnixMicro(),
+		}
+		protoBytes, err := proto.Marshal(md)
 		if err != nil {
 			return err
 		}
-		// Attempt the first write to see if all the peers will accept
-		// it. If the range information is stale, the write will fail
-		// here and the entire operation will be retried via RunAll.
-		_, err = w.Write([]byte{})
-		if err != nil {
-			return err
-		}
-		mwc = w
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	rwc := &raftWriteCloser{mwc, func() error {
-		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.FileWriteRequest{
-			FileRecord: fileRecord,
+		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+			Kv: &rfpb.KV{
+				Key:   fileMetadataKey,
+				Value: protoBytes,
+			},
 		}).ToProto()
 		if err != nil {
 			return err
@@ -451,8 +438,8 @@ func (rc *RaftCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.Com
 			return err
 		}
 		return rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
-	}}
-	return rwc, nil
+	}
+	return wc, nil
 }
 
 func (rc *RaftCache) Stop() error {
@@ -475,20 +462,7 @@ func (rc *RaftCache) Contains(ctx context.Context, r *resource.ResourceName) (bo
 	return len(missing) == 0, nil
 }
 
-func (rc *RaftCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return rc.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	})
-}
-
 func (rc *RaftCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
-	return nil, status.UnimplementedError("not implemented")
-}
-
-func (rc *RaftCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
 
@@ -547,27 +521,13 @@ func (rc *RaftCache) FindMissing(ctx context.Context, resources []*resource.Reso
 	return rc.findMissingResourceNames(ctx, resources)
 }
 
-func (rc *RaftCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	resourceNames := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
-	return rc.findMissingResourceNames(ctx, resourceNames)
-}
-
 func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
-	r, err := rc.reader(ctx, rn, 0, 0)
+	r, err := rc.Reader(ctx, rn, 0, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	return io.ReadAll(r)
-}
-
-func (rc *RaftCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return rc.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: rc.isolation.GetRemoteInstanceName(),
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    rc.isolation.GetCacheType(),
-	})
 }
 
 func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -605,13 +565,8 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.Resourc
 	return dataMap, nil
 }
 
-func (rc *RaftCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(rc.isolation.GetCacheType(), rc.isolation.GetRemoteInstanceName(), digests)
-	return rc.GetMulti(ctx, rns)
-}
-
-func (rc *RaftCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	wc, err := rc.Writer(ctx, d)
+func (rc *RaftCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	wc, err := rc.Writer(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -621,10 +576,10 @@ func (rc *RaftCache) Set(ctx context.Context, d *repb.Digest, data []byte) error
 	return wc.Close()
 }
 
-func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	return nil
 }
 
-func (rc *RaftCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (rc *RaftCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	return nil
 }

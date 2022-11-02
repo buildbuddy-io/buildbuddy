@@ -1,13 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//visibility:public"])
+
 go_library(
     name = "tasksize",
     srcs = ["tasksize.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize",
-    visibility = [
-        "//enterprise:__subpackages__",
-        "@buildbuddy_internal//enterprise:__subpackages__",
-    ],
     deps = [
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/tasksize_model",

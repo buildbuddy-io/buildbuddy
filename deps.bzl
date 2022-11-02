@@ -317,8 +317,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bduffany_godemon",
         importpath = "github.com/bduffany/godemon",
-        sum = "h1:GTXHG34z1pHcS4rAM1H//o4KhZaGlE00rELhoHRNU7w=",
-        version = "v0.0.0-20221018141343-3bc43fa8b810",
+        sum = "h1:swhDsEzgaYy2dKQ9FCrbmYrGvk7+dZRvvHOUu2rZvR0=",
+        version = "v0.0.0-20221022171016-b1a022d2f9c2",
     )
 
     go_repository(

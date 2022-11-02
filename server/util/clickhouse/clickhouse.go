@@ -6,15 +6,18 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strings"
 	"syscall"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	gormclickhouse "gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
 )
@@ -76,6 +79,19 @@ func getEngine() string {
 		return fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s')", *zooPath, *replicaName)
 	}
 	return "ReplacingMergeTree()"
+}
+
+func getAllTables() []Table {
+	return []Table{
+		&Invocation{},
+	}
+}
+
+func tableClusterOption() string {
+	if *dataReplicationEnabled {
+		return fmt.Sprintf("on cluster '%s'", *clusterName)
+	}
+	return ""
 }
 
 // Invocation constains a subset of tables.Invocations.
@@ -264,25 +280,39 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	}
 }
 
+func isTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "i/o timeout")
+}
+
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
 	inv := ToInvocationFromPrimaryDB(ti)
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
 	for retrier.Next() {
 		res := h.DB(ctx).Create(inv)
-		if res.Error == nil {
-			return nil
-		}
-		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) {
+		lastError = res.Error
+		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) {
 			// Retry since it's an transient error.
-			lastError = res.Error
-			log.Infof("attempt to write invocation (id: %q) to clickhouse failed: %s", res.Error, ti.InvocationID)
+			log.CtxInfof(ctx, "attempt (n=%d) to write invocation to clickhouse failed: %s", retrier.AttemptNumber(), res.Error)
 			continue
-		} else {
-			return res.Error
 		}
+		break
 	}
-	return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries for invocation id %q, err: %s", ti.InvocationID, lastError)
+	statusLabel := "ok"
+	if lastError != nil {
+		statusLabel = "error"
+	}
+	metrics.ClickhouseInsertedCount.With(prometheus.Labels{
+		metrics.ClickhouseTableName:   inv.TableName(),
+		metrics.ClickhouseStatusLabel: statusLabel,
+	}).Inc()
+	if lastError != nil {
+		return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries (n=%d) for invocation id %q, err: %s", retrier.AttemptNumber(), ti.InvocationID, lastError)
+	}
+	return nil
 }
 
 func runMigrations(gdb *gorm.DB) error {
@@ -307,17 +337,17 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return status.InternalErrorf("failed to parse clickhouse data source (%q): %s", *dataSource, err)
 	}
-	if *maxOpenConns != 0 {
-		options.MaxOpenConns = *maxOpenConns
-	}
-	if *maxIdleConns != 0 {
-		options.MaxIdleConns = *maxIdleConns
-	}
-	if *connMaxLifetime != 0 {
-		options.ConnMaxLifetime = *connMaxLifetime
-	}
 
 	sqlDB := clickhouse.OpenDB(options)
+	if *maxOpenConns != 0 {
+		sqlDB.SetMaxOpenConns(*maxOpenConns)
+	}
+	if *maxIdleConns != 0 {
+		sqlDB.SetMaxIdleConns(*maxIdleConns)
+	}
+	if *connMaxLifetime != 0 {
+		sqlDB.SetConnMaxLifetime(*connMaxLifetime)
+	}
 
 	db, err := gorm.Open(gormclickhouse.New(gormclickhouse.Config{
 		Conn: sqlDB,

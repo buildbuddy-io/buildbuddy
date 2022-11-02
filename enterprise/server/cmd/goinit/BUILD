@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "goinit_lib",
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/goinit",
-    visibility = ["//visibility:private"],
     deps = [
         "//enterprise/server/util/vsock",
         "//enterprise/server/vmexec",
@@ -25,5 +26,4 @@ go_binary(
     embed = [":goinit_lib"],
     pure = "on",
     static = "on",
-    visibility = ["//visibility:public"],
 )

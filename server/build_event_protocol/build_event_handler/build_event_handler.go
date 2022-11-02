@@ -81,7 +81,7 @@ const (
 
 var (
 	chunkFileSizeBytes                = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
-	enableChunkedEventLogs            = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	enableChunkedEventLogs            = flag.Bool("storage.enable_chunked_event_logs", true, "If true, Event logs will be stored separately from the invocation proto in chunks.")
 	requireInvocationEventParseOnRead = flag.Bool("app.require_invocation_event_parse_on_read", false, "If true, invocation responses will be filled from database values and then by parsing the events on read.")
 	writeToOLAPDBEnabled              = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
 
@@ -92,9 +92,10 @@ var (
 )
 
 type BuildEventHandler struct {
-	env           environment.Env
-	statsRecorder *statsRecorder
-	openChannels  *sync.WaitGroup
+	env              environment.Env
+	statsRecorder    *statsRecorder
+	openChannels     *sync.WaitGroup
+	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
 }
 
 func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
@@ -105,25 +106,38 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 
 	statsRecorder.Start()
 	webhookNotifier.Start()
+
+	h := &BuildEventHandler{
+		env:              env,
+		statsRecorder:    statsRecorder,
+		openChannels:     openChannels,
+		cancelFnsByInvID: sync.Map{},
+	}
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+		h.Stop()
 		statsRecorder.Stop()
 		webhookNotifier.Stop()
 		return nil
 	})
-
-	return &BuildEventHandler{
-		env:           env,
-		statsRecorder: statsRecorder,
-		openChannels:  openChannels,
-	}
+	return h
 }
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	buildEventAccumulator := accumulator.NewBEValues(iid)
+	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
+	val, ok := b.cancelFnsByInvID.Load(iid)
+	if ok {
+		cancelFn := val.(context.CancelFunc)
+		cancelFn()
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	b.cancelFnsByInvID.Store(iid, cancel)
 
 	b.openChannels.Add(1)
 	onClose := func() {
 		b.openChannels.Done()
+		b.cancelFnsByInvID.Delete(iid)
 	}
 
 	return &EventChannel{
@@ -146,6 +160,16 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		onClose:                     onClose,
 		attempt:                     1,
 	}
+}
+
+func (b *BuildEventHandler) Stop() {
+	b.cancelFnsByInvID.Range(func(key, val interface{}) bool {
+		iid := key.(string)
+		cancelFn := val.(context.CancelFunc)
+		log.Infof("Cancelling invocation %q because server received shutdown signal", iid)
+		cancelFn()
+		return true
+	})
 }
 
 // invocationJWT represents an invocation ID as well as the JWT granting access
@@ -265,7 +289,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
 	// Temporary logging for debugging clickhouse missing data.
 	if err == nil {
-		log.Infof("successfully wrote invocation %q to clickhouse", inv.InvocationID)
+		log.CtxInfo(ctx, "successfully wrote invocation to clickhouse")
 	}
 	return err
 }
@@ -281,36 +305,39 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	// unnecessarily throttled.
 	time.Sleep(time.Until(task.createdAt.Add(*cacheStatsFinalizationDelay)))
 	ti := &tables.Invocation{InvocationID: task.invocationJWT.id, Attempt: task.invocationJWT.attempt}
+	ctx = log.EnrichContext(ctx, log.InvocationIDKey, task.invocationJWT.id)
 	if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationJWT.id); stats != nil {
 		fillInvocationFromCacheStats(stats, ti)
+	} else {
+		log.CtxInfo(ctx, "cache stats is not available.")
 	}
 	if sc := hit_tracker.ScoreCard(ctx, r.env, task.invocationJWT.id); sc != nil {
 		scorecard.FillBESMetadata(sc, task.files)
 		if err := scorecard.Write(ctx, r.env, task.invocationJWT.id, task.invocationJWT.attempt, sc); err != nil {
-			log.Errorf("Error writing scorecard blob: %s", err)
+			log.CtxErrorf(ctx, "Error writing scorecard blob: %s", err)
 		}
 	}
 
 	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
-		log.Errorf("Failed to write cache stats for invocation %q to primaryDB: %s", ti.InvocationID, err)
+		log.CtxErrorf(ctx, "Failed to write cache stats to primaryDB: %s", err)
 	}
 
 	if task.invocationStatus == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
 		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationJWT)
 		if err != nil {
-			log.Errorf("Failed to flush stats for invocation %s to clickhouse: %s", ti.InvocationID, err)
+			log.CtxErrorf(ctx, "Failed to flush stats to clickhouse: %s", err)
 		}
 	} else {
-		log.Infof("skipped writing stats for invocation %s to clickhouse, invocationStatus = %s", ti.InvocationID, task.invocationStatus)
+		log.CtxInfof(ctx, "skipped writing stats to clickhouse, invocationStatus = %s", task.invocationStatus)
 	}
 	// Cleanup regardless of whether the stats are flushed successfully to
 	// the DB (since we won't retry the flush and we don't need these stats
 	// for any other purpose).
 	hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationJWT.id)
 	if !updated {
-		log.Warningf("Attempt %d of invocation %s pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt, task.invocationJWT.id)
+		log.CtxWarningf(ctx, "Attempt %d of invocation pre-empted by more recent attempt, no cache stats flushed.", task.invocationJWT.attempt)
 		// Don't notify the webhook; the more recent attempt should trigger
 		// the notification when it is finalized.
 		return
@@ -335,8 +362,10 @@ func (r *statsRecorder) Stop() {
 	// just after the stream request is accepted by the server but before calling
 	// openChannels.Add(1). Can fix this by explicitly waiting for the gRPC server
 	// shutdown to finish, which ensures all streaming requests have terminated.
+	log.Info("StatsRecorder: waiting for EventChannels to be closed before shutting down")
 	r.openChannels.Wait()
 
+	log.Info("StatsRecorder: shutting down")
 	r.mu.Lock()
 	r.stopped = true
 	close(r.tasks)
@@ -596,7 +625,7 @@ func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID st
 		} else if err == io.EOF {
 			break
 		} else {
-			log.Warningf("Error reading proto from log: %s", err)
+			log.CtxWarningf(ctx, "Error reading proto from log: %s", err)
 			return err
 		}
 	}
@@ -611,6 +640,10 @@ func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, in
 	}
 	_, err = e.env.GetBlobstore().WriteBlob(ctx, blobID, protoBytes)
 	return err
+}
+
+func (e *EventChannel) Context() context.Context {
+	return e.ctx
 }
 
 func (e *EventChannel) Close() {
@@ -679,11 +712,12 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	// This reduces the likelihood that the disconnected invocation's status
 	// will overwrite any statuses written by a more recent attempt.
 	if invocationStatus == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
-		log.Warningf("Reporting disconnected status for invocation %s.", iid)
+		log.CtxWarning(ctx, "Reporting disconnected status for invocation")
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
 	e.statsRecorder.Enqueue(ctx, invocation)
+	log.CtxInfof(ctx, "Updated invocation to primaryDB and Enqueued invocation, invocation_status: %s", invocationStatus)
 	return nil
 }
 
@@ -763,7 +797,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 
 	var bazelBuildEvent build_event_stream.BuildEvent
 	if err := readBazelEvent(event.OrderedBuildEvent, &bazelBuildEvent); err != nil {
-		log.Warningf("error reading bazel event: %s", err)
+		log.CtxWarningf(e.ctx, "error reading bazel event: %s", err)
 		return err
 	}
 
@@ -778,12 +812,12 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	if f, ok := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Finished); ok {
 		if f.Finished.GetExitCode().GetCode() == InterruptedExitCode && e.env.GetRemoteExecutionService() != nil {
 			if err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
-				log.Warningf("Could not cancel executions for invocation %q: %s", iid, err)
+				log.CtxWarningf(e.ctx, "Could not cancel executions for invocation %q: %s", iid, err)
 			}
 		}
 	}
 	if seqNo == 1 {
-		log.Debugf("First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
+		log.CtxDebugf(e.ctx, "First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 	}
 
 	if e.isFirstStartedEvent(&bazelBuildEvent) {
@@ -807,7 +841,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	// If this is the first event with options, keep track of the project ID and save any notification keywords.
 	if e.isFirstEventWithOptions(&bazelBuildEvent) {
 		e.hasReceivedEventWithOptions = true
-		log.Debugf("Received options! sequence: %d invocation_id: %s", seqNo, iid)
+		log.CtxDebugf(e.ctx, "Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
 		if auth := e.env.GetAuthenticator(); auth != nil {
 			options, err := extractOptions(&bazelBuildEvent)
@@ -851,7 +885,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 		if !created {
 			// We failed to retry an existing invocation
-			log.Warningf("Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
+			log.CtxWarningf(e.ctx, "Voiding EventChannel for invocation %s: invocation already exists and is either completed or was last updated over 4 hours ago, so may not be retried.", iid)
 			e.isVoid = true
 			return nil
 		}
@@ -887,7 +921,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		// don't increment the usage on invocation retries.
 		if ut := e.env.GetUsageTracker(); ut != nil && ti.Attempt == 1 {
 			if err := ut.Increment(e.ctx, &tables.UsageCounts{Invocations: 1}); err != nil {
-				log.Warningf("Failed to record invocation usage: %s", err)
+				log.CtxWarningf(e.ctx, "Failed to record invocation usage: %s", err)
 			}
 		}
 	} else if !e.hasReceivedEventWithOptions || !e.hasReceivedStartedEvent {
@@ -934,7 +968,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	e.statusReporter.ReportStatusForEvent(e.ctx, event.BuildEvent)
 
 	if err := e.collectAPIFacets(iid, event.BuildEvent); err != nil {
-		log.Warningf("Error collecting API facets: %s", err)
+		log.CtxWarningf(e.ctx, "Error collecting API facets: %s", err)
 	}
 
 	// For everything else, just save the event to our buffer and keep on chugging.

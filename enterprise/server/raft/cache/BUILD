@@ -1,10 +1,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "cache",
     srcs = ["cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/raft/bringup",
         "//enterprise/server/raft/client",
@@ -28,6 +29,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/flagutil",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
@@ -35,6 +37,7 @@ go_library(
         "@com_github_lni_dragonboat_v3//:dragonboat",
         "@com_github_lni_dragonboat_v3//config",
         "@com_github_lni_dragonboat_v3//raftio",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -44,9 +47,9 @@ go_test(
     tags = ["manual"],
     deps = [
         ":cache",
-        "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
+        "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",

@@ -1,10 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "//tools/rbeperf:__pkg__",
+])
+
 go_library(
     name = "rbeclient",
     srcs = ["rbeclient.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient",
-    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",

@@ -31,7 +31,8 @@ var (
 )
 
 const (
-	ExecutionIDKey = "execution_id"
+	ExecutionIDKey  = "execution_id"
+	InvocationIDKey = "invocation_id"
 
 	callerSkipFrameCount = 3
 )
@@ -282,6 +283,15 @@ func Debugf(format string, args ...interface{}) {
 	log.Debug().Msgf(format, args...)
 }
 
+// CtxDebug logs to the DEBUG log.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxDebug(ctx context.Context, message string) {
+	e := log.Debug()
+	enrichEventFromContext(ctx, e)
+	e.Msg(message)
+}
+
 // CtxDebugf logs to the DEBUG log. Arguments are handled in the manner of
 // fmt.Printf.
 // Logs are enriched with information from the context
@@ -300,6 +310,15 @@ func Info(message string) {
 // Infof logs to the INFO log. Arguments are handled in the manner of fmt.Printf.
 func Infof(format string, args ...interface{}) {
 	log.Info().Msgf(format, args...)
+}
+
+// CtxInfo logs to the INFO log.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxInfo(ctx context.Context, message string) {
+	e := log.Info()
+	enrichEventFromContext(ctx, e)
+	e.Msg(message)
 }
 
 // CtxInfof logs to the INFO log. Arguments are handled in the manner of
@@ -322,6 +341,15 @@ func Warningf(format string, args ...interface{}) {
 	log.Warn().Msgf(format, args...)
 }
 
+// CtxWarning logs to the WARNING log.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxWarning(ctx context.Context, message string) {
+	e := log.Warn()
+	enrichEventFromContext(ctx, e)
+	e.Msg(message)
+}
+
 // CtxWarningf logs to the WARNING log. Arguments are handled in the manner of
 // fmt.Printf.
 // Logs are enriched with information from the context
@@ -340,6 +368,15 @@ func Error(message string) {
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func Errorf(format string, args ...interface{}) {
 	log.Error().Msgf(format, args...)
+}
+
+// CtxError logs to the ERROR log.
+// Logs are enriched with information from the context
+// (e.g. invocation_id, request_id)
+func CtxError(ctx context.Context, message string) {
+	e := log.Error()
+	enrichEventFromContext(ctx, e)
+	e.Msg(message)
 }
 
 // CtxErrorf logs to the ERROR log. Arguments are handled in the manner of

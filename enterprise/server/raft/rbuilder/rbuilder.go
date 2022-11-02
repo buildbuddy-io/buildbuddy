@@ -35,6 +35,14 @@ func (bb *BatchBuilder) Merge(bb2 *BatchBuilder) *BatchBuilder {
 	return bb
 }
 
+func (bb *BatchBuilder) SetSplitTag(splitTag string) *BatchBuilder {
+	if bb.cmd == nil {
+		bb.cmd = &rfpb.BatchCmdRequest{}
+	}
+	bb.cmd.SplitTag = splitTag
+	return bb
+}
+
 func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 	if bb.cmd == nil {
 		bb.cmd = &rfpb.BatchCmdRequest{}
@@ -155,6 +163,9 @@ func NewBatchResponse(val interface{}) *BatchResponse {
 		br.setErr(status.FailedPreconditionError("Could not coerce value to []byte."))
 	}
 	if err := proto.Unmarshal(buf, br.cmd); err != nil {
+		br.setErr(err)
+	}
+	if err := gstatus.FromProto(br.cmd.GetStatus()).Err(); err != nil {
 		br.setErr(err)
 	}
 	return br

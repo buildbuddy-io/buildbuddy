@@ -58,29 +58,12 @@ func (c *ComposableCache) Contains(ctx context.Context, r *resource.ResourceName
 	return c.inner.Contains(ctx, r)
 }
 
-func (c *ComposableCache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	outerExists, err := c.outer.ContainsDeprecated(ctx, d)
-	if err == nil && outerExists {
-		return outerExists, nil
-	}
-
-	return c.inner.ContainsDeprecated(ctx, d)
-}
-
 func (c *ComposableCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	md, err := c.outer.Metadata(ctx, r)
 	if err == nil {
 		return md, nil
 	}
 	return c.inner.Metadata(ctx, r)
-}
-
-func (c *ComposableCache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	md, err := c.outer.MetadataDeprecated(ctx, d)
-	if err == nil {
-		return md, nil
-	}
-	return c.inner.MetadataDeprecated(ctx, d)
 }
 
 func (c *ComposableCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
@@ -101,17 +84,6 @@ func (c *ComposableCache) FindMissing(ctx context.Context, resources []*resource
 	return c.inner.FindMissing(ctx, missingResources)
 }
 
-func (c *ComposableCache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	missing, err := c.outer.FindMissingDeprecated(ctx, digests)
-	if err != nil {
-		missing = digests
-	}
-	if len(missing) == 0 {
-		return nil, nil
-	}
-	return c.inner.FindMissingDeprecated(ctx, missing)
-}
-
 func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	outerRsp, err := c.outer.Get(ctx, r)
 	if err == nil {
@@ -123,24 +95,7 @@ func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 		return nil, err
 	}
 	if c.mode&ModeReadThrough != 0 {
-		c.outer.Set(ctx, r.GetDigest(), innerRsp)
-	}
-
-	return innerRsp, nil
-}
-
-func (c *ComposableCache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	outerRsp, err := c.outer.GetDeprecated(ctx, d)
-	if err == nil {
-		return outerRsp, nil
-	}
-
-	innerRsp, err := c.inner.GetDeprecated(ctx, d)
-	if err != nil {
-		return nil, err
-	}
-	if c.mode&ModeReadThrough != 0 {
-		c.outer.Set(ctx, d, innerRsp)
+		c.outer.Set(ctx, r, innerRsp)
 	}
 
 	return innerRsp, nil
@@ -184,46 +139,19 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.Re
 	return foundMap, nil
 }
 
-func (c *ComposableCache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	foundMap := make(map[*repb.Digest][]byte, len(digests))
-	if outerFoundMap, err := c.outer.GetMultiDeprecated(ctx, digests); err == nil {
-		for d, data := range outerFoundMap {
-			foundMap[d] = data
-		}
-	}
-	stillMissing := make([]*repb.Digest, 0)
-	for _, d := range digests {
-		if _, ok := foundMap[d]; !ok {
-			stillMissing = append(stillMissing, d)
-		}
-	}
-	if len(stillMissing) == 0 {
-		return foundMap, nil
-	}
-
-	innerFoundMap, err := c.inner.GetMultiDeprecated(ctx, stillMissing)
-	if err != nil {
-		return nil, err
-	}
-	for d, data := range innerFoundMap {
-		foundMap[d] = data
-	}
-	return foundMap, nil
-}
-
-func (c *ComposableCache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
+func (c *ComposableCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
 	// Special case -- we call set on the inner cache first (in case of
 	// error) and then if no error we'll maybe set on the outer.
-	if err := c.inner.Set(ctx, d, data); err != nil {
+	if err := c.inner.Set(ctx, r, data); err != nil {
 		return err
 	}
 	if c.mode&ModeWriteThrough != 0 {
-		c.outer.Set(ctx, d, data)
+		c.outer.Set(ctx, r, data)
 	}
 	return nil
 }
 
-func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	if err := c.inner.SetMulti(ctx, kvs); err != nil {
 		return err
 	}
@@ -233,14 +161,14 @@ func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]b
 	return nil
 }
 
-func (c *ComposableCache) Delete(ctx context.Context, d *repb.Digest) error {
+func (c *ComposableCache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	// Special case -- we call delete on the inner cache first (in case of
 	// error) and then if no error we'll maybe delete from the outer.
-	if err := c.inner.Delete(ctx, d); err != nil {
+	if err := c.inner.Delete(ctx, r); err != nil {
 		return err
 	}
 	if c.mode&ModeWriteThrough != 0 {
-		c.outer.Delete(ctx, d)
+		c.outer.Delete(ctx, r)
 	}
 	return nil
 }
@@ -270,12 +198,12 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
-func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	if outerReader, err := c.outer.Reader(ctx, d, offset, limit); err == nil {
+func (c *ComposableCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	if outerReader, err := c.outer.Reader(ctx, r, offset, limit); err == nil {
 		return outerReader, nil
 	}
 
-	innerReader, err := c.inner.Reader(ctx, d, offset, limit)
+	innerReader, err := c.inner.Reader(ctx, r, offset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -285,8 +213,7 @@ func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	}
 
 	// Copy the digest over to the outer cache.
-
-	outerWriter, err := c.outer.Writer(ctx, d)
+	outerWriter, err := c.outer.Writer(ctx, r)
 	// Directly return the inner reader if the outer cache doesn't want the
 	// blob.
 	if err != nil {
@@ -302,7 +229,7 @@ func (c *ComposableCache) Reader(ctx context.Context, d *repb.Digest, offset, li
 	if err := outerWriter.Commit(); err != nil {
 		return nil, err
 	}
-	outerReader, err := c.outer.Reader(ctx, d, offset, limit)
+	outerReader, err := c.outer.Reader(ctx, r, offset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -340,14 +267,14 @@ func (d *doubleWriter) Close() error {
 	return err
 }
 
-func (c *ComposableCache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	innerWriter, err := c.inner.Writer(ctx, d)
+func (c *ComposableCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	innerWriter, err := c.inner.Writer(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 
 	if c.mode&ModeWriteThrough != 0 {
-		if outerWriter, err := c.outer.Writer(ctx, d); err == nil {
+		if outerWriter, err := c.outer.Writer(ctx, r); err == nil {
 			dw := &doubleWriter{
 				inner: innerWriter,
 				outer: outerWriter,

@@ -63,6 +63,7 @@ type Env interface {
 	GetSplashPrinter() interfaces.SplashPrinter
 	GetActionCacheClient() repb.ActionCacheClient
 	GetByteStreamClient() bspb.ByteStreamClient
+	SetByteStreamClient(bspb.ByteStreamClient)
 	GetSchedulerClient() scpb.SchedulerClient
 	GetCapabilitiesClient() repb.CapabilitiesClient
 	GetRemoteExecutionClient() repb.ExecutionClient
@@ -144,4 +145,6 @@ type Env interface {
 	SetOLAPDBHandle(dbh interfaces.OLAPDBHandle)
 	GetKMS() interfaces.KMS
 	SetKMS(k interfaces.KMS)
+	GetSecretService() interfaces.SecretService
+	SetSecretService(s interfaces.SecretService)
 }

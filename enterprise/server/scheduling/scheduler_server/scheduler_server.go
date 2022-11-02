@@ -130,6 +130,8 @@ var (
 			return 11
 		end
 
+		redis.call("hincrby", KEYS[1], "attemptCount", 1)
+
 		return redis.call("hset", KEYS[1], "claimed", "1") 
 		`)
 	// Claim field is removed only if it's present.
@@ -1147,11 +1149,6 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID string, claimTim
 		return status.NotFoundError("task already claimed")
 	default:
 		return status.UnknownErrorf("unknown error %d", c)
-	}
-
-	err = s.rdb.HIncrBy(ctx, s.redisKeyForTask(taskID), redisTaskAttempCountField, 1).Err()
-	if err != nil {
-		return err
 	}
 
 	return nil

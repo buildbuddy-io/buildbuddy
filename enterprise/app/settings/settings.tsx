@@ -5,6 +5,7 @@ import FilledButton from "../../../app/components/button/button";
 import ApiKeysComponent from "../api_keys/api_keys";
 import EditOrgComponent from "../org/edit_org";
 import OrgMembersComponent from "../org/org_members";
+import SecretsComponent from "../secrets/secrets";
 import router from "../../../app/router/router";
 import UserPreferences from "../../../app/preferences/preferences";
 import GitHubLink from "./github_link";
@@ -22,6 +23,7 @@ enum TabId {
   OrgMembers = "org/members",
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
+  OrgSecrets = "org/secrets",
   PersonalPreferences = "personal/preferences",
   ServerQuota = "server/quota",
 }
@@ -98,6 +100,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <SettingsTab id={TabId.OrgApiKeys} activeTabId={activeTabId}>
                   API keys
                 </SettingsTab>
+                {capabilities.config.secretsEnabled && router.canAccessOrgSecretsPage(this.props.user) && (
+                  <SettingsTab id={TabId.OrgSecrets} activeTabId={activeTabId}>
+                    Secrets
+                  </SettingsTab>
+                )}
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
@@ -171,6 +178,9 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       </div>
                       <ApiKeysComponent user={this.props.user} />
                     </>
+                  )}
+                  {activeTabId === TabId.OrgSecrets && capabilities.config.secretsEnabled && (
+                    <SecretsComponent path={this.props.path} search={this.props.search} />
                   )}
                   {activeTabId === TabId.ServerQuota && capabilities.config.quotaManagementEnabled && (
                     <QuotaComponent path={this.props.path} search={this.props.search} />

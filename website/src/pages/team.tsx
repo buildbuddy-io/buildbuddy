@@ -68,6 +68,12 @@ const teamMembers = [
     blurb: "Previously Software Engineer at Thumbtack. Studied Computer Science at Northwestern.",
     image: "maggie.jpeg",
   },
+  {
+    name: "Iain Macdonald",
+    email: "iain@buildbuddy.io",
+    blurb: "Previously Senior Software Engineer at Google — 10 years. Studied Software Engineering at McGill.",
+    image: "iain.jpg",
+  },
 ];
 
 function Team() {

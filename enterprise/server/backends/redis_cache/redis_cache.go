@@ -151,15 +151,6 @@ func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType,
 	}, nil
 }
 
-func (c *Cache) ContainsDeprecated(ctx context.Context, d *repb.Digest) (bool, error) {
-	return c.Contains(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
-}
-
 func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
 	key, err := c.key(ctx, r)
 	if err != nil {
@@ -197,15 +188,6 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 	}, nil
 }
 
-func (c *Cache) MetadataDeprecated(ctx context.Context, d *repb.Digest) (*interfaces.CacheMetadata, error) {
-	return c.Metadata(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
-}
-
 func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
@@ -238,11 +220,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceN
 	return missing, nil
 }
 
-func (c *Cache) FindMissingDeprecated(ctx context.Context, digests []*repb.Digest) ([]*repb.Digest, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.FindMissing(ctx, rns)
-}
-
 func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
 	if !c.eligibleForCache(r.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for redis", r.GetDigest())
@@ -256,15 +233,6 @@ func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, erro
 	b, err := c.rdbGet(ctx, k)
 	timer.ObserveGet(len(b), err)
 	return b, err
-}
-
-func (c *Cache) GetDeprecated(ctx context.Context, d *repb.Digest) ([]byte, error) {
-	return c.Get(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -299,11 +267,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 	return response, nil
 }
 
-func (c *Cache) GetMultiDeprecated(ctx context.Context, digests []*repb.Digest) (map[*repb.Digest][]byte, error) {
-	rns := digest.ResourceNames(c.cacheType, c.remoteInstanceName, digests)
-	return c.GetMulti(ctx, rns)
-}
-
 // Efficiently convert string to byte slice: https://github.com/go-redis/redis/pull/1106
 // Copied from: https://github.com/go-redis/redis/blob/b965d69fc9defa439a46d8178b60fc1d44f8fe29/internal/util/unsafe.go#L15
 func stringToBytes(s string) []byte {
@@ -315,16 +278,11 @@ func stringToBytes(s string) []byte {
 	))
 }
 
-func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
-	if !c.eligibleForCache(d) {
-		return status.ResourceExhaustedErrorf("Set: Digest %v too big for redis", d)
+func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+	if !c.eligibleForCache(r.GetDigest()) {
+		return status.ResourceExhaustedErrorf("Set: Digest %v too big for redis", r.GetDigest())
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -335,18 +293,13 @@ func (c *Cache) Set(ctx context.Context, d *repb.Digest, data []byte) error {
 	return err
 }
 
-func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error {
+func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
 	if len(kvs) == 0 {
 		return nil
 	}
 	setMap := make(map[string][]byte, len(kvs))
-	for d, v := range kvs {
-		k, err := c.key(ctx, &resource.ResourceName{
-			Digest:       d,
-			InstanceName: c.remoteInstanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    c.cacheType,
-		})
+	for r, v := range kvs {
+		k, err := c.key(ctx, r)
 		if err != nil {
 			return err
 		}
@@ -355,13 +308,8 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*repb.Digest][]byte) error
 	return c.rdbMultiSet(ctx, setMap)
 }
 
-func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -369,19 +317,15 @@ func (c *Cache) Delete(ctx context.Context, d *repb.Digest) error {
 	err = c.rdb.Del(ctx, k).Err()
 	timer.ObserveDelete(err)
 	return err
+
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64) (io.ReadCloser, error) {
-	if !c.eligibleForCache(d) {
-		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for redis", d)
+func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	if !c.eligibleForCache(rn.GetDigest()) {
+		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for redis", rn.GetDigest())
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +336,7 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64)
 
 	r := bytes.NewReader(buf)
 	r.Seek(offset, 0)
-	length := d.GetSizeBytes()
+	length := rn.GetDigest().GetSizeBytes()
 	if limit != 0 && limit < length {
 		length = limit
 	}
@@ -403,16 +347,11 @@ func (c *Cache) Reader(ctx context.Context, d *repb.Digest, offset, limit int64)
 	return io.NopCloser(timer.NewInstrumentedReader(r, length)), nil
 }
 
-func (c *Cache) Writer(ctx context.Context, d *repb.Digest) (interfaces.CommittedWriteCloser, error) {
-	if !c.eligibleForCache(d) {
-		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for redis", d)
+func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	if !c.eligibleForCache(r.GetDigest()) {
+		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for redis", r.GetDigest())
 	}
-	k, err := c.key(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: c.remoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    c.cacheType,
-	})
+	k, err := c.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
