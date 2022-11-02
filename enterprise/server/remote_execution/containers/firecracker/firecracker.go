@@ -1517,6 +1517,10 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) remove(ctx context.Context) error {
+	// Make sure we don't get stuck for too long trying to remove.
+	ctx, cancel := context.WithTimeout(ctx, finalizationTimeout)
+	defer cancel()
+
 	defer c.cancelVmCtx()
 
 	var lastErr error
