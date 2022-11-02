@@ -113,6 +113,10 @@ const (
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
 
+	// compressorBufSizeBytes is the buffer size we use for each chunk when compressing data
+	// It should be relatively large to get a good compression ratio bc each chunk is compressed independently
+	compressorBufSizeBytes = 4e6 // 4 MB
+
 	// Default values for Options
 	DefaultBlockCacheSizeBytes    = int64(1000 * megabyte)
 	DefaultMaxInlineFileSizeBytes = int64(1024)
@@ -1165,6 +1169,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+// TODO(Maggie): Compress all data above a given size before writing it
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -1858,13 +1863,13 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 
 func readerForCompressionType(reader io.ReadCloser, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-		// TODO: What should the buffer sizes be?
-		readBuf := make([]byte, 1000)
-		compressBuf := make([]byte, 1000)
+		// TODO: Should I use buffer pool?
+		readBuf := make([]byte, compressorBufSizeBytes)
+		compressBuf := make([]byte, compressorBufSizeBytes)
 		return compression.NewZstdCompressingReader(reader, readBuf, compressBuf)
 	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
-		readBuf := make([]byte, 1000)
-		compressBuf := make([]byte, 1000)
+		readBuf := make([]byte, compressorBufSizeBytes)
+		compressBuf := make([]byte, compressorBufSizeBytes)
 		return compression.NewZstdDecompressingReader(reader, readBuf, compressBuf)
 	}
 	return reader, nil
