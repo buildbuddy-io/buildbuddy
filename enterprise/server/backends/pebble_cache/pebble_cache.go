@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -185,6 +186,7 @@ type PebbleCache struct {
 	orphanedFilesDone chan struct{}
 
 	fileStorer filestore.Store
+	bufferPool *bytebufferpool.Pool
 
 	// TODO(Maggie): Clean this up after the isolateByGroupIDs migration
 	isolateByGroupIDs bool
@@ -379,6 +381,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
 		fileStorer:             filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
 		isolateByGroupIDs:      opts.IsolateByGroupIDs,
+		bufferPool:             bytebufferpool.New(compressorBufSizeBytes),
 	}
 
 	peMu := sync.Mutex{}
@@ -953,7 +956,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 		}
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
 
-		rc, err = readerForCompressionType(rc, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+		rc, err = p.readerForCompressionType(rc, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
 		if err != nil {
 			return nil, err
 		}
@@ -1133,7 +1136,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offs
 		return nil, err
 	}
 
-	rc, err = readerForCompressionType(rc, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+	rc, err = p.readerForCompressionType(rc, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
 	if err != nil {
 		return nil, err
 	}
@@ -1861,16 +1864,21 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 	}
 }
 
-func readerForCompressionType(reader io.ReadCloser, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
-	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-		// TODO: Should I use buffer pool?
-		readBuf := make([]byte, compressorBufSizeBytes)
-		compressBuf := make([]byte, compressorBufSizeBytes)
-		return compression.NewZstdCompressingReader(reader, readBuf, compressBuf)
-	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
-		readBuf := make([]byte, compressorBufSizeBytes)
-		compressBuf := make([]byte, compressorBufSizeBytes)
-		return compression.NewZstdDecompressingReader(reader, readBuf, compressBuf)
+func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
+	if requestedCompression != cachedCompression {
+		// Close the original reader because the compression readers stream all the data to a new io.Pipe
+		defer reader.Close()
+
+		readBuf := p.bufferPool.Get(compressorBufSizeBytes)
+		defer p.bufferPool.Put(readBuf)
+		compressBuf := p.bufferPool.Get(compressorBufSizeBytes)
+		defer p.bufferPool.Put(compressBuf)
+
+		if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
+			return compression.NewZstdCompressingReader(reader, readBuf, compressBuf)
+		} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
+			return compression.NewZstdDecompressingReader(reader, readBuf, compressBuf)
+		}
 	}
 	return reader, nil
 }
