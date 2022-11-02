@@ -343,6 +343,12 @@ func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
 		cpuEstimate = props.EstimatedComputeUnits * ComputeUnitsToMilliCPU
 		memEstimate = props.EstimatedComputeUnits * ComputeUnitsToRAMBytes
 	}
+	if props.EstimatedMilliCPU > 0 {
+		cpuEstimate = props.EstimatedMilliCPU
+	}
+	if props.EstimatedMemoryBytes > 0 {
+		memEstimate = props.EstimatedMemoryBytes
+	}
 	if props.EstimatedFreeDiskBytes > 0 {
 		freeDiskEstimate = props.EstimatedFreeDiskBytes
 	}

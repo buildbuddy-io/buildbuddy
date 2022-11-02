@@ -98,6 +98,9 @@ const (
 	// requires a relatively large amount of free space compared to typical actions.
 	EstimatedFreeDiskPropertyName = "EstimatedFreeDiskBytes"
 
+	EstimatedMilliCPUPropertyName    = "EstimatedMilliCPU"
+	EstimatedMemoryBytesPropertyName = "EstimatedMemoryBytes"
+
 	BareContainerType        ContainerType = "none"
 	PodmanContainerType      ContainerType = "podman"
 	DockerContainerType      ContainerType = "docker"
@@ -111,6 +114,8 @@ type Properties struct {
 	Arch                       string
 	Pool                       string
 	EstimatedComputeUnits      int64
+	EstimatedMilliCPU          int64
+	EstimatedMemoryBytes       int64
 	EstimatedFreeDiskBytes     int64
 	ContainerImage             string
 	ContainerRegistryUsername  string
@@ -209,6 +214,8 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		Arch:                       strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                       strings.ToLower(pool),
 		EstimatedComputeUnits:      int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedMemoryBytes:       int64Prop(m, EstimatedMemoryBytesPropertyName, 0),
+		EstimatedMilliCPU:          int64Prop(m, EstimatedMilliCPUPropertyName, 0),
 		EstimatedFreeDiskBytes:     int64Prop(m, EstimatedFreeDiskPropertyName, 0),
 		ContainerImage:             stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername:  stringProp(m, containerRegistryUsernamePropertyName, ""),

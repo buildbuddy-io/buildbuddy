@@ -22,14 +22,15 @@ type BuildBuddyConfig struct {
 }
 
 type Action struct {
-	Name              string    `yaml:"name"`
-	Triggers          *Triggers `yaml:"triggers"`
-	OS                string    `yaml:"os"`
-	Arch              string    `yaml:"arch"`
-	User              string    `yaml:"user"`
-	GitCleanExclude   []string  `yaml:"git_clean_exclude"`
-	BazelWorkspaceDir string    `yaml:"bazel_workspace_dir"`
-	BazelCommands     []string  `yaml:"bazel_commands"`
+	Name              string           `yaml:"name"`
+	Triggers          *Triggers        `yaml:"triggers"`
+	OS                string           `yaml:"os"`
+	Arch              string           `yaml:"arch"`
+	ResourceRequests  ResourceRequests `yaml:"resource_requests"`
+	User              string           `yaml:"user"`
+	GitCleanExclude   []string         `yaml:"git_clean_exclude"`
+	BazelWorkspaceDir string           `yaml:"bazel_workspace_dir"`
+	BazelCommands     []string         `yaml:"bazel_commands"`
 }
 
 type Triggers struct {
@@ -43,6 +44,11 @@ type PushTrigger struct {
 
 type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
+}
+
+type ResourceRequests struct {
+	MemoryBytes int64 `yaml:"memory_bytes"`
+	MilliCPU    int64 `yaml:"milli_cpu"`
 }
 
 func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {

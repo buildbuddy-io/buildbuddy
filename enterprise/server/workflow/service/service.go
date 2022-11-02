@@ -720,6 +720,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.IncludeSecretsPropertyName, Value: includeSecretsPropertyValue},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: fmt.Sprintf("%d", computeUnits)},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
+				{Name: platform.EstimatedMemoryBytesPropertyName, Value: fmt.Sprint(workflowAction.ResourceRequests.MemoryBytes)},
+				{Name: platform.EstimatedMilliCPUPropertyName, Value: fmt.Sprint(workflowAction.ResourceRequests.MilliCPU)},
 			},
 		},
 	}
