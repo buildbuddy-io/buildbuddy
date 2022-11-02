@@ -146,7 +146,7 @@ jobs:
           mv bazelisk "${GITHUB_WORKSPACE}/bin/bazel"
           chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
 
-      - name: Build artifacts
+      - name: Build Artifacts
         id: build
         run: |
           set -x  # print executed commands
@@ -169,7 +169,7 @@ jobs:
           shasum -a 256 "$BINARY" > "${BINARY}.sha256"
           echo "BINARY=${BINARY}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload artifacts
+      - name: Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         run: |
