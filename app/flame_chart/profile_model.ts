@@ -14,6 +14,7 @@ export interface TraceEvent {
   dur: number;
   tdur: number;
   tts: number;
+  out: string;
   args: { [key: string]: any };
   id?: string;
 }

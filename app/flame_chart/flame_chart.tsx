@@ -503,7 +503,7 @@ class HoveredBlockInfo extends React.Component<{ buildDuration: number }, Hovere
     if (!block) return <></>;
 
     const {
-      event: { name, cat: category, ts, dur },
+      event: { name, cat: category, ts, dur, out, args },
     } = block;
 
     const buildFraction = ((dur / buildDuration) * 100).toFixed(2);
@@ -526,7 +526,11 @@ class HoveredBlockInfo extends React.Component<{ buildDuration: number }, Hovere
         }}>
         <div className="hovered-block-title">{name}</div>
         <div className="hovered-block-details">
-          <div>{category}</div>
+          <div>
+            {category}
+            {(args?.target && <div>Target: {args?.target}</div>) || ""}
+            {(out && <div>Out: {out}</div>) || ""}
+          </div>
 
           <div className="duration">
             <span className="data">{displayedDuration}</span> seconds total (<span className="data">{percentage}</span>{" "}
