@@ -98,3 +98,17 @@ func NewCustomCommitWriteCloser(w io.Writer) *CustomCommitWriteCloser {
 		w: w,
 	}
 }
+
+// Counter keeps a count of all bytes written, discarding any written bytes.
+// It is not safe for concurrent use.
+type Counter struct{ n int64 }
+
+func (c *Counter) Write(p []byte) (n int, err error) {
+	c.n += int64(len(p))
+	return len(p), nil
+}
+
+// Count returns the total number of bytes written.
+func (c *Counter) Count() int64 {
+	return c.n
+}
