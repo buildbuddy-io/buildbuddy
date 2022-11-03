@@ -18,7 +18,8 @@ var (
 
 const (
 	// tempSubDir is a subdirectory under the temp dir where we actually write
-	// temporary files.
+	// temporary files. It is recursively removed and re-created from scratch
+	// when Init() is called.
 	tempSubDir = "buildbuddy-scratch"
 )
 

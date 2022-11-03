@@ -201,36 +201,34 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 	// Download to a temp file to avoid running out of memory.
 	// TODO: Support cache uploads with unknown digest length, so that we can
 	// pipe directly from the HTTP response to the cache.
-	f, err := scratchspace.CreateTemp("remote-asset-fetch-*")
+	tmpFilePath, err := tempCopy(rsp.Body)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to create temp file for download: %s", err)
+		return nil, err
 	}
 	defer func() {
-		_ = f.Close()
-		if err := os.Remove(f.Name()); err != nil {
+		if err := os.Remove(tmpFilePath); err != nil {
 			log.Errorf("Failed to remove temp file: %s", err)
 		}
 	}()
-	if _, err := io.Copy(f, rsp.Body); err != nil {
-		return nil, status.UnavailableErrorf("failed to read response body from %q: %s", uri, err)
-	}
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, status.UnavailableErrorf("failed to seek temp file: %s", err)
-	}
-	blobDigest, err := digest.Compute(f)
+	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, tmpFilePath)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to compute digest: %s", err)
+		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
 	}
 	if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256)
 	}
-	cacheRN := digest.NewCASResourceName(blobDigest, remoteInstanceName)
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, status.UnavailableErrorf("failed to seek temp file: %s", err)
-	}
-	if _, err := cachetools.UploadFromReader(ctx, bsClient, cacheRN, f); err != nil {
-		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
-	}
 	log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s/%d)", uri, blobDigest.Hash, blobDigest.SizeBytes)
 	return blobDigest, nil
+}
+
+func tempCopy(r io.Reader) (path string, err error) {
+	f, err := scratchspace.CreateTemp("remote-asset-fetch-*")
+	if err != nil {
+		return "", status.UnavailableErrorf("failed to create temp file for download: %s", err)
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, r); err != nil {
+		return "", status.UnavailableErrorf("failed to copy HTTP response to temp file: %s", err)
+	}
+	return f.Name(), nil
 }
