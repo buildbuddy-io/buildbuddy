@@ -211,12 +211,8 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256)
 	}
 	cacheRN := digest.NewCASResourceName(blobDigest, remoteInstanceName)
-	uploadDigest, err := cachetools.UploadFromReader(ctx, bsClient, cacheRN, bytes.NewReader(data))
-	if err != nil {
+	if _, err := cachetools.UploadFromReader(ctx, bsClient, cacheRN, bytes.NewReader(data)); err != nil {
 		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
-	}
-	if uploadDigest.Hash != expectedSHA256 {
-		return nil, status.UnavailableErrorf("unexpected hash mismatch: expected %s, got %s", expectedSHA256, uploadDigest.Hash)
 	}
 	log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s/%d)", uri, blobDigest.Hash, blobDigest.SizeBytes)
 	return blobDigest, nil
