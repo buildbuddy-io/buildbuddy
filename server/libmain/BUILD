@@ -52,6 +52,7 @@ go_library(
         "//server/util/log",
         "//server/util/monitoring",
         "//server/util/rlimit",
+        "//server/util/scratchspace",
         "//server/util/status",
         "//server/util/tracing",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
