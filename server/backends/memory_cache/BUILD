@@ -12,6 +12,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/util/compression",
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/lru",

@@ -55,6 +55,7 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/compression",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/prefix",

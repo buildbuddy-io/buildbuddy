@@ -433,6 +433,108 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 	}
 }
 
+func TestRPC_CacheHandlesCompression(t *testing.T) {
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+	// Make sure to use a cache that supports compression
+	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	require.NoError(t, err)
+
+	clientConn := runByteStreamServer(ctx, te, t)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	// TODO: Make sure size is big enough to send multiple chunks to writer
+	blob := compressibleBlobOfSize(10)
+	compressedBlob := compression.CompressZstd(nil, blob)
+	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name                 string
+		uploadResourceName   string
+		uploadBlob           []byte
+		downloadResourceName string
+		expectedDownloadBlob []byte
+	}{
+		{
+			name:                 "Write compressed, read compressed",
+			uploadResourceName:   fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:           compressedBlob,
+			downloadResourceName: fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadBlob: compressedBlob,
+		},
+		{
+			name:                 "Write compressed, read decompressed",
+			uploadResourceName:   fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:           compressedBlob,
+			downloadResourceName: fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadBlob: blob,
+		},
+		{
+			name:                 "Write decompressed, read decompressed",
+			uploadResourceName:   fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:           blob,
+			downloadResourceName: fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadBlob: blob,
+		},
+		{
+			name:                 "Write decompressed, read compressed",
+			uploadResourceName:   fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:           blob,
+			downloadResourceName: fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadBlob: compressedBlob,
+		},
+	}
+	for _, tc := range testCases {
+		// Upload the blob
+		mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob)
+
+		// Read back the blob we just uploaded
+		downloadBuf := []byte{}
+		downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+			ResourceName: tc.downloadResourceName,
+		})
+		require.NoError(t, err)
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			downloadBuf = append(downloadBuf, res.Data...)
+		}
+		require.Equal(t, tc.expectedDownloadBlob, downloadBuf)
+
+		// TODO:
+		// 3. Run manually
+		// 4. Should I move the memory cache stuff into just the test suite?
+
+		// Now try uploading a duplicate. The duplicate upload should not fail,
+		// and we should still be able to read the blob.
+		mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob)
+
+		downloadBuf = []byte{}
+		downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
+			ResourceName: tc.downloadResourceName,
+		})
+		require.NoError(t, err)
+		for {
+			res, err := downloadStream.Recv()
+			if err == io.EOF {
+				break
+			}
+			require.NoError(t, err)
+			downloadBuf = append(downloadBuf, res.Data...)
+		}
+		require.Equal(t, tc.expectedDownloadBlob, downloadBuf)
+	}
+
+}
+
 func compressibleBlobOfSize(sizeBytes int) []byte {
 	out := make([]byte, 0, sizeBytes)
 	for len(out) < sizeBytes {

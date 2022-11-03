@@ -31,7 +31,9 @@ go_test(
     embed = [":byte_stream_server"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/backends/memory_metrics_collector",
+        "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",

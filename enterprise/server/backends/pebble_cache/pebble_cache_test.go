@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -800,6 +801,101 @@ func TestSizeLimit(t *testing.T) {
 	dirSize, err := disk.DirSize(rootDir)
 	require.NoError(t, err)
 	require.LessOrEqual(t, dirSize, maxSizeBytes)
+}
+
+func TestCompression(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	blob := compressibleBlobOfSize(1000)
+	compressedBuf := compression.CompressZstd(nil, blob)
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	compressedRN := &resource.ResourceName{
+		Digest:     d,
+		CacheType:  resource.CacheType_CAS,
+		Compressor: repb.Compressor_ZSTD,
+	}
+	decompressedRN := &resource.ResourceName{
+		Digest:     d,
+		CacheType:  resource.CacheType_CAS,
+		Compressor: repb.Compressor_IDENTITY,
+	}
+
+	testCases := []struct {
+		name        string
+		rnToWrite   *resource.ResourceName
+		dataToWrite []byte
+	}{
+		{
+			name:        "Write compressed data",
+			rnToWrite:   compressedRN,
+			dataToWrite: compressedBuf,
+		},
+		{
+			name:        "Write decompressed data",
+			rnToWrite:   decompressedRN,
+			dataToWrite: blob,
+		},
+	}
+
+	for _, tc := range testCases {
+		// Write data to cache
+		wc, err := pc.Writer(ctx, tc.rnToWrite)
+		require.NoError(t, err)
+		n, err := wc.Write(tc.dataToWrite)
+		require.NoError(t, err)
+		require.Equal(t, len(tc.dataToWrite), n)
+		err = wc.Commit()
+		require.NoError(t, err)
+		err = wc.Close()
+		require.NoError(t, err)
+
+		// Read data in compressed form
+		reader, err := pc.Reader(ctx, compressedRN, 0, 0)
+		require.NoError(t, err)
+		defer reader.Close()
+		data, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.Equal(t, compressedBuf, data)
+
+		// Read data non-compressed
+		reader, err = pc.Reader(ctx, decompressedRN, 0, 0)
+		require.NoError(t, err)
+		defer reader.Close()
+		data, err = io.ReadAll(reader)
+		require.NoError(t, err)
+		require.Equal(t, blob, data)
+	}
+
+}
+
+func compressibleBlobOfSize(sizeBytes int) []byte {
+	out := make([]byte, 0, sizeBytes)
+	for len(out) < sizeBytes {
+		runEnd := len(out) + 100 + rand.Intn(100)
+		if runEnd > sizeBytes {
+			runEnd = sizeBytes
+		}
+
+		runChar := byte(rand.Intn('Z'-'A'+1)) + 'A'
+		for len(out) < runEnd {
+			out = append(out, runChar)
+		}
+	}
+	return out
 }
 
 func TestFindMissing(t *testing.T) {

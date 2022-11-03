@@ -780,7 +780,8 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceNa
 			PartitionId:        partID,
 			GroupId:            groupID,
 		},
-		Digest: r.GetDigest(),
+		Digest:     r.GetDigest(),
+		Compressor: r.GetCompressor(),
 	}, nil
 }
 
