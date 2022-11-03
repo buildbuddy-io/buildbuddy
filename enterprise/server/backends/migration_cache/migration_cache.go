@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
@@ -44,11 +43,6 @@ type MigrationCache struct {
 	copyChan                    chan *copyData
 	copyChanFullWarningInterval time.Duration
 	numCopiesDropped            *int64
-
-	// TODO(Maggie): Clean up these fields when removing WithIsolation
-	// These fields describe the current isolation, as set by WithIsolation
-	remoteInstanceName string
-	cacheType          resource.CacheType
 }
 
 func Register(env environment.Env) error {
@@ -94,8 +88,6 @@ func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cac
 		eg:                          &errgroup.Group{},
 		copyChanFullWarningInterval: time.Duration(migrationConfig.CopyChanFullWarningIntervalMin) * time.Minute,
 		numCopiesDropped:            &zero,
-		remoteInstanceName:          "",
-		cacheType:                   resource.CacheType_CAS,
 	}
 }
 
@@ -163,29 +155,6 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 
 	c.Start()
 	return c, nil
-}
-
-func (mc *MigrationCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	return mc.withIsolation(ctx, cacheType, remoteInstanceName)
-}
-
-func (mc *MigrationCache) withIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (*MigrationCache, error) {
-	srcCache, err := mc.src.WithIsolation(ctx, cacheType, remoteInstanceName)
-	if err != nil {
-		return nil, errors.WithMessage(err, "cannot get src cache with isolation")
-	}
-	destCache, err := mc.dest.WithIsolation(ctx, cacheType, remoteInstanceName)
-	if err != nil {
-		return nil, errors.WithMessage(err, "cannot get dest cache with isolation")
-	}
-
-	clone := *mc
-	clone.src = srcCache
-	clone.dest = destCache
-	clone.remoteInstanceName = remoteInstanceName
-	clone.cacheType = cacheType
-
-	return &clone, nil
 }
 
 func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {

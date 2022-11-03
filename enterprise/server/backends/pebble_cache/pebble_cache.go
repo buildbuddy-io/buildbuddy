@@ -162,10 +162,9 @@ type PebbleCache struct {
 	atimeBufferSize      int
 	minEvictionAge       time.Duration
 
-	env       environment.Env
-	isolation *rfpb.Isolation
-	db        *pebble.DB
-	leaser    pebbleutil.Leaser
+	env    environment.Env
+	db     *pebble.DB
+	leaser pebbleutil.Leaser
 
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
@@ -370,12 +369,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		edits:                  make(chan *sizeUpdate, 1000),
 		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
-		isolation: &rfpb.Isolation{
-			CacheType:   resource.CacheType_CAS,
-			PartitionId: defaultPartitionID,
-			GroupId:     interfaces.AuthAnonymousUser,
-		},
-		fileStorer: filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
+		fileStorer:             filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
 	}
 
 	peMu := sync.Mutex{}
@@ -749,32 +743,6 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 		}
 	}
 	return user.GetGroupID(), defaultPartitionID, nil
-}
-
-func (p *PebbleCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, remoteInstanceName)
-	if err != nil {
-		return nil, err
-	}
-
-	newIsolation := &rfpb.Isolation{}
-	newIsolation.CacheType = cacheType
-	newIsolation.RemoteInstanceName = remoteInstanceName
-	newIsolation.PartitionId = partID
-	newIsolation.GroupId = groupID
-	clone := *p
-	clone.isolation = newIsolation
-	return &clone, nil
-}
-
-// TODO(Maggie): Clean this up after completing refactor to deprecate WithIsolation
-func (p *PebbleCache) makeFileRecordDeprecated(ctx context.Context, d *repb.Digest) (*rfpb.FileRecord, error) {
-	return p.makeFileRecord(ctx, &resource.ResourceName{
-		Digest:       d,
-		InstanceName: p.isolation.RemoteInstanceName,
-		Compressor:   repb.Compressor_IDENTITY,
-		CacheType:    p.isolation.CacheType,
-	})
 }
 
 func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {

@@ -88,7 +88,6 @@ type Cache struct {
 	shutdownMu           *sync.RWMutex
 	shutDownChan         chan struct{}
 	finishedShutdown     bool
-	isolation            *dcpb.Isolation
 	config               CacheConfig
 	zone                 string
 }
@@ -141,7 +140,6 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 		config:         config,
 		cacheProxy:     cacheproxy.NewCacheProxy(env, c, config.ListenAddr),
 		consistentHash: chash,
-		isolation:      &dcpb.Isolation{},
 
 		heartbeatMu:      &sync.Mutex{},
 		shutdownMu:       &sync.RWMutex{},
@@ -322,21 +320,6 @@ func (c *Cache) Shutdown(ctx context.Context) error {
 	close(c.shutDownChan)
 	c.finishedShutdown = true
 	return c.cacheProxy.Shutdown(ctx)
-}
-
-func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	newLocal, err := c.local.WithIsolation(ctx, cacheType, remoteInstanceName)
-	if err != nil {
-		return nil, err
-	}
-
-	clone := *c
-	clone.isolation = &dcpb.Isolation{
-		CacheType:          cacheType,
-		RemoteInstanceName: remoteInstanceName,
-	}
-	clone.local = newLocal
-	return &clone, nil
 }
 
 func (c *Cache) peerZone(peer string) (string, bool) {

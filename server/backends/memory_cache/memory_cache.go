@@ -25,10 +25,8 @@ import (
 var cacheInMemory = flag.Bool("cache.in_memory", false, "Whether or not to use the in_memory cache.")
 
 type MemoryCache struct {
-	l                  interfaces.LRU
-	lock               *sync.RWMutex
-	cacheType          resource.CacheType
-	remoteInstanceName string
+	l    interfaces.LRU
+	lock *sync.RWMutex
 }
 
 func sizeFn(value interface{}) int64 {
@@ -64,10 +62,8 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 		return nil, err
 	}
 	return &MemoryCache{
-		l:                  l,
-		lock:               &sync.RWMutex{},
-		cacheType:          resource.CacheType_CAS,
-		remoteInstanceName: "",
+		l:    l,
+		lock: &sync.RWMutex{},
 	}, nil
 }
 
@@ -88,15 +84,6 @@ func (m *MemoryCache) key(ctx context.Context, r *resource.ResourceName) (string
 		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), hash)
 	}
 	return key, nil
-}
-
-func (m *MemoryCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	return &MemoryCache{
-		l:                  m.l,
-		lock:               m.lock,
-		cacheType:          cacheType,
-		remoteInstanceName: remoteInstanceName,
-	}, nil
 }
 
 func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {

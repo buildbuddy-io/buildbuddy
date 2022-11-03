@@ -156,13 +156,6 @@ type DiskCache struct {
 	partitions        map[string]*partition
 	partitionMappings []disk.PartitionMapping
 	defaultPartition  *partition
-
-	// TODO(Maggie): Deprecate these fields
-	// The currently selected partition. Initialized to the default partition.
-	// WithRemoteInstanceName can create a new cache accessor with a different selected partition.
-	partition          *partition
-	cacheType          resource.CacheType
-	remoteInstanceName string
 }
 
 func Register(env environment.Env) error {
@@ -200,10 +193,8 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	}
 
 	c := &DiskCache{
-		env:                env,
-		partitionMappings:  opts.PartitionMappings,
-		cacheType:          resource.CacheType_CAS,
-		remoteInstanceName: "",
+		env:               env,
+		partitionMappings: opts.PartitionMappings,
 	}
 
 	partitions := make(map[string]*partition)
@@ -244,7 +235,6 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	}
 
 	c.partitions = partitions
-	c.partition = defaultPartition
 	c.defaultPartition = defaultPartition
 
 	statusz.AddSection("disk_cache", "On disk LRU cache", c)
@@ -270,23 +260,6 @@ func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string)
 		}
 	}
 	return c.defaultPartition, nil
-}
-
-func (c *DiskCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	p, err := c.getPartition(ctx, remoteInstanceName)
-	if err != nil {
-		return nil, err
-	}
-
-	return &DiskCache{
-		env:                c.env,
-		partition:          p,
-		defaultPartition:   c.defaultPartition,
-		partitions:         c.partitions,
-		partitionMappings:  c.partitionMappings,
-		cacheType:          cacheType,
-		remoteInstanceName: remoteInstanceName,
-	}, nil
 }
 
 func (c *DiskCache) Statusz(ctx context.Context) string {
