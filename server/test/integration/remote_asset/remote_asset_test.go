@@ -3,12 +3,13 @@ package remote_asset_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -24,9 +25,10 @@ import (
 )
 
 var (
-	testAppTarget = flag.String("test_app_target", "", "App target to try using as the fetch backend.")
-	testURL       = flag.String("test_url", "", "URL to try fetching manually.")
-	testSHA256    = flag.String("test_sha256", "", "Digest of the contents at --test_url")
+	testAppTarget     = flag.String("test_app_target", "", "App target to try using as the fetch backend.")
+	testURL           = flag.String("test_url", "", "URL to try fetching manually.")
+	testSHA256        = flag.String("test_sha256", "", "Digest of the contents at --test_url")
+	testPrintContents = flag.Bool("test_print_contents", false, "Whether to print the downloaded contents.")
 )
 
 func TestRemoteAsset_ManualTest(t *testing.T) {
@@ -34,16 +36,21 @@ func TestRemoteAsset_ManualTest(t *testing.T) {
 		t.Skip()
 	}
 
-	res := fetchWithBazel(t, *testAppTarget, []string{*testURL}, *testSHA256)
+	fetchedFilePath, res := fetchFileWithBazel(t, *testAppTarget, []string{*testURL}, *testSHA256)
 
 	require.NoError(t, res.Error)
+	if *testPrintContents {
+		b, err := os.ReadFile(fetchedFilePath)
+		require.NoError(t, err)
+		fmt.Println(string(b))
+	}
 }
 
 func TestRemoteAsset_OKResponse_FetchesSuccessfully(t *testing.T) {
 	app := buildbuddy.Run(t)
 	archiveDigest, archiveURL := serveArchive(t, map[string]string{"BUILD": ""})
 
-	res := fetchWithBazel(t, app.GRPCAddress(), []string{archiveURL.String()}, archiveDigest.GetHash())
+	_, res := fetchArchiveWithBazel(t, app.GRPCAddress(), []string{archiveURL.String()}, archiveDigest.GetHash())
 
 	require.NoError(t, res.Error)
 }
@@ -56,7 +63,7 @@ func TestRemoteAsset_FallbackToSecondURLAfterNotFound_FetchesSuccessfully(t *tes
 		archiveURL.String(),
 	}
 
-	res := fetchWithBazel(t, app.GRPCAddress(), urls, archiveDigest.GetHash())
+	_, res := fetchArchiveWithBazel(t, app.GRPCAddress(), urls, archiveDigest.GetHash())
 
 	require.NoError(t, res.Error)
 }
@@ -69,7 +76,7 @@ func TestRemoteAsset_FallbackToSecondURLAfterUnreachable_FetchesSuccessfully(t *
 		archiveURL.String(),
 	}
 
-	res := fetchWithBazel(t, app.GRPCAddress(), urls, archiveDigest.GetHash())
+	_, res := fetchArchiveWithBazel(t, app.GRPCAddress(), urls, archiveDigest.GetHash())
 
 	require.NoError(t, res.Error)
 }
@@ -87,24 +94,67 @@ func serveArchive(t *testing.T, contents map[string]string) (*repb.Digest, *url.
 	return d, u
 }
 
-func fetchWithBazel(t *testing.T, appTarget string, urls []string, sha256 string) *bazel.InvocationResult {
-	urlsJSON := &bytes.Buffer{}
-	err := json.NewEncoder(urlsJSON).Encode(urls)
+func serveFile(t *testing.T, content string) (*repb.Digest, *url.URL) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{"file.txt": content})
+	d, err := digest.Compute(strings.NewReader(content))
 	require.NoError(t, err)
+	u := testhttp.StartServer(t, http.FileServer(http.Dir(ws)))
+	u.Path = "/file.txt"
+	return d, u
+}
 
+func fetchArchiveWithBazel(t *testing.T, appTarget string, urls []string, sha256 string) (outputDir string, result *bazel.InvocationResult) {
 	ws := testbazel.MakeTempWorkspace(t, map[string]string{
 		"WORKSPACE": `
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "test",
-    sha256 = "` + sha256 + `",
-    urls = ` + urlsJSON.String() + `,
+    ` + starlarkOptionalSHA256Kwarg(sha256) + `
+    urls = ` + starlarkStringListRepr(urls) + `,
 )
 `,
 	})
-	return testbazel.Invoke(
+	result = testbazel.Invoke(
 		context.Background(), t, ws,
 		"fetch", "@test//...",
 		"--experimental_remote_downloader="+appTarget,
 		"--remote_cache="+appTarget)
+	outputDir = filepath.Join(ws, fmt.Sprintf("bazel-%s", filepath.Dir(ws)), "external/test")
+	return outputDir, result
+}
+
+func fetchFileWithBazel(t *testing.T, appTarget string, urls []string, sha256 string) (outputPath string, result *bazel.InvocationResult) {
+	ws := testbazel.MakeTempWorkspace(t, map[string]string{
+		"WORKSPACE": `
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+http_file(
+    name = "test",
+    ` + starlarkOptionalSHA256Kwarg(sha256) + `
+    urls = ` + starlarkStringListRepr(urls) + `,
+)
+`,
+	})
+	result = testbazel.Invoke(
+		context.Background(), t, ws,
+		"build", "@test//...",
+		"--experimental_remote_downloader="+appTarget,
+		"--remote_cache="+appTarget)
+	outputPath = filepath.Join(ws, fmt.Sprintf("bazel-%s", filepath.Base(ws)), "external/test/file/downloaded")
+	return outputPath, result
+}
+
+func starlarkStringListRepr(values []string) string {
+	quotedValues := make([]string, 0, len(values))
+	for _, v := range values {
+		quotedValues = append(quotedValues, fmt.Sprintf("%q", v))
+	}
+	return "[" + strings.Join(quotedValues, ", ") + "]"
+}
+
+func starlarkOptionalSHA256Kwarg(sha256 string) string {
+	if sha256 == "" {
+		return ""
+	}
+	return fmt.Sprintf("sha256 = %q,", sha256)
 }
