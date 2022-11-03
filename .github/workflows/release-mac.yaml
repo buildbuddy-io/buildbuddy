@@ -24,7 +24,7 @@ jobs:
         id: tag
         run: echo "TAG=${GITHUB_REF/refs\/tags\//}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Artifacts
+      - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
