@@ -64,9 +64,6 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 	if err != nil {
 		t.Fatal(err)
 	}
-	ic, err := c.WithIsolation(context.Background(), resource.CacheType_CAS, "" /* =remoteInstanceName */)
-	require.NoError(t, err)
-	c = ic.(*Cache)
 	c.StartListening()
 	t.Cleanup(func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), maxShutdownDuration)
