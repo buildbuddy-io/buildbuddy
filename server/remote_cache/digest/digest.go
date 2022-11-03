@@ -366,6 +366,11 @@ func Parse(str string) (*repb.Digest, error) {
 	}, nil
 }
 
+// String returns the digest formatted as "HASH/SIZE".
+func String(d *repb.Digest) string {
+	return fmt.Sprintf("%s/%d", d.Hash, d.SizeBytes)
+}
+
 // ElementsMatch returns whether two slices contain the same digests, ignoring the order of the elements.
 // If there are duplicate elements, the number of appearances of each of them in both lists should match.
 func ElementsMatch(s1 []*repb.Digest, s2 []*repb.Digest) bool {

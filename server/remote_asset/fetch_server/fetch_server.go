@@ -1,7 +1,6 @@
 package fetch_server
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -9,14 +8,17 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -125,15 +127,15 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			// TODO: Find a way to get the correct digest size without
 			// downloading the full blob from cache.
 			log.CtxInfof(ctx, "Looking up %s in cache", blobDigest.Hash)
-			buf := bytes.NewBuffer(nil)
+			c := &ioutil.Counter{}
 
-			if err := cachetools.GetBlob(ctx, p.env.GetByteStreamClient(), cacheRN, buf); err != nil {
+			if err := cachetools.GetBlob(ctx, p.env.GetByteStreamClient(), cacheRN, c); err != nil {
 				log.CtxInfof(ctx, "FetchServer failed to get %s from cache: %s", expectedSHA256, err)
 				continue
 			}
 
-			log.CtxInfof(ctx, "FetchServer successfully read %s from cache", expectedSHA256)
-			blobDigest.SizeBytes = int64(buf.Len()) // set the actual correct size.
+			blobDigest.SizeBytes = c.Count() // set the actual correct size.
+			log.CtxInfof(ctx, "FetchServer successfully read %s from cache", digest.String(blobDigest))
 			return &rapb.FetchBlobResponse{
 				Status:     &statuspb.Status{Code: int32(gcodes.OK)},
 				BlobDigest: blobDigest,
@@ -196,24 +198,37 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, err)
 	}
+	// Download to a temp file to avoid running out of memory.
 	// TODO: Support cache uploads with unknown digest length, so that we can
-	// pipe directly from the HTTP response to the cache and avoid buffering
-	// the entire fetched contents in memory.
-	data, err := io.ReadAll(rsp.Body)
+	// pipe directly from the HTTP response to the cache.
+	tmpFilePath, err := tempCopy(rsp.Body)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to read response body from %q: %s", uri, err)
+		return nil, err
 	}
-	blobDigest, err := digest.Compute(bytes.NewReader(data))
+	defer func() {
+		if err := os.Remove(tmpFilePath); err != nil {
+			log.Errorf("Failed to remove temp file: %s", err)
+		}
+	}()
+	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, tmpFilePath)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to compute digest: %s", err)
+		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
 	}
 	if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256)
 	}
-	cacheRN := digest.NewCASResourceName(blobDigest, remoteInstanceName)
-	if _, err := cachetools.UploadFromReader(ctx, bsClient, cacheRN, bytes.NewReader(data)); err != nil {
-		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
-	}
 	log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s/%d)", uri, blobDigest.Hash, blobDigest.SizeBytes)
 	return blobDigest, nil
+}
+
+func tempCopy(r io.Reader) (path string, err error) {
+	f, err := scratchspace.CreateTemp("remote-asset-fetch-*")
+	if err != nil {
+		return "", status.UnavailableErrorf("failed to create temp file for download: %s", err)
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, r); err != nil {
+		return "", status.UnavailableErrorf("failed to copy HTTP response to temp file: %s", err)
+	}
+	return f.Name(), nil
 }
