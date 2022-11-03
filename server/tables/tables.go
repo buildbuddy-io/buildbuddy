@@ -341,8 +341,8 @@ type Secret struct {
 	UserID  string `gorm:"primaryKey"`
 	GroupID string `gorm:"primaryKey"`
 	Name    string `gorm:"primaryKey"`
-	Value   string
-	Perms   int `gorm:"type:int(11);default:NULL"`
+	Value   string `gorm:"type:text"`
+	Perms   int    `gorm:"type:int(11);default:NULL"`
 }
 
 func (s *Secret) TableName() string {
