@@ -140,7 +140,7 @@ func TestBasicReadWrite(t *testing.T) {
 	}
 }
 
-func TestContains_WithIsolation(t *testing.T) {
+func TestContains(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))

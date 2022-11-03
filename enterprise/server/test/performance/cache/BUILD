@@ -21,6 +21,5 @@ go_test(
         "//server/testutil/testport",
         "//server/util/log",
         "//server/util/prefix",
-        "@com_github_stretchr_testify//require",
     ],
 )

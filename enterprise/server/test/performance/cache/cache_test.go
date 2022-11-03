@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -199,11 +198,6 @@ func getAllCaches(b *testing.B, te *testenv.TestEnv) []*namedCache {
 		{getMemoryCache(b), "Memory"},
 		{getDiskCache(b, te), "Disk"},
 		{dc, "DDisk"},
-	}
-	for _, c := range caches {
-		ic, err := c.WithIsolation(context.Background(), resource.CacheType_CAS, "")
-		require.NoError(b, err)
-		c.Cache = ic
 	}
 	return caches
 }
