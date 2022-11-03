@@ -180,6 +180,9 @@ type PebbleCache struct {
 	orphanedFilesDone chan struct{}
 
 	fileStorer filestore.Store
+
+	// TODO(Maggie): Clean this up after the isolateByGroupIDs migration
+	isolateByGroupIDs bool
 }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
@@ -370,6 +373,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
 		fileStorer:             filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
+		isolateByGroupIDs:      opts.IsolateByGroupIDs,
 	}
 
 	peMu := sync.Mutex{}
@@ -769,7 +773,11 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceNa
 
 // partitionBlobDir returns a directory path under the root directory, for the specified partition, where blobs can be stored.
 func (p *PebbleCache) partitionBlobDir(partID string) string {
-	partDir := partitionDirectoryPrefix + partID
+	// In isolateByGroupID migration, remove duplicate partition ID from file name
+	partDir := ""
+	if !p.isolateByGroupIDs {
+		partDir = partitionDirectoryPrefix + partID
+	}
 	return filepath.Join(p.rootDirectory, "blobs", partDir)
 }
 

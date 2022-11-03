@@ -20,6 +20,10 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
+const (
+	partitionDirectoryPrefix = "PT"
+)
+
 // returns partitionID, groupID, isolation, remote_instance_name, hash
 // callers may choose to use all or some of these elements when constructing
 // a file path or file key. because these strings may be persisted to disk, this
@@ -78,7 +82,7 @@ type fileStorer struct {
 
 type Opts struct {
 	// IsolateByGroupIDs includes the caller group ID in the metadata and file
-	// keys.
+	// keys for AC records.
 	IsolateByGroupIDs bool
 	// PrioritizeHashInMetadataKey controls the placement of the digest within the metadata
 	// key. When enabled, the digest is placed before the cache type & isolation
@@ -116,8 +120,13 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fs.isolateByGroupIDs && r.GetIsolation().GetCacheType() == resource.CacheType_AC {
-		return []byte(filepath.Join(partID, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	if fs.isolateByGroupIDs {
+		partDir := partitionDirectoryPrefix + partID
+		if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
+			return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+		} else {
+			return []byte(filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
+		}
 	} else {
 		return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	}
@@ -147,25 +156,25 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 		return nil, err
 	}
 
-	numParts := 4
-	if fs.isolateByGroupIDs {
-		numParts = 5
-	}
-	parts := make([]string, 0, numParts)
-	parts = append(parts, partID)
-	if fs.isolateByGroupIDs && r.GetIsolation().GetCacheType() == resource.CacheType_AC {
-		parts = append(parts, groupID)
-	}
+	var filePath string
 	if fs.prioritizeHashInMetadataKey {
-		parts = append(parts, hash)
-	}
-	parts = append(parts, isolation)
-	parts = append(parts, remoteInstanceHash)
-	if !fs.prioritizeHashInMetadataKey {
-		parts = append(parts, hash)
+		filePath = filepath.Join(hash, isolation, remoteInstanceHash)
+	} else {
+		filePath = filepath.Join(isolation, remoteInstanceHash, hash)
 	}
 
-	return []byte(filepath.Join(parts...)), nil
+	var partDir string
+	if fs.isolateByGroupIDs {
+		if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
+			filePath = filepath.Join(groupID, filePath)
+		}
+		partDir = partitionDirectoryPrefix + partID
+	} else {
+		partDir = partID
+	}
+	filePath = filepath.Join(partDir, filePath)
+
+	return []byte(filePath), nil
 }
 
 func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {

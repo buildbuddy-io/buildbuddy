@@ -346,7 +346,7 @@ func TestIsolateByGroupIds(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, rbuf))
 	hash := d.GetHash()
-	expectedFilename := fmt.Sprintf("%s/blobs/PT%s/%s/cas/%v/%v", rootDir, partitionID, partitionID, hash[:4], hash)
+	expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, partitionID, hash[:4], hash)
 	_, err = os.Stat(expectedFilename)
 	require.NoError(t, err)
 
@@ -364,7 +364,7 @@ func TestIsolateByGroupIds(t *testing.T) {
 	require.True(t, bytes.Equal(buf, rbuf))
 	instanceNameHash := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(instanceName))))
 	hash = d.GetHash()
-	expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/%s/ac/%s/%v/%v", rootDir, partitionID, partitionID, testGroup, instanceNameHash, hash[:4], hash)
+	expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/ac/%s/%v/%v", rootDir, partitionID, testGroup, instanceNameHash, hash[:4], hash)
 	_, err = os.Stat(expectedFilename)
 	require.NoError(t, err)
 }
