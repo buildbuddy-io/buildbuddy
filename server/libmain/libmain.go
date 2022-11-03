@@ -100,7 +100,7 @@ func init() {
 
 func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
 	if err := scratchspace.Init(); err != nil {
-		log.Fatalf("Failed to configure initialize scratch directory: %s", err)
+		log.Fatalf("Failed to initialize temp storage directory: %s", err)
 	}
 	if *staticDirectory != "" {
 		staticFS, err := static.FSFromRelPath(*staticDirectory)

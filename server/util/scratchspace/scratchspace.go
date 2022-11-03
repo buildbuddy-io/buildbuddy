@@ -9,29 +9,35 @@ import (
 )
 
 var (
-	tempDir_doNotUseDirectly = flag.String("storage.tempdir", filepath.Join(os.TempDir(), "buildbuddy-scratch"), "Staging directory for ephemeral files. If unspecified, defaults to 'TEMPDIR/buildbuddy' where TEMPDIR is the OS-specific temp dir.")
+	// NOTE: This flag shouldn't be used directly except in the tempDir() func.
+	// We intentionally write to a subdirectory under this dir to avoid blowing
+	// away existing files in the configured directory, in case of accidental
+	// misconfiguration.
+	tempDir_doNotUseDirectly = flag.String("storage.tempdir", os.TempDir(), "Root directory for temporary files. Defaults to the OS-specific temp dir.")
+)
+
+const (
+	// tempSubDir is a subdirectory under the temp dir where we actually write
+	// temporary files.
+	tempSubDir = "buildbuddy-scratch"
 )
 
 // Init creates the scratch directory if needed and deletes any pre-existing
 // files. Calling this function is required before using any other functions in
 // this package.
 func Init() error {
-	if err := os.RemoveAll(TempDir()); err != nil {
+	if err := os.RemoveAll(tempDir()); err != nil {
 		return status.InvalidArgumentErrorf("failed to clear scratch directory: %s", err)
 	}
-	if err := os.MkdirAll(TempDir(), 0755); err != nil {
+	if err := os.MkdirAll(tempDir(), 0755); err != nil {
 		return status.InvalidArgumentErrorf("failed to create scratch directory: %s", err)
 	}
 	return nil
 }
 
-// TempDir returns the directory where scratch files are written.
-func TempDir() string {
-	// Note: This is the only func that should directly reference the tempdir
-	// flag. We intentionally write to a _tmp subdirectory to avoid blowing away
-	// existing files in the scratch_directory, in case of accidental
-	// misconfiguration.
-	return filepath.Join(*tempDir_doNotUseDirectly, "_tmp")
+// tempDir returns the directory where scratch files are written.
+func tempDir() string {
+	return filepath.Join(*tempDir_doNotUseDirectly, tempSubDir)
 }
 
 // CreateTemp has the same semantics as os.CreateTemp, with the temp directory
@@ -40,7 +46,7 @@ func TempDir() string {
 //
 // Example usage:
 //
-//     f, err := os.CreateTemp("download-*")
+//     f, err := scratchspace.CreateTemp("download-*")
 //     if err != nil {
 //         return err
 //     }
@@ -50,5 +56,5 @@ func TempDir() string {
 //     }()
 //
 func CreateTemp(pattern string) (*os.File, error) {
-	return os.CreateTemp(TempDir(), pattern)
+	return os.CreateTemp(tempDir(), pattern)
 }
