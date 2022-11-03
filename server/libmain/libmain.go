@@ -327,16 +327,20 @@ func StartAndRunServices(env environment.Env) {
 		log.Fatalf("%v", err)
 	}
 
-	if err := grpc_server.RegisterInternalGRPCServer(env, registerInternalGRPCServices); err != nil {
+	_, err = grpc_server.RegisterInternalGRPCServer(env, registerInternalGRPCServices)
+	if err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := grpc_server.RegisterInternalGRPCSServer(env, registerInternalGRPCServices); err != nil {
+	_, err = grpc_server.RegisterInternalGRPCSServer(env, registerInternalGRPCServices)
+	if err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := grpc_server.RegisterGRPCServer(env, registerGRPCServices); err != nil {
+	gRPCPort, err := grpc_server.RegisterGRPCServer(env, registerGRPCServices)
+	if err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := grpc_server.RegisterGRPCSServer(env, registerGRPCServices); err != nil {
+	_, err = grpc_server.RegisterGRPCSServer(env, registerGRPCServices)
+	if err != nil {
 		log.Fatalf("%v", err)
 	}
 
@@ -378,12 +382,12 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/webhooks/workflow/", httpfilters.WrapExternalHandler(env, wfs))
 	}
 
-	if sp := env.GetSplashPrinter(); sp != nil {
-		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), *port, grpc_server.GRPCPort())
+	httpServerAddr := fmt.Sprintf("%s:%d", *listen, *port)
+	httpListener, err := net.Listen("tcp", httpServerAddr)
+	if err != nil {
+		log.Fatalf("could not listen on HTTP port: %s", err)
 	}
-
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
 		Handler: env.GetMux(),
 	}
 
@@ -431,8 +435,12 @@ func StartAndRunServices(env environment.Env) {
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.
 		go func() {
-			server.ListenAndServe()
+			server.Serve(httpListener)
 		}()
+	}
+
+	if sp := env.GetSplashPrinter(); sp != nil {
+		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), httpListener.Addr().(*net.TCPAddr).Port, gRPCPort)
 	}
 
 	if *exitWhenReady {

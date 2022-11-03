@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"flag"
+	"net"
 	"net/http"
 	"net/http/pprof"
 
@@ -54,14 +55,18 @@ func RegisterMonitoringHandlers(mux *http.ServeMux) {
 func StartMonitoringHandler(hostPort string) {
 	mux := http.NewServeMux()
 	RegisterMonitoringHandlers(mux)
+	httpListener, err := net.Listen("tcp", hostPort)
+	if err != nil {
+		log.Fatalf("could not listen on HTTP port: %s", err)
+	}
+	httpPort := httpListener.Addr().(*net.TCPAddr).Port
 	s := &http.Server{
-		Addr:    hostPort,
 		Handler: http.Handler(mux),
 	}
 
 	go func() {
-		log.Infof("Enabling monitoring (pprof/prometheus) interface on http://%s", hostPort)
-		if err := s.ListenAndServe(); err != nil {
+		log.Infof("Enabling monitoring (pprof/prometheus) interface on http://localhost:%d", httpPort)
+		if err := s.Serve(httpListener); err != nil {
 			log.Fatal(err.Error())
 		}
 	}()
