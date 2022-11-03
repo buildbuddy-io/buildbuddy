@@ -102,10 +102,6 @@ func TestMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
-	if err != nil {
-		t.Fatal(err)
-	}
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
@@ -128,7 +124,7 @@ func TestMetadata(t *testing.T) {
 			InstanceName: "remoteInstanceName",
 		}
 
-		md, err := c.Metadata(ctx, rn)
+		md, err := dc.Metadata(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime1 := md.LastAccessTimeUsec
@@ -137,7 +133,7 @@ func TestMetadata(t *testing.T) {
 		require.NotZero(t, lastModifyTime1)
 
 		// Last access time should not update since last call to Metadata()
-		md, err = c.Metadata(ctx, rn)
+		md, err = dc.Metadata(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
@@ -147,8 +143,8 @@ func TestMetadata(t *testing.T) {
 
 		// After updating data, last access and modify time should update
 		time.Sleep(1 * time.Second) // Sleep to guarantee timestamps change
-		err = c.Set(ctx, rn, buf)
-		md, err = c.Metadata(ctx, rn)
+		err = dc.Set(ctx, rn, buf)
+		md, err = dc.Metadata(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
@@ -168,10 +164,6 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := dc.WithIsolation(ctx, resource.CacheType_AC, "remoteInstanceName")
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	testSize := int64(100)
 	d, _ := testdigest.NewRandomDigestBuf(t, testSize)
@@ -180,7 +172,7 @@ func TestMetadataFileDoesNotExist(t *testing.T) {
 		CacheType: resource.CacheType_CAS,
 	}
 
-	md, err := c.Metadata(ctx, r)
+	md, err := dc.Metadata(ctx, r)
 	require.True(t, status.IsNotFoundError(err))
 	require.Nil(t, md)
 }
