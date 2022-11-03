@@ -47,10 +47,10 @@ func Port() int {
 
 type RegisterServices func(server *grpc.Server, env environment.Env)
 
-func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error {
-	grpcServer, err := NewGRPCServer(env, *gRPCPort, nil, regServices)
+func RegisterGRPCServer(env environment.Env, regServices RegisterServices) (int, error) {
+	grpcServer, port, err := NewGRPCServer(env, *gRPCPort, nil, regServices)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	env.SetGRPCServer(grpcServer)
 	if *gRPCOverHTTPPortEnabled {
@@ -59,73 +59,75 @@ func RegisterGRPCServer(env environment.Env, regServices RegisterServices) error
 			grpcServer,
 		})
 	}
-	return nil
+	return port, nil
 }
 
-func RegisterGRPCSServer(env environment.Env, regServices RegisterServices) error {
+func RegisterGRPCSServer(env environment.Env, regServices RegisterServices) (int, error) {
 	if !env.GetSSLService().IsEnabled() {
-		return nil
+		return -1, nil
 	}
 	creds, err := env.GetSSLService().GetGRPCSTLSCreds()
 	if err != nil {
-		return status.InternalErrorf("Error getting SSL creds: %s", err)
+		return -1, status.InternalErrorf("Error getting SSL creds: %s", err)
 	}
-	grpcsServer, err := NewGRPCServer(env, *gRPCSPort, grpc.Creds(creds), regServices)
+	grpcsServer, port, err := NewGRPCServer(env, *gRPCSPort, grpc.Creds(creds), regServices)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	env.SetGRPCSServer(grpcsServer)
-	return nil
+	return port, nil
 }
 
-func RegisterInternalGRPCServer(env environment.Env, regServices RegisterServices) error {
-	if *internalGRPCPort == 0 {
-		return nil
+func RegisterInternalGRPCServer(env environment.Env, regServices RegisterServices) (int, error) {
+	if *internalGRPCPort == -1 {
+		return -1, nil
 	}
 
-	grpcServer, err := NewGRPCServer(env, *internalGRPCPort, nil, regServices)
+	grpcServer, port, err := NewGRPCServer(env, *internalGRPCPort, nil, regServices)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	env.SetInternalGRPCServer(grpcServer)
-	return nil
+	return port, nil
 }
 
-func RegisterInternalGRPCSServer(env environment.Env, regServices RegisterServices) error {
-	if *internalGRPCSPort == 0 {
-		return nil
+func RegisterInternalGRPCSServer(env environment.Env, regServices RegisterServices) (int, error) {
+	if *internalGRPCSPort == -1 {
+		return -1, nil
 	}
 
 	if !env.GetSSLService().IsEnabled() {
-		return nil
+		return -1, nil
 	}
 	creds, err := env.GetSSLService().GetGRPCSTLSCreds()
 	if err != nil {
-		return status.InternalErrorf("Error getting SSL creds: %s", err)
+		return -1, status.InternalErrorf("Error getting SSL creds: %s", err)
 	}
-	grpcsServer, err := NewGRPCServer(env, *internalGRPCSPort, grpc.Creds(creds), regServices)
+	grpcsServer, port, err := NewGRPCServer(env, *internalGRPCSPort, grpc.Creds(creds), regServices)
 	if err != nil {
-		return err
+		return -1, err
 	}
 	env.SetInternalGRPCSServer(grpcsServer)
-	return nil
+	return port, nil
 }
 
-func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOption, regServices RegisterServices) (*grpc.Server, error) {
+func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOption, regServices RegisterServices) (*grpc.Server, int, error) {
 	// Initialize our gRPC server (and fail early if that doesn't happen).
 	hostAndPort := fmt.Sprintf("%s:%d", env.GetListenAddr(), port)
 
 	lis, err := net.Listen("tcp", hostAndPort)
 	if err != nil {
-		return nil, status.InternalErrorf("Failed to listen: %s", err)
+		return nil, -1, status.InternalErrorf("Failed to listen: %s", err)
 	}
+
+	listeningPort := lis.Addr().(*net.TCPAddr).Port
 
 	grpcOptions := CommonGRPCServerOptions(env)
 	if credentialOption != nil {
 		grpcOptions = append(grpcOptions, credentialOption)
-		log.Infof("gRPCS listening on %s", hostAndPort)
+		log.Infof("gRPCS listening on %s:%d", env.GetListenAddr(), listeningPort)
 	} else {
-		log.Infof("gRPC listening on %s", hostAndPort)
+		log.Infof("gRPC listening on %s:%d", env.GetListenAddr(), listeningPort)
 	}
 
 	grpcServer := grpc.NewServer(grpcOptions...)
@@ -150,7 +152,7 @@ func NewGRPCServer(env environment.Env, port int, credentialOption grpc.ServerOp
 		_ = grpcServer.Serve(lis)
 	}()
 	env.GetHealthChecker().RegisterShutdownFunction(GRPCShutdownFunc(grpcServer))
-	return grpcServer, nil
+	return grpcServer, lis.Addr().(*net.TCPAddr).Port, nil
 }
 
 func GRPCShutdown(ctx context.Context, grpcServer *grpc.Server) error {

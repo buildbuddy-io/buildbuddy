@@ -459,10 +459,10 @@ func (c *imageConverter) Start(hc interfaces.HealthChecker, env environment.Env)
 		rgpb.RegisterImageConverterServer(server, c)
 	}
 
-	if err := grpc_server.RegisterGRPCServer(env, regRegistryServices); err != nil {
+	if _, err := grpc_server.RegisterGRPCServer(env, regRegistryServices); err != nil {
 		log.Fatalf("Could not setup GRPC server: %s", err)
 	}
-	if err := grpc_server.RegisterGRPCSServer(env, regRegistryServices); err != nil {
+	if _, err := grpc_server.RegisterGRPCSServer(env, regRegistryServices); err != nil {
 		log.Fatalf("Could not setup GRPCS server: %s", err)
 	}
 
