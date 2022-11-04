@@ -246,6 +246,7 @@ func NewGossipManager(name, listenAddress string, join []string) (*GossipManager
 				}
 				log.Debugf("Join failed: %s", err)
 			}
+			log.Warningf("Gossip: %q failed to join other nodes: %+v", listenAddress, otherNodes)
 		}()
 		wg.Wait()
 	}
