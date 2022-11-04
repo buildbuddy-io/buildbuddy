@@ -549,6 +549,7 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
+			"mkdir", "output_dir", "&&",
 			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
 		},
 		Platform:          platform,
@@ -610,6 +611,7 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
+			"mkdir", "output_dir",
 			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
 		},
 		Platform:          platform,
@@ -673,10 +675,10 @@ func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
 	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
 	res := cmd.Wait()
 
-	expectedOutput := ""
-	for _, dir := range dirs {
-		expectedOutput += "755 " + dir + "\n"
+	expected_dirs := []string{
+		".", "output_dir_parent", "output_file_parent", "input_dir",
 	}
+	expectedOutput := "755 " + strings.Join(expected_dirs[:], "\n755 ") + "\n"
 
 	require.Equal(t, expectedOutput, res.Stdout)
 }
@@ -717,10 +719,10 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 	}, &rbetest.ExecuteOpts{InputRootDir: inputRoot})
 	res := cmd.Wait()
 
-	expectedOutput := ""
-	for _, dir := range dirs {
-		expectedOutput += "777 " + dir + "\n"
+	expected_dirs := []string{
+		".", "output_dir_parent", "output_file_parent", "input_dir",
 	}
+	expectedOutput := "777 " + strings.Join(expected_dirs[:], "\n777 ") + "\n"
 
 	require.Equal(t, expectedOutput, res.Stdout)
 }
@@ -787,15 +789,14 @@ func TestBasicActionIO(t *testing.T) {
 		Arguments: []string{
 			"sh", "-c", strings.Join([]string{
 				`set -e`,
+				// Make the output directory -- even though it's declared in
+				// OutputDirectories, it's the Command's responsibility to
+				// create it (the executor creates parent directories though)
+				`mkdir out_dir`,
 				// Create a file in the output directory.
-				// No need to create the output directory itself; executor is
-				// responsible for that.
 				`cp greeting.input out_dir/hello_world.output`,
 				`printf 'world' >> out_dir/hello_world.output`,
 				// Create a file in a child dir of the output directory.
-				// Need to create the child directory ourselves since it's not a declared
-				// output directory. Note that the executor should still upload it as
-				// part of the output dir tree.
 				`mkdir out_dir/child`,
 				`cp child/farewell.input out_dir/child/goodbye_world.output`,
 				`printf 'world' >> out_dir/child/goodbye_world.output`,
@@ -803,7 +804,8 @@ func TestBasicActionIO(t *testing.T) {
 				`cp greeting.input out_files_dir/hello_bb.output`,
 				`printf 'BB' >> out_files_dir/hello_bb.output`,
 				// Create another explicitly declared output.
-				// No need to create out_files_dir/child; executor is responsible for that.
+				// Because this is an OutputFile, its parent is created by the
+				// executor.
 				`cp child/farewell.input out_files_dir/child/goodbye_bb.output`,
 				`printf 'BB' >> out_files_dir/child/goodbye_bb.output`,
 			}, "\n"),
