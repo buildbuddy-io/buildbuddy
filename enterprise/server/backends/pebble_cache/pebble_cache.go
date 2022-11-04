@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -382,7 +383,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		i := i
 		part := part
 		eg.Go(func() error {
-			blobDir := pc.partitionBlobDir(part.ID)
+			blobDir := pc.blobDir(!opts.IsolateByGroupIDs, part.ID)
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
@@ -524,7 +525,6 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 
 	orphanCount := 0
 	for _, part := range p.partitions {
-		blobDir := p.partitionBlobDir(part.ID)
 		walkFn := func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -539,6 +539,10 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 				return status.CanceledErrorf("cache shutting down")
 			default:
 			}
+
+			dupPartitionPattern := fmt.Sprintf("%s/%s", part.ID, part.ID)
+			pathHasDupPartitionID, err := regexp.MatchString(dupPartitionPattern, path)
+			blobDir := p.blobDir(pathHasDupPartitionID, part.ID)
 
 			relPath, err := filepath.Rel(blobDir, path)
 			if err != nil {
@@ -568,11 +572,12 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 				orphanCount += 1
 			}
 
-			if orphanCount%1000 == 0 {
+			if orphanCount%1000 == 0 && orphanCount != 0 {
 				log.Infof("Removed %d orphans", orphanCount)
 			}
 			return nil
 		}
+		blobDir := p.blobDir(!p.isolateByGroupIDs, part.ID)
 		if err := filepath.WalkDir(blobDir, walkFn); err != nil {
 			alert.UnexpectedEvent("pebble_cache_error_deleting_orphans", "err: %s", err)
 		}
@@ -621,8 +626,8 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
 			continue
 		}
-		// TODO: Based on the key, determine the blobdir - if it starts with PT, it is the new naming structure
-		blobDir = p.partitionBlobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+		pathHasDupPartitionID := !bytes.HasPrefix(fileMetadataKey, []byte("PT"))
+		blobDir = p.blobDir(pathHasDupPartitionID, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
 		_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
@@ -772,14 +777,14 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceNa
 	}, nil
 }
 
-// partitionBlobDir returns a directory path under the root directory, for the specified partition, where blobs can be stored.
-func (p *PebbleCache) partitionBlobDir(partID string) string {
-	// In isolateByGroupID migration, remove duplicate partition ID from file name
-	partDir := ""
-	if !p.isolateByGroupIDs {
-		partDir = partitionDirectoryPrefix + partID
+// blobDir returns a directory path under the root directory where blobs can be stored.
+func (p *PebbleCache) blobDir(shouldIncludePartition bool, partID string) string {
+	filePath := filepath.Join(p.rootDirectory, "blobs")
+	if shouldIncludePartition {
+		partDir := partitionDirectoryPrefix + partID
+		filePath = filepath.Join(filePath, partDir)
 	}
-	return filepath.Join(p.rootDirectory, "blobs", partDir)
+	return filePath
 }
 
 func lookupFileMetadata(iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
@@ -936,7 +941,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 			continue
 		}
 		partitionID := fileRecord.GetIsolation().GetPartitionId()
-		blobDir := p.partitionBlobDir(partitionID)
+		blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
 		rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			p.handleMetadataMismatch(err, fileMetadataKey, fileMetadata)
@@ -1056,7 +1061,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRec
 	}
 
 	partitionID := fileRecord.GetIsolation().GetPartitionId()
-	blobDir := p.partitionBlobDir(partitionID)
+	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
 	fp := p.fileStorer.FilePath(blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
@@ -1107,7 +1112,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offs
 	}
 
 	partitionID := fileRecord.GetIsolation().GetPartitionId()
-	blobDir := p.partitionBlobDir(partitionID)
+	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
 	rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err == nil {
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
@@ -1180,7 +1185,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		wcm = p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
 	} else {
 		partitionID := fileRecord.GetIsolation().GetPartitionId()
-		blobDir := p.partitionBlobDir(partitionID)
+		blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
 		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)
 		if err != nil {
 			return nil, err
