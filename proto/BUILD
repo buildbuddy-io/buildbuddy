@@ -267,6 +267,13 @@ proto_library(
 )
 
 proto_library(
+    name = "internal_execution_proto",
+    srcs = [
+        "internal_execution.proto",
+    ],
+)
+
+proto_library(
     name = "command_line_proto",
     srcs = ["command_line.proto"],
     deps = [
@@ -506,6 +513,12 @@ go_proto_library(
         ":scheduler_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "internal_execution_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/internal_execution",
+    proto = ":internal_execution_proto",
 )
 
 go_proto_library(
