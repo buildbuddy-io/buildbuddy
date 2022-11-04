@@ -198,7 +198,24 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, err)
 	}
-	// Download to a temp file to avoid running out of memory.
+
+	// If we know what the SHA256 should be and the content length is known,
+	// then we know the full digest, and can pipe directly from the HTTP
+	// response to cache.
+	if expectedSHA256 != "" && rsp.ContentLength >= 0 {
+		d := &repb.Digest{Hash: expectedSHA256, SizeBytes: rsp.ContentLength}
+		rn := digest.NewResourceName(d, remoteInstanceName)
+		if _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
+			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
+		}
+		log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(d))
+		return d, nil
+	}
+
+	// Otherwise we need to download the whole file before uploading to cache,
+	// since we don't know the digest. Download to disk rather than memory,
+	// since these downloads can be large.
+	//
 	// TODO: Support cache uploads with unknown digest length, so that we can
 	// pipe directly from the HTTP response to the cache.
 	tmpFilePath, err := tempCopy(rsp.Body)
@@ -217,7 +234,7 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 	if expectedSHA256 != "" && blobDigest.Hash != expectedSHA256 {
 		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", uri, blobDigest.Hash, expectedSHA256)
 	}
-	log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s/%d)", uri, blobDigest.Hash, blobDigest.SizeBytes)
+	log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(blobDigest))
 	return blobDigest, nil
 }
 
