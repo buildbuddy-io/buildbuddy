@@ -80,12 +80,6 @@ message PartitionMetadata {
   int64 ac_count = 3;
 }
 
-message FileWriteRequest {
-  FileRecord file_record = 1;
-}
-
-message FileWriteResponse {}
-
 message FileDeleteRequest {
   FileRecord file_record = 1;
 }
@@ -201,25 +195,12 @@ message SplitReleaseRequest {
 }
 message SplitReleaseResponse {}
 
-// A request to copy stored files from one replica to another
-// on the same nodehost. No copying will be done if the replica
-// processing this command is not present in source_range.
-message CopyStoredFilesRequest {
-  RangeDescriptor source_range = 1;
-  uint64 target_range_id = 2;
-  bytes start = 3;
-  bytes end = 4;
-}
-
-message CopyStoredFilesResponse {}
-
 // Raft CMD API, used to encode raft commands that are replicated via raft and
 // written to a log. Everything written via SyncPropose must be a RequestUnion
 // wrapped in a BatchCmdRequest..
 message RequestUnion {
-  reserved 8;
+  reserved 1, 8, 13;
   oneof value {
-    FileWriteRequest file_write = 1;
     DirectWriteRequest direct_write = 2;
     DirectReadRequest direct_read = 3;
     IncrementRequest increment = 4;
@@ -230,7 +211,6 @@ message RequestUnion {
     FileUpdateMetadataRequest file_update_metadata = 10;
     SplitLeaseRequest split_lease = 11;
     SplitReleaseRequest split_release = 12;
-    CopyStoredFilesRequest copy_stored_files = 13;
     DeleteRangeRequest delete_range = 14;
   }
 }
@@ -240,11 +220,10 @@ message RequestUnion {
 // wrapped in a BatchCmdRequest and everything returned will be a
 // BatchCmdResponse.
 message ResponseUnion {
-  reserved 9;
+  reserved 2, 9, 14;
   google.rpc.Status status = 1;
 
   oneof value {
-    FileWriteResponse file_write = 2;
     DirectWriteResponse direct_write = 3;
     DirectReadResponse direct_read = 4;
     IncrementResponse increment = 5;
@@ -255,7 +234,6 @@ message ResponseUnion {
     FileUpdateMetadataResponse file_update_metadata = 11;
     SplitLeaseResponse split_lease = 12;
     SplitReleaseResponse split_release = 13;
-    CopyStoredFilesResponse copy_stored_files = 14;
     DeleteRangeResponse delete_range = 15;
   }
 }
