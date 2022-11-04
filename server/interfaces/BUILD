@@ -12,6 +12,7 @@ go_library(
         "//proto:execution_stats_go_proto",
         "//proto:group_go_proto",
         "//proto:health_go_proto",
+        "//proto:internal_execution_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:quota_go_proto",

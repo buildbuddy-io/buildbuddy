@@ -21,6 +21,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
+	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
@@ -914,4 +915,11 @@ type SecretService interface {
 
 	// Internal use only -- fetches decoded secrets for use in running a command.
 	GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error)
+}
+
+// An Execution Collector collects Executions.
+type ExecutionCollector interface {
+	Append(ctx context.Context, iid string, execution *iepb.Execution) error
+	ListRange(ctx context.Context, iid string, start, stop int64) ([]*iepb.Execution, error)
+	Delete(ctx context.Context, iid string) error
 }
