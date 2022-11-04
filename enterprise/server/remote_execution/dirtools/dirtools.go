@@ -89,7 +89,7 @@ func NewDirHelper(rootDir string, outputFiles, outputDirectories []string, dirPe
 	for _, outputDir := range outputDirectories {
 		fullPath := filepath.Join(c.rootDir, outputDir)
 		c.fullPaths[fullPath] = struct{}{}
-		c.dirsToCreate = append(c.dirsToCreate, fullPath)
+		c.dirsToCreate = append(c.dirsToCreate, filepath.Dir(fullPath))
 		c.outputDirs = append(c.outputDirs, fullPath)
 	}
 
