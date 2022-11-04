@@ -621,6 +621,7 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
 			continue
 		}
+		// TODO: Based on the key, determine the blobdir - if it starts with PT, it is the new naming structure
 		blobDir = p.partitionBlobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
 		_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {

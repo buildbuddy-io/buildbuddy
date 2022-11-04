@@ -293,6 +293,88 @@ func TestGetSet(t *testing.T) {
 	}
 }
 
+func TestIsolateByGroupIds_Restart(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	partitionID := "FOO"
+	instanceName := "cloud"
+	opts := &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		IsolateByGroupIDs:      true,
+		MaxInlineFileSizeBytes: 1, // Ensure file is written to disk
+		Partitions: []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           partitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     testGroup,
+				Prefix:      "",
+				PartitionID: partitionID,
+			},
+		},
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+
+	// Write a file where isolateByGroupIDs=true
+	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: instanceName,
+	}
+	err = pc.Set(ctx, r, buf)
+	require.NoError(t, err)
+	rbuf, err := pc.Get(ctx, r)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, rbuf))
+
+	// Check that metadata is saved to disk
+	c, err := pc.Contains(ctx, r)
+	require.NoError(t, err)
+	require.True(t, c)
+
+	// Restart pc with isolateByGroupIds=false
+	pc.Stop()
+	opts.IsolateByGroupIDs = false
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+
+	// Wait for startup scan to cleanup metadata mismatches
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+
+	// Restart pc with isolateByGroupIds=true
+	pc.Stop()
+	opts.IsolateByGroupIDs = true
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+
+	// Originally set data should still be there
+	rbuf, err = pc.Get(ctx, r)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, rbuf))
+
+}
+
 func TestIsolateByGroupIds(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	testAPIKey := "AK2222"
