@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -51,6 +52,7 @@ const (
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 	enableActionMerging               = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
+	writeExecutionToRedisEnabled      = flag.Bool("remote_execution.enable_write_to_redis", true, "If enabled, complete executions will be written to Redis.")
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -269,6 +271,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				}
 			}
 			fillExecutionFromActionMetadata(md, execution)
+
 		}
 	}
 
@@ -278,13 +281,32 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	return s.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
+	dbErr := s.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
 		var existing tables.Execution
 		if err := tx.Where("execution_id = ?", executionID).First(&existing).Error; err != nil {
 			return err
 		}
 		return tx.Model(&existing).Where("execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
 	})
+
+	if stage == repb.ExecutionStage_COMPLETED {
+		if err := s.recordExecution(ctx, executionID); err != nil {
+			log.CtxErrorf(ctx, "failed to record execution: %s", err)
+		}
+	}
+	return dbErr
+}
+
+func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string) error {
+	if s.env.GetExecutionCollector() == nil || !*writeExecutionToRedisEnabled {
+		return nil
+	}
+	var executionPrimaryDB tables.Execution
+	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
+		return status.InternalErrorf("failed to record execution: %s", err)
+	}
+	executionProto := execution.TableExecToProto(&executionPrimaryDB)
+	return s.env.GetExecutionCollector().Append(ctx, executionPrimaryDB.InvocationID, executionProto)
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does
