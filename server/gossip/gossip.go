@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/network"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 
 	"github.com/hashicorp/memberlist"
@@ -26,6 +27,7 @@ type Listener interface {
 // gracefully, clients should call GossipManager.Leave() followed by
 // GossipManager.Shutdown().
 type GossipManager struct {
+	cancelFunc    context.CancelFunc
 	serfInstance  *serf.Serf
 	serfEventChan chan serf.Event
 
@@ -79,6 +81,7 @@ func (gm *GossipManager) Leave() error {
 	return gm.serfInstance.Leave()
 }
 func (gm *GossipManager) Shutdown() error {
+	gm.cancelFunc()
 	return gm.serfInstance.Shutdown()
 }
 func (gm *GossipManager) SetTags(tags map[string]string) error {
@@ -197,8 +200,11 @@ func NewGossipManager(name, listenAddress string, join []string) (*GossipManager
 	serfConfig.UserEventSizeLimit = 9 * 1024
 	serfConfig.BroadcastTimeout = time.Second
 
+	ctx, cancel := context.WithCancel(context.TODO())
+
 	// spoiler: gossip girl was actually a:
 	gossipMan := &GossipManager{
+		cancelFunc:    cancel,
 		ListenAddr:    listenAddress,
 		Join:          join,
 		serfEventChan: make(chan serf.Event, 16),
@@ -221,11 +227,28 @@ func NewGossipManager(name, listenAddress string, join []string) (*GossipManager
 		}
 	}
 	if len(otherNodes) > 0 {
-		log.Debugf("I am %q, attempting to join %+v", listenAddress, otherNodes)
-		_, err := serfInstance.Join(otherNodes, false)
-		if err != nil {
-			log.Debugf("Join failed: %s", err)
-		}
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+
+		go func() {
+			retrier := retry.New(ctx, &retry.Options{
+				InitialBackoff: 10 * time.Second,
+				MaxBackoff:     180 * time.Second,
+				Multiplier:     2,
+			})
+			once := sync.Once{}
+			for retrier.Next() {
+				log.Debugf("I am %q, attempting to join %+v", listenAddress, otherNodes)
+				_, err := serfInstance.Join(otherNodes, false)
+				once.Do(wg.Done)
+				if err == nil {
+					return
+				}
+				log.Debugf("Join failed: %s", err)
+			}
+			log.Warningf("Gossip: %q failed to join other nodes: %+v", listenAddress, otherNodes)
+		}()
+		wg.Wait()
 	}
 	gossipMan.serfInstance = serfInstance
 	statusz.AddSection("gossip_manager", "Serf Gossip Network", gossipMan)
