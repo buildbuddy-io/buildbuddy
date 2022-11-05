@@ -287,11 +287,50 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	}
 
 	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
-	// Temporary logging for debugging clickhouse missing data.
-	if err == nil {
-		log.CtxInfo(ctx, "successfully wrote invocation to clickhouse")
+	if err != nil {
+		return err
 	}
-	return err
+	// Temporary logging for debugging clickhouse missing data.
+	log.CtxInfo(ctx, "successfully wrote invocation to clickhouse")
+
+	if r.env.GetExecutionCollector() == nil {
+		return nil
+	}
+	const batchSize = 500_000
+	startIndex := 0
+	endIndex := batchSize - 1
+
+	// Always clean up executions in Collector because we are not retrying
+	defer func() {
+		err := r.env.GetExecutionCollector().Delete(ctx, inv.InvocationID)
+		if err != nil {
+			log.CtxErrorf(ctx, "failed to clean up executions in collector: %s", err)
+		}
+	}()
+
+	for {
+		endIndex = startIndex + batchSize - 1
+		executions, err := r.env.GetExecutionCollector().ListRange(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
+		if err != nil {
+			return status.InternalErrorf("failed to read executions for invocation_id = %q, startIndex = %d, endIndex = %d from Redis: %s", inv.InvocationID, startIndex, endIndex, err)
+		}
+		if len(executions) == 0 {
+			break
+		}
+		err = r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, executions)
+		if err != nil {
+			break
+		}
+		log.CtxInfof(ctx, "successfully wrote %d executions", len(executions))
+		// Flush executions to OLAP
+		size := len(executions)
+		if size < batchSize {
+			break
+		}
+		startIndex += batchSize
+	}
+
+	return nil
 }
 
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
