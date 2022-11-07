@@ -38,12 +38,19 @@ const (
 	// flushing any atime updates in an incomplete batch (that have not
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
+
+	// Estimated disk usage will be re-computed when more than this many
+	// state machine updates have happened since the last check.
+	// Assuming 1024 size chunks, checking every 1000 writes will mean
+	// re-evaluating our size when it's increased by ~1MB.
+	entriesBetweenUsageChecks = 1000
 )
 
 var (
-	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
-	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
-	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	atimeUpdateThreshold  = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
+	atimeWriteBatchSize   = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
+	atimeBufferSize       = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	replicaSplitSizeBytes = flag.Int64("cache.raft.replica_split_size_bytes", 2e7, "Split replicas after they reach this size")
 )
 
 // Replicas need a reference back to the Store that holds them in order to
@@ -54,7 +61,7 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	Sender() *sender.Sender
-	GetReplica(rangeID uint64) (*Replica, error)
+	RequestSplit(clusterID uint64)
 }
 
 // IOnDiskStateMachine is the interface to be implemented by application's
@@ -93,8 +100,9 @@ type Replica struct {
 	timerMu   *sync.Mutex
 	splitTag  string
 
-	store            IStore
-	lastAppliedIndex uint64
+	store               IStore
+	lastAppliedIndex    uint64
+	lastUsageCheckIndex uint64
 
 	log             log.Logger
 	rangeMu         sync.RWMutex
@@ -1212,6 +1220,18 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		sm.lastAppliedIndex = entry.Index
 	}
 
+	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > entriesBetweenUsageChecks {
+		usage, err := sm.Usage()
+		if err != nil {
+			sm.log.Warningf("Error computing usage: %s", err)
+		} else {
+			if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
+				sm.log.Warningf("Requesting split")
+				sm.store.RequestSplit(sm.ClusterID)
+			}
+			sm.lastUsageCheckIndex = sm.lastAppliedIndex
+		}
+	}
 	return entries, nil
 }
 
@@ -1582,14 +1602,15 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 		log.Errorf("Error creating fileDir %q for replica: %s", fileDir, err)
 	}
 	r := &Replica{
-		leaser:    nil,
-		rootDir:   rootDir,
-		fileDir:   fileDir,
-		ClusterID: clusterID,
-		NodeID:    nodeID,
-		timerMu:   &sync.Mutex{},
-		store:     store,
-		log:       log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
+		leaser:              nil,
+		rootDir:             rootDir,
+		fileDir:             fileDir,
+		ClusterID:           clusterID,
+		NodeID:              nodeID,
+		timerMu:             &sync.Mutex{},
+		store:               store,
+		lastUsageCheckIndex: 0,
+		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 		fileStorer: filestore.New(filestore.Opts{
 			IsolateByGroupIDs:           true,
 			PrioritizeHashInMetadataKey: true,
