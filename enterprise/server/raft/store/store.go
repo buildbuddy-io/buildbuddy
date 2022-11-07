@@ -212,7 +212,7 @@ func (s *Store) handleSplits(quitChan <-chan struct{}) error {
 				Range: rd,
 			}
 			ctx, cancel := context.WithTimeout(context.TODO(), 60*time.Second)
-			rsp, err := s.SplitCluster(ctx, req)
+			_, err := s.SplitCluster(ctx, req)
 			cancel()
 			if err != nil {
 				s.log.Warningf("Error splitting cluster: %s", err)
