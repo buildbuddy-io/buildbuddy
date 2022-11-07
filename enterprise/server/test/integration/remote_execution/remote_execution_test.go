@@ -942,7 +942,7 @@ func TestComplexActionIO(t *testing.T) {
 	assert.Empty(t, missing)
 }
 
-func TestOutputPaths(t *testing.T) {
+func TestOutputDirectoriesAndFiles(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	dirLayout := []string{
 		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a", "d/b", "e", "e/a",
