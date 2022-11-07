@@ -117,15 +117,23 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 		}
 		return nil, err
 	}
-	return nil, status.InternalErrorf("Error writing digest: %s/%d: %s", d.GetHash(), d.GetSizeBytes(), err)
+	return nil, err
 }
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest) error {
 	resourceName := digest.NewResourceName(d, *instanceName)
-	if err := cachetools.GetBlob(ctx, client, resourceName, io.Discard); err != nil {
-		return status.InternalErrorf("Error reading digest: %s/%d: %s", resourceName.GetDigest().GetHash(), resourceName.GetDigest().GetSizeBytes(), err)
+	retrier := retry.DefaultWithContext(ctx)
+	var err error
+	for retrier.Next() {
+		err := cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+		if err == nil {
+			return nil
+		} else if status.IsUnavailableError(err) {
+			continue
+		}
+		return err
 	}
-	return nil
+	return err
 }
 
 func main() {
@@ -208,7 +216,14 @@ func main() {
 	for i := 0; i < numReaders; i++ {
 		eg.Go(func() error {
 			for {
-				d := <-writtenDigests
+				var d *repb.Digest
+				select {
+				case d = <-writtenDigests:
+					break
+				case <-gctx.Done():
+					return nil
+				}
+
 				for i := 0; i < readsPerWrite; i++ {
 					if err := readLimiter.Wait(gctx); err != nil {
 						return err
