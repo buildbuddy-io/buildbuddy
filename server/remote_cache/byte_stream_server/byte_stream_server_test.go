@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -433,19 +435,85 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 	}
 }
 
-func TestRPC_CacheHandlesCompression(t *testing.T) {
-	flags.Set(t, "cache.zstd_transcoding_enabled", true)
-	// Make sure to use a cache that supports compression
+type compressionCache struct {
+	interfaces.Cache
+}
+
+func (c *compressionCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+	data, err := c.Cache.Get(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	cachedDataWithCompression, err := dataWithCompression(r, data)
+	if err != nil {
+		return nil, status.InternalErrorf("Could not get data for compression %v for %s: %s", r.GetCompressor(), r.GetDigest(), err)
+	}
+
+	return cachedDataWithCompression, nil
+}
+
+func (c *compressionCache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	buf, err := c.Get(ctx, rn)
+	if err != nil {
+		return nil, err
+	}
+	r := bytes.NewReader(buf)
+	r.Seek(offset, 0)
+	length := int64(len(buf))
+	if limit != 0 && limit < length {
+		length = limit
+	}
+	if length > 0 {
+		return io.NopCloser(io.LimitReader(r, length)), nil
+	}
+	return io.NopCloser(r), nil
+}
+
+func dataWithCompression(requestedResource *resource.ResourceName, cachedData []byte) ([]byte, error) {
+	isCompressed := int64(len(cachedData)) != requestedResource.GetDigest().GetSizeBytes()
+	if isCompressed {
+		if requestedResource.GetCompressor() == repb.Compressor_ZSTD {
+			return cachedData, nil
+		} else if requestedResource.GetCompressor() == repb.Compressor_IDENTITY {
+			return compression.DecompressZstd(nil, cachedData)
+		}
+	}
+
+	if requestedResource.GetCompressor() == repb.Compressor_ZSTD {
+		compressedData := compression.CompressZstd(nil, cachedData)
+		return compressedData, nil
+	} else if requestedResource.GetCompressor() == repb.Compressor_IDENTITY {
+		return cachedData, nil
+	}
+
+	return nil, status.InternalErrorf("Cache does not support fetching data with compression %v", requestedResource.GetCompressor())
+}
+
+func (c *compressionCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	switch compressor {
+	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
+		return true
+	default:
+		return false
+	}
+}
+
+func Test_CacheHandlesCompression(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := context.Background()
+
+	// Enable compression
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+	te.SetCache(&compressionCache{te.GetCache()})
+
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 	require.NoError(t, err)
-
 	clientConn := runByteStreamServer(ctx, te, t)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
-	// TODO: Make sure size is big enough to send multiple chunks to writer
-	blob := compressibleBlobOfSize(10)
+	// Make blob big enough to require multiple chunks to upload
+	blob := compressibleBlobOfSize(1_001_000)
 	compressedBlob := compression.CompressZstd(nil, blob)
 	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
@@ -498,20 +566,16 @@ func TestRPC_CacheHandlesCompression(t *testing.T) {
 		downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
 			ResourceName: tc.downloadResourceName,
 		})
-		require.NoError(t, err)
+		require.NoError(t, err, tc.name)
 		for {
 			res, err := downloadStream.Recv()
 			if err == io.EOF {
 				break
 			}
-			require.NoError(t, err)
+			require.NoError(t, err, tc.name)
 			downloadBuf = append(downloadBuf, res.Data...)
 		}
-		require.Equal(t, tc.expectedDownloadBlob, downloadBuf)
-
-		// TODO:
-		// 3. Run manually
-		// 4. Should I move the memory cache stuff into just the test suite?
+		require.Equal(t, tc.expectedDownloadBlob, downloadBuf, tc.name)
 
 		// Now try uploading a duplicate. The duplicate upload should not fail,
 		// and we should still be able to read the blob.
@@ -521,16 +585,16 @@ func TestRPC_CacheHandlesCompression(t *testing.T) {
 		downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
 			ResourceName: tc.downloadResourceName,
 		})
-		require.NoError(t, err)
+		require.NoError(t, err, tc.name)
 		for {
 			res, err := downloadStream.Recv()
 			if err == io.EOF {
 				break
 			}
-			require.NoError(t, err)
+			require.NoError(t, err, tc.name)
 			downloadBuf = append(downloadBuf, res.Data...)
 		}
-		require.Equal(t, tc.expectedDownloadBlob, downloadBuf)
+		require.Equal(t, tc.expectedDownloadBlob, downloadBuf, tc.name)
 	}
 
 }

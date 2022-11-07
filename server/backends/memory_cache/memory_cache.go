@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -151,33 +150,7 @@ func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	if !ok {
 		return nil, status.InternalErrorf("LRU type assertion failed for %s", r.GetDigest())
 	}
-
-	cachedDataWithCompression, err := dataWithCompression(r, value)
-	if err != nil {
-		return nil, status.InternalErrorf("Could not get data for compression %v for %s", r.GetCompressor(), r.GetDigest())
-	}
-
-	return cachedDataWithCompression, nil
-}
-
-func dataWithCompression(requestedResource *resource.ResourceName, cachedData []byte) ([]byte, error) {
-	isCompressed := int64(len(cachedData)) != requestedResource.GetDigest().GetSizeBytes()
-	if isCompressed {
-		if requestedResource.GetCompressor() == repb.Compressor_ZSTD {
-			return cachedData, nil
-		} else if requestedResource.GetCompressor() == repb.Compressor_IDENTITY {
-			return compression.DecompressZstd(nil, cachedData)
-		}
-	}
-
-	if requestedResource.GetCompressor() == repb.Compressor_ZSTD {
-		compressedData := compression.CompressZstd(nil, cachedData)
-		return compressedData, nil
-	} else if requestedResource.GetCompressor() == repb.Compressor_IDENTITY {
-		return cachedData, nil
-	}
-
-	return nil, status.InternalErrorf("Cache does not support fetching data with compression %v", requestedResource.GetCompressor())
+	return value, nil
 }
 
 func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -269,10 +242,5 @@ func (m *MemoryCache) Stop() error {
 }
 
 func (m *MemoryCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	switch compressor {
-	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
-		return true
-	default:
-		return false
-	}
+	return false
 }
