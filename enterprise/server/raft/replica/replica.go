@@ -54,7 +54,6 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	Sender() *sender.Sender
-	ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
 	GetReplica(rangeID uint64) (*Replica, error)
 }
 
@@ -406,52 +405,6 @@ func (sm *Replica) fileUpdateMetadata(wb *pebble.Batch, req *rfpb.FileUpdateMeta
 	return &rfpb.FileUpdateMetadataResponse{}, nil
 }
 
-func (sm *Replica) fileWrite(wb *pebble.Batch, req *rfpb.FileWriteRequest) (*rfpb.FileWriteResponse, error) {
-	// In the common case, this doesn't actually write any data, because
-	// it's already been written it in a separate Write RPC. It simply
-	// validates that the Metadata key exists. If it does not, the data is
-	// read from a peer.
-	iter := wb.NewIter(nil /*default iter options*/)
-	defer iter.Close()
-
-	ctx := context.TODO()
-	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
-	if err != nil {
-		return nil, err
-	}
-
-	fileExists := false
-	fileMetadata, err := lookupFileMetadata(iter, fileMetadataKey)
-	if err == nil {
-		fileExists = sm.fileStorer.FileExists(ctx, sm.fileDir, fileMetadata.GetStorageMetadata())
-	}
-	if fileExists {
-		return &rfpb.FileWriteResponse{}, nil
-	}
-
-	sm.log.Warningf("Stored file did not exist. FileMetadata: %+v", fileMetadata)
-
-	storageMD, sizeBytes, err := sm.fetchFileToLocalStorage(ctx, req.GetFileRecord())
-	if err != nil {
-		return nil, err
-	}
-	d := req.GetFileRecord().GetDigest()
-	sm.log.Debugf("fileWrite: fetched file %q/%d to local storage", d.GetHash(), d.GetSizeBytes())
-	md := &rfpb.FileMetadata{
-		FileRecord:      req.GetFileRecord(),
-		StorageMetadata: storageMD,
-		SizeBytes:       sizeBytes,
-	}
-	protoBytes, err := proto.Marshal(md)
-	if err != nil {
-		return nil, err
-	}
-	if err := sm.rangeCheckedSet(wb, fileMetadataKey, protoBytes); err != nil {
-		return nil, err
-	}
-	return &rfpb.FileWriteResponse{}, nil
-}
-
 func (sm *Replica) directWrite(wb *pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
 	err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
@@ -774,53 +727,6 @@ func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 	return nil
 }
 
-// copyStoredFiles copies stored file data from this replica to another replica
-// which must be running locally on this nodehost and available in the store.
-func (sm *Replica) copyStoredFiles(req *rfpb.CopyStoredFilesRequest) (*rfpb.CopyStoredFilesResponse, error) {
-	start := time.Now()
-	appliesToThisReplica := sm.splitAppliesToThisReplica(req.GetSourceRange())
-	if !appliesToThisReplica {
-		sm.log.Debugf("Received copyStoredFiles cmd but it doesn't apply to this replica. Not doing anything.")
-		return &rfpb.CopyStoredFilesResponse{}, nil
-	}
-	targetReplica, err := sm.store.GetReplica(req.GetTargetRangeId())
-	if err != nil {
-		return nil, err
-	}
-	if targetReplica == sm {
-		return nil, status.FailedPreconditionErrorf("cannot copy stored files from replica (range %d) to self", req.GetTargetRangeId())
-	}
-
-	fileCount := 0
-	ctx := context.TODO()
-	iter := sm.db.NewIter(&pebble.IterOptions{
-		LowerBound: keys.Key(req.GetStart()),
-		UpperBound: keys.Key(req.GetEnd()),
-	})
-	defer iter.Close()
-
-	defer func() {
-		sm.log.Infof("Took %s to copy %d stored files from %+v to %+v", time.Since(start), fileCount, sm, targetReplica)
-	}()
-	for iter.First(); iter.Valid(); iter.Next() {
-		fileMetadata := &rfpb.FileMetadata{}
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			continue
-		}
-		md := fileMetadata.GetStorageMetadata()
-		if md == nil {
-			continue
-		}
-
-		err := sm.fileStorer.LinkOrCopyFile(ctx, md, sm.fileDir, targetReplica.fileDir)
-		if err != nil {
-			return nil, err
-		}
-		fileCount += 1
-	}
-	return &rfpb.CopyStoredFilesResponse{}, nil
-}
-
 // splitAppliesToThisReplica returns true if this replica is one of the replicas
 // found in the provided range descriptor.
 func (sm *Replica) splitAppliesToThisReplica(rd *rfpb.RangeDescriptor) bool {
@@ -886,12 +792,6 @@ func statusProto(err error) *statuspb.Status {
 
 func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion, rsp *rfpb.ResponseUnion) {
 	switch value := req.Value.(type) {
-	case *rfpb.RequestUnion_FileWrite:
-		r, err := sm.fileWrite(wb, value.FileWrite)
-		rsp.Value = &rfpb.ResponseUnion_FileWrite{
-			FileWrite: r,
-		}
-		rsp.Status = statusProto(err)
 	case *rfpb.RequestUnion_DirectWrite:
 		r, err := sm.directWrite(wb, value.DirectWrite)
 		rsp.Value = &rfpb.ResponseUnion_DirectWrite{
@@ -944,12 +844,6 @@ func (sm *Replica) handlePropose(wb *pebble.Batch, req *rfpb.RequestUnion, rsp *
 		r, err := sm.findSplitPoint(value.FindSplitPoint)
 		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
 			FindSplitPoint: r,
-		}
-		rsp.Status = statusProto(err)
-	case *rfpb.RequestUnion_CopyStoredFiles:
-		r, err := sm.copyStoredFiles(value.CopyStoredFiles)
-		rsp.Value = &rfpb.ResponseUnion_CopyStoredFiles{
-			CopyStoredFiles: r,
 		}
 		rsp.Status = statusProto(err)
 	default:
@@ -1459,31 +1353,6 @@ func (sm *Replica) SaveSnapshotToWriter(w io.Writer, snap *pebble.Snapshot, star
 	return nil
 }
 
-func (sm *Replica) fetchFileToLocalStorage(ctx context.Context, fileRecord *rfpb.FileRecord) (*rfpb.StorageMetadata, int64, error) {
-	rd := &rfpb.ReplicaDescriptor{
-		ClusterId: sm.ClusterID,
-		NodeId:    sm.NodeID,
-	}
-	writeCloserMetadata, err := sm.fileStorer.NewWriter(ctx, sm.fileDir, fileRecord)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer writeCloserMetadata.Close()
-	readCloser, err := sm.store.ReadFileFromPeer(ctx, rd, fileRecord)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer readCloser.Close()
-	n, err := io.Copy(writeCloserMetadata, readCloser)
-	if err != nil {
-		return nil, 0, err
-	}
-	if err := writeCloserMetadata.Commit(); err != nil {
-		return nil, 0, err
-	}
-	return writeCloserMetadata.Metadata(), n, nil
-}
-
 func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error {
 	wb := db.NewBatch()
 	defer wb.Close()
@@ -1562,13 +1431,6 @@ func (sm *Replica) ParseSnapshot(ctx context.Context, r io.Reader) <-chan Record
 				break
 			}
 			ch <- Record{PB: &rfpb.DirectWriteRequest{Kv: kv}}
-
-			fileMetadata := &rfpb.FileMetadata{}
-			if err := proto.Unmarshal(kv.GetValue(), fileMetadata); err == nil {
-				if fileMetadata.GetStorageMetadata() != nil {
-					ch <- Record{PB: &rfpb.FileWriteRequest{FileRecord: fileMetadata.GetFileRecord()}}
-				}
-			}
 		}
 	}()
 	return ch

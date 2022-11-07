@@ -13,7 +13,6 @@ go_library(
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
-        "//server/remote_cache/namespace",
         "//server/util/bytebufferpool",
         "//server/util/capabilities",
         "//server/util/compression",

@@ -7,7 +7,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -31,22 +30,6 @@ func NewComposableCache(outer, inner interfaces.Cache, mode CacheMode) interface
 		outer: outer,
 		mode:  mode,
 	}
-}
-
-func (c *ComposableCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	newInner, err := c.inner.WithIsolation(ctx, cacheType, remoteInstanceName)
-	if err != nil {
-		return nil, status.WrapError(err, "WithIsolation failed on inner cache")
-	}
-	newOuter, err := c.outer.WithIsolation(ctx, cacheType, remoteInstanceName)
-	if err != nil {
-		return nil, status.WrapError(err, "WithIsolation failed on outer cache")
-	}
-	return &ComposableCache{
-		inner: newInner,
-		outer: newOuter,
-		mode:  c.mode,
-	}, nil
 }
 
 func (c *ComposableCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {

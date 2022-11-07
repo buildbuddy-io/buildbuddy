@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
+	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
@@ -98,6 +99,9 @@ func init() {
 }
 
 func configureFilesystemsOrDie(realEnv *real_environment.RealEnv) {
+	if err := scratchspace.Init(); err != nil {
+		log.Fatalf("Failed to initialize temp storage directory: %s", err)
+	}
 	if *staticDirectory != "" {
 		staticFS, err := static.FSFromRelPath(*staticDirectory)
 		if err != nil {

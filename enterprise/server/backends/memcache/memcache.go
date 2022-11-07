@@ -39,9 +39,7 @@ func eligibleForMc(d *repb.Digest) bool {
 // Adding a WithPrefix method allows us to separate AC content from CAS
 // content.
 type Cache struct {
-	mc                 *memcache.Client
-	cacheType          resource.CacheType
-	remoteInstanceName string
+	mc *memcache.Client
 }
 
 func Register(env environment.Env) error {
@@ -64,9 +62,7 @@ func Register(env environment.Env) error {
 
 func NewCache(mcServers ...string) *Cache {
 	return &Cache{
-		cacheType:          resource.CacheType_CAS,
-		remoteInstanceName: "",
-		mc:                 memcache.New(mcServers...),
+		mc: memcache.New(mcServers...),
 	}
 }
 
@@ -107,14 +103,6 @@ func makeItem(key string, data []byte) *memcache.Item {
 
 func (c *Cache) mcSet(key string, data []byte) error {
 	return c.mc.Set(makeItem(key, data))
-}
-
-func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	return &Cache{
-		cacheType:          cacheType,
-		remoteInstanceName: remoteInstanceName,
-		mc:                 c.mc,
-	}, nil
 }
 
 func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {

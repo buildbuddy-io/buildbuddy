@@ -113,41 +113,42 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 	return s
 }
 
-func (s *Store) replicaString(r *replica.Replica) string {
-	ru, err := r.Usage()
-	if err != nil {
-		return "UNKNOWN"
-	}
-	clusterString := fmt.Sprintf("(c%dn%d)", ru.GetReplica().GetClusterId(), ru.GetReplica().GetNodeId())
-	rangeLeaseString := ""
-	if rd := s.lookupRange(ru.GetReplica().GetClusterId()); rd != nil {
-		clusterString = fmt.Sprintf("%d: [%q %q)\t", rd.GetRangeId(), rd.GetLeft(), rd.GetRight()) + clusterString
-		if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok {
-			if rl, ok := rlIface.(*rangelease.Lease); ok {
-				rangeLeaseString = rl.String()
-			}
-		}
-	}
-	mbUsed := ru.GetEstimatedDiskBytesUsed() / 1e6
-	return fmt.Sprintf("\t%s Usage: %dMB, Lease: %s\n", clusterString, mbUsed, rangeLeaseString)
-}
-
 func (s *Store) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("NHID: %s\n", s.nodeHost.ID())
 	buf += fmt.Sprintf("Liveness lease: %s\n", s.liveness)
 
-	replicaStrings := make([]string, 0)
+	replicas := make([]*replica.Replica, 0)
 	s.replicas.Range(func(key, value any) bool {
 		if r, ok := value.(*replica.Replica); ok {
-			replicaStrings = append(replicaStrings, s.replicaString(r))
+			replicas = append(replicas, r)
 		}
 		return true
 	})
+	sort.Slice(replicas, func(i, j int) bool {
+		return replicas[i].ClusterID < replicas[j].ClusterID
+	})
 	buf += "Replicas:\n"
-	sort.Strings(replicaStrings)
-	for _, replicaString := range replicaStrings {
-		buf += replicaString
+	for _, r := range replicas {
+		cluster := fmt.Sprintf("(c%03dn%03d)", r.ClusterID, r.NodeID)
+
+		usage, err := r.Usage()
+		if err != nil {
+			buf += fmt.Sprintf("\t%s error: %s\n", cluster, err)
+			continue
+		}
+
+		mbUsed := usage.GetEstimatedDiskBytesUsed() / 1e6
+		extra := ""
+		if r.IsSplitting() {
+			extra += "(Splitting) "
+		}
+		if rd := s.lookupRange(r.ClusterID); rd != nil {
+			if rlIface, ok := s.leases.Load(rd.GetRangeId()); ok && rlIface.(*rangelease.Lease).Valid() {
+				extra += "Leaseholder"
+			}
+		}
+		buf += fmt.Sprintf("\t%s Usage: %4dMB %s\n", cluster, mbUsed, extra)
 	}
 	buf += "</pre>"
 	return buf
@@ -381,33 +382,6 @@ func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMach
 
 func (s *Store) Sender() *sender.Sender {
 	return s.sender
-}
-
-func (s *Store) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
-	fileMetadataKey, err := s.fileStorer.FileMetadataKey(fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	var rc io.ReadCloser
-	err = s.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
-		if h.GetReplica().GetClusterId() == except.GetClusterId() &&
-			h.GetReplica().GetNodeId() == except.GetNodeId() {
-			return status.OutOfRangeError("except node")
-		}
-		req := &rfpb.ReadRequest{
-			Header:     h,
-			FileRecord: fileRecord,
-			Offset:     0,
-			Limit:      0,
-		}
-		r, err := s.apiClient.RemoteReader(ctx, c, req)
-		if err != nil {
-			return err
-		}
-		rc = r
-		return nil
-	})
-	return rc, err
 }
 
 func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {

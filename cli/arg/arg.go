@@ -9,23 +9,37 @@ import (
 
 // Returns true if the list of args contains desiredArg
 func Has(args []string, desiredArg string) bool {
-	arg, _ := find(args, desiredArg)
+	arg, _, _ := Find(args, desiredArg)
 	return arg != ""
 }
 
 // Returns the value of the given desiredArg if contained in args
 func Get(args []string, desiredArg string) string {
-	arg, _ := find(args, desiredArg)
+	arg, _, _ := Find(args, desiredArg)
 	return arg
+}
+
+// GetMulti returns all occurrences of the flag with the given name which
+// is allowed to be specified more than once.
+func GetMulti(args []string, name string) []string {
+	var out []string
+	for {
+		value, i, length := Find(args, name)
+		if i < 0 {
+			return out
+		}
+		out = append(out, value)
+		args = args[i+length:]
+	}
 }
 
 // Returns the value of the given desiredArg and a slice with that arg removed
 func Pop(args []string, desiredArg string) (string, []string) {
-	arg, i := find(args, desiredArg)
+	arg, i, length := Find(args, desiredArg)
 	if i < 0 {
 		return "", args
 	}
-	return arg, append(args[:i], args[i+1:]...)
+	return arg, append(args[:i], args[i+length:]...)
 }
 
 // Returns a list with argToRemove removed (if it exists)
@@ -35,14 +49,20 @@ func Remove(args []string, argToRemove string) []string {
 }
 
 // Helper method for finding arguments by prefix within a list of arguments
-func find(args []string, desiredArg string) (string, int) {
+func Find(args []string, desiredArg string) (value string, index int, length int) {
+	exact := fmt.Sprintf("--%s", desiredArg)
 	prefix := fmt.Sprintf("--%s=", desiredArg)
 	for i, arg := range args {
+		// Handle "--name", "value" form
+		if arg == exact && i+1 < len(args) {
+			return args[i+1], i, 2
+		}
+		// Handle "--name=value" form
 		if strings.HasPrefix(arg, prefix) {
-			return strings.TrimPrefix(arg, prefix), i
+			return strings.TrimPrefix(arg, prefix), i, 1
 		}
 	}
-	return "", -1
+	return "", -1, 0
 }
 
 // Returns the first non-option found in the list of args (doesn't begin with "-")

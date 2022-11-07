@@ -135,6 +135,8 @@ You can place this file in `~/Library/LaunchAgents/buildbuddy-executor.plist`.
             <string>YOUR_MACS_NETWORK_ADDRESS</string>
             <key>MY_POOL</key>
             <string></string>
+            <key>PATH</key>
+            <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/usr/bin</string>
         </dict>
         <key>WorkingDirectory</key>
         <string>/Users/YOUR_USERNAME</string>

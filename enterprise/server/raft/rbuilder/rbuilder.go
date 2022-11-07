@@ -50,10 +50,6 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 
 	req := &rfpb.RequestUnion{}
 	switch value := m.(type) {
-	case *rfpb.FileWriteRequest:
-		req.Value = &rfpb.RequestUnion_FileWrite{
-			FileWrite: value,
-		}
 	case *rfpb.DirectReadRequest:
 		req.Value = &rfpb.RequestUnion_DirectRead{
 			DirectRead: value,
@@ -93,10 +89,6 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 	case *rfpb.SplitReleaseRequest:
 		req.Value = &rfpb.RequestUnion_SplitRelease{
 			SplitRelease: value,
-		}
-	case *rfpb.CopyStoredFilesRequest:
-		req.Value = &rfpb.RequestUnion_CopyStoredFiles{
-			CopyStoredFiles: value,
 		}
 	case *rfpb.DeleteRangeRequest:
 		req.Value = &rfpb.RequestUnion_DeleteRange{
@@ -207,15 +199,6 @@ func (br *BatchResponse) DirectReadResponse(n int) (*rfpb.DirectReadResponse, er
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetDirectRead(), br.unionError(u)
-}
-
-func (br *BatchResponse) FileWriteResponse(n int) (*rfpb.FileWriteResponse, error) {
-	br.checkIndex(n)
-	if br.err != nil {
-		return nil, br.err
-	}
-	u := br.cmd.GetUnion()[n]
-	return u.GetFileWrite(), br.unionError(u)
 }
 
 func (br *BatchResponse) IncrementResponse(n int) (*rfpb.IncrementResponse, error) {

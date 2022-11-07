@@ -77,8 +77,11 @@ func run() (exitCode int, err error) {
 	// Split out passthrough args and don't let plugins modify them,
 	// since those are intended to be passed to the built binary as-is.
 	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(args)
-	rcFileArgs := parser.GetArgsFromRCFiles(bazelArgs)
-	args = append(bazelArgs, rcFileArgs...)
+	// TODO: Expanding configs results in a long explicit command line in the BB
+	// UI. Need to find a way to override the explicit command line in the UI so
+	// that it reflects the args passed to the CLI, not the wrapped Bazel
+	// process.
+	args = parser.ExpandConfigs(bazelArgs)
 
 	// Fiddle with args
 	// TODO(bduffany): model these as "built-in" plugins
@@ -103,9 +106,6 @@ func run() (exitCode int, err error) {
 	args = remotebazel.HandleRemoteBazel(args, passthroughArgs)
 	args = version.HandleVersion(args)
 	args = login.HandleLogin(args)
-
-	// Remove any args that don't need to be on the command line
-	args = arg.RemoveExistingArgs(args, rcFileArgs)
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.

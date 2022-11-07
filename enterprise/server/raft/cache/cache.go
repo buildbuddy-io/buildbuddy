@@ -95,7 +95,6 @@ type RaftCache struct {
 	clusterStarter *bringup.ClusterStarter
 	driver         *driver.Driver
 
-	isolation    *rfpb.Isolation
 	shutdown     chan struct{}
 	shutdownOnce *sync.Once
 
@@ -298,23 +297,6 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 		})
 		return err
 	})
-}
-
-func (rc *RaftCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	_, partID, err := rc.lookupGroupAndPartitionID(ctx, remoteInstanceName)
-	if err != nil {
-		return nil, err
-	}
-
-	newIsolation := &rfpb.Isolation{}
-	newIsolation.CacheType = cacheType
-	newIsolation.RemoteInstanceName = remoteInstanceName
-	newIsolation.PartitionId = partID
-
-	clone := *rc
-	clone.isolation = newIsolation
-
-	return &clone, nil
 }
 
 func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {

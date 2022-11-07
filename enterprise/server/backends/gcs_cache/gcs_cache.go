@@ -43,12 +43,10 @@ var (
 )
 
 type GCSCache struct {
-	gcsClient          *storage.Client
-	bucketHandle       *storage.BucketHandle
-	projectID          string
-	cacheType          resource.CacheType
-	remoteInstanceName string
-	ttlInDays          int64
+	gcsClient    *storage.Client
+	bucketHandle *storage.BucketHandle
+	projectID    string
+	ttlInDays    int64
 }
 
 func Register(env environment.Env) error {
@@ -77,11 +75,9 @@ func NewGCSCache(bucketName, projectID string, ageInDays int64, opts ...option.C
 		return nil, err
 	}
 	g := &GCSCache{
-		gcsClient:          gcsClient,
-		projectID:          projectID,
-		ttlInDays:          ageInDays,
-		cacheType:          resource.CacheType_CAS,
-		remoteInstanceName: "",
+		gcsClient: gcsClient,
+		projectID: projectID,
+		ttlInDays: ageInDays,
 	}
 	if err := g.createBucketIfNotExists(ctx, bucketName); err != nil {
 		return nil, err
@@ -159,17 +155,6 @@ func (g *GCSCache) key(ctx context.Context, r *resource.ResourceName) (string, e
 		isolationPrefix += "/"
 	}
 	return userPrefix + isolationPrefix + hash, nil
-}
-
-func (g *GCSCache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	return &GCSCache{
-		gcsClient:          g.gcsClient,
-		bucketHandle:       g.bucketHandle,
-		projectID:          g.projectID,
-		ttlInDays:          g.ttlInDays,
-		cacheType:          cacheType,
-		remoteInstanceName: remoteInstanceName,
-	}, nil
 }
 
 func (g *GCSCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {

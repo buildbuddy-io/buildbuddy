@@ -213,12 +213,6 @@ type CacheMetadata struct {
 // Similar to the Cache above, a digest cache allows for more intelligent
 // storing of blob data based on its size.
 type Cache interface {
-	// TODO(Maggie) Deprecate WithIsolation and associated methods
-
-	// WithIsolation returns a cache accessor that guarantees that data for a given cacheType and
-	// remoteInstanceCombination is isolated from any other cacheType and remoteInstanceName combination.
-	WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (Cache, error)
-
 	// Normal cache-like operations
 	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
 	Metadata(ctx context.Context, r *resource.ResourceName) (*CacheMetadata, error)

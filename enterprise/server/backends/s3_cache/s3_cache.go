@@ -60,13 +60,11 @@ var (
 
 // AWS stuff
 type S3Cache struct {
-	s3                 *s3.S3
-	bucket             *string
-	downloader         *s3manager.Downloader
-	uploader           *s3manager.Uploader
-	cacheType          resource.CacheType
-	remoteInstanceName string
-	ttlInDays          int64
+	s3         *s3.S3
+	bucket     *string
+	downloader *s3manager.Downloader
+	uploader   *s3manager.Uploader
+	ttlInDays  int64
 }
 
 func Register(env environment.Env) error {
@@ -118,13 +116,11 @@ func NewS3Cache() (*S3Cache, error) {
 	// Create S3 service client
 	svc := s3.New(sess)
 	s3c := &S3Cache{
-		s3:                 svc,
-		bucket:             aws.String(*bucket),
-		downloader:         s3manager.NewDownloader(sess),
-		uploader:           s3manager.NewUploader(sess),
-		ttlInDays:          *ttlDays,
-		cacheType:          resource.CacheType_CAS,
-		remoteInstanceName: "",
+		s3:         svc,
+		bucket:     aws.String(*bucket),
+		downloader: s3manager.NewDownloader(sess),
+		uploader:   s3manager.NewUploader(sess),
+		ttlInDays:  *ttlDays,
 	}
 
 	// S3 access points can't modify or delete buckets
@@ -253,18 +249,6 @@ func isNotFoundErr(err error) bool {
 	default:
 		return false
 	}
-}
-
-func (s3c *S3Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	return &S3Cache{
-		s3:                 s3c.s3,
-		bucket:             s3c.bucket,
-		downloader:         s3c.downloader,
-		uploader:           s3c.uploader,
-		ttlInDays:          s3c.ttlInDays,
-		cacheType:          cacheType,
-		remoteInstanceName: remoteInstanceName,
-	}, nil
 }
 
 func (s3c *S3Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {

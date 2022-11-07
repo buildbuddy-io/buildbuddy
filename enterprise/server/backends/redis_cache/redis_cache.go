@@ -41,10 +41,8 @@ var (
 // Adding a WithPrefix method allows us to separate AC content from CAS
 // content.
 type Cache struct {
-	rdb                redis.UniversalClient
-	cacheType          resource.CacheType
-	remoteInstanceName string
-	cutoffSizeBytes    int64
+	rdb             redis.UniversalClient
+	cutoffSizeBytes int64
 }
 
 func Register(env environment.Env) error {
@@ -72,10 +70,8 @@ func Register(env environment.Env) error {
 
 func NewCache(redisClient redis.UniversalClient) *Cache {
 	return &Cache{
-		cacheType:          resource.CacheType_CAS,
-		remoteInstanceName: "",
-		rdb:                redisClient,
-		cutoffSizeBytes:    *maxValueSizeBytes,
+		rdb:             redisClient,
+		cutoffSizeBytes: *maxValueSizeBytes,
 	}
 }
 
@@ -140,15 +136,6 @@ func (c *Cache) rdbMultiSet(ctx context.Context, setMap map[string][]byte) error
 func (c *Cache) rdbSet(ctx context.Context, key string, data []byte) error {
 	err := c.rdb.Set(ctx, key, data, ttl).Err()
 	return err
-}
-
-func (c *Cache) WithIsolation(ctx context.Context, cacheType resource.CacheType, remoteInstanceName string) (interfaces.Cache, error) {
-	return &Cache{
-		cacheType:          cacheType,
-		remoteInstanceName: remoteInstanceName,
-		rdb:                c.rdb,
-		cutoffSizeBytes:    c.cutoffSizeBytes,
-	}, nil
 }
 
 func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {

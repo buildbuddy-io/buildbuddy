@@ -13,6 +13,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/prefix",
+        "//server/util/scratchspace",
         "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",

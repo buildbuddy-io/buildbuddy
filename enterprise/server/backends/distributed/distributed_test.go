@@ -64,9 +64,6 @@ func startNewDCache(t *testing.T, te environment.Env, config CacheConfig, baseCa
 	if err != nil {
 		t.Fatal(err)
 	}
-	ic, err := c.WithIsolation(context.Background(), resource.CacheType_CAS, "" /* =remoteInstanceName */)
-	require.NoError(t, err)
-	c = ic.(*Cache)
 	c.StartListening()
 	t.Cleanup(func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), maxShutdownDuration)
@@ -143,7 +140,7 @@ func TestBasicReadWrite(t *testing.T) {
 	}
 }
 
-func TestContains_WithIsolation(t *testing.T) {
+func TestContains(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))

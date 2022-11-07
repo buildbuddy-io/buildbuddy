@@ -1,5 +1,5 @@
 executor:
-  root_directory: "/tmp/remote_build"
+  root_directory: "/tmp/${USER}_remote_build"
   docker_socket: /var/run/docker.sock
   docker_inherit_user_ids: true
   enable_firecracker: true
