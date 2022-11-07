@@ -13,6 +13,7 @@ storage:
   ttl_seconds: 86400 # One day in seconds.
   disk:
     root_directory: /tmp/${USER}_buildbuddy_enterprise
+  tempdir: /tmp/${USER}
 cache:
   disk:
     root_directory: /tmp/${USER}-buildbuddy-enterprise-cache
