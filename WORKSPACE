@@ -212,6 +212,12 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "rbe-ubuntu18-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu18-04:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
     name = "executor_image",
     dockerfile = "//dockerfiles/executor_image:Dockerfile",
     visibility = ["//visibility:public"],

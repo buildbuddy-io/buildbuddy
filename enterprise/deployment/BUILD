@@ -45,3 +45,13 @@ container_push(
     tag = "$(version)",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
+
+container_push(
+    name = "rbe-ubuntu18-04",
+    format = "Docker",
+    image = "@rbe-ubuntu18-04_image//image:dockerfile_image",
+    registry = "gcr.io",
+    repository = "flame-public/rbe-ubuntu18-04",
+    tag = "$(version)",
+    tags = ["manual"],
+)
