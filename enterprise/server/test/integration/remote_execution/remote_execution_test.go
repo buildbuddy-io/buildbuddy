@@ -942,6 +942,63 @@ func TestComplexActionIO(t *testing.T) {
 	assert.Empty(t, missing)
 }
 
+func TestOutputPaths(t *testing.T) {
+	tmpDir := testfs.MakeTempDir(t)
+	dirLayout := []string{
+		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a", "d/b", "e", "e/a",
+        "e/b",
+    }
+	files := []string{"a.txt", "b.txt"}
+	for _, dir := range dirLayout {
+		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0777); err != nil {
+			assert.FailNow(t, err.Error())
+		}
+		for _, fname := range files {
+			relPath := filepath.Join(dir, fname)
+			testfs.WriteRandomString(t, tmpDir, relPath /* size= */, 10)
+		}
+	}
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := rbe.Execute(&repb.Command{
+		Arguments:         []string{"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output"},
+		Platform:          platform,
+		OutputDirectories: []string{"output/a", "output/b/a", "output/c/a"},
+		OutputFiles:       []string{"output/c/b/a.txt", "output/d/a.txt", "output/d/a/a.txt"},
+	}, opts)
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+	require.Empty(t, res.Stderr)
+
+	outDir := rbe.DownloadOutputsToNewTempDir(res)
+
+	expectedFiles := []string{
+        "a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt", "b/a/b.txt", "c/a/a.txt",
+        "c/a/b.txt", "c/b/a.txt", "d/a.txt", "d/a/a.txt",
+    }
+	unexpectedFiles := []string{"a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e"}
+	for _, expectedFile := range expectedFiles {
+		expectedOutputFile := filepath.Join("output", expectedFile)
+		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile), "expected file to exist: %s", expectedOutputFile)
+	}
+	for _, unexpectedFile := range unexpectedFiles {
+		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
+		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile), "expectd file to not exist: %s", unexpectedOutputFile)
+	}
+}
+
 func TestComplexActionIOWithCompression(t *testing.T) {
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 	flags.Set(t, "cache.client.enable_upload_compression", true)
