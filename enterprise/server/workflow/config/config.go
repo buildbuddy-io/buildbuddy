@@ -2,6 +2,7 @@ package config
 
 import (
 	"io"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"gopkg.in/yaml.v2"
@@ -47,8 +48,36 @@ type PullRequestTrigger struct {
 }
 
 type ResourceRequests struct {
-	MemoryBytes int64 `yaml:"memory_bytes"`
-	MilliCPU    int64 `yaml:"milli_cpu"`
+	// Memory is a numeric quantity of memory in bytes, or human-readable IEC
+	// byte notation like "1GB" = 1024^3 bytes.
+	Memory interface{} `yaml:"memory"`
+	// CPU is a numeric quantity of CPU cores, or a string with a numeric
+	// quantity followed by an "m"-suffix for milli-CPU.
+	CPU interface{} `yaml:"cpu"`
+}
+
+// GetEstimatedMemory converts the memory resource request to a value compatible
+// with the "EstimatedMemory" platform property.
+func (r *ResourceRequests) GetEstimatedMemory() string {
+	if str, ok := yamlNumberToString(r.Memory); ok {
+		return str
+	}
+	if str, ok := r.Memory.(string); ok {
+		return str
+	}
+	return ""
+}
+
+// GetEstimatedCPU converts the memory resource request to a value compatible
+// with the "EstimatedCPU" platform property.
+func (r *ResourceRequests) GetEstimatedCPU() string {
+	if str, ok := yamlNumberToString(r.CPU); ok {
+		return str
+	}
+	if str, ok := r.CPU.(string); ok {
+		return str
+	}
+	return ""
 }
 
 func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
@@ -113,4 +142,14 @@ func matchesAnyBranch(branches []string, branch string) bool {
 		}
 	}
 	return false
+}
+
+func yamlNumberToString(num interface{}) (str string, ok bool) {
+	if i, ok := num.(int); ok {
+		return strconv.Itoa(i), true
+	}
+	if f, ok := num.(float64); ok {
+		return strconv.FormatFloat(f, 'e', -1, 64), true
+	}
+	return "", false
 }
