@@ -48,6 +48,7 @@ func (fs *fakeStore) GetReplica(rangeID uint64) (*replica.Replica, error) {
 func (fs *fakeStore) Sender() *sender.Sender {
 	return nil
 }
+func (fs *fakeStore) RequestSplit(clusterID uint64) {}
 func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	fs.fileReadFn = fn
 	return fs

@@ -349,8 +349,8 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             )}
           </div>
         )}
-        <div className="cache-type-column" title={cacheTypeTitle(getCacheType(result))}>
-          {renderCacheType(getCacheType(result))}
+        <div className="cache-type-column" title={cacheTypeTitle(result.cacheType)}>
+          {renderCacheType(result.cacheType)}
         </div>
         <div className="status-column column-with-icon">{renderStatus(result)}</div>
         <div>
@@ -376,7 +376,6 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   private getCacheMetadata(scorecardResult: cache.ScoreCard.IResult) {
     const digest = scorecardResult.digest;
     const remoteInstanceName = this.props.model.getRemoteInstanceName();
-    const cacheType = toResourceCacheType(scorecardResult.cacheTypeDeprecated);
 
     // Set an empty struct in the map so the FE doesn't fire duplicate requests while the first request is in progress
     // or if there is an invalid result
@@ -386,7 +385,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       .getCacheMetadata({
         resourceName: {
           digest: digest,
-          cacheType: cacheType,
+          cacheType: scorecardResult.cacheType,
           instanceName: remoteInstanceName,
         },
       })
@@ -627,7 +626,6 @@ function renderCompressionSavings(result: cache.ScoreCard.IResult) {
 }
 
 function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
-  const cacheType = getCacheType(result);
   if (result.requestType === cache.RequestType.READ) {
     if (result.status.code !== 0 /*=OK*/) {
       return (
@@ -640,7 +638,11 @@ function renderStatus(result: cache.ScoreCard.IResult): React.ReactNode {
     }
     return (
       <>
-        {cacheType === resource.CacheType.AC ? <Check className="icon green" /> : <ArrowDown className="icon green" />}
+        {result.cacheType === resource.CacheType.AC ? (
+          <Check className="icon green" />
+        ) : (
+          <ArrowDown className="icon green" />
+        )}
         <span>Hit</span>
       </>
     );
@@ -711,27 +713,6 @@ function groupResults(
  */
 function looksLikeDigest(actionId: string) {
   return actionId.length === 64;
-}
-
-function getCacheType(result: cache.ScoreCard.IResult): resource.CacheType {
-  const cacheType = result.cacheType;
-  // If the cacheType field is not set, try reading data from the older cacheTypeDeprecated field
-  // for scorecard results that were written before we added the new cacheType field
-  if (!cacheType) {
-    return toResourceCacheType(result.cacheTypeDeprecated);
-  }
-  return cacheType;
-}
-
-function toResourceCacheType(cacheType: cache.CacheType): resource.CacheType {
-  switch (cacheType) {
-    case cache.CacheType.CAS:
-      return resource.CacheType.CAS;
-    case cache.CacheType.AC:
-      return resource.CacheType.AC;
-    default:
-      return resource.CacheType.UNKNOWN_CACHE_TYPE;
-  }
 }
 
 function toCacheProtoCacheType(cacheType: resource.CacheType): cache.CacheType {

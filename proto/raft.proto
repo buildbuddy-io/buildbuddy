@@ -452,6 +452,7 @@ message SplitClusterRequest {
   Header header = 1;
   RangeDescriptor range = 2;
 }
+
 message SplitClusterResponse {
   RangeDescriptor left = 1;
   RangeDescriptor right = 2;

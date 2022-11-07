@@ -93,7 +93,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		v := lr.Get()
 		if newDescriptor.GetGeneration() > v.GetGeneration() {
 			lr.Update(newDescriptor)
-			log.Debugf("Updated generation of range: [%q, %q) (%d -> %d)", left, right, v.GetGeneration(), newDescriptor.GetGeneration())
+			log.Debugf("Updated rangelease generation: [%q, %q) (%d -> %d)", left, right, v.GetGeneration(), newDescriptor.GetGeneration())
 		}
 	}
 	return nil

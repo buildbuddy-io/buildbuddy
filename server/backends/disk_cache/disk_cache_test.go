@@ -588,6 +588,109 @@ func TestAsyncLoading(t *testing.T) {
 	}
 }
 
+func waitForEviction(t *testing.T, dc *disk_cache.DiskCache) {
+	start := time.Now()
+	for time.Since(start) < 1*time.Second {
+		if dc.WithinTargetSize() {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.FailNow(t, "eviction did not happen in time")
+}
+
+func expectedDefaultV1DiskPath(rootDir string, r *resource.ResourceName) string {
+	return filepath.Join(rootDir, interfaces.AuthAnonymousUser, r.GetDigest().GetHash())
+}
+
+func testEviction(t *testing.T, rootDir string) {
+	maxSizeBytes := int64(5_000_000) // 10MB
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	dc, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir, ForceV1Layout: true}, maxSizeBytes)
+	require.NoError(t, err)
+
+	// Fill the cache.
+	resources := make([]*resource.ResourceName, 0)
+	for i := 0; i < 999; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		err := dc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		resources = append(resources, r)
+	}
+
+	waitForEviction(t, dc)
+
+	for i, r := range resources {
+		if i > 500 {
+			break
+		}
+		contains, err := dc.Contains(ctx, r)
+		require.NoError(t, err)
+		if contains {
+			t.Fatalf("Expected oldest digest %+v to be deleted", r)
+		}
+		fp := expectedDefaultV1DiskPath(rootDir, r)
+		if _, err := os.Stat(fp); err == nil || !os.IsNotExist(err) {
+			require.FailNow(t, "file should not exist", "%q should not exist", fp)
+		}
+	}
+
+	// Simulate a "restart" of the cache by creating a new instance.
+
+	dc, err = disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDir}, maxSizeBytes)
+	require.NoError(t, err)
+	dc.WaitUntilMapped()
+
+	// Write more data to push out what's left of the original digests.
+
+	for i := 0; i < 500; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+		r := &resource.ResourceName{Digest: d, CacheType: resource.CacheType_CAS}
+		err := dc.Set(ctx, r, buf)
+		require.NoError(t, err)
+	}
+
+	for _, r := range resources {
+		contains, err := dc.Contains(ctx, r)
+		require.NoError(t, err)
+		if contains {
+			t.Fatalf("Expected oldest digest %+v to be deleted", r)
+		}
+		fp := expectedDefaultV1DiskPath(rootDir, r)
+		if _, err := os.Stat(fp); err == nil || !os.IsNotExist(err) {
+			require.FailNow(t, "file should not exist", "%q should not exist", fp)
+		}
+	}
+}
+
+func TestEviction_V1Layout(t *testing.T) {
+	rootDir := filepath.Clean(testfs.MakeTempDir(t))
+	testEviction(t, rootDir)
+}
+
+func TestEviction_V1Layout_RootDirEndsInSlash(t *testing.T) {
+	rootDir := filepath.Clean(testfs.MakeTempDir(t))
+	testEviction(t, rootDir+"/")
+}
+
+func newCacheAndContext(t *testing.T, opts *disk_cache.Options, maxSizeBytes int64) (*disk_cache.DiskCache, context.Context) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	optsCopy := *opts
+	if optsCopy.RootDirectory == "" {
+		rootDir := testfs.MakeTempDir(t)
+		optsCopy.RootDirectory = rootDir
+	}
+	dc, err := disk_cache.NewDiskCache(te, &optsCopy, maxSizeBytes)
+	require.NoError(t, err)
+	return dc, ctx
+}
+
 func TestJanitorThread(t *testing.T) {
 	maxSizeBytes := int64(10_000_000) // 10MB
 	te := getTestEnv(t, emptyUserMap)
@@ -631,6 +734,27 @@ func TestJanitorThread(t *testing.T) {
 		if contains {
 			t.Fatalf("Expected oldest digest %+v to be deleted", d.GetDigest())
 		}
+	}
+}
+
+func TestDefaultToV2Layout(t *testing.T) {
+	// Setup a v1 cache and verify it doesn't get switched to v2.
+	{
+		rootDir := testfs.MakeTempDir(t)
+
+		c, ctx := newCacheAndContext(t, &disk_cache.Options{ForceV1Layout: true, RootDirectory: rootDir}, 10_000_000)
+		d, data := testdigest.NewRandomDigestBuf(t, 1000)
+		err := c.Set(ctx, &resource.ResourceName{Digest: d, CacheType: resource.CacheType_CAS}, data)
+		require.NoError(t, err)
+
+		c, ctx = newCacheAndContext(t, &disk_cache.Options{RootDirectory: rootDir}, 10_000_000)
+		require.False(t, c.IsV2Layout(), "cache should have remained on v1 layout")
+	}
+
+	// New cache on an empty directory should default to v2.
+	{
+		c, _ := newCacheAndContext(t, &disk_cache.Options{}, 10_000_000)
+		require.True(t, c.IsV2Layout(), "cache should have been auto-updated to v2 layout")
 	}
 }
 
@@ -748,6 +872,7 @@ func TestNonDefaultPartition(t *testing.T) {
 	otherPartitionID := "other"
 	otherPartitionPrefix := "myteam/"
 	diskConfig := &disk_cache.Options{
+		ForceV1Layout: true,
 		RootDirectory: rootDir,
 		Partitions: []disk.Partition{
 			{

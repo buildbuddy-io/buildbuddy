@@ -71,6 +71,7 @@ type Options struct {
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
 	UseV2Layout       bool
+	ForceV1Layout     bool
 }
 
 // MigrateToV2Layout restructures the files under the root directory to conform to the "v2" layout.
@@ -153,6 +154,7 @@ func MigrateToV2Layout(rootDir string) error {
 // It is broken up into partitions which are independent and maintain their own LRUs.
 type DiskCache struct {
 	env               environment.Env
+	useV2Layout       bool
 	partitions        map[string]*partition
 	partitionMappings []disk.PartitionMapping
 	defaultPartition  *partition
@@ -192,27 +194,55 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 		os.Exit(0)
 	}
 
+	useV2Layout := opts.UseV2Layout
+	// Logic to auto-promote new users to v2 layout.
+	if !useV2Layout && !opts.ForceV1Layout {
+		// Assume v2 layout if the v2 dir already exists.
+		v2Dir := filepath.Join(opts.RootDirectory, V2Dir)
+		_, err := os.Stat(v2Dir)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		if err == nil {
+			log.Infof("Auto-enabling v2 layout due to existence of v2 directory.")
+			useV2Layout = true
+		}
+
+		// Start with v2 layout if root directory is empty.
+		if !useV2Layout {
+			files, err := os.ReadDir(opts.RootDirectory)
+			if err != nil && !os.IsNotExist(err) {
+				return nil, err
+			}
+			if len(files) == 0 {
+				log.Infof("Auto-enabling v2 layout for new cache.")
+				useV2Layout = true
+			}
+		}
+	}
+
 	c := &DiskCache{
 		env:               env,
 		partitionMappings: opts.PartitionMappings,
+		useV2Layout:       useV2Layout,
 	}
 
 	partitions := make(map[string]*partition)
 	var defaultPartition *partition
 	for _, pc := range opts.Partitions {
 		rootDir := opts.RootDirectory
-		if opts.UseV2Layout {
+		if useV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir)
 		}
 
-		if pc.ID != DefaultPartitionID || opts.UseV2Layout {
+		if pc.ID != DefaultPartitionID || useV2Layout {
 			if pc.ID == "" {
 				return nil, status.InvalidArgumentError("Non-default partition %q must have a valid ID")
 			}
 			rootDir = filepath.Join(rootDir, PartitionDirectoryPrefix+pc.ID)
 		}
 
-		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, opts.UseV2Layout)
+		p, err := newPartition(pc.ID, rootDir, pc.MaxSizeBytes, useV2Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -223,10 +253,10 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	}
 	if defaultPartition == nil {
 		rootDir := opts.RootDirectory
-		if opts.UseV2Layout {
+		if useV2Layout {
 			rootDir = filepath.Join(rootDir, V2Dir, PartitionDirectoryPrefix+DefaultPartitionID)
 		}
-		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, opts.UseV2Layout)
+		p, err := newPartition(DefaultPartitionID, rootDir, defaultMaxSizeBytes, useV2Layout)
 		if err != nil {
 			return nil, err
 		}
@@ -239,6 +269,10 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 
 	statusz.AddSection("disk_cache", "On disk LRU cache", c)
 	return c, nil
+}
+
+func (c *DiskCache) IsV2Layout() bool {
+	return c.useV2Layout
 }
 
 func (c *DiskCache) getPartition(ctx context.Context, remoteInstanceName string) (*partition, error) {
@@ -400,6 +434,15 @@ func (c *DiskCache) WaitUntilMapped() {
 	}
 }
 
+func (c *DiskCache) WithinTargetSize() bool {
+	for _, p := range c.partitions {
+		if !p.withinTargetSize() {
+			return false
+		}
+	}
+	return true
+}
+
 // We keep a record (in memory) of file atime (Last Access Time) and size, and
 // when our cache reaches maxSize we remove the oldest files. Rather than
 // serialize this ledger, we regenerate it from scratch on startup by looking
@@ -410,6 +453,7 @@ type partition struct {
 	mu               sync.RWMutex
 	rootDir          string
 	maxSizeBytes     int64
+	targetSizeBytes  int64
 	lru              interfaces.LRU
 	fileChannel      chan *fileRecord
 	diskIsMapped     bool
@@ -420,11 +464,13 @@ type partition struct {
 }
 
 func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout bool) (*partition, error) {
+	targetSizeBytes := int64(float64(maxSizeBytes) * janitorCutoffThreshold)
 	p := &partition{
 		id:               id,
 		useV2Layout:      useV2Layout,
 		maxSizeBytes:     maxSizeBytes,
-		rootDir:          rootDir,
+		targetSizeBytes:  targetSizeBytes,
+		rootDir:          filepath.Clean(rootDir),
 		fileChannel:      make(chan *fileRecord),
 		internedStrings:  make(map[string]string, 0),
 		doneAsyncLoading: make(chan struct{}),
@@ -526,7 +572,7 @@ func (p *partition) evictFn(value interface{}) {
 			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id}).Set(ageUsec)
 		}
 		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
-			log.Warningf("Could delete evicted file: %s", err)
+			log.Warningf("Could not delete evicted file: %s", err)
 		}
 	}
 }
@@ -572,12 +618,18 @@ func (p *partition) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (p *partition) reduceCacheSize(targetSize int64) bool {
+func (p *partition) withinTargetSize() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.lru.Size() < targetSize {
+	return p.lru.Size() < p.targetSizeBytes
+}
+
+func (p *partition) reduceCacheSize() bool {
+	if p.withinTargetSize() {
 		return false
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	value, ok := p.lru.RemoveOldest()
 	if !ok {
 		return false // should never happen
@@ -590,13 +642,12 @@ func (p *partition) reduceCacheSize(targetSize int64) bool {
 }
 
 func (p *partition) startJanitor() {
-	targetSize := int64(float64(p.maxSizeBytes) * janitorCutoffThreshold)
 	go func() {
 		for {
 			select {
 			case <-time.After(janitorCheckPeriod):
 				for {
-					if !p.reduceCacheSize(targetSize) {
+					if !p.reduceCacheSize() {
 						break
 					}
 				}

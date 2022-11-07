@@ -24,7 +24,6 @@ import (
 )
 
 var (
-	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
 	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", true, "If set, allow moving replicas between nodes")
 	enableReplacingReplicas = flag.Bool("cache.raft.enable_replacing_replicas", false, "If set, allow replacing dead / down replicas")
 )
@@ -39,9 +38,6 @@ const (
 
 	// Attempt to reconcile / manage clusters after this period.
 	defaultManagePeriod = 60 * time.Second
-
-	// Split replicas after they reach this size.
-	defaultMaxReplicaSizeBytes = 1e9 // 1GB
 
 	// A node must have this * idealReplicaCount number of replicas to be
 	// eligible for moving a replica to another node.
@@ -60,10 +56,6 @@ type Opts struct {
 	// ManagePeriod is how often to attempt to re-spawn, clean-up, or
 	// split dead or oversize replicas / clusters.
 	ManagePeriod time.Duration
-
-	// The maximum size a replica may be before it's considered overloaded
-	// and is split.
-	MaxReplicaSizeBytes int64
 }
 
 // make a replica struct that can be used as a map key because protos cannot be.
@@ -248,28 +240,6 @@ func (cm *clusterMap) DeadReplicas(myClusters uint64Set, timeout time.Duration) 
 	return dead
 }
 
-// OverloadedReplicas returns a slice of replicaStructs that:
-//   - Are members of clusters this node manages
-//   - Report sizes greater than `maxSizeBytes`
-func (cm *clusterMap) OverloadedReplicas(myClusters uint64Set, maxSizeBytes int64) replicaSet {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
-
-	overloaded := make(replicaSet, 0)
-	for rs, observation := range cm.observations {
-		if !myClusters.Contains(rs.clusterID) {
-			// Skip clusters that this node does not hold the lease
-			// for.
-			continue
-		}
-		if observation.sizeBytes > maxSizeBytes {
-			overloaded.Add(rs)
-		}
-		// TODO(tylerw): also split if QPS > 1000.
-	}
-	return overloaded
-}
-
 func (cm *clusterMap) idealReplicaCount() float64 {
 	totalNumReplicas := len(cm.observations)
 	numNodes := len(cm.nodeReplicas)
@@ -384,19 +354,17 @@ func (cm *clusterMap) FitScore(potentialMoves ...moveInstruction) float64 {
 
 func DefaultOpts() Opts {
 	return Opts{
-		ReplicaTimeout:      defaultReplicaTimeout,
-		BroadcastPeriod:     defaultBroadcastPeriod,
-		ManagePeriod:        defaultManagePeriod,
-		MaxReplicaSizeBytes: defaultMaxReplicaSizeBytes,
+		ReplicaTimeout:  defaultReplicaTimeout,
+		BroadcastPeriod: defaultBroadcastPeriod,
+		ManagePeriod:    defaultManagePeriod,
 	}
 }
 
 func TestingOpts() Opts {
 	return Opts{
-		ReplicaTimeout:      5 * time.Second,
-		BroadcastPeriod:     2 * time.Second,
-		ManagePeriod:        5 * time.Second,
-		MaxReplicaSizeBytes: 10 * 1e6, // 10MB
+		ReplicaTimeout:  5 * time.Second,
+		BroadcastPeriod: 2 * time.Second,
+		ManagePeriod:    5 * time.Second,
 	}
 }
 
@@ -631,9 +599,6 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 }
 
 type clusterChanges struct {
-	// split these
-	overloadedReplicas replicaSet
-
 	// replace these
 	deadReplicas replicaSet
 
@@ -643,9 +608,8 @@ type clusterChanges struct {
 
 func (d *Driver) proposeChanges(state *clusterState) *clusterChanges {
 	changes := &clusterChanges{
-		overloadedReplicas: d.clusterMap.OverloadedReplicas(state.myClusters, d.opts.MaxReplicaSizeBytes),
-		deadReplicas:       d.clusterMap.DeadReplicas(state.myClusters, d.opts.ReplicaTimeout),
-		moveableReplicas:   d.clusterMap.MoveableReplicas(state.myClusters, state.myNodes, state.node.GetNhid()),
+		deadReplicas:     d.clusterMap.DeadReplicas(state.myClusters, d.opts.ReplicaTimeout),
+		moveableReplicas: d.clusterMap.MoveableReplicas(state.myClusters, state.myNodes, state.node.GetNhid()),
 	}
 	return changes
 }
@@ -717,33 +681,6 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 
 // modifyCluster applies `changes` to the cluster when possible.
 func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes *clusterChanges) error {
-	// Splits are going to happen before anything else.
-	if *enableSplittingReplicas {
-		overloadedClusters := make(map[uint64]struct{})
-		for rs, _ := range changes.overloadedReplicas {
-			overloadedClusters[rs.clusterID] = struct{}{}
-		}
-		for clusterID := range overloadedClusters {
-			rd, ok := state.managedRanges[clusterID]
-			if !ok {
-				continue
-			}
-			_, err := d.store.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-				Header: state.GetHeader(clusterID),
-				Range:  rd,
-			})
-			if err != nil {
-				log.Warningf("Error splitting cluster: %s", err)
-			} else {
-				log.Infof("Successfully split %+v", rd)
-			}
-			time.Sleep(10 * time.Second)
-			if err := d.updateState(ctx, state); err != nil {
-				return err
-			}
-		}
-	}
-
 	if *enableReplacingReplicas {
 		requiredMoves := d.makeMoveInstructions(changes.deadReplicas)
 		for _, move := range requiredMoves {
@@ -802,7 +739,7 @@ func (d *Driver) manageClusters() error {
 	log.Printf("cluster map:\n%s", d.clusterMap.String())
 
 	changes := d.proposeChanges(state)
-	s := len(changes.overloadedReplicas) + len(changes.deadReplicas) + len(changes.moveableReplicas)
+	s := len(changes.deadReplicas) + len(changes.moveableReplicas)
 	if s == 0 {
 		return nil
 	}
@@ -825,12 +762,6 @@ func (d *Driver) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("cluster map:\n%s\n", d.clusterMap.String())
 	changes := d.proposeChanges(state)
 
-	if len(changes.overloadedReplicas) > 0 {
-		buf += "Overloaded Replicas:\n"
-		for rep, _ := range changes.overloadedReplicas {
-			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
-		}
-	}
 	if len(changes.deadReplicas) > 0 {
 		buf += "Dead Replicas:\n"
 		for rep, _ := range changes.deadReplicas {
