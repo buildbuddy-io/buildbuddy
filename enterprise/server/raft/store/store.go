@@ -216,8 +216,6 @@ func (s *Store) handleSplits(quitChan <-chan struct{}) error {
 			cancel()
 			if err != nil {
 				s.log.Warningf("Error splitting cluster: %s", err)
-			} else {
-				s.log.Infof("Split cluster succeeded: %+v", rsp)
 			}
 		}
 	}

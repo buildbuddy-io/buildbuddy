@@ -1226,7 +1226,6 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 			sm.log.Warningf("Error computing usage: %s", err)
 		} else {
 			if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
-				sm.log.Warningf("Requesting split")
 				sm.store.RequestSplit(sm.ClusterID)
 			}
 			sm.lastUsageCheckIndex = sm.lastAppliedIndex
