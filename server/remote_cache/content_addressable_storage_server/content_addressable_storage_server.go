@@ -275,6 +275,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	closeTrackerFuncs := make([]closeTrackerFunc, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+	clientAcceptsZstd := clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
 	for _, readDigest := range req.GetDigests() {
 		_, err := digest.Validate(readDigest)
 		if err != nil {
@@ -286,8 +287,11 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		})
 
 		if readDigest.GetHash() != digest.EmptySha256 {
-			rn := digest.NewCASResourceName(readDigest, req.GetInstanceName()).ToProto()
-			cacheRequest = append(cacheRequest, rn)
+			rn := digest.NewCASResourceName(readDigest, req.GetInstanceName())
+			if clientAcceptsZstd {
+				rn.SetCompressor(repb.Compressor_ZSTD)
+			}
+			cacheRequest = append(cacheRequest, rn.ToProto())
 		}
 	}
 	cacheRsp, err := s.cache.GetMulti(ctx, cacheRequest)
@@ -305,6 +309,10 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			Digest: d,
 			Data:   data,
 		}
+		if clientAcceptsZstd {
+			blobRsp.Compressor = repb.Compressor_ZSTD
+		}
+
 		if !ok || os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
 		} else if d.GetSizeBytes() != int64(len(data)) {
@@ -314,7 +322,9 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
 		} else {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
-			if remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD) {
+
+			// If the cache doesn't support zstd compression but the client will accept it, compress data before sending
+			if remote_cache_config.ZstdTranscodingEnabled() && !s.cache.SupportsCompressor(repb.Compressor_ZSTD) && clientAcceptsZstd {
 				blobRsp.Data = compression.CompressZstd(nil, blobRsp.Data)
 				blobRsp.Compressor = repb.Compressor_ZSTD
 			}
