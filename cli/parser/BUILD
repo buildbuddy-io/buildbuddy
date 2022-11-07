@@ -20,5 +20,6 @@ go_test(
         "//cli/log",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )

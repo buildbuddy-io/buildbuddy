@@ -81,7 +81,10 @@ func run() (exitCode int, err error) {
 	// UI. Need to find a way to override the explicit command line in the UI so
 	// that it reflects the args passed to the CLI, not the wrapped Bazel
 	// process.
-	args = parser.ExpandConfigs(bazelArgs)
+	args, err = parser.ExpandConfigs(bazelArgs)
+	if err != nil {
+		return -1, err
+	}
 
 	// Fiddle with args
 	// TODO(bduffany): model these as "built-in" plugins
