@@ -116,7 +116,7 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fs.isolateByGroupIDs {
+	if fs.isolateByGroupIDs && r.GetIsolation().GetCacheType() == resource.CacheType_AC {
 		return []byte(filepath.Join(partID, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	} else {
 		return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash[:4], hash)), nil
@@ -153,7 +153,7 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	}
 	parts := make([]string, 0, numParts)
 	parts = append(parts, partID)
-	if fs.isolateByGroupIDs {
+	if fs.isolateByGroupIDs && r.GetIsolation().GetCacheType() == resource.CacheType_AC {
 		parts = append(parts, groupID)
 	}
 	if fs.prioritizeHashInMetadataKey {
