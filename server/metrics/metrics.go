@@ -1472,6 +1472,7 @@ var (
 		Help:      "The total number of moves per nodehost.",
 	}, []string{
 		RaftNodeHostIDLabel,
+		RaftMoveLabel,
 	})
 
 	RaftRangeCacheLookups = promauto.NewCounterVec(prometheus.CounterOpts{
