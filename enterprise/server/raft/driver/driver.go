@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", false, "If set, allow moving replicas between nodes")
+	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", true, "If set, allow moving replicas between nodes")
 	enableReplacingReplicas = flag.Bool("cache.raft.enable_replacing_replicas", false, "If set, allow replacing dead / down replicas")
 )
 
