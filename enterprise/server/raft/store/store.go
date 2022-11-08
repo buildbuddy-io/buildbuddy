@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -36,6 +38,7 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -342,6 +345,10 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.openRanges[rd.GetRangeId()] = rd
 	s.rangeMu.Unlock()
 
+	metrics.RaftRanges.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+	}).Inc()
+
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
 		return
@@ -374,6 +381,10 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
 	s.rangeMu.Unlock()
+
+	metrics.RaftRanges.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+	}).Dec()
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range descriptor had no replicas yet")
@@ -1156,6 +1167,14 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 
 	s.log.Infof("splitlog: cleaned up old data on cluster %d", clusterID)
 
+	metrics.RaftSplits.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+	}).Inc()
+
+	metrics.RaftSplitDurationUs.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(newLeft.GetRangeId())),
+	}).Observe(float64(time.Since(splitStart).Microseconds()))
+
 	splitRsp := &rfpb.SplitClusterResponse{
 		Left:  newLeft,
 		Right: newRight,
@@ -1263,6 +1282,10 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 	if err != nil {
 		return nil, err
 	}
+	metrics.RaftMoves.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		metrics.RaftMoveLabel:       "add",
+	}).Inc()
 
 	return &rfpb.AddClusterNodeResponse{
 		Range: rd,
@@ -1338,6 +1361,12 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 	if err != nil {
 		return nil, err
 	}
+
+	metrics.RaftMoves.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		metrics.RaftMoveLabel:       "remove",
+	}).Inc()
+
 	return &rfpb.RemoveClusterNodeResponse{
 		Range: rd,
 	}, nil

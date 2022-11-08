@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -19,11 +20,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -174,6 +177,11 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 		return nil, err
 	}
 	ru.EstimatedDiskBytesUsed = int64(estimatedBytesUsed)
+	metrics.RaftBytes.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
+	}).Set(float64(estimatedBytesUsed))
+	// TODO(tylerw): compute number of keys here too.
+
 	return ru, nil
 }
 
@@ -1206,10 +1214,15 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err != nil {
 			return nil, err
 		}
+		rangeID := batchCmdReq.GetHeader().GetRangeId()
+
 		entries[idx].Result = dbsm.Result{
 			Value: uint64(len(entries[idx].Cmd)),
 			Data:  rspBuf,
 		}
+		metrics.RaftProposals.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+		}).Inc()
 		appliedIndex := uint64ToBytes(entry.Index)
 		if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
 			return nil, err

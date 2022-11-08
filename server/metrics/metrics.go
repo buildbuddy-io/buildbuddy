@@ -141,6 +141,18 @@ const (
 
 	/// Status of the Clickhouse operation: `ok`, `error`.
 	ClickhouseStatusLabel = "status"
+
+	/// The ID of a raft nodehost.
+	RaftNodeHostIDLabel = "node_host_id"
+
+	/// The range ID of a raft region.
+	RaftRangeIDLabel = "range_id"
+
+	/// The type of raft move `add`, or `remove`.
+	RaftMoveLabel = "move_type"
+
+	/// Raft RangeCache event type: `hit`, `miss`, or `update`.
+	RaftRangeCacheEventTypeLabel = "rangecache_event_type"
 )
 
 const (
@@ -1404,6 +1416,82 @@ var (
 	}, []string{
 		ClickhouseTableName,
 		ClickhouseStatusLabel,
+	})
+
+	/// ### Raft cache metrics
+
+	RaftRanges = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "ranges",
+		Help:      "Number of raft ranges on each nodehost.",
+	}, []string{
+		RaftNodeHostIDLabel,
+	})
+
+	RaftRecords = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "records",
+		Help:      "Number of raft records in each range.",
+	}, []string{
+		RaftRangeIDLabel,
+	})
+
+	RaftBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "bytes",
+		Help:      "Size (in bytes) of each range.",
+	}, []string{
+		RaftRangeIDLabel,
+	})
+
+	RaftProposals = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "proposals",
+		Help:      "The total number of statemachine proposals on each range.",
+	}, []string{
+		RaftRangeIDLabel,
+	})
+
+	RaftSplits = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "splits",
+		Help:      "The total number of splits per nodehost.",
+	}, []string{
+		RaftNodeHostIDLabel,
+	})
+
+	RaftMoves = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "moves",
+		Help:      "The total number of moves per nodehost.",
+	}, []string{
+		RaftNodeHostIDLabel,
+		RaftMoveLabel,
+	})
+
+	RaftRangeCacheLookups = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "rangecache_lookups",
+		Help:      "The total number of rangecache lookups per nodehost.",
+	}, []string{
+		RaftRangeCacheEventTypeLabel,
+	})
+
+	RaftSplitDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "split_duration_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "The time spent splitting a range in **microseconds**.",
+	}, []string{
+		RaftRangeIDLabel,
 	})
 )
 
