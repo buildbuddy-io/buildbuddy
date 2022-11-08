@@ -48,6 +48,7 @@ go_test(
         "//server/util/bazel_request",
         "//server/util/compression",
         "//server/util/prefix",
+        "//server/util/testing/compression",
         "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",

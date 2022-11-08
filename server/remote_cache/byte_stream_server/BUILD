@@ -31,9 +31,7 @@ go_test(
     embed = [":byte_stream_server"],
     deps = [
         "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/backends/memory_metrics_collector",
-        "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
@@ -44,6 +42,7 @@ go_test(
         "//server/util/prefix",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/testing/compression",
         "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",

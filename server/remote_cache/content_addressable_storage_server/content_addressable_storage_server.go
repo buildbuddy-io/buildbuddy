@@ -315,8 +315,10 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 
 		if !ok || os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
-		} else if d.GetSizeBytes() != int64(len(data)) {
-			log.Debugf("Digest %s, but data len: %d", d, len(data))
+		} else if d.GetSizeBytes() != int64(len(data)) && !s.cache.SupportsCompressor(repb.Compressor_ZSTD) {
+			// We only expect the data length to be different from the digest for caches that might have compressed
+			// the data when storing it. If this happens for a cache that doesn't support compression, consider the
+			// data corrupted and return that it is not found
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
 		} else if err != nil {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.Internal)}
