@@ -1839,7 +1839,10 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_gogo_protobuf",
+        build_file_generation = "off",
         importpath = "github.com/gogo/protobuf",
+        patch_args = ["-p1"],
+        patches = ["@io_bazel_rules_go//third_party:com_github_gogo_protobuf-gazelle.patch"],
         sum = "h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=",
         version = "v1.3.2",
     )
@@ -1879,12 +1882,17 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_mock",
         importpath = "github.com/golang/mock",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:com_github_golang_mock-gazelle.patch"],
         sum = "h1:ErTB+efbowRARo13NNdxyJji2egdxLGQhRaY+DUumQc=",
         version = "v1.6.0",
     )
     go_repository(
         name = "com_github_golang_protobuf",
         importpath = "github.com/golang/protobuf",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:com_github_golang_protobuf-gazelle.patch"],
         sum = "h1:ROPKBNFfQgOUMifHyP+KYbvpjbdoFNs+aK7DXlji0Tw=",
         version = "v1.5.2",
     )
@@ -5344,6 +5352,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_genproto",
         importpath = "google.golang.org/genproto",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_google_genproto-gazelle.patch"],
         sum = "h1:SeX3QUcBj3fciwnfPT9kt5gBhFy/FCZtYZ+I/RB8agc=",
         version = "v0.0.0-20220421151946-72621c1f0bd3",
     )
@@ -5366,6 +5377,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_protobuf",
         importpath = "google.golang.org/protobuf",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_google_protobuf-gazelle.patch"],
         sum = "h1:d0NfwRgPtno5B1Wa6L2DAG+KivqkdutMf1UhdNx175w=",
         version = "v1.28.1",
     )
@@ -5433,6 +5447,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_x_sys-gazelle.patch"],
         sum = "h1:v4INt8xihDGvnrfjMDVXGxw9wrfxYyCjk0KbXjhR55s=",
         version = "v0.0.0-20220722155257-8c9f86f7a55f",
     )
@@ -5460,6 +5477,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_tools",
         importpath = "golang.org/x/tools",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_x_tools-gazelle.patch"],
         sum = "h1:VveCTK38A2rkS8ZqFY25HIDFscX5X9OoEhJd3quQmXU=",
         version = "v0.1.12",
     )
@@ -5467,6 +5487,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_xerrors",
         importpath = "golang.org/x/xerrors",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_x_errors-gazelle.patch"],
         sum = "h1:GGU+dLjvlC3qDwqYgL6UgRmHXhOOgns0bZu2Ty5mm6U=",
         version = "v0.0.0-20220411194840-2f41105eb62f",
     )
