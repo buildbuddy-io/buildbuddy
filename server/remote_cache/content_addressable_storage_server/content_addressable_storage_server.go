@@ -275,7 +275,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	closeTrackerFuncs := make([]closeTrackerFunc, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	clientAcceptsZstd := clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
+	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
 	for _, readDigest := range req.GetDigests() {
 		_, err := digest.Validate(readDigest)
 		if err != nil {
@@ -326,7 +326,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
 
 			// If the cache doesn't support zstd compression but the client will accept it, compress data before sending
-			if remote_cache_config.ZstdTranscodingEnabled() && !s.cache.SupportsCompressor(repb.Compressor_ZSTD) && clientAcceptsZstd {
+			if clientAcceptsZstd && !s.cache.SupportsCompressor(repb.Compressor_ZSTD) {
 				blobRsp.Data = compression.CompressZstd(nil, blobRsp.Data)
 				blobRsp.Compressor = repb.Compressor_ZSTD
 			}
