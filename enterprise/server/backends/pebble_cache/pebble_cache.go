@@ -1867,9 +1867,6 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 
 func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
 	if requestedCompression != cachedCompression {
-		// Close the original reader because the compression readers stream all the data to a new io.Pipe
-		defer reader.Close()
-
 		readBuf := p.bufferPool.Get(compressorBufSizeBytes)
 		defer p.bufferPool.Put(readBuf)
 		compressBuf := p.bufferPool.Get(compressorBufSizeBytes)
