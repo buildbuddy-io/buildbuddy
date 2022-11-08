@@ -171,14 +171,13 @@ func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	val := rc.rangeMap.Lookup(key)
 
 	var rd *rfpb.RangeDescriptor
+	label := "miss"
+
 	if lr, ok := val.(*lockingRangeDescriptor); ok {
 		rd = lr.Get()
+		label = "hit"
 	}
 
-	label := "hit"
-	if rd == nil {
-		label = "miss"
-	}
 	metrics.RaftRangeCacheLookups.With(prometheus.Labels{
 		metrics.RaftRangeCacheEventTypeLabel: label,
 	}).Inc()
