@@ -65,7 +65,7 @@ type DirHelper struct {
 	// commands. (Parent dirs of requested outputs)
 	dirsToCreate []string
 
-    // The output paths that the client requested. Stored as a map for fast lookup.
+	// The output paths that the client requested. Stored as a map for fast lookup.
 	outputPaths map[string]struct{}
 
 	// dirPerms are the permissions used when creating output directories.
@@ -82,13 +82,13 @@ func NewDirHelper(rootDir string, outputPaths []string, dirPerms fs.FileMode) *D
 		dirPerms:     dirPerms,
 	}
 
-    for _, outputPath := range outputPaths {
+	for _, outputPath := range outputPaths {
 		fullPath := filepath.Join(c.rootDir, outputPath)
 		c.fullPaths[fullPath] = struct{}{}
 		c.dirsToCreate = append(c.dirsToCreate, filepath.Dir(fullPath))
-        c.outputPaths[fullPath] = struct{}{}
-        c.prefixes[fullPath] = struct{}{}
-    }
+		c.outputPaths[fullPath] = struct{}{}
+		c.prefixes[fullPath] = struct{}{}
+	}
 
 	for _, dir := range c.dirsToCreate {
 		for p := dir; p != filepath.Dir(p); p = filepath.Dir(p) {
@@ -107,42 +107,43 @@ func (c *DirHelper) CreateOutputDirs() error {
 	}
 	return nil
 }
-func (c *DirHelper) IsOutputPath(path string) (bool) {
-    _, ok := c.outputPaths[path]
-    return ok
+func (c *DirHelper) IsOutputPath(path string) bool {
+	_, ok := c.outputPaths[path]
+	return ok
 }
+
 // If the provided path is a descendant of any of the output_paths, this function returns which
 // output_path it is a descendent of and true, otherwise it returns an unspecified string and false.
 func (c *DirHelper) FindParentOutputPath(path string) (string, bool) {
-    for p := filepath.Dir(path); p != filepath.Dir(p); p = filepath.Dir(p) {
-        if c.IsOutputPath(p) {
-            return p, true
-        }
-    }
+	for p := filepath.Dir(path); p != filepath.Dir(p); p = filepath.Dir(p) {
+		if c.IsOutputPath(p) {
+			return p, true
+		}
+	}
 	return "", false
 }
 func (c *DirHelper) ShouldUploadAnythingInDir(path string) bool {
-    // Upload something in this directory if:
-    // 1. it is in output_paths
-    // 2. any of its children are in output_paths
-    // 3. it is a child of anything in output_paths
-    if c.IsOutputPath(path) {
-        return true
-    }
-    _, ok := c.prefixes[path]
-    if ok {
-        return true
-    }
-    return c.ShouldUploadFile(path)
+	// Upload something in this directory if:
+	// 1. it is in output_paths
+	// 2. any of its children are in output_paths
+	// 3. it is a child of anything in output_paths
+	if c.IsOutputPath(path) {
+		return true
+	}
+	_, ok := c.prefixes[path]
+	if ok {
+		return true
+	}
+	return c.ShouldUploadFile(path)
 }
 func (c *DirHelper) ShouldUploadFile(path string) bool {
-    // Upload the file if it is a child of anything in output_paths
-    for p := path; p != filepath.Dir(p); p = filepath.Dir(p) {
-        if c.IsOutputPath(p) {
-            return true
-        }
-    }
-    return false
+	// Upload the file if it is a child of anything in output_paths
+	for p := path; p != filepath.Dir(p); p = filepath.Dir(p) {
+		if c.IsOutputPath(p) {
+			return true
+		}
+	}
+	return false
 }
 
 func trimPathPrefix(fullPath, prefix string) string {
@@ -267,7 +268,7 @@ func uploadFiles(ctx context.Context, env environment.Env, instanceName string, 
 func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName, rootDir string, actionResult *repb.ActionResult) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
-    treesToUpload := make([]string, 0)
+	treesToUpload := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
 	uploadFileFn := func(parentDir string, info os.FileInfo) (*repb.FileNode, error) {
 		uploadableFile, err := newFileToUpload(instanceName, parentDir, info)
@@ -309,9 +310,9 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if !dirHelper.ShouldUploadAnythingInDir(fqfn) {
 					continue
 				}
-                if dirHelper.IsOutputPath(fqfn) {
-                    treesToUpload = append(treesToUpload, fqfn)
-                }
+				if dirHelper.IsOutputPath(fqfn) {
+					treesToUpload = append(treesToUpload, fqfn)
+				}
 				dirNode, err := uploadDirFn(fullPath, info.Name())
 				if err != nil {
 					return nil, err
@@ -357,14 +358,14 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return nil, err
 	}
 
-    // Make Trees of all of the paths specified in output_paths which were directories (which we
-    // noted in the filesystem walk above).
+	// Make Trees of all of the paths specified in output_paths which were directories (which we
+	// noted in the filesystem walk above).
 	trees := make(map[string]*repb.Tree, 0)
-    for _, treeToUpload := range treesToUpload {
-        trees[treeToUpload] = &repb.Tree{}
-    }
+	for _, treeToUpload := range treesToUpload {
+		trees[treeToUpload] = &repb.Tree{}
+	}
 
-    // For each of the filesToUpload, determine which Tree (if any) it is a part of and add it.
+	// For each of the filesToUpload, determine which Tree (if any) it is a part of and add it.
 	for _, f := range filesToUpload {
 		if f.dir == nil {
 			continue
@@ -373,8 +374,8 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		if tree, ok := trees[fqfn]; ok {
 			tree.Root = f.dir
 		} else if treePath, ok := dirHelper.FindParentOutputPath(fqfn); ok {
-            tree = trees[treePath]
-            tree.Children = append(tree.Children, f.dir)
+			tree = trees[treePath]
+			tree.Children = append(tree.Children, f.dir)
 		}
 	}
 

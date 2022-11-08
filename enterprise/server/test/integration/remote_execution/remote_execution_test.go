@@ -946,8 +946,8 @@ func TestOutputDirectoriesAndFiles(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	dirLayout := []string{
 		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a", "d/b", "e", "e/a",
-        "e/b",
-    }
+		"e/b",
+	}
 	files := []string{"a.txt", "b.txt"}
 	for _, dir := range dirLayout {
 		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0777); err != nil {
@@ -985,9 +985,9 @@ func TestOutputDirectoriesAndFiles(t *testing.T) {
 	outDir := rbe.DownloadOutputsToNewTempDir(res)
 
 	expectedFiles := []string{
-        "a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt", "b/a/b.txt", "c/a/a.txt",
-        "c/a/b.txt", "c/b/a.txt", "d/a.txt", "d/a/a.txt",
-    }
+		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt", "b/a/b.txt", "c/a/a.txt",
+		"c/a/b.txt", "c/b/a.txt", "d/a.txt", "d/a/a.txt",
+	}
 	unexpectedFiles := []string{"a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e"}
 	for _, expectedFile := range expectedFiles {
 		expectedOutputFile := filepath.Join("output", expectedFile)
@@ -1003,8 +1003,8 @@ func TestOutputPaths(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	dirLayout := []string{
 		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a", "d/b", "e", "e/a",
-        "e/b",
-    }
+		"e/b",
+	}
 	files := []string{"a.txt", "b.txt"}
 	for _, dir := range dirLayout {
 		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0777); err != nil {
@@ -1029,12 +1029,12 @@ func TestOutputPaths(t *testing.T) {
 		},
 	}
 	cmd := rbe.Execute(&repb.Command{
-		Arguments:         []string{"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output"},
-		Platform:          platform,
+		Arguments: []string{"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output"},
+		Platform:  platform,
 		OutputPaths: []string{
-            "output/a", "output/b/a", "output/c/a", "output/c/b/a.txt", "output/d/a.txt",
-            "output/d/a/a.txt",
-        },
+			"output/a", "output/b/a", "output/c/a", "output/c/b/a.txt", "output/d/a.txt",
+			"output/d/a/a.txt",
+		},
 	}, opts)
 	res := cmd.Wait()
 
@@ -1044,9 +1044,9 @@ func TestOutputPaths(t *testing.T) {
 	outDir := rbe.DownloadOutputsToNewTempDir(res)
 
 	expectedFiles := []string{
-        "a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt", "b/a/b.txt", "c/a/a.txt",
-        "c/a/b.txt", "c/b/a.txt", "d/a.txt", "d/a/a.txt",
-    }
+		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt", "b/a/b.txt", "c/a/a.txt",
+		"c/a/b.txt", "c/b/a.txt", "d/a.txt", "d/a/a.txt",
+	}
 	unexpectedFiles := []string{"a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e"}
 	for _, expectedFile := range expectedFiles {
 		expectedOutputFile := filepath.Join("output", expectedFile)
@@ -1085,21 +1085,20 @@ func TestOuputPathsDirectoriesAndFiles(t *testing.T) {
 		},
 	}
 	cmd := rbe.Execute(&repb.Command{
-		Arguments:          []string{"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output"},
-		Platform:           platform,
-        OutputFiles:        []string{"output/a/a.txt"},
-        OutputDirectories:  []string{"output/b"},
-		OutputPaths:        []string{"output/c"},
+		Arguments:         []string{"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output"},
+		Platform:          platform,
+		OutputFiles:       []string{"output/a/a.txt"},
+		OutputDirectories: []string{"output/b"},
+		OutputPaths:       []string{"output/c"},
 	}, opts)
 	res := cmd.Wait()
-
 
 	require.Equal(t, 0, res.ExitCode)
 	require.Empty(t, res.Stderr)
 
 	outDir := rbe.DownloadOutputsToNewTempDir(res)
 
-    // output_paths should supersede output_files and output_directories.
+	// output_paths should supersede output_files and output_directories.
 	expectedFiles := []string{"c/a.txt", "c/b.txt"}
 	unexpectedFiles := []string{"a", "b"}
 	for _, expectedFile := range expectedFiles {
