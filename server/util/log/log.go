@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	gcplogging "github.com/buildbuddy-io/buildbuddy/server/util/log/gcp"
 	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -28,6 +29,8 @@ var (
 	IncludeShortFileName    = flag.Bool("app.log_include_short_file_name", false, "If true, log messages will include shortened originating file name.")
 	EnableGCPLoggingFormat  = flag.Bool("app.log_enable_gcp_logging_format", false, "If true, the output structured logs will be compatible with format expected by GCP Logging.")
 	LogErrorStackTraces     = flag.Bool("app.log_error_stack_traces", false, "If true, stack traces will be printed for errors that have them.")
+	ProjectID               = flag.String("app.log_gcp_project_id", "", "The project ID to log to in GCP (if any).")
+	LogID                   = flag.String("app.log_gcp_log_id", "", "The log ID to log to in GCP (if any).")
 )
 
 const (
@@ -170,6 +173,13 @@ func Configure() error {
 		} else {
 			logger = logger.With().CallerWithSkipFrameCount(callerSkipFrameCount).Logger()
 		}
+	}
+	if *ProjectID != "" && *LogID != "" {
+		l, err := gcplogging.NewLogger(*ProjectID, *LogID)
+		if err != nil {
+			return err
+		}
+		logger = zerolog.New(zerolog.MultiLevelWriter(l, logger))
 	}
 	log.Logger = logger
 	return nil
