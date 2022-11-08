@@ -415,7 +415,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 		}()
 
 		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.ID(), reservation.GetTaskId())
-		ctx, serializedTask, err := taskLease.Claim(ctx)
+		leaseCtx, serializedTask, err := taskLease.Claim(ctx)
 		if err != nil {
 			// NotFound means the task is already claimed.
 			if status.IsNotFoundError(err) {
@@ -425,6 +425,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			}
 			return
 		}
+		ctx = leaseCtx
 
 		execTask := &repb.ExecutionTask{}
 		if err := proto.Unmarshal(serializedTask, execTask); err != nil {

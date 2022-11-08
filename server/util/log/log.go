@@ -242,6 +242,11 @@ func NamedSubLogger(name string) Logger {
 }
 
 func enrichEventFromContext(ctx context.Context, e *zerolog.Event) {
+	// Not supposed to happen, but let's not panic if it does.
+	if ctx == nil {
+		return
+	}
+
 	if m, ok := ctx.Value(logMetaKey).(*logMeta); ok {
 		for m != nil {
 			e.Str(m.key, m.value)
