@@ -1839,7 +1839,10 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_gogo_protobuf",
+        build_file_generation = "off",
         importpath = "github.com/gogo/protobuf",
+        patch_args = ["-p1"],
+        patches = ["@io_bazel_rules_go//third_party:com_github_gogo_protobuf-gazelle.patch"],
         sum = "h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=",
         version = "v1.3.2",
     )
