@@ -3,11 +3,9 @@ package parser
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -15,9 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
 
-var (
-	importMatcher = regexp.MustCompile("(import|try-import)\\s+(?P<relative>\\%workspace\\%)?(?P<path>.*)")
+const (
+	workspacePrefix = `%workspace%/`
+)
 
+var (
 	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
 	// All commands inherit from "common".
 	parentCommand = map[string]string{
@@ -71,29 +71,35 @@ type RcRule struct {
 	Options []string
 }
 
-func appendRcRulesFromImport(match []string, opts []*RcRule) ([]*RcRule, error) {
-	importPath := ""
-	for i, name := range importMatcher.SubexpNames() {
-		switch name {
-		case "relative":
-			if len(match[i]) > 0 {
-				importPath, _ = os.Getwd()
-			}
-		case "path":
-			importPath = filepath.Join(importPath, match[i])
-		}
+func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional bool, importStack []string) ([]*RcRule, error) {
+	if strings.HasPrefix(path, workspacePrefix) {
+		path = filepath.Join(workspaceDir, path[len(workspacePrefix):])
 	}
-	file, err := os.Open(importPath)
+
+	file, err := os.Open(path)
 	if err != nil {
-		return opts, err
+		if optional {
+			return opts, nil
+		}
+		return nil, err
 	}
 	defer file.Close()
-	return appendRcRulesFromFile(file, opts)
+	return appendRcRulesFromFile(workspaceDir, file, opts, importStack)
 }
 
-func appendRcRulesFromFile(in io.Reader, opts []*RcRule) ([]*RcRule, error) {
-	scanner := bufio.NewScanner(in)
-	var err error
+func appendRcRulesFromFile(workspaceDir string, f *os.File, opts []*RcRule, importStack []string) ([]*RcRule, error) {
+	rpath, err := realpath(f.Name())
+	if err != nil {
+		return nil, fmt.Errorf("could not determine real path of bazelrc file: %s", err)
+	}
+	for _, path := range importStack {
+		if path == rpath {
+			return nil, fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), rpath)
+		}
+	}
+	importStack = append(importStack, rpath)
+
+	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Handle line continuations (lines can end with "\" to effectively
@@ -103,16 +109,18 @@ func appendRcRulesFromFile(in io.Reader, opts []*RcRule) ([]*RcRule, error) {
 		}
 
 		line = stripCommentsAndWhitespace(line)
-		if strings.TrimSpace(line) == "" {
+
+		tokens := strings.Fields(line)
+		if len(tokens) == 0 {
+			// blank line
 			continue
 		}
-
-		if importMatcher.MatchString(line) {
-			match := importMatcher.FindStringSubmatch(line)
-			// TODO: Prevent import cycles
-			opts, err = appendRcRulesFromImport(match, opts)
+		if tokens[0] == "import" || tokens[0] == "try-import" {
+			isOptional := tokens[0] == "try-import"
+			path := strings.TrimSpace(strings.TrimPrefix(line, tokens[0]))
+			opts, err = appendRcRulesFromImport(workspaceDir, path, opts, isOptional, importStack)
 			if err != nil {
-				log.Debugf("Error parsing import: %s", err.Error())
+				return nil, err
 			}
 			continue
 		}
@@ -130,6 +138,14 @@ func appendRcRulesFromFile(in io.Reader, opts []*RcRule) ([]*RcRule, error) {
 		opts = append(opts, opt)
 	}
 	return opts, scanner.Err()
+}
+
+func realpath(path string) (string, error) {
+	directPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(directPath)
 }
 
 func stripCommentsAndWhitespace(line string) string {
@@ -168,7 +184,7 @@ func parseRcRule(line string) (*RcRule, error) {
 	}, nil
 }
 
-func ParseRCFiles(filePaths ...string) ([]*RcRule, error) {
+func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
 	options := make([]*RcRule, 0)
 	for _, filePath := range filePaths {
 		file, err := os.Open(filePath)
@@ -176,15 +192,15 @@ func ParseRCFiles(filePaths ...string) ([]*RcRule, error) {
 			continue
 		}
 		defer file.Close()
-		options, err = appendRcRulesFromFile(file, options)
+		options, err = appendRcRulesFromFile(workspaceDir, file, options, nil /*=importStack*/)
 		if err != nil {
-			continue
+			return nil, err
 		}
 	}
 	return options, nil
 }
 
-func ExpandConfigs(args []string) []string {
+func ExpandConfigs(args []string) ([]string, error) {
 	ws, err := workspace.Path()
 	if err != nil {
 		log.Debugf("Could not determine workspace dir: %s", err)
@@ -192,7 +208,7 @@ func ExpandConfigs(args []string) []string {
 	return expandConfigs(ws, args)
 }
 
-func expandConfigs(workspaceDir string, args []string) []string {
+func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	rcFiles := make([]string, 0)
 	// TODO: handle --nosystem_rc, --system_rc no, --system_rc=0, etc.
 	if arg.Get(args, "system_rc") != "no" {
@@ -212,12 +228,19 @@ func expandConfigs(workspaceDir string, args []string) []string {
 	if b := arg.Get(args, "bazelrc"); b != "" {
 		rcFiles = append(rcFiles, b)
 	}
-	r, err := ParseRCFiles(rcFiles...)
+	r, err := ParseRCFiles(workspaceDir, rcFiles...)
 	if err != nil {
-		log.Debugf("Error parsing .bazelrc file: %s", err.Error())
-		return nil
+		return nil, fmt.Errorf("failed to parse bazelrc file: %s", err)
 	}
 	rules := StructureRules(r)
+
+	// Expand startup args first, before any other args (including explicit
+	// startup args).
+	startupArgs, err := appendArgsForConfig(rules, nil, "startup", nil, "" /*=config*/, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand startup options: %s", err)
+	}
+	args = append(startupArgs, args...)
 
 	command, commandIndex := arg.GetCommandAndIndex(args)
 
@@ -234,7 +257,10 @@ func expandConfigs(workspaceDir string, args []string) []string {
 	// so we expand those first just after the command.
 	var defaultArgs []string
 	for _, phase := range phases {
-		defaultArgs = appendArgsForConfig(rules, defaultArgs, phase, "" /*=config*/)
+		defaultArgs, err = appendArgsForConfig(rules, defaultArgs, phase, phases, "" /*=config*/, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
+		}
 	}
 	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
 
@@ -246,7 +272,10 @@ func expandConfigs(workspaceDir string, args []string) []string {
 
 		var configArgs []string
 		for _, phase := range phases {
-			configArgs = appendArgsForConfig(rules, configArgs, phase, config)
+			configArgs, err = appendArgsForConfig(rules, configArgs, phase, phases, config, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
+			}
 		}
 
 		args = concat(args[:i], configArgs, args[i+length:])
@@ -254,29 +283,44 @@ func expandConfigs(workspaceDir string, args []string) []string {
 
 	log.Debugf("expanded args: %+v", args)
 
-	return args
+	return args, nil
 }
 
-func appendArgsForConfig(rules *Rules, args []string, phase, config string) []string {
-	// TODO: Detect cycles in --config definitions, like
-	// build:foo --config=bar, build:bar --config=foo
+func appendArgsForConfig(rules *Rules, args []string, phase string, phases []string, config string, configStack []string) ([]string, error) {
+	var err error
+	for _, c := range configStack {
+		if c == config {
+			return nil, fmt.Errorf("circular --config reference detected: %s -> %s", strings.Join(configStack, " -> "), config)
+		}
+	}
+	configStack = append(configStack, config)
+
 	for _, rule := range rules.ForPhaseAndConfig(phase, config) {
 		for i := 0; i < len(rule.Options); i++ {
 			opt := rule.Options[i]
+
+			configArg := ""
 			if strings.HasPrefix(opt, "--config=") {
-				config := strings.TrimPrefix(opt, "--config=")
-				args = appendArgsForConfig(rules, args, phase, config)
+				configArg = strings.TrimPrefix(opt, "--config=")
 			} else if opt == "--config" && i+1 < len(rule.Options) {
-				config := rule.Options[i+1]
-				args = appendArgsForConfig(rules, args, phase, config)
+				configArg = rule.Options[i+1]
 				// Consume the following argument in this iteration too
 				i++
-			} else {
-				args = append(args, opt)
 			}
+			if configArg != "" {
+				for _, phase := range phases {
+					args, err = appendArgsForConfig(rules, args, phase, phases, configArg, configStack)
+					if err != nil {
+						return nil, err
+					}
+				}
+				continue
+			}
+
+			args = append(args, opt)
 		}
 	}
-	return args
+	return args, nil
 }
 
 // getPhases returns the command's inheritance hierarchy in increasing order of
