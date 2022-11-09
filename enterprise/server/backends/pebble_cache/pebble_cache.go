@@ -1881,7 +1881,7 @@ func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, resource *r
 		if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
 			return compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
 		} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
-			return compression.NewZstdDecompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
+			return compression.NewZstdDecompressingReader(reader)
 		}
 	}
 	return reader, nil

@@ -153,29 +153,30 @@ func NewZstdCompressingReader(reader io.Reader, readBuf []byte, compressBuf []by
 
 // NewZstdDecompressingReader reads chunks of zstd-compressed data from the input
 // reader and makes the decompressed data available on the output reader
-func NewZstdDecompressingReader(reader io.Reader, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
-	pr, pw := io.Pipe()
-	go func() {
-		for {
-			n, err := reader.Read(readBuf)
-			if n > 0 {
-				compressBuf, err = DecompressZstd(compressBuf[:0], readBuf[:n])
-				if err != nil {
-					pw.CloseWithError(err)
-					return
-				}
+func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
+	// Stream data from reader to decoder
+	decoder, err := zstdDecoderPool.Get(reader)
+	if err != nil {
+		return nil, err
+	}
 
-				if _, err := pw.Write(compressBuf); err != nil {
-					pw.CloseWithError(err)
-					return
-				}
+	pr, pw := io.Pipe()
+	// io.Pipe writer blocks until there is a read, so you need a goroutine so they can happen in parallel
+	go func() {
+		defer func() {
+			if err := zstdDecoderPool.Put(decoder); err != nil {
+				log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
 			}
-			if err != nil {
-				pw.CloseWithError(err)
-				return
-			}
-		}
+			pw.Close()
+		}()
+		// Write decoded bytes to pw, then the pipe automatically streams them to pr
+		_, err = decoder.WriteTo(pw)
 	}()
+
+	if err != nil {
+		return nil, err
+	}
+
 	return pr, nil
 }
 
