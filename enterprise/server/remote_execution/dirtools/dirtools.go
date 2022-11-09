@@ -66,7 +66,7 @@ type DirHelper struct {
 	dirsToCreate []string
 
 	// The output paths that the client requested. Stored as a map for fast
-    // lookup.
+	// lookup.
 	outputPaths map[string]struct{}
 
 	// dirPerms are the permissions used when creating output directories.
@@ -364,14 +364,14 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	// Make Trees of all of the paths specified in output_paths which were
-    // directories (which we noted in the filesystem walk above).
+	// directories (which we noted in the filesystem walk above).
 	trees := make(map[string]*repb.Tree, 0)
 	for _, treeToUpload := range treesToUpload {
 		trees[treeToUpload] = &repb.Tree{}
 	}
 
 	// For each of the filesToUpload, determine which Tree (if any) it is a part
-    // of and add it.
+	// of and add it.
 	for _, f := range filesToUpload {
 		if f.dir == nil {
 			continue

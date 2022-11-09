@@ -549,8 +549,8 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"sh", "-c", strings.Join([]string{
-            `mkdir output_dir`,
-			"touch output.txt undeclared_output.txt output_dir/output.txt",
+			`mkdir output_dir`,
+			`touch output.txt undeclared_output.txt output_dir/output.txt`,
 		}, "\n")},
 		Platform:          platform,
 		OutputDirectories: []string{"output_dir"},
@@ -611,8 +611,8 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"sh", "-c", strings.Join([]string{
-            `mkdir output_dir`,
-			"touch output.txt undeclared_output.txt output_dir/output.txt",
+			`mkdir output_dir`,
+			`touch output.txt undeclared_output.txt output_dir/output.txt`,
 		}, "\n")},
 		Platform:          platform,
 		OutputDirectories: []string{"output_dir"},
@@ -881,9 +881,9 @@ func TestComplexActionIO(t *testing.T) {
 			`set -e`,
 			`input_paths=$(find . -type f)`,
 			// Mirror the input tree to out_files_dir, skipping the first byte
-            // so that the output digests are different. Note that we don't
-            // create directories here since the executor is responsible for
-            // creating parent dirs of output files.
+			// so that the output digests are different. Note that we don't
+			// create directories here since the executor is responsible for
+			// creating parent dirs of output files.
 			`
 			for path in $input_paths; do
 				opath="out_files_dir/$(echo "$path" | sed 's/.input/.output/')"
@@ -891,8 +891,8 @@ func TestComplexActionIO(t *testing.T) {
 			done
 			`,
 			// Mirror the input tree to out_dir, skipping the first 2 bytes this
-            // time. We *do* need to create parent dirs since the executor is
-            // only responsible for creating the top-level out_dir.
+			// time. We *do* need to create parent dirs since the executor is
+			// only responsible for creating the top-level out_dir.
 			`
 			for path in $input_paths; do
 				output_path="out_dir/$(echo "$path" | sed 's/.input/.output/')"
@@ -946,73 +946,7 @@ func TestOutputDirectoriesAndFiles(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	dirLayout := []string{
 		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a",
-        "d/b", "e", "e/a", "e/b",
-	}
-	files := []string{"a.txt", "b.txt"}
-	for _, dir := range dirLayout {
-		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0777); err != nil {
-			assert.FailNow(t, err.Error())
-		}
-		for _, fname := range files {
-			relPath := filepath.Join(dir, fname)
-			testfs.WriteRandomString(t, tmpDir, relPath /* size= */, 10)
-		}
-	}
-
-	rbe := rbetest.NewRBETestEnv(t)
-	rbe.AddBuildBuddyServer()
-	rbe.AddExecutor(t)
-
-	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
-
-	platform := &repb.Platform{
-		Properties: []*repb.Platform_Property{
-			{Name: "OSFamily", Value: runtime.GOOS},
-			{Name: "Arch", Value: runtime.GOARCH},
-		},
-	}
-	cmd := rbe.Execute(&repb.Command{
-		Arguments:         []string{
-            "sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
-        },
-		Platform:          platform,
-		OutputDirectories: []string{"output/a", "output/b/a", "output/c/a"},
-		OutputFiles:       []string{
-            "output/c/b/a.txt", "output/d/a.txt", "output/d/a/a.txt",
-        },
-	}, opts)
-	res := cmd.Wait()
-
-	require.Equal(t, 0, res.ExitCode)
-	require.Empty(t, res.Stderr)
-
-	outDir := rbe.DownloadOutputsToNewTempDir(res)
-
-	expectedFiles := []string{
-		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt",
-        "b/a/b.txt", "c/a/a.txt", "c/a/b.txt", "c/b/a.txt", "d/a.txt",
-        "d/a/a.txt",
-	}
-	unexpectedFiles := []string{
-        "a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e",
-    }
-	for _, expectedFile := range expectedFiles {
-		expectedOutputFile := filepath.Join("output", expectedFile)
-		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile),
-            "expected file to exist: %s", expectedOutputFile)
-	}
-	for _, unexpectedFile := range unexpectedFiles {
-		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
-		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile),
-            "expected file to not exist: %s", unexpectedOutputFile)
-	}
-}
-
-func TestOutputPaths(t *testing.T) {
-	tmpDir := testfs.MakeTempDir(t)
-	dirLayout := []string{
-		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a",
-        "d/b", "e", "e/a", "e/b",
+		"d/b", "e", "e/a", "e/b",
 	}
 	files := []string{"a.txt", "b.txt"}
 	for _, dir := range dirLayout {
@@ -1039,12 +973,12 @@ func TestOutputPaths(t *testing.T) {
 	}
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
-            "sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
-        },
-		Platform:  platform,
-		OutputPaths: []string{
-			"output/a", "output/b/a", "output/c/a", "output/c/b/a.txt",
-            "output/d/a.txt", "output/d/a/a.txt",
+			"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
+		},
+		Platform:          platform,
+		OutputDirectories: []string{"output/a", "output/b/a", "output/c/a"},
+		OutputFiles: []string{
+			"output/c/b/a.txt", "output/d/a.txt", "output/d/a/a.txt",
 		},
 	}, opts)
 	res := cmd.Wait()
@@ -1056,21 +990,87 @@ func TestOutputPaths(t *testing.T) {
 
 	expectedFiles := []string{
 		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt",
-        "b/a/b.txt", "c/a/a.txt", "c/a/b.txt", "c/b/a.txt", "d/a.txt",
-        "d/a/a.txt",
+		"b/a/b.txt", "c/a/a.txt", "c/a/b.txt", "c/b/a.txt", "d/a.txt",
+		"d/a/a.txt",
 	}
 	unexpectedFiles := []string{
-        "a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e",
-    }
+		"a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e",
+	}
 	for _, expectedFile := range expectedFiles {
 		expectedOutputFile := filepath.Join("output", expectedFile)
 		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile),
-            "expected file to exist: %s", expectedOutputFile)
+			"expected file to exist: %s", expectedOutputFile)
 	}
 	for _, unexpectedFile := range unexpectedFiles {
 		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
 		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile),
-            "expectd file to not exist: %s", unexpectedOutputFile)
+			"expected file to not exist: %s", unexpectedOutputFile)
+	}
+}
+
+func TestOutputPaths(t *testing.T) {
+	tmpDir := testfs.MakeTempDir(t)
+	dirLayout := []string{
+		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a",
+		"d/b", "e", "e/a", "e/b",
+	}
+	files := []string{"a.txt", "b.txt"}
+	for _, dir := range dirLayout {
+		if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0777); err != nil {
+			assert.FailNow(t, err.Error())
+		}
+		for _, fname := range files {
+			relPath := filepath.Join(dir, fname)
+			testfs.WriteRandomString(t, tmpDir, relPath /* size= */, 10)
+		}
+	}
+
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir}
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{
+			"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
+		},
+		Platform: platform,
+		OutputPaths: []string{
+			"output/a", "output/b/a", "output/c/a", "output/c/b/a.txt",
+			"output/d/a.txt", "output/d/a/a.txt",
+		},
+	}, opts)
+	res := cmd.Wait()
+
+	require.Equal(t, 0, res.ExitCode)
+	require.Empty(t, res.Stderr)
+
+	outDir := rbe.DownloadOutputsToNewTempDir(res)
+
+	expectedFiles := []string{
+		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt",
+		"b/a/b.txt", "c/a/a.txt", "c/a/b.txt", "c/b/a.txt", "d/a.txt",
+		"d/a/a.txt",
+	}
+	unexpectedFiles := []string{
+		"a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e",
+	}
+	for _, expectedFile := range expectedFiles {
+		expectedOutputFile := filepath.Join("output", expectedFile)
+		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile),
+			"expected file to exist: %s", expectedOutputFile)
+	}
+	for _, unexpectedFile := range unexpectedFiles {
+		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
+		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile),
+			"expectd file to not exist: %s", unexpectedOutputFile)
 	}
 }
 
@@ -1101,9 +1101,9 @@ func TestOuputPathsDirectoriesAndFiles(t *testing.T) {
 		},
 	}
 	cmd := rbe.Execute(&repb.Command{
-		Arguments:         []string{
-            "sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
-        },
+		Arguments: []string{
+			"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
+		},
 		Platform:          platform,
 		OutputFiles:       []string{"output/a/a.txt"},
 		OutputDirectories: []string{"output/b"},
@@ -1122,12 +1122,12 @@ func TestOuputPathsDirectoriesAndFiles(t *testing.T) {
 	for _, expectedFile := range expectedFiles {
 		expectedOutputFile := filepath.Join("output", expectedFile)
 		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile),
-            "expected file to exist: %s", expectedOutputFile)
+			"expected file to exist: %s", expectedOutputFile)
 	}
 	for _, unexpectedFile := range unexpectedFiles {
 		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
 		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile),
-            "expected file to not exist: %s", unexpectedOutputFile)
+			"expected file to not exist: %s", unexpectedOutputFile)
 	}
 }
 
