@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -16,8 +17,10 @@ func init() {
 func TestParseBazelrc_Basic(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"WORKSPACE":      "",
-		"import.bazelrc": "",
+		"WORKSPACE":                 "",
+		"import.bazelrc":            "",
+		"explicit_import_1.bazelrc": "--flag_from_explicit_import_1_bazelrc",
+		"explicit_import_2.bazelrc": "--flag_from_explicit_import_2_bazelrc",
 		".bazelrc": `
 
 # COMMENT
@@ -63,9 +66,77 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			[]string{"query"},
 			[]string{
 				"--startup_flag_1",
+				"--ignore_all_rc_files",
 				"query",
 				"--common_global_flag_1",
 				"--common_global_flag_2",
+			},
+		},
+		{
+			[]string{
+				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
+				"query",
+			},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"query",
+				"--common_global_flag_1",
+				"--common_global_flag_2",
+				"--flag_from_explicit_import_1_bazelrc",
+			},
+		},
+		{
+			[]string{
+				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
+				"--bazelrc=" + filepath.Join(ws, "explicit_import_2.bazelrc"),
+				"query",
+			},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"query",
+				"--common_global_flag_1",
+				"--common_global_flag_2",
+				"--flag_from_explicit_import_1_bazelrc",
+				"--flag_from_explicit_import_2_bazelrc",
+			},
+		},
+		{
+			[]string{
+				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
+				// Passing --bazelrc=/dev/null causes subsequent --bazelrc args
+				// to be ignored.
+				"--bazelrc=/dev/null",
+				"--bazelrc=" + filepath.Join(ws, "explicit_import_2.bazelrc"),
+				"query",
+			},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"query",
+				"--common_global_flag_1",
+				"--common_global_flag_2",
+				"--flag_from_explicit_import_1_bazelrc",
+			},
+		},
+		{
+			[]string{
+				"--ignore_all_rc_files",
+				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
+				"build",
+				"--config=foo",
+			},
+			[]string{
+				"--ignore_all_rc_files",
+				// Note: when `--ignore_all_rc_files` is set, it's OK to leave
+				// --bazelrc flags as-is, since Bazel will ignore these when it
+				// actually gets invoked. We also don't expand --config args,
+				// since bazel will fail anyway due to configs being effectively
+				// disabled when --ignore_all_rc_files is set.
+				"--bazelrc=" + filepath.Join(ws, "explicit_import_1.bazelrc"),
+				"build",
+				"--config=foo",
 			},
 		},
 		{
@@ -73,6 +144,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			[]string{
 				"--startup_flag_1",
 				"--explicit_startup_flag",
+				"--ignore_all_rc_files",
 				"query",
 				"--common_global_flag_1",
 				"--common_global_flag_2",
@@ -82,6 +154,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			[]string{"build"},
 			[]string{
 				"--startup_flag_1",
+				"--ignore_all_rc_files",
 				"build",
 				"--common_global_flag_1",
 				"--common_global_flag_2",
@@ -92,6 +165,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			[]string{"build", "--explicit_flag"},
 			[]string{
 				"--startup_flag_1",
+				"--ignore_all_rc_files",
 				"build",
 				"--common_global_flag_1",
 				"--common_global_flag_2",
@@ -103,6 +177,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			[]string{"build", "--config=foo"},
 			[]string{
 				"--startup_flag_1",
+				"--ignore_all_rc_files",
 				"build",
 				"--common_global_flag_1",
 				"--common_global_flag_2",
@@ -118,6 +193,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			[]string{"build", "--config=foo", "--config", "bar"},
 			[]string{
 				"--startup_flag_1",
+				"--ignore_all_rc_files",
 				"build",
 				"--common_global_flag_1",
 				"--common_global_flag_2",
@@ -135,6 +211,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			[]string{"test"},
 			[]string{
 				"--startup_flag_1",
+				"--ignore_all_rc_files",
 				"test",
 				"--common_global_flag_1",
 				"--common_global_flag_2",
@@ -165,11 +242,11 @@ build:d --config=d
 	})
 
 	_, err := expandConfigs(ws, []string{"build", "--config=a"})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: a -> b -> c -> a")
 
 	_, err = expandConfigs(ws, []string{"build", "--config=d"})
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: d -> d")
 }
 
