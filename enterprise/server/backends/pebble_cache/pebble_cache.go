@@ -11,7 +11,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -541,7 +540,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 			}
 
 			dupPartitionPattern := fmt.Sprintf("%s/%s", part.ID, part.ID)
-			pathHasDupPartitionID, err := regexp.MatchString(dupPartitionPattern, path)
+			pathHasDupPartitionID := strings.Contains(path, dupPartitionPattern)
 			blobDir := p.blobDir(pathHasDupPartitionID, part.ID)
 
 			relPath, err := filepath.Rel(blobDir, path)
