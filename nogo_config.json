@@ -27,6 +27,9 @@
     "only_files": {
       "/server/": "Server code",
       "/enterprise/server/": "Enterprise server code"
+    },
+    "analyzer_flags": {
+      "default-signifies-exhaustive": "true"
     }
   },
   "fieldalignment": {
