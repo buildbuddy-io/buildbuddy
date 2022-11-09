@@ -957,7 +957,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 		}
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
 
-		rc, err = p.readerForCompressionType(rc, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+		rc, err = p.readerForCompressionType(rc, r, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
 		if err != nil {
 			return nil, err
 		}
@@ -1137,7 +1137,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offs
 		return nil, err
 	}
 
-	rc, err = p.readerForCompressionType(rc, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+	rc, err = p.readerForCompressionType(rc, r, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
 	if err != nil {
 		return nil, err
 	}
@@ -1865,17 +1865,23 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 	}
 }
 
-func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
+func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, resource *resource.ResourceName, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
 	if requestedCompression != cachedCompression {
-		readBuf := p.bufferPool.Get(compressorBufSizeBytes)
+		bufSize := int64(compressorBufSizeBytes)
+		resourceSize := resource.GetDigest().GetSizeBytes()
+		if resourceSize > 0 && resourceSize < bufSize {
+			bufSize = resourceSize
+		}
+
+		readBuf := p.bufferPool.Get(bufSize)
 		defer p.bufferPool.Put(readBuf)
-		compressBuf := p.bufferPool.Get(compressorBufSizeBytes)
+		compressBuf := p.bufferPool.Get(bufSize)
 		defer p.bufferPool.Put(compressBuf)
 
 		if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-			return compression.NewZstdCompressingReader(reader, readBuf, compressBuf)
+			return compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
 		} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
-			return compression.NewZstdDecompressingReader(reader, readBuf, compressBuf)
+			return compression.NewZstdDecompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
 		}
 	}
 	return reader, nil
