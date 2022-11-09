@@ -347,15 +347,15 @@ func (cm *clusterMap) FitScore(potentialMoves ...moveInstruction) float64 {
 
 func DefaultOpts() Opts {
 	return Opts{
-		ReplicaTimeout:  defaultReplicaTimeout,
-		ManagePeriod:    defaultManagePeriod,
+		ReplicaTimeout: defaultReplicaTimeout,
+		ManagePeriod:   defaultManagePeriod,
 	}
 }
 
 func TestingOpts() Opts {
 	return Opts{
-		ReplicaTimeout:  5 * time.Second,
-		ManagePeriod:    5 * time.Second,
+		ReplicaTimeout: 5 * time.Second,
+		ManagePeriod:   5 * time.Second,
 	}
 }
 
