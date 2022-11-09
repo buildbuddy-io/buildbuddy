@@ -36,19 +36,10 @@ type fakeStore struct {
 
 func (fs *fakeStore) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica)    {}
 func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {}
-func (fs *fakeStore) ReadFileFromPeer(ctx context.Context, except *rfpb.ReplicaDescriptor, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
-	if fs.fileReadFn != nil {
-		return fs.fileReadFn(fileRecord)
-	}
-	return nil, status.NotFoundErrorf("file not found")
-}
-func (fs *fakeStore) GetReplica(rangeID uint64) (*replica.Replica, error) {
-	return nil, nil
-}
 func (fs *fakeStore) Sender() *sender.Sender {
 	return nil
 }
-func (fs *fakeStore) RequestSplit(clusterID uint64) {}
+func (fs *fakeStore) NotifyUsage(ru *rfpb.ReplicaUsage) {}
 func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	fs.fileReadFn = fn
 	return fs

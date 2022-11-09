@@ -64,6 +64,7 @@ const (
 
 var (
 	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
+	replicaSplitSizeBytes   = flag.Int64("cache.raft.replica_split_size_bytes", 2e7, "Split replicas after they reach this size")
 )
 
 type Store struct {
@@ -179,6 +180,13 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 		return
 	}
 	go s.maybeAcquireRangeLease(rd)
+}
+
+func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
+	if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
+		s.RequestSplit(usage.GetReplica().GetClusterId())
+	}
+
 }
 
 func (s *Store) RequestSplit(clusterID uint64) {
