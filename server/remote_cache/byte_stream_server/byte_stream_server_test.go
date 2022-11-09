@@ -435,18 +435,6 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 }
 
 func Test_CacheHandlesCompression(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	ctx := context.Background()
-
-	// Enable compression
-	flags.Set(t, "cache.zstd_transcoding_enabled", true)
-	te.SetCache(&compressiontest.CompressionCache{Cache: te.GetCache()})
-
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	require.NoError(t, err)
-	clientConn := runByteStreamServer(ctx, te, t)
-	bsClient := bspb.NewByteStreamClient(clientConn)
-
 	// Make blob big enough to require multiple chunks to upload
 	blob := compressibleBlobOfSize(5e6)
 	compressedBlob := compression.CompressZstd(nil, blob)
@@ -493,45 +481,58 @@ func Test_CacheHandlesCompression(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		// Upload the blob
-		mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob, true)
+		{
+			te := testenv.GetTestEnv(t)
+			ctx := context.Background()
 
-		// Read back the blob we just uploaded
-		downloadBuf := []byte{}
-		downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
-			ResourceName: tc.downloadResourceName,
-		})
-		require.NoError(t, err, tc.name)
-		for {
-			res, err := downloadStream.Recv()
-			if err == io.EOF {
-				break
-			}
+			// Enable compression
+			flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			te.SetCache(&compressiontest.CompressionCache{Cache: te.GetCache()})
+
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+			require.NoError(t, err)
+			clientConn := runByteStreamServer(ctx, te, t)
+			bsClient := bspb.NewByteStreamClient(clientConn)
+
+			// Upload the blob
+			mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob, true)
+
+			// Read back the blob we just uploaded
+			downloadBuf := []byte{}
+			downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+				ResourceName: tc.downloadResourceName,
+			})
 			require.NoError(t, err, tc.name)
-			downloadBuf = append(downloadBuf, res.Data...)
-		}
-		require.Equal(t, tc.expectedDownloadBlob, downloadBuf, tc.name)
-
-		// Now try uploading a duplicate. The duplicate upload should not fail,
-		// and we should still be able to read the blob.
-		mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob, false)
-
-		downloadBuf = []byte{}
-		downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
-			ResourceName: tc.downloadResourceName,
-		})
-		require.NoError(t, err, tc.name)
-		for {
-			res, err := downloadStream.Recv()
-			if err == io.EOF {
-				break
+			for {
+				res, err := downloadStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err, tc.name)
+				downloadBuf = append(downloadBuf, res.Data...)
 			}
+			require.Equal(t, tc.expectedDownloadBlob, downloadBuf, tc.name)
+
+			// Now try uploading a duplicate. The duplicate upload should not fail,
+			// and we should still be able to read the blob.
+			mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob, false)
+
+			downloadBuf = []byte{}
+			downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
+				ResourceName: tc.downloadResourceName,
+			})
 			require.NoError(t, err, tc.name)
-			downloadBuf = append(downloadBuf, res.Data...)
+			for {
+				res, err := downloadStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err, tc.name)
+				downloadBuf = append(downloadBuf, res.Data...)
+			}
+			require.Equal(t, tc.expectedDownloadBlob, downloadBuf, tc.name)
 		}
-		require.Equal(t, tc.expectedDownloadBlob, downloadBuf, tc.name)
 	}
-
 }
 
 func compressibleBlobOfSize(sizeBytes int) []byte {
