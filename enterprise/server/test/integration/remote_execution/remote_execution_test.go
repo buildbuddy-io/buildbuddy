@@ -1070,7 +1070,7 @@ func TestOutputPaths(t *testing.T) {
 	for _, unexpectedFile := range unexpectedFiles {
 		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
 		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile),
-			"expectd file to not exist: %s", unexpectedOutputFile)
+			"expected file to not exist: %s", unexpectedOutputFile)
 	}
 }
 
