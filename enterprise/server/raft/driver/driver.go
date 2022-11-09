@@ -33,9 +33,6 @@ const (
 	// should be started on a new node.
 	defaultReplicaTimeout = 5 * time.Minute
 
-	// Broadcast this nodes set of active replicas after this period.
-	defaultBroadcastPeriod = 30 * time.Second
-
 	// Attempt to reconcile / manage clusters after this period.
 	defaultManagePeriod = 60 * time.Second
 
@@ -48,10 +45,6 @@ type Opts struct {
 	// ReplicaTimeout is how long a replica must go-unseen before being
 	// marked dead.
 	ReplicaTimeout time.Duration
-
-	// BroadcastPeriod is how often this node will broadcast its set of
-	// active replicas.
-	BroadcastPeriod time.Duration
 
 	// ManagePeriod is how often to attempt to re-spawn, clean-up, or
 	// split dead or oversize replicas / clusters.
@@ -354,17 +347,15 @@ func (cm *clusterMap) FitScore(potentialMoves ...moveInstruction) float64 {
 
 func DefaultOpts() Opts {
 	return Opts{
-		ReplicaTimeout:  defaultReplicaTimeout,
-		BroadcastPeriod: defaultBroadcastPeriod,
-		ManagePeriod:    defaultManagePeriod,
+		ReplicaTimeout: defaultReplicaTimeout,
+		ManagePeriod:   defaultManagePeriod,
 	}
 }
 
 func TestingOpts() Opts {
 	return Opts{
-		ReplicaTimeout:  5 * time.Second,
-		BroadcastPeriod: 2 * time.Second,
-		ManagePeriod:    5 * time.Second,
+		ReplicaTimeout: 5 * time.Second,
+		ManagePeriod:   5 * time.Second,
 	}
 }
 
@@ -374,7 +365,6 @@ type Driver struct {
 	gossipManager *gossip.GossipManager
 	mu            *sync.Mutex
 	started       bool
-	broadcastQuit chan struct{}
 	manageQuit    chan struct{}
 	clusterMap    *clusterMap
 	numSamples    int64
@@ -402,8 +392,6 @@ func (d *Driver) Start() error {
 	if d.started {
 		return nil
 	}
-	d.broadcastQuit = make(chan struct{})
-	go d.broadcastLoop()
 
 	d.manageQuit = make(chan struct{})
 	go d.manageLoop()
@@ -419,26 +407,10 @@ func (d *Driver) Stop() error {
 	if !d.started {
 		return nil
 	}
-	close(d.broadcastQuit)
 	close(d.manageQuit)
 	d.started = false
 	log.Debugf("Driver stopped")
 	return nil
-}
-
-// broadcastLoop does not return; call it from a goroutine.
-func (d *Driver) broadcastLoop() {
-	for {
-		select {
-		case <-d.broadcastQuit:
-			return
-		case <-time.After(d.opts.BroadcastPeriod):
-			err := d.broadcast()
-			if err != nil {
-				log.Errorf("Broadcast error: %s", err)
-			}
-		}
-	}
 }
 
 // manageLoop does not return; call it from a goroutine.
@@ -454,61 +426,6 @@ func (d *Driver) manageLoop() {
 			}
 		}
 	}
-}
-
-// broadcasts a proto containing usage information about this store's
-// replicas.
-func (d *Driver) broadcast() error {
-	ctx := context.Background()
-	rsp, err := d.store.ListCluster(ctx, &rfpb.ListClusterRequest{})
-	if err != nil {
-		return err
-	}
-
-	// Need to be very careful about what is broadcast here because the max
-	// allowed UserEvent size is 9K, and broadcasting too much could cause
-	// slow rebalancing etc.
-
-	// A max ReplicaUsage should be around 8 bytes * 3 = 24 bytes. So 375
-	// replica usages should fit in a single gossip message. Use 350 as the
-	// target size so there is room for the NHID and a small margin of
-	// safety.
-	batchSize := 350
-	numReplicas := len(rsp.GetRangeReplicas())
-	gossiped := false
-	for start := 0; start < numReplicas; start += batchSize {
-		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
-		end := start + batchSize
-		if end > numReplicas {
-			end = numReplicas
-		}
-		for _, rr := range rsp.GetRangeReplicas()[start:end] {
-			nu.ReplicaUsage = append(nu.ReplicaUsage, rr.GetReplicaUsage())
-		}
-		buf, err := proto.Marshal(nu)
-		if err != nil {
-			return err
-		}
-		if err := d.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
-			return err
-		}
-		gossiped = true
-	}
-
-	// If a node does not yet have any replicas, the loop above will not
-	// have gossiped anything. In that case, gossip an "empty" usage event
-	// now.
-	if !gossiped {
-		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
-		buf, err := proto.Marshal(nu)
-		if err != nil {
-			return err
-		}
-		if err := d.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // OnEvent listens for other nodes' gossip events and handles them.

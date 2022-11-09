@@ -50,10 +50,9 @@ const (
 )
 
 var (
-	atimeUpdateThreshold  = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
-	atimeWriteBatchSize   = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
-	atimeBufferSize       = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	replicaSplitSizeBytes = flag.Int64("cache.raft.replica_split_size_bytes", 2e7, "Split replicas after they reach this size")
+	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
+	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
+	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 )
 
 // Replicas need a reference back to the Store that holds them in order to
@@ -63,8 +62,8 @@ var (
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
+	NotifyUsage(ru *rfpb.ReplicaUsage)
 	Sender() *sender.Sender
-	RequestSplit(clusterID uint64)
 }
 
 // IOnDiskStateMachine is the interface to be implemented by application's
@@ -1238,11 +1237,9 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
 		} else {
-			if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
-				sm.store.RequestSplit(sm.ClusterID)
-			}
-			sm.lastUsageCheckIndex = sm.lastAppliedIndex
+			sm.store.NotifyUsage(usage)
 		}
+		sm.lastUsageCheckIndex = sm.lastAppliedIndex
 	}
 	return entries, nil
 }

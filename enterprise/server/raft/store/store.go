@@ -64,6 +64,7 @@ const (
 
 var (
 	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
+	replicaSplitSizeBytes   = flag.Int64("cache.raft.replica_split_size_bytes", 2e7, "Split replicas after they reach this size")
 )
 
 type Store struct {
@@ -179,6 +180,13 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 		return
 	}
 	go s.maybeAcquireRangeLease(rd)
+}
+
+func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
+	if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
+		s.RequestSplit(usage.GetReplica().GetClusterId())
+	}
+
 }
 
 func (s *Store) RequestSplit(clusterID uint64) {
@@ -372,6 +380,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.maybeAcquireRangeLease(rd)
+	go s.broadcast()
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
@@ -393,6 +402,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	// Start goroutines for these so that Removing ranges is quick.
 	go s.releaseRangeLease(rd.GetRangeId())
+	go s.broadcast()
 }
 
 // validatedRange verifies that the header is valid and the client is using
@@ -779,6 +789,59 @@ func (s *Store) renewNodeLiveness() {
 		}
 		s.log.Errorf("Error leasing node liveness record: %s", err)
 	}
+}
+
+func (s *Store) broadcast() error {
+	ctx := context.Background()
+	rsp, err := s.ListCluster(ctx, &rfpb.ListClusterRequest{})
+	if err != nil {
+		return err
+	}
+
+	// Need to be very careful about what is broadcast here because the max
+	// allowed UserEvent size is 9K, and broadcasting too much could cause
+	// slow rebalancing etc.
+
+	// A max ReplicaUsage should be around 8 bytes * 3 = 24 bytes. So 375
+	// replica usages should fit in a single gossip message. Use 350 as the
+	// target size so there is room for the NHID and a small margin of
+	// safety.
+	batchSize := 350
+	numReplicas := len(rsp.GetRangeReplicas())
+	gossiped := false
+	for start := 0; start < numReplicas; start += batchSize {
+		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
+		end := start + batchSize
+		if end > numReplicas {
+			end = numReplicas
+		}
+		for _, rr := range rsp.GetRangeReplicas()[start:end] {
+			nu.ReplicaUsage = append(nu.ReplicaUsage, rr.GetReplicaUsage())
+		}
+		buf, err := proto.Marshal(nu)
+		if err != nil {
+			return err
+		}
+		if err := s.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
+			return err
+		}
+		gossiped = true
+	}
+
+	// If a node does not yet have any replicas, the loop above will not
+	// have gossiped anything. In that case, gossip an "empty" usage event
+	// now.
+	if !gossiped {
+		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
+		buf, err := proto.Marshal(nu)
+		if err != nil {
+			return err
+		}
+		if err := s.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
