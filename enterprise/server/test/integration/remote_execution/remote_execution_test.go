@@ -548,10 +548,10 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Success(t *testing.T) {
 	opts := &rbetest.ExecuteOpts{}
 
 	cmd := rbe.Execute(&repb.Command{
-		Arguments: []string{
-			"mkdir", "output_dir", "&&",
-			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
-		},
+		Arguments: []string{"sh", "-c", strings.Join([]string{
+            `mkdir output_dir`,
+			"touch output.txt undeclared_output.txt output_dir/output.txt",
+		}, "\n")},
 		Platform:          platform,
 		OutputDirectories: []string{"output_dir"},
 		OutputFiles:       []string{"output.txt"},
@@ -610,10 +610,10 @@ func TestSimpleCommandWithPoolSelectionViaHeader(t *testing.T) {
 	}
 
 	cmd := rbe.Execute(&repb.Command{
-		Arguments: []string{
-			"mkdir", "output_dir",
-			"touch", "output.txt", "undeclared_output.txt", "output_dir/output.txt",
-		},
+		Arguments: []string{"sh", "-c", strings.Join([]string{
+            `mkdir output_dir`,
+			"touch output.txt undeclared_output.txt output_dir/output.txt",
+		}, "\n")},
 		Platform:          platform,
 		OutputDirectories: []string{"output_dir"},
 		OutputFiles:       []string{"output.txt"},
@@ -880,19 +880,19 @@ func TestComplexActionIO(t *testing.T) {
 		Arguments: []string{"sh", "-c", strings.Join([]string{
 			`set -e`,
 			`input_paths=$(find . -type f)`,
-			// Mirror the input tree to out_files_dir, skipping the first byte so that
-			// the output digests are different. Note that we don't create directories
-			// here since the executor is responsible for creating parent dirs of
-			// output files.
+			// Mirror the input tree to out_files_dir, skipping the first byte
+            // so that the output digests are different. Note that we don't
+            // create directories here since the executor is responsible for
+            // creating parent dirs of output files.
 			`
 			for path in $input_paths; do
-				output_path="out_files_dir/$(echo "$path" | sed 's/.input/.output/')"
-				cat "$path" | tail -c +2 > "$output_path"
+				opath="out_files_dir/$(echo "$path" | sed 's/.input/.output/')"
+				cat "$path" | tail -c +2 > "$opath"
 			done
 			`,
-			// Mirror the input tree to out_dir, skipping the first 2 bytes this time.
-			// We *do* need to create parent dirs since the executor is only
-			// responsible for creating the top-level out_dir.
+			// Mirror the input tree to out_dir, skipping the first 2 bytes this
+            // time. We *do* need to create parent dirs since the executor is
+            // only responsible for creating the top-level out_dir.
 			`
 			for path in $input_paths; do
 				output_path="out_dir/$(echo "$path" | sed 's/.input/.output/')"
@@ -945,8 +945,8 @@ func TestComplexActionIO(t *testing.T) {
 func TestOutputDirectoriesAndFiles(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	dirLayout := []string{
-		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a", "d/b", "e", "e/a",
-		"e/b",
+		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a",
+        "d/b", "e", "e/a", "e/b",
 	}
 	files := []string{"a.txt", "b.txt"}
 	for _, dir := range dirLayout {
@@ -972,10 +972,14 @@ func TestOutputDirectoriesAndFiles(t *testing.T) {
 		},
 	}
 	cmd := rbe.Execute(&repb.Command{
-		Arguments:         []string{"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output"},
+		Arguments:         []string{
+            "sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
+        },
 		Platform:          platform,
 		OutputDirectories: []string{"output/a", "output/b/a", "output/c/a"},
-		OutputFiles:       []string{"output/c/b/a.txt", "output/d/a.txt", "output/d/a/a.txt"},
+		OutputFiles:       []string{
+            "output/c/b/a.txt", "output/d/a.txt", "output/d/a/a.txt",
+        },
 	}, opts)
 	res := cmd.Wait()
 
@@ -985,25 +989,30 @@ func TestOutputDirectoriesAndFiles(t *testing.T) {
 	outDir := rbe.DownloadOutputsToNewTempDir(res)
 
 	expectedFiles := []string{
-		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt", "b/a/b.txt", "c/a/a.txt",
-		"c/a/b.txt", "c/b/a.txt", "d/a.txt", "d/a/a.txt",
+		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt",
+        "b/a/b.txt", "c/a/a.txt", "c/a/b.txt", "c/b/a.txt", "d/a.txt",
+        "d/a/a.txt",
 	}
-	unexpectedFiles := []string{"a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e"}
+	unexpectedFiles := []string{
+        "a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e",
+    }
 	for _, expectedFile := range expectedFiles {
 		expectedOutputFile := filepath.Join("output", expectedFile)
-		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile), "expected file to exist: %s", expectedOutputFile)
+		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile),
+            "expected file to exist: %s", expectedOutputFile)
 	}
 	for _, unexpectedFile := range unexpectedFiles {
 		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
-		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile), "expected file to not exist: %s", unexpectedOutputFile)
+		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile),
+            "expected file to not exist: %s", unexpectedOutputFile)
 	}
 }
 
 func TestOutputPaths(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	dirLayout := []string{
-		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a", "d/b", "e", "e/a",
-		"e/b",
+		"", "a", "a/a", "a/b", "b", "b/a", "b/b", "c", "c/a", "c/b", "d", "d/a",
+        "d/b", "e", "e/a", "e/b",
 	}
 	files := []string{"a.txt", "b.txt"}
 	for _, dir := range dirLayout {
@@ -1029,11 +1038,13 @@ func TestOutputPaths(t *testing.T) {
 		},
 	}
 	cmd := rbe.Execute(&repb.Command{
-		Arguments: []string{"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output"},
+		Arguments: []string{
+            "sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
+        },
 		Platform:  platform,
 		OutputPaths: []string{
-			"output/a", "output/b/a", "output/c/a", "output/c/b/a.txt", "output/d/a.txt",
-			"output/d/a/a.txt",
+			"output/a", "output/b/a", "output/c/a", "output/c/b/a.txt",
+            "output/d/a.txt", "output/d/a/a.txt",
 		},
 	}, opts)
 	res := cmd.Wait()
@@ -1044,17 +1055,22 @@ func TestOutputPaths(t *testing.T) {
 	outDir := rbe.DownloadOutputsToNewTempDir(res)
 
 	expectedFiles := []string{
-		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt", "b/a/b.txt", "c/a/a.txt",
-		"c/a/b.txt", "c/b/a.txt", "d/a.txt", "d/a/a.txt",
+		"a/a/a.txt", "a/a/b.txt", "a/b/a.txt", "a/b/b.txt", "b/a/a.txt",
+        "b/a/b.txt", "c/a/a.txt", "c/a/b.txt", "c/b/a.txt", "d/a.txt",
+        "d/a/a.txt",
 	}
-	unexpectedFiles := []string{"a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e"}
+	unexpectedFiles := []string{
+        "a.txt", "b.txt", "b/b", "c/b/b.txt", "d/a/b.txt", "d/b", "e",
+    }
 	for _, expectedFile := range expectedFiles {
 		expectedOutputFile := filepath.Join("output", expectedFile)
-		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile), "expected file to exist: %s", expectedOutputFile)
+		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile),
+            "expected file to exist: %s", expectedOutputFile)
 	}
 	for _, unexpectedFile := range unexpectedFiles {
 		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
-		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile), "expectd file to not exist: %s", unexpectedOutputFile)
+		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile),
+            "expectd file to not exist: %s", unexpectedOutputFile)
 	}
 }
 
@@ -1085,7 +1101,9 @@ func TestOuputPathsDirectoriesAndFiles(t *testing.T) {
 		},
 	}
 	cmd := rbe.Execute(&repb.Command{
-		Arguments:         []string{"sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output"},
+		Arguments:         []string{
+            "sh", "-c", "cp -r " + filepath.Join(tmpDir, "*") + " output",
+        },
 		Platform:          platform,
 		OutputFiles:       []string{"output/a/a.txt"},
 		OutputDirectories: []string{"output/b"},
@@ -1103,11 +1121,13 @@ func TestOuputPathsDirectoriesAndFiles(t *testing.T) {
 	unexpectedFiles := []string{"a", "b"}
 	for _, expectedFile := range expectedFiles {
 		expectedOutputFile := filepath.Join("output", expectedFile)
-		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile), "expected file to exist: %s", expectedOutputFile)
+		assert.Truef(t, testfs.Exists(t, outDir, expectedOutputFile),
+            "expected file to exist: %s", expectedOutputFile)
 	}
 	for _, unexpectedFile := range unexpectedFiles {
 		unexpectedOutputFile := filepath.Join("output", unexpectedFile)
-		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile), "expectd file to not exist: %s", unexpectedOutputFile)
+		assert.Falsef(t, testfs.Exists(t, outDir, unexpectedOutputFile),
+            "expected file to not exist: %s", unexpectedOutputFile)
 	}
 }
 

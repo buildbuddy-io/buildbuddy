@@ -65,7 +65,8 @@ type DirHelper struct {
 	// commands. (Parent dirs of requested outputs)
 	dirsToCreate []string
 
-	// The output paths that the client requested. Stored as a map for fast lookup.
+	// The output paths that the client requested. Stored as a map for fast
+    // lookup.
 	outputPaths map[string]struct{}
 
 	// dirPerms are the permissions used when creating output directories.
@@ -107,13 +108,15 @@ func (c *DirHelper) CreateOutputDirs() error {
 	}
 	return nil
 }
+
 func (c *DirHelper) IsOutputPath(path string) bool {
 	_, ok := c.outputPaths[path]
 	return ok
 }
 
-// If the provided path is a descendant of any of the output_paths, this function returns which
-// output_path it is a descendent of and true, otherwise it returns an unspecified string and false.
+// If the provided path is a descendant of any of the output_paths, this
+// function returns which output_path it is a descendent of and true, otherwise
+// it returns an unspecified string and false.
 func (c *DirHelper) FindParentOutputPath(path string) (string, bool) {
 	for p := filepath.Dir(path); p != filepath.Dir(p); p = filepath.Dir(p) {
 		if c.IsOutputPath(p) {
@@ -122,6 +125,7 @@ func (c *DirHelper) FindParentOutputPath(path string) (string, bool) {
 	}
 	return "", false
 }
+
 func (c *DirHelper) ShouldUploadAnythingInDir(path string) bool {
 	// Upload something in this directory if:
 	// 1. it is in output_paths
@@ -136,6 +140,7 @@ func (c *DirHelper) ShouldUploadAnythingInDir(path string) bool {
 	}
 	return c.ShouldUploadFile(path)
 }
+
 func (c *DirHelper) ShouldUploadFile(path string) bool {
 	// Upload the file if it is a child of anything in output_paths
 	for p := path; p != filepath.Dir(p); p = filepath.Dir(p) {
@@ -358,14 +363,15 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		return nil, err
 	}
 
-	// Make Trees of all of the paths specified in output_paths which were directories (which we
-	// noted in the filesystem walk above).
+	// Make Trees of all of the paths specified in output_paths which were
+    // directories (which we noted in the filesystem walk above).
 	trees := make(map[string]*repb.Tree, 0)
 	for _, treeToUpload := range treesToUpload {
 		trees[treeToUpload] = &repb.Tree{}
 	}
 
-	// For each of the filesToUpload, determine which Tree (if any) it is a part of and add it.
+	// For each of the filesToUpload, determine which Tree (if any) it is a part
+    // of and add it.
 	for _, f := range filesToUpload {
 		if f.dir == nil {
 			continue
