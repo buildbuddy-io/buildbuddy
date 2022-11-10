@@ -15,7 +15,7 @@ func Has(args []string, desiredArg string) bool {
 
 // Returns the value of the given desiredArg if contained in args
 func Get(args []string, desiredArg string) string {
-	arg, _, _ := Find(args, desiredArg)
+	arg, _, _ := FindLast(args, desiredArg)
 	return arg
 }
 
@@ -63,6 +63,22 @@ func Find(args []string, desiredArg string) (value string, index int, length int
 		}
 	}
 	return "", -1, 0
+}
+
+// FindLast returns the value corresponding to the last occurrence of the given
+// argument.
+func FindLast(args []string, desiredArg string) (value string, index int, length int) {
+	start := 0
+	lastValue, lastIndex, lastLength := "", -1, 0
+	for start < len(args) {
+		value, index, length := Find(args[start:], desiredArg)
+		if index == -1 {
+			break
+		}
+		lastValue, lastIndex, lastLength = value, start+index, length
+		start = start + index + length
+	}
+	return lastValue, lastIndex, lastLength
 }
 
 // Returns the first non-option found in the list of args (doesn't begin with "-")

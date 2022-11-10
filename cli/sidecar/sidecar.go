@@ -158,12 +158,10 @@ func ConfigureSidecar(args []string) []string {
 		return args
 	}
 	if besBackendFlag != "" {
-		_, rest := arg.Pop(args, "bes_backend")
-		args = append(rest, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
+		args = append(args, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
 	}
 	if remoteCacheFlag != "" && remoteExecFlag == "" {
-		_, rest := arg.Pop(args, "remote_cache")
-		args = append(rest, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
+		args = append(args, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
 	}
 	return args
 }
