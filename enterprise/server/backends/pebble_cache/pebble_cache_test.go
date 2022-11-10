@@ -804,19 +804,8 @@ func TestSizeLimit(t *testing.T) {
 }
 
 func TestCompression(t *testing.T) {
-	te := testenv.GetTestEnv(t)
-	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
-	ctx := getAnonContext(t, te)
-
-	maxSizeBytes := int64(1_000_000_000) // 1GB
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
-	if err != nil {
-		t.Fatal(err)
-	}
-	pc.Start()
-	defer pc.Stop()
-
-	blob := compressibleBlobOfSize(1000)
+	// Make blob big enough to require multiple chunks to compress
+	blob := compressibleBlobOfSize(4e6 + 1)
 	compressedBuf := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
@@ -852,34 +841,48 @@ func TestCompression(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		// Write data to cache
-		wc, err := pc.Writer(ctx, tc.rnToWrite)
-		require.NoError(t, err)
-		n, err := wc.Write(tc.dataToWrite)
-		require.NoError(t, err)
-		require.Equal(t, len(tc.dataToWrite), n)
-		err = wc.Commit()
-		require.NoError(t, err)
-		err = wc.Close()
-		require.NoError(t, err)
+		{
+			te := testenv.GetTestEnv(t)
+			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+			ctx := getAnonContext(t, te)
 
-		// Read data in compressed form
-		reader, err := pc.Reader(ctx, compressedRN, 0, 0)
-		require.NoError(t, err)
-		defer reader.Close()
-		data, err := io.ReadAll(reader)
-		require.NoError(t, err)
-		require.Equal(t, compressedBuf, data)
+			maxSizeBytes := int64(1_000_000_000) // 1GB
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pc.Start()
+			defer pc.Stop()
 
-		// Read data non-compressed
-		reader, err = pc.Reader(ctx, decompressedRN, 0, 0)
-		require.NoError(t, err)
-		defer reader.Close()
-		data, err = io.ReadAll(reader)
-		require.NoError(t, err)
-		require.Equal(t, blob, data)
+			// Write data to cache
+			wc, err := pc.Writer(ctx, tc.rnToWrite)
+			require.NoError(t, err, tc.name)
+			n, err := wc.Write(tc.dataToWrite)
+			require.NoError(t, err, tc.name)
+			require.Equal(t, len(tc.dataToWrite), n)
+			err = wc.Commit()
+			require.NoError(t, err, tc.name)
+			err = wc.Close()
+			require.NoError(t, err, tc.name)
+
+			// Read data in compressed form
+			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
+			require.NoError(t, err, tc.name)
+			defer reader.Close()
+			data, err := io.ReadAll(reader)
+			require.NoError(t, err, tc.name)
+			decompressed, err := compression.DecompressZstd(nil, data)
+			require.Equal(t, blob, decompressed, tc.name)
+
+			// Read data non-compressed
+			reader, err = pc.Reader(ctx, decompressedRN, 0, 0)
+			require.NoError(t, err, tc.name)
+			defer reader.Close()
+			data, err = io.ReadAll(reader)
+			require.NoError(t, err, tc.name)
+			require.Equal(t, blob, data, tc.name)
+		}
 	}
-
 }
 
 func compressibleBlobOfSize(sizeBytes int) []byte {
