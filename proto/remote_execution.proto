@@ -1930,8 +1930,7 @@ message ToolDetails {
 // * name: `build.bazel.remote.execution.v2.requestmetadata-bin`
 // * contents: the base64 encoded binary `RequestMetadata` message.
 // Note: the gRPC library serializes binary headers encoded in base 64 by
-// default
-// (https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests).
+// default (https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests).
 // Therefore, if the gRPC library is used to pass/retrieve this
 // metadata, the user may ignore the base64 encoding and assume it is simply
 // serialized as a binary message.
@@ -1952,21 +1951,18 @@ message RequestMetadata {
   // runs of foo_test, bar_test and baz_test on a post-submit of a given patch.
   string correlated_invocations_id = 4;
 
-  // A brief description of the kind of action, for example, CppCompile or
-  // GoLink. There is no standard agreed set of values for this, and they are
-  // expected to vary between different client tools.
+  // A brief description of the kind of action, for example, CppCompile or GoLink.
+  // There is no standard agreed set of values for this, and they are expected to vary between different client tools.
   string action_mnemonic = 5;
 
   // An identifier for the target which produced this action.
-  // No guarantees are made around how many actions may relate to a single
-  // target.
+  // No guarantees are made around how many actions may relate to a single target.
   string target_id = 6;
 
   // An identifier for the configuration in which the target was built,
   // e.g. for differentiating building host tools or different target platforms.
   // There is no expectation that this value will have any particular structure,
-  // or equality across invocations, though some client tools may offer these
-  // guarantees.
+  // or equality across invocations, though some client tools may offer these guarantees.
   string configuration_id = 7;
 
   // BUILDBUDDY EXTENSIONS BELOW
