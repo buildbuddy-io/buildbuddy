@@ -106,6 +106,9 @@ type Replica struct {
 	lastAppliedIndex    uint64
 	lastUsageCheckIndex uint64
 
+	fileRecordCountMu sync.Mutex
+	fileRecordCount   uint64
+
 	log             log.Logger
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
@@ -131,6 +134,10 @@ func isLocalKey(key []byte) bool {
 	return bytes.HasPrefix(key, constants.LocalPrefix) ||
 		bytes.HasPrefix(key, constants.SystemPrefix) ||
 		bytes.HasPrefix(key, constants.MetaRangePrefix)
+}
+
+func isFileRecordKey(key []byte) bool {
+	return !isLocalKey(key)
 }
 
 func sizeOf(key []byte, val []byte) (int64, error) {
@@ -179,7 +186,12 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	metrics.RaftBytes.With(prometheus.Labels{
 		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
 	}).Set(float64(estimatedBytesUsed))
-	// TODO(tylerw): compute number of keys here too.
+
+	sm.fileRecordCountMu.Lock()
+	metrics.RaftRecords.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
+	}).Set(float64(sm.fileRecordCount))
+	sm.fileRecordCountMu.Unlock()
 
 	return ru, nil
 }
@@ -232,6 +244,13 @@ func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	if !keys.IsLocalKey(key) {
 		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
 			sm.rangeMu.RUnlock()
+
+			if isFileRecordKey(key) {
+				if err := sm.updateFileRecordCount(wb, key, 1); err != nil {
+					return err
+				}
+			}
+
 			return wb.Set(key, val, nil /*ignored write options*/)
 		}
 		sm.rangeMu.RUnlock()
@@ -270,8 +289,8 @@ func (sm *Replica) lookup(db ReplicaReader, query []byte) ([]byte, error) {
 	return val, nil
 }
 
-func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
-	val, err := sm.lookup(db, []byte(constants.LastAppliedIndexKey))
+func (sm *Replica) getUint64Value(db ReplicaReader, key []byte) (uint64, error) {
+	val, err := sm.lookup(db, key)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return 0, nil
@@ -283,6 +302,35 @@ func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
 	}
 	i := bytesToUint64(val)
 	return i, nil
+}
+
+func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
+	return sm.getUint64Value(db, constants.LastAppliedIndexKey)
+}
+
+func (sm *Replica) getFileRecordCount(db ReplicaReader) (uint64, error) {
+	return sm.getUint64Value(db, constants.FileRecordCount)
+}
+
+func (sm *Replica) updateFileRecordCount(wb *pebble.Batch, key []byte, delta int) error {
+	sm.fileRecordCountMu.Lock()
+	defer sm.fileRecordCountMu.Unlock()
+	if delta < 0 {
+		sm.fileRecordCount -= uint64(-1 * delta)
+	} else {
+		_, closer, err := wb.Get(key)
+		if err == nil {
+			return closer.Close()
+		}
+		if err != nil && err != pebble.ErrNotFound {
+			return err
+		}
+		sm.fileRecordCount += uint64(delta)
+	}
+	if err := wb.Set(constants.FileRecordCount, uint64ToBytes(sm.fileRecordCount), nil); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (sm *Replica) getDBDir() string {
@@ -328,6 +376,11 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	sm.leaser = pebbleutil.NewDBLeaser(db)
 
 	sm.checkAndSetRangeDescriptor(db)
+	rc, err := sm.getFileRecordCount(db)
+	if err != nil {
+		return 0, err
+	}
+	sm.fileRecordCount = rc
 	return sm.getLastAppliedIndex(db)
 }
 
@@ -363,6 +416,9 @@ func (sm *Replica) fileDelete(wb *pebble.Batch, req *rfpb.FileDeleteRequest) (*r
 	if err := wb.Delete(fileMetadataKey, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
+	if err := sm.updateFileRecordCount(wb, fileMetadataKey, -1); err != nil {
+		return nil, err
+	}
 	return &rfpb.FileDeleteResponse{}, nil
 }
 
@@ -373,18 +429,24 @@ func (sm *Replica) deleteRange(wb *pebble.Batch, req *rfpb.DeleteRangeRequest) (
 	})
 	defer iter.Close()
 
+	numDeleted := 0
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := wb.Delete(iter.Key(), nil /*ignored write options*/); err != nil {
 			return nil, err
 		}
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err == nil {
+			numDeleted++
 			if fileMetadata.GetFileRecord() != nil {
 				if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
 					log.Errorf("Error deleting stored file: %s", err)
 				}
 			}
 		}
+	}
+
+	if err := sm.updateFileRecordCount(wb, iter.Key(), -numDeleted); err != nil {
+		return nil, err
 	}
 
 	return &rfpb.DeleteRangeResponse{}, nil
