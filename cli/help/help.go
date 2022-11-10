@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 )
 
@@ -36,15 +37,17 @@ func HandleHelp(args []string) (exitCode int, err error) {
 		return showHelp("", getHelpModifiers(args))
 	}
 	if cmd == "help" {
-		// Get the subcommand (the string "build" in "bazel help build")
-		subcommand, _ := arg.GetCommandAndIndex(args[idx+1:])
-		return showHelp(subcommand, getHelpModifiers(args))
+		bazelCommand, _ := parser.GetBazelCommandAndIndex(args[idx+1:])
+		return showHelp(bazelCommand, getHelpModifiers(args))
 	}
 	if arg.ContainsExact(args, "-h") || arg.ContainsExact(args, "--help") {
-		// Assume cmd is the bazel subcommand if set.
-		// Bazel will show "ERROR: 'foo' is not a known command" if the
-		// subcommand is invalid.
-		return showHelp(cmd, getHelpModifiers(args))
+		bazelCommand, _ := parser.GetBazelCommandAndIndex(args)
+		// Sanity check to work around potential issues with
+		// GetBazelCommandAndIndex (see TODOs on that func).
+		if cmd != bazelCommand {
+			return -1, nil
+		}
+		return showHelp(bazelCommand, getHelpModifiers(args))
 	}
 	return -1, nil
 }
