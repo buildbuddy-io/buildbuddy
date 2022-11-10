@@ -14,7 +14,7 @@
 //
 // Prevent buildfix.sh from clang-formatting this file because it's misformatted
 // in the upstream repository.
-// NO-CLANG-FORMAT
+// clang-format off
 
 syntax = "proto3";
 
