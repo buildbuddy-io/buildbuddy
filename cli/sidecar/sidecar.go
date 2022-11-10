@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_bundle"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/google/shlex"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/sidecar"
 )
@@ -35,10 +36,10 @@ func getSidecarBinaryName() string {
 	return sidecarName
 }
 
-func extractBundledSidecar(ctx context.Context, bbHomeDir string) error {
+func extractBundledSidecar(ctx context.Context, bbCacheDir string) error {
 	// Figure out appropriate os/arch for this machine.
 	sidecarName := getSidecarBinaryName()
-	sidecarPath := filepath.Join(bbHomeDir, sidecarName)
+	sidecarPath := filepath.Join(bbCacheDir, sidecarName)
 
 	if _, err := os.Stat(sidecarPath); err == nil {
 		return nil
@@ -73,17 +74,21 @@ func pathExists(p string) bool {
 	return !os.IsNotExist(err)
 }
 
-func startBackgroundProcess(cmd string, args []string) error {
-	c := exec.Command(cmd, args...)
-	log.Debugf("running sidecar cmd: %s", c.String())
-	return c.Start()
-}
-
-func restartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []string) (string, error) {
+func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []string) (string, error) {
 	sidecarName := getSidecarBinaryName()
-	cmd := filepath.Join(bbHomeDir, sidecarName)
+	cmd := filepath.Join(bbCacheDir, sidecarName)
 
-	sockName := sockPrefix + hashStrings(append(args, cmd)) + ".sock"
+	// Forward args from BB_SIDECAR_ARGS env var (useful for setting debug log
+	// level, etc.)
+	rawExtraArgs := os.Getenv("BB_SIDECAR_ARGS")
+	extraArgs, err := shlex.Split(rawExtraArgs)
+	if err != nil {
+		return "", err
+	}
+	args = append(args, extraArgs...)
+
+	sidecarID := hashStrings(append([]string{cmd}, args...))
+	sockName := sockPrefix + sidecarID + ".sock"
 	sockPath := filepath.Join(os.TempDir(), sockName)
 
 	// Check if a process is already running with this sock.
@@ -93,9 +98,21 @@ func restartSidecarIfNecessary(ctx context.Context, bbHomeDir string, args []str
 		return sockPath, nil
 	}
 
+	logPath := filepath.Join(bbCacheDir, "sidecar-"+sidecarID+".log")
+	f, err := os.Create(logPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create sidecar log file: %s", err)
+	}
+	// Note: Not closing f since the sidecar writes to it.
+
 	// This is where we'll listen for bazel traffic
 	args = append(args, fmt.Sprintf("--listen_addr=unix://%s", sockPath))
-	if err := startBackgroundProcess(cmd, args); err != nil {
+	c := exec.Command(cmd, args...)
+	c.Stdout = f
+	c.Stderr = f
+	log.Debugf("Running sidecar cmd: %s", c.String())
+	log.Debugf("Sidecar will write logs to: %s", logPath)
+	if err := c.Start(); err != nil {
 		return "", err
 	}
 	return sockPath, nil
@@ -127,23 +144,26 @@ func ConfigureSidecar(args []string) []string {
 		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
 	}
 
-	if len(sidecarArgs) > 0 {
-		sidecarSocket, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
-		if err == nil {
-			err = keepaliveSidecar(ctx, sidecarSocket)
-		}
-		if err == nil {
-			if besBackendFlag != "" {
-				_, rest := arg.Pop(args, "bes_backend")
-				args = append(rest, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
-			}
-			if remoteCacheFlag != "" && remoteExecFlag == "" {
-				_, rest := arg.Pop(args, "remote_cache")
-				args = append(rest, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
-			}
-		} else {
-			log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
-		}
+	if len(sidecarArgs) == 0 {
+		return args
+	}
+
+	sidecarSocket, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
+	if err != nil {
+		log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
+		return args
+	}
+	if err := keepaliveSidecar(ctx, sidecarSocket); err != nil {
+		log.Printf("Could not connect to sidecar, continuing without sidecar: %s", err)
+		return args
+	}
+	if besBackendFlag != "" {
+		_, rest := arg.Pop(args, "bes_backend")
+		args = append(rest, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
+	}
+	if remoteCacheFlag != "" && remoteExecFlag == "" {
+		_, rest := arg.Pop(args, "remote_cache")
+		args = append(rest, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
 	}
 	return args
 }
