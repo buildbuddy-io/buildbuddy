@@ -48,28 +48,28 @@ With a row-based store, we can see from this diagram that computing a sum of
 cache hit count would require us to load both block 1 and block 2. With
 a column-based store, all the cache hits data are stored in the same block.
 
-Therefore, we felt that using Clickhouse, a column-based database, would improve
+Therefore, we felt that using ClickHouse, a column-based database, would improve
 the performance of required queries for the trends page. We validated
-Clickhouse’s performance against our use case: it took Clickhouse 0.317 seconds
+ClickHouse’s performance against our use case: it took ClickHouse 0.317 seconds
 to process 1.5 million rows and calculate the stats. The same query took MySQL
 about 24 seconds.
 
 One of our goals for data migration is to make sure the data is accurate. We
-added monitoring and compared data between MySQL and Clickhouse after we enabled
+added monitoring and compared data between MySQL and ClickHouse after we enabled
 double writing in production. One source of inconsistency was that data was
-inserted into Clickhouse both by the backfill script and production servers.
-Different to a traditional database, Clickhouse’s
+inserted into ClickHouse both by the backfill script and production servers.
+Different to a traditional database, ClickHouse’s
 [ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree/)
 engine only deduplicates data in the background at an indeterminate time. As
 a result, we needed to manually run the
 [OPTIMIZE](https://clickhouse.com/docs/en/sql-reference/statements/optimize/)
-operation to force Clickhouse to deduplicate data after the backfill was done.
+operation to force ClickHouse to deduplicate data after the backfill was done.
 After we were confident in the data consistency, we finally enabled the Trends
-page to read from Clickhouse.
+page to read from ClickHouse.
 
 ## What's next
 
-We are excited how Clickhouse unlocks more possibilities for us to provide
+We are excited how ClickHouse unlocks more possibilities for us to provide
 analytical insights into builds, targets, tests and remote execution. For
 example, we want to add graphs that show how remote actions are spending most of
 their time. These insights can be used to guide remote execution performance
