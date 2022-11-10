@@ -897,9 +897,6 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 	resourceName := req.GetResourceName()
 	metadata, err := s.env.GetCache().Metadata(ctx, resourceName)
 	if err != nil {
-		if status.IsNotFoundError(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
 
