@@ -250,7 +250,7 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	}
 	args = append(startupArgs, args...)
 
-	command, commandIndex := getBazelCommandAndIndex(args)
+	command, commandIndex := GetBazelCommandAndIndex(args)
 	if commandIndex == -1 {
 		return args, nil
 	}
@@ -361,7 +361,7 @@ func isConfigDefined(rules *Rules, config string, phases []string) bool {
 }
 
 func consumeRCFileArgs(args []string, workspaceDir string) (newArgs []string, rcFiles []string, err error) {
-	_, idx := getBazelCommandAndIndex(args)
+	_, idx := GetBazelCommandAndIndex(args)
 	if idx == -1 {
 		return nil, nil, fmt.Errorf(`no command provided (run "%s help" to see available commands)`, os.Args[0])
 	}
@@ -458,7 +458,13 @@ func asStartupBoolFlag(arg, name string) (value, ok bool) {
 	return false, false
 }
 
-func getBazelCommandAndIndex(args []string) (string, int) {
+// TODO: Return an empty string if the subcommand happens to come after
+// a bb-specific command. For example, `bb install --path test` should
+// return an empty string, not "test".
+// TODO: More robust parsing of startup options. For example, this has a bug
+// that passing `bazel --output_base build test ...` returns "build" as the
+// bazel command, even though "build" is the argument to --output_base.
+func GetBazelCommandAndIndex(args []string) (string, int) {
 	for i, a := range args {
 		if _, ok := bazelCommands[a]; ok {
 			return a, i
