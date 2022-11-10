@@ -445,39 +445,39 @@ func Test_CacheHandlesCompression(t *testing.T) {
 	require.NoError(t, err)
 
 	testCases := []struct {
-		name                 string
-		uploadResourceName   string
-		uploadBlob           []byte
-		downloadResourceName string
-		expectedDownloadBlob []byte
+		name                        string
+		uploadResourceName          string
+		uploadBlob                  []byte
+		downloadResourceName        string
+		expectedDownloadCompression repb.Compressor_Value
 	}{
 		{
-			name:                 "Write compressed, read compressed",
-			uploadResourceName:   fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
-			uploadBlob:           compressedBlob,
-			downloadResourceName: fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
-			expectedDownloadBlob: compressedBlob,
+			name:                        "Write compressed, read compressed",
+			uploadResourceName:          fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:                  compressedBlob,
+			downloadResourceName:        fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_ZSTD,
 		},
 		{
-			name:                 "Write compressed, read decompressed",
-			uploadResourceName:   fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
-			uploadBlob:           compressedBlob,
-			downloadResourceName: fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
-			expectedDownloadBlob: blob,
+			name:                        "Write compressed, read decompressed",
+			uploadResourceName:          fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:                  compressedBlob,
+			downloadResourceName:        fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_IDENTITY,
 		},
 		{
-			name:                 "Write decompressed, read decompressed",
-			uploadResourceName:   fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
-			uploadBlob:           blob,
-			downloadResourceName: fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
-			expectedDownloadBlob: blob,
+			name:                        "Write decompressed, read decompressed",
+			uploadResourceName:          fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:                  blob,
+			downloadResourceName:        fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_IDENTITY,
 		},
 		{
-			name:                 "Write decompressed, read compressed",
-			uploadResourceName:   fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
-			uploadBlob:           blob,
-			downloadResourceName: fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
-			expectedDownloadBlob: compressedBlob,
+			name:                        "Write decompressed, read compressed",
+			uploadResourceName:          fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:                  blob,
+			downloadResourceName:        fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_ZSTD,
 		},
 	}
 	for _, tc := range testCases {
@@ -511,7 +511,14 @@ func Test_CacheHandlesCompression(t *testing.T) {
 				require.NoError(t, err, tc.name)
 				downloadBuf = append(downloadBuf, res.Data...)
 			}
-			require.Equal(t, tc.expectedDownloadBlob, downloadBuf, tc.name)
+
+			if tc.expectedDownloadCompression == repb.Compressor_IDENTITY {
+				require.Equal(t, blob, downloadBuf, tc.name)
+			} else if tc.expectedDownloadCompression == repb.Compressor_ZSTD {
+				decompressedDownloadBuf, err := compression.DecompressZstd(nil, downloadBuf)
+				require.NoError(t, err, tc.name)
+				require.Equal(t, blob, decompressedDownloadBuf, tc.name)
+			}
 
 			// Now try uploading a duplicate. The duplicate upload should not fail,
 			// and we should still be able to read the blob.
@@ -530,7 +537,14 @@ func Test_CacheHandlesCompression(t *testing.T) {
 				require.NoError(t, err, tc.name)
 				downloadBuf = append(downloadBuf, res.Data...)
 			}
-			require.Equal(t, tc.expectedDownloadBlob, downloadBuf, tc.name)
+
+			if tc.expectedDownloadCompression == repb.Compressor_IDENTITY {
+				require.Equal(t, blob, downloadBuf, tc.name)
+			} else if tc.expectedDownloadCompression == repb.Compressor_ZSTD {
+				decompressedDownloadBuf, err := compression.DecompressZstd(nil, downloadBuf)
+				require.NoError(t, err, tc.name)
+				require.Equal(t, blob, decompressedDownloadBuf, tc.name)
+			}
 		}
 	}
 }
