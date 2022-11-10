@@ -40,7 +40,7 @@ if which clang-format &>/dev/null; then
   protos=()
   while read -r proto; do
     protos+=("$proto")
-  done < <(git ls-files --exclude-standard | grep '\.proto$')
+  done < <(grep -L NO-CLANG-FORMAT $(git ls-files --exclude-standard | grep '\.proto$'))
   if [ ${#protos[@]} -gt 0 ]; then
     clang-format -i --style=Google "${protos[@]}"
   fi
