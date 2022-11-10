@@ -393,9 +393,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         className="action-property-title">
                         Output node properties
                       </div>
-                      {this.state.action.outputNodeProperties.length ? (
+                      {this.state.command.outputNodeProperties.length ? (
                         <div>
-                          {this.state.action.outputNodeProperties.map((outputNodeProperty) => (
+                          {this.state.command.outputNodeProperties.map((outputNodeProperty) => (
                             <div className="output-node">{outputNodeProperty}</div>
                           ))}
                         </div>

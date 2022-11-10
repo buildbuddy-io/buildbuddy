@@ -517,16 +517,7 @@ message Action {
   // requests for the same `Action` may not be merged.
   bool do_not_cache = 7;
 
-  // List of required supported
-  // [NodeProperty][build.bazel.remote.execution.v2.NodeProperty] keys. In order
-  // to ensure that equivalent `Action`s always hash to the same value, the
-  // supported node properties MUST be lexicographically sorted by name. Sorting
-  // of strings is done by code point, equivalently, by the UTF-8 bytes.
-  //
-  // The interpretation of these properties is server-dependent. If a property
-  // is not recognized by the server, the server will return an
-  // `INVALID_ARGUMENT` error.
-  repeated string output_node_properties = 8;
+  reserved 8; // Used for field moved to [Command][build.bazel.remote.execution.v2.Command].
 
   // An optional additional salt value used to place this `Action` into a
   // separate cache namespace from other instances having the same field
@@ -837,7 +828,8 @@ message Directory {
   repeated SymlinkNode symlinks = 3;
 
   // The node properties of the Directory.
-  repeated NodeProperty node_properties = 4;
+  reserved 4;
+  NodeProperties node_properties = 5;
 }
 
 // A single property for [FileNodes][build.bazel.remote.execution.v2.FileNode],
@@ -884,7 +876,8 @@ message FileNode {
   bool is_executable = 4;
 
   // The node properties of the FileNode.
-  repeated NodeProperty node_properties = 5;
+  reserved 5;
+  NodeProperties node_properties = 6;
 }
 
 // A `DirectoryNode` represents a child of a
@@ -918,7 +911,8 @@ message SymlinkNode {
   string target = 2;
 
   // The node properties of the SymlinkNode.
-  repeated NodeProperty node_properties = 3;
+  reserved 3;
+  NodeProperties node_properties = 4;
 }
 
 // A content digest. A digest for a given blob consists of the size of the blob
@@ -1239,7 +1233,8 @@ message OutputFile {
   bytes contents = 5;
 
   // The supported node properties of the OutputFile, if requested by the Action.
-  repeated NodeProperty node_properties = 6;
+  reserved 6;
+  NodeProperties node_properties = 7;
 }
 
 // A `Tree` contains all the
@@ -1342,7 +1337,8 @@ message OutputSymlink {
 
   // The supported node properties of the OutputSymlink, if requested by the
   // Action.
-  repeated NodeProperty node_properties = 3;
+  reserved 3;
+  NodeProperties node_properties = 4;
 }
 
 // An `ExecutionPolicy` can be used to control the scheduling of the action.
@@ -1857,7 +1853,7 @@ message Compressor {
 message CacheCapabilities {
   // All the digest functions supported by the remote cache.
   // Remote cache may support multiple digest functions simultaneously.
-  repeated DigestFunction.Value digest_function = 1;
+  repeated DigestFunction.Value digest_functions = 1;
 
   // Capabilities for updating the action cache.
   ActionCacheUpdateCapabilities action_cache_update_capabilities = 2;
