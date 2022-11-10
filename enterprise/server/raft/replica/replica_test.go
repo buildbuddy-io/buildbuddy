@@ -138,7 +138,7 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 
 func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
 	writeLocalRangeDescriptor(t, em, r, &rfpb.RangeDescriptor{
-		Left:       []byte("a"),
+		Left:       []byte("A"),
 		Right:      []byte("z"),
 		RangeId:    1,
 		Generation: 1,
