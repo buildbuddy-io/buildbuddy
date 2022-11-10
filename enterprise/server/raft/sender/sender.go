@@ -171,23 +171,22 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 		err = fn(client, header)
 		if err == nil {
 			return i, nil
-		} else {
-			if status.IsOutOfRangeError(err) {
-				m := status.Message(err)
-				switch {
-				// range not found, no replicas are likely to have it; bail.
-				case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
-					log.Debugf("out of range: %s (skipping rangecache)", m)
-					return 0, err
-				case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
-					log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetNodeId())
-					continue
-				default:
-					break
-				}
-			}
-			return 0, err
 		}
+		if status.IsOutOfRangeError(err) {
+			m := status.Message(err)
+			switch {
+			// range not found, no replicas are likely to have it; bail.
+			case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
+				log.Debugf("out of range: %s (skipping rangecache)", m)
+				return 0, err
+			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
+				log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetNodeId())
+				continue
+			default:
+				break
+			}
+		}
+		return 0, err
 	}
 	return 0, status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
 }
