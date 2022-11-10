@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -138,6 +139,51 @@ func TestInstall_ToUserConfig_CreateNewConfig(t *testing.T) {
   - path: ./test-plugin
 `
 	require.Equal(t, expectedConfig, config)
+}
+
+func TestParseRepoInstallSpec(t *testing.T) {
+	for _, tc := range []struct {
+		Repo, PathArg  string
+		ExpectedConfig *PluginConfig
+	}{
+		{
+			"foo/bar", "",
+			&PluginConfig{Repo: "foo/bar"},
+		},
+		{
+			"foo/bar@v1.0", "",
+			&PluginConfig{Repo: "foo/bar@v1.0"},
+		},
+		{
+			"foo/bar:subdir", "",
+			&PluginConfig{Repo: "foo/bar", Path: "subdir"},
+		},
+		{
+			"example.com/foo/bar", "",
+			&PluginConfig{Repo: "example.com/foo/bar"},
+		},
+		{
+			"https://example.com/foo/bar", "",
+			&PluginConfig{Repo: "example.com/foo/bar"},
+		},
+		{
+			"https://example.com/foo/bar@v1:subdir", "",
+			&PluginConfig{Repo: "example.com/foo/bar@v1", Path: "subdir"},
+		},
+		{
+			"https://example.com/foo/bar@v1", "subdir",
+			&PluginConfig{Repo: "example.com/foo/bar@v1", Path: "subdir"},
+		},
+		{
+			"https://example.com/foo/bar@v1:/nested/subdir", "",
+			&PluginConfig{Repo: "example.com/foo/bar@v1", Path: "/nested/subdir"},
+		},
+	} {
+		cfg, err := parseRepoInstallSpec(tc.Repo, tc.PathArg)
+
+		require.NoError(t, err)
+		assert.Equal(t, tc.ExpectedConfig, cfg)
+	}
 }
 
 func setup(t *testing.T) (ws, home string) {

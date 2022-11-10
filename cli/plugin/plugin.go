@@ -38,23 +38,26 @@ const (
 	pluginsStorageDirName = "plugins"
 
 	installCommandUsage = `
-Usage: bb install [REPO@VERSION] [--path=PATH] [--user]
+Usage: bb install [REPO[@VERSION][:SUBDIR]] [--path=PATH] [--user]
 
 Installs a remote or local CLI plugin for the current bazel workspace.
 
 The --user flag installs the plugin globally for your user in ~/buildbuddy.yaml,
 instead of just for the current workspace.
 
-If [repo] is not present, then --path is required, and must point to a local
-directory.
+A local plugin can be installed by omitting the repo argument and specifying
+--path=PATH instead.
 
 Examples:
+  # Install the latest version of "github.com/example-inc/example-bb-plugin"
+  bb install example-inc/example-bb-plugin
+
   # Install "github.com/example-inc/example-bb-plugin" at version tag "v1.2.3"
   bb install example-inc/example-bb-plugin@v1.2.3
 
   # Install "example.com/example-bb-plugin" at commit SHA "abc123",
   # where the plugin is located in the "src" directory in that repo.
-  bb install example.com/example-bb-plugin@abc123 --path=src
+  bb install example.com/example-bb-plugin@abc123:src
 
   # Use the local plugin in "./plugins/local_plugin".
   bb install --path=./plugins/local_plugin
@@ -65,6 +68,15 @@ var (
 	installCmd     = flag.NewFlagSet("install", flag.ContinueOnError)
 	installPath    = installCmd.String("path", "", "Path under the repo root where the plugin directory is located.")
 	installForUser = installCmd.Bool("user", false, "Whether to install globally for the user.")
+
+	repoPattern = regexp.MustCompile(`` +
+		`^` + // Start marker
+		`(https?://)?` + // Optional scheme. TODO: Support SSH, git@, etc.
+		`(?P<repo>.+?)` + // Required repo spec
+		`(@(?P<version>.*?))?` + // Optional version spec
+		`(:(?P<path>.*))?` + // Optional path
+		`$`, // End marker
+	)
 )
 
 // HandleInstall handles the "bb install" subcommand, which allows adding
@@ -96,20 +108,20 @@ func HandleInstall(args []string) (exitCode int, err error) {
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	var repo string
-	if len(installCmd.Args()) == 1 {
-		repo = installCmd.Args()[0]
-		if !strings.Contains(repo, "@") {
-			log.Print("Error: repo is missing @VERSION suffix")
-			log.Print(installCommandUsage)
-			return 1, nil
-		}
-	}
-
 	pluginCfg := &PluginConfig{
-		Repo: repo,
+		Repo: "",
 		Path: *installPath,
 	}
+	if len(installCmd.Args()) == 1 {
+		repo := installCmd.Args()[0]
+		cfg, err := parseRepoInstallSpec(repo, *installPath)
+		if err != nil {
+			log.Printf("Failed to parse repo: %s", repo)
+			return 1, nil
+		}
+		pluginCfg = cfg
+	}
+
 	configPath := ""
 	if *installForUser {
 		home := os.Getenv("HOME")
@@ -133,6 +145,36 @@ func HandleInstall(args []string) (exitCode int, err error) {
 	}
 	log.Printf("Plugin installed successfully and added to %s", configPath)
 	return 0, nil
+}
+
+func parseRepoInstallSpec(repo, pathArg string) (*PluginConfig, error) {
+	m := repoPattern.FindStringSubmatch(repo)
+	if len(m) == 0 {
+		return nil, fmt.Errorf("invalid repo spec %q: does not match REPO[@VERSION][:PATH]", repo)
+	}
+	repoMatch := m[repoPattern.SubexpIndex("repo")]
+	versionMatch := m[repoPattern.SubexpIndex("version")]
+	pathMatch := m[repoPattern.SubexpIndex("path")]
+
+	repoSpec := repoMatch
+
+	versionSpec := ""
+	if versionMatch != "" {
+		versionSpec = "@" + versionMatch
+	}
+
+	pathSpec := pathMatch
+	if pathArg != "" {
+		if pathSpec != "" {
+			return nil, fmt.Errorf("ambiguous path: repo argument specifies %q but --path specifies %q", pathMatch, pathArg)
+		}
+		pathSpec = pathArg
+	}
+
+	return &PluginConfig{
+		Repo: repoSpec + versionSpec,
+		Path: pathSpec,
+	}, nil
 }
 
 func installPlugin(plugin *PluginConfig, configPath string) error {
