@@ -6,7 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/cas",
     visibility = ["//visibility:private"],
     deps = [
+        "//proto:buildbuddy_service_go_proto",
+        "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/grpc_client",

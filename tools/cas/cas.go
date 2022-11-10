@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -15,7 +16,10 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -31,6 +35,9 @@ var (
 	instanceName = flag.String("remote_instance_name", "", "Remote instance name")
 	apiKey       = flag.String("api_key", "", "API key to attach to the outgoing context")
 	invocationID = flag.String("invocation_id", "", "Invocation ID. This is required when fetching the result of a failed action. Otherwise, it's optional.")
+
+	showMetadata     = flag.Bool("metadata", false, "Whether to fetch and log metadata for the digest (printed to stderr).")
+	showMetadataOnly = flag.Bool("metadata_only", false, "Whether to *only* fetch metadata, not the contents. This will print the metadata to stdout instead of stderr.")
 )
 
 // Examples:
@@ -59,7 +66,11 @@ func main() {
 		log.Fatalf(status.Message(err))
 	}
 
-	ind := digest.NewResourceName(d, *instanceName)
+	cacheType := rspb.CacheType_CAS
+	if *blobType == "ActionResult" {
+		cacheType = rspb.CacheType_AC
+	}
+	ind := digest.NewCacheResourceName(d, *instanceName, cacheType)
 	conn, err := grpc_client.DialTarget(*target)
 	if err != nil {
 		log.Fatalf("Error dialing CAS target: %s", err)
@@ -67,10 +78,36 @@ func main() {
 	bsClient := bspb.NewByteStreamClient(conn)
 	acClient := repb.NewActionCacheClient(conn)
 	casClient := repb.NewContentAddressableStorageClient(conn)
+	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
 	ctx := context.Background()
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	}
+
+	if *showMetadata || *showMetadataOnly {
+		req := &capb.GetCacheMetadataRequest{
+			ResourceName: ind.ToProto(),
+		}
+		md, err := bbClient.GetCacheMetadata(ctx, req)
+		if err != nil {
+			log.Fatalf("Failed to get metadata: %s", err)
+		}
+		log.Infof(
+			"Metadata: accessed=%q, modified=%q",
+			time.UnixMicro(md.GetLastAccessUsec()),
+			time.UnixMicro(md.GetLastModifyUsec()),
+		)
+		// If --metadata_only is set, print the metadata as JSON to stdout for
+		// easy consumption in scripts.
+		if *showMetadataOnly {
+			b, err := protojson.MarshalOptions{Multiline: false}.Marshal(md)
+			if err != nil {
+				log.Fatalf("Failed to marshal metadata: %s", err)
+			}
+			fmt.Println(string(b))
+			return
+		}
 	}
 
 	// Handle raw string types
