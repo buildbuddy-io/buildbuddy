@@ -11,6 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Prevent buildfix.sh from clang-formatting this file because it's misformatted
+// in the upstream repository.
+// NO-CLANG-FORMAT
 
 syntax = "proto3";
 
