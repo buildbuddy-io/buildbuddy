@@ -47,6 +47,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testdigest",
         "//server/testutil/testfs",
+        "//server/util/disk",
         "//server/util/ioutil",
         "//server/util/log",
         "//server/util/status",

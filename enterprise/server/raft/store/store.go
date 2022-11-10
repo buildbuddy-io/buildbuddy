@@ -69,8 +69,9 @@ var (
 )
 
 type Store struct {
-	rootDir  string
-	grpcAddr string
+	rootDir    string
+	grpcAddr   string
+	partitions []disk.Partition
 
 	nodeHost      *dragonboat.NodeHost
 	gossipManager *gossip.GossipManager
@@ -98,10 +99,11 @@ type Store struct {
 	quitChan   chan struct{}
 }
 
-func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
+func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient, partitions []disk.Partition) *Store {
 	s := &Store{
 		rootDir:       rootDir,
 		nodeHost:      nodeHost,
+		partitions:    partitions,
 		gossipManager: gossipManager,
 		sender:        sender,
 		registry:      registry,
@@ -479,7 +481,7 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 }
 
 func (s *Store) ReplicaFactoryFn(clusterID, nodeID uint64) dbsm.IOnDiskStateMachine {
-	return replica.New(s.rootDir, clusterID, nodeID, s)
+	return replica.New(s.rootDir, clusterID, nodeID, s, s.partitions)
 }
 
 func (s *Store) Sender() *sender.Sender {
