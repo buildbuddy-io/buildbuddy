@@ -1,12 +1,12 @@
 ---
 slug: building-a-fast-trends-page.md
-title: "Building a Fast Trends Page"
+title: "How We Use ClickHouse to Analyze Trends Across Millions of Builds"
 author: Lulu Zhang
 author_title: Engineer @ BuildBuddy
 date: 2022-11-11:12:00:00
 author_url: https://www.linkedin.com/in/luluzhang66
 author_image_url: https://avatars.githubusercontent.com/u/3977083?v=4
-image: /img/blog
+image: /img/blog/clickhouse.png
 tags: [product, engineering]
 ---
 
