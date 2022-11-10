@@ -130,7 +130,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 			log.Warningf("RangeCache did not have meta range yet (key %q)", key)
 			continue
 		}
-		i, err := s.tryReplicas(ctx, metaRangeDescriptor, fn)
+		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn)
 		if err == nil {
 			return rangeDescriptor, nil
 		}
