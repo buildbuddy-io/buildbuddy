@@ -130,7 +130,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 			log.Warningf("RangeCache did not have meta range yet (key %q)", key)
 			continue
 		}
-		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn)
+		i, err := s.tryReplicas(ctx, metaRangeDescriptor, fn)
 		if err == nil {
 			return rangeDescriptor, nil
 		}
@@ -148,6 +148,7 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 		if err != nil {
 			return nil, err
 		}
+		s.rangeCache.UpdateRange(rd)
 		rangeDescriptor = rd
 	}
 	return rangeDescriptor, nil
@@ -168,7 +169,9 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 		}
 		header := makeHeader(rd, i)
 		err = fn(client, header)
-		if err != nil {
+		if err == nil {
+			return i, nil
+		} else {
 			if status.IsOutOfRangeError(err) {
 				m := status.Message(err)
 				switch {
@@ -180,12 +183,11 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 					log.Debugf("out of range: %s (skipping replica %d)", m, replica.GetNodeId())
 					continue
 				default:
-					return 0, err
+					break
 				}
 			}
 			return 0, err
 		}
-		return i, nil
 	}
 	return 0, status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
 }
@@ -212,11 +214,9 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 		}
 		i, err := s.tryReplicas(ctx, rangeDescriptor, fn)
 		if err == nil {
-			replica := rangeDescriptor.GetReplicas()[i]
-			if err := s.rangeCache.UpdateRange(rangeDescriptor); err == nil {
+			if i != 0 {
+				replica := rangeDescriptor.GetReplicas()[i]
 				s.rangeCache.SetPreferredReplica(replica, rangeDescriptor)
-			} else {
-				log.Errorf("Error updating rangecache: %s", err)
 			}
 			return nil
 		}
@@ -231,59 +231,6 @@ func (s *Sender) Run(ctx context.Context, key []byte, fn runFunc) error {
 		lastError = err
 	}
 	return status.UnavailableErrorf("sender.Run retries exceeded for key: %q err: %s", key, lastError)
-}
-
-type runAllFunc func(peerHeaders []*client.PeerHeader) error
-
-// RunAll is similar to Run but instead of trying replicas one at a time,
-// fn will be passed information about all the replicas for performing
-// operations that span multiple replicas.
-//
-// If any of the replicas indicate that range information is stale, the whole
-// operation will be retried using fresh range information.
-//
-// Run should generally be used instead unless there's a specialized reason that
-// all replicas need to be consulted.
-func (s *Sender) RunAll(ctx context.Context, key []byte, fn runAllFunc) error {
-	retrier := retry.DefaultWithContext(ctx)
-	skipRangeCache := false
-	var lastError error
-	for retrier.Next() {
-		rd, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
-		if err != nil {
-			log.Warningf("sender.RunAll error getting rd for %q: %s, %s, %+v", key, err, s.rangeCache.String(), s.rangeCache.Get(key))
-			continue
-		}
-
-		var clients []*client.PeerHeader
-		for i, replica := range rd.GetReplicas() {
-			addr, err := s.grpcAddrForReplicaDescriptor(replica)
-			if err != nil {
-				return err
-			}
-			c, err := s.apiClient.Get(ctx, addr)
-			h := makeHeader(rd, i)
-			clients = append(clients, &client.PeerHeader{Header: h, GRPCAddr: addr, GRPClient: c})
-		}
-
-		err = fn(clients)
-		if err == nil {
-			if err := s.rangeCache.UpdateRange(rd); err != nil {
-				log.Errorf("Error updating rangecache: %s", err)
-			}
-			return nil
-		}
-		skipRangeCache = true
-		if !status.IsOutOfRangeError(err) {
-			return err
-		}
-		if isRangeSplittingError(err) {
-			log.Debugf("RunAll() delayed %q for split", key)
-			retrier.FixedDelayOnce(splitRetryInterval)
-		}
-		lastError = err
-	}
-	return status.UnavailableErrorf("sender.RunAll retries exceeded for key: %q err: %s", key, lastError)
 }
 
 // KeyMeta contains a key with arbitrary data attached.
