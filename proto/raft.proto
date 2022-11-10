@@ -88,6 +88,15 @@ message PartitionMetadatas {
   repeated PartitionMetadata metadata = 1;
 }
 
+message PartitionRecordCount {
+  string partition_id = 1;
+  int64 count = 2;
+}
+
+message PartitionCounts {
+  repeated PartitionRecordCount counts = 1;
+}
+
 message FileDeleteRequest {
   FileRecord file_record = 1;
 }
