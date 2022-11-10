@@ -28,15 +28,22 @@ import (
 const (
 	// Path where we expect to find the plugin configuration, relative to the
 	// root of the Bazel workspace in which the CLI is invoked.
-	configPath = "buildbuddy.yaml"
+	workspaceRelativeConfigPath = "buildbuddy.yaml"
+
+	// Path where we expect to find the user's plugin configuration, relative
+	// to the user's home directory.
+	homeRelativeUserConfigPath = "buildbuddy.yaml"
 
 	// Path under the CLI storage dir where plugins are saved.
 	pluginsStorageDirName = "plugins"
 
 	installCommandUsage = `
-Usage: bb install [REPO@VERSION] [--path=PATH]
+Usage: bb install [REPO@VERSION] [--path=PATH] [--user]
 
-Installs a remote or local CLI plugin.
+Installs a remote or local CLI plugin for the current bazel workspace.
+
+The --user flag installs the plugin globally for your user in ~/buildbuddy.yaml,
+instead of just for the current workspace.
 
 If [repo] is not present, then --path is required, and must point to a local
 directory.
@@ -55,8 +62,9 @@ Examples:
 )
 
 var (
-	installCmd  = flag.NewFlagSet("install", flag.ContinueOnError)
-	installPath = installCmd.String("path", "", "Path under the repo root where the plugin directory is located.")
+	installCmd     = flag.NewFlagSet("install", flag.ContinueOnError)
+	installPath    = installCmd.String("path", "", "Path under the repo root where the plugin directory is located.")
+	installForUser = installCmd.Bool("user", false, "Whether to install globally for the user.")
 )
 
 // HandleInstall handles the "bb install" subcommand, which allows adding
@@ -102,7 +110,24 @@ func HandleInstall(args []string) (exitCode int, err error) {
 		Repo: repo,
 		Path: *installPath,
 	}
-	if err := installPlugin(pluginCfg); err != nil {
+	configPath := ""
+	if *installForUser {
+		home := os.Getenv("HOME")
+		if home == "" {
+			log.Printf("Could not locate user config path: $HOME not set")
+			return 1, nil
+		}
+		configPath = filepath.Join(home, homeRelativeUserConfigPath)
+	} else {
+		ws, err := workspace.Path()
+		if err != nil {
+			log.Printf("Could not locate workspace config path: %s", err)
+			return 1, nil
+		}
+		configPath = filepath.Join(ws, workspaceRelativeConfigPath)
+	}
+
+	if err := installPlugin(pluginCfg, configPath); err != nil {
 		log.Printf("Failed to install plugin: %s", err)
 		return 1, nil
 	}
@@ -110,18 +135,21 @@ func HandleInstall(args []string) (exitCode int, err error) {
 	return 0, nil
 }
 
-func installPlugin(plugin *PluginConfig) error {
-	config, err := readConfig()
+func installPlugin(plugin *PluginConfig, configPath string) error {
+	configFile, err := readConfig(configPath)
 	if err != nil {
 		return err
 	}
-	if config == nil {
-		config = &BuildBuddyConfig{}
+	if configFile == nil {
+		configFile = &ConfigFile{
+			Path:             configPath,
+			BuildBuddyConfig: &BuildBuddyConfig{},
+		}
 	}
 
 	// Load the plugin so that an invalid version, path etc. doesn't wind
 	// up getting added to buildbuddy.yaml.
-	p := &Plugin{config: plugin}
+	p := &Plugin{configFile: configFile, config: plugin}
 	if err := p.load(); err != nil {
 		return err
 	}
@@ -131,10 +159,10 @@ func installPlugin(plugin *PluginConfig) error {
 	if err != nil {
 		return err
 	}
-	for _, p := range config.Plugins {
-		existingPath, err := (&Plugin{config: p}).Path()
+	for _, p := range configFile.Plugins {
+		existingPath, err := (&Plugin{configFile: configFile, config: p}).Path()
 		if err != nil {
-			return err
+			return fmt.Errorf("invalid config: failed to determine existing plugin path: %s", err)
 		}
 		if pluginPath == existingPath {
 			return fmt.Errorf("plugin is already installed")
@@ -142,18 +170,13 @@ func installPlugin(plugin *PluginConfig) error {
 	}
 
 	// Init the config file if it doesn't exist already.
-	ws, err := workspace.Path()
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(ws, configPath)
-	if _, err := os.Stat(path); err != nil {
+	if _, err := os.Stat(configPath); err != nil {
 		if !os.IsNotExist(err) {
 			return err
 		}
-		f, err := os.Create(path)
+		f, err := os.Create(configPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to initialize config file: %s", err)
 		}
 		f.Close()
 	}
@@ -163,9 +186,9 @@ func installPlugin(plugin *PluginConfig) error {
 	// To avoid messing with buildbuddy.yaml too much,
 	// look for the "plugins:" section of the yaml file and mutate only that
 	// part.
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read existing config contents: %s", err)
 	}
 	lines := strings.Split(string(b), "\n")
 	pluginSection := struct{ start, end int }{-1, -1}
@@ -191,12 +214,12 @@ func installPlugin(plugin *PluginConfig) error {
 	if pluginSection.start >= 0 {
 		head, tail = lines[:pluginSection.start], lines[pluginSection.end:]
 	}
-	config.Plugins = append(config.Plugins, plugin)
-	b, err = yaml.Marshal(config)
+	configFile.Plugins = append(configFile.Plugins, plugin)
+	b, err = yaml.Marshal(configFile.BuildBuddyConfig)
 	if err != nil {
 		return err
 	}
-	pluginSectionLines := strings.Split(string(b), "\n")
+	pluginSectionLines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
 	// go-yaml doesn't properly indent lists :'(
 	// Apply a fix for that here.
 	for i := 1; i < len(pluginSectionLines); i++ {
@@ -222,10 +245,16 @@ func installPlugin(plugin *PluginConfig) error {
 			return err
 		}
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return err
+	if err := disk.MoveFile(tmp.Name(), configPath); err != nil {
+		return fmt.Errorf("failed to move temp config to %s: %s", configPath, err)
 	}
 	return nil
+}
+
+// ConfigFile represents a decoded config file along its file metadata.
+type ConfigFile struct {
+	Path string
+	*BuildBuddyConfig
 }
 
 type BuildBuddyConfig struct {
@@ -242,15 +271,24 @@ type PluginConfig struct {
 	Path string `yaml:"path,omitempty"`
 }
 
-func readConfig() (*BuildBuddyConfig, error) {
-	ws, err := workspace.Path()
-	if err != nil {
-		return nil, err
+func readWorkspaceConfig(workspaceDir string) (*ConfigFile, error) {
+	return readConfig(filepath.Join(workspaceDir, workspaceRelativeConfigPath))
+}
+
+func readUserConfig() (*ConfigFile, error) {
+	homeDir := os.Getenv("HOME")
+	if homeDir == "" {
+		log.Debugf("not reading ~/%s: $HOME environment variable is not set", homeRelativeUserConfigPath)
+		return nil, nil
 	}
-	f, err := os.Open(filepath.Join(ws, configPath))
+	return readConfig(filepath.Join(homeDir, homeRelativeUserConfigPath))
+}
+
+func readConfig(path string) (*ConfigFile, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Debugf("%s not found in %s", configPath, ws)
+			log.Debugf("%s not found", path)
 			return nil, nil
 		}
 		return nil, err
@@ -262,42 +300,124 @@ func readConfig() (*BuildBuddyConfig, error) {
 	if err := yaml.NewDecoder(f).Decode(cfg); err != nil {
 		return nil, status.UnknownErrorf("failed to parse %s: %s", f.Name(), err)
 	}
-	return cfg, nil
+	return &ConfigFile{Path: path, BuildBuddyConfig: cfg}, nil
+}
+
+// getConfigFiles returns a list of parsed buildbuddy.yaml files from which to
+// load plugins, in increasing order of precedence.
+func getConfigFiles(workspaceDir string) ([]*ConfigFile, error) {
+	var configs []*ConfigFile
+	cfg, err := readUserConfig()
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil {
+		configs = append(configs, cfg)
+	}
+	cfg, err = readWorkspaceConfig(workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	if cfg != nil {
+		configs = append(configs, cfg)
+	}
+	return configs, nil
+}
+
+// dedupe returns a modified list of plugins such that if there are multiple
+// occurrences of the same plugin in the list, only the last occurrence appears
+// in the final list. Version info is ignored when determining whether two
+// plugins are the same.
+func dedupe(plugins []*Plugin) ([]*Plugin, error) {
+	ids := map[string]struct{}{}
+	var out []*Plugin
+	// Iterate in reverse order so that IDs appearing latest get the highest
+	// precedence.
+	for i := len(plugins) - 1; i >= 0; i-- {
+		p := plugins[i]
+		id, err := p.NonVersionedID()
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := ids[id]; ok {
+			continue
+		}
+		ids[id] = struct{}{}
+		out = append(out, p)
+	}
+	// Reverse to undo the reverse-iteration. This ensures plugin hooks are
+	// run with the same relative ordering as they appear in buildbuddy.yaml.
+	reversePlugins(out)
+	return out, nil
+}
+
+func reversePlugins(a []*Plugin) {
+	for i := 0; i < len(a)/2; i++ {
+		j := len(a) - i - 1
+		a[i], a[j] = a[j], a[i]
+	}
 }
 
 // Plugin represents a CLI plugin. Plugins can exist locally or remotely
 // (if remote, they will be fetched).
 type Plugin struct {
+	// config is the raw config spec for this plugin.
 	config *PluginConfig
+	// configFile is the ConfigFile that defined this plugin.
+	configFile *ConfigFile
 	// tempDir is a directory where the plugin can store temporary files.
 	// This dir lasts only for the current CLI invocation and is visible
 	// to all hooks.
 	tempDir string
 }
 
-// LoadAll loads all plugins from the config, and ensures that any remote
-// plugins are downloaded.
+// LoadAll loads all plugins from the combined user and workspace configs, and
+// ensures that any remote plugins are downloaded.
 func LoadAll(tempDir string) ([]*Plugin, error) {
-	cfg, err := readConfig()
+	ws, err := workspace.Path()
 	if err != nil {
 		return nil, err
 	}
-	if cfg == nil {
-		return nil, nil
+	return loadAll(ws, tempDir)
+}
+
+// loadAll gets all of the configured plugins from the user's ~/buildbuddy.yaml
+// and workspace buildbuddy.yaml, and prepares them for use by ensuring all
+// files and directories needed for correct operation are present on disk.
+func loadAll(workspaceDir, tempDir string) ([]*Plugin, error) {
+	plugins, err := getConfiguredPlugins(workspaceDir)
+	if err != nil {
+		return nil, err
 	}
-	plugins := make([]*Plugin, 0, len(cfg.Plugins))
-	for _, p := range cfg.Plugins {
+	for _, plugin := range plugins {
 		pluginTempDir, err := os.MkdirTemp(tempDir, "plugin-tmp-*")
 		if err != nil {
 			return nil, status.InternalErrorf("failed to create plugin temp dir: %s", err)
 		}
-		plugin := &Plugin{config: p, tempDir: pluginTempDir}
+		plugin.tempDir = pluginTempDir
 		if err := plugin.load(); err != nil {
 			return nil, err
 		}
-		plugins = append(plugins, plugin)
 	}
 	return plugins, nil
+}
+
+// getConfiguredPlugins parses the user's ~/buildbuddy.yaml as well as the
+// workspace buildbuddy.yaml and returns the set of plugins. The returned
+// plugins are not yet ready to use.
+func getConfiguredPlugins(workspaceDir string) ([]*Plugin, error) {
+	configFiles, err := getConfigFiles(workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	var plugins []*Plugin
+	for _, f := range configFiles {
+		for _, p := range f.BuildBuddyConfig.Plugins {
+			plugin := &Plugin{config: p, configFile: f}
+			plugins = append(plugins, plugin)
+		}
+	}
+	return dedupe(plugins)
 }
 
 // PrepareEnv sets environment variables for use in plugins.
@@ -348,6 +468,52 @@ func (p *Plugin) splitRepoRef() (string, string) {
 		return refParts[0], ""
 	}
 	return "", ""
+}
+
+// VersionedID returns a human-readable, unique representation of the plugin
+// which includes its versioning info.
+func (p *Plugin) VersionedID() (string, error) {
+	if p.config.Repo == "" {
+		return p.ResolveLocalPath()
+	}
+	id := p.RepoURL()
+	_, ref := p.splitRepoRef()
+	if ref != "" {
+		id += "@" + ref
+	}
+	if p.config.Path != "" {
+		id += ":" + filepath.Clean(p.config.Path)
+	}
+	return id, nil
+}
+
+// NonVersionedID returns a human-readable, unique representation of the plugin
+// which does not include its versioning info. Plugins with the same repo and
+// path information have identical IDs, even if their version is different.
+func (p *Plugin) NonVersionedID() (string, error) {
+	if p.config.Repo == "" {
+		return p.ResolveLocalPath()
+	}
+	id := p.RepoURL()
+	if p.config.Path != "" {
+		id += ":" + filepath.Clean(p.config.Path)
+	}
+	return id, nil
+}
+
+// ResolveLocalPath returns the absolute path on the local filesystem for the
+// plugin if it's a local plugin. Otherwise, it returns an error.
+func (p *Plugin) ResolveLocalPath() (string, error) {
+	if p.RepoURL() != "" {
+		return "", fmt.Errorf("could not resolve local path for remote plugin %s", p.RepoURL())
+	}
+	// If already an abs path, return it directly.
+	if strings.HasPrefix(p.config.Path, "/") {
+		return realpath(p.config.Path)
+	}
+	// Otherwise, resolve relative to the config file which defined it.
+	configParentDir := filepath.Dir(p.configFile.Path)
+	return realpath(filepath.Join(configParentDir, p.config.Path))
 }
 
 func (p *Plugin) repoClonePath() (string, error) {
@@ -464,12 +630,7 @@ func (p *Plugin) Path() (string, error) {
 		}
 		return filepath.Join(repoPath, p.config.Path), nil
 	}
-
-	ws, err := workspace.Path()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(ws, p.config.Path), nil
+	return p.ResolveLocalPath()
 }
 
 func (p *Plugin) commandEnv() []string {
@@ -699,4 +860,12 @@ func readArgsFile(path string) ([]string, error) {
 	}
 
 	return newArgs, nil
+}
+
+func realpath(path string) (string, error) {
+	directPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(directPath)
 }
