@@ -80,6 +80,15 @@ message PartitionMetadata {
   int64 ac_count = 3;
 }
 
+message PartitionRecordCount {
+  string partition_id = 1;
+  int64 count = 2;
+}
+
+message PartitionCounts {
+  repeated PartitionRecordCount counts = 1;
+}
+
 message FileDeleteRequest {
   FileRecord file_record = 1;
 }
