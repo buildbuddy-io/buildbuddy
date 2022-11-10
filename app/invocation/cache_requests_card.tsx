@@ -141,7 +141,6 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         filter: {
           mask: { paths: filterFields },
           cacheType: filter.cache,
-          cacheTypeDeprecated: toCacheProtoCacheType(filter.cache),
           requestType: filter.request,
           responseType: filter.response,
           search: this.getSearch(),
@@ -713,15 +712,4 @@ function groupResults(
  */
 function looksLikeDigest(actionId: string) {
   return actionId.length === 64;
-}
-
-function toCacheProtoCacheType(cacheType: resource.CacheType): cache.CacheType {
-  switch (cacheType) {
-    case resource.CacheType.CAS:
-      return cache.CacheType.CAS;
-    case resource.CacheType.AC:
-      return cache.CacheType.AC;
-    default:
-      return cache.CacheType.UNKNOWN_CACHE_TYPE;
-  }
 }
