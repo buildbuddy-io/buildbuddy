@@ -44,7 +44,7 @@ let plugins = [
   //   description: "Sets a set of default Bazel flags that should probably be set by default.",
   //   icon: <Brush />,
   //   snippet: "bb install buildbuddy-io/plugins:sane-defaults",
-  //   docs: "https://github.com/buildbuddy-io/plugins/tree/main/plugins/open_invocation",
+  //   docs: "https://github.com/buildbuddy-io/plugins/tree/main/plugins/open-invocation",
   //   copied: false,
   // },
   {
