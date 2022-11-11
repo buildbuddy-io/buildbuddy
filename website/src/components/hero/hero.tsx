@@ -1,11 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
 import styles from "./hero.module.css";
 import common from "../../css/common.module.css";
 import Image from "@theme/IdealImage";
+import { copyToClipboard } from "../../util/clipboard";
+import { Copy } from "lucide-react";
 
 function Component(props) {
+  let [copied, setCopied] = useState(0);
+
   return (
     <div
+      style={props.style}
       className={`${common.section} ${styles.hero} ${props.lessPadding ? styles.lessPadding : ""} ${
         props.noImage ? styles.noImage : ""
       }`}>
@@ -27,6 +32,18 @@ function Component(props) {
             )}
           </div>
           <div className={styles.buttons}>
+            {props.snippet && (
+              <div
+                className={`${styles.snippet} ${(copied && styles.copied) || ""}`}
+                onClick={() => {
+                  copyToClipboard(props.snippet);
+                  setCopied(1);
+                  setTimeout(() => setCopied(0), 2000);
+                }}>
+                {props.snippet}
+                <Copy />
+              </div>
+            )}
             {props.primaryButtonText !== "" && (
               <a
                 href={props.primaryButtonHref || "https://app.buildbuddy.io"}
