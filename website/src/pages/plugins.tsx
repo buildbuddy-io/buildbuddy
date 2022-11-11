@@ -170,7 +170,7 @@ function Component() {
           </div>
         </div>
 
-        <CTA href="/docs/cli-installation" text="Get the BuildBuddy CLI" />
+        <CTA href="/docs/cli" text="Get the BuildBuddy CLI" />
       </div>
     </Layout>
   );
