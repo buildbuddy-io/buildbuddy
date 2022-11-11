@@ -44,6 +44,25 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
       .join(" ");
   }
 
+  explicitCommandLine() {
+    // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
+    // to append bazel args but still preserve the appearance of the original
+    // command line. The effective command line can still be used to see the
+    // effective configuration used by bazel.
+    const overrideJSON = this.props.model.buildMetadataMap.get("EXPLICIT_COMMAND_LINE");
+    if (overrideJSON) {
+      try {
+        // TODO: Render these with something like shlex so that spaces are
+        // quoted as necessary.
+        return JSON.parse(overrideJSON).join(" ");
+      } catch (_) {
+        // Invalid JSON; fall back to showing BES event.
+      }
+    }
+
+    return this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.explicitCmdLine);
+  }
+
   render() {
     const isBazelInvocation = this.props.model.isBazelInvocation();
 
@@ -224,16 +243,11 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                     explicit command line{" "}
                     <Copy
                       className="copy-icon"
-                      onClick={this.handleCopyClicked.bind(
-                        this,
-                        `${this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.explicitCmdLine)}`
-                      )}
+                      onClick={this.handleCopyClicked.bind(this, this.explicitCommandLine())}
                     />
                   </div>
                   <div className="invocation-section">
-                    <code className="wrap">
-                      {this.bazelCommandAndPatternWithOptions(this.props.model.optionsParsed?.explicitCmdLine)}
-                    </code>
+                    <code className="wrap">{this.explicitCommandLine()}</code>
                   </div>
                 </div>
 
