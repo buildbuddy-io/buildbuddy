@@ -720,11 +720,9 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 		return args, nil
 	}
 	log.Debugf("Running pre-bazel hook for %s/%s", p.config.Repo, p.config.Path)
-	// TODO: if pre_bazel.sh is not executable and does not contain a shebang
-	// line, wrap it with "/usr/bin/env bash"
 	// TODO: support "pre_bazel.<any-extension>" as long as the file is
 	// executable and has a shebang line
-	cmd := exec.Command(scriptPath, argsFile.Name())
+	cmd := exec.Command("/usr/bin/env", "bash", scriptPath, argsFile.Name())
 	// TODO: Prefix output with "output from [plugin]" ?
 	cmd.Dir = path
 	cmd.Stderr = os.Stderr
@@ -764,7 +762,7 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 		return nil
 	}
 	log.Debugf("Running post-bazel hook for %s/%s", p.config.Repo, p.config.Path)
-	cmd := exec.Command(scriptPath, bazelOutputPath)
+	cmd := exec.Command("/usr/bin/env", "bash", scriptPath, bazelOutputPath)
 	// TODO: Prefix stderr output with "output from [plugin]" ?
 	cmd.Dir = path
 	cmd.Stderr = os.Stderr
@@ -799,7 +797,7 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	if !exists {
 		return r, nil
 	}
-	cmd := exec.Command(scriptPath)
+	cmd := exec.Command("/usr/bin/env", "bash", scriptPath)
 	pr, pw := io.Pipe()
 	cmd.Dir = path
 	// Write command output to a pty to ensure line buffering.
