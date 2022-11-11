@@ -4,7 +4,7 @@ title: BuildBuddy CLI
 sidebar_label: CLI Overview
 ---
 
-The [BuildBuddy CLI](https://buildbuddy.io/cli) brings the power of BuildBuddy to the command line. It's a [Bazel](https://bazel.build/) wrapper that's built on top of [Bazelisk](https://github.com/bazelbuild/bazelisk) and brings support for [plugins](#plugins), [authentication](#authentication), [flaky network conditions](#networking), and more.
+The [BuildBuddy CLI](/cli) brings the power of BuildBuddy to the command line. It's a [Bazel](https://bazel.build/) wrapper that's built on top of [Bazelisk](https://github.com/bazelbuild/bazelisk) and brings support for [plugins](#plugins), [authentication](#authentication), [flaky network conditions](#networking), and more.
 
 Because it's built on top of [Bazelisk](https://github.com/bazelbuild/bazelisk), it's command line compatible with Bazel - which means you can simply `alias bazel=bb` and keep using Bazel the way you normally would.
 
