@@ -141,11 +141,15 @@ func TestInstall_ToUserConfig_CreateNewConfig(t *testing.T) {
 	require.Equal(t, expectedConfig, config)
 }
 
-func TestParseRepoInstallSpec(t *testing.T) {
+func TestParsePluginSpec(t *testing.T) {
 	for _, tc := range []struct {
 		Repo, PathArg  string
 		ExpectedConfig *PluginConfig
 	}{
+		{
+			":/local/path", "",
+			&PluginConfig{Path: "/local/path"},
+		},
 		{
 			"foo/bar", "",
 			&PluginConfig{Repo: "foo/bar"},
@@ -179,7 +183,7 @@ func TestParseRepoInstallSpec(t *testing.T) {
 			&PluginConfig{Repo: "example.com/foo/bar@v1", Path: "/nested/subdir"},
 		},
 	} {
-		cfg, err := parseRepoInstallSpec(tc.Repo, tc.PathArg)
+		cfg, err := parsePluginSpec(tc.Repo, tc.PathArg)
 
 		require.NoError(t, err)
 		assert.Equal(t, tc.ExpectedConfig, cfg)
