@@ -36,7 +36,7 @@ function OpenSource() {
         <div className={`${common.section} ${common.sectionDark} ${styles.ossSection}`}>
           <div className={`${common.container} ${common.splitContainer}`}>
             <div className={common.text}>
-              <div className={common.title}>Want to see your open source repo on this list?</div>
+              <h1 className={common.title}>Want to see your open source repo on this list?</h1>
               <div className={common.subtitle}>We love open source projects of all sizes! </div>
             </div>
             <div className={contact.form}>
