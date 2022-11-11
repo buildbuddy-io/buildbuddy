@@ -3,6 +3,9 @@
   border-radius: 12px;
   color: #fff;
   font-size: 0.9em;
+  display: flex;
+  flex-direction: column;
+  overflow-anchor: none;
 }
 
 .terminalMenu {
@@ -44,14 +47,21 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.terminalContentWrapper {
+  position: relative;
+  height: 360px;
+  overflow: hidden;
+}
+
 .terminalContent {
   padding: 8px 16px;
   padding-bottom: 32px;
   color: rgba(255, 255, 255, 0.8);
-  min-height: 360px;
   white-space: nowrap;
   text-overflow: ellipsis;
-  overflow: hidden;
+  position: absolute;
+  bottom: 0;
+  min-height: 360px;
 }
 
 .terminalContent a {
