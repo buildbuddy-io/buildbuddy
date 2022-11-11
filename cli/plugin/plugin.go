@@ -691,7 +691,7 @@ func (p *Plugin) commandEnv() []string {
 // be fed to the next plugin in the pipeline, or passed to Bazel if this is the
 // last plugin.
 //
-// See cli/example_plugins/ping_remote/pre_bazel.sh for an example.
+// See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
 func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	// Write args to a file so the plugin can manipulate them.
 	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
@@ -748,7 +748,7 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 // Currently the invocation data is fed as plain text via a file. The file path
 // is passed as the first argument.
 //
-// See cli/example_plugins/go_deps/post_bazel.sh for an example.
+// See cli/example_plugins/go-deps/post_bazel.sh for an example.
 func (p *Plugin) PostBazel(bazelOutputPath string) error {
 	path, err := p.Path()
 	if err != nil {
@@ -784,7 +784,7 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 // It returns the original reader if no output handler is configured for this
 // plugin.
 //
-// See cli/example_plugins/go_highlight/handle_bazel_output.sh for an example.
+// See cli/example_plugins/go-highlight/handle_bazel_output.sh for an example.
 func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 	path, err := p.Path()
 	if err != nil {
