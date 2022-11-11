@@ -311,10 +311,8 @@ function Component() {
           bigImage={true}
           lessPadding={true}
           flipped={false}
-          primaryButtonText="View authentication docs"
-          primaryButtonHref="/docs/cli-login"
-          secondaryButtonText="View all docs"
-          secondaryButtonHref="/docs/cli"
+          primaryButtonText=""
+          secondaryButtonText=""
         />
 
         <Hero
@@ -377,7 +375,7 @@ function Component() {
           secondaryButtonText=""
         />
 
-        <CTA href="/docs/cli-installation" text="View the installation docs" />
+        <CTA href="/docs/cli" text="View the installation docs" />
       </div>
     </Layout>
   );
