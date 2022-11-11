@@ -18,4 +18,3 @@ export function copyToClipboard(text: string) {
       throw new Error("Failed to copy to clipboard.");
     }
   }
-  
