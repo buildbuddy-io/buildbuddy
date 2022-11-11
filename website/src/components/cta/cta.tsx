@@ -8,8 +8,10 @@ function Component(props) {
       <div className={common.container}>
         <div className={`${common.centeredText}`}>
           <h2 className={common.title}>{props.title || "Build better today."}</h2>
-          <a href="https://app.buildbuddy.io" className={`${common.button} ${common.buttonPrimary} ${styles.button}`}>
-            Get Started for Free
+          <a
+            href={props.href || "https://app.buildbuddy.io"}
+            className={`${common.button} ${common.buttonPrimary} ${styles.button}`}>
+            {props.text || `Get Started for Free`}
           </a>
         </div>
       </div>

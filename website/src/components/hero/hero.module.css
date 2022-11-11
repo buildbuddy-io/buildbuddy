@@ -36,6 +36,10 @@
   max-width: 740px;
 }
 
+.bigImage {
+  width: 100%;
+}
+
 .bigImage img {
   width: 60vw !important;
   max-width: 60vw !important;
@@ -78,6 +82,14 @@
 
   .image img {
     max-width: 100% !important;
+  }
+
+  .bigImage {
+    width: calc(100% + 34px);
+  }
+
+  .flipped .bigImage {
+    width: calc(100%);
   }
 }
 
@@ -141,4 +153,51 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.snippet {
+  background-color: #000;
+  color: #fff;
+  padding: 24px 32px;
+  border-radius: 8px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  cursor: pointer;
+  position: relative;
+  flex-grow: 1;
+}
+
+.snippet svg {
+  opacity: 0.5;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+}
+
+.snippet:hover:after {
+  content: "Click to Copy";
+  background-color: #aaa;
+}
+
+.snippet:hover:after,
+.copied:after {
+  display: block;
+  color: #fff;
+  padding: 4px 16px;
+  font-size: 0.8em;
+  border-radius: 32px;
+  font-weight: 500;
+  position: absolute;
+  bottom: -36px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.copied:after,
+.copied:hover:after {
+  content: "Copied!";
+  background-color: #4caf50;
 }

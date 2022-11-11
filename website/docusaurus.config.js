@@ -51,6 +51,7 @@ module.exports = {
             { label: "Build & Test UI", href: "/ui" },
             { label: "Remote Execution", href: "/remote-execution" },
             { label: "Remote Cache", href: "/remote-cache" },
+            { label: "BuildBuddy CLI", href: "/cli" },
             // {label: "Workflows", href: "/workflows"},
             // {label: "Cloud", href: "/cloud"},
             // {label: "Open Source", href: "/open-source"},
