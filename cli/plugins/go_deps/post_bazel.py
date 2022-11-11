@@ -98,7 +98,7 @@ def get_package(relative_src_path):
 
 def prompt(msg):
     while True:
-        print("\x1b[34m> " + msg + "\x1b[0;90m (yes)/always/no/never: \x1b[m", end="")
+        print("\x1b[36m> " + msg + "\x1b[0;90m (yes)/always/no/never: \x1b[m", end="")
         response = input().lower().strip()
         # Return (response, dont_ask_again) pair
         if response in ("", "yes", "y"):
