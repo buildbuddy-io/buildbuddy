@@ -18,9 +18,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
 )
 
 func main() {
+	// If we're the sidecar (CLI server) process, run the sidecar instead of the
+	// CLI.
+	sidecarmain.Handle()
+
 	exitCode, err := run()
 	if err != nil {
 		log.Fatal(status.Message(err))

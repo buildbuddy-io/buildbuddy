@@ -4,17 +4,15 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/sidecar_bundle"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/google/shlex"
 
@@ -26,39 +24,6 @@ const (
 	windowsFileExtension = ".exe"
 	sockPrefix           = "sidecar-"
 )
-
-func getSidecarBinaryName() string {
-	extension := ""
-	if runtime.GOOS == windowsOSName {
-		extension = windowsFileExtension
-	}
-	sidecarName := fmt.Sprintf("sidecar-%s-%s%s", runtime.GOOS, runtime.GOARCH, extension)
-	return sidecarName
-}
-
-func extractBundledSidecar(ctx context.Context, bbCacheDir string) error {
-	// Figure out appropriate os/arch for this machine.
-	sidecarName := getSidecarBinaryName()
-	sidecarPath := filepath.Join(bbCacheDir, sidecarName)
-
-	if _, err := os.Stat(sidecarPath); err == nil {
-		return nil
-	}
-	f, err := sidecar_bundle.Open()
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	dst, err := os.OpenFile(sidecarPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0555)
-	if err != nil {
-		return err
-	}
-	defer dst.Close()
-	if _, err := io.Copy(dst, f); err != nil {
-		return err
-	}
-	return nil
-}
 
 func hashStrings(in []string) string {
 	data := []byte{}
@@ -75,9 +40,6 @@ func pathExists(p string) bool {
 }
 
 func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []string) (string, error) {
-	sidecarName := getSidecarBinaryName()
-	cmd := filepath.Join(bbCacheDir, sidecarName)
-
 	// Forward args from BB_SIDECAR_ARGS env var (useful for setting debug log
 	// level, etc.)
 	rawExtraArgs := os.Getenv("BB_SIDECAR_ARGS")
@@ -87,7 +49,13 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	}
 	args = append(args, extraArgs...)
 
-	sidecarID := hashStrings(append([]string{cmd}, args...))
+	// A sidecar instance is identified by the args passed to it as well as its
+	// version.
+	//
+	// Note: During development, the version string will be "unknown".
+	// To get the sidecar to restart, you can shut it down manually with
+	// `kill -INT <sidecar_pid>`, then re-run the CLI.
+	sidecarID := hashStrings(append([]string{version.String()}, args...))
 	sockName := sockPrefix + sidecarID + ".sock"
 	sockPath := filepath.Join(os.TempDir(), sockName)
 
@@ -107,7 +75,8 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 
 	// This is where we'll listen for bazel traffic
 	args = append(args, fmt.Sprintf("--listen_addr=unix://%s", sockPath))
-	c := exec.Command(cmd, args...)
+	// Re-invoke ourselves in sidecar mode.
+	c := exec.Command(os.Args[0], append(args, "--sidecar=1")...)
 	c.Stdout = f
 	c.Stderr = f
 	log.Debugf("Running sidecar cmd: %s", c.String())
@@ -119,13 +88,12 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 }
 
 func ConfigureSidecar(args []string) []string {
+	log.Debugf("Configuring sidecar")
+
 	cacheDir, err := storage.CacheDir()
 	ctx := context.Background()
 	if err != nil {
 		log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
-	}
-	if err := extractBundledSidecar(ctx, cacheDir); err != nil {
-		log.Printf("Error extracting sidecar: %s", err)
 	}
 
 	// Re(Start) the sidecar if the flags set don't match.
