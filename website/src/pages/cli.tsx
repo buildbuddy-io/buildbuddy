@@ -214,13 +214,13 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`bb install buildbuddy-io/plugins@v0.0.12 open-invocation`}</span>
+                    <span>{`bb install buildbuddy-io/plugins@v0.0.14:open-invocation`}</span>
                   </div>
                 </>,
                 <>
                   <div>
                     <Prompt />
-                    <span>{`bb install buildbuddy-io/plugins@v0.0.12 open-invocation`}</span>
+                    <span>{`bb install buildbuddy-io/plugins@v0.0.14:open-invocation`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -229,7 +229,7 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`bb install buildbuddy-io/plugins@v0.0.12 open-invocation`}</span>
+                    <span>{`bb install buildbuddy-io/plugins@v0.0.14:open-invocation`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -239,7 +239,7 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`bb install buildbuddy-io/plugins@v0.0.12 open-invocation`}</span>
+                    <span>{`bb install buildbuddy-io/plugins@v0.0.14:open-invocation`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -250,7 +250,7 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`bb install buildbuddy-io/plugins@v0.0.12 open-invocation`}</span>
+                    <span>{`bb install buildbuddy-io/plugins@v0.0.14:open-invocation`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -267,7 +267,7 @@ function Component() {
           bigImage={true}
           lessPadding={true}
           flipped={false}
-          snippet={`bb install buildbuddy-io/plugins@v0.0.12 open-invocation`}
+          snippet={`bb install buildbuddy-io/plugins@v0.0.14:open-invocation`}
           primaryButtonText="See plugin library"
           primaryButtonHref="/plugins"
           secondaryButtonText="View docs"
