@@ -1,13 +1,16 @@
-package main
+// TODO: Move this out of `cmd` since it is no longer a cmd.
+package sidecar
 
 import (
 	"context"
 	"flag"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -181,6 +184,7 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 type sidecarService struct{}
 
 func (s *sidecarService) Ping(ctx context.Context, req *scpb.PingRequest) (*scpb.PingResponse, error) {
+	log.Printf("PONG")
 	return &scpb.PingResponse{}, nil
 }
 
@@ -203,7 +207,14 @@ func initializeDiskCache(env *real_environment.RealEnv) {
 	env.SetCache(c)
 }
 
-func main() {
+func Handle() {
+	sc, args := arg.Pop(os.Args, "sidecar")
+	if sc != "1" {
+		return
+	}
+	defer os.Exit(0)
+	os.Args = args
+
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -233,5 +244,7 @@ func main() {
 
 	scpb.RegisterSidecarServer(grpcServer, &sidecarService{})
 
+	log.Printf("Listening on %s", lis.Addr())
 	grpcServer.Serve(lis)
+	env.GetHealthChecker().WaitForGracefulShutdown()
 }
