@@ -111,7 +111,7 @@ The `pre_bazel.sh` script will be called before Bazel is run. It is called with 
 The script will be called like this:
 
 ```bash
-/path/to/plugin/pre_bazel.sh /path/to/bazel-args
+/usr/bin/env bash /path/to/plugin/pre_bazel.sh /path/to/bazel-args
 ```
 
 Here's an example of what the Bazel args file might look like:
@@ -169,7 +169,7 @@ The `post_bazel.sh` script is called after Bazel completes. It is called with a 
 The script will be called like this:
 
 ```bash
-/path/to/plugin/post_bazel.sh /path/to/bazel-outputs
+/usr/bin/env bash /path/to/plugin/post_bazel.sh /path/to/bazel-outputs
 ```
 
 Here's an example of what the Bazel outputs file might look like:
@@ -303,11 +303,11 @@ This is a long-lived directory you can use to store user preferences, like wheth
 
 Here are some examples of plugins that can help you get started quickly:
 
-`pre-bazel.sh`
+`pre_bazel.sh`
 
 - ping_remote: https://github.com/buildbuddy-io/buildbuddy/tree/master/cli/example_plugins/ping_remote
 
-`post-bazel-sh`
+`post_bazel.sh`
 
 - open_invocation: https://github.com/buildbuddy-io/buildbuddy/tree/master/cli/plugins/open_invocation
 - notify: https://github.com/buildbuddy-io/buildbuddy/tree/master/cli/plugins/notify
