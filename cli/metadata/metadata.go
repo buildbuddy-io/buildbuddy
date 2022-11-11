@@ -3,11 +3,21 @@ package metadata
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 )
 
+func getCommandLineToolName() string {
+	if bazelisk.IsInvokedByBazelisk() {
+		return "bazel"
+	}
+	return "bb"
+}
+
 func AppendBuildMetadata(args, originalArgs []string) ([]string, error) {
-	// Ensure arg0 is "bb" (by default, it is an abs path)
-	originalArgs = append([]string{"bb"}, originalArgs[1:]...)
+	originalArgs = append(
+		[]string{getCommandLineToolName()},
+		originalArgs[1:]...)
 
 	originalArgsJSON, err := json.Marshal(originalArgs)
 	if err != nil {

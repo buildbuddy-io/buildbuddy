@@ -5,4 +5,5 @@ go_library(
     srcs = ["metadata.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/metadata",
     visibility = ["//visibility:public"],
+    deps = ["//cli/bazelisk"],
 )

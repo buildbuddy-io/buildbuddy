@@ -153,6 +153,13 @@ func InvokeRunScript(path string) (exitCode int, err error) {
 	panic("unreachable")
 }
 
+// IsInvokedByBazelisk returns whether the CLI was invoked by bazelisk itself.
+// This will return true when referencing a CLI release in .bazelversion such as
+// "buildbuddy-io/0.0.13" and then running `bazelisk`.
+func IsInvokedByBazelisk() bool {
+	return os.Getenv("BAZELISK_SKIP_WRAPPER") == "true"
+}
+
 // makePipeWriter adapts a writer to an *os.File by using an os.Pipe().
 // The returned file should not be closed; instead the returned closeFunc
 // should be called to ensure that all data from the pipe is flushed to the
