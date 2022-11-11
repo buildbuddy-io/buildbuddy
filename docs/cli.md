@@ -18,9 +18,9 @@ The easiest way to install the BuildBuddy CLI is by running this simple bash scr
 curl -fsSL install.buildbuddy.io | bash
 ```
 
-If you're not comfortable executing random bash scripts from the internet (we totally get it!), you can take a look at what this script is doing under the hood, by visiting [install.buildbuddy.io](http://install.buildbuddy.io) in your browser.
+If you're not comfortable executing random bash scripts from the internet (we totally get it!), you can take a look at what this script is doing under the hood, by visiting [install.buildbuddy.io](https://install.buildbuddy.io) in your browser.
 
-It's downloading the latest BuildBuddy CLI binary for your OS and architecture from our Github repo [https://github.com/buildbuddy-io/bazel/releases](here) and moving it to `/usr/local/bin/bb`.
+It's downloading the latest BuildBuddy CLI binary for your OS and architecture from our Github repo [here](https://github.com/buildbuddy-io/bazel/releases) and moving it to `/usr/local/bin/bb`.
 
 You can perform those steps manually yourself if you'd like!
 
