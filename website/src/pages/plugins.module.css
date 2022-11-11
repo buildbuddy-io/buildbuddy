@@ -10,10 +10,10 @@
 .plugin {
   background-color: #fafafa;
   padding: 32px;
-  grid-column: span;
   border-radius: 8px;
-  max-width: 500px;
   transition: all 0.1s ease-in-out;
+  width: 100%;
+  overflow: hidden;
 }
 
 .plugin:hover,
@@ -47,6 +47,7 @@
   position: relative;
   display: flex;
   align-items: center;
+  overflow-y: auto;
 }
 
 .plugin:hover .pluginSnippet:after {
@@ -102,6 +103,30 @@
   justify-content: center;
 }
 
+.featuredPlugin .plugin {
+  max-width: 500px;
+}
+
 .featuredPlugin .sectionTitle {
   margin-bottom: 8px;
+}
+
+@media (max-width: 1280px) {
+  .plugins {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sectionTitle {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 997px) {
+  .plugins {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionTitle {
+    grid-column: span 1;
+  }
 }
