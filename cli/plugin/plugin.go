@@ -15,8 +15,11 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -746,7 +749,10 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	}
 
 	log.Debugf("New bazel args: %s", newArgs)
-	return newArgs, nil
+
+	// Canonicalize args after each plugin is run, so that every plugin gets
+	// canonicalized args as input.
+	return parser.CanonicalizeArgs(newArgs)
 }
 
 // PostBazel executes the plugin's post-bazel hook if it exists, allowing it to
@@ -877,6 +883,65 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 		AfterClose: func() { <-doneCopying },
 	}
 	return out, nil
+}
+
+func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin) (int, error) {
+	// Build the pipeline of bazel output handlers
+	wc, err := PipelineWriter(os.Stdout, plugins)
+	if err != nil {
+		return -1, err
+	}
+	// Note, it's important that the Close() here happens just after the
+	// bazelisk run completes and before we run post_bazel hooks, since this
+	// waits for all plugins to finish writing to stdout. Otherwise, the
+	// post_bazel output will get intermingled with bazel output.
+	defer wc.Close()
+
+	log.Debugf("Calling bazelisk with %+v", args)
+
+	// Create the output path where the original bazel output will be written,
+	// for post-bazel plugins to read.
+	output, err := os.Create(outputPath)
+	if err != nil {
+		return -1, fmt.Errorf("failed to create output file: %s", err)
+	}
+	defer output.Close()
+
+	// If bb's output is connected to a terminal, then allocate a pty so that
+	// bazel thinks it's writing to a terminal, even though we're capturing its
+	// output via a Writer that is not a terminal. This enables ANSI colors,
+	// proper truncation of progress messages, etc.
+	isStdoutTTY, err := terminal.IsTTY(os.Stdout)
+	if err != nil {
+		return -1, fmt.Errorf("failed to determine whether stdout is a terminal: %s", err)
+	}
+	w := io.MultiWriter(output, wc)
+	opts := &bazelisk.RunOpts{Stdout: w, Stderr: w}
+	if isStdoutTTY {
+		ptmx, tty, err := pty.Open()
+		if err != nil {
+			return -1, fmt.Errorf("failed to allocate pty: %s", err)
+		}
+		defer func() {
+			// 	Close pty/tty (best effort).
+			_ = tty.Close()
+			_ = ptmx.Close()
+		}()
+		if err := pty.InheritSize(os.Stdout, tty); err != nil {
+			return -1, fmt.Errorf("failed to inherit terminal size: %s", err)
+		}
+		// Note: we don't listen to resize events (SIGWINCH) and re-inherit the
+		// size, because Bazel itself doesn't do that currently. So it wouldn't
+		// make a difference either way.
+		opts.Stdout = tty
+		opts.Stderr = tty
+		go io.Copy(w, ptmx)
+	} else {
+		opts.Stdout = w
+		opts.Stderr = w
+	}
+
+	return bazelisk.Run(args, opts)
 }
 
 type overrideCloser struct {

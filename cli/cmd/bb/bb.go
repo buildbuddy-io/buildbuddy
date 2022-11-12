@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -38,6 +39,7 @@ func main() {
 }
 
 func run() (exitCode int, err error) {
+	start := time.Now()
 	// Record original arguments so we can show them in the UI.
 	originalArgs := append([]string{}, os.Args...)
 
@@ -131,6 +133,10 @@ func run() (exitCode int, err error) {
 	}
 
 	// Run plugin pre-bazel hooks
+	args, err = parser.CanonicalizeArgs(args)
+	if err != nil {
+		return -1, err
+	}
 	for _, p := range plugins {
 		args, err = p.PreBazel(args)
 		if err != nil {
@@ -157,8 +163,9 @@ func run() (exitCode int, err error) {
 
 	// Run bazelisk, capturing the original output in a file and allowing
 	// plugins to control how the output is rendered to the terminal.
+	log.Debugf("bb initialized in %s", time.Since(start))
 	outputPath := filepath.Join(tempDir, "bazel.log")
-	exitCode, err = bazelisk.RunWithPlugins(
+	exitCode, err = plugin.RunBazeliskWithPlugins(
 		arg.JoinPassthroughArgs(args, passthroughArgs),
 		outputPath, plugins)
 	if err != nil {

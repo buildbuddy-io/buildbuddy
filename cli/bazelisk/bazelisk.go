@@ -6,76 +6,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/bazelbuild/bazelisk/core"
 	"github.com/bazelbuild/bazelisk/repositories"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
-	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	"github.com/creack/pty"
 )
 
-func RunWithPlugins(args []string, outputPath string, plugins []*plugin.Plugin) (int, error) {
-	// Build the pipeline of bazel output handlers
-	wc, err := plugin.PipelineWriter(os.Stdout, plugins)
-	if err != nil {
-		return -1, err
-	}
-	// Note, it's important that the Close() here happens just after the
-	// bazelisk run completes and before we run post_bazel hooks, since this
-	// waits for all plugins to finish writing to stdout. Otherwise, the
-	// post_bazel output will get intermingled with bazel output.
-	defer wc.Close()
-
-	log.Debugf("Calling bazelisk with %+v", args)
-
-	// Create the output path where the original bazel output will be written,
-	// for post-bazel plugins to read.
-	output, err := os.Create(outputPath)
-	if err != nil {
-		return -1, fmt.Errorf("failed to create output file: %s", err)
-	}
-	defer output.Close()
-
-	// If bb's output is connected to a terminal, then allocate a pty so that
-	// bazel thinks it's writing to a terminal, even though we're capturing its
-	// output via a Writer that is not a terminal. This enables ANSI colors,
-	// proper truncation of progress messages, etc.
-	isStdoutTTY, err := terminal.IsTTY(os.Stdout)
-	if err != nil {
-		return -1, fmt.Errorf("failed to determine whether stdout is a terminal: %s", err)
-	}
-	w := io.MultiWriter(output, wc)
-	opts := &RunOpts{Stdout: w, Stderr: w}
-	if isStdoutTTY {
-		ptmx, tty, err := pty.Open()
-		if err != nil {
-			return -1, fmt.Errorf("failed to allocate pty: %s", err)
-		}
-		defer func() {
-			// 	Close pty/tty (best effort).
-			_ = tty.Close()
-			_ = ptmx.Close()
-		}()
-		if err := pty.InheritSize(os.Stdout, tty); err != nil {
-			return -1, fmt.Errorf("failed to inherit terminal size: %s", err)
-		}
-		// Note: we don't listen to resize events (SIGWINCH) and re-inherit the
-		// size, because Bazel itself doesn't do that currently. So it wouldn't
-		// make a difference either way.
-		opts.Stdout = tty
-		opts.Stderr = tty
-		go io.Copy(w, ptmx)
-	} else {
-		opts.Stdout = w
-		opts.Stderr = w
-	}
-
-	return Run(args, opts)
-}
+var (
+	setVersionOnce sync.Once
+	setVersionErr  error
+)
 
 type RunOpts struct {
 	// Stdout is the Writer where bazelisk should write its stdout.
@@ -205,7 +148,60 @@ func redirectStdio(w io.Writer, stdio **os.File) (close func(), err error) {
 	return close, nil
 }
 
+func createRepositories() *core.Repositories {
+	gcs := &repositories.GCSRepo{}
+	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
+	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
+	return core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
+}
+
+func getBazeliskHome() (string, error) {
+	bazeliskHome := core.GetEnvOrConfig("BAZELISK_HOME")
+	if bazeliskHome != "" {
+		return bazeliskHome, nil
+	}
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("could not get the user's cache directory: %v", err)
+	}
+	return filepath.Join(userCacheDir, "bazelisk"), nil
+}
+
+// ResolveVersion returns the actual bazel version that will be used by
+// bazelisk.
+// This will either return a version string like "5.0.0" or an absolute path to
+// a local bazel binary (which bazelisk also supports).
+func ResolveVersion() (string, error) {
+	if err := setBazelVersion(); err != nil {
+		return "", err
+	}
+	rawVersion := os.Getenv("USE_BAZEL_VERSION")
+	// If using a file path "version", return the file path directly.
+	if filepath.IsAbs(rawVersion) {
+		return rawVersion, nil
+	}
+	bazeliskHome, err := getBazeliskHome()
+	if err != nil {
+		return "", err
+	}
+	// TODO: Support forks?
+	fork := ""
+	repos := createRepositories()
+	version, _, err := repos.ResolveVersion(bazeliskHome, fork, rawVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve bazel version %s: %s", version, err)
+	}
+	return version, nil
+}
+
 func setBazelVersion() error {
+	setVersionOnce.Do(func() {
+		setVersionErr = setBazelVersionImpl()
+	})
+	return setVersionErr
+}
+
+func setBazelVersionImpl() error {
 	// If USE_BAZEL_VERSION is already set and not pointing to us (the BB CLI),
 	// preserve that value.
 	envVersion := os.Getenv("USE_BAZEL_VERSION")

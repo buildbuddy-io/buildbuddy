@@ -10,12 +10,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
-        "//cli/log",
-        "//cli/plugin",
-        "//cli/terminal",
         "//cli/workspace",
         "@com_github_bazelbuild_bazelisk//core:go_default_library",
         "@com_github_bazelbuild_bazelisk//repositories:go_default_library",
-        "@com_github_creack_pty//:pty",
     ],
 )

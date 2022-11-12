@@ -7,8 +7,12 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
+        "//cli/bazelisk",
         "//cli/log",
+        "//cli/storage",
         "//cli/workspace",
+        "//server/remote_cache/digest",
+        "//server/util/disk",
     ],
 )
 
@@ -18,6 +22,7 @@ go_test(
     embed = [":parser"],
     deps = [
         "//cli/log",
+        "//cli/parser/test_data",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
