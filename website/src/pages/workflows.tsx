@@ -7,7 +7,7 @@ import CTA from "../components/cta/cta";
 
 function Component() {
   return (
-    <Layout title="Bazel at Enterprise Scale">
+    <Layout title="BuildBuddy Workflows">
       <div className={common.page}>
         <Hero
           title="Workflows"
