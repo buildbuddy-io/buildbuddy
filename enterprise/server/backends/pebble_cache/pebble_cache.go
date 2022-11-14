@@ -1865,21 +1865,40 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 	}
 }
 
+// CompressionReader helps manage resources associated with a compression.NewZstdCompressingReader
+type CompressionReader struct {
+	io.ReadCloser
+	readBuf     []byte
+	compressBuf []byte
+	bufferPool  *bytebufferpool.Pool
+}
+
+func (r *CompressionReader) Close() error {
+	err := r.ReadCloser.Close()
+	r.bufferPool.Put(r.readBuf)
+	r.bufferPool.Put(r.compressBuf)
+	return err
+}
+
 func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, resource *resource.ResourceName, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
 	if requestedCompression != cachedCompression {
-		bufSize := int64(compressorBufSizeBytes)
-		resourceSize := resource.GetDigest().GetSizeBytes()
-		if resourceSize > 0 && resourceSize < bufSize {
-			bufSize = resourceSize
-		}
-
-		readBuf := p.bufferPool.Get(bufSize)
-		defer p.bufferPool.Put(readBuf)
-		compressBuf := p.bufferPool.Get(bufSize)
-		defer p.bufferPool.Put(compressBuf)
-
 		if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-			return compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
+			bufSize := int64(compressorBufSizeBytes)
+			resourceSize := resource.GetDigest().GetSizeBytes()
+			if resourceSize > 0 && resourceSize < bufSize {
+				bufSize = resourceSize
+			}
+
+			readBuf := p.bufferPool.Get(bufSize)
+			compressBuf := p.bufferPool.Get(bufSize)
+
+			cr, err := compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
+			return &CompressionReader{
+				ReadCloser:  cr,
+				readBuf:     readBuf,
+				compressBuf: compressBuf,
+				bufferPool:  p.bufferPool,
+			}, err
 		} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
 			return compression.NewZstdDecompressingReader(reader)
 		}
