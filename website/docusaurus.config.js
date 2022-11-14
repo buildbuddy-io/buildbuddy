@@ -53,7 +53,7 @@ module.exports = {
             { label: "Remote Cache", href: "/remote-cache" },
             { label: "Workflows", href: "/workflows" },
             { label: "BuildBuddy CLI", href: "/cli" },
-            { label: "Plugins", href: "/plugins" },
+            { label: "Plugin Library", href: "/plugins" },
             // {label: "Cloud", href: "/cloud"},
             // {label: "Open Source", href: "/open-source"},
             // {label: "Enterprise", href: "/enterpise"},
