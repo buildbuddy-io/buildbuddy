@@ -359,6 +359,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	buildBuddyServiceServer, err := buildbuddy_server.NewBuildBuddyServer(env, nil /*=sslService*/)
 	require.NoError(t, err, "could not set up BuildBuddyServiceServer")
 	capabilitiesServer := capabilities_server.NewCapabilitiesServer(
+		env,
 		/*cache=*/ true,
 		/*remoteExec=*/ true,
 		/*zstd=*/ true,
