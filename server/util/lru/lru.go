@@ -279,7 +279,7 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 	}
 	if deleteIndex != -1 {
 		if len(entries) == 1 {
-			c.items[key] = nil
+			delete(c.items, key)
 			return
 		}
 		entries[deleteIndex] = entries[len(entries)-1]
