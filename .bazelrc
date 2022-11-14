@@ -114,7 +114,6 @@ build --noremote_upload_local_results # Uploads logs & artifacts without writing
 build --workspace_status_command=$(pwd)/workspace_status.sh
 
 # Misc remote cache optimizations
-build --incompatible_remote_build_event_upload_respect_no_cache
 build --experimental_remote_cache_async
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
