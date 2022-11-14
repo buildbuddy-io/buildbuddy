@@ -269,10 +269,6 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 	if !ok {
 		return
 	}
-	if len(entries) == 0 {
-		c.items[key] = nil
-		return
-	}
 
 	deleteIndex := -1
 	for i, ent := range entries {
@@ -282,6 +278,10 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 		}
 	}
 	if deleteIndex != -1 {
+		if len(entries) == 1 {
+			delete(c.items, key)
+			return
+		}
 		entries[deleteIndex] = entries[len(entries)-1]
 		c.items[key] = entries[:len(entries)-1]
 	}
