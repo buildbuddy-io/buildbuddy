@@ -9,13 +9,13 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -61,17 +61,6 @@ func init() {
 	for _, c := range histCounts {
 		histCountsTotal += c
 	}
-}
-
-type Counter struct {
-	c uint64
-}
-
-func (c *Counter) Get() uint64 {
-	return atomic.LoadUint64(&c.c)
-}
-func (c *Counter) Inc() uint64 {
-	return atomic.AddUint64(&c.c, 1)
 }
 
 func randRange(low, high int) int64 {
@@ -164,25 +153,19 @@ func main() {
 	writtenDigests := make(chan *repb.Digest, 10000)
 	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
 
-	writeQPSCounter := &Counter{}
-	readQPSCounter := &Counter{}
+	writeQPSCounter := qps.NewCounter()
+	readQPSCounter := qps.NewCounter()
 
 	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), 1)
 	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), 1)
 
 	eg.Go(func() error {
-		lastWriteCount := writeQPSCounter.Get()
-		lastReadCount := readQPSCounter.Get()
 		for {
 			select {
 			case <-gctx.Done():
 				return nil
 			case <-time.After(time.Second):
-				writeCount := writeQPSCounter.Get()
-				readCount := readQPSCounter.Get()
-				log.Printf("Write: %d, Read: %d QPS", writeCount-lastWriteCount, readCount-lastReadCount)
-				lastWriteCount = writeCount
-				lastReadCount = readCount
+				log.Printf("Write: %d, Read: %d QPS", writeQPSCounter.Get(), readQPSCounter.Get())
 			}
 		}
 		return nil

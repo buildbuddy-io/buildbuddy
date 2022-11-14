@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
@@ -115,6 +116,9 @@ type Replica struct {
 
 	quitChan chan struct{}
 	accesses chan *accessTimeUpdate
+
+	readQPS        *qps.Counter
+	raftProposeQPS *qps.Counter
 }
 
 func uint64ToBytes(i uint64) []byte {
@@ -180,6 +184,9 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
 	}).Set(float64(estimatedBytesUsed))
 	// TODO(tylerw): compute number of keys here too.
+
+	ru.ReadQps = int64(sm.readQPS.Get())
+	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
 
 	return ru, nil
 }
@@ -1042,6 +1049,8 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 		return nil, err
 	}
 
+	sm.readQPS.Inc()
+
 	fileMetadata, err := sm.metadataForRecord(db, fileRecord)
 	db.Close()
 
@@ -1222,6 +1231,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		metrics.RaftProposals.With(prometheus.Labels{
 			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
 		}).Inc()
+		sm.raftProposeQPS.Inc()
 		appliedIndex := uint64ToBytes(entry.Index)
 		if err := wb.Set(constants.LastAppliedIndexKey, appliedIndex, nil /*ignored write options*/); err != nil {
 			return nil, err
@@ -1624,8 +1634,10 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 			IsolateByGroupIDs:           true,
 			PrioritizeHashInMetadataKey: true,
 		}),
-		quitChan: make(chan struct{}),
-		accesses: make(chan *accessTimeUpdate, *atimeBufferSize),
+		quitChan:       make(chan struct{}),
+		accesses:       make(chan *accessTimeUpdate, *atimeBufferSize),
+		readQPS:        qps.NewCounter(),
+		raftProposeQPS: qps.NewCounter(),
 	}
 	go r.processAccessTimeUpdates()
 	return r
