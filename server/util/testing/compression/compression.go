@@ -13,7 +13,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-// CompressionCache is a wrapper that can simulate a cache that supports compression for unit tests
+// CompressionCache simulates a cache that supports compression for unit tests
 type CompressionCache struct {
 	interfaces.Cache
 }

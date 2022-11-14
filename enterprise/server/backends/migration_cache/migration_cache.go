@@ -835,7 +835,6 @@ func (mc *MigrationCache) Stop() error {
 	return dstShutdownErr
 }
 
-// TODO: Add unit test where we store something compressed - should come out okay
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return false
 }

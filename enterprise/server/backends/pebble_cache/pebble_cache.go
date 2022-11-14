@@ -1865,15 +1865,15 @@ func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool 
 	}
 }
 
-// CompressionReader helps manage resources associated with a compression.NewZstdCompressingReader
-type CompressionReader struct {
+// compressionReader helps manage resources associated with a compression.NewZstdCompressingReader
+type compressionReader struct {
 	io.ReadCloser
 	readBuf     []byte
 	compressBuf []byte
 	bufferPool  *bytebufferpool.Pool
 }
 
-func (r *CompressionReader) Close() error {
+func (r *compressionReader) Close() error {
 	err := r.ReadCloser.Close()
 	r.bufferPool.Put(r.readBuf)
 	r.bufferPool.Put(r.compressBuf)
@@ -1893,7 +1893,7 @@ func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, resource *r
 			compressBuf := p.bufferPool.Get(bufSize)
 
 			cr, err := compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
-			return &CompressionReader{
+			return &compressionReader{
 				ReadCloser:  cr,
 				readBuf:     readBuf,
 				compressBuf: compressBuf,

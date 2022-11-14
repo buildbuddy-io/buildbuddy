@@ -151,7 +151,7 @@ func NewZstdCompressingReader(reader io.Reader, readBuf []byte, compressBuf []by
 	return pr, nil
 }
 
-// NewZstdDecompressingReader reads chunks of zstd-compressed data from the input
+// NewZstdDecompressingReader reads zstd-compressed data from the input
 // reader and makes the decompressed data available on the output reader
 func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
 	// Stream data from reader to decoder
@@ -161,7 +161,6 @@ func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
 	}
 
 	pr, pw := io.Pipe()
-	// io.Pipe writer blocks until there is a read, so you need a goroutine so they can happen in parallel
 	go func() {
 		defer func() {
 			if err := zstdDecoderPool.Put(decoder); err != nil {
@@ -169,7 +168,7 @@ func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
 			}
 			pw.Close()
 		}()
-		// Write decoded bytes to pw, then the pipe automatically streams them to pr
+		// Write decoded bytes to pw and pipe to pr
 		_, err = decoder.WriteTo(pw)
 	}()
 
