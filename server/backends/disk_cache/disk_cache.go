@@ -772,6 +772,16 @@ func isStaleFile(info fs.FileInfo) bool {
 	return time.Since(info.ModTime()) > staleFilePeriod
 }
 
+func decodeDigest(d string) ([]byte, error) {
+	src := []byte(d)
+	dst := make([]byte, hex.DecodedLen(len(src)))
+	_, err := hex.Decode(dst, src)
+	if err != nil {
+		return nil, err
+	}
+	return dst, nil
+}
+
 func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType resource.CacheType, userPrefix, remoteInstanceName string, digestBytes []byte, err error) {
 	p := strings.TrimPrefix(fullPath, rootDir+"/")
 	parts := strings.Split(p, "/")
@@ -791,7 +801,7 @@ func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType resour
 
 	// pull digest off the end
 	if len(parts) > 0 {
-		db, decodeErr := hex.DecodeString(parts[len(parts)-1])
+		db, decodeErr := decodeDigest(parts[len(parts)-1])
 		if decodeErr != nil {
 			err = parseError()
 			return
@@ -957,7 +967,7 @@ func (p *partition) key(ctx context.Context, cacheType resource.CacheType, remot
 		return nil, status.FailedPreconditionErrorf("digest hash %q is way too short!", hash)
 	}
 
-	digestBytes, err := hex.DecodeString(hash)
+	digestBytes, err := decodeDigest(hash)
 	if err != nil {
 		return nil, err
 	}
