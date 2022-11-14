@@ -14,7 +14,7 @@ It's written in [go](https://go.dev/), [fully open source](https://github.com/bu
 
 The easiest way to install the BuildBuddy CLI is by running this simple bash script, which works on both MacOS and Linux:
 
-```
+```bash
 curl -fsSL install.buildbuddy.io | bash
 ```
 
@@ -28,7 +28,7 @@ You can perform those steps manually yourself if you'd like!
 
 You can update the cli by re-running the installation script:
 
-```
+```bash
 curl -fsSL install.buildbuddy.io | bash
 ```
 
@@ -36,7 +36,7 @@ If you installed BuildBuddy manually instead, you can repeat those installation 
 
 You can check your BuildBuddy CLI version at any time by running:
 
-```
+```bash
 bb version
 ```
 
@@ -44,7 +44,7 @@ bb version
 
 If you're already using Bazelisk, you can easily install the BuildBuddy CLI for your entire project by running:
 
-```
+```bash
 echo "$(echo "buildbuddy-io/0.0.14"; cat .bazelversion)" > .bazelversion
 ```
 
