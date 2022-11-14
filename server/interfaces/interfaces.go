@@ -811,6 +811,9 @@ type LRU interface {
 	// Returns the total "size" of the LRU.
 	Size() int64
 
+	// Returns the number of items in the LRU.
+	Len() int
+
 	// Remove()s the oldest value in the LRU. (See Remove() above).
 	RemoveOldest() (interface{}, bool)
 
