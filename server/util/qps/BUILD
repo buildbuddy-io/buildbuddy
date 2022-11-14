@@ -5,5 +5,4 @@ go_library(
     srcs = ["qps.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/qps",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/log"],
 )
