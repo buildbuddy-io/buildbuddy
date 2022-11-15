@@ -378,3 +378,7 @@ bb install your-username/your-repo:path-to-repo
 ```
 
 If you want to share your plugin with the wider BuildBuddy community, you can submit it to our plugin library [here](/plugins#share).
+
+## Uninstalling a plugin
+
+You can uninstall a plugin at any time by removing it from the `plugins:` block of your `buildbuddy.yaml` file.
