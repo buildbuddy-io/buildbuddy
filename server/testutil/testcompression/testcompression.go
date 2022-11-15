@@ -1,4 +1,4 @@
-package compression
+package testcompression
 
 import (
 	"bytes"

@@ -162,19 +162,14 @@ func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
 
 	pr, pw := io.Pipe()
 	go func() {
-		defer func() {
-			if err := zstdDecoderPool.Put(decoder); err != nil {
-				log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
-			}
-			pw.Close()
-		}()
 		// Write decoded bytes to pw and pipe to pr
 		_, err = decoder.WriteTo(pw)
-	}()
+		pw.CloseWithError(err)
 
-	if err != nil {
-		return nil, err
-	}
+		if err := zstdDecoderPool.Put(decoder); err != nil {
+			log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
+		}
+	}()
 
 	return pr, nil
 }

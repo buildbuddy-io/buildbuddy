@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -31,7 +32,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	compressiontest "github.com/buildbuddy-io/buildbuddy/server/util/testing/compression"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gcodes "google.golang.org/grpc/codes"
 )
@@ -302,7 +302,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 		{
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
-			te.SetCache(&compressiontest.CompressionCache{Cache: te.GetCache()})
+			te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
 			flags.Set(t, "cache.detailed_stats_enabled", true)
 			mc, err := memory_metrics_collector.NewMemoryMetricsCollector()

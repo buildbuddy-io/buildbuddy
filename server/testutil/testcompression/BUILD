@@ -1,9 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "compression",
-    srcs = ["compression.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/testing/compression",
+    name = "testcompression",
+    testonly = 1,
+    srcs = ["testcompression.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",

@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -26,7 +27,6 @@ import (
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	compressiontest "github.com/buildbuddy-io/buildbuddy/server/util/testing/compression"
 	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
@@ -487,7 +487,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 
 			// Enable compression
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
-			te.SetCache(&compressiontest.CompressionCache{Cache: te.GetCache()})
+			te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
 			require.NoError(t, err)
