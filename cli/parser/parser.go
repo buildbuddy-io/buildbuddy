@@ -232,6 +232,12 @@ func ExpandConfigs(args []string) ([]string, error) {
 }
 
 func expandConfigs(workspaceDir string, args []string) ([]string, error) {
+	_, idx := GetBazelCommandAndIndex(args)
+	if idx == -1 {
+		// Not a bazel command; don't expand configs.
+		return args, nil
+	}
+
 	args, rcFiles, err := consumeRCFileArgs(args, workspaceDir)
 	if err != nil {
 		return nil, err
