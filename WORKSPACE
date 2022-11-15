@@ -4,6 +4,7 @@ workspace(
 )
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 # Go
 
@@ -330,3 +331,12 @@ browser_repositories(chromium = True)
 load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
 
 web_test_go_repositories()
+
+# AWS RDS instance certs are signed by an AWS CA.
+# The cert is necessary to validate connections to AWS RDS instances when TLS is enabled.
+http_file(
+    name = "aws_rds_certs",
+    downloaded_file_path = "rds-combined-ca-bundle.pem",
+    sha256 = "6a8ba1c9f858386edba0ea82b7bf8168ef513d1eb0df3a08cc7cf4bb89f856d0",
+    url = "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem",
+)
