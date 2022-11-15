@@ -148,7 +148,12 @@ func run() (exitCode int, err error) {
 		return exitCode, nil
 	}
 
-	// Run plugin post-bazel hooks
+	// Run plugin post-bazel hooks.
+	// Pause the file watcher while these are in progress, so that plugins can
+	// apply fixes to files in the workspace without the watcher immediately
+	// restarting.
+	watcher.Pause()
+	defer watcher.Unpause()
 	for _, p := range plugins {
 		if err := p.PostBazel(outputPath); err != nil {
 			return -1, err

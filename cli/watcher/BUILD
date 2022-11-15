@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
+        "//cli/log",
         "//cli/workspace",
         "//server/util/status",
         "@com_github_bduffany_godemon//:godemon",
