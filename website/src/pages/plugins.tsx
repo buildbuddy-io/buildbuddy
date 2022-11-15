@@ -20,7 +20,7 @@ let plugins = [
     ),
     icon: <ArrowUpCircle />,
     snippet: "bb install buildbuddy-io/plugins:open-invocation",
-    docs: "https://github.com/buildbuddy-io/plugins/tree/main/open-invocation#readme",
+    docs: "https://github.com/buildbuddy-io/buildbuddy/tree/master/cli/plugins/open-invocation#readme",
     copied: false,
   },
   {
@@ -28,7 +28,7 @@ let plugins = [
     description: "Prompts you to automatically run gazelle when you forget to update your BUILD files.",
     icon: <Network />,
     snippet: "bb install buildbuddy-io/plugins:go-deps",
-    docs: "https://github.com/buildbuddy-io/plugins/tree/main/go-deps#readme",
+    docs: "https://github.com/buildbuddy-io/buildbuddy/tree/master/cli/plugins/go-deps#readme",
     copied: false,
   },
   {
@@ -53,7 +53,7 @@ let plugins = [
       "Adds support for a `--notify` argument that sends you a desktop notification when your build completes.",
     icon: <Bell />,
     snippet: "bb install buildbuddy-io/plugins:notify",
-    docs: "https://github.com/buildbuddy-io/plugins/tree/main/notify#readme",
+    docs: "https://github.com/buildbuddy-io/buildbuddy/tree/master/cli/plugins/notify#readme",
     copied: false,
   },
   {
