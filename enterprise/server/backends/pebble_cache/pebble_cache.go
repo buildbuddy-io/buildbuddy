@@ -1179,13 +1179,51 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// TODO(Maggie): Compress all data above a given size before writing it
+// zstdCompressor compresses bytes before writing them to the nested writer
+type zstdCompressor struct {
+	w           interfaces.CommittedMetadataWriteCloser
+	compressBuf []byte
+	bufferPool  *bytebufferpool.Pool
+}
+
+func (z *zstdCompressor) Write(p []byte) (int, error) {
+	z.compressBuf = compression.CompressZstd(z.compressBuf, p)
+	n, err := z.w.Write(z.compressBuf)
+	return n, err
+}
+
+func (z *zstdCompressor) Commit() error {
+	return z.w.Commit()
+}
+
+func (z *zstdCompressor) Metadata() *rfpb.StorageMetadata {
+	return z.w.Metadata()
+}
+
+func (z *zstdCompressor) Close() error {
+	err := z.w.Close()
+	z.bufferPool.Put(z.compressBuf)
+	return err
+}
+
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
+
+	// If data is not already compressed, return a writer that will compress it before writing
+	// Only compress data over a given size for more optimal compression ratios
+	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.maxInlineFileSizeBytes
+	if shouldCompress {
+		r = &resource.ResourceName{
+			Digest:       r.GetDigest(),
+			InstanceName: r.GetInstanceName(),
+			Compressor:   repb.Compressor_ZSTD,
+			CacheType:    r.GetCacheType(),
+		}
+	}
 
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
@@ -1215,7 +1253,16 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		if err != nil {
 			return nil, err
 		}
+
 		wcm = fw
+		if shouldCompress {
+			compressBuf := p.bufferPool.Get(r.GetDigest().GetSizeBytes())
+			wcm = &zstdCompressor{
+				w:           fw,
+				compressBuf: compressBuf,
+				bufferPool:  p.bufferPool,
+			}
+		}
 	}
 
 	// Grab another lease and pass the Close function to the writer

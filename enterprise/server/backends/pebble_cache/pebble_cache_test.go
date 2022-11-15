@@ -599,7 +599,8 @@ func TestMetadata(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	options := &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,6 +620,13 @@ func TestMetadata(t *testing.T) {
 		err := pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 
+		expectDataCompressed := testSize > options.MaxInlineFileSizeBytes
+		expectedSizeBytes := testSize
+		if expectDataCompressed {
+			compressedBuf := compression.CompressZstd(nil, buf)
+			expectedSizeBytes = int64(len(compressedBuf))
+		}
+
 		// Metadata should return true size of the blob, regardless of queried size.
 		digestWrongSize := &repb.Digest{Hash: d.GetHash(), SizeBytes: 1}
 		rWrongSize := &resource.ResourceName{
@@ -628,7 +636,7 @@ func TestMetadata(t *testing.T) {
 
 		md, err := pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
+		require.Equal(t, expectedSizeBytes, md.SizeBytes)
 		lastAccessTime1 := md.LastAccessTimeUsec
 		lastModifyTime1 := md.LastModifyTimeUsec
 		require.NotZero(t, lastAccessTime1)
@@ -637,7 +645,7 @@ func TestMetadata(t *testing.T) {
 		// Last access time should not update since last call to Metadata()
 		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
+		require.Equal(t, expectedSizeBytes, md.SizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
 		lastModifyTime2 := md.LastModifyTimeUsec
 		require.Equal(t, lastAccessTime1, lastAccessTime2)
@@ -647,7 +655,7 @@ func TestMetadata(t *testing.T) {
 		err = pc.Set(ctx, r, buf)
 		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
+		require.Equal(t, expectedSizeBytes, md.SizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
 		lastModifyTime3 := md.LastModifyTimeUsec
 		require.Greater(t, lastAccessTime3, lastAccessTime1)
@@ -726,7 +734,7 @@ func TestReadWrite(t *testing.T) {
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
 	for _, testSize := range testSizes {
-		d, r := testdigest.NewRandomDigestReader(t, testSize)
+		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
 		rn := &resource.ResourceName{
 			Digest:    d,
 			CacheType: resource.CacheType_CAS,
@@ -736,9 +744,8 @@ func TestReadWrite(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error getting %q writer: %s", d.GetHash(), err.Error())
 		}
-		if _, err := io.Copy(wc, r); err != nil {
-			t.Fatalf("Error copying bytes to cache: %s", err.Error())
-		}
+		_, err = wc.Write(buf)
+		require.NoError(t, err)
 		if err := wc.Commit(); err != nil {
 			t.Fatalf("Error closing writer: %s", err.Error())
 		}
@@ -858,9 +865,88 @@ func TestCompression(t *testing.T) {
 			// Write data to cache
 			wc, err := pc.Writer(ctx, tc.rnToWrite)
 			require.NoError(t, err, tc.name)
-			n, err := wc.Write(tc.dataToWrite)
+			_, err = wc.Write(tc.dataToWrite)
 			require.NoError(t, err, tc.name)
-			require.Equal(t, len(tc.dataToWrite), n)
+			err = wc.Commit()
+			require.NoError(t, err, tc.name)
+			err = wc.Close()
+			require.NoError(t, err, tc.name)
+
+			// Read data in compressed form
+			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
+			require.NoError(t, err, tc.name)
+			defer reader.Close()
+			data, err := io.ReadAll(reader)
+			require.NoError(t, err, tc.name)
+			decompressed, err := compression.DecompressZstd(nil, data)
+			require.Equal(t, blob, decompressed, tc.name)
+
+			// Read data non-compressed
+			reader, err = pc.Reader(ctx, decompressedRN, 0, 0)
+			require.NoError(t, err, tc.name)
+			defer reader.Close()
+			data, err = io.ReadAll(reader)
+			require.NoError(t, err, tc.name)
+			require.Equal(t, blob, data, tc.name)
+		}
+	}
+}
+
+func TestCompression_InlinedData(t *testing.T) {
+	blob := compressibleBlobOfSize(int(pebble_cache.DefaultMaxInlineFileSizeBytes - 100))
+	compressedBuf := compression.CompressZstd(nil, blob)
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	compressedRN := &resource.ResourceName{
+		Digest:     d,
+		CacheType:  resource.CacheType_CAS,
+		Compressor: repb.Compressor_ZSTD,
+	}
+	decompressedRN := &resource.ResourceName{
+		Digest:     d,
+		CacheType:  resource.CacheType_CAS,
+		Compressor: repb.Compressor_IDENTITY,
+	}
+
+	testCases := []struct {
+		name        string
+		rnToWrite   *resource.ResourceName
+		dataToWrite []byte
+	}{
+		{
+			name:        "Write compressed data",
+			rnToWrite:   compressedRN,
+			dataToWrite: compressedBuf,
+		},
+		{
+			name:        "Write decompressed data",
+			rnToWrite:   decompressedRN,
+			dataToWrite: blob,
+		},
+	}
+
+	for _, tc := range testCases {
+		{
+			te := testenv.GetTestEnv(t)
+			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+			ctx := getAnonContext(t, te)
+
+			maxSizeBytes := int64(1_000_000_000) // 1GB
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pc.Start()
+			defer pc.Stop()
+
+			// Write data to cache
+			wc, err := pc.Writer(ctx, tc.rnToWrite)
+			require.NoError(t, err, tc.name)
+			_, err = wc.Write(tc.dataToWrite)
+			require.NoError(t, err, tc.name)
 			err = wc.Commit()
 			require.NoError(t, err, tc.name)
 			err = wc.Close()
