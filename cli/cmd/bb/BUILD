@@ -18,6 +18,7 @@ go_library(
         "//cli/metadata",
         "//cli/parser",
         "//cli/plugin",
+        "//cli/printlog",
         "//cli/remotebazel",
         "//cli/sidecar",
         "//cli/tooltag",
