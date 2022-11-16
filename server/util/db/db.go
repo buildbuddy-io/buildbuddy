@@ -2,7 +2,10 @@ package db
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +15,7 @@ import (
 
 	golog "log"
 
+	"github.com/aws/aws-sdk-go/service/rds/rdsutils"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
@@ -34,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
+	awssession "github.com/aws/aws-sdk-go/aws/session"
 	gomysql "github.com/go-sql-driver/mysql"
 	gosqlite "github.com/mattn/go-sqlite3"
 )
@@ -54,7 +59,9 @@ const (
 
 var (
 	dataSource             = flagutil.New("database.data_source", "sqlite3:///tmp/buildbuddy.db", "The SQL database to connect to, specified as a connection string.", flagutil.SecretTag)
+	advDataSource          = flagutil.New("database.advanced_data_source", AdvancedConfig{}, "Alternative to the database.data_source flag that allows finer control over database settings as well as allowing use of AWS IAM credentials. For most users, database.data_source is a simpler configuration method.")
 	readReplica            = flag.String("database.read_replica", "", "A secondary, read-only SQL database to connect to, specified as a connection string.")
+	advReadReplica         = flagutil.New("database.advanced_read_replica", AdvancedConfig{}, "Advanced alternative to database.read_replica. Refer to database.advanced for more information.")
 	statsPollInterval      = flag.Duration("database.stats_poll_interval", 5*time.Second, "How often to poll the DB client for connection stats (default: '5s').")
 	maxOpenConns           = flag.Int("database.max_open_conns", 0, "The maximum number of open connections to maintain to the db")
 	maxIdleConns           = flag.Int("database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
@@ -65,6 +72,59 @@ var (
 	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
 )
+
+type AdvancedConfig struct {
+	Driver    string `yaml:"driver" usage:"The driver to use: one of sqlite3 or mysql."`
+	Endpoint  string `yaml:"endpoint" usage:"Typically the host:port combination of the database server."`
+	Username  string `yaml:"username" usage:"Username to use when connecting."`
+	Password  string `yaml:"password" usage:"Password to use when connecting. Not used if AWS IAM is enabled."`
+	DBName    string `yaml:"db_name" usage:"The name of the database to use for BuildBuddy data."`
+	Region    string `yaml:"region" usage:"Region of the database instance. Required if AWS IAM is enabled."`
+	UseAWSIAM bool   `yaml:"use_aws_iam" usage:"If enabled, AWS IAM authentication is used instead of fixed credentials. Make sure the endpoint includes the port, otherwise IAM-based auth will fail."`
+	Params    string `yaml:"params" usage:"Optional parameters to pass to the database driver (in format key1=val1&key2=val2)"`
+}
+
+// dnsFormatter generates DSN strings from structured options.
+type dsnFormatter struct {
+	Driver   string
+	Endpoint string
+	Username string
+	Password string
+	DBName   string
+	Params   string
+}
+
+func (df *dsnFormatter) AddParam(key, val string) {
+	if df.Params != "" {
+		df.Params += "&"
+	}
+	df.Params += fmt.Sprintf("%s=%s", key, val)
+}
+
+func (df *dsnFormatter) String() string {
+	endpoint := df.Endpoint
+	if df.Driver == mysqlDialect {
+		endpoint = fmt.Sprintf("tcp(%s)", df.Endpoint)
+	}
+
+	b := strings.Builder{}
+	if df.Username != "" && df.Password != "" {
+		b.WriteString(df.Username)
+		b.WriteString(":")
+		b.WriteString(df.Password)
+		b.WriteString("@")
+	}
+	b.WriteString(endpoint)
+	if df.DBName != "" {
+		b.WriteString("/")
+		b.WriteString(df.DBName)
+	}
+	if df.Params != "" {
+		b.WriteString("?")
+		b.WriteString(df.Params)
+	}
+	return b.String()
+}
 
 type DBHandle struct {
 	db            *gorm.DB
@@ -272,18 +332,60 @@ func instrumentGORM(gdb *gorm.DB) {
 	gdb.Callback().Update().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
 }
 
-func openDB(dialect string, connString string) (*gorm.DB, error) {
-	var dialector gorm.Dialector
-	switch dialect {
+// connector implements the sql Driver interface which allows us to control the
+// DSN passed to the driver for every new connection instead of using a single
+// fixed DSN.
+//
+// Some connectivity (i.e. AWS IAM) uses short-lived tokens which requires us
+// to update the DSN. We delegate to the DataSource to generate the DSN.
+type connector struct {
+	d  driver.Driver
+	ds DataSource
+}
+
+func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
+	dsn, err := c.ds.DSN()
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not generate DSN: %s", err)
+	}
+	return c.d.Open(dsn)
+}
+
+func (c *connector) Driver() driver.Driver {
+	return c.d
+}
+
+func openDB(dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
+	ds, err := ParseDatasource(dataSource, advancedConfig)
+	if err != nil {
+		return nil, "", err
+	}
+
+	var drv driver.Driver
+	switch ds.DriverName() {
 	case sqliteDialect:
-		dialector = sqlite.Open(connString)
+		drv = &gosqlite.SQLiteDriver{}
+	case mysqlDialect:
+		drv = &gomysql.MySQLDriver{}
+	default:
+		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
+	}
+
+	// Use our own connector so that we can control the DSN for each new
+	// connection.
+	db := sql.OpenDB(&connector{d: drv, ds: ds})
+
+	var dialector gorm.Dialector
+	switch ds.DriverName() {
+	case sqliteDialect:
+		dialector = sqlite.Dialector{Conn: db}
 	case mysqlDialect:
 		// Set default string size to 255 to avoid unnecessary schema modifications by GORM.
 		// Newer versions of GORM use a smaller default size (191) to account for InnoDB index limits
 		// that don't apply to modern MysQL installations.
-		dialector = mysql.New(mysql.Config{DSN: connString, DefaultStringSize: 255})
+		dialector = mysql.New(mysql.Config{Conn: db, DefaultStringSize: 255})
 	default:
-		return nil, fmt.Errorf("unsupported database dialect %s", dialect)
+		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
 
 	var l logger.Interface
@@ -308,24 +410,121 @@ func openDB(dialect string, connString string) (*gorm.DB, error) {
 	}
 	gdb, err := gorm.Open(dialector, &config)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	instrumentGORM(gdb)
 
-	return gdb, nil
+	return gdb, ds.DriverName(), nil
 }
 
-func parseDatasource(datasource string) (string, string, error) {
+// DataSource is responsible for generating the DSN for new sql connections.
+type DataSource interface {
+	DriverName() string
+	DSN() (string, error)
+}
+
+// fixedDSNDataSource returns a fixed DSN.
+type fixedDSNDataSource struct {
+	driver string
+	dsn    string
+}
+
+func (fd *fixedDSNDataSource) DriverName() string {
+	return fd.driver
+}
+
+func (fd *fixedDSNDataSource) DSN() (string, error) {
+	return fd.dsn, nil
+}
+
+// awsIAMDataSource generates the DSN using short-lived AWS IAM auth tokens.
+type awsIAMDataSource struct {
+	baseDSN *dsnFormatter
+	region  string
+	session *awssession.Session
+}
+
+func (aid *awsIAMDataSource) DriverName() string {
+	return aid.baseDSN.Driver
+}
+
+func (aid *awsIAMDataSource) DSN() (string, error) {
+	creds := aid.session.Config.Credentials
+	token, err := rdsutils.BuildAuthToken(aid.baseDSN.Endpoint, aid.region, aid.baseDSN.Username, creds)
+	if err != nil {
+		return "", status.UnavailableErrorf("could not obtain AWS IAM auth token: %s", err)
+	}
+	dsn := *aid.baseDSN
+	dsn.Password = token
+	return dsn.String(), nil
+}
+
+func ParseDatasource(datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
+	if *advancedConfig != (AdvancedConfig{}) {
+		ac := advancedConfig
+		dsn := &dsnFormatter{
+			Driver:   ac.Driver,
+			Endpoint: ac.Endpoint,
+			Username: ac.Username,
+			Password: ac.Password,
+			DBName:   ac.DBName,
+			Params:   ac.Params,
+		}
+
+		if ac.Endpoint == "" {
+			return nil, status.FailedPreconditionError("endpoint is required")
+		}
+
+		if ac.UseAWSIAM {
+			if ac.Region == "" {
+				return nil, status.FailedPreconditionError("region is required to enable AWS IAM")
+			}
+			if ac.Password != "" {
+				return nil, status.FailedPreconditionError("password should not be specified when AWS IAM is enabled")
+			}
+
+			if ac.Driver == mysqlDialect {
+				certPool := x509.NewCertPool()
+				// This file is packaged in the enterprise docker image.
+				pem, err := os.ReadFile("/rds-combined-ca-bundle.pem")
+				if err != nil {
+					return nil, status.UnavailableErrorf("could not read RDS CA bundle: %s", err)
+				}
+				if !certPool.AppendCertsFromPEM(pem) {
+					return nil, status.UnavailableErrorf("could not parse RDS CA bundle")
+				}
+				if err = gomysql.RegisterTLSConfig("rds", &tls.Config{RootCAs: certPool}); err != nil {
+					return nil, status.UnknownErrorf("could not configure RDS CA bundle for mysql: %s", err)
+				}
+				dsn.AddParam("tls", "rds")
+				dsn.AddParam("allowCleartextPasswords", "true")
+			}
+
+			sess, err := awssession.NewSession()
+			if err != nil {
+				return nil, status.FailedPreconditionErrorf("could not initialize AWS session: %s", err)
+			}
+			return &awsIAMDataSource{
+				baseDSN: dsn,
+				region:  ac.Region,
+				session: sess,
+			}, nil
+		}
+
+		return &fixedDSNDataSource{driver: ac.Driver, dsn: dsn.String()}, nil
+	}
+
 	if datasource != "" {
 		parts := strings.SplitN(datasource, "://", 2)
 		if len(parts) != 2 {
-			return "", "", fmt.Errorf("malformed db connection string")
+			return nil, fmt.Errorf("malformed db connection string")
 		}
-		dialect, connString := parts[0], parts[1]
-		return dialect, connString, nil
+		driverName, connString := parts[0], parts[1]
+		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
 	}
-	return "", "", fmt.Errorf("No database configured -- please specify at least one in the config")
+
+	return nil, status.FailedPreconditionError("no database configured -- please specify at least one in the config")
 }
 
 // sqlLogger is a GORM logger wrapper that supresses "record not found" errors.
@@ -420,13 +619,9 @@ func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, er
 	if *dataSource == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
-	dialect, connString, err := parseDatasource(*dataSource)
+	primaryDB, dialect, err := openDB(*dataSource, advDataSource)
 	if err != nil {
-		return nil, err
-	}
-	primaryDB, err := openDB(dialect, connString)
-	if err != nil {
-		return nil, err
+		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
 
 	err = setDBOptions(dialect, primaryDB)
@@ -467,13 +662,9 @@ func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, er
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
-		readDialect, readConnString, err := parseDatasource(*readReplica)
+		replicaDB, readDialect, err := openDB(*readReplica, advReadReplica)
 		if err != nil {
-			return nil, err
-		}
-		replicaDB, err := openDB(readDialect, readConnString)
-		if err != nil {
-			return nil, err
+			return nil, status.FailedPreconditionErrorf("could not configure read replica database: %s", err)
 		}
 		setDBOptions(readDialect, replicaDB)
 		log.Info("Read replica was present -- connecting to it.")
