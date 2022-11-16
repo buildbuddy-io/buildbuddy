@@ -65,6 +65,7 @@ def _main(version):
     sh("git tag " + tag)
     sh("git push origin " + tag)
 
+    print("---")
     print("> Tag pushed!")
 
     print("> Release workflow should show up here:")
@@ -74,6 +75,15 @@ def _main(version):
 
     print("> Once the workflow has succeeded, publish the draft release here:")
     print("> https://github.com/buildbuddy-io/bazel/releases")
+
+    print("---")
+    print("> Run cli/update_docs.sh to update website docs? (Enter=OK, Cancel=Ctrl+C)")
+    try:
+        input()
+    except KeyboardInterrupt:
+        print()
+        return 1
+    subprocess.run(["cli/update_docs.sh"])
 
 
 def sh(command, stream_stdout=True, **kwargs):
