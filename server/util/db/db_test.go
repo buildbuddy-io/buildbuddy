@@ -11,9 +11,6 @@ func TestParseDataSource(t *testing.T) {
 	_, err := db.ParseDatasource("", &db.AdvancedConfig{})
 	require.ErrorContains(t, err, "no database configured")
 
-	_, err = db.ParseDatasource("foo", &db.AdvancedConfig{Driver: "foo"})
-	require.ErrorContains(t, err, "specify either")
-
 	_, err = db.ParseDatasource("foo", &db.AdvancedConfig{})
 	require.ErrorContains(t, err, "malformed")
 
