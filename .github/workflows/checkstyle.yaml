@@ -17,9 +17,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v34
+      # TODO(https://github.com/tj-actions/changed-files/issues/809): Re-enable
+      # - name: Get changed files
+      #   id: changed-files
+      #   uses: tj-actions/changed-files@v34.4.2
 
       - name: Setup go
         uses: actions/setup-go@v2
@@ -81,7 +82,11 @@ jobs:
         # prettier can be slow.
         run: |
           yarn global add prettier@2.2.1
-          printf '%s\n' ${{ steps.changed-files.outputs.all_changed_files }} |
+          # TODO(https://github.com/tj-actions/changed-files/issues/809):
+          # Use changed-files instead of git ls-files
+          # printf '%s\n' ${{ steps.changed-files.outputs.all_changed_files }}
+
+          git ls-files |
             grep -P '(README|\.(js|jsx|ts|tsx|html|css|yaml|yml|json|md))$' |
             ( xargs --no-run-if-empty --delimiter='\n' "$(yarn global bin)/prettier" --check 1>/dev/null || true ) &> prettier-errors.txt
           echo "prettier errors:"
