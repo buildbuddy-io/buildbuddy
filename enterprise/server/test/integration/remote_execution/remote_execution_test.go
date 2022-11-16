@@ -787,9 +787,9 @@ func TestBasicActionIO(t *testing.T) {
 		Arguments: []string{
 			"sh", "-c", strings.Join([]string{
 				`set -e`,
-                // No need to create the output directory itself; executor is
-                // responsible for that because it's specified as an
-                // OutputDirectory.
+				// No need to create the output directory itself; executor is
+				// responsible for that because it's specified as an
+				// OutputDirectory.
 				`cp greeting.input out_dir/hello_world.output`,
 				`printf 'world' >> out_dir/hello_world.output`,
 				// Create a file in a child dir of the output directory.
