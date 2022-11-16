@@ -479,6 +479,13 @@ func PrepareEnv() error {
 	if err := os.Setenv("USER_CONFIG_DIR", cfg); err != nil {
 		return err
 	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+	if err := os.Setenv("USER_CACHE_DIR", cache); err != nil {
+		return err
+	}
 	return nil
 }
 
