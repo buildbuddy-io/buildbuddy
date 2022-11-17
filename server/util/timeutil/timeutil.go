@@ -63,3 +63,12 @@ func (*clock) Now() time.Time {
 func NewClock() Clock {
 	return &clock{}
 }
+
+func StopAndDrainTimer(t *time.Timer) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+}

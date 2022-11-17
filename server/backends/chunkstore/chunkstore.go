@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 )
 
 const (
@@ -399,6 +400,9 @@ type ChunkstoreWriter struct {
 }
 
 func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
+	delay := time.NewTimer(w.writeTimeoutDuration)
+	// don't leak the timer
+	defer timeutil.StopAndDrainTimer(delay)
 	select {
 	case result, open := <-w.writeResultChannel:
 		if !open || result.Close {
@@ -414,7 +418,7 @@ func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 			return w.readFromWriteResultChannel()
 		}
 		return result.Size, result.Err
-	case <-time.After(w.writeTimeoutDuration):
+	case <-delay.C:
 		return 0, status.DeadlineExceededErrorf("Error accessing %v: Deadline exceeded.", w.blobName)
 	}
 }
@@ -491,6 +495,9 @@ func (l *writeLoop) run(ctx context.Context) {
 		bytesFlushed := 0
 		var req *WriteRequest
 
+		delay := time.NewTimer(time.Until(flushTime))
+		// don't leak the timer
+		defer timeutil.StopAndDrainTimer(delay)
 		// Get the write request for this iteration.
 		select {
 		case req, open = <-l.writeChannel:
@@ -518,7 +525,7 @@ func (l *writeLoop) run(ctx context.Context) {
 					open = false
 				}
 			}
-		case <-time.After(time.Until(flushTime)):
+		case <-delay.C:
 			// We timed out waiting for a write request. Flush the contents of the
 			// chunk to disk.
 			timeout = true
