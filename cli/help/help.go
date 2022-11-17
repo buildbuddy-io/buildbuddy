@@ -75,6 +75,18 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 	// Get help output lines with trailing newlines removed
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+
+		if line == "Available commands:" {
+			fmt.Println("bazel commands:")
+			continue
+		}
+		if line == "Getting more help:" {
+			// Before the "Getting more help" section, print bb commands.
+			printBBCommands()
+			fmt.Println(line)
+			continue
+		}
 		// Bazel shows its release version at the top of the help output;
 		// show ours too.
 		if strings.Contains(line, "[bazel release") {
@@ -96,6 +108,21 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 	return exitCode, nil
 }
 
+func printBBCommands() {
+	// TODO: Have commands add themselves to a registry and get the command
+	// names / descriptions from there.
+	columns := [][]string{
+		{"install", "Installs a bb plugin (https://buildbuddy.io/plugins)."},
+		{"login", "Configures bb commands to use your BuildBuddy API key."},
+		{"remote", "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service."},
+	}
+	fmt.Println("bb commands:")
+	for _, row := range columns {
+		fmt.Printf("  %s  %s\n", padEnd(row[0], 18), row[1])
+	}
+	fmt.Println()
+}
+
 func getHelpModifiers(args []string) []string {
 	var out []string
 	for _, arg := range args {
@@ -109,6 +136,13 @@ func getHelpModifiers(args []string) []string {
 func padStart(value string, targetLength int) string {
 	for len(value) < targetLength {
 		value = " " + value
+	}
+	return value
+}
+
+func padEnd(value string, targetLength int) string {
+	for len(value) < targetLength {
+		value += " "
 	}
 	return value
 }
