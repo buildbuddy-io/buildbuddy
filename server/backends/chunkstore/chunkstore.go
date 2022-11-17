@@ -399,8 +399,13 @@ type ChunkstoreWriter struct {
 }
 
 func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
+	delay := time.NewTimer(w.writeTimeoutDuration)
 	select {
 	case result, open := <-w.writeResultChannel:
+		if !delay.Stop() {
+			// don't leak the timer
+			<-delay.C
+		}
 		if !open || result.Close {
 			close(w.writeChannel)
 			w.closed = true
@@ -414,7 +419,7 @@ func (w *ChunkstoreWriter) readFromWriteResultChannel() (int, error) {
 			return w.readFromWriteResultChannel()
 		}
 		return result.Size, result.Err
-	case <-time.After(w.writeTimeoutDuration):
+	case <-delay.C:
 		return 0, status.DeadlineExceededErrorf("Error accessing %v: Deadline exceeded.", w.blobName)
 	}
 }
@@ -491,9 +496,14 @@ func (l *writeLoop) run(ctx context.Context) {
 		bytesFlushed := 0
 		var req *WriteRequest
 
+		delay := time.NewTimer(time.Until(flushTime))
 		// Get the write request for this iteration.
 		select {
 		case req, open = <-l.writeChannel:
+			if !delay.Stop() {
+				// don't leak the timer
+				<-delay.C
+			}
 			if req != nil {
 				// We received a write request; update the context, chunk, and tail.
 				ctx = req.ctx
@@ -518,11 +528,15 @@ func (l *writeLoop) run(ctx context.Context) {
 					open = false
 				}
 			}
-		case <-time.After(time.Until(flushTime)):
+		case <-delay.C:
 			// We timed out waiting for a write request. Flush the contents of the
 			// chunk to disk.
 			timeout = true
 		case <-ctx.Done():
+			if !delay.Stop() {
+				// don't leak the timer
+				<-delay.C
+			}
 			open = false
 
 			// The context was canceled before the file was closed; extend the life of
