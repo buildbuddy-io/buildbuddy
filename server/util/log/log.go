@@ -179,6 +179,9 @@ func Configure() error {
 		if err != nil {
 			return err
 		}
+		// logger comes last in the MultiLevelWriter because it writes to its
+		// sub-writers in sequence, and logger will exit after logging when we log
+		// fatal errors.
 		logger = zerolog.New(zerolog.MultiLevelWriter(l, logger))
 	}
 	log.Logger = logger
