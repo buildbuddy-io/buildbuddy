@@ -115,6 +115,7 @@ func printBBCommands() {
 		{"install", "Installs a bb plugin (https://buildbuddy.io/plugins)."},
 		{"login", "Configures bb commands to use your BuildBuddy API key."},
 		{"remote", "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service."},
+		{"update", "Updates the bb CLI to the latest version."},
 	}
 	fmt.Println("bb commands:")
 	for _, row := range columns {

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
+	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -49,8 +50,11 @@ func run() (exitCode int, err error) {
 	}
 
 	// Handle CLI-specific subcommands.
-	// TODO: Refactor so that logging is configured earlier.
 	exitCode, err = plugin.HandleInstall(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = update.HandleUpdate(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
@@ -117,8 +121,11 @@ func run() (exitCode int, err error) {
 
 	// Handle commands
 	args = remotebazel.HandleRemoteBazel(args, passthroughArgs)
-	args = version.HandleVersion(args)
 	args = login.HandleLogin(args)
+	exitCode, err = version.HandleVersion(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
