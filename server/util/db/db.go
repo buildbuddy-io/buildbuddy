@@ -44,8 +44,8 @@ import (
 )
 
 const (
-	sqliteDialect = "sqlite3"
-	mysqlDialect  = "mysql"
+	sqliteDriver = "sqlite3"
+	mysqlDriver  = "mysql"
 
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
@@ -103,7 +103,7 @@ func (df *dsnFormatter) AddParam(key, val string) {
 
 func (df *dsnFormatter) String() string {
 	endpoint := df.Endpoint
-	if df.Driver == mysqlDialect {
+	if df.Driver == mysqlDriver {
 		endpoint = fmt.Sprintf("tcp(%s)", df.Endpoint)
 	}
 
@@ -129,7 +129,7 @@ func (df *dsnFormatter) String() string {
 type DBHandle struct {
 	db            *gorm.DB
 	readReplicaDB *gorm.DB
-	dialect       string
+	driver        string
 }
 
 type Options struct {
@@ -363,9 +363,9 @@ func openDB(dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string
 
 	var drv driver.Driver
 	switch ds.DriverName() {
-	case sqliteDialect:
+	case sqliteDriver:
 		drv = &gosqlite.SQLiteDriver{}
-	case mysqlDialect:
+	case mysqlDriver:
 		drv = &gomysql.MySQLDriver{}
 	default:
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
@@ -377,9 +377,9 @@ func openDB(dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string
 
 	var dialector gorm.Dialector
 	switch ds.DriverName() {
-	case sqliteDialect:
+	case sqliteDriver:
 		dialector = sqlite.Dialector{Conn: db}
-	case mysqlDialect:
+	case mysqlDriver:
 		// Set default string size to 255 to avoid unnecessary schema modifications by GORM.
 		// Newer versions of GORM use a smaller default size (191) to account for InnoDB index limits
 		// that don't apply to modern MysQL installations.
@@ -484,10 +484,11 @@ func ParseDatasource(datasource string, advancedConfig *AdvancedConfig) (DataSou
 				return nil, status.FailedPreconditionError("password should not be specified when AWS IAM is enabled")
 			}
 
-			if ac.Driver == mysqlDialect {
+			if ac.Driver == mysqlDriver {
 				certPool := x509.NewCertPool()
 				// This file is packaged in the enterprise docker image.
 				pem, err := os.ReadFile("/rds-combined-ca-bundle.pem")
+				// This file is packaged in the enterprise docker image.
 				if err != nil {
 					return nil, status.UnavailableErrorf("could not read RDS CA bundle: %s", err)
 				}
@@ -546,14 +547,14 @@ func (l sqlLogger) LogMode(level logger.LogLevel) logger.Interface {
 	return sqlLogger{l.Interface.LogMode(level), level}
 }
 
-func setDBOptions(dialect string, gdb *gorm.DB) error {
+func setDBOptions(driver string, gdb *gorm.DB) error {
 	db, err := gdb.DB()
 	if err != nil {
 		return err
 	}
 
 	// SQLITE Special! To avoid "database is locked errors":
-	if dialect == sqliteDialect {
+	if driver == sqliteDriver {
 		db.SetMaxOpenConns(1)
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	} else {
@@ -619,12 +620,12 @@ func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, er
 	if *dataSource == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
-	primaryDB, dialect, err := openDB(*dataSource, advDataSource)
+	primaryDB, driverName, err := openDB(*dataSource, advDataSource)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
 
-	err = setDBOptions(dialect, primaryDB)
+	err = setDBOptions(driverName, primaryDB)
 	if err != nil {
 		return nil, err
 	}
@@ -640,21 +641,21 @@ func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, er
 	go statsRecorder.poll()
 
 	if *autoMigrateDBAndExit {
-		if err := runMigrations(dialect, primaryDB); err != nil {
+		if err := runMigrations(driverName, primaryDB); err != nil {
 			log.Fatalf("Database auto-migration failed: %s", err)
 		}
 		log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
 		os.Exit(0)
 	}
 	if *autoMigrateDB {
-		if err := runMigrations(dialect, primaryDB); err != nil {
+		if err := runMigrations(driverName, primaryDB); err != nil {
 			return nil, err
 		}
 	}
 
 	dbh := &DBHandle{
-		db:      primaryDB,
-		dialect: dialect,
+		db:     primaryDB,
+		driver: driverName,
 	}
 	hc.AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
 		return primarySQLDB.Ping()
@@ -697,7 +698,7 @@ func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, er
 // Epoch) to a month in UTC time, formatted as "YYYY-MM".
 func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
 	timestampExpr := fieldName + `/1000000`
-	if h.dialect == sqliteDialect {
+	if h.driver == sqliteDriver {
 		return `STRFTIME('%Y-%m', ` + timestampExpr + `, 'unixepoch')`
 	}
 	return `DATE_FORMAT(FROM_UNIXTIME(` + timestampExpr + `), '%Y-%m')`
@@ -711,7 +712,7 @@ func (h *DBHandle) UTCMonthFromUsecTimestamp(fieldName string) string {
 func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string {
 	offsetUsec := int64(timezoneOffsetMinutes) * 60 * 1e6
 	timestampExpr := fmt.Sprintf("(%s + (%d))/1000000", fieldName, -offsetUsec)
-	if h.dialect == sqliteDialect {
+	if h.driver == sqliteDriver {
 		return fmt.Sprintf("DATE(%s, 'unixepoch')", timestampExpr)
 	}
 	return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
@@ -726,7 +727,7 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 //      (potentially_already_existing_key)
 //      VALUES ("key_value")`
 func (h *DBHandle) InsertIgnoreModifier() string {
-	if h.dialect == sqliteDialect {
+	if h.driver == sqliteDriver {
 		return "OR IGNORE"
 	}
 	return "IGNORE"
@@ -740,7 +741,7 @@ func (h *DBHandle) InsertIgnoreModifier() string {
 //     `SELECT column FROM MyTable
 //      WHERE id=<some id> `+db.SelectForUpdateModifier()
 func (h *DBHandle) SelectForUpdateModifier() string {
-	if h.dialect == sqliteDialect {
+	if h.driver == sqliteDriver {
 		return ""
 	}
 	return "FOR UPDATE"
