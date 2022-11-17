@@ -678,7 +678,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	}
 
 	dbh := &DBHandle{
-		db:      primaryDB,
+		db:     primaryDB,
 		driver: driverName,
 	}
 	env.GetHealthChecker().AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
