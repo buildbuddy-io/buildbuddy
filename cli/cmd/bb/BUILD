@@ -21,6 +21,7 @@ go_library(
         "//cli/remotebazel",
         "//cli/sidecar",
         "//cli/tooltag",
+        "//cli/update",
         "//cli/version",
         "//cli/watcher",
         "//server/util/status",
