@@ -28,20 +28,37 @@ func (l *logWriter) Write(p []byte) (int, error) {
 func (l *logWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 	switch level {
 	case zerolog.DebugLevel:
-		l.logger.StandardLogger(logging.Debug).Print(string(p))
+		l.logger.Log(logging.Entry{
+			Severity: logging.Debug,
+			Payload:  p,
+		})
 	case zerolog.InfoLevel:
-		l.logger.StandardLogger(logging.Info).Print(string(p))
+		l.logger.Log(logging.Entry{
+			Severity: logging.Info,
+			Payload:  p,
+		})
 	case zerolog.WarnLevel:
-		l.logger.StandardLogger(logging.Warning).Print(string(p))
+		l.logger.Log(logging.Entry{
+			Severity: logging.Warning,
+			Payload:  p,
+		})
 	case zerolog.ErrorLevel:
-		l.logger.StandardLogger(logging.Error).Print(string(p))
+		l.logger.Log(logging.Entry{
+			Severity: logging.Error,
+			Payload:  p,
+		})
 	case zerolog.PanicLevel:
 		fallthrough
 	case zerolog.FatalLevel:
-		l.logger.StandardLogger(logging.Critical).Print(string(p))
-		l.logger.Flush()
+		l.logger.LogSync(l.ctx, logging.Entry{
+			Severity: logging.Critical,
+			Payload:  p,
+		})
 	default:
-		l.logger.StandardLogger(logging.Default).Print(string(p))
+		l.logger.Log(logging.Entry{
+			Severity: logging.Default,
+			Payload:  p,
+		})
 	}
 	return len(p), nil
 }
