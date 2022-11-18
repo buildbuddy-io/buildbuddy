@@ -1001,6 +1001,7 @@ func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interface
 	return mwc, nil
 }
 
+// TODO(Maggie): Implement for distributed cache
 func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	return c.local.SupportsCompressor(compressor)
+	return false
 }
