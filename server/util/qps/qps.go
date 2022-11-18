@@ -59,7 +59,7 @@ func (c *Counter) reset() {
 	for {
 		t := time.Now().Second()
 		numCounts := len(c.counts)
-		atomic.StoreUint64(&c.idx, uint64(t % numCounts))
+		atomic.StoreUint64(&c.idx, uint64(t%numCounts))
 		j := (t + 1) % numCounts
 		c.counts[j].Reset()
 
