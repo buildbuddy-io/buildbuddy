@@ -3,7 +3,7 @@ slug: building-a-fast-trends-page.md
 title: "How We Use ClickHouse to Analyze Trends Across Millions of Builds"
 author: Lulu Zhang
 author_title: Engineer @ BuildBuddy
-date: 2022-11-18:12:00:00
+date: 2022-11-21:12:00:00
 author_url: https://www.linkedin.com/in/luluzhang66
 author_image_url: https://avatars.githubusercontent.com/u/3977083?v=4
 image: /img/blog/clickhouse.png
@@ -22,15 +22,15 @@ The trends page allows you to see how improvements you are making to your builds
 affects your average build duration and other stats. It also exposes areas that
 might need improving. For example, if you see the cache hit rate go down over
 time, your build might have some non-deterministic build actions that could be
-improved, or some newly introduced dependencies in your build that result in
-more frequent cache invalidations.
+improved, or some newly introduced dependencies that result in more frequent
+cache invalidations.
 
 When we first created the Trends page, we used MySQL queries to aggregate
 build stats and generate the data we wanted to display. For a time this worked
 well, but we quickly ran into performance issues for customers that had very
 large numbers of builds. We were able to temporarily improve performance by
 adding various indices, and though this helped to reduce the number of rows
-read, it was not sufficient. Some customers do over 100K builds per day, and the
+read, it was not sufficient. Some customers do millions on monthly builds, and the
 Trends page (which can look back up to a year) for these customers was taking
 more than 20 _minutes_ to load.
 
