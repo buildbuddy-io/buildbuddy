@@ -14,18 +14,21 @@ message Key {
   int64 size_bytes = 2;
 }
 
+// TODO: Delete key and isolation fields once PR to stop reading them has been rolled out
 message ReadRequest {
   Isolation isolation = 4;
   reserved 1;
   Key key = 2;
   int64 offset = 3;
   int64 limit = 5;
+  resource.ResourceName resource = 6;
 }
 
 message ReadResponse {
   bytes data = 1;
 }
 
+// TODO: Delete key and isolation fields once PR to stop reading them has been rolled out
 message WriteRequest {
   Isolation isolation = 6;
   reserved 1;
@@ -36,6 +39,7 @@ message WriteRequest {
   // A node that this data should eventually be handed off to.
   // Clients should attempt to replicate this data when possible.
   string handoff_peer = 5;
+  resource.ResourceName resource = 7;
 }
 
 message WriteResponse {
@@ -49,9 +53,11 @@ message DeleteRequest {
 
 message DeleteResponse {}
 
+// TODO: Delete key and isolation fields once PR to stop reading them has been rolled out
 message FindMissingRequest {
   Isolation isolation = 1;
   repeated Key key = 2;
+  repeated resource.ResourceName resources = 3;
 }
 
 message FindMissingResponse {
@@ -74,10 +80,12 @@ message KV {
   bytes value = 2;
 }
 
+// TODO: Delete key field once PR to stop reading them has been rolled out
 message GetMultiRequest {
   Isolation isolation = 3;
   reserved 1;
   repeated Key key = 2;
+  repeated resource.ResourceName resources = 4;
 }
 
 message GetMultiResponse {
