@@ -415,8 +415,10 @@ proto_library(
     deps = [
         ":scheduler_proto",
         ":semver_proto",
+        "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
+        "@com_google_protobuf//:wrappers_proto",
         "@go_googleapis//google/api:annotations_proto",
         "@go_googleapis//google/longrunning:longrunning_proto",
         "@go_googleapis//google/rpc:status_proto",
