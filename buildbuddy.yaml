@@ -9,7 +9,7 @@ actions:
           - "master"
     bazel_commands:
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
-  - name: Build (darwin_amd64)
+  - name: Test (darwin_amd64)
     os: "darwin"
     triggers:
       push:
@@ -19,7 +19,9 @@ actions:
         branches:
           - "master"
     bazel_commands:
+      # TODO: Fix `test //...` on Mac and do that instead
       - build //enterprise/server/cmd/executor //enterprise/server //server //cli/cmd/bb --config=mac-workflows
+      - test //cli/... --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker
   - name: Benchmark
     triggers:
       push:

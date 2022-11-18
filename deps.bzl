@@ -298,6 +298,10 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_bazelisk",
         importpath = "github.com/bazelbuild/bazelisk",
+        # TODO: Remove once https://github.com/bazelbuild/bazelisk/pull/396 is
+        # upstreamed
+        patch_args = ["-p1"],
+        patches = ["//buildpatches:bazelisk.patch"],
         sum = "h1:dmESc1UeF8iqJTOPxlPw2DH9ykZEMwdlL/jQ+UrW7fY=",
         version = "v1.11.0",
     )
