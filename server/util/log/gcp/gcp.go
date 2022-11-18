@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func NewLogger(projectID string, logID string) (zerolog.LevelWriter, error) {
+func NewLogWriter(projectID string, logID string) (zerolog.LevelWriter, error) {
 	client, err := logging.NewClient(context.Background(), projectID)
 	if err != nil {
 		return nil, err

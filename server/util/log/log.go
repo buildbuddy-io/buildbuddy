@@ -112,8 +112,9 @@ func init() {
 	}
 }
 
-func LocalLogger() zerolog.Logger {
-	output := zerolog.ConsoleWriter{Out: os.Stderr}
+func LocalLogger() *zerolog.ConsoleWriter {
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	output := &zerolog.ConsoleWriter{Out: os.Stderr}
 	output.FormatCaller = func(i interface{}) string {
 		s, ok := i.(string)
 		if !ok {
@@ -123,20 +124,21 @@ func LocalLogger() zerolog.Logger {
 		// we're not going to have any file names longer than that... right?
 		return fmt.Sprintf("%41s >", filepath.Base(s))
 	}
-	zerolog.TimeFieldFormat = time.RFC3339Nano
 	output.TimeFormat = "2006/01/02 15:04:05.000"
 	// Skipping 3 frames prints the correct source file + line number, rather
 	// than printing a line number in this file or in the zerolog library.
-	return zerolog.New(output).With().Timestamp().Logger()
+	return output
 }
 
-func StructuredLogger() zerolog.Logger {
+func StructuredLogger() *zerolog.ConsoleWriter {
+	fmt.Printf("Using Structured")
 	// These overrides configure the logger to emit structured
 	// events compatible with GCP's logging infrastructure.
 	zerolog.LevelFieldName = "severity"
 	zerolog.TimestampFieldName = "timestamp"
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	return zerolog.New(os.Stdout).With().Timestamp().Logger()
+	output := &zerolog.ConsoleWriter{Out: os.Stdout}
+	return output
 }
 
 type gcpLoggingCallerHook struct{}
@@ -152,12 +154,6 @@ func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg str
 }
 
 func Configure() error {
-	var logger zerolog.Logger
-	if *EnableStructuredLogging {
-		logger = StructuredLogger()
-	} else {
-		logger = LocalLogger()
-	}
 	intLogLevel := zerolog.InfoLevel
 	if *LogLevel != "" {
 		if l, err := zerolog.ParseLevel(*LogLevel); err == nil {
@@ -166,17 +162,27 @@ func Configure() error {
 			return err
 		}
 	}
-	logger = logger.Level(intLogLevel)
+	var logger zerolog.Logger
+	writers := []io.Writer{}
 	if *ProjectID != "" && *LogID != "" {
-		l, err := gcplogging.NewLogger(*ProjectID, *LogID)
+		logWriter, err := gcplogging.NewLogWriter(*ProjectID, *LogID)
 		if err != nil {
 			return err
 		}
-		// logger comes last in the MultiLevelWriter because it writes to its
-		// sub-writers in sequence, and logger will exit after logging when we log
-		// fatal errors.
-		logger = zerolog.New(zerolog.MultiLevelWriter(l, logger))
+		writers = append(writers, logWriter)
 	}
+	var consoleWriter *zerolog.ConsoleWriter
+	if *EnableStructuredLogging {
+		consoleWriter = StructuredLogger()
+	} else {
+		consoleWriter = LocalLogger()
+	}
+	// consoleWriter comes last in the MultiLevelWriter because it writes to its
+	// sub-writers in sequence, and consoleWriter will exit after logging when we
+	// log fatal errors.
+	writers = append(writers, consoleWriter)
+	logger = zerolog.New(zerolog.MultiLevelWriter(writers...)).With().Timestamp().Logger()
+	logger.Level(intLogLevel)
 	if *IncludeShortFileName {
 		if *EnableStructuredLogging && *EnableGCPLoggingFormat {
 			logger = logger.Hook(gcpLoggingCallerHook{})
