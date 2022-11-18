@@ -167,13 +167,6 @@ func Configure() error {
 		}
 	}
 	logger = logger.Level(intLogLevel)
-	if *IncludeShortFileName {
-		if *EnableStructuredLogging && *EnableGCPLoggingFormat {
-			logger = logger.Hook(gcpLoggingCallerHook{})
-		} else {
-			logger = logger.With().CallerWithSkipFrameCount(callerSkipFrameCount).Logger()
-		}
-	}
 	if *ProjectID != "" && *LogID != "" {
 		l, err := gcplogging.NewLogger(*ProjectID, *LogID)
 		if err != nil {
@@ -183,6 +176,13 @@ func Configure() error {
 		// sub-writers in sequence, and logger will exit after logging when we log
 		// fatal errors.
 		logger = zerolog.New(zerolog.MultiLevelWriter(l, logger))
+	}
+	if *IncludeShortFileName {
+		if *EnableStructuredLogging && *EnableGCPLoggingFormat {
+			logger = logger.Hook(gcpLoggingCallerHook{})
+		} else {
+			logger = logger.With().CallerWithSkipFrameCount(callerSkipFrameCount).Logger()
+		}
 	}
 	log.Logger = logger
 	return nil
