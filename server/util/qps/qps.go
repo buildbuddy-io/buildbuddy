@@ -16,13 +16,7 @@ func (b *bin) Get() uint64 {
 	return atomic.LoadUint64(&b.c)
 }
 func (b *bin) Add(d uint64) {
-	for {
-		old := atomic.LoadUint64(&b.c)
-		new := old + d
-		if atomic.CompareAndSwapUint64(&b.c, old, new) {
-			return
-		}
-	}
+	atomic.AddUint64(&b.c, d)
 }
 func (b *bin) Inc() {
 	b.Add(1)
@@ -34,7 +28,7 @@ func (b *bin) Reset() {
 type Counter struct {
 	counts [60]bin
 	once   *sync.Once
-	idx    int
+	idx    uint64
 }
 
 func NewCounter() *Counter {
@@ -65,7 +59,7 @@ func (c *Counter) reset() {
 	for {
 		t := time.Now().Second()
 		numCounts := len(c.counts)
-		c.idx = t % numCounts
+		atomic.StoreUint64(&c.idx, uint64(t % numCounts))
 		j := (t + 1) % numCounts
 		c.counts[j].Reset()
 
@@ -77,5 +71,6 @@ func (c *Counter) Inc() {
 	c.once.Do(func() {
 		go c.reset()
 	})
-	c.counts[c.idx].Inc()
+	idx := atomic.LoadUint64(&c.idx)
+	c.counts[idx].Inc()
 }
