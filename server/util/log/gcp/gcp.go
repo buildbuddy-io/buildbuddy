@@ -2,17 +2,26 @@ package gcp
 
 import (
 	"context"
+	"flag"
 
 	"cloud.google.com/go/logging"
 	"github.com/rs/zerolog"
 )
 
-func NewLogWriter(projectID string, logID string) (zerolog.LevelWriter, error) {
-	client, err := logging.NewClient(context.Background(), projectID)
+var (
+	ProjectID = flag.String("app.log_gcp_project_id", "", "The project ID to log to in GCP (if any).")
+	LogID     = flag.String("app.log_gcp_log_id", "", "The log ID to log to in GCP (if any).")
+)
+
+func NewLogWriter() (zerolog.LevelWriter, error) {
+	if *ProjectID == "" || *LogID == "" {
+		return nil, nil
+	}
+	client, err := logging.NewClient(context.Background(), *ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	return &logWriter{ctx: context.Background(), logger: client.Logger(logID)}, nil
+	return &logWriter{ctx: context.Background(), logger: client.Logger(*LogID)}, nil
 }
 
 type logWriter struct {

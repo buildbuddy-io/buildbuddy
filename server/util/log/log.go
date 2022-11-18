@@ -29,8 +29,6 @@ var (
 	IncludeShortFileName    = flag.Bool("app.log_include_short_file_name", false, "If true, log messages will include shortened originating file name.")
 	EnableGCPLoggingFormat  = flag.Bool("app.log_enable_gcp_logging_format", false, "If true, the output structured logs will be compatible with format expected by GCP Logging.")
 	LogErrorStackTraces     = flag.Bool("app.log_error_stack_traces", false, "If true, stack traces will be printed for errors that have them.")
-	ProjectID               = flag.String("app.log_gcp_project_id", "", "The project ID to log to in GCP (if any).")
-	LogID                   = flag.String("app.log_gcp_log_id", "", "The log ID to log to in GCP (if any).")
 )
 
 const (
@@ -112,7 +110,7 @@ func init() {
 	}
 }
 
-func LocalLogger() *zerolog.ConsoleWriter {
+func LocalWriter() *zerolog.ConsoleWriter {
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 	output := &zerolog.ConsoleWriter{Out: os.Stderr}
 	output.FormatCaller = func(i interface{}) string {
@@ -130,7 +128,7 @@ func LocalLogger() *zerolog.ConsoleWriter {
 	return output
 }
 
-func StructuredLogger() *zerolog.ConsoleWriter {
+func StructuredWriter() *zerolog.ConsoleWriter {
 	fmt.Printf("Using Structured")
 	// These overrides configure the logger to emit structured
 	// events compatible with GCP's logging infrastructure.
@@ -139,6 +137,13 @@ func StructuredLogger() *zerolog.ConsoleWriter {
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 	output := &zerolog.ConsoleWriter{Out: os.Stdout}
 	return output
+}
+
+func NewConsoleWriter() *zerolog.ConsoleWriter {
+	if *EnableStructuredLogging {
+		return StructuredWriter()
+	}
+	return LocalWriter()
 }
 
 type gcpLoggingCallerHook struct{}
@@ -154,35 +159,21 @@ func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg str
 }
 
 func Configure() error {
-	intLogLevel := zerolog.InfoLevel
-	if *LogLevel != "" {
-		if l, err := zerolog.ParseLevel(*LogLevel); err == nil {
-			intLogLevel = l
-		} else {
-			return err
-		}
-	}
-	var logger zerolog.Logger
 	writers := []io.Writer{}
-	if *ProjectID != "" && *LogID != "" {
-		logWriter, err := gcplogging.NewLogWriter(*ProjectID, *LogID)
-		if err != nil {
-			return err
-		}
+	if logWriter, err := gcplogging.NewLogWriter(); err != nil {
+		return err
+	} else if logWriter != nil {
 		writers = append(writers, logWriter)
 	}
-	var consoleWriter *zerolog.ConsoleWriter
-	if *EnableStructuredLogging {
-		consoleWriter = StructuredLogger()
+	// The ConsoleWriter comes last in the MultiLevelWriter because it writes to
+	// its sub-writers in sequence, and consoleWriter will exit after logging when
+	// we log fatal errors.
+	logger := zerolog.New(zerolog.MultiLevelWriter(append(writers, NewConsoleWriter())...)).With().Timestamp().Logger()
+	if l, err := zerolog.ParseLevel(*LogLevel); err != nil {
+		return err
 	} else {
-		consoleWriter = LocalLogger()
+		logger.Level(l)
 	}
-	// consoleWriter comes last in the MultiLevelWriter because it writes to its
-	// sub-writers in sequence, and consoleWriter will exit after logging when we
-	// log fatal errors.
-	writers = append(writers, consoleWriter)
-	logger = zerolog.New(zerolog.MultiLevelWriter(writers...)).With().Timestamp().Logger()
-	logger.Level(intLogLevel)
 	if *IncludeShortFileName {
 		if *EnableStructuredLogging && *EnableGCPLoggingFormat {
 			logger = logger.Hook(gcpLoggingCallerHook{})
