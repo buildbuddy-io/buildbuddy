@@ -524,10 +524,10 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_github_census_instrumentation_opencensus_proto",
+        build_extra_args = ["-exclude=src"],
         importpath = "github.com/census-instrumentation/opencensus-proto",
         sum = "h1:iKLQ0xPNFxR/2hzXZMrBo8f1j86j5WHzznCCQxV/b8g=",
         version = "v0.4.1",
-        build_extra_args = ["-exclude=src"],
     )
 
     go_repository(
