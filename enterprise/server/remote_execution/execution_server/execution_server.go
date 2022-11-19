@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/go-redis/redis/v8"
@@ -306,7 +307,46 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		return status.InternalErrorf("failed to record execution: %s", err)
 	}
 	executionProto := execution.TableExecToProto(&executionPrimaryDB)
-	return s.env.GetExecutionCollector().Append(ctx, executionPrimaryDB.InvocationID, executionProto)
+
+	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
+		return status.InternalErrorf("failed to record execution: %s", err)
+	}
+	invIDs, err := s.getLinkedInvocationIDs(ctx, executionID)
+	if err != nil {
+		return status.InternalErrorf("failed to record execution: %s", err)
+	}
+
+	for _, invID := range invIDs {
+		if err := s.env.GetExecutionCollector().Append(ctx, invID, executionProto); err != nil {
+			log.CtxErrorf(ctx, "failed to append execution %q to invocation %q", executionID, invID)
+		}
+	}
+	return nil
+}
+
+func (s *ExecutionServer) getLinkedInvocationIDs(ctx context.Context, executionID string) ([]string, error) {
+	dbh := s.env.GetDBHandle()
+	q := query_builder.NewQuery(`
+		SELECT invocation_id FROM InvocationExecutions
+	`)
+	queryStr, args := q.AddWhereClause(`execution_id = ?`, executionID).Build()
+	query := dbh.DB(ctx).Raw(queryStr, args...)
+	invIDs := []string{}
+	rows, err := query.Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		invID := ""
+		if err := dbh.DB(ctx).ScanRows(rows, &invID); err != nil {
+			return nil, err
+		}
+		invIDs = append(invIDs, invID)
+	}
+
+	return invIDs, nil
+
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does

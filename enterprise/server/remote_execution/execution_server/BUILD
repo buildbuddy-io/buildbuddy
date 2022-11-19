@@ -28,6 +28,7 @@ go_library(
         "//server/util/log",
         "//server/util/perms",
         "//server/util/prefix",
+        "//server/util/query_builder",
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_go_redis_redis_v8//:redis",
