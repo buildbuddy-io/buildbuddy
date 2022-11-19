@@ -161,14 +161,16 @@ func (i *Invocation) TableOptions() string {
 
 type Execution struct {
 	// Sort keys
-	GroupID       string
-	UpdatedAtUsec int64
-	ExecutionID   string
-
+	GroupID        string
+	UpdatedAtUsec  int64
 	InvocationUUID string
-	CreatedAtUsec  int64
-	UserID         string
-	Worker         string
+	ExecutionID    string
+
+	// Type from tables.InvocationExecution
+	InvocationLinkType int8
+	CreatedAtUsec      int64
+	UserID             string
+	Worker             string
 
 	Stage int64
 
@@ -221,7 +223,7 @@ func (e *Execution) TableName() string {
 }
 
 func (e *Execution) TableOptions() string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, execution_id)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, updated_at_usec, invocation_uuid,execution_id)", getEngine())
 }
 
 func (e *Execution) ExcludedFields() []string {
@@ -246,6 +248,7 @@ func (e *Execution) AdditionalFields() []string {
 		"CommitSHA",
 		"RepoURL",
 		"Command",
+		"InvocationLinkType",
 	}
 }
 
