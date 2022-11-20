@@ -43,7 +43,11 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testport",
+        "//server/util/log",
         "//server/util/prefix",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )
