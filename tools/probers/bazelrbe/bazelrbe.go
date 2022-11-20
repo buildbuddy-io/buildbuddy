@@ -114,13 +114,11 @@ func runProbe() error {
 		return status.UnknownErrorf("Could not populate workspace: %s", err)
 	}
 
-	args := []string{"//:all"}
+	args := []string{"build", "//:all"}
 	if *bazelArgs != "" {
-		for _, extraArg := range strings.Split(*bazelArgs, " ") {
-			args = append(args, extraArg)
-		}
+		args = append(args, strings.Split(*bazelArgs, " ")...)
 	}
-	res := bazel.Invoke(context.Background(), *bazelBinary, workspaceDir, "build", args...)
+	res := bazel.Invoke(context.Background(), *bazelBinary, workspaceDir, args...)
 	if res.Error != nil {
 		return status.UnknownErrorf("Bazel did not exit successfully: %s", res.Error)
 	}

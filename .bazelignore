@@ -1,1 +1,4 @@
+bazel-bin
+bazel-buildbuddy
+bazel-out
 node_modules

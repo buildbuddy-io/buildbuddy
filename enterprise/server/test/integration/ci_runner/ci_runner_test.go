@@ -31,6 +31,7 @@ import (
 var (
 	workspaceContentsWithBazelVersionAction = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
+		".bazelrc":  commonBazelrc,
 		"buildbuddy.yaml": `
 actions:
   - name: "Show bazel version"
@@ -43,6 +44,7 @@ actions:
 
 	workspaceContentsWithTestsAndNoBuildBuddyYAML = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
+		".bazelrc":  commonBazelrc,
 		"BUILD": `
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_test(name = "fail", srcs = ["fail.sh"])
@@ -53,6 +55,7 @@ sh_test(name = "fail", srcs = ["fail.sh"])
 
 	workspaceContentsWithTestsAndBuildBuddyYAML = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
+		".bazelrc":  commonBazelrc,
 		"BUILD": `
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_test(name = "fail", srcs = ["fail.sh"])
@@ -72,6 +75,7 @@ actions:
 
 	workspaceContentsWithRunScript = map[string]string{
 		"WORKSPACE":     `workspace(name = "test")`,
+		".bazelrc":      commonBazelrc,
 		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 		"print_args.sh": "echo 'args: {{' $@ '}}'",
 		"buildbuddy.yaml": `
@@ -87,6 +91,7 @@ actions:
 
 	workspaceContentsWithEnvVars = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
+		".bazelrc":  commonBazelrc,
 		"BUILD":     `sh_test(name = "check_env", srcs = ["check_env.sh"])`,
 		"check_env.sh": `
 		
@@ -115,6 +120,12 @@ actions:
 	invocationIDPattern = regexp.MustCompile(`Invocation URL:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
+const (
+	// Disable sandboxing for CI builds in this test, since nested sandboxing
+	// isn't supported.
+	commonBazelrc = "build --spawn_strategy=local"
+)
+
 type result struct {
 	// Output is the combined stdout and stderr of the action runner
 	Output string
@@ -130,12 +141,9 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 	if err != nil {
 		t.Fatal(err)
 	}
-	bazelPath, err := bazelgo.Runfile(testbazel.BazelBinaryPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	args = append(args, []string{
-		"--bazel_command=" + bazelPath,
+		"--bazel_command=" + testbazel.BinaryPath(t),
 		"--bazel_startup_flags=--max_idle_secs=5 --noblock_for_lock",
 	}...)
 
@@ -572,6 +580,7 @@ func TestGitCleanExclude(t *testing.T) {
 
 	targetRepoPath, commitSHA := makeGitRepo(t, map[string]string{
 		"WORKSPACE": "",
+		".bazelrc":  commonBazelrc,
 		"BUILD":     `sh_binary(name = "check_repo", srcs = ["check_repo.sh"])`,
 		"check_repo.sh": `
 			cd "$BUILD_WORKSPACE_DIRECTORY"
@@ -623,6 +632,7 @@ func TestBazelWorkspaceDir(t *testing.T) {
 
 	repoPath, commitSHA := makeGitRepo(t, map[string]string{
 		"subdir/WORKSPACE": "",
+		"subdir/.bazelrc":  commonBazelrc,
 		"subdir/BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
 		"subdir/pass.sh":   "",
 		"buildbuddy.yaml": `
@@ -660,6 +670,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 
 	targetRepoPath, _ := makeGitRepo(t, map[string]string{
 		"WORKSPACE": "",
+		".bazelrc":  commonBazelrc,
 		"BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
 		"pass.sh":   "exit 0",
 	})

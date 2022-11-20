@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
+load(":defs.bzl", "extract_bazel_installation")
 
 genrule(
     name = "bazel-3.7_crossplatform",
@@ -9,6 +10,7 @@ genrule(
     }),
     outs = ["bazel-3.7"],
     cmd_bash = "cp $(SRCS) $@",
+    executable = True,
     visibility = ["//visibility:public"],
 )
 
@@ -20,6 +22,7 @@ genrule(
     }),
     outs = ["bazel-4.1"],
     cmd_bash = "cp $(SRCS) $@",
+    executable = True,
     visibility = ["//visibility:public"],
 )
 
@@ -31,6 +34,14 @@ genrule(
     }),
     outs = ["bazel-5.3.0"],
     cmd_bash = "cp $(SRCS) $@",
+    executable = True,
+    visibility = ["//visibility:public"],
+)
+
+extract_bazel_installation(
+    name = "bazel-5.3.0_extract_installation",
+    bazel = ":bazel-5.3.0_crossplatform",
+    out_dir = "bazel-5.3.0_install",
     visibility = ["//visibility:public"],
 )
 

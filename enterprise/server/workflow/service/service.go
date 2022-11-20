@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -62,6 +63,7 @@ var (
 	workflowsDefaultImage         = flag.String("remote_execution.workflows_default_image", "", "The default docker image to use for running workflows.")
 	workflowsCIRunnerDebug        = flag.Bool("remote_execution.workflows_ci_runner_debug", false, "Whether to run the CI runner in debug mode.")
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
+	workflowsCIRunnerExtraArgs    = flagutil.New("remote_execution.workflows_ci_runner_extra_args", []string{}, "Arbitrary extra args to pass to the CI runner. May override previous args.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
 
@@ -677,6 +679,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if isTrusted && ws.env.GetSecretService() != nil {
 		includeSecretsPropertyValue = "true"
 	}
+	var extras []string
+	extras = append(extras, extraArgs...)
+	extras = append(extras, *workflowsCIRunnerExtraArgs...)
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -700,7 +705,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--trigger_event=" + wd.EventName,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
-		}, extraArgs...),
+		}, extras...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
 				{Name: "Pool", Value: ws.WorkflowsPoolName()},
