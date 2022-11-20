@@ -371,16 +371,11 @@ func (c *Cache) remoteContains(ctx context.Context, peer string, r *resource.Res
 	return c.cacheProxy.RemoteContains(ctx, peer, r)
 }
 
-func (c *Cache) remoteMetadata(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
-		return c.local.Metadata(ctx, &resource.ResourceName{
-			Digest:       d,
-			InstanceName: isolation.GetRemoteInstanceName(),
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    isolation.GetCacheType(),
-		})
+		return c.local.Metadata(ctx, r)
 	}
-	return c.cacheProxy.RemoteMetadata(ctx, peer, isolation, d)
+	return c.cacheProxy.RemoteMetadata(ctx, peer, r)
 }
 
 func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*resource.ResourceName) ([]*repb.Digest, error) {
@@ -412,11 +407,7 @@ func (c *Cache) remoteDelete(ctx context.Context, peer string, r *resource.Resou
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Delete(ctx, r)
 	}
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
-	return c.cacheProxy.RemoteDelete(ctx, peer, isolation, r.GetDigest())
+	return c.cacheProxy.RemoteDelete(ctx, peer, r)
 }
 
 func (c *Cache) sendFile(ctx context.Context, rn *resource.ResourceName, dest string) error {
@@ -546,10 +537,6 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 
 func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
 	ps := c.readPeers(d)
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
@@ -558,14 +545,14 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		md, err := c.remoteMetadata(ctx, peer, isolation, d)
+		md, err := c.remoteMetadata(ctx, peer, r)
 		if err == nil {
 			c.log.Debugf("Metadata(%q) found on peer %q", d, peer)
 			backfill()
 			return md, nil
 		}
 		if status.IsNotFoundError(err) {
-			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.IsolationToString(isolation)+d.GetHash(), peer)
+			c.log.Debugf("Metadata(%q) not found on peer %s", cacheproxy.ResourceIsolationString(r), peer)
 			continue
 		}
 
@@ -855,10 +842,9 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 type multiWriteCloser struct {
 	ctx           context.Context
 	log           log.Logger
-	isolation     *dcpb.Isolation
 	peerClosers   map[string]interfaces.CommittedWriteCloser
 	mu            *sync.Mutex
-	d             *repb.Digest
+	r             *resource.ResourceName
 	listenAddr    string
 	totalNumPeers int
 }
@@ -891,7 +877,7 @@ func (mc *multiWriteCloser) Commit() error {
 			if err := wc.Commit(); err != nil {
 				return err
 			}
-			mc.log.Debugf("Successfully wrote %s to %q", cacheproxy.IsolationToString(mc.isolation)+mc.d.GetHash(), peer)
+			mc.log.Debugf("Successfully wrote %s to %q", cacheproxy.ResourceIsolationString(mc.r), peer)
 			return nil
 		})
 	}
@@ -901,7 +887,7 @@ func (mc *multiWriteCloser) Commit() error {
 		for peer := range mc.peerClosers {
 			peers = append(peers, peer)
 		}
-		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", cacheproxy.IsolationToString(mc.isolation)+mc.d.GetHash(), peers)
+		mc.log.Debugf("Writer(%q) successfully wrote to peers %s", cacheproxy.ResourceIsolationString(mc.r), peers)
 	}
 	return err
 }
@@ -929,18 +915,13 @@ func (mc *multiWriteCloser) Close() error {
 // This is like setting WRITE_CONSISTENCY = QUORUM.
 func (c *Cache) multiWriter(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	ps := c.peers(r.GetDigest())
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
 		log:         c.log,
-		d:           r.GetDigest(),
 		peerClosers: make(map[string]interfaces.CommittedWriteCloser, 0),
 		mu:          &sync.Mutex{},
 		listenAddr:  c.config.ListenAddr,
-		isolation:   isolation,
+		r:           r,
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
 		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r)

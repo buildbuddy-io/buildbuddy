@@ -192,14 +192,7 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	d := digestFromKey(req.GetKey())
-	isolation := req.GetIsolation()
-	r := &resource.ResourceName{
-		Digest:       d,
-		CacheType:    isolation.GetCacheType(),
-		InstanceName: isolation.GetRemoteInstanceName(),
-	}
-	md, err := c.cache.Metadata(ctx, r)
+	md, err := c.cache.Metadata(ctx, req.GetResource())
 	if err != nil {
 		return nil, err
 	}
@@ -208,15 +201,6 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 		LastModifyUsec: md.LastModifyTimeUsec,
 		LastAccessUsec: md.LastAccessTimeUsec,
 	}, nil
-}
-
-// IsolationToString returns a compact representation of the Isolation proto suitable for logging.
-func IsolationToString(isolation *dcpb.Isolation) string {
-	rep := filepath.Join(isolation.GetRemoteInstanceName(), digest.CacheTypeToPrefix(isolation.GetCacheType()))
-	if !strings.HasSuffix(rep, "/") {
-		rep += "/"
-	}
-	return rep
 }
 
 // ResourceIsolationString returns a compact representation of a resource's isolation that is suitable for logging.
@@ -233,10 +217,7 @@ func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb
 	if err != nil {
 		return nil, err
 	}
-	d := digestFromKey(req.GetKey())
-	i := req.GetIsolation()
-	rn := digest.NewCacheResourceName(d, i.GetRemoteInstanceName(), i.GetCacheType()).ToProto()
-	err = c.cache.Delete(ctx, rn)
+	err = c.cache.Delete(ctx, req.GetResource())
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +236,12 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	rsp := &dcpb.GetMultiResponse{}
 	for d, buf := range found {
 		if len(buf) == 0 {
-			c.log.Warningf("returned a zero-length response for %s", IsolationToString(req.GetIsolation())+d.GetHash())
+			rn := &resource.ResourceName{
+				Digest:       d,
+				InstanceName: req.GetIsolation().GetRemoteInstanceName(),
+				CacheType:    req.GetIsolation().GetCacheType(),
+			}
+			c.log.Warningf("returned a zero-length response for %s", ResourceIsolationString(rn))
 		}
 		rsp.KeyValue = append(rsp.KeyValue, &dcpb.KV{
 			Key:   digestToKey(d),
@@ -380,10 +366,15 @@ func (c *CacheProxy) RemoteContains(ctx context.Context, peer string, r *resourc
 	return len(missing) == 0, nil
 }
 
-func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, isolation *dcpb.Isolation, d *repb.Digest) (*interfaces.CacheMetadata, error) {
+func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
 	req := &dcpb.MetadataRequest{
 		Isolation: isolation,
-		Key:       digestToKey(d),
+		Key:       digestToKey(r.GetDigest()),
+		Resource:  r,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
@@ -428,10 +419,15 @@ func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolati
 	return missing, nil
 }
 
-func (c *CacheProxy) RemoteDelete(ctx context.Context, peer string, isolation *dcpb.Isolation, digest *repb.Digest) error {
+func (c *CacheProxy) RemoteDelete(ctx context.Context, peer string, r *resource.ResourceName) error {
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
 	req := &dcpb.DeleteRequest{
 		Isolation: isolation,
-		Key:       digestToKey(digest),
+		Key:       digestToKey(r.GetDigest()),
+		Resource:  r,
 	}
 	client, err := c.getClient(ctx, peer)
 	if err != nil {

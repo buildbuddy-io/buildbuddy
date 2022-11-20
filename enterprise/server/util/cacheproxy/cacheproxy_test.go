@@ -820,7 +820,6 @@ func TestDelete(t *testing.T) {
 	waitUntilServerIsAlive(peer)
 
 	remoteInstanceName := "remote/instance"
-	isolation := &dcpb.Isolation{CacheType: resource.CacheType_CAS, RemoteInstanceName: remoteInstanceName}
 
 	// Write to the cache (with a prefix)
 	d, buf := testdigest.NewRandomDigestBuf(t, 100)
@@ -837,7 +836,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, exists)
 
-	err = c.RemoteDelete(ctx, peer, isolation, d)
+	err = c.RemoteDelete(ctx, peer, r)
 	require.NoError(t, err)
 
 	// Ensure it no longer exists
@@ -887,6 +886,7 @@ func TestMetadata(t *testing.T) {
 			Key:       d.GetHash(),
 			SizeBytes: d.GetSizeBytes(),
 		},
+		Resource: r,
 	})
 	if err != nil {
 		t.Fatalf("Error fetching metadata from cacheproxy: %s", err)
