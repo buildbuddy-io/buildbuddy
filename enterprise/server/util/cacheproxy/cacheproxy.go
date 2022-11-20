@@ -176,11 +176,7 @@ func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingReque
 		return nil, err
 	}
 
-	digests := make([]*resource.ResourceName, 0)
-	for _, r := range req.GetResources() {
-		digests = append(digests, r)
-	}
-	missing, err := c.cache.FindMissing(ctx, digests)
+	missing, err := c.cache.FindMissing(ctx, req.GetResources())
 	if err != nil {
 		return nil, err
 	}

@@ -14,7 +14,8 @@ message Key {
   int64 size_bytes = 2;
 }
 
-// TODO: Delete key and isolation fields once PR to stop reading them has been rolled out
+// TODO: Delete key and isolation fields once PR to stop reading them has been
+// rolled out
 message ReadRequest {
   Isolation isolation = 4;
   reserved 1;
@@ -28,7 +29,8 @@ message ReadResponse {
   bytes data = 1;
 }
 
-// TODO: Delete key and isolation fields once PR to stop reading them has been rolled out
+// TODO: Delete key and isolation fields once PR to stop reading them has been
+// rolled out
 message WriteRequest {
   Isolation isolation = 6;
   reserved 1;
@@ -53,7 +55,8 @@ message DeleteRequest {
 
 message DeleteResponse {}
 
-// TODO: Delete key and isolation fields once PR to stop reading them has been rolled out
+// TODO: Delete key and isolation fields once PR to stop reading them has been
+// rolled out
 message FindMissingRequest {
   Isolation isolation = 1;
   repeated Key key = 2;
