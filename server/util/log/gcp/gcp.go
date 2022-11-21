@@ -2,10 +2,15 @@ package gcp
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
+	"strconv"
+	"time"
 
 	"cloud.google.com/go/logging"
 	"github.com/rs/zerolog"
+
+	logpb "google.golang.org/genproto/googleapis/logging/v2"
 )
 
 var (
@@ -35,39 +40,62 @@ func (l *logWriter) Write(p []byte) (int, error) {
 }
 
 func (l *logWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
+	entry := logging.Entry{}
+	m := map[string]any{}
+	if err := json.Unmarshal(p, &m); err == nil {
+		if v, ok := m[zerolog.TimestampFieldName]; ok {
+			if t, ok := v.(string); ok {
+				if entry.Timestamp, err = time.Parse(zerolog.TimeFieldFormat, t); err != nil {
+					entry.Timestamp = time.Time{}
+				}
+			}
+		}
+		if v, ok := m[zerolog.MessageFieldName]; ok {
+			if p, ok := v.(string); ok {
+				entry.Payload = p
+			}
+		}
+		if v, ok := m["logging.googleapis.com/sourceLocation"]; ok {
+			if m, ok := v.(map[string]any); ok {
+				entry.SourceLocation = &logpb.LogEntrySourceLocation{}
+				if v, ok := m["file"]; ok {
+					if f, ok := v.(string); ok {
+						entry.SourceLocation.File = f
+					}
+				}
+				if v, ok := m["line"]; ok {
+					if l, ok := v.(string); ok {
+						if n, err := strconv.ParseInt(l, 10, 64); err != nil {
+							entry.SourceLocation.Line = n
+						}
+					}
+				}
+			}
+		}
+	} else {
+		entry.Payload = string(p)
+	}
 	switch level {
 	case zerolog.DebugLevel:
-		l.logger.Log(logging.Entry{
-			Severity: logging.Debug,
-			Payload:  p,
-		})
+		entry.Severity = logging.Debug
+		l.logger.Log(entry)
 	case zerolog.InfoLevel:
-		l.logger.Log(logging.Entry{
-			Severity: logging.Info,
-			Payload:  p,
-		})
+		entry.Severity = logging.Info
+		l.logger.Log(entry)
 	case zerolog.WarnLevel:
-		l.logger.Log(logging.Entry{
-			Severity: logging.Warning,
-			Payload:  p,
-		})
+		entry.Severity = logging.Warning
+		l.logger.Log(entry)
 	case zerolog.ErrorLevel:
-		l.logger.Log(logging.Entry{
-			Severity: logging.Error,
-			Payload:  p,
-		})
+		entry.Severity = logging.Error
+		l.logger.Log(entry)
 	case zerolog.PanicLevel:
 		fallthrough
 	case zerolog.FatalLevel:
-		l.logger.LogSync(l.ctx, logging.Entry{
-			Severity: logging.Critical,
-			Payload:  p,
-		})
+		entry.Severity = logging.Critical
+		l.logger.LogSync(l.ctx, entry)
 	default:
-		l.logger.Log(logging.Entry{
-			Severity: logging.Default,
-			Payload:  p,
-		})
+		entry.Severity = logging.Default
+		l.logger.Log(entry)
 	}
 	return len(p), nil
 }
