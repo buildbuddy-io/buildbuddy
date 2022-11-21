@@ -124,12 +124,10 @@ func Register(env environment.Env) error {
 // in a HTTP API and announcing its presence over redis to other distributed
 // cache nodes. Together, these distributed caches each maintain a consistent
 // hash ring which identifies the owner (and replicas) of any stored keys.
-//   - myAddr is the interface to listen on in "host:port" format.
-//   - groupName is a string namespace which the distributed cache nodes must
-//
+//  - myAddr is the interface to listen on in "host:port" format.
+//  - groupName is a string namespace which the distributed cache nodes must
 // match to peer.
-//   - replicationFactor is an int specifying how many copies of each key will
-//
+//  - replicationFactor is an int specifying how many copies of each key will
 // be stored across unique caches.
 func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheConfig, hc interfaces.HealthChecker) (*Cache, error) {
 	chash := consistent_hash.NewConsistentHash()
