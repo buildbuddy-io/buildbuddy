@@ -170,13 +170,48 @@ func (c *CacheProxy) readWriteContext(ctx context.Context) (context.Context, err
 	return ctx, err
 }
 
+// Distributed cache requests now contain resource.ResourceName structs, replacing usage of the dcpb.Isolation and
+// dcpb.Key structs. However during a rollout, the new resource fields may not be set, and may require fallback to the
+// older deprecated fields
+func getResource(r *resource.ResourceName, isolation *dcpb.Isolation, digestKey *dcpb.Key) *resource.ResourceName {
+	if r != nil {
+		return r
+	}
+
+	d := digestFromKey(digestKey)
+	return &resource.ResourceName{
+		Digest:       d,
+		CacheType:    isolation.GetCacheType(),
+		InstanceName: isolation.GetRemoteInstanceName(),
+		Compressor:   repb.Compressor_IDENTITY,
+	}
+}
+
+func getResources(resources []*resource.ResourceName, isolation *dcpb.Isolation, digestKeys []*dcpb.Key) []*resource.ResourceName {
+	if resources != nil {
+		return resources
+	}
+
+	instanceName := isolation.GetRemoteInstanceName()
+	cacheType := isolation.GetCacheType()
+	rns := make([]*resource.ResourceName, 0)
+	for _, k := range digestKeys {
+		d := digestFromKey(k)
+		rn := digest.NewCacheResourceName(d, instanceName, cacheType).ToProto()
+		rns = append(rns, rn)
+	}
+
+	return rns
+}
+
 func (c *CacheProxy) FindMissing(ctx context.Context, req *dcpb.FindMissingRequest) (*dcpb.FindMissingResponse, error) {
 	ctx, err := c.readWriteContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	missing, err := c.cache.FindMissing(ctx, req.GetResources())
+	r := getResources(req.GetResources(), req.GetIsolation(), req.GetKey())
+	missing, err := c.cache.FindMissing(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +227,8 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	md, err := c.cache.Metadata(ctx, req.GetResource())
+	r := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
+	md, err := c.cache.Metadata(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +253,8 @@ func (c *CacheProxy) Delete(ctx context.Context, req *dcpb.DeleteRequest) (*dcpb
 	if err != nil {
 		return nil, err
 	}
-	err = c.cache.Delete(ctx, req.GetResource())
+	r := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
+	err = c.cache.Delete(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +266,8 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	found, err := c.cache.GetMulti(ctx, req.GetResources())
+	r := getResources(req.GetResources(), req.GetIsolation(), req.GetKey())
+	found, err := c.cache.GetMulti(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +306,7 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 		return err
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
-	rn := req.GetResource()
+	rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
 	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
@@ -312,10 +350,11 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		if err != nil {
 			return err
 		}
+		rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
 		if writeCloser == nil {
-			wc, err := c.cache.Writer(ctx, req.GetResource())
+			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
-				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(req.GetResource()), up, err)
+				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
 				return err
 			}
 			defer wc.Close()
@@ -333,9 +372,9 @@ func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			}
 			// TODO(vadim): use handoff peer from request once client is including it in the FinishWrite request.
 			if handoffPeer != "" {
-				c.callHintedHandoffCB(ctx, handoffPeer, req.GetResource())
+				c.callHintedHandoffCB(ctx, handoffPeer, rn)
 			}
-			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(req.GetResource()), up)
+			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 			return stream.SendAndClose(&dcpb.WriteResponse{
 				CommittedSize: bytesWritten,
 			})
