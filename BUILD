@@ -135,8 +135,8 @@ go_library(
 platform(
     name = "firecracker",
     constraint_values = [
-        "@bazel_tools//platforms:x86_64",
-        "@bazel_tools//platforms:linux",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
     ],
     exec_properties = {
         "workload-isolation-type": "firecracker",
@@ -146,8 +146,8 @@ platform(
 platform(
     name = "firecracker_vfs",
     constraint_values = [
-        "@bazel_tools//platforms:x86_64",
-        "@bazel_tools//platforms:linux",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
     ],
     exec_properties = {
         "workload-isolation-type": "firecracker",
@@ -158,8 +158,8 @@ platform(
 platform(
     name = "vfs",
     constraint_values = [
-        "@bazel_tools//platforms:x86_64",
-        "@bazel_tools//platforms:linux",
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
     ],
     exec_properties = {
         "enable-vfs": "true",
