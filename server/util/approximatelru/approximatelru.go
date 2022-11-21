@@ -57,8 +57,9 @@ type Config struct {
 // keys for fast existence checks, and will randomly sample values and pick
 // the oldest ones for deletion when the total cache size is larger than the
 // max. For more details, see:
-//  https://github.com/redis/redis/blob/unstable/src/evict.c#L118 and
-//  http://antirez.com/news/109
+//
+//	https://github.com/redis/redis/blob/unstable/src/evict.c#L118 and
+//	http://antirez.com/news/109
 type ApproximateLRU struct {
 	sizeFn       SizeFn
 	onEvict      EvictedCallback

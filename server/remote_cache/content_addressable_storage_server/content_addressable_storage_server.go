@@ -127,8 +127,8 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 //
 // Errors:
 //
-// * `INVALID_ARGUMENT`: The client attempted to upload more than the
-//   server supported limit.
+//   - `INVALID_ARGUMENT`: The client attempted to upload more than the
+//     server supported limit.
 //
 // Individual requests may return the following errors, additionally:
 //
@@ -251,8 +251,8 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 //
 // Errors:
 //
-// * `INVALID_ARGUMENT`: The client attempted to read more than the
-//   server supported limit.
+//   - `INVALID_ARGUMENT`: The client attempted to read more than the
+//     server supported limit.
 //
 // Every error on individual read will be returned in the corresponding digest
 // status.
