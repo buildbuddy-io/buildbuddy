@@ -369,10 +369,12 @@ type DeprecatedFlag[T any] struct {
 //
 // You would redefine the flag as deprecated like this:
 // var foo = DeprecatedVar[string](
-//   NewPrimitiveFlag("foo default value"),
-//   "foo",
-//   "help text for foo",
-//   "All of our foos were destroyed in a fire, please specify a bar instead.",
+//
+//	NewPrimitiveFlag("foo default value"),
+//	"foo",
+//	"help text for foo",
+//	"All of our foos were destroyed in a fire, please specify a bar instead.",
+//
 // )
 func DeprecatedVar[T any](value flag.Value, name string, usage, migrationPlan string) *T {
 	common.DefaultFlagSet.Var(value, name, usage)

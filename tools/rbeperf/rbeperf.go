@@ -1,10 +1,11 @@
 // rbeperf is a tool to measure Remote Execution Build performance.
 //
 // Example usage:
-// $ blaze run //tools/rbeperf -- \
-//   --server=grpcs://remote.buildbuddy.dev \
-//   --api_key=XXX \
-//   --workload basic_sequential
+//
+//	$ blaze run //tools/rbeperf -- \
+//	  --server=grpcs://remote.buildbuddy.dev \
+//	  --api_key=XXX \
+//	  --workload basic_sequential
 package main
 
 import (

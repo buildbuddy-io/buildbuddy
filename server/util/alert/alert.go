@@ -16,7 +16,8 @@ import (
 // Use this for cases where it's worth knowing about the event, but not worth introducing a standalone metric & alert.
 //
 // Example usages:
-// 	alert.UnexpectedEvent("cannot_unmarshal_proto")
+//
+//	alert.UnexpectedEvent("cannot_unmarshal_proto")
 //	alert.UnexpectedEvent("cannot_unmarshal_proto", "invocation_id %s err: %s", invocation_id, err)
 func UnexpectedEvent(name string, msgAndArgs ...interface{}) {
 	metrics.UnexpectedEvent.With(prometheus.Labels{metrics.EventName: name}).Inc()
