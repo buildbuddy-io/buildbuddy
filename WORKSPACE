@@ -115,7 +115,7 @@ yarn_install(
     name = "npm",
     exports_directories_only = False,
     package_json = "//:package.json",
-    symlink_node_modules = True,
+    symlink_node_modules = False,
     yarn_lock = "//:yarn.lock",
 )
 
