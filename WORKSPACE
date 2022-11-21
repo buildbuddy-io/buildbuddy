@@ -10,20 +10,20 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "099a9fb96a376ccbbb7d291ed4ecbdfd42f6bc822ab77ae6f1b5cb9e914e94fa",
+    sha256 = "ab21448cef298740765f33a7f5acee0607203e4ea321219f2a4c85a6e0fb0a27",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.35.0/rules_go-v0.35.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.35.0/rules_go-v0.35.0.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.32.0/rules_go-v0.32.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.32.0/rules_go-v0.32.0.zip",
     ],
 )
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "efbbba6ac1a4fd342d5122cbdfdb82aeb2cf2862e35022c752eaddffada7c3f3",
+    sha256 = "5982e5463f171da99e3bdaeff8c0f48283a7a5f396ec5282910b9e8a49c0dd7e",
     # Keep version in sync with .github/workflows/checkstyle.yaml
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.27.0/bazel-gazelle-v0.27.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.27.0/bazel-gazelle-v0.27.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.25.0/bazel-gazelle-v0.25.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.25.0/bazel-gazelle-v0.25.0.tar.gz",
     ],
 )
 
@@ -43,28 +43,28 @@ go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
-    version = "1.19.3",  # Keep in sync with .github/workflows/checkstyle.yaml
+    version = "1.18.1",  # Keep in sync with .github/workflows/checkstyle.yaml
 )
 
 go_download_sdk(
     name = "go_sdk_linux_arm64",
     goarch = "arm64",
     goos = "linux",
-    version = "1.19.3",
+    version = "1.18.1",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
-    version = "1.19.3",
+    version = "1.18.1",
 )
 
 go_download_sdk(
     name = "go_sdk_darwin_arm64",
     goarch = "arm64",
     goos = "darwin",
-    version = "1.19.3",
+    version = "1.18.1",
 )
 
 go_register_toolchains(

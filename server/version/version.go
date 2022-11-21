@@ -17,11 +17,10 @@ const (
 )
 
 // This is set by x_defs in the BUILD file.
-//
-//	x_defs = {
-//	    "version": "{VERSION}",
-//	    "commitSha": "{COMMIT_SHA}",
-//	},
+//    x_defs = {
+//        "version": "{VERSION}",
+//        "commitSha": "{COMMIT_SHA}",
+//    },
 var commitSha string
 var version string
 
