@@ -193,7 +193,7 @@ k8s_repositories()
 
 load("@io_bazel_rules_k8s//k8s:k8s_go_deps.bzl", k8s_go_deps = "deps")
 
-k8s_go_deps()
+k8s_go_deps(go_version = "")
 
 k8s_defaults(
     name = "k8s_deploy",
