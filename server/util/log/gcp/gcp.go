@@ -65,7 +65,7 @@ func (l *logWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 				}
 				if v, ok := m["line"]; ok {
 					if l, ok := v.(string); ok {
-						if n, err := strconv.ParseInt(l, 10, 64); err != nil {
+						if n, err := strconv.ParseInt(l, 10, 64); err == nil {
 							entry.SourceLocation.Line = n
 						}
 					}
