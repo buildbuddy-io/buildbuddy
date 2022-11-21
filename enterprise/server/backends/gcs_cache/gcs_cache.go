@@ -515,6 +515,6 @@ func (g *GCSCache) Stop() error {
 	return nil
 }
 
-func (g *GCSCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+func (g *GCSCache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
 	return compressor == repb.Compressor_IDENTITY
 }

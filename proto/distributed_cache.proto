@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/remote_execution.proto";
 import "proto/resource.proto";
 
 package distributed_cache;
@@ -102,6 +103,15 @@ message GetMultiResponse {
   repeated KV key_value = 1;
 }
 
+message SupportsCompressorRequest {
+  build.bazel.remote.execution.v2.Compressor.Value compressor = 1;
+  resource.ResourceName resource = 2;
+}
+
+message SupportsCompressorResponse {
+  bool supportsCompressor = 1;
+}
+
 message HeartbeatRequest {
   string source = 1;
 }
@@ -115,5 +125,6 @@ service DistributedCache {
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
+  rpc SupportsCompressor(SupportsCompressorRequest) returns (SupportsCompressorResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }

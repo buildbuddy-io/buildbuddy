@@ -123,7 +123,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
-	if s.cache.SupportsCompressor(r.GetCompressor()) {
+	if s.cache.SupportsCompressor(ctx, r.GetCompressor(), r.ToProto()) {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
@@ -140,7 +140,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	// If the cache doesn't support the requested compression, it will cache decompressed bytes and the server
 	// is in charge of compressing it
-	if r.GetCompressor() == repb.Compressor_ZSTD && !s.cache.SupportsCompressor(r.GetCompressor()) {
+	if r.GetCompressor() == repb.Compressor_ZSTD && !s.cache.SupportsCompressor(ctx, r.GetCompressor(), r.ToProto()) {
 		rbuf := s.bufferPool.Get(bufSize)
 		defer s.bufferPool.Put(rbuf)
 		cbuf := s.bufferPool.Get(bufSize)
@@ -239,7 +239,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 
 	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
-	if s.cache.SupportsCompressor(r.GetCompressor()) {
+	if s.cache.SupportsCompressor(ctx, r.GetCompressor(), r.ToProto()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
 	// The protocol says it is *optional* to allow overwriting, but does
@@ -274,7 +274,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		if s.cache.SupportsCompressor(r.GetCompressor()) {
+		if s.cache.SupportsCompressor(ctx, r.GetCompressor(), r.ToProto()) {
 			// If the cache supports compression, write compressed bytes to the cache with committedWriteCloser
 			// but wrap the checksum in a decompressor to validate the decompressed data
 			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)

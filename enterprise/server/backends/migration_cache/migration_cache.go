@@ -835,6 +835,6 @@ func (mc *MigrationCache) Stop() error {
 	return dstShutdownErr
 }
 
-func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+func (mc *MigrationCache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
 	return false
 }

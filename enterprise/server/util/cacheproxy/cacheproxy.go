@@ -239,6 +239,12 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 	}, nil
 }
 
+func (c *CacheProxy) SupportsCompressor(ctx context.Context, req *dcpb.SupportsCompressorRequest) (*dcpb.SupportsCompressorResponse, error) {
+	return &dcpb.SupportsCompressorResponse{
+		SupportsCompressor: c.cache.SupportsCompressor(ctx, req.GetCompressor(), req.GetResource()),
+	}, nil
+}
+
 // ResourceIsolationString returns a compact representation of a resource's isolation that is suitable for logging.
 func ResourceIsolationString(r *resource.ResourceName) string {
 	rep := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()), r.GetDigest().GetHash())
@@ -646,6 +652,22 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		r:             r,
 	}
 	return wc, nil
+}
+
+func (c *CacheProxy) RemoteSupportsCompressor(ctx context.Context, peer string, compressor repb.Compressor_Value, r *resource.ResourceName) (bool, error) {
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return false, err
+	}
+
+	s, err := client.SupportsCompressor(ctx, &dcpb.SupportsCompressorRequest{
+		Compressor: compressor,
+		Resource:   r,
+	})
+	if err != nil {
+		return false, err
+	}
+	return s.SupportsCompressor, nil
 }
 
 func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {

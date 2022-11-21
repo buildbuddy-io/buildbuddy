@@ -1862,7 +1862,7 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 	}
 }
 
-func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+func (p *PebbleCache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
 	switch compressor {
 	case repb.Compressor_IDENTITY:
 		return true

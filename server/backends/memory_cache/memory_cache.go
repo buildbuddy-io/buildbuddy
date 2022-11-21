@@ -241,6 +241,6 @@ func (m *MemoryCache) Stop() error {
 	return nil
 }
 
-func (m *MemoryCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+func (m *MemoryCache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
 	return compressor == repb.Compressor_IDENTITY
 }

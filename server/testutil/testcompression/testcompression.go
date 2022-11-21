@@ -84,7 +84,7 @@ func dataWithCompression(requestedResource *resource.ResourceName, cachedData []
 	return nil, status.InternalErrorf("Cache does not support fetching data with compression %v", requestedResource.GetCompressor())
 }
 
-func (c *CompressionCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+func (c *CompressionCache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
 	switch compressor {
 	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
 		return true

@@ -71,6 +71,7 @@ proto_library(
         "distributed_cache.proto",
     ],
     deps = [
+        ":remote_execution_proto",
         ":resource_proto",
     ],
 )
@@ -848,6 +849,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache",
     proto = ":distributed_cache_proto",
     deps = [
+        ":remote_execution_go_proto",
         ":resource_go_proto",
     ],
 )

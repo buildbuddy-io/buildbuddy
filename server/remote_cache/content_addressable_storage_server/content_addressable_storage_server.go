@@ -224,7 +224,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		rn := digest.NewCASResourceName(uploadDigest, req.GetInstanceName())
 		// If cache doesn't support compression type, store decompressed data
 		dataToCache := decompressedData
-		if s.cache.SupportsCompressor(uploadRequest.GetCompressor()) {
+		if s.cache.SupportsCompressor(ctx, uploadRequest.GetCompressor(), rn.ToProto()) {
 			rn.SetCompressor(uploadRequest.GetCompressor())
 			// If cache supports saving compressed data, pass through compressed data from the request
 			dataToCache = uploadRequest.GetData()
@@ -271,11 +271,13 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		return nil, err
 	}
 	type closeTrackerFunc func(res *repb.BatchReadBlobsResponse_Response)
-	cacheRequest := make([]*resource.ResourceName, 0, len(req.Digests))
 	closeTrackerFuncs := make([]closeTrackerFunc, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
+
+	notEmptyDigests := make([]*resource.ResourceName, 0)
+	allDigests := make([]*resource.ResourceName, 0, len(req.GetDigests()))
 	for _, readDigest := range req.GetDigests() {
 		_, err := digest.Validate(readDigest)
 		if err != nil {
@@ -286,16 +288,20 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			downloadTracker.CloseWithBytesTransferred(int64(len(res.Data)), res.Compressor)
 		})
 
+		rn := digest.NewCASResourceName(readDigest, req.GetInstanceName())
+		if clientAcceptsZstd {
+			rn.SetCompressor(repb.Compressor_ZSTD)
+		}
+
+		allDigests = append(allDigests, rn.ToProto())
 		if readDigest.GetHash() != digest.EmptySha256 {
-			rn := digest.NewCASResourceName(readDigest, req.GetInstanceName())
-			if clientAcceptsZstd {
-				rn.SetCompressor(repb.Compressor_ZSTD)
-			}
-			cacheRequest = append(cacheRequest, rn.ToProto())
+			notEmptyDigests = append(notEmptyDigests, rn.ToProto())
 		}
 	}
-	cacheRsp, err := s.cache.GetMulti(ctx, cacheRequest)
-	for _, d := range req.GetDigests() {
+
+	cacheRsp, err := s.cache.GetMulti(ctx, notEmptyDigests)
+	for _, r := range allDigests {
+		d := r.GetDigest()
 		if d.GetHash() == digest.EmptySha256 {
 			rsp.Responses = append(rsp.Responses, &repb.BatchReadBlobsResponse_Response{
 				Digest: d,
@@ -315,8 +321,8 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 
 		if !ok || os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
-		} else if d.GetSizeBytes() != int64(len(data)) && !s.cache.SupportsCompressor(repb.Compressor_ZSTD) {
-			// We only expect the data length to be different from the digest for caches that might have compressed
+		} else if d.GetSizeBytes() != int64(len(data)) && !s.cache.SupportsCompressor(ctx, repb.Compressor_ZSTD, r) {
+			// We only expect data length to be different from the size in the digest for caches that might have compressed
 			// the data when storing it. If this happens for a cache that doesn't support compression, consider the
 			// data corrupted and return that it is not found
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
@@ -326,7 +332,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.OK)}
 
 			// If the cache doesn't support zstd compression but the client will accept it, compress data before sending
-			if clientAcceptsZstd && !s.cache.SupportsCompressor(repb.Compressor_ZSTD) {
+			if clientAcceptsZstd && !s.cache.SupportsCompressor(ctx, repb.Compressor_ZSTD, r) {
 				blobRsp.Data = compression.CompressZstd(nil, blobRsp.Data)
 				blobRsp.Compressor = repb.Compressor_ZSTD
 			}

@@ -362,6 +362,6 @@ func (c *Cache) Stop() error {
 	return nil
 }
 
-func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+func (c *Cache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
 	return compressor == repb.Compressor_IDENTITY
 }

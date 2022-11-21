@@ -274,6 +274,6 @@ func (c *ComposableCache) Writer(ctx context.Context, r *resource.ResourceName) 
 	return innerWriter, nil
 }
 
-func (c *ComposableCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+func (c *ComposableCache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
 	return compressor == repb.Compressor_IDENTITY
 }

@@ -410,6 +410,13 @@ func (c *Cache) remoteDelete(ctx context.Context, peer string, r *resource.Resou
 	return c.cacheProxy.RemoteDelete(ctx, peer, r)
 }
 
+func (c *Cache) remoteSupportsCompressor(ctx context.Context, peer string, compressor repb.Compressor_Value, r *resource.ResourceName) (bool, error) {
+	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
+		return c.local.SupportsCompressor(ctx, compressor, r), nil
+	}
+	return c.cacheProxy.RemoteSupportsCompressor(ctx, peer, compressor, r)
+}
+
 func (c *Cache) sendFile(ctx context.Context, rn *resource.ResourceName, dest string) error {
 	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
@@ -1001,7 +1008,16 @@ func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interface
 	return mwc, nil
 }
 
-// TODO(Maggie): Implement for distributed cache
-func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	return false
+// Compression should only be enabled for a resource if all peers support compression
+func (c *Cache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
+	ps := c.readPeers(r.GetDigest())
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		supportsCompressor, err := c.remoteSupportsCompressor(ctx, peer, compressor, r)
+		if err == nil && !supportsCompressor {
+			return false
+		} else {
+			ps.MarkPeerAsFailed(peer)
+		}
+	}
+	return true
 }

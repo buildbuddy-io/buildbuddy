@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"net"
 	"testing"
@@ -15,9 +16,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
@@ -472,6 +475,91 @@ func TestWriteAlreadyExists(t *testing.T) {
 	}
 }
 
+func TestReadWrite_Compressed(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	testCases := []struct {
+		name             string
+		writeCompression repb.Compressor_Value
+		readCompression  repb.Compressor_Value
+	}{
+		{
+			name:             "Write compressed, read compressed",
+			writeCompression: repb.Compressor_ZSTD,
+			readCompression:  repb.Compressor_ZSTD,
+		},
+		{
+			name:             "Write compressed, read decompressed",
+			writeCompression: repb.Compressor_ZSTD,
+			readCompression:  repb.Compressor_IDENTITY,
+		},
+		{
+			name:             "Write decompressed, read decompressed",
+			writeCompression: repb.Compressor_IDENTITY,
+			readCompression:  repb.Compressor_IDENTITY,
+		},
+		{
+			name:             "Write decompressed, read compressed",
+			writeCompression: repb.Compressor_IDENTITY,
+			readCompression:  repb.Compressor_ZSTD,
+		},
+	}
+
+	for _, tc := range testCases {
+		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
+		c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+		if err := c.StartListening(); err != nil {
+			t.Fatalf("Error setting up cacheproxy: %s", err)
+		}
+		waitUntilServerIsAlive(peer)
+
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		writeRN := &resource.ResourceName{
+			Digest:     d,
+			CacheType:  resource.CacheType_CAS,
+			Compressor: tc.writeCompression,
+		}
+		compressedBuf := compression.CompressZstd(nil, buf)
+
+		wc, err := c.RemoteWriter(ctx, peer, noHandoff, writeRN)
+		require.NoError(t, err)
+
+		bufToWrite := buf
+		if tc.writeCompression == repb.Compressor_ZSTD {
+			bufToWrite = compressedBuf
+		}
+		_, err = wc.Write(bufToWrite)
+		require.NoError(t, err)
+		err = wc.Commit()
+		require.NoError(t, err)
+		err = wc.Close()
+		require.NoError(t, err)
+
+		readRN := &resource.ResourceName{
+			Digest:     d,
+			CacheType:  resource.CacheType_CAS,
+			Compressor: tc.readCompression,
+		}
+		r, err := c.RemoteReader(ctx, peer, readRN, 0, 0)
+		require.NoError(t, err)
+
+		expected := buf
+		if tc.readCompression == repb.Compressor_ZSTD {
+			expected = compressedBuf
+		}
+		readBuf, err := ioutil.ReadAll(r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(expected, readBuf))
+	}
+}
+
 func TestContains(t *testing.T) {
 	ctx := context.Background()
 	te := getTestEnv(t, emptyUserMap)
@@ -899,4 +987,31 @@ func TestMetadata(t *testing.T) {
 	require.Equal(t, cacheMetadata.SizeBytes, cacheproxyMetadata.SizeBytes)
 	require.Equal(t, cacheMetadata.LastAccessTimeUsec, cacheproxyMetadata.LastAccessUsec)
 	require.Equal(t, cacheMetadata.LastModifyTimeUsec, cacheproxyMetadata.LastModifyUsec)
+}
+
+func TestSupportsCompressor(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	compressionCache := &testcompression.CompressionCache{Cache: te.GetCache()}
+	te.SetCache(compressionCache)
+	c := cacheproxy.NewCacheProxy(te, te.GetCache(), peer)
+	err := c.StartListening()
+	require.NoError(t, err)
+	waitUntilServerIsAlive(peer)
+
+	d, _ := testdigest.NewRandomDigestBuf(t, 100)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+
+	supports, err := c.RemoteSupportsCompressor(ctx, peer, repb.Compressor_ZSTD, r)
+	require.NoError(t, err)
+	require.True(t, supports)
+
+	supports, err = c.RemoteSupportsCompressor(ctx, peer, repb.Compressor_DEFLATE, r)
+	require.NoError(t, err)
+	require.False(t, supports)
 }
