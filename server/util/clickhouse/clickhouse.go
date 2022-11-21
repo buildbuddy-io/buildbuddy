@@ -332,6 +332,7 @@ func ToExecutionFromInternalProto(in *iepb.Execution, inv *tables.Invocation) *E
 		ExecutionCompletedTimestampUsec:    in.GetExecutionCompletedTimestampUsec(),
 		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
 		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
+		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
 		User:                               inv.User,
 		Host:                               inv.Host,
 		Pattern:                            inv.Pattern,

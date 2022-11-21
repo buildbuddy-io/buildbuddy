@@ -41,4 +41,6 @@ message Execution {
   int64 execution_completed_timestamp_usec = 25;
   int64 output_upload_start_timestamp_usec = 26;
   int64 output_upload_completed_timestamp_usec = 27;
+
+  int32 invocation_link_type = 28;
 }

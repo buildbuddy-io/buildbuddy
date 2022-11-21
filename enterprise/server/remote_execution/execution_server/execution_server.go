@@ -306,46 +306,48 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
 		return status.InternalErrorf("failed to record execution: %s", err)
 	}
-	executionProto := execution.TableExecToProto(&executionPrimaryDB)
 
 	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
 		return status.InternalErrorf("failed to record execution: %s", err)
 	}
-	invIDs, err := s.getLinkedInvocationIDs(ctx, executionID)
+	links, err := s.getInvocationLinks(ctx, executionID)
 	if err != nil {
 		return status.InternalErrorf("failed to record execution: %s", err)
 	}
 
-	for _, invID := range invIDs {
-		if err := s.env.GetExecutionCollector().Append(ctx, invID, executionProto); err != nil {
-			log.CtxErrorf(ctx, "failed to append execution %q to invocation %q", executionID, invID)
+	for _, link := range links {
+		log.Infof("append execution to invocation: %q", link.InvocationID)
+		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
+		if err := s.env.GetExecutionCollector().Append(ctx, link.InvocationID, executionProto); err != nil {
+			log.CtxErrorf(ctx, "failed to append execution %q to invocation %q", executionID, link.InvocationID)
 		}
 	}
 	return nil
 }
 
-func (s *ExecutionServer) getLinkedInvocationIDs(ctx context.Context, executionID string) ([]string, error) {
+func (s *ExecutionServer) getInvocationLinks(ctx context.Context, executionID string) ([]*tables.InvocationExecution, error) {
 	dbh := s.env.GetDBHandle()
 	q := query_builder.NewQuery(`
-		SELECT invocation_id FROM InvocationExecutions
+		SELECT invocation_id, type FROM InvocationExecutions
 	`)
 	queryStr, args := q.AddWhereClause(`execution_id = ?`, executionID).Build()
 	query := dbh.DB(ctx).Raw(queryStr, args...)
-	invIDs := []string{}
+	res := []*tables.InvocationExecution{}
 	rows, err := query.Rows()
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		invID := ""
-		if err := dbh.DB(ctx).ScanRows(rows, &invID); err != nil {
+		link := &tables.InvocationExecution{}
+		if err := dbh.DB(ctx).ScanRows(rows, link); err != nil {
 			return nil, err
 		}
-		invIDs = append(invIDs, invID)
+		log.Infof("find invocation_id %q", link.InvocationID)
+		res = append(res, link)
 	}
 
-	return invIDs, nil
+	return res, nil
 
 }
 

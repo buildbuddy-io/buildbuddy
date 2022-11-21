@@ -7,12 +7,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 )
 
-func TableExecToProto(in *tables.Execution) *iepb.Execution {
+func TableExecToProto(in *tables.Execution, invLink *tables.InvocationExecution) *iepb.Execution {
 	return &iepb.Execution{
 		GroupId:                            in.GroupID,
 		UpdatedAtUsec:                      in.UpdatedAtUsec,
 		ExecutionId:                        in.ExecutionID,
-		InvocationUuid:                     strings.Replace(in.InvocationID, "-", "", -1),
+		InvocationUuid:                     strings.Replace(invLink.InvocationID, "-", "", -1),
+		InvocationLinkType:                 int32(invLink.Type),
 		CreatedAtUsec:                      in.CreatedAtUsec,
 		UserId:                             in.UserID,
 		Worker:                             in.Worker,
