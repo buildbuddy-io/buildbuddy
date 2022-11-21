@@ -1864,7 +1864,9 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 
 func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	switch compressor {
-	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
+	case repb.Compressor_IDENTITY:
+		return true
+	case repb.Compressor_ZSTD:
 		return p.enableZstdCompression
 	default:
 		return false

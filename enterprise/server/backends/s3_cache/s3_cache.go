@@ -584,5 +584,5 @@ func (s3c *S3Cache) Stop() error {
 }
 
 func (s3c *S3Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	return false
+	return compressor == repb.Compressor_IDENTITY
 }

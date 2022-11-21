@@ -567,5 +567,5 @@ func (rc *RaftCache) Delete(ctx context.Context, r *resource.ResourceName) error
 }
 
 func (rc *RaftCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	return false
+	return compressor == repb.Compressor_IDENTITY
 }

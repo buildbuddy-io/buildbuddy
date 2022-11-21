@@ -1247,5 +1247,5 @@ func (p *partition) writer(ctx context.Context, r *resource.ResourceName) (inter
 }
 
 func (c *DiskCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	return false
+	return compressor == repb.Compressor_IDENTITY
 }

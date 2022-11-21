@@ -363,5 +363,5 @@ func (c *Cache) Stop() error {
 }
 
 func (c *Cache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	return false
+	return compressor == repb.Compressor_IDENTITY
 }
