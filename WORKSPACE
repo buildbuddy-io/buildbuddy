@@ -182,9 +182,9 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    sha256 = "51f0977294699cd547e139ceff2396c32588575588678d2054da167691a227ef",
-    strip_prefix = "rules_k8s-0.6",
-    urls = ["https://github.com/bazelbuild/rules_k8s/archive/v0.6.tar.gz"],
+    sha256 = "ce5b9bc0926681e2e7f2147b49096f143e6cbc783e71bc1d4f36ca76b00e6f4a",
+    strip_prefix = "rules_k8s-0.7",
+    urls = ["https://github.com/bazelbuild/rules_k8s/archive/refs/tags/v0.7.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
