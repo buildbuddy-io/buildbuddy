@@ -12,7 +12,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
@@ -32,10 +31,9 @@ func Run(t *testing.T, args ...string) *app.App {
 func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
 	redisTarget := testredis.Start(t).Target
 	commandArgs := []string{
-		fmt.Sprintf("--telemetry_port=%d", testport.FindFree(t)),
 		"--app_directory=/enterprise/app",
-		"--disable_telemetry",
 		"--app.default_redis_target=" + redisTarget,
+		"--telemetry_port=-1",
 	}
 	commandArgs = append(commandArgs, args...)
 	return app.Run(

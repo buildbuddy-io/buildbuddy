@@ -199,10 +199,12 @@ func setBazelVersion() error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// Bazelisk probably chose us because we were specified first in
-	// .bazelversion. Delete the first line, if it exists.
-	if len(parts) > 0 {
-		parts = parts[1:]
+	// If we appear first in .bazelversion, ignore that version to prevent
+	// bazelisk from invoking us recursively.
+	if IsInvokedByBazelisk() {
+		for len(parts) > 0 && strings.HasPrefix(parts[0], "buildbuddy-io/") {
+			parts = parts[1:]
+		}
 	}
 	// If we couldn't find a non-BB bazel version in .bazelversion at this
 	// point, default to "latest".

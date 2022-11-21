@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/metadata"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
+	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
@@ -54,10 +55,23 @@ func run() (exitCode int, err error) {
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
+	exitCode, err = printlog.HandlePrint(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
 	exitCode, err = update.HandleUpdate(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
+	exitCode, err = version.HandleVersion(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	// TODO: Convert this to (exitCode, err) convention
+	args = login.HandleLogin(args)
+
+	// If none of the CLI subcommand handlers were triggered, assume we have a
+	// bazel invocation.
 
 	// Maybe run interactively (watching for changes to files).
 	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {
@@ -100,7 +114,7 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 
-	// Fiddle with args
+	// Fiddle with Bazel args
 	// TODO(bduffany): model these as "built-in" plugins
 	args = tooltag.ConfigureToolTag(args)
 	args = sidecar.ConfigureSidecar(args)
@@ -119,13 +133,9 @@ func run() (exitCode int, err error) {
 		}
 	}
 
-	// Handle commands
+	// Handle remote bazel. Note, pre-bazel hooks apply to remote bazel, but not
+	// output handlers or post-bazel hooks.
 	args = remotebazel.HandleRemoteBazel(args, passthroughArgs)
-	args = login.HandleLogin(args)
-	exitCode, err = version.HandleVersion(args)
-	if err != nil || exitCode >= 0 {
-		return exitCode, err
-	}
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.

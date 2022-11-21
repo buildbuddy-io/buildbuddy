@@ -39,6 +39,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 	args := []string{
 		"--app.log_level=debug",
 		"--app.log_include_short_file_name",
+		"--disable_telemetry",
 		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
 		fmt.Sprintf("--port=%d", app.httpPort),
 		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
