@@ -1,10 +1,20 @@
 workspace(
     name = "buildbuddy",
-    managed_directories = {"@npm": ["node_modules"]},
 )
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# Bazel platforms
+
+http_archive(
+    name = "platforms",
+    sha256 = "5308fc1d8865406a49427ba24a9ab53087f17f5266a7aabbfc28823f3916e1ca",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/0.0.6/platforms-0.0.6.tar.gz",
+        "https://github.com/bazelbuild/platforms/releases/download/0.0.6/platforms-0.0.6.tar.gz",
+    ],
+)
 
 # Go
 
@@ -105,7 +115,7 @@ yarn_install(
     name = "npm",
     exports_directories_only = False,
     package_json = "//:package.json",
-    symlink_node_modules = True,
+    symlink_node_modules = False,
     yarn_lock = "//:yarn.lock",
 )
 
@@ -172,9 +182,9 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    sha256 = "51f0977294699cd547e139ceff2396c32588575588678d2054da167691a227ef",
-    strip_prefix = "rules_k8s-0.6",
-    urls = ["https://github.com/bazelbuild/rules_k8s/archive/v0.6.tar.gz"],
+    sha256 = "ce5b9bc0926681e2e7f2147b49096f143e6cbc783e71bc1d4f36ca76b00e6f4a",
+    strip_prefix = "rules_k8s-0.7",
+    urls = ["https://github.com/bazelbuild/rules_k8s/archive/refs/tags/v0.7.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
@@ -183,7 +193,7 @@ k8s_repositories()
 
 load("@io_bazel_rules_k8s//k8s:k8s_go_deps.bzl", k8s_go_deps = "deps")
 
-k8s_go_deps()
+k8s_go_deps(go_version = "")
 
 k8s_defaults(
     name = "k8s_deploy",
