@@ -129,8 +129,8 @@ go_library(
     srcs = ["bundle.go"],
     embedsrcs = [
         "//:config_files",
+        "//:embedded_certs",
         "//static",
-        "//embedded_certs",
     ] + select({
         ":fastbuild": [],
         "//conditions:default": [
