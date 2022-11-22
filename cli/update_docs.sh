@@ -16,15 +16,16 @@ DOCS_FILES=(
   docs/cli.md
 )
 
+if [[ "$(git status --short 2>&1)" ]]; then
+  echo >&2 "Working tree is dirty; refusing to update docs."
+  exit 1
+fi
+
 perl -p -i -e 's#buildbuddy-io/\d+\.\d+\.\d+#buildbuddy-io/'"$VERSION"'#g' "${DOCS_FILES[@]}"
 perl -p -i -e 's#buildbuddy-io/plugins@v\d+\.\d+\.\d+#buildbuddy-io/plugins@'"$VERSION"'#g' "${DOCS_FILES[@]}"
 
 if ! ((UPDATE_GIT)); then
   exit
-fi
-if [[ "$(git status --short 2>&1)" ]]; then
-  echo >&2 "Working tree is dirty; will not update git repo."
-  exit 1
 fi
 
 git add "${DOCS_FILES[@]}"
