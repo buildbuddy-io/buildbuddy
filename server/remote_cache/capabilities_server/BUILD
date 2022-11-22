@@ -11,7 +11,7 @@ go_library(
         "//proto:semver_go_proto",
         "//server/environment",
         "//server/remote_cache/config",
-        "//server/util/log",
+        "//server/util/bazel_request",
         "//server/util/perms",
     ],
 )
