@@ -11,7 +11,7 @@ tags: [product, engineering]
 ---
 
 When you use Buildbuddy with Bazel to build and test software, Buildbuddy
-captures information about each Bazel invocation, such as number of builds,build
+captures information about each Bazel invocation, such as number of builds, build
 duration, remote cache performance, and more. Buildbuddy has
 a [Trends](https://app.buildbuddy.io/trends/) page to visualize trends in this
 data over time.
