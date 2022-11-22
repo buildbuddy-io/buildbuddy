@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog"
 
 	logpb "google.golang.org/genproto/googleapis/logging/v2"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 )
 
 var (
@@ -43,16 +44,36 @@ func (l *logWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 	entry := logging.Entry{}
 	m := map[string]any{}
 	if err := json.Unmarshal(p, &m); err == nil {
+		jsonPayload := &structpb.Struct{}
+		entry.Payload = &logpb.LogEntry_JsonPayload{JsonPayload: jsonPayload}
+		entry.Operation = &logpb.LogEntryOperation{Producer: "github.com/buildbuddy-io/buildbuddy"}
 		if v, ok := m[zerolog.TimestampFieldName]; ok {
 			if t, ok := v.(string); ok {
 				if entry.Timestamp, err = time.Parse(zerolog.TimeFieldFormat, t); err != nil {
 					entry.Timestamp = time.Time{}
 				}
+				jsonPayload.Fields["timestamp"] = structpb.NewStringValue(t)
 			}
 		}
 		if v, ok := m[zerolog.MessageFieldName]; ok {
 			if p, ok := v.(string); ok {
-				entry.Payload = p
+				jsonPayload.Fields["message"] = structpb.NewStringValue(p)
+			}
+		}
+		if v, ok := m["executor_id"]; ok {
+			if p, ok := v.(string); ok {
+				jsonPayload.Fields["executor_id"] = structpb.NewStringValue(p)
+			}
+		}
+		if v, ok := m["executor_host_id"]; ok {
+			if p, ok := v.(string); ok {
+				jsonPayload.Fields["executor_host_id"] = structpb.NewStringValue(p)
+			}
+		}
+		if v, ok := m["execution_id"]; ok {
+			if p, ok := v.(string); ok {
+				jsonPayload.Fields["execution_id"] = structpb.NewStringValue(p)
+				entry.Operation.Id = p
 			}
 		}
 		if v, ok := m["logging.googleapis.com/sourceLocation"]; ok {
