@@ -44,7 +44,7 @@ func (l *logWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 	entry := logging.Entry{}
 	m := map[string]any{}
 	if err := json.Unmarshal(p, &m); err == nil {
-		jsonPayload := &structpb.Struct{}
+		jsonPayload := &structpb.Struct{Fields: map[string]*structpb.Value{}}
 		entry.Payload = &logpb.LogEntry_JsonPayload{JsonPayload: jsonPayload}
 		entry.Operation = &logpb.LogEntryOperation{Producer: "github.com/buildbuddy-io/buildbuddy"}
 		if v, ok := m[zerolog.TimestampFieldName]; ok {
