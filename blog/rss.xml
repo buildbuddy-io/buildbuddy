@@ -14,7 +14,7 @@
             <pubDate>Tue, 22 Nov 2022 12:00:00 GMT</pubDate>
             <description><![CDATA[When you use Buildbuddy with Bazel to build and test software, Buildbuddy]]></description>
             <content:encoded><![CDATA[<p>When you use Buildbuddy with Bazel to build and test software, Buildbuddy
-captures information about each Bazel invocation, such as number of builds,build
+captures information about each Bazel invocation, such as number of builds, build
 duration, remote cache performance, and more. Buildbuddy has
 a <a href="https://app.buildbuddy.io/trends/">Trends</a> page to visualize trends in this
 data over time.</p><p><img src="/img/blog/trends-2.png"/></p><p>The trends page allows you to see how improvements you are making to your builds
@@ -27,7 +27,7 @@ build stats and generate the data we wanted to display. For a time this worked
 well, but we quickly ran into performance issues for customers that had very
 large numbers of builds. We were able to temporarily improve performance by
 adding various indices, and though this helped to reduce the number of rows
-read, it was not sufficient. Some customers do millions on monthly builds, and the
+read, it was not sufficient. Some customers do millions of builds monthly, and the
 Trends page (which can look back up to a year) for these customers was taking
 more than 20 <em>minutes</em> to load.</p><p>The queries behind the trends page require aggregation of multiple columns, such
 as cache hits and cache misses. A traditional row-based database like MySQL is
@@ -41,7 +41,7 @@ a column-based store, all the cache hits data are stored in the same block.</p><
 the performance of required queries for the trends page. We validated
 ClickHouse’s performance against our use case: it took ClickHouse 0.317 seconds
 to process 1.5 million rows and calculate the stats. The same query took MySQL
-about 24 seconds.</p><p>One of our goals for data migration is to make sure the data is accurate. We
+about 24 minutes.</p><p>One of our goals for data migration is to make sure the data is accurate. We
 added monitoring and compared data between MySQL and ClickHouse after we enabled
 double writing in production. One source of inconsistency was that data was
 inserted into ClickHouse both by the backfill script and production servers.
