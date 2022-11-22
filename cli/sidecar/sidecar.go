@@ -23,6 +23,9 @@ const (
 	windowsOSName        = "windows"
 	windowsFileExtension = ".exe"
 	sockPrefix           = "sidecar-"
+
+	// Number of attempts to restart and reconnect to the sidecar.
+	numConnectionAttempts = 2
 )
 
 func hashStrings(in []string) string {
@@ -62,7 +65,7 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	// Check if a process is already running with this sock.
 	// If one is, we're all done!
 	if pathExists(sockPath) {
-		log.Debugf("sidecar with args %s is already listening at %q.", args, sockPath)
+		log.Debugf("Sidecar socket %q exists.", sockPath)
 		return sockPath, nil
 	}
 
@@ -90,12 +93,10 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 func ConfigureSidecar(args []string) []string {
 	log.Debugf("Configuring sidecar")
 
-	ctx := context.Background()
-
 	cacheDir, err := storage.CacheDir()
+	ctx := context.Background()
 	if err != nil {
 		log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
-		return args
 	}
 
 	// Re(Start) the sidecar if the flags set don't match.
@@ -118,21 +119,33 @@ func ConfigureSidecar(args []string) []string {
 		return args
 	}
 
-	sidecarSocket, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
-	if err != nil {
-		log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
+	var connectionErr error
+	for i := 0; i < numConnectionAttempts; i++ {
+		sidecarSocket, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
+		if err != nil {
+			log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
+			return args
+		}
+		if err := keepaliveSidecar(ctx, sidecarSocket); err != nil {
+			// If we fail to connect, the sidecar might have been abruptly
+			// killed before this CLI invocation. Attempt to remove the socket
+			// and restart the sidecar before the next connection attempt.
+			if err := os.Remove(sidecarSocket); err != nil {
+				log.Debugf("Failed to remove sidecar socket: %s", err)
+			}
+			connectionErr = err
+			log.Debugf("Sidecar connection error (retryable): %s", err)
+			continue
+		}
+		if besBackendFlag != "" {
+			args = append(args, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
+		}
+		if remoteCacheFlag != "" && remoteExecFlag == "" {
+			args = append(args, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
+		}
 		return args
 	}
-	if err := keepaliveSidecar(ctx, sidecarSocket); err != nil {
-		log.Printf("Could not connect to sidecar, continuing without sidecar: %s", err)
-		return args
-	}
-	if besBackendFlag != "" {
-		args = append(args, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
-	}
-	if remoteCacheFlag != "" && remoteExecFlag == "" {
-		args = append(args, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
-	}
+	log.Warnf("Could not connect to sidecar, continuing without sidecar: %s", connectionErr)
 	return args
 }
 
@@ -146,8 +159,10 @@ func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
 	}
 	s := scpb.NewSidecarClient(conn)
 	connected := make(chan struct{})
+	timedOut := make(chan struct{})
 	go func() {
 		connectionValidated := false
+		pingInterval := 10 * time.Millisecond
 		for {
 			_, err := s.Ping(ctx, &scpb.PingRequest{})
 			if connectionValidated && err != nil {
@@ -155,13 +170,17 @@ func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
 				return
 			}
 			if !connectionValidated && err == nil {
+				log.Debugf("Established connection to sidecar.")
 				close(connected)
 				connectionValidated = true
+				pingInterval = 1 * time.Second
 			}
 			select {
+			case <-timedOut:
+				return
 			case <-ctx.Done():
 				return
-			case <-time.After(1 * time.Second):
+			case <-time.After(pingInterval):
 			}
 		}
 	}()
@@ -169,6 +188,7 @@ func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
 	case <-connected:
 		return nil
 	case <-time.After(5 * time.Second):
-		return fmt.Errorf("could not connect to sidecar")
+		close(timedOut)
+		return fmt.Errorf("timed out waiting for sidecar connection")
 	}
 }
