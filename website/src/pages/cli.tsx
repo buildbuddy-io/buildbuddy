@@ -331,13 +331,13 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`echo "$(echo "buildbuddy-io/0.0.15"; cat .bazelversion)" > .bazelversion`}</span>
+                    <span>{`echo "$(echo "buildbuddy-io/0.1.0"; cat .bazelversion)" > .bazelversion`}</span>
                   </div>
                 </>,
                 <>
                   <div>
                     <Prompt />
-                    <span>{`echo "$(echo "buildbuddy-io/0.0.15"; cat .bazelversion)" > .bazelversion`}</span>
+                    <span>{`echo "$(echo "buildbuddy-io/0.1.0"; cat .bazelversion)" > .bazelversion`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -346,7 +346,7 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`echo "$(echo "buildbuddy-io/0.0.15"; cat .bazelversion)" > .bazelversion`}</span>
+                    <span>{`echo "$(echo "buildbuddy-io/0.1.0"; cat .bazelversion)" > .bazelversion`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -356,7 +356,7 @@ function Component() {
                 <>
                   <div>
                     <Prompt />
-                    <span>{`echo "$(echo "buildbuddy-io/0.0.15"; cat .bazelversion)" > .bazelversion`}</span>
+                    <span>{`echo "$(echo "buildbuddy-io/0.1.0"; cat .bazelversion)" > .bazelversion`}</span>
                   </div>
                   <div>
                     <Prompt />
@@ -370,7 +370,7 @@ function Component() {
           bigImage={true}
           lessPadding={true}
           flipped={false}
-          snippet={`echo "$(echo "buildbuddy-io/0.0.15"; cat .bazelversion)" > .bazelversion`}
+          snippet={`echo "$(echo "buildbuddy-io/0.1.0"; cat .bazelversion)" > .bazelversion`}
           primaryButtonText=""
           secondaryButtonText=""
         />
