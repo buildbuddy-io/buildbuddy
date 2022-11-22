@@ -38,11 +38,22 @@ func NewCounter() *Counter {
 	return c
 }
 
+func (c *Counter) bin(idx int) *bin {
+	b := &(c.counts[idx])
+	return b
+}
+
+func (c *Counter) currentBin() *bin {
+	idx := atomic.LoadUint64(&c.idx)
+	return c.bin(int(idx))
+}
+
 func (c *Counter) Get() uint64 {
 	sum := uint64(0)
 	nonZeroBuckets := -1 // don't count the active bucket
-	for _, b := range c.counts {
-		v := b.Get()
+	for i := 0; i < len(c.counts); i++ {
+		v := c.bin(i).Get()
+
 		if v > 0 {
 			sum += v
 			nonZeroBuckets += 1
@@ -61,7 +72,7 @@ func (c *Counter) reset() {
 		numCounts := len(c.counts)
 		atomic.StoreUint64(&c.idx, uint64(t%numCounts))
 		j := (t + 1) % numCounts
-		c.counts[j].Reset()
+		c.bin(j).Reset()
 
 		time.Sleep(window / time.Duration(numCounts))
 	}
@@ -71,6 +82,5 @@ func (c *Counter) Inc() {
 	c.once.Do(func() {
 		go c.reset()
 	})
-	idx := atomic.LoadUint64(&c.idx)
-	c.counts[idx].Inc()
+	c.currentBin().Inc()
 }
