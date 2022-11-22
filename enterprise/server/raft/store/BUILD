@@ -25,6 +25,7 @@ go_library(
         "//server/gossip",
         "//server/interfaces",
         "//server/metrics",
+        "//server/resources",
         "//server/util/alert",
         "//server/util/disk",
         "//server/util/grpc_server",

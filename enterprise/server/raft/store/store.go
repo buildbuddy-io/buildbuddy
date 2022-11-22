@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -85,6 +87,7 @@ type Store struct {
 
 	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
 	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
+	usages   sync.Map // map of uint64 rangeID -> *ReplicaUsage
 
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
@@ -112,6 +115,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 		leases:   sync.Map{},
 		replicas: sync.Map{},
+		usages:   sync.Map{},
 
 		metaRangeData: "",
 		fileStorer: filestore.New(filestore.Opts{
@@ -183,10 +187,16 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 }
 
 func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
+	clusterID := usage.GetReplica().GetClusterId()
 	if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
-		s.RequestSplit(usage.GetReplica().GetClusterId())
+		s.RequestSplit(clusterID)
 	}
 
+	rd := s.lookupRange(clusterID)
+	if rd == nil {
+		return
+	}
+	s.usages.Store(rd.GetRangeId(), usage)
 }
 
 func (s *Store) RequestSplit(clusterID uint64) {
@@ -317,6 +327,7 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 		}
 		s.log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
 	}
+	s.updateTags()
 }
 
 func (s *Store) releaseRangeLease(rangeID uint64) {
@@ -332,6 +343,7 @@ func (s *Store) releaseRangeLease(rangeID uint64) {
 	s.leases.Delete(rangeID)
 	if rl.Valid() {
 		rl.Release()
+		s.updateTags()
 	}
 }
 
@@ -386,6 +398,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Removing range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetLeft(), rd.GetRight(), rd.GetGeneration())
 	s.replicas.Delete(rd.GetRangeId())
+	s.usages.Delete(rd.GetRangeId())
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
@@ -791,7 +804,62 @@ func (s *Store) renewNodeLiveness() {
 	}
 }
 
+type stats struct {
+	RangeCount     int
+	LeaseCount     int
+	ReadQPS        int64
+	RaftProposeQPS int64
+	TotalSizeBytes int64
+}
+
+func (s *Store) Usage() *rfpb.StoreUsage {
+	su := &rfpb.StoreUsage{
+		Node: s.MyNodeDescriptor(),
+	}
+
+	s.rangeMu.Lock()
+	su.RangeCount = int64(len(s.openRanges))
+	s.rangeMu.Unlock()
+
+	s.leases.Range(func(key, value any) bool {
+		su.LeaseCount += 1
+		return true
+	})
+
+	s.usages.Range(func(key, value any) bool {
+		if ru, ok := value.(*rfpb.ReplicaUsage); ok {
+			su.ReadQps += ru.GetReadQps()
+			su.RaftProposeQps += ru.GetRaftProposeQps()
+			su.TotalBytesUsed += ru.GetEstimatedDiskBytesUsed()
+		}
+		return true
+	})
+	return su
+}
+
+func (s *Store) updateTags() error {
+	storeTags := make(map[string]string, 0)
+
+	zone, err := resources.GetZone()
+	if err == nil {
+		storeTags[constants.ZoneTag] = zone
+	} else {
+		storeTags[constants.ZoneTag] = "local"
+	}
+
+	su := s.Usage()
+	buf, err := proto.Marshal(su)
+	if err != nil {
+		return err
+	}
+	storeTags[constants.StoreUsageTag] = base64.StdEncoding.EncodeToString(buf)
+	err = s.gossipManager.SetTags(storeTags)
+	return err
+}
+
 func (s *Store) broadcast() error {
+	go s.updateTags()
+
 	ctx := context.Background()
 	rsp, err := s.ListCluster(ctx, &rfpb.ListClusterRequest{})
 	if err != nil {

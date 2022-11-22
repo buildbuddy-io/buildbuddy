@@ -19,6 +19,7 @@ go_library(
         "//server/metrics",
         "//server/util/disk",
         "//server/util/log",
+        "//server/util/qps",
         "//server/util/rangemap",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
