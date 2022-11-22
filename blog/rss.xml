@@ -4,14 +4,14 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Mon, 21 Nov 2022 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Tue, 22 Nov 2022 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <item>
             <title><![CDATA[How We Use ClickHouse to Analyze Trends Across Millions of Builds]]></title>
-            <link>https://www.buildbuddy.io/blog/building-a-fast-trends-page.md</link>
-            <guid>building-a-fast-trends-page.md</guid>
-            <pubDate>Mon, 21 Nov 2022 12:00:00 GMT</pubDate>
+            <link>https://www.buildbuddy.io/blog/clickhouse-build-trends</link>
+            <guid>clickhouse-build-trends</guid>
+            <pubDate>Tue, 22 Nov 2022 12:00:00 GMT</pubDate>
             <description><![CDATA[When you use Buildbuddy with Bazel to build and test software, Buildbuddy]]></description>
             <content:encoded><![CDATA[<p>When you use Buildbuddy with Bazel to build and test software, Buildbuddy
 captures information about each Bazel invocation, such as number of builds,build
