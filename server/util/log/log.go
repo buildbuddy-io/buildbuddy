@@ -129,7 +129,6 @@ func LocalWriter() *zerolog.ConsoleWriter {
 }
 
 func StructuredWriter() *zerolog.ConsoleWriter {
-	fmt.Printf("Using Structured")
 	// These overrides configure the logger to emit structured
 	// events compatible with GCP's logging infrastructure.
 	zerolog.LevelFieldName = "severity"
