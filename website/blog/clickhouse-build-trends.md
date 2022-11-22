@@ -11,7 +11,7 @@ tags: [product, engineering]
 ---
 
 When you use Buildbuddy with Bazel to build and test software, Buildbuddy
-captures information about each Bazel invocation, such as number of builds,build
+captures information about each Bazel invocation, such as number of builds, build
 duration, remote cache performance, and more. Buildbuddy has
 a [Trends](https://app.buildbuddy.io/trends/) page to visualize trends in this
 data over time.
@@ -30,7 +30,7 @@ build stats and generate the data we wanted to display. For a time this worked
 well, but we quickly ran into performance issues for customers that had very
 large numbers of builds. We were able to temporarily improve performance by
 adding various indices, and though this helped to reduce the number of rows
-read, it was not sufficient. Some customers do millions on monthly builds, and the
+read, it was not sufficient. Some customers do millions of builds monthly, and the
 Trends page (which can look back up to a year) for these customers was taking
 more than 20 _minutes_ to load.
 
@@ -52,7 +52,7 @@ Therefore, we felt that using ClickHouse, a column-based database, would improve
 the performance of required queries for the trends page. We validated
 ClickHouse’s performance against our use case: it took ClickHouse 0.317 seconds
 to process 1.5 million rows and calculate the stats. The same query took MySQL
-about 24 seconds.
+about 24 minutes.
 
 One of our goals for data migration is to make sure the data is accurate. We
 added monitoring and compared data between MySQL and ClickHouse after we enabled
