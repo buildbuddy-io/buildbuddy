@@ -41,9 +41,14 @@ func (w *bazelStderrHandler) Write(b []byte) (int, error) {
 }
 
 // Invoke starts the bazel binary from within the given workspace dir.
-func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, args ...string) *InvocationResult {
+func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, subCommand string, args ...string) *InvocationResult {
+	// --max_idle_secs prevents the Bazel server (that is potentially spun up by this command)
+	// from sticking around for a long time.
+	// See https://docs.bazel.build/versions/master/guide.html#clientserver-implementation
+	bazelArgs := []string{"--max_idle_secs=5", subCommand}
+	bazelArgs = append(bazelArgs, args...)
 	var stdout bytes.Buffer
-	cmd := exec.CommandContext(ctx, bazelBinary, args...)
+	cmd := exec.CommandContext(ctx, bazelBinary, bazelArgs...)
 	cmd.Stdout = &stdout
 	stderrHandler := &bazelStderrHandler{}
 	cmd.Stderr = stderrHandler

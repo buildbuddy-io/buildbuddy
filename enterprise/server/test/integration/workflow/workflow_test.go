@@ -105,13 +105,9 @@ func setup(t *testing.T, gp interfaces.GitProvider) (*rbetest.Env, interfaces.Wo
 	flags.Set(t, "executor.memory_bytes", 10_000_000_000)
 	// Use bare execution -- Docker isn't supported in tests yet.
 	flags.Set(t, "remote_execution.workflows_default_image", "none")
-	// Use a pre-built, pre-extracted bazel instead of invoking bazelisk, which
-	// significantly slows down the test.
+	// Use a pre-built bazel instead of invoking bazelisk, which significantly
+	// slows down the test.
 	flags.Set(t, "remote_execution.workflows_ci_runner_bazel_command", testbazel.BinaryPath(t))
-	flags.Set(t, "remote_execution.workflows_ci_runner_extra_args", []string{
-		"--bazel_startup_flags=--install_base=" + testbazel.InstallBasePath(t),
-		"--extra_bazel_args=--spawn_strategy=remote,local",
-	})
 	// Set events_api_url to point to the test BB app server (this gets
 	// propagated to the CI runner so it knows where to publish build events).
 	u, err := url.Parse(fmt.Sprintf("grpc://localhost:%d", bbServer.GRPCPort()))
