@@ -52,7 +52,7 @@ Therefore, we felt that using ClickHouse, a column-based database, would improve
 the performance of required queries for the trends page. We validated
 ClickHouse’s performance against our use case: it took ClickHouse 0.317 seconds
 to process 1.5 million rows and calculate the stats. The same query took MySQL
-about 24 seconds.
+about 24 minutes.
 
 One of our goals for data migration is to make sure the data is accurate. We
 added monitoring and compared data between MySQL and ClickHouse after we enabled
