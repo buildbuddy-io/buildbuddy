@@ -52,8 +52,35 @@ type Version struct {
 	Suffix string
 }
 
-// GetVersion returns the parsed Bazel version. It returns nil if no Bazel
-// version could be parsed, and in particular if the client is not bazel.
+// ParseVersion attempts to parse a Bazel version from a string.
+func ParseVersion(spec string) (*Version, error) {
+	m := bazelVersionPattern.FindStringSubmatch(spec)
+	if len(m) == 0 {
+		return nil, status.InvalidArgumentErrorf("invalid tool version %q", spec)
+	}
+	var err error
+	v := &Version{}
+	v.Major, err = strconv.Atoi(m[bazelVersionPattern.SubexpIndex("major")])
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid major version: %s", err)
+	}
+	v.Minor, err = strconv.Atoi(m[bazelVersionPattern.SubexpIndex("minor")])
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid minor version: %s", err)
+	}
+	if p := m[bazelVersionPattern.SubexpIndex("patch")]; p != "" {
+		v.Patch, err = strconv.Atoi(p)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid patch version: %s", err)
+		}
+	}
+	v.Suffix = m[bazelVersionPattern.SubexpIndex("suffix")]
+	return v, nil
+}
+
+// GetVersion returns the parsed Bazel version from the context. It returns nil
+// if no Bazel version could be parsed, and in particular if the client is not
+// bazel.
 func GetVersion(ctx context.Context) *Version {
 	rmd := GetRequestMetadata(ctx)
 	if rmd == nil {
@@ -62,29 +89,8 @@ func GetVersion(ctx context.Context) *Version {
 	if rmd.GetToolDetails().GetToolName() != "bazel" {
 		return nil
 	}
-	tv := rmd.GetToolDetails().GetToolVersion()
-	m := bazelVersionPattern.FindStringSubmatch(tv)
-	if len(m) == 0 {
-		return nil
-	}
-	var err error
-	b := &Version{}
-	b.Major, err = strconv.Atoi(m[bazelVersionPattern.SubexpIndex("major")])
-	if err != nil {
-		return nil
-	}
-	b.Minor, err = strconv.Atoi(m[bazelVersionPattern.SubexpIndex("minor")])
-	if err != nil {
-		return nil
-	}
-	if p := m[bazelVersionPattern.SubexpIndex("patch")]; p != "" {
-		b.Patch, err = strconv.Atoi(p)
-		if err != nil {
-			return nil
-		}
-	}
-	b.Suffix = m[bazelVersionPattern.SubexpIndex("suffix")]
-	return b
+	v, _ := ParseVersion(rmd.GetToolDetails().GetToolVersion())
+	return v
 }
 
 // IsAtLeast returns whether this bazel version is equal to or supercedes the
