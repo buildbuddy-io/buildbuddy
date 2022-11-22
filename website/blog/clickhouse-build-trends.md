@@ -30,7 +30,7 @@ build stats and generate the data we wanted to display. For a time this worked
 well, but we quickly ran into performance issues for customers that had very
 large numbers of builds. We were able to temporarily improve performance by
 adding various indices, and though this helped to reduce the number of rows
-read, it was not sufficient. Some customers do millions on monthly builds, and the
+read, it was not sufficient. Some customers do millions of builds monthly, and the
 Trends page (which can look back up to a year) for these customers was taking
 more than 20 _minutes_ to load.
 
