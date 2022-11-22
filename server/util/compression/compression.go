@@ -37,7 +37,7 @@ func mustGetZstdEncoder() *zstd.Encoder {
 // the default level. If dst is not big enough, then a new buffer will be
 // allocated.
 func CompressZstd(dst []byte, src []byte) []byte {
-	metrics.BytesCompressed.With(prometheus.Labels{metrics.CacheRequestType: "zstdCompress"}).Add(float64(len(src)))
+	metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(len(src)))
 	return zstdEncoder.EncodeAll(src, dst[:0])
 }
 
@@ -54,7 +54,7 @@ func DecompressZstd(dst []byte, src []byte) ([]byte, error) {
 		}
 	}()
 	buf, err := dec.DecodeAll(src, dst[:0])
-	metrics.BytesCompressed.With(prometheus.Labels{metrics.CacheRequestType: "zstdDecompress"}).Add(float64(len(buf)))
+	metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(len(buf)))
 	return buf, err
 }
 
@@ -87,7 +87,7 @@ func NewZstdDecompressor(writer io.Writer) (io.WriteCloser, error) {
 		}()
 		defer pr.Close()
 		n, err := decoder.WriteTo(writer)
-		metrics.BytesCompressed.With(prometheus.Labels{metrics.CacheRequestType: "zstdDecompress"}).Add(float64(n))
+		metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
 		d.done <- err
 		close(d.done)
 	}()
@@ -171,7 +171,7 @@ func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
 		// Write decoded bytes to pw and pipe to pr
 		n, err := decoder.WriteTo(pw)
 		pw.CloseWithError(err)
-		metrics.BytesCompressed.With(prometheus.Labels{metrics.CacheRequestType: "zstdDecompress"}).Add(float64(n))
+		metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
 
 		if err := zstdDecoderPool.Put(decoder); err != nil {
 			log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())

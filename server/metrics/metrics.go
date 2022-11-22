@@ -1425,7 +1425,16 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "compressor",
 		Name:      "bytes_compressed",
-		Help:      "Num decompressed bytes passed through compressors",
+		Help:      "The number of decompressed bytes passed into compressors",
+	}, []string{
+		CompressionType,
+	})
+
+	BytesDecompressed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "bytes_decompressed",
+		Help:      "The number of decompressed bytes passed out of decompressors",
 	}, []string{
 		CompressionType,
 	})
