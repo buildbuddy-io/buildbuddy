@@ -1,6 +1,7 @@
 load("@bazel_gazelle//:def.bzl", "gazelle")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 load("@npm//@bazel/typescript:index.bzl", "ts_config")
+load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -52,6 +53,12 @@ nogo(
 # gazelle:prefix github.com/buildbuddy-io/buildbuddy
 # gazelle:proto disable
 gazelle(name = "gazelle")
+
+# Example usage: "bazel run //:gofmt -- -w ."
+go_sdk_tool(
+    name = "gofmt",
+    goroot_relative_path = "bin/gofmt",
+)
 
 exports_files([
     ".swcrc",
