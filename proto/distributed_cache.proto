@@ -14,68 +14,68 @@ message Key {
   int64 size_bytes = 2;
 }
 
-// TODO: Delete key and isolation fields once PR to stop reading them has been
-// rolled out
 message ReadRequest {
-  Isolation isolation = 4;
   reserved 1;
-  Key key = 2;
   int64 offset = 3;
   int64 limit = 5;
   resource.ResourceName resource = 6;
+
+  // Deprecated fields - use resource field instead
+  Isolation isolation = 4;
+  Key key = 2;
 }
 
 message ReadResponse {
   bytes data = 1;
 }
 
-// TODO: Delete key and isolation fields once PR to stop reading them has been
-// rolled out
 message WriteRequest {
-  Isolation isolation = 6;
   reserved 1;
-  Key key = 2;
   bool finish_write = 3;
   bytes data = 4;
+  resource.ResourceName resource = 7;
 
   // A node that this data should eventually be handed off to.
   // Clients should attempt to replicate this data when possible.
   string handoff_peer = 5;
-  resource.ResourceName resource = 7;
+
+  // Deprecated fields - use resource field instead
+  Isolation isolation = 6;
+  Key key = 2;
 }
 
 message WriteResponse {
   int64 committed_size = 1;
 }
 
-// TODO: Delete key and isolation fields once PR to stop reading them has been
-// rolled out
 message DeleteRequest {
+  resource.ResourceName resource = 3;
+
+  // Deprecated fields - use resource field instead
   Isolation isolation = 1;
   Key key = 2;
-  resource.ResourceName resource = 3;
 }
 
 message DeleteResponse {}
 
-// TODO: Delete key and isolation fields once PR to stop reading them has been
-// rolled out
 message FindMissingRequest {
+  repeated resource.ResourceName resources = 3;
+
+  // Deprecated fields - use resource field instead
   Isolation isolation = 1;
   repeated Key key = 2;
-  repeated resource.ResourceName resources = 3;
 }
 
 message FindMissingResponse {
   repeated Key missing = 1;
 }
 
-// TODO: Delete key and isolation fields once PR to stop reading them has been
-// rolled out
 message MetadataRequest {
+  resource.ResourceName resource = 3;
+
+  // Deprecated fields - use resource field instead
   Isolation isolation = 1;
   Key key = 2;
-  resource.ResourceName resource = 3;
 }
 
 message MetadataResponse {
@@ -89,12 +89,13 @@ message KV {
   bytes value = 2;
 }
 
-// TODO: Delete key field once PR to stop reading them has been rolled out
 message GetMultiRequest {
-  Isolation isolation = 3;
   reserved 1;
-  repeated Key key = 2;
   repeated resource.ResourceName resources = 4;
+
+  // Deprecated fields - use resource field instead
+  Isolation isolation = 3;
+  repeated Key key = 2;
 }
 
 message GetMultiResponse {
