@@ -34,6 +34,9 @@ html[data-theme="dark"] .sign-up:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  background-color: rgba(255, 255, 255, 0.9);
+  -webkit-backdrop-filter: saturate(180%) blur(10px);
+  backdrop-filter: saturate(180%) blur(10px);
 }
 
 .navbar__inner {
