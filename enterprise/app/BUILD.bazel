@@ -25,9 +25,6 @@ esbuild(
             ".ttf": "binary",
             ".css": "binary",
         },
-        "external": [
-            "@octokit/webhooks",
-        ],
     },
     config = ":esbuild_config",
     define = {"process.env.NODE_ENV": '"production"'},
