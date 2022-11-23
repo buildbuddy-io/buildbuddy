@@ -46,11 +46,11 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
   quote(pieces: string[]) {
     return pieces
       .map((value) => {
-        if (value.includes("=") && value.includes(" ")) {
+        if (value.includes("=")) {
           // shlex.quote everything after the first '=' so that arguments like:
-          // --flag="blah blah blah" are properly escaped.
-          let parts: string[] = value.split("=", 2);
-          return parts.map((val) => shlex.quote(val)).join("=");
+          // --flag="  = = = '' \"" are properly quoted.
+          let parts: string[] = value.split("=");
+          return parts[0] + "=" + shlex.quote(parts.slice(1).join("="));
         }
         return value;
       })
