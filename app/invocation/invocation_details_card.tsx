@@ -44,26 +44,28 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
   // and this will be returned:
   //   ["bazel", "build", "--output_filter='argument with spaces'"," "//..."],
   quote(pieces: string[]) {
-    return pieces.map((value) => {
-      if (value.includes("=") && value.includes(" ")) {
-        // shlex.quote everything after the first '=' so that arguments like:
-        // --flag="blah blah blah" are properly escaped.
-        let parts: string[] = value.split("=", 2);
-        return parts.map((val) => shlex.quote(val)).join("=");
-      }
-      return value;
-    })
-    .join(" ");
+    return pieces
+      .map((value) => {
+        if (value.includes("=") && value.includes(" ")) {
+          // shlex.quote everything after the first '=' so that arguments like:
+          // --flag="blah blah blah" are properly escaped.
+          let parts: string[] = value.split("=", 2);
+          return parts.map((val) => shlex.quote(val)).join("=");
+        }
+        return value;
+      })
+      .join(" ");
   }
 
   bazelCommandAndPatternWithOptions(options: string[]) {
-    return this.quote([
-      "bazel",
-      this.props.model.started?.command,
-      ...(this.props.model.expanded?.id?.pattern?.pattern || []),
-      ...(options || []),
-    ]
-      .filter((value) => value));
+    return this.quote(
+      [
+        "bazel",
+        this.props.model.started?.command,
+        ...(this.props.model.expanded?.id?.pattern?.pattern || []),
+        ...(options || []),
+      ].filter((value) => value)
+    );
   }
 
   explicitCommandLine() {
