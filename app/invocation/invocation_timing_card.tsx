@@ -8,7 +8,7 @@ import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
 import { Clock, HelpCircle } from "lucide-react";
 import errorService from "../errors/error_service";
-import format from "app/format/format";
+import format from "../format/format";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 
 interface Props {

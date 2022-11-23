@@ -1,8 +1,8 @@
 import React from "react";
 import { PieChart as PieChartIcon } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-import format from "app/format/format";
-import getColor from "app/flame_chart/colors";
+import format from "../format/format";
+import getColor from "../flame_chart/colors";
 
 interface Props {
   durationMap: Map<string, number>;
