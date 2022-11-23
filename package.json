@@ -69,5 +69,8 @@
   },
   "resolutions": {
     "@types/react": "^16.8.17"
+  },
+  "dependencies": {
+    "shlex": "^2.1.2"
   }
 }

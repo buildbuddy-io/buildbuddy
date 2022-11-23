@@ -4,6 +4,7 @@ import { Copy, Info } from "lucide-react";
 import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import { command_line } from "../../proto/command_line_ts_proto";
+import shlex from "shlex";
 
 interface Props {
   model: InvocationModel;
@@ -33,15 +34,38 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     alert_service.success("Command line copied to clipboard!");
   }
 
-  bazelCommandAndPatternWithOptions(options: string[]) {
-    return [
-      "bazel",
-      this.props.model.started?.command,
-      ...(this.props.model.expanded?.id?.pattern?.pattern || []),
-      ...(options || []),
-    ]
-      .filter((value) => value)
+  // Wraps arguments containing spaces in the provided command-line in
+  // quotation marks so they work when copied and pasted. The input
+  // command-line is passed in as an array with one entry per piece. For
+  // example, this command:
+  //   "bazel build --output_filter='argument with spaces' //..."
+  // is passed into this function as:
+  //   ["bazel", "build", "--output_filter=argument with spaces"," "//..."],
+  // and this will be returned:
+  //   ["bazel", "build", "--output_filter='argument with spaces'"," "//..."],
+  quote(pieces: string[]) {
+    return pieces
+      .map((value) => {
+        if (value.includes("=")) {
+          // shlex.quote everything after the first '=' so that arguments like:
+          // --flag="  = = = '' \"" are properly quoted.
+          let parts: string[] = value.split("=");
+          return parts[0] + "=" + shlex.quote(parts.slice(1).join("="));
+        }
+        return value;
+      })
       .join(" ");
+  }
+
+  bazelCommandAndPatternWithOptions(options: string[]) {
+    return this.quote(
+      [
+        "bazel",
+        this.props.model.started?.command,
+        ...(this.props.model.expanded?.id?.pattern?.pattern || []),
+        ...(options || []),
+      ].filter((value) => value)
+    );
   }
 
   explicitCommandLine() {
@@ -52,9 +76,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
     const overrideJSON = this.props.model.buildMetadataMap.get("EXPLICIT_COMMAND_LINE");
     if (overrideJSON) {
       try {
-        // TODO: Render these with something like shlex so that spaces are
-        // quoted as necessary.
-        return JSON.parse(overrideJSON).join(" ");
+        return this.quote(JSON.parse(overrideJSON));
       } catch (_) {
         // Invalid JSON; fall back to showing BES event.
       }
