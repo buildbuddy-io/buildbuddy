@@ -8,6 +8,11 @@ interface Props {
   durationMap: Map<string, number>;
 }
 
+interface Datum {
+  name: string;
+  value: number;
+}
+
 export default class InvocationBreakdownCardComponent extends React.Component<Props> {
   render() {
     let launching = this.props.durationMap.get("Launch Blaze");
@@ -38,10 +43,6 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
 
     phaseData = phaseData.sort((a, b) => b.value - a.value).filter((entry) => entry.value > 0);
 
-    let phaseSum = phaseData.reduce((prev, current) => {
-      return { name: "Sum", value: prev.value + current.value };
-    });
-
     let executionData = [
       { value: runningProcess, name: "Executing locally" },
       { value: inputMapping, name: "Input mapping" },
@@ -70,71 +71,51 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
           <div className="title">Timing Breakdown</div>
           <div className="details">
             <div className="cache-sections">
-              <div className="cache-section">
-                <div className="cache-title">Phase breakdown</div>
-                <div className="cache-subtitle">Breakdown of build phases</div>
-                <div className="cache-chart">
-                  <ResponsiveContainer width={100} height={100}>
-                    <PieChart>
-                      <Pie data={phaseData} dataKey="value" outerRadius={40} innerRadius={20}>
-                        {phaseData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={getColor(entry.name)} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div>
-                    {phaseData.map((entry, index) => (
-                      <div className="cache-chart-label">
-                        <span
-                          className="color-swatch cache-hit-color-swatch"
-                          style={{ backgroundColor: getColor(entry.name) }}></span>
-                        <span className="cache-stat">
-                          <span className="cache-stat-duration">{format.durationUsec(entry.value)}</span>{" "}
-                          <span className="cache-stat-description">
-                            {entry.name} ({format.percent(entry.value / phaseSum.value)}%)
-                          </span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="cache-section">
-                <div className="cache-title">Execution breakdown</div>
-                <div className="cache-subtitle">Breakdown totals across all threads</div>
-                <div className="cache-chart">
-                  <ResponsiveContainer width={100} height={100}>
-                    <PieChart>
-                      <Pie data={executionData} dataKey="value" outerRadius={40} innerRadius={20}>
-                        {executionData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={getColor(entry.name)} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div>
-                    {executionData.map((entry, index) => (
-                      <div className="cache-chart-label">
-                        <span
-                          className="color-swatch cache-hit-color-swatch"
-                          style={{ backgroundColor: getColor(entry.name) }}></span>
-                        <span className="cache-stat">
-                          <span className="cache-stat-duration">{format.durationUsec(entry.value)}</span>{" "}
-                          <span className="cache-stat-description">
-                            {entry.name} ({format.percent(entry.value / executionSum.value)}%)
-                          </span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              {renderBreakdown(phaseData)}
+              {renderBreakdown(executionData)}
             </div>
           </div>
         </div>
       </div>
     );
   }
+}
+
+function renderBreakdown(data: Datum[]) {
+  let sum = data.reduce((prev, current) => {
+    return { name: "Sum", value: prev.value + current.value };
+  });
+
+  return (
+    <div className="cache-section">
+      <div className="cache-title">Phase breakdown</div>
+      <div className="cache-subtitle">Breakdown of build phases</div>
+      <div className="cache-chart">
+        <ResponsiveContainer width={100} height={100}>
+          <PieChart>
+            <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
+              {data.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={getColor(entry.name)} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div>
+          {data.map((entry, index) => (
+            <div className="cache-chart-label">
+              <span
+                className="color-swatch cache-hit-color-swatch"
+                style={{ backgroundColor: getColor(entry.name) }}></span>
+              <span className="cache-stat">
+                <span className="cache-stat-duration">{format.durationUsec(entry.value)}</span>{" "}
+                <span className="cache-stat-description">
+                  {entry.name} ({format.percent(entry.value / sum.value)}%)
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
