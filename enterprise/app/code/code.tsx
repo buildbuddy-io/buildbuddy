@@ -4,7 +4,7 @@ import { User } from "../../../app/auth/auth_service";
 import SidebarNodeComponent, { compareNodes } from "./code_sidebar_node";
 import { Subscription } from "rxjs";
 import * as monaco from "monaco-editor";
-import { Octokit } from "octokit";
+import { Octokit } from "@octokit/rest";
 import * as diff from "diff";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
@@ -89,7 +89,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   codeViewer = React.createRef<HTMLDivElement>();
   diffViewer = React.createRef<HTMLDivElement>();
 
-  octokit: any;
+  octokit: Octokit;
 
   subscription: Subscription;
 
@@ -489,7 +489,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       .merge({
         owner: this.currentOwner(),
         repo: this.currentRepo(),
-        pull_number: this.state.prNumber,
+        pull_number: Number(this.state.prNumber),
       })
       .then(() => {
         window.open(this.state.prLink, "_blank");

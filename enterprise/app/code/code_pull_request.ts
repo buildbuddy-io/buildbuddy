@@ -1,4 +1,4 @@
-import { Octokit } from "octokit";
+import { Octokit } from "@octokit/rest";
 
 // Based on https://github.com/gr2m/octokit-plugin-create-pull-request with added functionality of updating PRs.
 export async function createPullRequest(
