@@ -65,6 +65,7 @@ ts_library(
         "@npm//react",
         "@npm//recharts",
         "@npm//rxjs",
+        "@npm//shlex",
         "@npm//tslib",
     ],
 )
