@@ -1439,6 +1439,24 @@ var (
 		CompressionType,
 	})
 
+	BadCompressionRatioBufferSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "bad_compression_ratio_buffer_size",
+		Help:      "The size of buffers that increased in size when decompressed",
+	}, []string{
+		CompressionType,
+	})
+
+	CompressionRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "compression_ratio",
+		Help:      "The data compression ratio (decompressed bytes / compressed bytes)",
+	}, []string{
+		CompressionType,
+	})
+
 	/// ### Raft cache metrics
 
 	RaftRanges = promauto.NewGaugeVec(prometheus.GaugeOpts{

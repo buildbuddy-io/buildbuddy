@@ -816,8 +816,14 @@ func TestCompression(t *testing.T) {
 	blob := compressibleBlobOfSize(pebble_cache.CompressorBufSizeBytes + 1)
 	compressedBuf := compression.CompressZstd(nil, blob)
 
+	inlineBlob := compressibleBlobOfSize(int(pebble_cache.DefaultMaxInlineFileSizeBytes - 100))
+	compressedInlineBuf := compression.CompressZstd(nil, inlineBlob)
+
 	// Note: Digest is of uncompressed contents
 	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	inlineD, err := digest.Compute(bytes.NewReader(inlineBlob))
 	require.NoError(t, err)
 
 	compressedRN := &resource.ResourceName{
@@ -831,20 +837,86 @@ func TestCompression(t *testing.T) {
 		Compressor: repb.Compressor_IDENTITY,
 	}
 
+	compressedInlineRN := &resource.ResourceName{
+		Digest:     inlineD,
+		CacheType:  resource.CacheType_CAS,
+		Compressor: repb.Compressor_ZSTD,
+	}
+	decompressedInlineRN := &resource.ResourceName{
+		Digest:     inlineD,
+		CacheType:  resource.CacheType_CAS,
+		Compressor: repb.Compressor_IDENTITY,
+	}
+
 	testCases := []struct {
-		name        string
-		rnToWrite   *resource.ResourceName
-		dataToWrite []byte
+		name             string
+		rnToWrite        *resource.ResourceName
+		dataToWrite      []byte
+		rnToRead         *resource.ResourceName
+		isReadCompressed bool
+		// You cannot directly compare the compressed bytes because there may be differences with the compression headers
+		// due to the chunking compression algorithm used
+		expectedUncompressedReadData []byte
 	}{
 		{
-			name:        "Write compressed data",
-			rnToWrite:   compressedRN,
-			dataToWrite: compressedBuf,
+			name:                         "Write compressed data, read compressed data",
+			rnToWrite:                    compressedRN,
+			dataToWrite:                  compressedBuf,
+			rnToRead:                     compressedRN,
+			isReadCompressed:             true,
+			expectedUncompressedReadData: blob,
 		},
 		{
-			name:        "Write decompressed data",
-			rnToWrite:   decompressedRN,
-			dataToWrite: blob,
+			name:                         "Write compressed data, read decompressed data",
+			rnToWrite:                    compressedRN,
+			dataToWrite:                  compressedBuf,
+			rnToRead:                     decompressedRN,
+			expectedUncompressedReadData: blob,
+		},
+		{
+			name:                         "Write decompressed data, read compressed data",
+			rnToWrite:                    decompressedRN,
+			dataToWrite:                  blob,
+			rnToRead:                     compressedRN,
+			isReadCompressed:             true,
+			expectedUncompressedReadData: blob,
+		},
+		{
+			name:                         "Write decompressed data, read decompressed data",
+			rnToWrite:                    decompressedRN,
+			dataToWrite:                  blob,
+			rnToRead:                     decompressedRN,
+			expectedUncompressedReadData: blob,
+		},
+		{
+			name:                         "Write compressed inline data, read compressed data",
+			rnToWrite:                    compressedInlineRN,
+			dataToWrite:                  compressedInlineBuf,
+			rnToRead:                     compressedInlineRN,
+			isReadCompressed:             true,
+			expectedUncompressedReadData: inlineBlob,
+		},
+		{
+			name:                         "Write compressed inline data, read decompressed data",
+			rnToWrite:                    compressedInlineRN,
+			dataToWrite:                  compressedInlineBuf,
+			rnToRead:                     decompressedInlineRN,
+			expectedUncompressedReadData: inlineBlob,
+		},
+		{
+			name:                         "Write decompressed inline data, read compressed data",
+			rnToWrite:                    decompressedInlineRN,
+			dataToWrite:                  inlineBlob,
+			rnToRead:                     compressedInlineRN,
+			isReadCompressed:             true,
+			expectedUncompressedReadData: inlineBlob,
+		},
+		{
+			name:                         "Write decompressed inline data, read decompressed data",
+			rnToWrite:                    decompressedInlineRN,
+			dataToWrite:                  inlineBlob,
+			rnToRead:                     decompressedInlineRN,
+			expectedUncompressedReadData: inlineBlob,
 		},
 	}
 
@@ -865,109 +937,25 @@ func TestCompression(t *testing.T) {
 			// Write data to cache
 			wc, err := pc.Writer(ctx, tc.rnToWrite)
 			require.NoError(t, err, tc.name)
-			_, err = wc.Write(tc.dataToWrite)
+			n, err := wc.Write(tc.dataToWrite)
 			require.NoError(t, err, tc.name)
+			require.Equal(t, len(tc.dataToWrite), n)
 			err = wc.Commit()
 			require.NoError(t, err, tc.name)
 			err = wc.Close()
 			require.NoError(t, err, tc.name)
 
-			// Read data in compressed form
-			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
+			// Read data
+			reader, err := pc.Reader(ctx, tc.rnToRead, 0, 0)
 			require.NoError(t, err, tc.name)
 			defer reader.Close()
 			data, err := io.ReadAll(reader)
 			require.NoError(t, err, tc.name)
-			decompressed, err := compression.DecompressZstd(nil, data)
-			require.Equal(t, blob, decompressed, tc.name)
-
-			// Read data non-compressed
-			reader, err = pc.Reader(ctx, decompressedRN, 0, 0)
-			require.NoError(t, err, tc.name)
-			defer reader.Close()
-			data, err = io.ReadAll(reader)
-			require.NoError(t, err, tc.name)
-			require.Equal(t, blob, data, tc.name)
-		}
-	}
-}
-
-func TestCompression_InlinedData(t *testing.T) {
-	blob := compressibleBlobOfSize(int(pebble_cache.DefaultMaxInlineFileSizeBytes - 100))
-	compressedBuf := compression.CompressZstd(nil, blob)
-
-	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob))
-	require.NoError(t, err)
-
-	compressedRN := &resource.ResourceName{
-		Digest:     d,
-		CacheType:  resource.CacheType_CAS,
-		Compressor: repb.Compressor_ZSTD,
-	}
-	decompressedRN := &resource.ResourceName{
-		Digest:     d,
-		CacheType:  resource.CacheType_CAS,
-		Compressor: repb.Compressor_IDENTITY,
-	}
-
-	testCases := []struct {
-		name        string
-		rnToWrite   *resource.ResourceName
-		dataToWrite []byte
-	}{
-		{
-			name:        "Write compressed data",
-			rnToWrite:   compressedRN,
-			dataToWrite: compressedBuf,
-		},
-		{
-			name:        "Write decompressed data",
-			rnToWrite:   decompressedRN,
-			dataToWrite: blob,
-		},
-	}
-
-	for _, tc := range testCases {
-		{
-			te := testenv.GetTestEnv(t)
-			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
-			ctx := getAnonContext(t, te)
-
-			maxSizeBytes := int64(1_000_000_000) // 1GB
-			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
-			if err != nil {
-				t.Fatal(err)
+			if tc.isReadCompressed {
+				data, err = compression.DecompressZstd(nil, data)
+				require.NoError(t, err, tc.name)
 			}
-			pc.Start()
-			defer pc.Stop()
-
-			// Write data to cache
-			wc, err := pc.Writer(ctx, tc.rnToWrite)
-			require.NoError(t, err, tc.name)
-			_, err = wc.Write(tc.dataToWrite)
-			require.NoError(t, err, tc.name)
-			err = wc.Commit()
-			require.NoError(t, err, tc.name)
-			err = wc.Close()
-			require.NoError(t, err, tc.name)
-
-			// Read data in compressed form
-			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
-			require.NoError(t, err, tc.name)
-			defer reader.Close()
-			data, err := io.ReadAll(reader)
-			require.NoError(t, err, tc.name)
-			decompressed, err := compression.DecompressZstd(nil, data)
-			require.Equal(t, blob, decompressed, tc.name)
-
-			// Read data non-compressed
-			reader, err = pc.Reader(ctx, decompressedRN, 0, 0)
-			require.NoError(t, err, tc.name)
-			defer reader.Close()
-			data, err = io.ReadAll(reader)
-			require.NoError(t, err, tc.name)
-			require.Equal(t, blob, data, tc.name)
+			require.Equal(t, tc.expectedUncompressedReadData, data, tc.name)
 		}
 	}
 }
