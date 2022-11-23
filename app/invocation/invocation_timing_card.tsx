@@ -6,8 +6,10 @@ import { Profile, parseProfile } from "../flame_chart/profile_model";
 import rpcService from "../service/rpc_service";
 import InvocationModel from "./invocation_model";
 import Button from "../components/button/button";
-import { Clock } from "lucide-react";
+import { Clock, HelpCircle } from "lucide-react";
 import errorService from "../errors/error_service";
+import format from "../format/format";
+import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 
 interface Props {
   model: InvocationModel;
@@ -19,6 +21,7 @@ interface State {
   threadNumPages: number;
   threadToNumEventPagesMap: Map<number, number>;
   threadMap: Map<number, Thread>;
+  durationMap: Map<string, number>;
   sortBy: string;
   groupBy: string;
   threadPageSize: number;
@@ -48,6 +51,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadNumPages: 1,
     threadToNumEventPagesMap: new Map<number, number>(),
     threadMap: new Map<number, Thread>(),
+    durationMap: new Map<string, number>(),
     sortBy: window.localStorage[sortByStorageKey] || sortByTimeAscStorageValue,
     groupBy: window.localStorage[groupByStorageKey] || groupByThreadStorageValue,
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
@@ -115,6 +119,14 @@ export default class InvocationTimingCardComponent extends React.Component<Props
         events: [] as any[],
       };
 
+      if (event.dur) {
+        if (this.state.durationMap.get(event.name)) {
+          this.state.durationMap.set(event.name, this.state.durationMap.get(event.name) + event.dur);
+        } else {
+          this.state.durationMap.set(event.name, event.dur);
+        }
+      }
+
       if (event.ph == "X") {
         // Duration events
         thread.events.push(event);
@@ -178,14 +190,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return this.state.threadToNumEventPagesMap.get(threadId) || 1;
   }
 
-  formatDuration(durationMicros: number) {
-    let durationSeconds = durationMicros / 1000000;
-    if (durationSeconds < 100) {
-      return durationSeconds.toPrecision(3);
-    }
-    return durationSeconds.toFixed(0);
-  }
-
   renderEmptyState() {
     if (this.state.loading) {
       return <div className="loading" />;
@@ -207,7 +211,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       );
     }
 
-    console.assert(!this.isTimingEnabled());
     return (
       <>
         <p>Profiling isn't enabled for this invocation.</p>
@@ -240,6 +243,24 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return (
       <>
         <FlameChart profile={this.state.profile} />
+        <InvocationBreakdownCardComponent durationMap={this.state.durationMap} />
+
+        <div className="card card-suggestion">
+          <HelpCircle className="icon" />
+          <div className="content">
+            <div className="title">Want better timing data?</div>
+            <div className="details">
+              <div className="suggestions-tab-link">
+                For a more detailed timing profile, try using these flags:{" "}
+                <span className="inline-code bazel-flag">--noslim_profile</span>{" "}
+                <span className="inline-code bazel-flag">--experimental_profile_include_target_label</span>{" "}
+                <span className="inline-code bazel-flag">--experimental_profile_include_primary_output</span>{" "}
+                {/* <TextLink href="#suggestions">Click here to view suggestions</TextLink> based on your timing profile! */}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="card timing">
           <Clock className="icon" />
           <div className="content">
@@ -355,7 +376,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
                                 <div>
                                   {event.name} {event.args?.target}
                                 </div>
-                                <div>{this.formatDuration(event.dur)} seconds</div>
+                                <div>{format.durationUsec(event.dur)}</div>
                               </div>
                               <div
                                 className="list-percent"
@@ -395,7 +416,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
                         <li>
                           <div className="list-grid">
                             <div>{event.name}</div>
-                            <div>{this.formatDuration(event.dur)} seconds</div>
+                            <div>{format.durationUsec(event.dur)}</div>
                           </div>
                           <div
                             className="list-percent"
