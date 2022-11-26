@@ -1144,10 +1144,13 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID string, claimTim
 		// Success
 		break
 	case 10:
+		log.CtxErrorf(ctx, "claimTask %q error: task does not exist", taskID)
 		return status.NotFoundError("task does not exist")
 	case 11:
+		// Don't log this; it's extremely common.
 		return status.NotFoundError("task already claimed")
 	default:
+		log.CtxErrorf(ctx, "claimTask %q error: unknown error code: %d", taskID, c)
 		return status.UnknownErrorf("unknown error %d", c)
 	}
 
@@ -1343,7 +1346,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			log.CtxInfof(ctx, "LeaseTask %q claim attempt from executor %q", taskID, executorID)
 			err = s.claimTask(ctx, taskID, time.Now())
 			if err != nil {
-				log.CtxErrorf(ctx, "LeaseTask %q error claiming task %s", taskID, err.Error())
 				return err
 			}
 			claimed = true
