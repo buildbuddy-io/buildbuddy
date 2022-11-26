@@ -1343,6 +1343,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			log.CtxInfof(ctx, "LeaseTask %q claim attempt from executor %q", taskID, executorID)
 			err = s.claimTask(ctx, taskID, time.Now())
 			if err != nil {
+				log.CtxErrorf(ctx, "LeaseTask %q error claiming task %s", taskID, err.Error())
 				return err
 			}
 			claimed = true
