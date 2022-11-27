@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
@@ -64,6 +65,10 @@ func run() (exitCode int, err error) {
 		return exitCode, err
 	}
 	exitCode, err = version.HandleVersion(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = analyze.HandleAnalyze(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}

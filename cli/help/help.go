@@ -59,7 +59,7 @@ func showHelp(subcommand string, modifiers []string) (exitCode int, err error) {
 	}
 	bazelArgs = append(bazelArgs, modifiers...)
 	buf := bytes.NewBuffer(nil)
-	exitCode, err = bazelisk.Run(bazelArgs, "/dev/null" /*=outputPath*/, buf)
+	exitCode, err = bazelisk.Run(bazelArgs, &bazelisk.RunOpts{Stdout: buf, Stderr: buf})
 	if err != nil {
 		io.Copy(os.Stdout, buf)
 		return exitCode, err
@@ -112,6 +112,7 @@ func printBBCommands() {
 	// TODO: Have commands add themselves to a registry and get the command
 	// names / descriptions from there.
 	columns := [][]string{
+		{"analyze", "Analyzes the dependency graph."},
 		{"install", "Installs a bb plugin (https://buildbuddy.io/plugins)."},
 		{"login", "Configures bb commands to use your BuildBuddy API key."},
 		{"print", "Displays various log file types written by bazel."},
