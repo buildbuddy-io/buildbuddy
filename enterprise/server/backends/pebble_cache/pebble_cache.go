@@ -1186,36 +1186,34 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 
 // zstdCompressor compresses bytes before writing them to the nested writer
 type zstdCompressor struct {
-	w           interfaces.CommittedMetadataWriteCloser
+	*ioutil.CustomCommitWriteCloser
 	compressBuf []byte
 	bufferPool  *bytebufferpool.Pool
 }
 
 func (z *zstdCompressor) Write(p []byte) (int, error) {
 	z.compressBuf = compression.CompressZstd(z.compressBuf, p)
-	n, err := z.w.Write(z.compressBuf)
-	z.bufferPool.Put(z.compressBuf)
+	n, err := z.CustomCommitWriteCloser.Write(z.compressBuf)
+	if err != nil {
+		z.bufferPool.Put(z.compressBuf)
+		z.compressBuf = nil
+		return 0, err
+	}
 
 	metrics.CompressionRatio.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Set(float64(len(p)) / float64(n))
 	if n > len(p) {
 		metrics.BadCompressionRatioBufferSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Set(float64(len(p)))
 	}
 
-	// Return the full length of the buffer even though a different compressed buffer size may have been written,
+	// Return the size of the original buffer even though a different compressed buffer size may have been written,
 	// or clients will return a short write error
-	return len(p), err
-}
-
-func (z *zstdCompressor) Commit() error {
-	return z.w.Commit()
-}
-
-func (z *zstdCompressor) Metadata() *rfpb.StorageMetadata {
-	return z.w.Metadata()
+	return len(p), nil
 }
 
 func (z *zstdCompressor) Close() error {
-	return z.w.Close()
+	err := z.CustomCommitWriteCloser.Close()
+	z.bufferPool.Put(z.compressBuf)
+	return err
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -1267,16 +1265,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		if err != nil {
 			return nil, err
 		}
-
 		wcm = fw
-		if shouldCompress {
-			compressBuf := p.bufferPool.Get(r.GetDigest().GetSizeBytes())
-			wcm = &zstdCompressor{
-				w:           fw,
-				compressBuf: compressBuf,
-				bufferPool:  p.bufferPool,
-			}
-		}
 	}
 
 	// Grab another lease and pass the Close function to the writer
@@ -1308,6 +1297,16 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		}
 		return err
 	}
+
+	if shouldCompress {
+		compressBuf := p.bufferPool.Get(r.GetDigest().GetSizeBytes())
+		return &zstdCompressor{
+			CustomCommitWriteCloser: wc,
+			compressBuf:             compressBuf,
+			bufferPool:              p.bufferPool,
+		}, nil
+	}
+
 	return wc, nil
 }
 

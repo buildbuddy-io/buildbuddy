@@ -599,7 +599,12 @@ func TestMetadata(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
-	options := &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes}
+	options := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          maxSizeBytes,
+		CompressWrites:        true,
+		EnableZstdCompression: true,
+	}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	if err != nil {
 		t.Fatal(err)
@@ -620,7 +625,7 @@ func TestMetadata(t *testing.T) {
 		err := pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 
-		expectDataCompressed := testSize > options.MaxInlineFileSizeBytes
+		expectDataCompressed := testSize >= options.MaxInlineFileSizeBytes
 		expectedSizeBytes := testSize
 		if expectDataCompressed {
 			compressedBuf := compression.CompressZstd(nil, buf)
@@ -927,7 +932,13 @@ func TestCompression(t *testing.T) {
 			ctx := getAnonContext(t, te)
 
 			maxSizeBytes := int64(1_000_000_000) // 1GB
-			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+			opts := &pebble_cache.Options{
+				RootDirectory:         testfs.MakeTempDir(t),
+				MaxSizeBytes:          maxSizeBytes,
+				EnableZstdCompression: true,
+				CompressWrites:        true,
+			}
+			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -966,7 +977,13 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1000)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	opts := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          maxSizeBytes,
+		EnableZstdCompression: true,
+		CompressWrites:        true,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1019,7 +1036,13 @@ func TestCompression_ParallelRequests(t *testing.T) {
 	ctx := getAnonContext(t, te)
 
 	maxSizeBytes := int64(1000)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	opts := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          maxSizeBytes,
+		EnableZstdCompression: true,
+		CompressWrites:        true,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1029,7 +1052,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 	eg := errgroup.Group{}
 	for i := 0; i < 10; i++ {
 		eg.Go(func() error {
-			blob := compressibleBlobOfSize(100)
+			blob := compressibleBlobOfSize(10000)
 
 			// Note: Digest is of uncompressed contents
 			d, err := digest.Compute(bytes.NewReader(blob))
@@ -1055,19 +1078,82 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			compressedRN := &resource.ResourceName{
 				Digest:     d,
 				CacheType:  resource.CacheType_CAS,
-				Compressor: repb.Compressor_ZSTD,
+				Compressor: repb.Compressor_IDENTITY,
 			}
 			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
 			require.NoError(t, err)
 			defer reader.Close()
 			data, err := io.ReadAll(reader)
 			require.NoError(t, err)
-			decompressed, err := compression.DecompressZstd(nil, data)
-			require.Equal(t, blob, decompressed)
+			//decompressed, err := compression.DecompressZstd(nil, data)
+			require.Equal(t, blob, data)
 			return nil
 		})
 	}
 	eg.Wait()
+}
+
+func TestCompression_NoEarlyEviction(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	numDigests := 10
+	totalSizeCompresedData := 0
+	digestBlobs := make(map[*repb.Digest][]byte, numDigests)
+	for i := 0; i < numDigests; i++ {
+		blob := compressibleBlobOfSize(2000)
+		compressed := compression.CompressZstd(nil, blob)
+		require.Less(t, len(compressed), len(blob))
+		totalSizeCompresedData += len(compressed)
+
+		d, err := digest.Compute(bytes.NewReader(blob))
+		require.NoError(t, err)
+		digestBlobs[d] = blob
+	}
+
+	minEvictionAge := time.Duration(0)
+	// Base max size off compressed data. Cache should fit all compressed data, but evict decompressed data
+	maxSizeBytes := int64(
+		math.Ceil( // account for integer rounding
+			float64(totalSizeCompresedData) *
+				(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
+	opts := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          maxSizeBytes,
+		EnableZstdCompression: true,
+		CompressWrites:        true,
+		MinEvictionAge:        &minEvictionAge,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+	defer pc.Stop()
+
+	// Write decompressed bytes to the cache. Because CompressWrites=true, pebble should compress before writing
+	for d, blob := range digestBlobs {
+		rn := &resource.ResourceName{
+			Digest:     d,
+			Compressor: repb.Compressor_IDENTITY,
+			CacheType:  resource.CacheType_CAS,
+		}
+		err = pc.Set(ctx, rn, blob)
+		require.NoError(t, err)
+	}
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+
+	// All reads should succeed. Nothing should've been evicted
+	for d, blob := range digestBlobs {
+		rn := &resource.ResourceName{
+			Digest:     d,
+			Compressor: repb.Compressor_IDENTITY,
+			CacheType:  resource.CacheType_CAS,
+		}
+		data, err := pc.Get(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(blob, data))
+	}
 }
 
 func compressibleBlobOfSize(sizeBytes int) []byte {
