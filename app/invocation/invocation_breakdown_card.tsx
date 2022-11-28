@@ -71,8 +71,8 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
           <div className="title">Timing Breakdown</div>
           <div className="details">
             <div className="cache-sections">
-              {renderBreakdown(phaseData)}
-              {renderBreakdown(executionData)}
+              {renderBreakdown(phaseData, "Phase breakdown", "Breakdown of build phases")}
+              {renderBreakdown(executionData, "Execution breakdown", "Breakdown totals across all threads")}
             </div>
           </div>
         </div>
@@ -81,15 +81,15 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
   }
 }
 
-function renderBreakdown(data: Datum[]) {
+function renderBreakdown(data: Datum[], title: string, subtitle: string) {
   let sum = data.reduce((prev, current) => {
     return { name: "Sum", value: prev.value + current.value };
   });
 
   return (
     <div className="cache-section">
-      <div className="cache-title">Phase breakdown</div>
-      <div className="cache-subtitle">Breakdown of build phases</div>
+      <div className="cache-title">{title}</div>
+      <div className="cache-subtitle">{subtitle}</div>
       <div className="cache-chart">
         <ResponsiveContainer width={100} height={100}>
           <PieChart>
