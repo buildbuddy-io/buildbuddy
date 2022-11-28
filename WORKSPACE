@@ -258,12 +258,6 @@ dockerfile_image(
 )
 
 dockerfile_image(
-    name = "ci_runner_debug_image",
-    dockerfile = "//enterprise/dockerfiles/ci_runner_image:debug.Dockerfile",
-    visibility = ["//visibility:public"],
-)
-
-dockerfile_image(
     name = "run_script_image",
     dockerfile = "//dockerfiles/run_script:Dockerfile",
     visibility = ["//visibility:public"],
