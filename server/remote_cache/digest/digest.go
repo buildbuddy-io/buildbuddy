@@ -198,6 +198,9 @@ func Validate(d *repb.Digest) (string, error) {
 	if d == nil {
 		return "", status.InvalidArgumentError("Invalid (nil) Digest")
 	}
+	if d.SizeBytes < 0 {
+		return "", status.InvalidArgumentErrorf("Invalid (negative) digest size")
+	}
 	if d.SizeBytes == int64(0) {
 		if d.Hash == EmptySha256 {
 			return "", status.OK()

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	units "github.com/docker/go-units"
 )
 
 var (
@@ -98,6 +99,9 @@ const (
 	// requires a relatively large amount of free space compared to typical actions.
 	EstimatedFreeDiskPropertyName = "EstimatedFreeDiskBytes"
 
+	EstimatedCPUPropertyName    = "EstimatedCPU"
+	EstimatedMemoryPropertyName = "EstimatedMemory"
+
 	BareContainerType        ContainerType = "none"
 	PodmanContainerType      ContainerType = "podman"
 	DockerContainerType      ContainerType = "docker"
@@ -111,6 +115,8 @@ type Properties struct {
 	Arch                       string
 	Pool                       string
 	EstimatedComputeUnits      int64
+	EstimatedMilliCPU          int64
+	EstimatedMemoryBytes       int64
 	EstimatedFreeDiskBytes     int64
 	ContainerImage             string
 	ContainerRegistryUsername  string
@@ -186,6 +192,7 @@ type ExecutorProperties struct {
 // ParseProperties parses the client provided properties into a struct.
 // Before use, the returned platform.Properties object *must* have
 // executor-specific overrides applied via the ApplyOverrides function.
+// TODO: Have a way to notify users if properties are invalid.
 func ParseProperties(task *repb.ExecutionTask) *Properties {
 	m := map[string]string{}
 	for _, prop := range task.GetCommand().GetPlatform().GetProperties() {
@@ -209,6 +216,8 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		Arch:                       strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                       strings.ToLower(pool),
 		EstimatedComputeUnits:      int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
+		EstimatedMemoryBytes:       iecBytesProp(m, EstimatedMemoryPropertyName, 0),
+		EstimatedMilliCPU:          milliCPUProp(m, EstimatedCPUPropertyName, 0),
 		EstimatedFreeDiskBytes:     int64Prop(m, EstimatedFreeDiskPropertyName, 0),
 		ContainerImage:             stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername:  stringProp(m, containerRegistryUsernamePropertyName, ""),
@@ -443,6 +452,49 @@ func int64Prop(props map[string]string, name string, defaultValue int64) int64 {
 		return defaultValue
 	}
 	return i
+}
+
+func iecBytesProp(props map[string]string, name string, defaultValue int64) int64 {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	// If it looks like a float (e.g. 1e9), convert to an integer number of
+	// bytes.
+	f, err := strconv.ParseFloat(val, 64)
+	if err == nil {
+		return int64(f)
+	}
+	// Otherwise attempt to parse as an IEC number of bytes.
+	// Example: 4GB = 4*(1024^3) bytes
+	n, err := units.RAMInBytes(val)
+	if err != nil {
+		return defaultValue
+	}
+	return n
+}
+
+func milliCPUProp(props map[string]string, name string, defaultValue int64) int64 {
+	val := props[strings.ToLower(name)]
+	if val == "" {
+		return defaultValue
+	}
+	// Handle "m" suffix - specifies milliCPU directly
+	if val[len(val)-1] == 'm' {
+		mcpu, err := strconv.ParseFloat(val[:len(val)-1], 64)
+		if err != nil {
+			log.Debugf("Failed to parse %s=%q", name, val)
+			return defaultValue
+		}
+		return int64(mcpu)
+	}
+	// Otherwise parse as a float number of CPU cores.
+	cpu, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		log.Debugf("Failed to parse %s=%q", name, val)
+		return defaultValue
+	}
+	return int64(cpu * 1000)
 }
 
 func stringListProp(props map[string]string, name string) []string {

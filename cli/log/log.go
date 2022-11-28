@@ -6,6 +6,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 )
 
+const (
+	debugPrefix   = "\x1b[33m[bb-debug]\x1b[m "
+	warningPrefix = "\x1b[33mWarning:\x1b[m "
+)
+
 var verbose bool
 
 func Configure(args []string) []string {
@@ -19,14 +24,14 @@ func Debug(v ...any) {
 	if !verbose {
 		return
 	}
-	log.Print(v...)
+	log.Print(append([]any{debugPrefix}, v...)...)
 }
 
 func Debugf(format string, v ...interface{}) {
 	if !verbose {
 		return
 	}
-	log.Printf(format, v...)
+	log.Printf(debugPrefix+format, v...)
 }
 
 func Print(v ...any) {
@@ -35,6 +40,14 @@ func Print(v ...any) {
 
 func Printf(format string, v ...interface{}) {
 	log.Printf(format, v...)
+}
+
+func Warn(v ...any) {
+	log.Print(append([]any{warningPrefix}, v...)...)
+}
+
+func Warnf(format string, v ...interface{}) {
+	log.Printf(warningPrefix+format, v...)
 }
 
 func Fatalf(format string, v ...interface{}) {

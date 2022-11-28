@@ -70,7 +70,7 @@ if ! docker inspect buildbuddy-ci-runner-local &>/dev/null; then
     --detach \
     --rm \
     --name buildbuddy-ci-runner-local \
-    gcr.io/flame-public/buildbuddy-ci-runner:v2.2.9 \
+    gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0 \
     sleep infinity
 fi
 

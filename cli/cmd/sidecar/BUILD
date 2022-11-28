@@ -1,11 +1,12 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "sidecar_lib",
+    name = "sidecar",
     srcs = ["sidecar.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar",
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
     deps = [
+        "//cli/arg",
         "//cli/cache_proxy",
         "//cli/devnull",
         "//cli/log",
@@ -26,81 +27,4 @@ go_library(
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//reflection",
     ],
-)
-
-go_binary(
-    name = "sidecar",
-    embed = [":sidecar_lib"],
-    visibility = ["//visibility:public"],
-)
-
-go_binary(
-    name = "sidecar-darwin-amd64",
-    out = "sidecar-darwin-amd64",
-    embed = [":sidecar_lib"],
-    gc_linkopts = [
-        "-s",
-        "-w",
-    ],
-    goarch = "amd64",
-    goos = "darwin",
-    pure = "on",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-go_binary(
-    name = "sidecar-darwin-arm64",
-    out = "sidecar-darwin-arm64",
-    embed = [":sidecar_lib"],
-    gc_linkopts = [
-        "-s",
-        "-w",
-    ],
-    goarch = "arm64",
-    goos = "darwin",
-    pure = "on",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-go_binary(
-    name = "sidecar-linux-amd64",
-    out = "sidecar-linux-amd64",
-    embed = [":sidecar_lib"],
-    gc_linkopts = [
-        "-s",
-        "-w",
-    ],
-    goarch = "amd64",
-    goos = "linux",
-    pure = "on",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-go_binary(
-    name = "sidecar-linux-arm64",
-    out = "sidecar-linux-arm64",
-    embed = [":sidecar_lib"],
-    gc_linkopts = [
-        "-s",
-        "-w",
-    ],
-    goarch = "arm64",
-    goos = "linux",
-    pure = "on",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-go_binary(
-    name = "sidecar-windows-amd64",
-    out = "sidecar-windows-amd64.exe",
-    embed = [":sidecar_lib"],
-    goarch = "amd64",
-    goos = "windows",
-    pure = "on",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
 )

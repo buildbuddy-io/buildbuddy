@@ -24,8 +24,7 @@ import (
 )
 
 var (
-	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
-	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", false, "If set, allow moving replicas between nodes")
+	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", true, "If set, allow moving replicas between nodes")
 	enableReplacingReplicas = flag.Bool("cache.raft.enable_replacing_replicas", false, "If set, allow replacing dead / down replicas")
 )
 
@@ -34,14 +33,8 @@ const (
 	// should be started on a new node.
 	defaultReplicaTimeout = 5 * time.Minute
 
-	// Broadcast this nodes set of active replicas after this period.
-	defaultBroadcastPeriod = 30 * time.Second
-
 	// Attempt to reconcile / manage clusters after this period.
 	defaultManagePeriod = 60 * time.Second
-
-	// Split replicas after they reach this size.
-	defaultMaxReplicaSizeBytes = 1e9 // 1GB
 
 	// A node must have this * idealReplicaCount number of replicas to be
 	// eligible for moving a replica to another node.
@@ -53,17 +46,9 @@ type Opts struct {
 	// marked dead.
 	ReplicaTimeout time.Duration
 
-	// BroadcastPeriod is how often this node will broadcast its set of
-	// active replicas.
-	BroadcastPeriod time.Duration
-
 	// ManagePeriod is how often to attempt to re-spawn, clean-up, or
 	// split dead or oversize replicas / clusters.
 	ManagePeriod time.Duration
-
-	// The maximum size a replica may be before it's considered overloaded
-	// and is split.
-	MaxReplicaSizeBytes int64
 }
 
 // make a replica struct that can be used as a map key because protos cannot be.
@@ -248,28 +233,6 @@ func (cm *clusterMap) DeadReplicas(myClusters uint64Set, timeout time.Duration) 
 	return dead
 }
 
-// OverloadedReplicas returns a slice of replicaStructs that:
-//   - Are members of clusters this node manages
-//   - Report sizes greater than `maxSizeBytes`
-func (cm *clusterMap) OverloadedReplicas(myClusters uint64Set, maxSizeBytes int64) replicaSet {
-	cm.mu.RLock()
-	defer cm.mu.RUnlock()
-
-	overloaded := make(replicaSet, 0)
-	for rs, observation := range cm.observations {
-		if !myClusters.Contains(rs.clusterID) {
-			// Skip clusters that this node does not hold the lease
-			// for.
-			continue
-		}
-		if observation.sizeBytes > maxSizeBytes {
-			overloaded.Add(rs)
-		}
-		// TODO(tylerw): also split if QPS > 1000.
-	}
-	return overloaded
-}
-
 func (cm *clusterMap) idealReplicaCount() float64 {
 	totalNumReplicas := len(cm.observations)
 	numNodes := len(cm.nodeReplicas)
@@ -384,19 +347,15 @@ func (cm *clusterMap) FitScore(potentialMoves ...moveInstruction) float64 {
 
 func DefaultOpts() Opts {
 	return Opts{
-		ReplicaTimeout:      defaultReplicaTimeout,
-		BroadcastPeriod:     defaultBroadcastPeriod,
-		ManagePeriod:        defaultManagePeriod,
-		MaxReplicaSizeBytes: defaultMaxReplicaSizeBytes,
+		ReplicaTimeout: defaultReplicaTimeout,
+		ManagePeriod:   defaultManagePeriod,
 	}
 }
 
 func TestingOpts() Opts {
 	return Opts{
-		ReplicaTimeout:      5 * time.Second,
-		BroadcastPeriod:     2 * time.Second,
-		ManagePeriod:        5 * time.Second,
-		MaxReplicaSizeBytes: 10 * 1e6, // 10MB
+		ReplicaTimeout: 5 * time.Second,
+		ManagePeriod:   5 * time.Second,
 	}
 }
 
@@ -406,7 +365,6 @@ type Driver struct {
 	gossipManager *gossip.GossipManager
 	mu            *sync.Mutex
 	started       bool
-	broadcastQuit chan struct{}
 	manageQuit    chan struct{}
 	clusterMap    *clusterMap
 	numSamples    int64
@@ -434,8 +392,6 @@ func (d *Driver) Start() error {
 	if d.started {
 		return nil
 	}
-	d.broadcastQuit = make(chan struct{})
-	go d.broadcastLoop()
 
 	d.manageQuit = make(chan struct{})
 	go d.manageLoop()
@@ -451,26 +407,10 @@ func (d *Driver) Stop() error {
 	if !d.started {
 		return nil
 	}
-	close(d.broadcastQuit)
 	close(d.manageQuit)
 	d.started = false
 	log.Debugf("Driver stopped")
 	return nil
-}
-
-// broadcastLoop does not return; call it from a goroutine.
-func (d *Driver) broadcastLoop() {
-	for {
-		select {
-		case <-d.broadcastQuit:
-			return
-		case <-time.After(d.opts.BroadcastPeriod):
-			err := d.broadcast()
-			if err != nil {
-				log.Errorf("Broadcast error: %s", err)
-			}
-		}
-	}
 }
 
 // manageLoop does not return; call it from a goroutine.
@@ -486,61 +426,6 @@ func (d *Driver) manageLoop() {
 			}
 		}
 	}
-}
-
-// broadcasts a proto containing usage information about this store's
-// replicas.
-func (d *Driver) broadcast() error {
-	ctx := context.Background()
-	rsp, err := d.store.ListCluster(ctx, &rfpb.ListClusterRequest{})
-	if err != nil {
-		return err
-	}
-
-	// Need to be very careful about what is broadcast here because the max
-	// allowed UserEvent size is 9K, and broadcasting too much could cause
-	// slow rebalancing etc.
-
-	// A max ReplicaUsage should be around 8 bytes * 3 = 24 bytes. So 375
-	// replica usages should fit in a single gossip message. Use 350 as the
-	// target size so there is room for the NHID and a small margin of
-	// safety.
-	batchSize := 350
-	numReplicas := len(rsp.GetRangeReplicas())
-	gossiped := false
-	for start := 0; start < numReplicas; start += batchSize {
-		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
-		end := start + batchSize
-		if end > numReplicas {
-			end = numReplicas
-		}
-		for _, rr := range rsp.GetRangeReplicas()[start:end] {
-			nu.ReplicaUsage = append(nu.ReplicaUsage, rr.GetReplicaUsage())
-		}
-		buf, err := proto.Marshal(nu)
-		if err != nil {
-			return err
-		}
-		if err := d.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
-			return err
-		}
-		gossiped = true
-	}
-
-	// If a node does not yet have any replicas, the loop above will not
-	// have gossiped anything. In that case, gossip an "empty" usage event
-	// now.
-	if !gossiped {
-		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
-		buf, err := proto.Marshal(nu)
-		if err != nil {
-			return err
-		}
-		if err := d.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // OnEvent listens for other nodes' gossip events and handles them.
@@ -631,9 +516,6 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 }
 
 type clusterChanges struct {
-	// split these
-	overloadedReplicas replicaSet
-
 	// replace these
 	deadReplicas replicaSet
 
@@ -643,9 +525,8 @@ type clusterChanges struct {
 
 func (d *Driver) proposeChanges(state *clusterState) *clusterChanges {
 	changes := &clusterChanges{
-		overloadedReplicas: d.clusterMap.OverloadedReplicas(state.myClusters, d.opts.MaxReplicaSizeBytes),
-		deadReplicas:       d.clusterMap.DeadReplicas(state.myClusters, d.opts.ReplicaTimeout),
-		moveableReplicas:   d.clusterMap.MoveableReplicas(state.myClusters, state.myNodes, state.node.GetNhid()),
+		deadReplicas:     d.clusterMap.DeadReplicas(state.myClusters, d.opts.ReplicaTimeout),
+		moveableReplicas: d.clusterMap.MoveableReplicas(state.myClusters, state.myNodes, state.node.GetNhid()),
 	}
 	return changes
 }
@@ -717,33 +598,6 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 
 // modifyCluster applies `changes` to the cluster when possible.
 func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes *clusterChanges) error {
-	// Splits are going to happen before anything else.
-	if *enableSplittingReplicas {
-		overloadedClusters := make(map[uint64]struct{})
-		for rs, _ := range changes.overloadedReplicas {
-			overloadedClusters[rs.clusterID] = struct{}{}
-		}
-		for clusterID := range overloadedClusters {
-			rd, ok := state.managedRanges[clusterID]
-			if !ok {
-				continue
-			}
-			_, err := d.store.SplitCluster(ctx, &rfpb.SplitClusterRequest{
-				Header: state.GetHeader(clusterID),
-				Range:  rd,
-			})
-			if err != nil {
-				log.Warningf("Error splitting cluster: %s", err)
-			} else {
-				log.Infof("Successfully split %+v", rd)
-			}
-			time.Sleep(10 * time.Second)
-			if err := d.updateState(ctx, state); err != nil {
-				return err
-			}
-		}
-	}
-
 	if *enableReplacingReplicas {
 		requiredMoves := d.makeMoveInstructions(changes.deadReplicas)
 		for _, move := range requiredMoves {
@@ -802,7 +656,7 @@ func (d *Driver) manageClusters() error {
 	log.Printf("cluster map:\n%s", d.clusterMap.String())
 
 	changes := d.proposeChanges(state)
-	s := len(changes.overloadedReplicas) + len(changes.deadReplicas) + len(changes.moveableReplicas)
+	s := len(changes.deadReplicas) + len(changes.moveableReplicas)
 	if s == 0 {
 		return nil
 	}
@@ -825,12 +679,6 @@ func (d *Driver) Statusz(ctx context.Context) string {
 	buf += fmt.Sprintf("cluster map:\n%s\n", d.clusterMap.String())
 	changes := d.proposeChanges(state)
 
-	if len(changes.overloadedReplicas) > 0 {
-		buf += "Overloaded Replicas:\n"
-		for rep, _ := range changes.overloadedReplicas {
-			buf += fmt.Sprintf("\tc%dn%d\n", rep.clusterID, rep.nodeID)
-		}
-	}
 	if len(changes.deadReplicas) > 0 {
 		buf += "Dead Replicas:\n"
 		for rep, _ := range changes.deadReplicas {

@@ -109,6 +109,7 @@ func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.R
 					return nil
 				} else if connState == connectivity.Idle {
 					conn.Connect()
+					return nil
 				}
 				return fmt.Errorf("gRPC connection not yet ready (state: %s)", connState)
 			},

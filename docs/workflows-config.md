@@ -189,9 +189,25 @@ A named group of Bazel commands that run when triggered.
   Defaults to `"amd64"`. `"arm64"` is also supported when running under
   `os: "darwin"`, but requires using self-hosted Apple silicon (ARM-based)
   Mac executors running on a dedicated `workflows` pool.
+- **`resource_requests`** ([`ResourceRequests`](#resourcerequests)):
+  the requested resources for this action.
+- **`user`** (`string`): User to run the workflow as. For Linux workflows,
+  the user `buildbuddy` can be specified here to ensure that the action
+  runs as a non-root user, to accomodate certain Bazel actions that refuse
+  to run as root (like `rules_hermetic_python`).
+- **`git_clean_exclude`** (`string` list): List of directories within the
+  workspace that are excluded when running `git clean` across actions that
+  are executed in the same runner instance. This is an advanced option and
+  is not recommended for most users.
+- **`bazel_workspace_dir`** (`string`): A subdirectory within the repo
+  containing the bazel workspace for this action. By default, this is
+  assumed to be the repo root directory.
 - **`bazel_commands`** (`string` list): Bazel commands to be run in order.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
+  Environment variables are expanded, which means that the bazel command
+  line can reference [secrets](secrets.md) if the workflow execution
+  is trusted.
 
 ### `Triggers`
 
@@ -230,3 +246,18 @@ pushed.
   action is only run when a PR wants to merge a branch _into_ the `v1`
   branch or the `v2` branch. This field accepts a simple wildcard
   character (`"*"`) as a possible value, which will match any branch.
+
+### `ResourceRequests`
+
+Defines the requested resources for a workflow action.
+
+**Fields:**
+
+- **`memory`** (`string` or `number`): Requested amount of memory for the
+  workflow action. Can be specified as an exact number of bytes, or a
+  numeric string containing an IEC unit abbreviation. For example: `8GB`
+  represents `8 * (1024)^3` bytes of memory.
+- **`cpu`** (`string` or `number`): Requested amount of CPU for the
+  workflow action. Can be specified as a number of CPU cores, or a numeric
+  string containing an `m` suffix to represent thousandths of a CPU core.
+  For example: `8000m` represents 8 CPU cores.

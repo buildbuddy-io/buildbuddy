@@ -6,11 +6,13 @@ module.exports = {
       "remote-build-execution",
       "rbe-setup",
       "rbe-platforms",
+      "secrets",
       "rbe-microvms",
       "rbe-github-actions",
       "rbe-pools",
     ],
     "Workflows (CI)": ["workflows-introduction", "workflows-setup", "workflows-config"],
+    CLI: ["cli", "cli-plugins"],
     Troubleshooting: ["troubleshooting", "troubleshooting-rbe", "troubleshooting-slow-upload"],
     Enterprise: [
       "enterprise",

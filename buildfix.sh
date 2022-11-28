@@ -27,13 +27,14 @@ done
 c_yellow="\x1b[33m"
 c_reset="\x1b[0m"
 
+BAZEL_QUIET_FLAGS=(--ui_event_filters=-info,-stdout,-stderr --noshow_progress)
+
 # buildifier format all BUILD files
 echo "Formatting WORKSPACE/BUILD files..."
 buildifier -r .
 
-echo "Formatting .go files..."
-# go fmt all .go files
-gofmt -w .
+echo "Building and running gofmt..."
+bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w .
 
 if which clang-format &>/dev/null; then
   echo "Formatting .proto files..."

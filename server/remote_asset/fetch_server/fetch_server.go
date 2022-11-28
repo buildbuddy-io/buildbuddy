@@ -122,7 +122,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				// the hash. We can look up the size using the Metadata API,
 				// which looks up only using the hash, so the size we pass here
 				// doesn't matter.
-				SizeBytes: -1,
+				SizeBytes: 1,
 			}
 			expectedSHA256 = blobDigest.Hash
 			cacheRN := digest.NewCASResourceName(blobDigest, req.GetInstanceName())

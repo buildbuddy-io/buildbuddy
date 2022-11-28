@@ -2,12 +2,12 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 var (
@@ -43,8 +43,14 @@ func path() (string, error) {
 		next := filepath.Dir(dir)
 		if dir == next {
 			// We've reached the root dir without finding a WORKSPACE file
-			return "", status.FailedPreconditionError("not within a bazel workspace (could not find WORKSPACE or WORKSPACE.bazel file)")
+			return "", fmt.Errorf("not within a bazel workspace (could not find WORKSPACE or WORKSPACE.bazel file)")
 		}
 		dir = next
 	}
+}
+
+// TODO: Take workspace dir as a param everywhere so that this isn't needed.
+func SetForTest(path string) {
+	_, _ = Path()
+	pathVal, pathErr = path, nil
 }

@@ -298,6 +298,10 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_bazelisk",
         importpath = "github.com/bazelbuild/bazelisk",
+        # TODO: Remove once https://github.com/bazelbuild/bazelisk/pull/396 is
+        # upstreamed
+        patch_args = ["-p1"],
+        patches = ["//buildpatches:bazelisk.patch"],
         sum = "h1:dmESc1UeF8iqJTOPxlPw2DH9ykZEMwdlL/jQ+UrW7fY=",
         version = "v1.11.0",
     )
@@ -317,8 +321,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bduffany_godemon",
         importpath = "github.com/bduffany/godemon",
-        sum = "h1:swhDsEzgaYy2dKQ9FCrbmYrGvk7+dZRvvHOUu2rZvR0=",
-        version = "v0.0.0-20221022171016-b1a022d2f9c2",
+        sum = "h1:Th4pNly+xoH2szOq4aA+uAFmg5h37BCyq3pFqnZGJ70=",
+        version = "v0.0.0-20221115232931-09721d48e30e",
     )
 
     go_repository(
@@ -1839,7 +1843,10 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_gogo_protobuf",
+        build_file_generation = "off",
         importpath = "github.com/gogo/protobuf",
+        patch_args = ["-p1"],
+        patches = ["@io_bazel_rules_go//third_party:com_github_gogo_protobuf-gazelle.patch"],
         sum = "h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=",
         version = "v1.3.2",
     )
@@ -1879,12 +1886,17 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_mock",
         importpath = "github.com/golang/mock",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:com_github_golang_mock-gazelle.patch"],
         sum = "h1:ErTB+efbowRARo13NNdxyJji2egdxLGQhRaY+DUumQc=",
         version = "v1.6.0",
     )
     go_repository(
         name = "com_github_golang_protobuf",
         importpath = "github.com/golang/protobuf",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:com_github_golang_protobuf-gazelle.patch"],
         sum = "h1:ROPKBNFfQgOUMifHyP+KYbvpjbdoFNs+aK7DXlji0Tw=",
         version = "v1.5.2",
     )
@@ -3619,8 +3631,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
             "gazelle:resolve go golang.org/x/tools/go/ast/astutil @org_golang_x_tools//go/ast/astutil:go_default_library",
         ],
         importpath = "github.com/nishanths/exhaustive",
-        patch_args = ["-p1"],
-        patches = ["@%s//buildpatches:com_github_nishanths_exhaustive" % workspace_name],
         sum = "h1:+ANTMqRNrqwInnP9aszg/0jDo+zbXa4x66U19Bx/oTk=",  # keep
         version = "v0.2.3",  # keep
     )
@@ -4142,11 +4152,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_shirou_gopsutil_v3",
         importpath = "github.com/shirou/gopsutil/v3",
         patch_args = ["-p1"],
-        # TODO(bduffany): Remove this patch once https://github.com/shirou/gopsutil/pull/1360/files
-        # is merged and released
-        patches = ["@%s//buildpatches:com_github_shirou_gopsutil.patch" % workspace_name],
-        sum = "h1:yibtJhIVEMcdw+tCTbOPiF1VcsuDeTE4utJ8Dm4c5eA=",
-        version = "v3.22.9",
+        sum = "h1:4KMHdfBRYXGF9skjDWiL4RA2N+E8dRdodU/bOZpPoVg=",
+        version = "v3.22.10",
     )
 
     go_repository(
@@ -4318,15 +4325,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_stretchr_objx",
         importpath = "github.com/stretchr/objx",
-        sum = "h1:M2gUjqZET1qApGOWNSnZ49BAIMX4F/1plDv3+l31EJ4=",
-        version = "v0.4.0",
+        sum = "h1:1zr/of2m5FGMsad5YfcqgdqdWrIhu+EBEJRhR1U7z/c=",
+        version = "v0.5.0",
     )
 
     go_repository(
         name = "com_github_stretchr_testify",
         importpath = "github.com/stretchr/testify",
-        sum = "h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PKk=",
-        version = "v1.8.0",
+        sum = "h1:w7B6lhMri9wdJUVmEZPGGhZzrYTPvgJArz7wNPgYKsk=",
+        version = "v1.8.1",
     )
 
     go_repository(
@@ -5344,6 +5351,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_genproto",
         importpath = "google.golang.org/genproto",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_google_genproto-gazelle.patch"],
         sum = "h1:SeX3QUcBj3fciwnfPT9kt5gBhFy/FCZtYZ+I/RB8agc=",
         version = "v0.0.0-20220421151946-72621c1f0bd3",
     )
@@ -5366,6 +5376,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_protobuf",
         importpath = "google.golang.org/protobuf",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_google_protobuf-gazelle.patch"],
         sum = "h1:d0NfwRgPtno5B1Wa6L2DAG+KivqkdutMf1UhdNx175w=",
         version = "v1.28.1",
     )
@@ -5433,6 +5446,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_x_sys-gazelle.patch"],
         sum = "h1:v4INt8xihDGvnrfjMDVXGxw9wrfxYyCjk0KbXjhR55s=",
         version = "v0.0.0-20220722155257-8c9f86f7a55f",
     )
@@ -5460,6 +5476,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_tools",
         importpath = "golang.org/x/tools",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_x_tools-gazelle.patch"],
         sum = "h1:VveCTK38A2rkS8ZqFY25HIDFscX5X9OoEhJd3quQmXU=",
         version = "v0.1.12",
     )
@@ -5467,6 +5486,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_xerrors",
         importpath = "golang.org/x/xerrors",
+        # build_file_generation = "off",
+        # patch_args = ["-p1"],
+        # patches = ["@io_bazel_rules_go//third_party:org_golang_x_errors-gazelle.patch"],
         sum = "h1:GGU+dLjvlC3qDwqYgL6UgRmHXhOOgns0bZu2Ty5mm6U=",
         version = "v0.0.0-20220411194840-2f41105eb62f",
     )

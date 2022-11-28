@@ -8,7 +8,7 @@ go_test(
     # currently does not support dockerized execution of commands. So for now we
     # run the whole test using the CI runner image.
     exec_properties = {
-        "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.9",
+        "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0",
     },
     shard_count = 2,
     deps = [

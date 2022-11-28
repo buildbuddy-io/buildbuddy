@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "db",
@@ -13,6 +13,8 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",
+        "@com_github_aws_aws_sdk_go//aws/session",
+        "@com_github_aws_aws_sdk_go//service/rds/rdsutils",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_googlecloudplatform_cloudsql_proxy//proxy/dialers/mysql",
         "@com_github_mattn_go_sqlite3//:go-sqlite3",
@@ -24,5 +26,14 @@ go_library(
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "db_test",
+    srcs = ["db_test.go"],
+    deps = [
+        ":db",
+        "@com_github_stretchr_testify//require",
     ],
 )

@@ -9,13 +9,13 @@ import (
 	"math"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
@@ -63,17 +63,6 @@ func init() {
 	}
 }
 
-type Counter struct {
-	c uint64
-}
-
-func (c *Counter) Get() uint64 {
-	return atomic.LoadUint64(&c.c)
-}
-func (c *Counter) Inc() uint64 {
-	return atomic.AddUint64(&c.c, 1)
-}
-
 func randRange(low, high int) int64 {
 	i := int64(rand.Intn(high-low+1) + low)
 	return i
@@ -117,15 +106,23 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 		}
 		return nil, err
 	}
-	return nil, status.InternalErrorf("Error writing digest: %s/%d: %s", d.GetHash(), d.GetSizeBytes(), err)
+	return nil, err
 }
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest) error {
 	resourceName := digest.NewResourceName(d, *instanceName)
-	if err := cachetools.GetBlob(ctx, client, resourceName, io.Discard); err != nil {
-		return status.InternalErrorf("Error reading digest: %s/%d: %s", resourceName.GetDigest().GetHash(), resourceName.GetDigest().GetSizeBytes(), err)
+	retrier := retry.DefaultWithContext(ctx)
+	var err error
+	for retrier.Next() {
+		err := cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+		if err == nil {
+			return nil
+		} else if status.IsUnavailableError(err) {
+			continue
+		}
+		return err
 	}
-	return nil
+	return err
 }
 
 func main() {
@@ -156,25 +153,19 @@ func main() {
 	writtenDigests := make(chan *repb.Digest, 10000)
 	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
 
-	writeQPSCounter := &Counter{}
-	readQPSCounter := &Counter{}
+	writeQPSCounter := qps.NewCounter()
+	readQPSCounter := qps.NewCounter()
 
 	writeLimiter := rate.NewLimiter(rate.Limit(*writeQPS), 1)
 	readLimiter := rate.NewLimiter(rate.Limit(*readQPS), 1)
 
 	eg.Go(func() error {
-		lastWriteCount := writeQPSCounter.Get()
-		lastReadCount := readQPSCounter.Get()
 		for {
 			select {
 			case <-gctx.Done():
 				return nil
 			case <-time.After(time.Second):
-				writeCount := writeQPSCounter.Get()
-				readCount := readQPSCounter.Get()
-				log.Printf("Write: %d, Read: %d QPS", writeCount-lastWriteCount, readCount-lastReadCount)
-				lastWriteCount = writeCount
-				lastReadCount = readCount
+				log.Printf("Write: %d, Read: %d QPS", writeQPSCounter.Get(), readQPSCounter.Get())
 			}
 		}
 		return nil
@@ -208,7 +199,14 @@ func main() {
 	for i := 0; i < numReaders; i++ {
 		eg.Go(func() error {
 			for {
-				d := <-writtenDigests
+				var d *repb.Digest
+				select {
+				case d = <-writtenDigests:
+					break
+				case <-gctx.Done():
+					return nil
+				}
+
 				for i := 0; i < readsPerWrite; i++ {
 					if err := readLimiter.Wait(gctx); err != nil {
 						return err

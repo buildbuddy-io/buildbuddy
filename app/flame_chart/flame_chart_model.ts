@@ -1,4 +1,4 @@
-import colors from "./colors";
+import getColor from "./colors";
 import { buildThreadTimelines, ThreadEvent, TraceEvent } from "./profile_model";
 import {
   BLOCK_HEIGHT,
@@ -30,24 +30,6 @@ export type BlockModel = {
   };
   event: ThreadEvent;
 };
-
-/**
- * Returns a random color for the given ID.
- *
- * Calls for the same ID will return the same color.
- *
- * All colors returned have the same approximate perceived brightness
- * to avoid issues with color contrast.
- */
-const getColor = (id: string) => colors[Math.abs(hash(id) % colors.length)];
-
-function hash(value: string) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i++) {
-    hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
-  }
-  return hash;
-}
 
 export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold = 0 } = {}): FlameChartModel {
   let currentThreadY = 0;

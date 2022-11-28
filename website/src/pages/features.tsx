@@ -4,8 +4,7 @@ import common from "../css/common.module.css";
 
 import Hero from "../components/hero/hero";
 import CTA from "../components/cta/cta";
-import Terminal from "../components/terminal/terminal";
-import Globe from "../components/globe/globe";
+import Terminal, { Prompt } from "../components/terminal/terminal";
 
 function Index() {
   return (
@@ -40,6 +39,45 @@ function Index() {
           primaryButtonHref="/remote-cache"
           lessPadding={true}
           flipped={true}
+        />
+        <Hero
+          title="BuildBuddy CLI"
+          subtitle="Take BuildBuddy to the command line &mdash; built on top of Bazelisk with support for plugins, authentication, flaky network conditions, and so much more."
+          component={
+            <Terminal
+              contents={
+                <>
+                  <Prompt />
+                  bb build //...
+                </>
+              }
+            />
+          }
+          secondaryButtonText=""
+          primaryButtonText="Learn more about BuildBuddy CLI"
+          primaryButtonHref="/cli"
+          bigImage={true}
+          flipped={false}
+        />
+        <Hero
+          title="Workflows"
+          subtitle="A CI system that's designed and built just for Bazel. Always hit a warm Bazel instance and enjoy CI runs that finish in seconds."
+          image={require("../../static/img/workflow.png")}
+          secondaryButtonText=""
+          primaryButtonText="Learn more about Workflows"
+          primaryButtonHref="/workflows"
+          flipped={true}
+        />
+        <Hero
+          title="Plugin Library"
+          subtitle="Add functionality and customize your BuildBuddy CLI experience with plugins built by our incredible developer community."
+          image={require("../../static/img/plugins.png")}
+          secondaryButtonText=""
+          primaryButtonText="View the Plugin Library"
+          primaryButtonHref="/plugins"
+          bigImage={true}
+          peekMore={true}
+          flipped={false}
         />
         <CTA />
       </div>

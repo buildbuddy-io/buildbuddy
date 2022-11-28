@@ -1,11 +1,13 @@
 package watcher
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 
 	"github.com/bduffany/godemon"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
@@ -44,8 +46,17 @@ func Watch() (exitCode int, err error) {
 		return -1, err
 	}
 
+	lockfile, err := initLockfile()
+	if err != nil {
+		return -1, fmt.Errorf("failed to initialize watcher lockfile: %s", err)
+	}
+
 	_ = os.Setenv("GODEMON_LOG_PREFIX", "--- ")
-	argv := append([]string{"godemon", "--watch", workspaceDir}, watcherFlags...)
+	argv := append([]string{
+		"godemon",
+		"--watch", workspaceDir,
+		"--lockfile", lockfile,
+	}, watcherFlags...)
 	argv = append(argv, args...)
 
 	// Optionally invoke a specific godemon binary.
@@ -61,4 +72,54 @@ func Watch() (exitCode int, err error) {
 	godemon.Main(argv)
 
 	return 0, nil
+}
+
+// Prepares a lockfile path that can be used to Pause and Unpause the watcher
+// by creating or removing it, respectively.
+func initLockfile() (string, error) {
+	f, err := os.CreateTemp("", "watcher-*.lock")
+	if err != nil {
+		return "", err
+	}
+	f.Close()
+	if err := os.Remove(f.Name()); err != nil {
+		return "", err
+	}
+	os.Setenv("BB_WATCHER_LOCKFILE_PATH", f.Name())
+	return f.Name(), nil
+}
+
+// Pause prevents the file watcher from triggering restarts until Unpause()
+// is called. Any FS events received while paused will be buffered, then flushed
+// when unpaused.
+func Pause() {
+	lockfilePath := os.Getenv("BB_WATCHER_LOCKFILE_PATH")
+	if lockfilePath == "" {
+		// We're not running in watch mode.
+		return
+	}
+	f, err := os.Create(lockfilePath)
+	if err != nil {
+		log.Printf("Warning: Failed to pause file watcher: %s", err)
+		return
+	}
+	f.Close()
+}
+
+// Unpause resumes watcher restart-on-update functionality. A restart will be
+// triggered immediately if any events were buffered while the watcher was
+// paused.
+func Unpause() {
+	lockfilePath := os.Getenv("BB_WATCHER_LOCKFILE_PATH")
+	if lockfilePath == "" {
+		// We're not running in watch mode.
+		return
+	}
+	if err := os.Remove(lockfilePath); err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		log.Printf("Warning: Failed to unpause file watcher: %s", err)
+		return
+	}
 }

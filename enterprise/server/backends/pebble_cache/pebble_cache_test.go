@@ -346,7 +346,7 @@ func TestIsolateByGroupIds(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(buf, rbuf))
 	hash := d.GetHash()
-	expectedFilename := fmt.Sprintf("%s/blobs/PT%s/%s/cas/%v/%v", rootDir, partitionID, partitionID, hash[:4], hash)
+	expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, partitionID, hash[:4], hash)
 	_, err = os.Stat(expectedFilename)
 	require.NoError(t, err)
 
@@ -364,9 +364,231 @@ func TestIsolateByGroupIds(t *testing.T) {
 	require.True(t, bytes.Equal(buf, rbuf))
 	instanceNameHash := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(instanceName))))
 	hash = d.GetHash()
-	expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/%s/ac/%s/%v/%v", rootDir, partitionID, partitionID, testGroup, instanceNameHash, hash[:4], hash)
+	expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/ac/%s/%v/%v", rootDir, partitionID, testGroup, instanceNameHash, hash[:4], hash)
 	_, err = os.Stat(expectedFilename)
 	require.NoError(t, err)
+}
+
+func TestIsolateByGroupIds_ScanForBrokenFiles(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+	ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	partitionID := "FOO"
+	instanceName := "cloud"
+	opts := &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		IsolateByGroupIDs:      true,
+		MaxInlineFileSizeBytes: 1, // Ensure file is written to disk
+		Partitions: []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           partitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     testGroup,
+				Prefix:      "",
+				PartitionID: partitionID,
+			},
+		},
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+
+	// Write a file where isolateByGroupIDs=true
+	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+	r := &resource.ResourceName{
+		Digest:       d,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: instanceName,
+	}
+	err = pc.Set(ctx, r, buf)
+	require.NoError(t, err)
+	rbuf, err := pc.Get(ctx, r)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, rbuf))
+
+	// Restart pc with isolateByGroupIds=false
+	pc.Stop()
+	opts.IsolateByGroupIDs = false
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+
+	// Write a file where isolateByGroupIDs=false
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 1000)
+	r2 := &resource.ResourceName{
+		Digest:       d2,
+		CacheType:    resource.CacheType_CAS,
+		InstanceName: instanceName,
+	}
+	err = pc.Set(ctx, r2, buf2)
+	require.NoError(t, err)
+	rbuf, err = pc.Get(ctx, r2)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf2, rbuf))
+
+	// Wait for startup scan to scan for broken files
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
+
+	// Restart pc with isolateByGroupIds=true
+	opts.IsolateByGroupIDs = true
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+
+	// Originally set data should still be there - it should not have been cleaned up as a "broken file"
+	rbuf, err = pc.Get(ctx, r)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, rbuf))
+
+	// Wait for startup scan to scan for broken files
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
+
+	// Restart pc with isolateByGroupIds=false
+	opts.IsolateByGroupIDs = false
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+
+	// Originally set data should still be there - it should not have been cleaned up as a "broken file"
+	rbuf, err = pc.Get(ctx, r2)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf2, rbuf))
+}
+
+func TestIsolateByGroupIds_DeleteOrphans(t *testing.T) {
+	flags.Set(t, "cache.pebble.scan_for_orphaned_files", true)
+	flags.Set(t, "cache.pebble.orphan_delete_dry_run", false)
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	opts := &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		IsolateByGroupIDs:      true,
+		MaxInlineFileSizeBytes: 1, // Ensure file is written to disk
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	for !pc.DoneScanning() {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Write data to the cache where isolateByGroupIDs=true
+	d, buf := testdigest.NewRandomDigestBuf(t, 10000)
+	r := &resource.ResourceName{
+		Digest:    d,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = pc.Set(ctx, r, buf)
+	require.NoError(t, err)
+
+	d2, buf2 := testdigest.NewRandomDigestBuf(t, 10000)
+	r2 := &resource.ResourceName{
+		Digest:    d2,
+		CacheType: resource.CacheType_AC,
+	}
+	err = pc.Set(ctx, r2, buf2)
+	require.NoError(t, err)
+
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
+
+	// Restart the cache with isolateByGroupIDs=false
+	opts.IsolateByGroupIDs = false
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+	for !pc.DoneScanning() {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Write data to the cache where isolateByGroupIDs=false
+	d3, buf3 := testdigest.NewRandomDigestBuf(t, 10000)
+	r3 := &resource.ResourceName{
+		Digest:    d3,
+		CacheType: resource.CacheType_CAS,
+	}
+	err = pc.Set(ctx, r3, buf3)
+	require.NoError(t, err)
+
+	d4, buf4 := testdigest.NewRandomDigestBuf(t, 10000)
+	r4 := &resource.ResourceName{
+		Digest:    d4,
+		CacheType: resource.CacheType_AC,
+	}
+	err = pc.Set(ctx, r4, buf4)
+	require.NoError(t, err)
+
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
+
+	// Restart the cache with isolateByGroupIDs=true
+	opts.IsolateByGroupIDs = true
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+	for !pc.DoneScanning() {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Check that none of the files were deleted as orphans
+	rbuf, err := pc.Get(ctx, r)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf, rbuf))
+	rbuf, err = pc.Get(ctx, r2)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf2, rbuf))
+
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
+
+	// Restart the cache with isolateByGroupIDs=false
+	opts.IsolateByGroupIDs = false
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	pc.Start()
+	for !pc.DoneScanning() {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Check that none of the files were deleted as orphans
+	rbuf, err = pc.Get(ctx, r3)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf3, rbuf))
+	rbuf, err = pc.Get(ctx, r4)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(buf4, rbuf))
+
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+	pc.Stop()
 }
 
 func TestMetadata(t *testing.T) {
