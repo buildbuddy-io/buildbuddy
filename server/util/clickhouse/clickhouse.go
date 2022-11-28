@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -19,8 +18,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	gormclickhouse "gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
+
+	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
+	gormclickhouse "gorm.io/driver/clickhouse"
 )
 
 var (
@@ -303,7 +304,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	}
 }
 
-func ToExecutionFromInternalProto(in *iepb.Execution, inv *tables.Invocation) *Execution {
+func buildExecution(in *iepb.Execution, inv *tables.Invocation) *Execution {
 	return &Execution{
 		GroupID:                            in.GetGroupId(),
 		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
@@ -359,7 +360,7 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 		lastError = res.Error
 		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) {
 			// Retry since it's an transient error.
-			log.CtxInfof(ctx, "attempt (n=%d) to clickhouse table %q failed: %s", retrier.AttemptNumber(), tableName, res.Error)
+			log.CtxWarningf(ctx, "attempt (n=%d) to clickhouse table %q failed: %s", retrier.AttemptNumber(), tableName, res.Error)
 			continue
 		}
 		break
@@ -390,7 +391,7 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 func (h *DBHandle) FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*iepb.Execution) error {
 	entries := make([]*Execution, 0, len(executions))
 	for _, e := range executions {
-		entries = append(entries, ToExecutionFromInternalProto(e, ti))
+		entries = append(entries, buildExecution(e, ti))
 	}
 	num := len(entries)
 	if err := h.insertWithRetrier(ctx, (&Execution{}).TableName(), num, &entries); err != nil {

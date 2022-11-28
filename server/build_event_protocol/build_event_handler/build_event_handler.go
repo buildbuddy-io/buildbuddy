@@ -291,14 +291,14 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		return err
 	}
 	// Temporary logging for debugging clickhouse missing data.
-	log.CtxInfo(ctx, "successfully wrote invocation to clickhouse")
+	log.CtxInfo(ctx, "Successfully wrote invocation to clickhouse")
 
 	if r.env.GetExecutionCollector() == nil {
 		return nil
 	}
 	const batchSize = 500_000
-	startIndex := 0
-	endIndex := batchSize - 1
+	var startIndex int64 = 0
+	var endIndex int64 = batchSize - 1
 
 	// Always clean up executions in Collector because we are not retrying
 	defer func() {

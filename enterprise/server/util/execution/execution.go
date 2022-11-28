@@ -3,8 +3,9 @@ package execution
 import (
 	"strings"
 
-	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+
+	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
 )
 
 func TableExecToProto(in *tables.Execution, invLink *tables.InvocationExecution) *iepb.Execution {

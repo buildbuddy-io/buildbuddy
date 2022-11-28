@@ -272,7 +272,6 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				}
 			}
 			fillExecutionFromActionMetadata(md, execution)
-
 		}
 	}
 
@@ -306,17 +305,12 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
 		return status.InternalErrorf("failed to record execution: %s", err)
 	}
-
-	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
-		return status.InternalErrorf("failed to record execution: %s", err)
-	}
 	links, err := s.getInvocationLinks(ctx, executionID)
 	if err != nil {
-		return status.InternalErrorf("failed to record execution: %s", err)
+		return status.InternalErrorf("failed to get invocations for execution: %s", err)
 	}
 
 	for _, link := range links {
-		log.Infof("append execution to invocation: %q", link.InvocationID)
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
 		if err := s.env.GetExecutionCollector().Append(ctx, link.InvocationID, executionProto); err != nil {
 			log.CtxErrorf(ctx, "failed to append execution %q to invocation %q", executionID, link.InvocationID)
@@ -343,7 +337,6 @@ func (s *ExecutionServer) getInvocationLinks(ctx context.Context, executionID st
 		if err := dbh.DB(ctx).ScanRows(rows, link); err != nil {
 			return nil, err
 		}
-		log.Infof("find invocation_id %q", link.InvocationID)
 		res = append(res, link)
 	}
 
