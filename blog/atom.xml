@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2022-11-22T12:00:00.000Z</updated>
+    <updated>2022-11-29T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Bazelcon 2022 Recap]]></title>
+        <id>bazelcon</id>
+        <link href="https://www.buildbuddy.io/blog/bazelcon"/>
+        <updated>2022-11-29T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Earlier this month we wrapped up the 2022 Bazelcon conference in New York City. The conference featured talks by many prominent Bazel users including Lyft, Spotify, Tesla, Slack, Stripe, Tinder, Tecton, Coinbase, Uber, more.]]></summary>
+        <content type="html"><![CDATA[<p>Earlier this month we wrapped up the 2022 Bazelcon conference in New York City. The conference featured talks by many prominent Bazel users including <a href="https://youtu.be/e2ID05dpJzo">Lyft</a>, <a href="https://youtu.be/k4H20WxhbsA">Spotify</a>, <a href="https://youtu.be/ol5hwjr48Q4">Tesla</a>, <a href="https://youtu.be/wy3Q38VJ5uQ">Slack</a>, <a href="https://youtu.be/kaKpp10z5ws">Stripe</a>, <a href="https://youtu.be/IoEMMLjKFtM">Tinder</a>, <a href="https://youtu.be/Bjaiu8tZZhs">Tecton</a>, <a href="https://youtu.be/2BgRXmX1X-4">Coinbase</a>, <a href="https://youtu.be/a1jXzx3884g">Uber</a>, more.</p><p>Here&#x27;s are some of the highlights from the conference:</p><ul><li>We gave a <a href="https://youtu.be/MIXy4zGtniE">talk previewing</a> the upcoming <strong>BuildBuddy 3.0</strong> release</li><li><strong>Six companies</strong> that are <a href="https://buildbuddy.io/">BuildBuddy Enterprise</a> customers presented on the main stage</li><li>We co-hosted a <a href="https://twitter.com/bazelbuild/status/1592624463975448576">Bazelcon happy hour</a> with <strong>Google Cloud</strong> that had over <strong>200 attendees</strong></li><li>We <a href="https://youtu.be/B__SHnz3K3c">shared</a> what we&#x27;ve been working on over the past year with <a href="https://github.com/buildbuddy-io/rules_xcodeproj">rules_xcodeproj</a></li><li>We gave away <strong>370 BuildBuddy shirts</strong> and <strong>1600 BuildBuddy stickers</strong></li><li>We finally got to meet so many of incredible customers &amp; open source contributors in person!</li></ul><p>Tweets, talks, and pictures from the event below!</p><div tweetId="1593290390953955328" options="[object Object]"></div><div tweetId="1593052641310875648" options="[object Object]"></div><h2>Our talks</h2><h3>BuildBuddy 3.0</h3><p>By Siggi Simonarson</p><p><a href="https://www.youtube.com/watch?v=MIXy4zGtniE"><img src="../static/img/blog/buildbuddy-3-talk.jpg"/></a></p><h3>Integrating Bazel with Xcode using rules_xcodeproj</h3><p>By Brentley Jones</p><p><a href="https://www.youtube.com/watch?v=B__SHnz3K3c"><img src="../static/img/blog/xcodeproj-talk.jpg"/></a></p><h2>BuildBuddy shout-outs</h2><h3>Autopilot: Developing Software for Cars &amp; Robots</h3><p>By Gabe Gheorghian and Romi Phadte @ Tesla</p><p><a href="https://youtu.be/ol5hwjr48Q4?t=1023"><img src="../static/img/blog/tesla-talk.jpg"/></a></p><h3>Insights from Two iOS Bazel Migrations</h3><p>By Erik Kerber @ Slack</p><p><a href="https://youtu.be/wy3Q38VJ5uQ?t=1626"><img src="../static/img/blog/slack-talk.jpg"/></a></p><p>See you all next year!</p>]]></content>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/siggisim/</uri>
+        </author>
+    </entry>
     <entry>
         <title type="html"><![CDATA[How We Use ClickHouse to Analyze Trends Across Millions of Builds]]></title>
         <id>clickhouse-build-trends</id>
