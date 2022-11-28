@@ -14,13 +14,3 @@ container_push(
     tag = "$(version)",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
-
-container_push(
-    name = "push_ci_runner_debug",
-    format = "Docker",
-    image = "//enterprise/server/cmd/ci_runner:ci_runner_debug_image",
-    registry = "gcr.io",
-    repository = "flame-public/buildbuddy-ci-runner",
-    tag = "debug",
-    tags = ["manual"],  # Don't include this target in wildcard patterns
-)
