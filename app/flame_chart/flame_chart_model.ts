@@ -1,4 +1,4 @@
-import getColor from "./colors";
+import { getUniformBrightnessColor } from "../util/color";
 import { buildThreadTimelines, ThreadEvent, TraceEvent } from "./profile_model";
 import {
   BLOCK_HEIGHT,
@@ -51,7 +51,7 @@ export function buildFlameChartModel(events: TraceEvent[], { visibilityThreshold
             width: dur / MICROSECONDS_PER_SECOND,
             y:
               currentThreadY + depth * (BLOCK_HEIGHT + BLOCK_VERTICAL_GAP) + SECTION_LABEL_HEIGHT + SECTION_PADDING_TOP,
-            fill: getColor(`${cat}#${name}`),
+            fill: getUniformBrightnessColor(`${cat}#${name}`),
           },
           event,
         };
