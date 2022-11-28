@@ -410,7 +410,7 @@ type InvocationExecution struct {
 	Model
 
 	InvocationID string `gorm:"primaryKey"`
-	ExecutionID  string `gorm:"primaryKey"`
+	ExecutionID  string `gorm:"primaryKey;index:execution_id_index"`
 	Type         int8
 }
 

@@ -8,7 +8,9 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
-type nullEventChannel struct{}
+type nullEventChannel struct {
+	ctx context.Context
+}
 
 func (c *nullEventChannel) MarkInvocationDisconnected(ctx context.Context, iid string) error {
 	return nil
@@ -23,11 +25,11 @@ func (c *nullEventChannel) GetNumDroppedEvents() uint64 {
 func (c *nullEventChannel) Close() {}
 
 func (c *nullEventChannel) Context() context.Context {
-	return nil
+	return c.ctx
 }
 
 type BuildEventHandler struct{}
 
 func (h *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
-	return &nullEventChannel{}
+	return &nullEventChannel{ctx: ctx}
 }

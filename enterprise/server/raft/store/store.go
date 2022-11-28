@@ -2,11 +2,14 @@ package store
 
 import (
 	"context"
+	"encoding/base64"
+	"flag"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -24,6 +27,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -35,6 +40,8 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
+	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -53,6 +60,13 @@ const (
 	// If a node's disk is fuller than this (by percentage), it is not
 	// eligible to receive ranges moved from other nodes.
 	maximumDiskCapacity = .95
+
+	splitQueueSize = 100
+)
+
+var (
+	enableSplittingReplicas = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
+	replicaSplitSizeBytes   = flag.Int64("cache.raft.replica_split_size_bytes", 2e7, "Split replicas after they reach this size")
 )
 
 type Store struct {
@@ -73,12 +87,16 @@ type Store struct {
 
 	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
 	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
+	usages   sync.Map // map of uint64 rangeID -> *ReplicaUsage
 
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
 
 	fileStorer filestore.Store
 	splitMu    sync.Mutex
+	splitQueue chan *rfpb.RangeDescriptor
+	eg         *errgroup.Group
+	quitChan   chan struct{}
 }
 
 func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.GossipManager, sender *sender.Sender, registry registry.NodeRegistry, apiClient *client.APIClient) *Store {
@@ -97,13 +115,16 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 		leases:   sync.Map{},
 		replicas: sync.Map{},
+		usages:   sync.Map{},
 
 		metaRangeData: "",
 		fileStorer: filestore.New(filestore.Opts{
 			IsolateByGroupIDs:           true,
 			PrioritizeHashInMetadataKey: true,
 		}),
-		splitMu: sync.Mutex{},
+		splitMu:    sync.Mutex{},
+		splitQueue: make(chan *rfpb.RangeDescriptor, splitQueueSize),
+		eg:         &errgroup.Group{},
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	gossipManager.AddListener(s)
@@ -165,7 +186,65 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 	go s.maybeAcquireRangeLease(rd)
 }
 
+func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
+	clusterID := usage.GetReplica().GetClusterId()
+	if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
+		s.RequestSplit(clusterID)
+	}
+
+	rd := s.lookupRange(clusterID)
+	if rd == nil {
+		return
+	}
+	s.usages.Store(rd.GetRangeId(), usage)
+}
+
+func (s *Store) RequestSplit(clusterID uint64) {
+	rd := s.lookupRange(clusterID)
+	if rd == nil {
+		return
+	}
+	header := &rfpb.Header{
+		RangeId:    rd.GetRangeId(),
+		Generation: rd.GetGeneration(),
+	}
+	if _, err := s.LeasedRange(header); err != nil {
+		return
+	}
+	select {
+	case s.splitQueue <- rd:
+		break
+	default:
+		s.log.Warningf("Split queue was full; dropping request to split cluster %d.", clusterID)
+	}
+}
+
+func (s *Store) handleSplits(quitChan <-chan struct{}) error {
+	for {
+		select {
+		case <-quitChan:
+			return nil
+		case rd := <-s.splitQueue:
+			req := &rfpb.SplitClusterRequest{
+				Header: &rfpb.Header{
+					RangeId:    rd.GetRangeId(),
+					Generation: rd.GetGeneration(),
+				},
+				Range: rd,
+			}
+			ctx, cancel := context.WithTimeout(context.TODO(), 60*time.Second)
+			_, err := s.SplitCluster(ctx, req)
+			cancel()
+			if err != nil {
+				s.log.Warningf("Error splitting cluster: %s", err)
+			}
+		}
+	}
+}
+
 func (s *Store) Start(grpcAddress string) error {
+	s.quitChan = make(chan struct{}, 0)
+
 	// A grpcServer is run which is responsible for presenting a meta API
 	// to manage raft nodes on each host, as well as an API to shuffle data
 	// around between nodes, outside of raft.
@@ -182,10 +261,21 @@ func (s *Store) Start(grpcAddress string) error {
 		s.grpcServer.Serve(lis)
 	}()
 	s.grpcAddr = grpcAddress
+
+	s.eg.Go(func() error {
+		return s.handleSplits(s.quitChan)
+	})
+
 	return nil
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	close(s.quitChan)
+	if err := s.eg.Wait(); err != nil {
+		return err
+	}
+	s.log.Info("Store: waitgroups finished")
+
 	listener.DefaultListener().UnregisterLeaderUpdatedCB(&s.leaderUpdatedCB)
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
@@ -237,6 +327,7 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 		}
 		s.log.Warningf("Error leasing range: %s: %s, will try again.", rl, err)
 	}
+	s.updateTags()
 }
 
 func (s *Store) releaseRangeLease(rangeID uint64) {
@@ -252,6 +343,7 @@ func (s *Store) releaseRangeLease(rangeID uint64) {
 	s.leases.Delete(rangeID)
 	if rl.Valid() {
 		rl.Release()
+		s.updateTags()
 	}
 }
 
@@ -272,6 +364,10 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.rangeMu.Lock()
 	s.openRanges[rd.GetRangeId()] = rd
 	s.rangeMu.Unlock()
+
+	metrics.RaftRanges.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+	}).Inc()
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range %d has no replicas (yet?)", rd.GetRangeId())
@@ -296,15 +392,21 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.maybeAcquireRangeLease(rd)
+	go s.broadcast()
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Removing range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetLeft(), rd.GetRight(), rd.GetGeneration())
 	s.replicas.Delete(rd.GetRangeId())
+	s.usages.Delete(rd.GetRangeId())
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
 	s.rangeMu.Unlock()
+
+	metrics.RaftRanges.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+	}).Dec()
 
 	if len(rd.GetReplicas()) == 0 {
 		s.log.Debugf("range descriptor had no replicas yet")
@@ -313,6 +415,7 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	// Start goroutines for these so that Removing ranges is quick.
 	go s.releaseRangeLease(rd.GetRangeId())
+	go s.broadcast()
 }
 
 // validatedRange verifies that the header is valid and the client is using
@@ -701,6 +804,114 @@ func (s *Store) renewNodeLiveness() {
 	}
 }
 
+type stats struct {
+	RangeCount     int
+	LeaseCount     int
+	ReadQPS        int64
+	RaftProposeQPS int64
+	TotalSizeBytes int64
+}
+
+func (s *Store) Usage() *rfpb.StoreUsage {
+	su := &rfpb.StoreUsage{
+		Node: s.MyNodeDescriptor(),
+	}
+
+	s.rangeMu.Lock()
+	su.RangeCount = int64(len(s.openRanges))
+	s.rangeMu.Unlock()
+
+	s.leases.Range(func(key, value any) bool {
+		su.LeaseCount += 1
+		return true
+	})
+
+	s.usages.Range(func(key, value any) bool {
+		if ru, ok := value.(*rfpb.ReplicaUsage); ok {
+			su.ReadQps += ru.GetReadQps()
+			su.RaftProposeQps += ru.GetRaftProposeQps()
+			su.TotalBytesUsed += ru.GetEstimatedDiskBytesUsed()
+		}
+		return true
+	})
+	return su
+}
+
+func (s *Store) updateTags() error {
+	storeTags := make(map[string]string, 0)
+
+	zone, err := resources.GetZone()
+	if err == nil {
+		storeTags[constants.ZoneTag] = zone
+	} else {
+		storeTags[constants.ZoneTag] = "local"
+	}
+
+	su := s.Usage()
+	buf, err := proto.Marshal(su)
+	if err != nil {
+		return err
+	}
+	storeTags[constants.StoreUsageTag] = base64.StdEncoding.EncodeToString(buf)
+	err = s.gossipManager.SetTags(storeTags)
+	return err
+}
+
+func (s *Store) broadcast() error {
+	go s.updateTags()
+
+	ctx := context.Background()
+	rsp, err := s.ListCluster(ctx, &rfpb.ListClusterRequest{})
+	if err != nil {
+		return err
+	}
+
+	// Need to be very careful about what is broadcast here because the max
+	// allowed UserEvent size is 9K, and broadcasting too much could cause
+	// slow rebalancing etc.
+
+	// A max ReplicaUsage should be around 8 bytes * 3 = 24 bytes. So 375
+	// replica usages should fit in a single gossip message. Use 350 as the
+	// target size so there is room for the NHID and a small margin of
+	// safety.
+	batchSize := 350
+	numReplicas := len(rsp.GetRangeReplicas())
+	gossiped := false
+	for start := 0; start < numReplicas; start += batchSize {
+		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
+		end := start + batchSize
+		if end > numReplicas {
+			end = numReplicas
+		}
+		for _, rr := range rsp.GetRangeReplicas()[start:end] {
+			nu.ReplicaUsage = append(nu.ReplicaUsage, rr.GetReplicaUsage())
+		}
+		buf, err := proto.Marshal(nu)
+		if err != nil {
+			return err
+		}
+		if err := s.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
+			return err
+		}
+		gossiped = true
+	}
+
+	// If a node does not yet have any replicas, the loop above will not
+	// have gossiped anything. In that case, gossip an "empty" usage event
+	// now.
+	if !gossiped {
+		nu := &rfpb.NodeUsage{Node: rsp.GetNode()}
+		buf, err := proto.Marshal(nu)
+		if err != nil {
+			return err
+		}
+		if err := s.gossipManager.SendUserEvent(constants.NodeUsageEvent, buf, false /*=coalesce*/); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
 	pq := &rfpb.PlacementQuery{}
 	if err := proto.Unmarshal(query.Payload, pq); err != nil {
@@ -884,6 +1095,10 @@ func casRevert(cas *rfpb.CASRequest) *rfpb.CASRequest {
 //   new endpoints.
 // 6) The split range is unlocked.
 func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
+	if !*enableSplittingReplicas {
+		return nil, status.FailedPreconditionError("Splitting not enabled")
+	}
+
 	s.splitMu.Lock()
 	defer s.splitMu.Unlock()
 
@@ -1083,6 +1298,14 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 
 	s.log.Infof("splitlog: cleaned up old data on cluster %d", clusterID)
 
+	metrics.RaftSplits.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+	}).Inc()
+
+	metrics.RaftSplitDurationUs.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(newLeft.GetRangeId())),
+	}).Observe(float64(time.Since(splitStart).Microseconds()))
+
 	splitRsp := &rfpb.SplitClusterResponse{
 		Left:  newLeft,
 		Right: newRight,
@@ -1190,6 +1413,10 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 	if err != nil {
 		return nil, err
 	}
+	metrics.RaftMoves.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		metrics.RaftMoveLabel:       "add",
+	}).Inc()
 
 	return &rfpb.AddClusterNodeResponse{
 		Range: rd,
@@ -1265,6 +1492,12 @@ func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNo
 	if err != nil {
 		return nil, err
 	}
+
+	metrics.RaftMoves.With(prometheus.Labels{
+		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
+		metrics.RaftMoveLabel:       "remove",
+	}).Inc()
+
 	return &rfpb.RemoveClusterNodeResponse{
 		Range: rd,
 	}, nil

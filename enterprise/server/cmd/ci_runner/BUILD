@@ -66,9 +66,3 @@ container_image(
     base = "@ci_runner_image//image:dockerfile_image.tar",
     tags = ["manual"],
 )
-
-container_image(
-    name = "ci_runner_debug_image",
-    base = "@ci_runner_debug_image//image:dockerfile_image.tar",
-    tags = ["manual"],
-)

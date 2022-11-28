@@ -538,6 +538,15 @@
   font-weight: 20px;
 }
 
+.cache-stat-duration {
+  min-width: 60px;
+  display: inline-block;
+}
+
+.cache-stat-description {
+  font-weight: normal;
+}
+
 .cache-chart-label {
   display: flex;
 }

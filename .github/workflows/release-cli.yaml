@@ -80,9 +80,21 @@ jobs:
           git config --local user.email "hello@buildbuddy.io"
 
           # Commit and push changes to cli/plugins dir from buildbuddy repo
-          rm -rf ./plugins
-          cp -r "${GITHUB_WORKSPACE}/buildbuddy/cli/plugins" ./plugins
-          git add plugins
+
+          # Remove any existing plugin directories in the plugins repo.
+          # Note, this implementation assumes all top-level directories
+          # are plugin directories (except the .git directory)
+          EXISTING_PLUGIN_DIRS=($(find . -mindepth 1 -maxdepth 1 -type d | grep -v './\.git'))
+          echo "Removing existing plugin dirs:" "${EXISTING_PLUGIN_DIRS[@]}"
+          rm -rf "${EXISTING_PLUGIN_DIRS[@]}"
+
+          # Copy all top-level plugin directories to the top-level of the
+          # plugins repo.
+          PLUGIN_DIRS=($(find "${GITHUB_WORKSPACE}/buildbuddy/cli/plugins" -mindepth 1 -maxdepth 1 -type d))
+          cp -r "${PLUGIN_DIRS[@]}" ./
+
+          # Commit and push the plugin dirs.
+          git add .
           commit_output=$(mktemp)
           if git commit -m "Update plugins to v${VERSION}" 2>&1 | tee "${commit_output}"; then
             git push

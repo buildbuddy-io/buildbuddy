@@ -9,10 +9,12 @@ go_library(
     deps = [
         "//enterprise/server/raft/constants",
         "//proto:raft_go_proto",
+        "//server/metrics",
         "//server/util/log",
         "//server/util/rangemap",
         "//server/util/status",
         "@com_github_hashicorp_serf//serf",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
     ],
 )

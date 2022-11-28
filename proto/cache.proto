@@ -66,9 +66,6 @@ message GetCacheScoreCardRequest {
     // Field mask selecting filters to be applied.
     google.protobuf.FieldMask mask = 1;
 
-    // TODO(#1733) Clean up deprecated field and CacheType enum
-    CacheType cache_type_deprecated = 2;
-
     // Return only results with this request type.
     RequestType request_type = 3;
 
@@ -135,16 +132,6 @@ message GetCacheScoreCardResponse {
   string next_page_token = 3;
 }
 
-// TODO(Maggie): Deprecate this enum - replace with the enum in resource.proto
-// CacheType represents the type of cache being written to.
-enum CacheType {
-  UNKNOWN_CACHE_TYPE = 0;
-  // Content addressable storage (CAS) cache.
-  CAS = 1;
-  // Action cache (AC).
-  AC = 2;
-}
-
 // RequestType represents the type of cache request being performed: read or
 // write.
 enum RequestType {
@@ -180,9 +167,6 @@ message ScoreCard {
 
     // Action digest hash for the action relevant to the transfer.
     string action_id = 3;
-
-    // TODO(#1733) Clean up deprecated field and CacheType enum
-    CacheType cache_type_deprecated = 4;
 
     // The type of cache request described by this result (read or write).
     RequestType request_type = 5;

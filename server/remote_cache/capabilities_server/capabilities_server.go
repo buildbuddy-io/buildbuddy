@@ -48,7 +48,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 	}
 	if s.supportCAS {
 		c.CacheCapabilities = &repb.CacheCapabilities{
-			DigestFunction: []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
+			DigestFunctions: []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
 				UpdateEnabled: true,
 			},

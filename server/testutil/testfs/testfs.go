@@ -106,6 +106,11 @@ func CopyFile(t testing.TB, src, destRootDir, destPath string) {
 	}
 }
 
+func MakeExecutable(t testing.TB, rootDir string, path string) {
+	err := os.Chmod(filepath.Join(rootDir, path), 0755)
+	require.NoError(t, err)
+}
+
 func WriteAllFileContents(t testing.TB, rootDir string, contents map[string]string) {
 	for relPath, content := range contents {
 		path := filepath.Join(rootDir, relPath)

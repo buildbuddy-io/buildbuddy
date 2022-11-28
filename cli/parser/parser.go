@@ -3,11 +3,9 @@ package parser
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -15,9 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
 
-var (
-	importMatcher = regexp.MustCompile("(import|try-import)\\s+(?P<relative>\\%workspace\\%)?(?P<path>.*)")
+const (
+	workspacePrefix = `%workspace%/`
+)
 
+var (
 	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
 	// All commands inherit from "common".
 	parentCommand = map[string]string{
@@ -32,6 +32,29 @@ var (
 		"aquery":         "build",
 
 		"coverage": "test",
+	}
+
+	bazelCommands = map[string]struct{}{
+		"analyze-profile":    {},
+		"aquery":             {},
+		"build":              {},
+		"canonicalize-flags": {},
+		"clean":              {},
+		"coverage":           {},
+		"cquery":             {},
+		"dump":               {},
+		"fetch":              {},
+		"help":               {},
+		"info":               {},
+		"license":            {},
+		"mobile-install":     {},
+		"print_action":       {},
+		"query":              {},
+		"run":                {},
+		"shutdown":           {},
+		"sync":               {},
+		"test":               {},
+		"version":            {},
 	}
 )
 
@@ -71,29 +94,35 @@ type RcRule struct {
 	Options []string
 }
 
-func appendRcRulesFromImport(match []string, opts []*RcRule) ([]*RcRule, error) {
-	importPath := ""
-	for i, name := range importMatcher.SubexpNames() {
-		switch name {
-		case "relative":
-			if len(match[i]) > 0 {
-				importPath, _ = os.Getwd()
-			}
-		case "path":
-			importPath = filepath.Join(importPath, match[i])
-		}
+func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional bool, importStack []string) ([]*RcRule, error) {
+	if strings.HasPrefix(path, workspacePrefix) {
+		path = filepath.Join(workspaceDir, path[len(workspacePrefix):])
 	}
-	file, err := os.Open(importPath)
+
+	file, err := os.Open(path)
 	if err != nil {
-		return opts, err
+		if optional {
+			return opts, nil
+		}
+		return nil, err
 	}
 	defer file.Close()
-	return appendRcRulesFromFile(file, opts)
+	return appendRcRulesFromFile(workspaceDir, file, opts, importStack)
 }
 
-func appendRcRulesFromFile(in io.Reader, opts []*RcRule) ([]*RcRule, error) {
-	scanner := bufio.NewScanner(in)
-	var err error
+func appendRcRulesFromFile(workspaceDir string, f *os.File, opts []*RcRule, importStack []string) ([]*RcRule, error) {
+	rpath, err := realpath(f.Name())
+	if err != nil {
+		return nil, fmt.Errorf("could not determine real path of bazelrc file: %s", err)
+	}
+	for _, path := range importStack {
+		if path == rpath {
+			return nil, fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), rpath)
+		}
+	}
+	importStack = append(importStack, rpath)
+
+	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Handle line continuations (lines can end with "\" to effectively
@@ -103,16 +132,18 @@ func appendRcRulesFromFile(in io.Reader, opts []*RcRule) ([]*RcRule, error) {
 		}
 
 		line = stripCommentsAndWhitespace(line)
-		if strings.TrimSpace(line) == "" {
+
+		tokens := strings.Fields(line)
+		if len(tokens) == 0 {
+			// blank line
 			continue
 		}
-
-		if importMatcher.MatchString(line) {
-			match := importMatcher.FindStringSubmatch(line)
-			// TODO: Prevent import cycles
-			opts, err = appendRcRulesFromImport(match, opts)
+		if tokens[0] == "import" || tokens[0] == "try-import" {
+			isOptional := tokens[0] == "try-import"
+			path := strings.TrimSpace(strings.TrimPrefix(line, tokens[0]))
+			opts, err = appendRcRulesFromImport(workspaceDir, path, opts, isOptional, importStack)
 			if err != nil {
-				log.Debugf("Error parsing import: %s", err.Error())
+				return nil, err
 			}
 			continue
 		}
@@ -130,6 +161,14 @@ func appendRcRulesFromFile(in io.Reader, opts []*RcRule) ([]*RcRule, error) {
 		opts = append(opts, opt)
 	}
 	return opts, scanner.Err()
+}
+
+func realpath(path string) (string, error) {
+	directPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(directPath)
 }
 
 func stripCommentsAndWhitespace(line string) string {
@@ -168,7 +207,7 @@ func parseRcRule(line string) (*RcRule, error) {
 	}, nil
 }
 
-func ParseRCFiles(filePaths ...string) ([]*RcRule, error) {
+func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
 	options := make([]*RcRule, 0)
 	for _, filePath := range filePaths {
 		file, err := os.Open(filePath)
@@ -176,15 +215,15 @@ func ParseRCFiles(filePaths ...string) ([]*RcRule, error) {
 			continue
 		}
 		defer file.Close()
-		options, err = appendRcRulesFromFile(file, options)
+		options, err = appendRcRulesFromFile(workspaceDir, file, options, nil /*=importStack*/)
 		if err != nil {
-			continue
+			return nil, err
 		}
 	}
 	return options, nil
 }
 
-func ExpandConfigs(args []string) []string {
+func ExpandConfigs(args []string) ([]string, error) {
 	ws, err := workspace.Path()
 	if err != nil {
 		log.Debugf("Could not determine workspace dir: %s", err)
@@ -192,34 +231,35 @@ func ExpandConfigs(args []string) []string {
 	return expandConfigs(ws, args)
 }
 
-func expandConfigs(workspaceDir string, args []string) []string {
-	rcFiles := make([]string, 0)
-	// TODO: handle --nosystem_rc, --system_rc no, --system_rc=0, etc.
-	if arg.Get(args, "system_rc") != "no" {
-		rcFiles = append(rcFiles, "/etc/bazel.bazelrc")
-		rcFiles = append(rcFiles, `%ProgramData%\bazel.bazelrc`)
+func expandConfigs(workspaceDir string, args []string) ([]string, error) {
+	_, idx := GetBazelCommandAndIndex(args)
+	if idx == -1 {
+		// Not a bazel command; don't expand configs.
+		return args, nil
 	}
-	if workspaceDir != "" && arg.Get(args, "workspace_rc") != "no" {
-		rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
-	}
-	if arg.Get(args, "home_rc") != "no" {
-		usr, err := user.Current()
-		if err == nil {
-			rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
-		}
-	}
-	// TODO(siggisim): Handle multiple bazelrc params.
-	if b := arg.Get(args, "bazelrc"); b != "" {
-		rcFiles = append(rcFiles, b)
-	}
-	r, err := ParseRCFiles(rcFiles...)
+
+	args, rcFiles, err := consumeRCFileArgs(args, workspaceDir)
 	if err != nil {
-		log.Debugf("Error parsing .bazelrc file: %s", err.Error())
-		return nil
+		return nil, err
+	}
+	r, err := ParseRCFiles(workspaceDir, rcFiles...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse bazelrc file: %s", err)
 	}
 	rules := StructureRules(r)
 
-	command, commandIndex := arg.GetCommandAndIndex(args)
+	// Expand startup args first, before any other args (including explicit
+	// startup args).
+	startupArgs, err := appendArgsForConfig(rules, nil, "startup", nil, "" /*=config*/, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand startup options: %s", err)
+	}
+	args = append(startupArgs, args...)
+
+	command, commandIndex := GetBazelCommandAndIndex(args)
+	if commandIndex == -1 {
+		return args, nil
+	}
 
 	// Always apply bazelrc rules in order of the precedence hierarchy. For
 	// example, for the "test" command, apply options in order of "common", then
@@ -234,49 +274,209 @@ func expandConfigs(workspaceDir string, args []string) []string {
 	// so we expand those first just after the command.
 	var defaultArgs []string
 	for _, phase := range phases {
-		defaultArgs = appendArgsForConfig(rules, defaultArgs, phase, "" /*=config*/)
+		defaultArgs, err = appendArgsForConfig(rules, defaultArgs, phase, phases, "" /*=config*/, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
+		}
 	}
 	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
 
-	for {
-		config, i, length := arg.Find(args, "config")
-		if i < 0 {
+	offset := 0
+	for offset < len(args) {
+		// Find the next --config arg, starting from just after we expanded
+		// the last config arg.
+		config, configIndex, length := arg.Find(args[offset:], "config")
+		if configIndex < 0 {
 			break
+		}
+		configIndex = offset + configIndex
+
+		// If the config isn't defined, leave it as-is, and let bazel return
+		// an error.
+		if !isConfigDefined(rules, config, phases) {
+			offset = configIndex + length
+			continue
 		}
 
 		var configArgs []string
 		for _, phase := range phases {
-			configArgs = appendArgsForConfig(rules, configArgs, phase, config)
+			configArgs, err = appendArgsForConfig(rules, configArgs, phase, phases, config, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
+			}
 		}
 
-		args = concat(args[:i], configArgs, args[i+length:])
+		args = concat(args[:configIndex], configArgs, args[configIndex+length:])
+		offset = configIndex
 	}
 
 	log.Debugf("expanded args: %+v", args)
 
-	return args
+	return args, nil
 }
 
-func appendArgsForConfig(rules *Rules, args []string, phase, config string) []string {
-	// TODO: Detect cycles in --config definitions, like
-	// build:foo --config=bar, build:bar --config=foo
+func appendArgsForConfig(rules *Rules, args []string, phase string, phases []string, config string, configStack []string) ([]string, error) {
+	var err error
+	for _, c := range configStack {
+		if c == config {
+			return nil, fmt.Errorf("circular --config reference detected: %s -> %s", strings.Join(configStack, " -> "), config)
+		}
+	}
+	configStack = append(configStack, config)
 	for _, rule := range rules.ForPhaseAndConfig(phase, config) {
 		for i := 0; i < len(rule.Options); i++ {
 			opt := rule.Options[i]
+
+			configArg := ""
+			configArgCount := 0
 			if strings.HasPrefix(opt, "--config=") {
-				config := strings.TrimPrefix(opt, "--config=")
-				args = appendArgsForConfig(rules, args, phase, config)
+				configArg = strings.TrimPrefix(opt, "--config=")
+				configArgCount = 1
 			} else if opt == "--config" && i+1 < len(rule.Options) {
-				config := rule.Options[i+1]
-				args = appendArgsForConfig(rules, args, phase, config)
+				configArg = rule.Options[i+1]
 				// Consume the following argument in this iteration too
-				i++
-			} else {
-				args = append(args, opt)
+				configArgCount = 2
 			}
+			// If we have a --config arg, expand it if it is defined in any rc
+			// file. If it is not defined, let bazel show an error saying that
+			// it is not defined.
+			if configArg != "" && isConfigDefined(rules, config, phases) {
+				for _, phase := range phases {
+					args, err = appendArgsForConfig(rules, args, phase, phases, configArg, configStack)
+					if err != nil {
+						return nil, err
+					}
+				}
+				i += (configArgCount - 1)
+				continue
+			}
+
+			args = append(args, opt)
 		}
 	}
-	return args
+	return args, nil
+}
+
+func isConfigDefined(rules *Rules, config string, phases []string) bool {
+	for _, phase := range phases {
+		if len(rules.ForPhaseAndConfig(phase, config)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func consumeRCFileArgs(args []string, workspaceDir string) (newArgs []string, rcFiles []string, err error) {
+	_, idx := GetBazelCommandAndIndex(args)
+	if idx == -1 {
+		return nil, nil, fmt.Errorf(`no command provided (run "%s help" to see available commands)`, os.Args[0])
+	}
+	startupArgs, cmdArgs := args[:idx], args[idx:]
+
+	// Before we do anything, check whether --ignore_all_rc_files is already
+	// set. If so, return an empty list of RC files, since bazel will do the
+	// same.
+	ignoreAllRCFiles := false
+	for _, a := range startupArgs {
+		if val, ok := asStartupBoolFlag(a, "ignore_all_rc_files"); ok {
+			ignoreAllRCFiles = val
+		}
+	}
+	if ignoreAllRCFiles {
+		return args, nil, nil
+	}
+
+	// Now do another pass through the args and parse workspace_rc, system_rc,
+	// home_rc, and bazelrc args. Note that if we encounter an arg
+	// --bazelrc=/dev/null, that means bazel will ignore subsequent --bazelrc
+	// args, so we ignore them as well.
+	workspaceRC := true
+	systemRC := true
+	homeRC := true
+	encounteredDevNullBazelrc := false
+	var newStartupArgs []string
+	var explicitBazelrcPaths []string
+	for i := 0; i < len(startupArgs); i++ {
+		a := startupArgs[i]
+		if val, ok := asStartupBoolFlag(a, "workspace_rc"); ok {
+			workspaceRC = val
+			continue
+		}
+		if val, ok := asStartupBoolFlag(a, "system_rc"); ok {
+			systemRC = val
+			continue
+		}
+		if val, ok := asStartupBoolFlag(a, "home_rc"); ok {
+			homeRC = val
+			continue
+		}
+		bazelrcArg := ""
+		if strings.HasPrefix(a, "--bazelrc=") {
+			bazelrcArg = strings.TrimPrefix(a, "--bazelrc=")
+		} else if a == "--bazelrc" && i+1 < len(args) {
+			bazelrcArg = args[i+1]
+			i++
+		}
+		if bazelrcArg != "" {
+			if encounteredDevNullBazelrc {
+				continue
+			}
+			if bazelrcArg == "/dev/null" {
+				encounteredDevNullBazelrc = true
+				continue
+			}
+			explicitBazelrcPaths = append(explicitBazelrcPaths, bazelrcArg)
+			continue
+		}
+
+		newStartupArgs = append(newStartupArgs, a)
+	}
+	// Ignore all RC files when actually running bazel, since the CLI has
+	// already accounted for them.
+	newStartupArgs = append(newStartupArgs, "--ignore_all_rc_files")
+	// Parse rc files in the order defined here:
+	// https://bazel.build/run/bazelrc#bazelrc-file-locations
+	if systemRC {
+		rcFiles = append(rcFiles, "/etc/bazel.bazelrc")
+		rcFiles = append(rcFiles, `%ProgramData%\bazel.bazelrc`)
+	}
+	if workspaceRC && workspaceDir != "" {
+		rcFiles = append(rcFiles, filepath.Join(workspaceDir, ".bazelrc"))
+	}
+	if homeRC {
+		usr, err := user.Current()
+		if err == nil {
+			rcFiles = append(rcFiles, filepath.Join(usr.HomeDir, ".bazelrc"))
+		}
+	}
+	rcFiles = append(rcFiles, explicitBazelrcPaths...)
+	newArgs = append(newStartupArgs, cmdArgs...)
+	return newArgs, rcFiles, nil
+}
+
+func asStartupBoolFlag(arg, name string) (value, ok bool) {
+	if arg == "--"+name {
+		return true, true
+	}
+	if arg == "--no"+name {
+		return false, true
+	}
+	return false, false
+}
+
+// TODO: Return an empty string if the subcommand happens to come after
+// a bb-specific command. For example, `bb install --path test` should
+// return an empty string, not "test".
+// TODO: More robust parsing of startup options. For example, this has a bug
+// that passing `bazel --output_base build test ...` returns "build" as the
+// bazel command, even though "build" is the argument to --output_base.
+func GetBazelCommandAndIndex(args []string) (string, int) {
+	for i, a := range args {
+		if _, ok := bazelCommands[a]; ok {
+			return a, i
+		}
+	}
+	return "", -1
 }
 
 // getPhases returns the command's inheritance hierarchy in increasing order of

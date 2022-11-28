@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
+        "//cli/parser",
         "//cli/version",
     ],
 )

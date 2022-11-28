@@ -1,7 +1,7 @@
 ---
 id: secrets
 title: Secrets
-sidebar_label: Secrets
+sidebar_label: RBE Secrets
 ---
 
 Secrets are encrypted environment variables associated with your

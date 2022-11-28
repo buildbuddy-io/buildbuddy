@@ -1,18 +1,29 @@
 workspace(
     name = "buildbuddy",
-    managed_directories = {"@npm": ["node_modules"]},
 )
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# Bazel platforms
+
+http_archive(
+    name = "platforms",
+    sha256 = "5308fc1d8865406a49427ba24a9ab53087f17f5266a7aabbfc28823f3916e1ca",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/platforms/releases/download/0.0.6/platforms-0.0.6.tar.gz",
+        "https://github.com/bazelbuild/platforms/releases/download/0.0.6/platforms-0.0.6.tar.gz",
+    ],
+)
 
 # Go
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "f2dcd210c7095febe54b804bb1cd3a58fe8435a909db2ec04e31542631cf715c",
+    sha256 = "ab21448cef298740765f33a7f5acee0607203e4ea321219f2a4c85a6e0fb0a27",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.31.0/rules_go-v0.31.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.31.0/rules_go-v0.31.0.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.32.0/rules_go-v0.32.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.32.0/rules_go-v0.32.0.zip",
     ],
 )
 
@@ -25,6 +36,13 @@ http_archive(
         "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.25.0/bazel-gazelle-v0.25.0.tar.gz",
     ],
 )
+
+load(":deps.bzl", "install_buildbuddy_dependencies")
+
+# Install gazelle and go_rules dependencies after ours so that our go module versions take precedence.
+
+# gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
+install_buildbuddy_dependencies()
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
@@ -63,13 +81,6 @@ go_register_toolchains(
     nogo = "@//:vet",
 )
 
-load(":deps.bzl", "install_buildbuddy_dependencies")
-
-# Install gazelle dependencies after ours so that our go module versions take precedence.
-
-# gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
-install_buildbuddy_dependencies()
-
 gazelle_dependencies()
 
 # Node
@@ -104,7 +115,7 @@ yarn_install(
     name = "npm",
     exports_directories_only = False,
     package_json = "//:package.json",
-    symlink_node_modules = True,
+    symlink_node_modules = False,
     yarn_lock = "//:yarn.lock",
 )
 
@@ -171,9 +182,9 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_k8s",
-    sha256 = "51f0977294699cd547e139ceff2396c32588575588678d2054da167691a227ef",
-    strip_prefix = "rules_k8s-0.6",
-    urls = ["https://github.com/bazelbuild/rules_k8s/archive/v0.6.tar.gz"],
+    sha256 = "ce5b9bc0926681e2e7f2147b49096f143e6cbc783e71bc1d4f36ca76b00e6f4a",
+    strip_prefix = "rules_k8s-0.7",
+    urls = ["https://github.com/bazelbuild/rules_k8s/archive/refs/tags/v0.7.tar.gz"],
 )
 
 load("@io_bazel_rules_k8s//k8s:k8s.bzl", "k8s_defaults", "k8s_repositories")
@@ -182,7 +193,7 @@ k8s_repositories()
 
 load("@io_bazel_rules_k8s//k8s:k8s_go_deps.bzl", k8s_go_deps = "deps")
 
-k8s_go_deps()
+k8s_go_deps(go_version = "")
 
 k8s_defaults(
     name = "k8s_deploy",
@@ -243,12 +254,6 @@ container_pull(
 dockerfile_image(
     name = "ci_runner_image",
     dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
-    visibility = ["//visibility:public"],
-)
-
-dockerfile_image(
-    name = "ci_runner_debug_image",
-    dockerfile = "//enterprise/dockerfiles/ci_runner_image:debug.Dockerfile",
     visibility = ["//visibility:public"],
 )
 
@@ -330,3 +335,12 @@ browser_repositories(chromium = True)
 load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
 
 web_test_go_repositories()
+
+# AWS RDS instance certs are signed by an AWS CA.
+# The cert is necessary to validate connections to AWS RDS instances when TLS is enabled.
+http_file(
+    name = "aws_rds_certs",
+    downloaded_file_path = "rds-combined-ca-bundle.pem",
+    sha256 = "6a8ba1c9f858386edba0ea82b7bf8168ef513d1eb0df3a08cc7cf4bb89f856d0",
+    url = "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem",
+)

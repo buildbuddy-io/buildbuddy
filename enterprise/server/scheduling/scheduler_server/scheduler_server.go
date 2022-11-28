@@ -1131,11 +1131,13 @@ func (s *SchedulerServer) unclaimTask(ctx context.Context, taskID string) error 
 func (s *SchedulerServer) claimTask(ctx context.Context, taskID string, claimTime time.Time) error {
 	r, err := redisAcquireClaim.Run(ctx, s.rdb, []string{s.redisKeyForTask(taskID)}).Result()
 	if err != nil {
+		log.CtxErrorf(ctx, "claimTask error: redis script failed: %s", err)
 		return err
 	}
 
 	c, ok := r.(int64)
 	if !ok {
+		log.CtxErrorf(ctx, "unexpected result from claim attempt: %v (type %T)", r, r)
 		return status.FailedPreconditionErrorf("unexpected result from claim attempt: %v", r)
 	}
 
@@ -1144,10 +1146,13 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID string, claimTim
 		// Success
 		break
 	case 10:
+		log.CtxInfof(ctx, "claimTask %q error: task does not exist", taskID)
 		return status.NotFoundError("task does not exist")
 	case 11:
+		// Don't log this; it's extremely common.
 		return status.NotFoundError("task already claimed")
 	default:
+		log.CtxErrorf(ctx, "claimTask %q error: unknown error code: %d", taskID, c)
 		return status.UnknownErrorf("unknown error %d", c)
 	}
 

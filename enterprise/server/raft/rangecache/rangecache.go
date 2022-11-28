@@ -4,10 +4,12 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -55,6 +57,10 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	rc.rangeMu.Lock()
 	defer rc.rangeMu.Unlock()
 
+	metrics.RaftRangeCacheLookups.With(prometheus.Labels{
+		metrics.RaftRangeCacheEventTypeLabel: "update",
+	}).Inc()
+
 	left := rangeDescriptor.GetLeft()
 	right := rangeDescriptor.GetRight()
 	newDescriptor := proto.Clone(rangeDescriptor).(*rfpb.RangeDescriptor)
@@ -93,7 +99,7 @@ func (rc *RangeCache) updateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 		v := lr.Get()
 		if newDescriptor.GetGeneration() > v.GetGeneration() {
 			lr.Update(newDescriptor)
-			log.Debugf("Updated generation of range: [%q, %q) (%d -> %d)", left, right, v.GetGeneration(), newDescriptor.GetGeneration())
+			log.Debugf("Updated rangelease generation: [%q, %q) (%d -> %d)", left, right, v.GetGeneration(), newDescriptor.GetGeneration())
 		}
 	}
 	return nil
@@ -163,10 +169,20 @@ func (rc *RangeCache) Get(key []byte) *rfpb.RangeDescriptor {
 	defer rc.rangeMu.RUnlock()
 
 	val := rc.rangeMap.Lookup(key)
+
+	var rd *rfpb.RangeDescriptor
+	label := "miss"
+
 	if lr, ok := val.(*lockingRangeDescriptor); ok {
-		return lr.Get()
+		rd = lr.Get()
+		label = "hit"
 	}
-	return nil
+
+	metrics.RaftRangeCacheLookups.With(prometheus.Labels{
+		metrics.RaftRangeCacheEventTypeLabel: label,
+	}).Inc()
+
+	return rd
 }
 
 func (rc *RangeCache) String() string {

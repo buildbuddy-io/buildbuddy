@@ -185,6 +185,48 @@ func TestParse_EstimatedFreeDisk(t *testing.T) {
 	}
 }
 
+func TestParse_EstimatedCPU(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		rawValue      string
+		expectedValue int64
+	}{
+		{"EstimatedCPU", "", 0},
+		{"EstimatedCPU", "0.5", 500},
+		{"EstimatedCPU", "1", 1000},
+		{"EstimatedCPU", "+0.1e+1", 1000},
+		{"EstimatedCPU", "4000m", 4000},
+		{"EstimatedCPU", "4e3m", 4000},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: testCase.name, Value: testCase.rawValue},
+		}}
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedMilliCPU)
+	}
+}
+
+func TestParse_EstimatedMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		rawValue      string
+		expectedValue int64
+	}{
+		{"EstimatedMemory", "", 0},
+		{"EstimatedMemory", "1000B", 1000},
+		{"EstimatedMemory", "1e3", 1000},
+		{"EstimatedMemory", "1M", 1024 * 1024},
+		{"EstimatedMemory", "1GB", 1024 * 1024 * 1024},
+		{"EstimatedMemory", "2.0GB", 2 * 1024 * 1024 * 1024},
+	} {
+		plat := &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: testCase.name, Value: testCase.rawValue},
+		}}
+		platformProps := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+		assert.Equal(t, testCase.expectedValue, platformProps.EstimatedMemoryBytes)
+	}
+}
+
 func TestParse_ApplyOverrides(t *testing.T) {
 	for _, testCase := range []struct {
 		platformProps       []*repb.Platform_Property

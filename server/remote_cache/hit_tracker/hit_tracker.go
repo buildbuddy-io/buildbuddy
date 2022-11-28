@@ -59,9 +59,6 @@ const (
 	actionCacheLabel = "action_cache"
 	casLabel         = "cas"
 
-	CAS         CacheMode = iota // CAS cache
-	ActionCache                  // Action cache
-
 	Hit counterType = iota
 	Miss
 	Upload
@@ -270,11 +267,9 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 
 	// TODO(bduffany): Use protos instead of counterType so we can avoid this
 	// translation
-	cacheTypeDeprecated := capb.CacheType_CAS
 	cacheType := resource.CacheType_CAS
 	if h.actionCache {
 		cacheType = resource.CacheType_AC
-		cacheTypeDeprecated = capb.CacheType_AC
 	}
 	requestType := capb.RequestType_READ
 	if stats.Status == Upload {
@@ -293,7 +288,6 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		TargetId:             h.requestMetadata.TargetId,
 		ActionId:             h.requestMetadata.ActionId,
 		CacheType:            cacheType,
-		CacheTypeDeprecated:  cacheTypeDeprecated,
 		RequestType:          requestType,
 		Digest:               d,
 		Status:               &statuspb.Status{Code: int32(statusCode)},

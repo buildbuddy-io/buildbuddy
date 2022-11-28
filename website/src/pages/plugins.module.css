@@ -1,0 +1,132 @@
+.plugins {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  width: 100%;
+  gap: 16px;
+  padding: 0 16px 16px 16px;
+  max-width: 1296px;
+}
+
+.plugin {
+  background-color: #fafafa;
+  padding: 32px;
+  border-radius: 8px;
+  transition: all 0.1s ease-in-out;
+  width: 100%;
+  overflow: hidden;
+}
+
+.plugin:hover,
+.featuredPlugin .plugin {
+  background-color: #fff;
+  cursor: pointer;
+  box-shadow: 9px 4px 16px rgb(46 41 51 / 8%), 0px 8px 24px rgb(71 63 79 / 16%);
+}
+
+.pluginTitle {
+  font-weight: 700;
+}
+
+.sectionTitle {
+  font-weight: bold;
+  grid-column: span 3;
+  font-size: 1.5em;
+  width: 100%;
+  max-width: 500px;
+}
+
+.pluginSnippet {
+  background-color: #222;
+  color: #fff;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-top: 16px;
+  white-space: nowrap;
+  font-weight: 500;
+  position: relative;
+  display: flex;
+  align-items: center;
+  overflow-y: auto;
+}
+
+.plugin:hover .pluginSnippet:after {
+  content: "Copy";
+  background-color: rgba(255, 255, 255, 0.95);
+  z-index: 1;
+}
+
+.plugin:hover .pluginSnippet:after,
+.copied .pluginSnippet:after {
+  display: block;
+  color: #000;
+  padding: 4px 16px;
+  font-size: 0.8em;
+  border-radius: 32px;
+  font-weight: 500;
+  position: absolute;
+  right: 8px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.copied .pluginSnippet:after,
+.copied:hover .pluginSnippet:after {
+  content: "Copied!";
+  background-color: #4caf50;
+  color: #fff;
+}
+
+.pluginButtons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pluginButtons a {
+  border: 1px solid #eee;
+  background: transparent;
+  padding: 12px 16px;
+  border-radius: 8px;
+  flex-grow: 1;
+  font-weight: 600;
+  font-family: inherit;
+  text-decoration: none;
+  font-size: 0.8em;
+  text-align: center;
+}
+
+.featuredPlugin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.featuredPlugin .plugin {
+  max-width: 500px;
+}
+
+.featuredPlugin .sectionTitle {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 1280px) {
+  .plugins {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sectionTitle {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 997px) {
+  .plugins {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionTitle {
+    grid-column: span 1;
+  }
+}

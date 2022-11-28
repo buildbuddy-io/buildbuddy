@@ -33,7 +33,7 @@ function Index() {
               </a>
               <div className={styles.priceTierFeatures}>
                 <li>
-                  <CheckCircle2 /> For individuals and open source projects
+                  <CheckCircle2 /> For small teams and open source projects
                 </li>
                 <li>
                   <CheckCircle2 /> 100 GB of cache transfer
@@ -115,7 +115,7 @@ function Index() {
             <div className={styles.featureGridHeader}>Enterprise</div>
 
             <div>Users</div>
-            <div>3</div>
+            <div>10</div>
             <div>Unlimited</div>
             <div>Unlimited</div>
 

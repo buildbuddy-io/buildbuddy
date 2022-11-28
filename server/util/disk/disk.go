@@ -307,3 +307,55 @@ func GetDirUsage(path string) (*DirUsage, error) {
 		AvailBytes: fs.Bavail * uint64(fs.Bsize),
 	}, nil
 }
+
+// MoveFile attempts to rename the src file to the dest file. If the src and
+// dest file are on different filesystems, a copy is performed instead of a
+// rename. In the copy case, the file is copied to an intermediate ".tmp" file
+// as a sibling of "dest" to ensure atomicity. In both cases, the original
+// source file is unlinked.
+func MoveFile(src, dest string) error {
+	if err := os.Rename(src, dest); err != nil {
+		if os.IsNotExist(err) {
+			return err
+		}
+		return copyViaTmpSibling(src, dest)
+	}
+	return nil
+}
+
+func copyViaTmpSibling(src, dest string) error {
+	randStr, err := random.RandomString(10)
+	if err != nil {
+		return err
+	}
+	s, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if !s.Mode().IsRegular() {
+		return fmt.Errorf("%s: non-regular file", src)
+	}
+	sf, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
+	tmpPath := fmt.Sprintf("%s.%s.tmp", dest, randStr)
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, s.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, sf); err != nil {
+		return err
+	}
+	// Move the temp file to its final destination.
+	if err := os.Rename(tmpPath, dest); err != nil {
+		return err
+	}
+	// Remove the original file.
+	if err := os.Remove(src); err != nil {
+		return err
+	}
+	return nil
+}

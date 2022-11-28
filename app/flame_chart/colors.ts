@@ -2,7 +2,7 @@
 // These colors were generated using a perceived brightness of 156 +/- 3
 // We want the perceived brightness to be constant so that text always
 // displays consistently against flame chart colors.
-export default [
+const colors = [
   "#17b51a",
   "#36a9c5",
   "#64ad02",
@@ -132,3 +132,23 @@ export default [
   "#21a3fb",
   "#1cacb8",
 ];
+
+/**
+ * Returns a random color for the given ID.
+ *
+ * Calls for the same ID will return the same color.
+ *
+ * All colors returned have the same approximate perceived brightness
+ * to avoid issues with color contrast.
+ */
+const getColor = (id: string) => colors[Math.abs(hash(id) % colors.length)];
+
+function hash(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value?.length; i++) {
+    hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
+export default getColor;

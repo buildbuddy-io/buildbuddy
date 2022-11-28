@@ -16,6 +16,8 @@ sidebar_label: Cache
 
 - `in_memory:` Whether or not to use the in_memory cache.
 
+- `zstd_transcoding_enabled`: Whether or not to enable cache compression capabilities. You need to use `--experimental_remote_cache_compression` to activate it on your build.
+
 - `disk:` The Disk section configures a disk-based cache.
 
   - `root_directory` The root directory to store cache data in, if using the disk cache. This directory must be readable and writable by the BuildBuddy process. The directory will be created if it does not exist.

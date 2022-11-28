@@ -53,7 +53,7 @@ import (
 )
 
 const (
-	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.2.9"
+	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0"
 )
 
 var (
@@ -720,6 +720,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.IncludeSecretsPropertyName, Value: includeSecretsPropertyValue},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: fmt.Sprintf("%d", computeUnits)},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
+				{Name: platform.EstimatedMemoryPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedMemory()},
+				{Name: platform.EstimatedCPUPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedCPU()},
 			},
 		},
 	}
