@@ -114,6 +114,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       commit: search.get(COMMIT_PARAM_NAME),
       host: search.get(HOST_PARAM_NAME),
       command: search.get(COMMAND_PARAM_NAME),
+      sortBy: search.get(SORT_BY_NAME),
+      sortOrder: search.get(SORT_ORDER_NAME),
     };
   }
 
