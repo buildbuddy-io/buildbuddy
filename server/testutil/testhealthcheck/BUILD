@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//proto:health_go_proto",
         "//server/interfaces",
-        "//server/util/log",
         "//server/util/status",
     ],
 )

@@ -12,7 +12,6 @@ go_test(
         "//server/testutil/testbazel",
         "//server/testutil/testmetrics",
         "//server/util/bazel",
-        "//server/util/log",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

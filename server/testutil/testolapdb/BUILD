@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//proto:internal_execution_go_proto",
         "//server/tables",
-        "//server/util/log",
         "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",
     ],
