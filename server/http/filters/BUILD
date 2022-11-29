@@ -13,7 +13,6 @@ go_library(
         "//server/role_filter",
         "//server/util/log",
         "//server/util/request_context",
-        "//server/util/status",
         "//server/util/uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
