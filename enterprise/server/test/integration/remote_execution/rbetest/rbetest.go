@@ -283,7 +283,6 @@ func NewRBETestEnv(t *testing.T) *Env {
 				wg.Done()
 			}()
 		}
-
 		log.Warningf("Waiting for executors shutdown to finish...")
 		wg.Wait()
 	})

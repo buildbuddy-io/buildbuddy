@@ -690,7 +690,6 @@ func (e *EventChannel) Close() {
 }
 
 func (e *EventChannel) FinalizeInvocation(iid string) error {
-	log.Info("Finalize Invocation")
 	if e.isVoid {
 		return nil
 	}
