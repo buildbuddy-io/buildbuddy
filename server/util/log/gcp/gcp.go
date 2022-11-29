@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"strconv"
+	"time"
 
 	"cloud.google.com/go/logging"
 	"github.com/rs/zerolog"
-
 	"google.golang.org/protobuf/types/known/structpb"
+
+	logpb "google.golang.org/genproto/googleapis/logging/v2"
 )
 
 var (
@@ -37,6 +40,25 @@ func (l *logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func zerologLevelToGCPSeverity(l zerolog.Level) logging.Severity {
+	switch l {
+	case zerolog.DebugLevel:
+		return logging.Debug
+	case zerolog.InfoLevel:
+		return logging.Info
+	case zerolog.WarnLevel:
+		return logging.Warning
+	case zerolog.ErrorLevel:
+		return logging.Error
+	case zerolog.PanicLevel:
+		fallthrough
+	case zerolog.FatalLevel:
+		return logging.Critical
+	default:
+		return logging.Default
+	}
+}
+
 func jsonPayload(p []byte) (*structpb.Struct, error) {
 	m := map[string]any{}
 	if err := json.Unmarshal(p, &m); err != nil {
@@ -49,33 +71,37 @@ func jsonPayload(p []byte) (*structpb.Struct, error) {
 	return jsonPayload, nil
 }
 
+func populateEntryFromJsonPayload(entry *logging.Entry, payload *structpb.Struct) {
+	entry.Payload = payload
+
+	// Populate the Entry fields, as this won't happen automatically. The map of
+	// json to Entry fields can be found here:
+	// https://cloud.google.com/logging/docs/structured-logging
+	fields := payload.GetFields()
+	if t, err := time.Parse(zerolog.TimeFieldFormat, fields[zerolog.TimestampFieldName].GetStringValue()); err == nil {
+		entry.Timestamp = t
+	}
+	if v, ok := fields["logging.googleapis.com/sourceLocation"]; ok {
+		line, _ := strconv.ParseInt(v.GetStructValue().GetFields()["line"].GetStringValue(), 10, 64)
+		entry.SourceLocation = &logpb.LogEntrySourceLocation{
+			File: v.GetStructValue().GetFields()["file"].GetStringValue(),
+			Line: line,
+			Function: v.GetStructValue().GetFields()["function"].GetStringValue(),
+		}
+	}
+}
+
 func (l *logWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 	entry := logging.Entry{}
+	entry.Severity = zerologLevelToGCPSeverity(level)
 	if payload, err := jsonPayload(p); err == nil {
-		entry.Payload = payload
+		populateEntryFromJsonPayload(&entry, payload)
 	} else {
 		entry.Payload = string(p)
 	}
-	switch level {
-	case zerolog.DebugLevel:
-		entry.Severity = logging.Debug
-		l.logger.Log(entry)
-	case zerolog.InfoLevel:
-		entry.Severity = logging.Info
-		l.logger.Log(entry)
-	case zerolog.WarnLevel:
-		entry.Severity = logging.Warning
-		l.logger.Log(entry)
-	case zerolog.ErrorLevel:
-		entry.Severity = logging.Error
-		l.logger.Log(entry)
-	case zerolog.PanicLevel:
-		fallthrough
-	case zerolog.FatalLevel:
-		entry.Severity = logging.Critical
+	if level == zerolog.PanicLevel || level == zerolog.FatalLevel {
 		l.logger.LogSync(l.ctx, entry)
-	default:
-		entry.Severity = logging.Default
+	} else {
 		l.logger.Log(entry)
 	}
 	return len(p), nil
