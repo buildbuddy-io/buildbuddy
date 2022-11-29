@@ -84,8 +84,8 @@ func populateEntryFromJsonPayload(entry *logging.Entry, payload *structpb.Struct
 	if v, ok := fields["logging.googleapis.com/sourceLocation"]; ok {
 		line, _ := strconv.ParseInt(v.GetStructValue().GetFields()["line"].GetStringValue(), 10, 64)
 		entry.SourceLocation = &logpb.LogEntrySourceLocation{
-			File: v.GetStructValue().GetFields()["file"].GetStringValue(),
-			Line: line,
+			File:     v.GetStructValue().GetFields()["file"].GetStringValue(),
+			Line:     line,
 			Function: v.GetStructValue().GetFields()["function"].GetStringValue(),
 		}
 	}
