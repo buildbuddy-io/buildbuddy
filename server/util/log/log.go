@@ -18,7 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	gcplogging "github.com/buildbuddy-io/buildbuddy/server/util/log/gcp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log/gcp"
 	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -154,12 +154,12 @@ func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg str
 		return
 	}
 	sourceLocation := zerolog.Dict().Str("file", filepath.Base(file)).Str("line", strconv.Itoa(line))
-	e.Dict("logging.googleapis.com/sourceLocation", sourceLocation)
+	e.Dict(gcp.SourceLocationFieldName, sourceLocation)
 }
 
 func Configure() error {
 	writers := []io.Writer{}
-	if logWriter, err := gcplogging.NewLogWriter(); err != nil {
+	if logWriter, err := gcp.NewLogWriter(); err != nil {
 		return err
 	} else if logWriter != nil {
 		writers = append(writers, logWriter)

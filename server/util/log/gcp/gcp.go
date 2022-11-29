@@ -19,6 +19,10 @@ var (
 	LogID     = flag.String("app.log_gcp_log_id", "", "The log ID to log to in GCP (if any).")
 )
 
+const (
+	SourceLocationFieldName = "logging.googleapis.com/sourceLocation"
+)
+
 func NewLogWriter() (zerolog.LevelWriter, error) {
 	if *ProjectID == "" || *LogID == "" {
 		return nil, nil
@@ -81,7 +85,7 @@ func populateEntryFromJsonPayload(entry *logging.Entry, payload *structpb.Struct
 	if t, err := time.Parse(zerolog.TimeFieldFormat, fields[zerolog.TimestampFieldName].GetStringValue()); err == nil {
 		entry.Timestamp = t
 	}
-	if v, ok := fields["logging.googleapis.com/sourceLocation"]; ok {
+	if v, ok := fields[SourceLocationFieldName]; ok {
 		line, _ := strconv.ParseInt(v.GetStructValue().GetFields()["line"].GetStringValue(), 10, 64)
 		entry.SourceLocation = &logpb.LogEntrySourceLocation{
 			File:     v.GetStructValue().GetFields()["file"].GetStringValue(),
@@ -96,6 +100,10 @@ func (l *logWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 	entry.Severity = zerologLevelToGCPSeverity(level)
 	if payload, err := jsonPayload(p); err == nil {
 		populateEntryFromJsonPayload(&entry, payload)
+		// remove fields from the payload that are represented in the Entry
+		delete(payload.GetFields(), zerolog.TimestampFieldName)
+		delete(payload.GetFields(), SourceLocationFieldName)
+		delete(payload.GetFields(), zerolog.LevelFieldName)
 	} else {
 		entry.Payload = string(p)
 	}
