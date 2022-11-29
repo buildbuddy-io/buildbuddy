@@ -31,13 +31,14 @@ import (
 )
 
 var (
-	listenAddr        = flag.String("cache.distributed_cache.listen_addr", "", "The address to listen for local BuildBuddy distributed cache traffic on.")
-	redisTarget       = flagutil.New("cache.distributed_cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flagutil.SecretTag)
-	groupName         = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
-	nodes             = flagutil.New("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
-	replicationFactor = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
-	clusterSize       = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
-	enableLocalWrites = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
+	listenAddr                   = flag.String("cache.distributed_cache.listen_addr", "", "The address to listen for local BuildBuddy distributed cache traffic on.")
+	redisTarget                  = flagutil.New("cache.distributed_cache.redis_target", "", "A redis target for improved Caching/RBE performance. Target can be provided as either a redis connection URI or a host:port pair. URI schemas supported: redis[s]://[[USER][:PASSWORD]@][HOST][:PORT][/DATABASE] or unix://[[USER][:PASSWORD]@]SOCKET_PATH[?db=DATABASE] ** Enterprise only **", flagutil.SecretTag)
+	groupName                    = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
+	nodes                        = flagutil.New("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
+	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 0, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
+	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
+	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
+	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks only the local cache for compression support instead of making an RPC to all peers.")
 )
 
 const (
@@ -48,15 +49,16 @@ const (
 )
 
 type CacheConfig struct {
-	PubSub               interfaces.PubSub
-	ListenAddr           string
-	GroupName            string
-	Nodes                []string
-	ReplicationFactor    int
-	ClusterSize          int
-	RPCHeartbeatInterval time.Duration
-	DisableLocalLookup   bool
-	EnableLocalWrites    bool
+	PubSub                       interfaces.PubSub
+	ListenAddr                   string
+	GroupName                    string
+	Nodes                        []string
+	ReplicationFactor            int
+	ClusterSize                  int
+	RPCHeartbeatInterval         time.Duration
+	DisableLocalLookup           bool
+	EnableLocalWrites            bool
+	EnableLocalCompressionLookup bool
 }
 
 type hintedHandoffOrder struct {
@@ -103,12 +105,13 @@ func Register(env environment.Env) error {
 		return status.FailedPreconditionErrorf("Distributed Cache requires a base cache but one was not configured: please also enable a base cache")
 	}
 	dcConfig := CacheConfig{
-		ListenAddr:        *listenAddr,
-		GroupName:         *groupName,
-		ReplicationFactor: *replicationFactor,
-		Nodes:             *nodes,
-		ClusterSize:       *clusterSize,
-		EnableLocalWrites: *enableLocalWrites,
+		ListenAddr:                   *listenAddr,
+		GroupName:                    *groupName,
+		ReplicationFactor:            *replicationFactor,
+		Nodes:                        *nodes,
+		ClusterSize:                  *clusterSize,
+		EnableLocalWrites:            *enableLocalWrites,
+		EnableLocalCompressionLookup: *enableLocalCompressionLookup,
 	}
 	log.Infof("Enabling distributed cache with config: %+v", dcConfig)
 	if len(dcConfig.Nodes) == 0 {
@@ -1010,6 +1013,10 @@ func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interface
 
 // Compression should only be enabled for a resource if all peers support compression
 func (c *Cache) SupportsCompressor(ctx context.Context, compressor repb.Compressor_Value, r *resource.ResourceName) bool {
+	if c.config.EnableLocalCompressionLookup {
+		return c.local.SupportsCompressor(ctx, compressor, r)
+	}
+
 	ps := c.readPeers(r.GetDigest())
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		supportsCompressor, err := c.remoteSupportsCompressor(ctx, peer, compressor, r)
