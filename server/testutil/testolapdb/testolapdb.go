@@ -3,9 +3,10 @@ package testolapdb
 import (
 	"context"
 	"sync"
+	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
 	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
@@ -16,7 +17,7 @@ type TestOLAPDBHandle struct {
 	invIDs              sync.Map // map of invocationID => struct{}
 }
 
-func NewTestOLAPDBHandle() interfaces.OLAPDBHandle {
+func NewTestOLAPDBHandle() *TestOLAPDBHandle {
 	return &TestOLAPDBHandle{
 		executionIDsByInvID: sync.Map{},
 	}
@@ -40,6 +41,22 @@ func (h *TestOLAPDBHandle) FlushExecutionStats(ctx context.Context, ti *tables.I
 	for _, e := range executions {
 		executionIDs = append(executionIDs, e.GetExecutionId())
 	}
-	h.executionIDsByInvID.LoadOrStore(ti.InvocationID, executionIDs)
+	h.executionIDsByInvID.Store(ti.InvocationID, executionIDs)
 	return nil
+}
+
+func (h *TestOLAPDBHandle) GetExecutionIDsByInvID(t *testing.T, invID string) []string {
+	v, ok := h.executionIDsByInvID.Load(invID)
+	require.True(t, ok, "invocation ID %q is not found in OLAP DB", invID)
+	return v.([]string)
+}
+
+func (h *TestOLAPDBHandle) GetInvocationIDs() []string {
+	res := []string{}
+	h.executionIDsByInvID.Range(func(k, v interface{}) bool {
+		invID := k.(string)
+		res = append(res, invID)
+		return true
+	})
+	return res
 }

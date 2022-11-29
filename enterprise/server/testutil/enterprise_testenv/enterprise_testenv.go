@@ -16,7 +16,8 @@ import (
 )
 
 type Options struct {
-	RedisTarget string
+	RedisTarget         string
+	EnableWriteToOLAPDB bool
 }
 
 func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
@@ -36,6 +37,10 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 		}
 		cache := redis_cache.NewCache(redisClient)
 		env.SetCache(cache)
+	}
+
+	if flag.Lookup("app.enable_write_to_olap_db") != nil {
+		flags.Set(t, "app.enable_write_to_olap_db", opts.EnableWriteToOLAPDB)
 	}
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
 	if err != nil {

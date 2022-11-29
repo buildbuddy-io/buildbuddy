@@ -38,6 +38,11 @@ func TestSimpleAction_Exit0(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Contains(t, res.Stdout, "Success\n")
 	assert.Equal(t, 1, tasksStarted(t))
+
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildbuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestSimpleAction_Exit1(t *testing.T) {
@@ -321,6 +326,22 @@ func tasksStarted(t testing.TB) int {
 	return diff
 }
 
+func GetNumInvocationsFlushedToOLAPDB(t *testing.T, env *rbetest.Env) int {
+	dbh := env.GetOLAPDBHandle()
+	invIDs := dbh.GetInvocationIDs()
+	return len(invIDs)
+}
+
+func GetNumExecutionsFlushedToOLAPDB(t *testing.T, env *rbetest.Env) int {
+	dbh := env.GetOLAPDBHandle()
+	invIDs := dbh.GetInvocationIDs()
+	res := 0
+	for _, iid := range invIDs {
+		res += len(dbh.GetExecutionIDsByInvID(t, iid))
+	}
+	return res
+}
+
 func runRemoteShellActionViaBazel(t *testing.T, ctx context.Context, env *rbetest.Env, shCommand string, extraBazelArgs ...string) *bazel.InvocationResult {
 	ws := testbazel.MakeTempWorkspace(t, map[string]string{
 		"WORKSPACE": "",
@@ -356,6 +377,7 @@ exec(name = "exec", command = """` + shCommand + `""")
 	buildArgs := []string{
 		":exec",
 		"--remote_executor=" + env.GetRemoteExecutionTarget(),
+		"--bes_backend=" + env.GetBuildbuddyServerTarget(),
 		"--remote_retries=" + fmt.Sprintf("%d", bazelRemoteRetries),
 	}
 	buildArgs = append(buildArgs, extraBazelArgs...)
