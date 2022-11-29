@@ -125,6 +125,7 @@ service DistributedCache {
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);
-  rpc SupportsCompressor(SupportsCompressorRequest) returns (SupportsCompressorResponse);
+  rpc SupportsCompressor(SupportsCompressorRequest)
+      returns (SupportsCompressorResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
