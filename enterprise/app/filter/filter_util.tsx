@@ -25,6 +25,9 @@ export const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 
 export const DEFAULT_LAST_N_DAYS = 30;
 
+export type SortBy = 'start-time' | 'end-time' | 'duration' | 'ac-hit-ratio' | 'cas-hit-ratio' | 'cache-down' | 'cache-up' | 'cache-xfer';
+export type SortOrder = 'asc' | 'desc';
+
 export interface ProtoFilterParams {
   role?: string[];
   status?: invocation.OverallStatus[];
@@ -38,8 +41,8 @@ export interface ProtoFilterParams {
   host: string;
   command: string;
 
-  sortBy: string;
-  sortOrder: string;
+  sortBy?: SortBy;
+  sortOrder?: SortOrder;
 }
 
 export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];

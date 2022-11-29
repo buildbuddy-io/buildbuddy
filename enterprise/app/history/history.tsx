@@ -53,8 +53,6 @@ interface Props {
   user?: User;
   search: URLSearchParams;
   hash: string;
-  sortBy?: string;
-  sortOrder?: string;
 }
 
 export default class HistoryComponent extends React.Component<Props, State> {
@@ -81,21 +79,21 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   private getSortField(filterParams: ProtoFilterParams) {
-    if (this.props.sortBy == "start-time" || filterParams.sortBy == "start-time") {
+    if (filterParams.sortBy === "start-time") {
       return invocation.InvocationSort.SortField.CREATED_AT_USEC_SORT_FIELD;
-    } else if (this.props.sortBy == "end-time" || filterParams.sortBy == "end-time") {
+    } else if (filterParams.sortBy === "end-time") {
       return invocation.InvocationSort.SortField.UPDATED_AT_USEC_SORT_FIELD;
-    } else if (this.props.sortBy == "duration" || filterParams.sortBy == "duration") {
+    } else if (filterParams.sortBy === "duration") {
       return invocation.InvocationSort.SortField.DURATION_SORT_FIELD;
-    } else if (this.props.sortBy == "ac-hit-ratio" || filterParams.sortBy == "ac-hit-ratio") {
+    } else if (filterParams.sortBy === "ac-hit-ratio") {
       return invocation.InvocationSort.SortField.ACTION_CACHE_HIT_RATIO_SORT_FIELD;
-    } else if (this.props.sortBy == "cas-hit-ratio" || filterParams.sortBy == "cas-hit-ratio") {
+    } else if (filterParams.sortBy === "cas-hit-ratio") {
       return invocation.InvocationSort.SortField.CONTENT_ADDRESSABLE_STORE_CACHE_HIT_RATIO_SORT_FIELD;
-    } else if (this.props.sortBy == "cache-down" || filterParams.sortBy == "cache-down") {
+    } else if (filterParams.sortBy === "cache-down") {
       return invocation.InvocationSort.SortField.CACHE_DOWNLOADED_SORT_FIELD;
-    } else if (this.props.sortBy == "cache-up" || filterParams.sortBy == "cache-up") {
+    } else if (filterParams.sortBy === "cache-up") {
       return invocation.InvocationSort.SortField.CACHE_UPLOADED_SORT_FIELD;
-    } else if (this.props.sortBy == "cache-xfer" || filterParams.sortBy == "cache-xfer") {
+    } else if (filterParams.sortBy === "cache-xfer") {
       return invocation.InvocationSort.SortField.CACHE_TRANSFERRED_SORT_FIELD;
     }
     return invocation.InvocationSort.SortField.UNKNOWN_SORT_FIELD;
@@ -122,7 +120,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       }),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),
-        ascending: this.props.sortOrder == "asc" || filterParams.sortOrder == "asc" ? true : false,
+        ascending: this.props.sortOrder === "asc" || filterParams.sortOrder === "asc" ? true : false,
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.

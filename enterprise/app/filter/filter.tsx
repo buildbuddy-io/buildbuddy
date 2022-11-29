@@ -197,19 +197,17 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
-  private onSortByToggle(sortBy: string, selected: string) {
-    selected = sortBy;
+  private onSortByChange(sortBy: string) {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [SORT_BY_NAME]: selected,
+      [SORT_BY_NAME]: sortBy,
     });
   }
 
-  private onSortOrderToggle(sortOrder: string, selected: string) {
-    selected = sortOrder;
+  private onSortOrderChange(sortOrder: string) {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [SORT_ORDER_NAME]: selected,
+      [SORT_ORDER_NAME]: sortOrder,
     });
   }
 
@@ -250,8 +248,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
   private renderSortByRadio(label: string, sortBy: string, selected: string) {
     return (
-      <label onClick={this.onSortByToggle.bind(this, sortBy, selected)}>
-        <Radio checked={selected == sortBy} />
+      <label onClick={this.onSortByChange.bind(this, sortBy, selected)}>
+        <Radio checked={selected === sortBy} />
         <span>{label}</span>
       </label>
     );
@@ -259,8 +257,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
   private renderSortOrderRadio(label: string, sortOrder: string, selected: string) {
     return (
-      <label onClick={this.onSortOrderToggle.bind(this, sortOrder, selected)}>
-        <Radio checked={selected == sortOrder} />
+      <label onClick={this.onSortOrderChange.bind(this, sortOrder, selected)}>
+        <Radio checked={selected === sortOrder} />
         <span>{label}</span>
       </label>
     );
@@ -459,17 +457,17 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         </div>
         <div className="popup-wrapper">
           <OutlinedButton className="sort-button icon-text-button" onClick={this.onOpenSortMenu.bind(this)}>
-            {sortOrderValue == "asc" && <SortAsc className="icon" />}
-            {sortOrderValue == "desc" && <SortDesc className="icon" />}
+            {sortOrderValue === "asc" && <SortAsc className="icon" />}
+            {sortOrderValue === "desc" && <SortDesc className="icon" />}
             <span>
-              {sortByValue == "start-time" && "Invocation Time (Start)"}
-              {sortByValue == "end-time" && "Invocation Time (End)"}
-              {sortByValue == "duration" && "Invocation Duration"}
-              {sortByValue == "ac-hit-ratio" && "AC Hit Ratio"}
-              {sortByValue == "cas-hit-ratio" && "CAS Hit Ratio"}
-              {sortByValue == "cache-down" && "Cache Download"}
-              {sortByValue == "cache-up" && "Cache Upload"}
-              {sortByValue == "cache-xfer" && "Cache Transfer"}
+              {sortByValue === "start-time" && "Start time"}
+              {sortByValue === "end-time" && "End time"}
+              {sortByValue === "duration" && "Duration"}
+              {sortByValue === "ac-hit-ratio" && "AC hit ratio"}
+              {sortByValue === "cas-hit-ratio" && "CAS hit ratio"}
+              {sortByValue === "cache-down" && "Cache download"}
+              {sortByValue === "cache-up" && "Cache upload"}
+              {sortByValue === "cache-xfer" && "Cache transfer"}
             </span>
           </OutlinedButton>
           <Popup
@@ -480,14 +478,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               <div className="option-group">
                 <div className="option-group-title">Sort By</div>
                 <div className="option-group-options">
-                  {this.renderSortByRadio("Invocation Time (Start)", "start-time", sortByValue)}
-                  {this.renderSortByRadio("Invocation Time (End)", "end-time", sortByValue)}
-                  {this.renderSortByRadio("Invocation Duration", "duration", sortByValue)}
-                  {this.renderSortByRadio("Action Cache Hit Ratio", "ac-hit-ratio", sortByValue)}
-                  {this.renderSortByRadio("CAS Cache Hit Ratio", "cas-hit-ratio", sortByValue)}
-                  {this.renderSortByRadio("Cache Download", "cache-down", sortByValue)}
-                  {this.renderSortByRadio("Cache Upload", "cache-up", sortByValue)}
-                  {this.renderSortByRadio("Cache Transfer", "cache-xfer", sortByValue)}
+                  {this.renderSortByRadio("Start time", "start-time", sortByValue)}
+                  {this.renderSortByRadio("End time", "end-time", sortByValue)}
+                  {this.renderSortByRadio("Duration", "duration", sortByValue)}
+                  {this.renderSortByRadio("Action cache hit ratio", "ac-hit-ratio", sortByValue)}
+                  {this.renderSortByRadio("CAS hit ratio", "cas-hit-ratio", sortByValue)}
+                  {this.renderSortByRadio("Cache download", "cache-down", sortByValue)}
+                  {this.renderSortByRadio("Cache upload", "cache-up", sortByValue)}
+                  {this.renderSortByRadio("Cache transfer", "cache-xfer", sortByValue)}
                 </div>
               </div>
               <div className="option-group">
