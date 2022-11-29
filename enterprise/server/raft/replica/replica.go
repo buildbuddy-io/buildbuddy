@@ -63,7 +63,7 @@ var (
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
-	NotifyUsage(ru *rfpb.ReplicaUsage)
+	NotifyUsage(ru *rfpb.ReplicaUsage, pu []*rfpb.PartitionUsage)
 	Sender() *sender.Sender
 }
 
@@ -161,7 +161,7 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 	return size, nil
 }
 
-func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
+func (sm *Replica) Usage() (*rfpb.ReplicaUsage, []*rfpb.PartitionUsage, error) {
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
 			ClusterId: sm.ClusterID,
@@ -172,28 +172,45 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	rd := sm.rangeDescriptor
 	sm.rangeMu.RUnlock()
 	if rd == nil {
-		return nil, status.FailedPreconditionError("range descriptor is not set")
+		return nil, nil, status.FailedPreconditionError("range descriptor is not set")
 	}
 	ru.Generation = rd.GetGeneration()
 	ru.RangeId = rd.GetRangeId()
 
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer db.Close()
 
 	estimatedBytesUsed, err := db.EstimateDiskUsage(rd.GetLeft(), rd.GetRight())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ru.EstimatedDiskBytesUsed = int64(estimatedBytesUsed)
 	metrics.RaftBytes.With(prometheus.Labels{
 		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
 	}).Set(float64(estimatedBytesUsed))
 
+	var partitionUsages []*rfpb.PartitionUsage
 	var numFileRecords int64
 	sm.fileRecordCountMu.Lock()
+	for _, p := range sm.partitions {
+		partStart := keys.MakeKey([]byte(filestore.PartitionDirectoryPrefix), []byte(p.ID), []byte("/"))
+		partEnd := keys.MakeKey([]byte(filestore.PartitionDirectoryPrefix), []byte(p.ID), []byte("/"), []byte{constants.MaxByte})
+
+		partBytes, err := db.EstimateDiskUsage(partStart, partEnd)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		partRecordCount := sm.fileRecordCount[p.ID]
+		partitionUsages = append(partitionUsages, &rfpb.PartitionUsage{
+			PartitionId: p.ID,
+			SizeBytes:   int64(partBytes),
+			RecordCount: partRecordCount,
+		})
+	}
 	for _, c := range sm.fileRecordCount {
 		numFileRecords += c
 	}
@@ -205,7 +222,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
 
-	return ru, nil
+	return ru, partitionUsages, nil
 }
 
 func (sm *Replica) String() string {
@@ -1355,11 +1372,11 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	}
 
 	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > entriesBetweenUsageChecks {
-		usage, err := sm.Usage()
+		usage, partitionUsages, err := sm.Usage()
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
 		} else {
-			sm.store.NotifyUsage(usage)
+			sm.store.NotifyUsage(usage, partitionUsages)
 		}
 		sm.lastUsageCheckIndex = sm.lastAppliedIndex
 	}

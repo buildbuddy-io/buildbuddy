@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	partitionDirectoryPrefix = "PT"
+	PartitionDirectoryPrefix = "PT"
 )
 
 // returns partitionID, groupID, isolation, remote_instance_name, hash
@@ -121,7 +121,7 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 		return nil, err
 	}
 	if fs.isolateByGroupIDs {
-		partDir := partitionDirectoryPrefix + partID
+		partDir := PartitionDirectoryPrefix + partID
 		if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
 			return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 		} else {
@@ -168,7 +168,7 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 		if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
 			filePath = filepath.Join(groupID, filePath)
 		}
-		partDir = partitionDirectoryPrefix + partID
+		partDir = PartitionDirectoryPrefix + partID
 	} else {
 		partDir = partID
 	}

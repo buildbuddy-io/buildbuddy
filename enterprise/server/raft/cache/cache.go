@@ -122,6 +122,12 @@ func Register(env environment.Env) error {
 		Join:          *join,
 		HTTPAddr:      *httpAddr,
 		GRPCAddr:      *gRPCAddr,
+		// XXX load partitions from config
+		Partitions: []disk.Partition{
+			{
+				ID: DefaultPartitionID,
+			},
+		},
 	}
 	rc, err := NewRaftCache(env, rcConfig)
 	if err != nil {

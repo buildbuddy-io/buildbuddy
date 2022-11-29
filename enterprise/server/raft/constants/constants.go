@@ -20,6 +20,7 @@ const (
 	RegistryQueryEvent        = "registry_query_event"
 	AutoBringupEvent          = "auto_bringup_event"
 	NodeUsageEvent            = "node_usage_event"
+	NodePartitionUsageEvent   = "node_partition_usage_event"
 	PlacementDriverQueryEvent = "placement_driver_query_event"
 )
 

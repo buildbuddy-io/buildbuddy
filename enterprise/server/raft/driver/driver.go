@@ -652,8 +652,8 @@ func (d *Driver) manageClusters() error {
 		// If we don't manage any clusters, exit now.
 		return nil
 	}
-	log.Printf("state: %+v", state)
-	log.Printf("cluster map:\n%s", d.clusterMap.String())
+	//log.Printf("state: %+v", state)
+	//log.Printf("cluster map:\n%s", d.clusterMap.String())
 
 	changes := d.proposeChanges(state)
 	s := len(changes.deadReplicas) + len(changes.moveableReplicas)
@@ -661,7 +661,7 @@ func (d *Driver) manageClusters() error {
 		return nil
 	}
 
-	log.Printf("proposed changes: %+v", changes)
+	//log.Printf("proposed changes: %+v", changes)
 	return d.modifyCluster(ctx, state, changes)
 }
 

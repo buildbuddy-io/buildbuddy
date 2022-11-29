@@ -367,6 +367,12 @@ message StoreUsage {
   int64 total_bytes_free = 7;
 }
 
+message PartitionUsage {
+  string partition_id = 1;
+  int64 size_bytes = 2;
+  int64 record_count = 3;
+}
+
 message NodeUsage {
   NodeDescriptor node = 1;
 
@@ -375,6 +381,12 @@ message NodeUsage {
   int64 disk_bytes_used = 4;
 
   repeated ReplicaUsage replica_usage = 5;
+}
+
+message NodePartitionUsage {
+  NodeDescriptor node = 1;
+
+  repeated PartitionUsage partition_usage = 2;
 }
 
 message NodeDescriptor {
@@ -492,6 +504,7 @@ message RangeReplica {
 message ListClusterResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
+  repeated PartitionUsage partitions = 3;
 }
 
 message CreateSnapshotRequest {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,6 +70,222 @@ var (
 	replicaSplitSizeBytes   = flag.Int64("cache.raft.replica_split_size_bytes", 2e7, "Split replicas after they reach this size")
 )
 
+type nodePartitionUsage struct {
+	sizeBytes  int64
+	lastUpdate time.Time
+}
+
+type partitionUsage struct {
+	nodes    map[string]*nodePartitionUsage
+	replicas map[uint64]*rfpb.PartitionUsage
+}
+
+type usageTracker struct {
+	store         *Store
+	gossipManager *gossip.GossipManager
+
+	partitions []disk.Partition
+
+	mu          sync.Mutex
+	byRange     map[uint64]*rfpb.ReplicaUsage
+	byPartition map[string]*partitionUsage
+}
+
+func newUsageTracker(store *Store, gossipManager *gossip.GossipManager, partitions []disk.Partition) *usageTracker {
+	ut := &usageTracker{
+		store:         store,
+		gossipManager: gossipManager,
+		partitions:    partitions,
+		byRange:       make(map[uint64]*rfpb.ReplicaUsage),
+		byPartition:   make(map[string]*partitionUsage),
+	}
+	// XXX add exit
+	go ut.broadcastLoop()
+	gossipManager.AddListener(ut)
+	return ut
+}
+
+func (ut *usageTracker) Statusz(ctx context.Context) string {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+	buf := "Partitions:\n"
+	for id, u := range ut.byPartition {
+		buf += fmt.Sprintf("\t%s\n", id)
+		buf += "\t\tLocal Ranges:\n"
+		for rid, pu := range u.replicas {
+			buf += fmt.Sprintf("\t\t\t%d: %d bytes, %d records\n", rid, pu.GetSizeBytes(), pu.GetRecordCount())
+		}
+		buf += "\t\tGlobal Usage:\n"
+		for nhid, nu := range u.nodes {
+			buf += fmt.Sprintf("\t\t\t%s: %d bytes\n", nhid, nu.sizeBytes)
+		}
+	}
+	return buf
+}
+
+func (ut *usageTracker) OnEvent(updateType serf.EventType, event serf.Event) {
+	if updateType != serf.EventUser {
+		return
+	}
+	userEvent, ok := event.(serf.UserEvent)
+	if !ok {
+		return
+	}
+	if userEvent.Name != constants.NodePartitionUsageEvent {
+		return
+	}
+
+	nu := &rfpb.NodePartitionUsage{}
+	if err := proto.Unmarshal(userEvent.Payload, nu); err != nil {
+		return
+	}
+
+	ut.RemoteUpdate(nu)
+}
+
+// RemoteUpdate processes a usage update broadcast by Raft nodes.
+// Note that this also includes data broadcast by the local node.
+func (ut *usageTracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+
+	nhid := usage.GetNode().GetNhid()
+	for _, pu := range usage.GetPartitionUsage() {
+		lpu, ok := ut.byPartition[pu.GetPartitionId()]
+		if !ok {
+			lpu = &partitionUsage{
+				nodes:    make(map[string]*nodePartitionUsage),
+				replicas: make(map[uint64]*rfpb.PartitionUsage),
+			}
+			ut.byPartition[pu.GetPartitionId()] = lpu
+		}
+		n, ok := lpu.nodes[nhid]
+		if !ok {
+			n = &nodePartitionUsage{}
+			lpu.nodes[nhid] = n
+		}
+		n.lastUpdate = time.Now()
+		n.sizeBytes = pu.GetSizeBytes()
+
+		// Prune stale data.
+		for id, n := range lpu.nodes {
+			if time.Since(n.lastUpdate) > 30*time.Second {
+				delete(lpu.nodes, id)
+			}
+		}
+	}
+}
+
+// Update processes a usage update from a local replica.
+func (ut *usageTracker) Update(rangeID uint64, usage *rfpb.ReplicaUsage, partitionUsages []*rfpb.PartitionUsage) {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+
+	ut.byRange[rangeID] = usage
+
+	// Partition usage is only tracked for leased ranges.
+	if !ut.store.haveLease(rangeID) {
+		ut.removeRangePartitions(rangeID)
+		return
+	}
+
+	for _, u := range partitionUsages {
+		ud, ok := ut.byPartition[u.GetPartitionId()]
+		if !ok {
+			ud = &partitionUsage{}
+			ut.byPartition[u.GetPartitionId()] = ud
+		}
+		ud.replicas[rangeID] = u
+	}
+}
+
+func (ut *usageTracker) removeRangePartitions(rangeID uint64) {
+	for _, u := range ut.byPartition {
+		delete(u.replicas, rangeID)
+	}
+}
+
+func (ut *usageTracker) RemoveRange(rangeID uint64) {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+
+	delete(ut.byRange, rangeID)
+
+	ut.removeRangePartitions(rangeID)
+}
+
+func (ut *usageTracker) RangeUsages() []*rfpb.ReplicaUsage {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+
+	var us []*rfpb.ReplicaUsage
+	for _, u := range ut.byRange {
+		us = append(us, u)
+	}
+	return us
+}
+
+func (ut *usageTracker) computeUsage() *rfpb.NodePartitionUsage {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+	nu := &rfpb.NodePartitionUsage{
+		Node: ut.store.MyNodeDescriptor(),
+	}
+
+	for _, p := range ut.partitions {
+		up := &rfpb.PartitionUsage{
+			PartitionId: p.ID,
+		}
+		if u, ok := ut.byPartition[p.ID]; ok {
+			// Sum up total partition usage. Other nodes don't need to know
+			// about individual ranges.
+			for _, ru := range u.replicas {
+				up.SizeBytes += ru.GetSizeBytes()
+				up.RecordCount += ru.GetRecordCount()
+			}
+		}
+		nu.PartitionUsage = append(nu.PartitionUsage, up)
+	}
+	return nu
+}
+
+func (ut *usageTracker) logState() {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+	for id, p := range ut.byPartition {
+		var usages []string
+		for nhid, u := range p.nodes {
+			usages = append(usages, fmt.Sprintf("%s=%d", nhid, u.sizeBytes))
+		}
+		log.Warningf("usage for %q: %s", id, strings.Join(usages, ", "))
+	}
+}
+
+func (ut *usageTracker) broadcastLoop() {
+	for {
+		if err := ut.broadcast(); err != nil {
+			log.Warningf("could not gossip node partition usage info: %s", err)
+		}
+		time.Sleep(15 * time.Second)
+		ut.logState()
+	}
+}
+
+func (ut *usageTracker) broadcast() error {
+	usage := ut.computeUsage()
+
+	buf, err := proto.Marshal(usage)
+	if err != nil {
+		return err
+	}
+
+	if err := ut.gossipManager.SendUserEvent(constants.NodePartitionUsageEvent, buf, false /*coalesce*/); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type Store struct {
 	rootDir    string
 	grpcAddr   string
@@ -88,7 +305,7 @@ type Store struct {
 
 	leases   sync.Map // map of uint64 rangeID -> *rangelease.Lease
 	replicas sync.Map // map of uint64 rangeID -> *replica.Replica
-	usages   sync.Map // map of uint64 rangeID -> *ReplicaUsage
+	usages   *usageTracker
 
 	metaRangeData   string
 	leaderUpdatedCB listener.LeaderCB
@@ -117,7 +334,6 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 		leases:   sync.Map{},
 		replicas: sync.Map{},
-		usages:   sync.Map{},
 
 		metaRangeData: "",
 		fileStorer: filestore.New(filestore.Opts{
@@ -129,6 +345,7 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		eg:         &errgroup.Group{},
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
+	s.usages = newUsageTracker(s, gossipManager, partitions)
 	gossipManager.AddListener(s)
 
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&s.leaderUpdatedCB)
@@ -155,7 +372,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	for _, r := range replicas {
 		cluster := fmt.Sprintf("(c%03dn%03d)", r.ClusterID, r.NodeID)
 
-		usage, err := r.Usage()
+		usage, _, err := r.Usage()
 		if err != nil {
 			buf += fmt.Sprintf("\t%s error: %s\n", cluster, err)
 			continue
@@ -173,6 +390,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 		}
 		buf += fmt.Sprintf("\t%s Usage: %4dMB %s\n", cluster, mbUsed, extra)
 	}
+	buf += s.usages.Statusz(ctx)
 	buf += "</pre>"
 	return buf
 }
@@ -188,7 +406,7 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 	go s.maybeAcquireRangeLease(rd)
 }
 
-func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
+func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage, partitionUsages []*rfpb.PartitionUsage) {
 	clusterID := usage.GetReplica().GetClusterId()
 	if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
 		s.RequestSplit(clusterID)
@@ -198,7 +416,7 @@ func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
 	if rd == nil {
 		return
 	}
-	s.usages.Store(rd.GetRangeId(), usage)
+	s.usages.Update(rd.GetRangeId(), usage, partitionUsages)
 }
 
 func (s *Store) RequestSplit(clusterID uint64) {
@@ -353,6 +571,15 @@ func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
 	return s.lookupRange(clusterID)
 }
 
+func (s *Store) updateUsages(r *replica.Replica) error {
+	usage, partitionUsages, err := r.Usage()
+	if err != nil {
+		return err
+	}
+	s.usages.Update(usage.GetRangeId(), usage, partitionUsages)
+	return nil
+}
+
 // We need to implement the Add/RemoveRange interface so that stores opened and
 // closed on this node will notify us when their range appears and disappears.
 // We'll use this information to drive the range tags we broadcast.
@@ -395,12 +622,13 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	// Start goroutines for these so that Adding ranges is quick.
 	go s.maybeAcquireRangeLease(rd)
 	go s.broadcast()
+	go s.updateUsages(r)
 }
 
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Removing range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetLeft(), rd.GetRight(), rd.GetGeneration())
 	s.replicas.Delete(rd.GetRangeId())
-	s.usages.Delete(rd.GetRangeId())
+	s.usages.RemoveRange(rd.GetRangeId())
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
@@ -458,6 +686,19 @@ func (s *Store) validatedRange(header *rfpb.Header) (*replica.Replica, *rfpb.Ran
 	return r, rd, nil
 }
 
+func (s *Store) haveLease(rangeID uint64) bool {
+	if rlIface, ok := s.leases.Load(rangeID); ok {
+		if rl, ok := rlIface.(*rangelease.Lease); ok {
+			if rl.Valid() {
+				return true
+			}
+		} else {
+			alert.UnexpectedEvent("unexpected_leases_map_type_error")
+		}
+	}
+	return false
+}
+
 // LeasedRange verifies that the header is valid and the client is using
 // an up-to-date range descriptor. It also checks that a local replica owns
 // the range lease for the requested range.
@@ -467,14 +708,8 @@ func (s *Store) LeasedRange(header *rfpb.Header) (*replica.Replica, error) {
 		return nil, err
 	}
 
-	if rlIface, ok := s.leases.Load(header.GetRangeId()); ok {
-		if rl, ok := rlIface.(*rangelease.Lease); ok {
-			if rl.Valid() {
-				return r, nil
-			}
-		} else {
-			alert.UnexpectedEvent("unexpected_leases_map_type_error")
-		}
+	if s.haveLease(header.GetRangeId()) {
+		return r, nil
 	}
 
 	go s.maybeAcquireRangeLease(rd)
@@ -828,14 +1063,11 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 		return true
 	})
 
-	s.usages.Range(func(key, value any) bool {
-		if ru, ok := value.(*rfpb.ReplicaUsage); ok {
-			su.ReadQps += ru.GetReadQps()
-			su.RaftProposeQps += ru.GetRaftProposeQps()
-			su.TotalBytesUsed += ru.GetEstimatedDiskBytesUsed()
-		}
-		return true
-	})
+	for _, ru := range s.usages.RangeUsages() {
+		su.ReadQps += ru.GetReadQps()
+		su.RaftProposeQps += ru.GetRaftProposeQps()
+		su.TotalBytesUsed += ru.GetEstimatedDiskBytesUsed()
+	}
 	return su
 }
 
@@ -1087,15 +1319,15 @@ func casRevert(cas *rfpb.CASRequest) *rfpb.CASRequest {
 //
 // Splits happen in the following way:
 //
-// 1) The range to be split is locked for splitting. This prevents all
-//   further reads and writes.
-// 2) A new range is brought up on the same nodes as the range to be split.
-// 3) A split point is determined, and data is copied from the range to be split
-//   to the newly created range.
-// 4) The newly created range is activated (locally).
-// 5) The metarange is updated with the new range info, and the split range's
-//   new endpoints.
-// 6) The split range is unlocked.
+//  1. The range to be split is locked for splitting. This prevents all
+//     further reads and writes.
+//  2. A new range is brought up on the same nodes as the range to be split.
+//  3. A split point is determined, and data is copied from the range to be split
+//     to the newly created range.
+//  4. The newly created range is activated (locally).
+//  5. The metarange is updated with the new range info, and the split range's
+//     new endpoints.
+//  6. The split range is unlocked.
 func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
 	if !*enableSplittingReplicas {
 		return nil, status.FailedPreconditionError("Splitting not enabled")
@@ -1343,9 +1575,9 @@ func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64
 
 // AddClusterNode adds a new node to the specified cluster if pre-reqs are met.
 // Pre-reqs are:
-//  * The request must be valid and contain all information
-//  * This node must be a member of the cluster that is being added to
-//  * The provided range descriptor must be up to date
+//   - The request must be valid and contain all information
+//   - This node must be a member of the cluster that is being added to
+//   - The provided range descriptor must be up to date
 func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequest) (*rfpb.AddClusterNodeResponse, error) {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
@@ -1427,9 +1659,9 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 
 // RemoveClusterNode removes a new node from the specified cluster if pre-reqs are
 // met. Pre-reqs are:
-//  * The request must be valid and contain all information
-//  * This node must be a member of the cluster that is being removed from
-//  * The provided range descriptor must be up to date
+//   - The request must be valid and contain all information
+//   - This node must be a member of the cluster that is being removed from
+//   - The provided range descriptor must be up to date
 func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNodeRequest) (*rfpb.RemoveClusterNodeResponse, error) {
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()
@@ -1530,7 +1762,7 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 			Range: rd,
 		}
 		if replica, err := s.GetReplica(rd.GetRangeId()); err == nil {
-			usage, err := replica.Usage()
+			usage, _, err := replica.Usage()
 			if err == nil {
 				rr.ReplicaUsage = usage
 			}
