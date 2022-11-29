@@ -94,13 +94,15 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                         onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
                         {output.name}
                       </a>
-                      <a
-                        className="artifact-view"
-                        href={`/code/buildbuddy-io/buildbuddy/?bytestream_url=${encodeURIComponent(
-                          output.uri
-                        )}&invocation_id=${this.props.model.getId()}&filename=${output.name}`}>
-                        <FileCode /> View
-                      </a>
+                      {output.uri?.startsWith("bytestream://") && (
+                        <a
+                          className="artifact-view"
+                          href={`/code/buildbuddy-io/buildbuddy/?bytestream_url=${encodeURIComponent(
+                            output.uri
+                          )}&invocation_id=${this.props.model.getId()}&filename=${output.name}`}>
+                          <FileCode /> View
+                        </a>
+                      )}
                     </div>
                   ))}
                   {target.hiddenOutputCount > 0 && (
