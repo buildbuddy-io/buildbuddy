@@ -368,6 +368,18 @@ message StoreUsage {
   int64 raft_propose_qps = 5;
   int64 total_bytes_used = 6;
   int64 total_bytes_free = 7;
+message PartitionUsage {
+  string partition_id = 1;
+  int64 size_bytes = 2;
+  int64 record_count = 3;
+}
+
+}
+
+message NodePartitionUsage {
+  NodeDescriptor node = 1;
+
+  repeated PartitionMetadata partition_usage = 2;
 }
 
 message NodeDescriptor {
@@ -488,6 +500,7 @@ message RangeReplica {
 message ListClusterResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
+  repeated PartitionUsage partitions = 3;
 }
 
 message CreateSnapshotRequest {
@@ -512,6 +525,15 @@ message LoadSnapshotResponse {}
 // Data API, used for shipping the actual bytes around, outside raft.
 //
 ////////////////////////////////////////////////////////////////////////////////
+
+message MetadataRequest {
+  Header header = 1;
+  FileRecord file_record = 2;
+}
+
+message MetadataResponse {
+  FileMetadata metadata = 1;
+}
 
 message ReadRequest {
   Header header = 1;

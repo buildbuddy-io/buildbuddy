@@ -42,6 +42,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 )
 
@@ -52,6 +53,8 @@ var (
 	httpAddr            = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
 	gRPCAddr            = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
 	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
+	partitions          = flagutil.New("cache.raft.partitions", []disk.Partition{}, "")
+	partitionMappings   = flagutil.New("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
 )
 
 const (
@@ -115,12 +118,30 @@ func Register(env environment.Env) error {
 	if *listenAddr == "" {
 		return nil
 	}
+
+	ps := *partitions
+	haveDefault := false
+	for _, p := range ps {
+		if p.ID == DefaultPartitionID {
+			haveDefault = true
+			break
+		}
+	}
+	if !haveDefault {
+		ps = append(ps, disk.Partition{
+			ID:           DefaultPartitionID,
+			MaxSizeBytes: cache_config.MaxSizeBytes(),
+		})
+	}
+
 	rcConfig := &Config{
-		RootDir:       *rootDirectory,
-		ListenAddress: *listenAddr,
-		Join:          *join,
-		HTTPAddr:      *httpAddr,
-		GRPCAddr:      *gRPCAddr,
+		RootDir:           *rootDirectory,
+		ListenAddress:     *listenAddr,
+		Join:              *join,
+		HTTPAddr:          *httpAddr,
+		GRPCAddr:          *gRPCAddr,
+		Partitions:        ps,
+		PartitionMappings: *partitionMappings,
 	}
 	rc, err := NewRaftCache(env, rcConfig)
 	if err != nil {
@@ -218,7 +239,11 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	rc.store = store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient, rc.conf.Partitions)
+	store, err := store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient, rc.conf.Partitions)
+	if err != nil {
+		return nil, err
+	}
+	rc.store = store
 	if err := rc.store.Start(rc.grpcAddress); err != nil {
 		return nil, err
 	}

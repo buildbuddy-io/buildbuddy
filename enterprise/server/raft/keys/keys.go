@@ -2,6 +2,12 @@ package keys
 
 import (
 	"bytes"
+	"math"
+)
+
+const (
+	MinByte = 0
+	MaxByte = math.MaxUint8
 )
 
 type Key []byte
@@ -30,4 +36,8 @@ func IsLocalKey(key Key) bool {
 		return false
 	}
 	return key[0] == '\x01'
+}
+
+func Range(key []byte) ([]byte, []byte) {
+	return MakeKey(key, []byte{MinByte}), MakeKey(key, []byte{MaxByte})
 }
