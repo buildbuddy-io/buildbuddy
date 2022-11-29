@@ -3,8 +3,21 @@ import React from "react";
 import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
-import { Filter, X, Calendar, User, Github, GitBranch, GitCommit, HardDrive, Wrench } from "lucide-react";
+import {
+  Filter,
+  X,
+  Calendar,
+  User,
+  Github,
+  GitBranch,
+  GitCommit,
+  HardDrive,
+  Wrench,
+  SortAsc,
+  SortDesc,
+} from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
+import Radio from "../../../app/components/radio/radio";
 import { formatDateRange } from "../../../app/format/format";
 import router, {
   START_DATE_PARAM_NAME,
@@ -18,6 +31,8 @@ import router, {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
+  SORT_BY_NAME,
+  SORT_ORDER_NAME,
 } from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import {
@@ -40,6 +55,7 @@ export interface FilterProps {
 interface State {
   isDatePickerOpen?: boolean;
   isFilterMenuOpen?: boolean;
+  isSortMenuOpen?: boolean;
 
   isAdvancedFilterOpen?: boolean;
 
@@ -49,6 +65,9 @@ interface State {
   commit?: string;
   host?: string;
   command?: string;
+
+  sortBy: string;
+  sortOrder: string;
 }
 
 type PresetRange = {
@@ -143,6 +162,13 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
+  private onOpenSortMenu() {
+    this.setState({ isSortMenuOpen: true });
+  }
+  private onCloseSortMenu() {
+    this.setState({ isSortMenuOpen: false });
+  }
+
   private onRoleToggle(role: string, selected: Set<string>) {
     selected = new Set(selected); // clone
     if (selected.has(role)) {
@@ -169,6 +195,22 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
+  private onSortByToggle(sortBy: string, selected: string) {
+    selected = sortBy;
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [SORT_BY_NAME]: selected,
+    });
+  }
+
+  private onSortOrderToggle(sortOrder: string, selected: string) {
+    selected = sortOrder;
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [SORT_ORDER_NAME]: selected,
+    });
+  }
+
   private renderRoleCheckbox(label: string, role: string, selected: Set<string>) {
     return (
       <label onClick={this.onRoleToggle.bind(this, role, selected)}>
@@ -192,7 +234,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     );
   }
 
-  private handleApplyClicked() {
+  private handleFilterApplyClicked() {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [USER_PARAM_NAME]: this.state.user,
@@ -202,6 +244,24 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [HOST_PARAM_NAME]: this.state.host,
       [COMMAND_PARAM_NAME]: this.state.command,
     });
+  }
+
+  private renderSortByRadio(label: string, sortBy: string, selected: string) {
+    return (
+      <label onClick={this.onSortByToggle.bind(this, sortBy, selected)}>
+        <Radio checked={selected == sortBy} />
+        <span>{label}</span>
+      </label>
+    );
+  }
+
+  private renderSortOrderRadio(label: string, sortOrder: string, selected: string) {
+    return (
+      <label onClick={this.onSortOrderToggle.bind(this, sortOrder, selected)}>
+        <Radio checked={selected == sortOrder} />
+        <span>{label}</span>
+      </label>
+    );
   }
 
   render() {
@@ -250,6 +310,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         }),
       };
     });
+
+    const sortByValue = this.props.search.get(SORT_BY_NAME) || "start-time";
+    const sortOrderValue = this.props.search.get(SORT_ORDER_NAME) || "desc";
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
@@ -385,7 +448,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                     />
                   </div>
                   <div className="option-group-input">
-                    <FilledButton onClick={this.handleApplyClicked.bind(this)}>Apply</FilledButton>
+                    <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>
                   </div>
                 </div>
               </form>
@@ -419,6 +482,49 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               startDatePlaceholder="Start date"
               endDatePlaceholder="End date"
             />
+          </Popup>
+        </div>
+        <div className="popup-wrapper">
+          <OutlinedButton className="sort-button icon-text-button" onClick={this.onOpenSortMenu.bind(this)}>
+            {sortOrderValue == "asc" && <SortAsc className="icon" />}
+            {sortOrderValue == "desc" && <SortDesc className="icon" />}
+            <span>
+              {sortByValue == "start-time" && "Invocation Time (Start)"}
+              {sortByValue == "end-time" && "Invocation Time (End)"}
+              {sortByValue == "duration" && "Invocation Duration"}
+              {sortByValue == "ac-hit-ratio" && "AC Hit Ratio"}
+              {sortByValue == "cas-hit-ratio" && "CAS Hit Ratio"}
+              {sortByValue == "cache-down" && "Cache Download"}
+              {sortByValue == "cache-up" && "Cache Upload"}
+              {sortByValue == "cache-xfer" && "Cache Transfer"}
+            </span>
+          </OutlinedButton>
+          <Popup
+            isOpen={this.state.isSortMenuOpen}
+            onRequestClose={this.onCloseSortMenu.bind(this)}
+            className="filter-menu-popup">
+            <div className="option-groups-row">
+              <div className="option-group">
+                <div className="option-group-title">Sort By</div>
+                <div className="option-group-options">
+                  {this.renderSortByRadio("Invocation Time (Start)", "start-time", sortByValue)}
+                  {this.renderSortByRadio("Invocation Time (End)", "end-time", sortByValue)}
+                  {this.renderSortByRadio("Invocation Duration", "duration", sortByValue)}
+                  {this.renderSortByRadio("Action Cache Hit Ratio", "ac-hit-ratio", sortByValue)}
+                  {this.renderSortByRadio("CAS Cache Hit Ratio", "cas-hit-ratio", sortByValue)}
+                  {this.renderSortByRadio("Cache Download", "cache-down", sortByValue)}
+                  {this.renderSortByRadio("Cache Upload", "cache-up", sortByValue)}
+                  {this.renderSortByRadio("Cache Transfer", "cache-xfer", sortByValue)}
+                </div>
+              </div>
+              <div className="option-group">
+                <div className="option-group-title">Sort Order</div>
+                <div className="option-group-options">
+                  {this.renderSortOrderRadio("Ascending", "asc", sortOrderValue)}
+                  {this.renderSortOrderRadio("Descending", "desc", sortOrderValue)}
+                </div>
+              </div>
+            </div>
           </Popup>
         </div>
       </div>

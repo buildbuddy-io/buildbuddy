@@ -14,6 +14,8 @@ import {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
+  SORT_BY_NAME,
+  SORT_ORDER_NAME,
 } from "../../../app/router/router";
 
 // URL param value representing the empty role (""), which is the default.
@@ -35,6 +37,9 @@ export interface ProtoFilterParams {
   commit: string;
   host: string;
   command: string;
+
+  sortBy: string;
+  sortOrder: string;
 }
 
 export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
@@ -53,6 +58,9 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     commit: search.get(COMMIT_PARAM_NAME),
     host: search.get(HOST_PARAM_NAME),
     command: search.get(COMMAND_PARAM_NAME),
+
+    sortBy: search.get(SORT_BY_NAME),
+    sortOrder: search.get(SORT_ORDER_NAME),
   };
 }
 
