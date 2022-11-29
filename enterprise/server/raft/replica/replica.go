@@ -142,7 +142,7 @@ func isLocalKey(key []byte) bool {
 }
 
 func isFileRecordKey(key []byte) bool {
-	return !isLocalKey(key)
+	return !isLocalKey(key) && bytes.Contains(key, []byte("/"))
 }
 
 func sizeOf(key []byte, val []byte) (int64, error) {
@@ -258,11 +258,7 @@ func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 			sm.rangeMu.RUnlock()
 
 			if isFileRecordKey(key) {
-				fileMetadata := &rfpb.FileMetadata{}
-				if err := proto.Unmarshal(val, fileMetadata); err != nil {
-					return err
-				}
-				if err := sm.updateAndFlushFileRecordCount(wb, key, fileMetadata, fileRecordAdd); err != nil {
+				if err := sm.updateAndFlushFileRecordCount(wb, key, fileRecordAdd); err != nil {
 					return err
 				}
 			}
@@ -368,10 +364,16 @@ func (sm *Replica) flushRecordCounts(wb *pebble.Batch) error {
 	return nil
 }
 
-func (sm *Replica) updateFileRecordCount(wb *pebble.Batch, key []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+func (sm *Replica) updateFileRecordCount(wb *pebble.Batch, key []byte, op fileRecordOp) error {
 	sm.fileRecordCountMu.Lock()
 	defer sm.fileRecordCountMu.Unlock()
-	partID := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
+
+	parts := bytes.SplitN(key, []byte("/"), 2)
+	if len(parts) != 2 {
+		return status.FailedPreconditionErrorf("not a valid file record key %q", string(key))
+	}
+
+	partID := string(parts[0])
 	if op == fileRecordDelete {
 		sm.fileRecordCount[partID]--
 	} else {
@@ -388,8 +390,8 @@ func (sm *Replica) updateFileRecordCount(wb *pebble.Batch, key []byte, fileMetad
 	return nil
 }
 
-func (sm *Replica) updateAndFlushFileRecordCount(wb *pebble.Batch, key []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
-	if err := sm.updateFileRecordCount(wb, key, fileMetadata, op); err != nil {
+func (sm *Replica) updateAndFlushFileRecordCount(wb *pebble.Batch, key []byte, op fileRecordOp) error {
+	if err := sm.updateFileRecordCount(wb, key, op); err != nil {
 		return err
 	}
 	return sm.flushRecordCounts(wb)
@@ -480,7 +482,7 @@ func (sm *Replica) fileDelete(wb *pebble.Batch, req *rfpb.FileDeleteRequest) (*r
 	if err := wb.Delete(fileMetadataKey, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
-	if err := sm.updateAndFlushFileRecordCount(wb, fileMetadataKey, fileMetadata, fileRecordDelete); err != nil {
+	if err := sm.updateAndFlushFileRecordCount(wb, fileMetadataKey, fileRecordDelete); err != nil {
 		return nil, err
 	}
 	return &rfpb.FileDeleteResponse{}, nil
@@ -499,7 +501,7 @@ func (sm *Replica) deleteRange(wb *pebble.Batch, req *rfpb.DeleteRangeRequest) (
 		}
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err == nil {
-			if err := sm.updateFileRecordCount(wb, iter.Key(), fileMetadata, fileRecordDelete); err != nil {
+			if err := sm.updateFileRecordCount(wb, iter.Key(), fileRecordDelete); err != nil {
 				return nil, err
 			}
 			if fileMetadata.GetFileRecord() != nil {
