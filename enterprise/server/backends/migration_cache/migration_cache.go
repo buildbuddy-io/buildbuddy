@@ -834,3 +834,7 @@ func (mc *MigrationCache) Stop() error {
 	}
 	return dstShutdownErr
 }
+
+func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	return false
+}

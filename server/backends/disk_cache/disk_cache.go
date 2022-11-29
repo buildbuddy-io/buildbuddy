@@ -1245,3 +1245,7 @@ func (p *partition) writer(ctx context.Context, r *resource.ResourceName) (inter
 	}
 	return cwc, nil
 }
+
+func (c *DiskCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	return compressor == repb.Compressor_IDENTITY
+}

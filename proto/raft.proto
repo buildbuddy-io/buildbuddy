@@ -29,6 +29,7 @@ message Isolation {
 message FileRecord {
   Isolation isolation = 1;
   build.bazel.remote.execution.v2.Digest digest = 2;
+  build.bazel.remote.execution.v2.Compressor.Value compressor = 3;
 }
 
 message StorageMetadata {
