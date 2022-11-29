@@ -4,14 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"strconv"
-	"time"
 
 	"cloud.google.com/go/logging"
 	"github.com/rs/zerolog"
 
-	logpb "google.golang.org/genproto/googleapis/logging/v2"
-	structpb "google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var (
@@ -40,59 +37,22 @@ func (l *logWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func jsonPayload(p []byte) (*structpb.Struct, error) {
+	m := map[string]any{}
+	if err := json.Unmarshal(p, &m); err != nil {
+		return nil, err
+	}
+	jsonPayload, err := structpb.NewStruct(m)
+	if err != nil {
+		return nil, err
+	}
+	return jsonPayload, nil
+}
+
 func (l *logWriter) WriteLevel(level zerolog.Level, p []byte) (int, error) {
 	entry := logging.Entry{}
-	m := map[string]any{}
-	if err := json.Unmarshal(p, &m); err == nil {
-		jsonPayload := &structpb.Struct{Fields: map[string]*structpb.Value{}}
-		entry.Payload = jsonPayload
-		entry.Operation = &logpb.LogEntryOperation{Producer: "github.com/buildbuddy-io/buildbuddy"}
-		if v, ok := m[zerolog.TimestampFieldName]; ok {
-			if t, ok := v.(string); ok {
-				if entry.Timestamp, err = time.Parse(zerolog.TimeFieldFormat, t); err != nil {
-					entry.Timestamp = time.Time{}
-				}
-				jsonPayload.Fields["timestamp"] = structpb.NewStringValue(t)
-			}
-		}
-		if v, ok := m[zerolog.MessageFieldName]; ok {
-			if p, ok := v.(string); ok {
-				jsonPayload.Fields["message"] = structpb.NewStringValue(p)
-			}
-		}
-		if v, ok := m["executor_id"]; ok {
-			if p, ok := v.(string); ok {
-				jsonPayload.Fields["executor_id"] = structpb.NewStringValue(p)
-			}
-		}
-		if v, ok := m["executor_host_id"]; ok {
-			if p, ok := v.(string); ok {
-				jsonPayload.Fields["executor_host_id"] = structpb.NewStringValue(p)
-			}
-		}
-		if v, ok := m["execution_id"]; ok {
-			if p, ok := v.(string); ok {
-				jsonPayload.Fields["execution_id"] = structpb.NewStringValue(p)
-				entry.Operation.Id = p
-			}
-		}
-		if v, ok := m["logging.googleapis.com/sourceLocation"]; ok {
-			if m, ok := v.(map[string]any); ok {
-				entry.SourceLocation = &logpb.LogEntrySourceLocation{}
-				if v, ok := m["file"]; ok {
-					if f, ok := v.(string); ok {
-						entry.SourceLocation.File = f
-					}
-				}
-				if v, ok := m["line"]; ok {
-					if l, ok := v.(string); ok {
-						if n, err := strconv.ParseInt(l, 10, 64); err == nil {
-							entry.SourceLocation.Line = n
-						}
-					}
-				}
-			}
-		}
+	if payload, err := jsonPayload(p); err == nil {
+		entry.Payload = payload
 	} else {
 		entry.Payload = string(p)
 	}
