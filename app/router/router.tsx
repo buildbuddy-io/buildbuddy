@@ -21,8 +21,8 @@ export const COMMAND_PARAM_NAME = "command";
 
 // Sort params for the global filter.
 
-export const SORT_BY_NAME = "sort-by";
-export const SORT_ORDER_NAME = "sort-order";
+export const SORT_BY_PARAM_NAME = "sort-by";
+export const SORT_ORDER_PARAM_NAME = "sort-order";
 
 const GLOBAL_FILTER_PARAM_NAMES = [
   ROLE_PARAM_NAME,
