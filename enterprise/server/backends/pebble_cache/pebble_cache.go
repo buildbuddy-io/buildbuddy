@@ -1889,34 +1889,38 @@ func (r *compressionReader) Close() error {
 }
 
 func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, resource *resource.ResourceName, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
-	if requestedCompression != cachedCompression {
-		if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
-			bufSize := int64(CompressorBufSizeBytes)
-			resourceSize := resource.GetDigest().GetSizeBytes()
-			if resourceSize > 0 && resourceSize < bufSize {
-				bufSize = resourceSize
-			}
-
-			readBuf := p.bufferPool.Get(bufSize)
-			compressBuf := p.bufferPool.Get(bufSize)
-
-			cr, err := compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
-			if err != nil {
-				p.bufferPool.Put(readBuf)
-				p.bufferPool.Put(compressBuf)
-				return nil, err
-			}
-			return &compressionReader{
-				ReadCloser:  cr,
-				readBuf:     readBuf,
-				compressBuf: compressBuf,
-				bufferPool:  p.bufferPool,
-			}, err
-		} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
-			return compression.NewZstdDecompressingReader(reader)
-		}
+	if requestedCompression == cachedCompression {
+		return reader, nil
 	}
-	return reader, nil
+
+	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
+		bufSize := int64(CompressorBufSizeBytes)
+		resourceSize := resource.GetDigest().GetSizeBytes()
+		if resourceSize > 0 && resourceSize < bufSize {
+			bufSize = resourceSize
+		}
+
+		readBuf := p.bufferPool.Get(bufSize)
+		compressBuf := p.bufferPool.Get(bufSize)
+
+		cr, err := compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
+		if err != nil {
+			p.bufferPool.Put(readBuf)
+			p.bufferPool.Put(compressBuf)
+			return nil, err
+		}
+		return &compressionReader{
+			ReadCloser:  cr,
+			readBuf:     readBuf,
+			compressBuf: compressBuf,
+			bufferPool:  p.bufferPool,
+		}, err
+	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
+		return compression.NewZstdDecompressingReader(reader)
+	} else {
+		return nil, fmt.Errorf("unsupported compressor %v requested for %v reader, cached compression is %v",
+			requestedCompression, resource, cachedCompression)
+	}
 }
 
 func (p *PebbleCache) Start() error {
