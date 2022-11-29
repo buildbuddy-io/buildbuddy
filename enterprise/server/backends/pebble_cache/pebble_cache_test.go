@@ -625,13 +625,6 @@ func TestMetadata(t *testing.T) {
 		err := pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 
-		expectDataCompressed := testSize >= options.MaxInlineFileSizeBytes
-		expectedSizeBytes := testSize
-		if expectDataCompressed {
-			compressedBuf := compression.CompressZstd(nil, buf)
-			expectedSizeBytes = int64(len(compressedBuf))
-		}
-
 		// Metadata should return true size of the blob, regardless of queried size.
 		digestWrongSize := &repb.Digest{Hash: d.GetHash(), SizeBytes: 1}
 		rWrongSize := &resource.ResourceName{
@@ -641,7 +634,7 @@ func TestMetadata(t *testing.T) {
 
 		md, err := pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
-		require.Equal(t, expectedSizeBytes, md.SizeBytes)
+		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime1 := md.LastAccessTimeUsec
 		lastModifyTime1 := md.LastModifyTimeUsec
 		require.NotZero(t, lastAccessTime1)
@@ -650,7 +643,7 @@ func TestMetadata(t *testing.T) {
 		// Last access time should not update since last call to Metadata()
 		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
-		require.Equal(t, expectedSizeBytes, md.SizeBytes)
+		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
 		lastModifyTime2 := md.LastModifyTimeUsec
 		require.Equal(t, lastAccessTime1, lastAccessTime2)
@@ -660,7 +653,7 @@ func TestMetadata(t *testing.T) {
 		err = pc.Set(ctx, r, buf)
 		md, err = pc.Metadata(ctx, rWrongSize)
 		require.NoError(t, err)
-		require.Equal(t, expectedSizeBytes, md.SizeBytes)
+		require.Equal(t, testSize, md.SizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
 		lastModifyTime3 := md.LastModifyTimeUsec
 		require.Greater(t, lastAccessTime3, lastAccessTime1)
