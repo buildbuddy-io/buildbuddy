@@ -313,7 +313,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       };
     });
 
-    const sortByValue = this.props.search.get(SORT_BY_NAME) || "start-time";
+    const sortByValue = this.props.search.get(SORT_BY_NAME) || "";
     const sortOrderValue = this.props.search.get(SORT_ORDER_NAME) || "desc";
 
     return (
@@ -458,35 +458,6 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           </Popup>
         </div>
         <div className="popup-wrapper">
-          <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
-            <Calendar className="icon" />
-            <span>{formatDateRange(startDate, endDate)}</span>
-          </OutlinedButton>
-          <Popup
-            isOpen={this.state.isDatePickerOpen}
-            onRequestClose={this.onCloseDatePicker.bind(this)}
-            className="date-picker-popup">
-            <DateRangePicker
-              ranges={[{ startDate, endDate, key: "selection" }]}
-              onChange={this.onDateChange.bind(this)}
-              // When showing "All time" we don't want to set the currently
-              // visible month to the Unix epoch... so always show the end
-              // date when initially rendering the component
-              shownDate={endDate}
-              // We want our `CustomDateRange` type here, which is compatible
-              // with the `StaticRange` type, so the cast to `any` is OK here.
-              staticRanges={presetDateRanges as any}
-              // Disable textbox inputs, like "days from today", or "days until today".
-              inputRanges={[]}
-              editableDateInputs
-              color="#263238"
-              rangeColors={["#263238"]}
-              startDatePlaceholder="Start date"
-              endDatePlaceholder="End date"
-            />
-          </Popup>
-        </div>
-        <div className="popup-wrapper">
           <OutlinedButton className="sort-button icon-text-button" onClick={this.onOpenSortMenu.bind(this)}>
             {sortOrderValue == "asc" && <SortAsc className="icon" />}
             {sortOrderValue == "desc" && <SortDesc className="icon" />}
@@ -527,6 +498,35 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 </div>
               </div>
             </div>
+          </Popup>
+        </div>
+        <div className="popup-wrapper">
+          <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
+            <Calendar className="icon" />
+            <span>{formatDateRange(startDate, endDate)}</span>
+          </OutlinedButton>
+          <Popup
+            isOpen={this.state.isDatePickerOpen}
+            onRequestClose={this.onCloseDatePicker.bind(this)}
+            className="date-picker-popup">
+            <DateRangePicker
+              ranges={[{ startDate, endDate, key: "selection" }]}
+              onChange={this.onDateChange.bind(this)}
+              // When showing "All time" we don't want to set the currently
+              // visible month to the Unix epoch... so always show the end
+              // date when initially rendering the component
+              shownDate={endDate}
+              // We want our `CustomDateRange` type here, which is compatible
+              // with the `StaticRange` type, so the cast to `any` is OK here.
+              staticRanges={presetDateRanges as any}
+              // Disable textbox inputs, like "days from today", or "days until today".
+              inputRanges={[]}
+              editableDateInputs
+              color="#263238"
+              rangeColors={["#263238"]}
+              startDatePlaceholder="Start date"
+              endDatePlaceholder="End date"
+            />
           </Popup>
         </div>
       </div>
