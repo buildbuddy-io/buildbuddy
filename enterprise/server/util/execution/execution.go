@@ -5,11 +5,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 
-	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-func TableExecToProto(in *tables.Execution, invLink *tables.InvocationExecution) *iepb.Execution {
-	return &iepb.Execution{
+func TableExecToProto(in *tables.Execution, invLink *tables.InvocationExecution) *repb.StoredExecution {
+	return &repb.StoredExecution{
 		GroupId:                            in.GroupID,
 		UpdatedAtUsec:                      in.UpdatedAtUsec,
 		ExecutionId:                        in.ExecutionID,

@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/util/redisutil",
-        "//proto:internal_execution_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "@com_github_go_redis_redis_v8//:redis",
         "@org_golang_google_protobuf//proto",
