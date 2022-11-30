@@ -448,6 +448,15 @@ message TrendStat {
   int64 branch_count = 20;
 }
 
+message ExecutionStat {
+  // The duration between the execution task is queued and the worker starts.
+  int64 queue_duration_usec_p50 = 1;
+  int64 queue_duration_usec_p75 = 2;
+  int64 queue_duration_usec_p90 = 3;
+  int64 queue_duration_usec_p95 = 4;
+  int64 queue_duration_usec_p99 = 5;
+}
+
 message TrendQuery {
   // The search parameters in this query will be ANDed when performing a
   // query -- so if a client specifies both "user" and "host", all results
@@ -503,4 +512,7 @@ message GetTrendResponse {
 
   // The list of trend stats found.
   repeated TrendStat trend_stat = 2;
+
+  // The list of execution stats found.
+  repeated ExecutionStat execution_stat = 3;
 }
