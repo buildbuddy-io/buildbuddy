@@ -110,7 +110,7 @@ func init() {
 	}
 }
 
-func LocalWriter() *zerolog.ConsoleWriter {
+func LocalWriter() io.Writer {
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 	output := &zerolog.ConsoleWriter{Out: os.Stderr}
 	output.FormatCaller = func(i interface{}) string {
@@ -128,17 +128,16 @@ func LocalWriter() *zerolog.ConsoleWriter {
 	return output
 }
 
-func StructuredWriter() *zerolog.ConsoleWriter {
+func StructuredWriter() io.Writer {
 	// These overrides configure the logger to emit structured
 	// events compatible with GCP's logging infrastructure.
 	zerolog.LevelFieldName = "severity"
 	zerolog.TimestampFieldName = "timestamp"
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	output := &zerolog.ConsoleWriter{Out: os.Stdout}
-	return output
+	return os.Stdout
 }
 
-func NewConsoleWriter() *zerolog.ConsoleWriter {
+func NewConsoleWriter() io.Writer {
 	if *EnableStructuredLogging {
 		return StructuredWriter()
 	}
