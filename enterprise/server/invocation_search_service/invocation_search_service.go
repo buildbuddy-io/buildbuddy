@@ -174,15 +174,36 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	// Always add permissions check.
 	addPermissionsCheckToQuery(u, q)
 
-	sort := defaultSortParams()
-	if req.Sort != nil && req.Sort.SortField != inpb.InvocationSort_UNKNOWN_SORT_FIELD {
-		sort = req.Sort
+	sort := req.Sort
+	if sort == nil {
+		sort = defaultSortParams()
+	} else if req.Sort.SortField == inpb.InvocationSort_UNKNOWN_SORT_FIELD {
+		sort.SortField = defaultSortParams().SortField
 	}
 	switch sort.SortField {
 	case inpb.InvocationSort_CREATED_AT_USEC_SORT_FIELD:
 		q.SetOrderBy("created_at_usec", sort.Ascending)
 	case inpb.InvocationSort_UPDATED_AT_USEC_SORT_FIELD:
 		q.SetOrderBy("updated_at_usec", sort.Ascending)
+	case inpb.InvocationSort_DURATION_SORT_FIELD:
+		q.SetOrderBy("duration_usec", sort.Ascending)
+	case inpb.InvocationSort_ACTION_CACHE_HIT_RATIO_SORT_FIELD:
+		// Treat 0/0 as 100% cache hit rate to avoid divide-by-zero weirdness.
+		q.SetOrderBy(`IFNULL(
+			action_cache_hits / (action_cache_hits + action_cache_misses), 1)`,
+			sort.Ascending)
+	case inpb.InvocationSort_CONTENT_ADDRESSABLE_STORE_CACHE_HIT_RATIO_SORT_FIELD:
+		// Treat 0/0 as 100% cache hit rate to avoid divide-by-zero weirdness.
+		q.SetOrderBy(`IFNULL(
+			cas_cache_hits / (cas_cache_hits + cas_cache_misses), 1)`,
+			sort.Ascending)
+	case inpb.InvocationSort_CACHE_DOWNLOADED_SORT_FIELD:
+		q.SetOrderBy("total_download_size_bytes", sort.Ascending)
+	case inpb.InvocationSort_CACHE_UPLOADED_SORT_FIELD:
+		q.SetOrderBy("total_upload_size_bytes", sort.Ascending)
+	case inpb.InvocationSort_CACHE_TRANSFERRED_SORT_FIELD:
+		q.SetOrderBy("total_download_size_bytes + total_upload_size_bytes",
+			sort.Ascending)
 	case inpb.InvocationSort_UNKNOWN_SORT_FIELD:
 		alert.UnexpectedEvent("invocation_search_no_sort_order")
 	}
