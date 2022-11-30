@@ -45,6 +45,8 @@ import {
   getStartDate,
   DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
+  SortBy,
+  SortOrder,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
 
@@ -311,8 +313,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       };
     });
 
-    const sortByValue = this.props.search.get(SORT_BY_PARAM_NAME) || "";
-    const sortOrderValue = this.props.search.get(SORT_ORDER_PARAM_NAME) || "desc";
+    const sortByValue: SortBy = (this.props.search.get(SORT_BY_PARAM_NAME) as SortBy) || "";
+    const sortOrderValue: SortOrder = (this.props.search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || "desc";
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>

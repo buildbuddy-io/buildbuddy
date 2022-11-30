@@ -26,6 +26,7 @@ export const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 export const DEFAULT_LAST_N_DAYS = 30;
 
 export type SortBy =
+  | ""
   | "start-time"
   | "end-time"
   | "duration"
@@ -70,8 +71,8 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     host: search.get(HOST_PARAM_NAME),
     command: search.get(COMMAND_PARAM_NAME),
 
-    sortBy: search.get(SORT_BY_PARAM_NAME),
-    sortOrder: search.get(SORT_ORDER_PARAM_NAME),
+    sortBy: search.get(SORT_BY_PARAM_NAME) as SortBy,
+    sortOrder: search.get(SORT_ORDER_PARAM_NAME) as SortOrder,
   };
 }
 

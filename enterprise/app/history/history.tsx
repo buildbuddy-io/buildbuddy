@@ -120,7 +120,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       }),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),
-        ascending: this.props.sortOrder === "asc" || filterParams.sortOrder === "asc" ? true : false,
+        ascending: filterParams.sortOrder === "asc",
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
