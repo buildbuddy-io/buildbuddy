@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 
-	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gormclickhouse "gorm.io/driver/clickhouse"
 )
 
@@ -304,7 +304,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	}
 }
 
-func buildExecution(in *iepb.Execution, inv *tables.Invocation) *Execution {
+func buildExecution(in *repb.StoredExecution, inv *tables.Invocation) *Execution {
 	return &Execution{
 		GroupID:                            in.GetGroupId(),
 		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
@@ -388,7 +388,7 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
-func (h *DBHandle) FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*iepb.Execution) error {
+func (h *DBHandle) FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*repb.StoredExecution) error {
 	entries := make([]*Execution, 0, len(executions))
 	for _, e := range executions {
 		entries = append(entries, buildExecution(e, ti))

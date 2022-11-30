@@ -296,7 +296,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	if r.env.GetExecutionCollector() == nil {
 		return nil
 	}
-	const batchSize = 500_000
+	const batchSize = 50_000
 	var startIndex int64 = 0
 	var endIndex int64 = batchSize - 1
 

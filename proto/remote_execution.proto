@@ -2045,3 +2045,46 @@ message UsageStats {
   // the task (peak_memory_bytes is a more useful summary metric).
   int64 memory_bytes = 3;
 }
+
+// Proto representation of the Execution stored in OLAP DB. Only used in
+// backends.
+message StoredExecution {
+  string group_id = 1;
+  int64 updated_at_usec = 2;
+  string execution_id = 3;
+
+  string invocation_uuid = 4;
+  int64 created_at_usec = 5;
+  string user_id = 6;
+  string worker = 7;
+  int64 stage = 8;
+
+  // IO Stats
+  int64 file_download_count = 9;
+  int64 file_download_size_bytes = 10;
+  int64 file_download_duration_usec = 11;
+  int64 file_upload_count = 12;
+  int64 file_upload_size_bytes = 13;
+  int64 file_upload_duration_usec = 14;
+
+  // UsageStats
+  int64 peak_memory_bytes = 15;
+  int64 cpu_nanos = 16;
+
+  // Task Sizing
+  int64 estimated_memory_bytes = 17;
+  int64 estimated_milli_cpu = 18;
+
+  // ExecutedActionMetadata
+  int64 queued_timestamp_usec = 19;
+  int64 worker_start_timestamp_usec = 20;
+  int64 worker_completed_timestamp_usec = 21;
+  int64 input_fetch_start_timestamp_usec = 22;
+  int64 input_fetch_completed_timestamp_usec = 23;
+  int64 execution_start_timestamp_usec = 24;
+  int64 execution_completed_timestamp_usec = 25;
+  int64 output_upload_start_timestamp_usec = 26;
+  int64 output_upload_completed_timestamp_usec = 27;
+
+  int32 invocation_link_type = 28;
+}

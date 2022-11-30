@@ -9,7 +9,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/protobuf/proto"
 
-	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -41,10 +41,10 @@ func New(rdb redis.UniversalClient, rbuf *redisutil.CommandBuffer) *collector {
 }
 
 func getKey(iid string) string {
-	return strings.Join([]string{redisExecutionKeyPrefix, iid}, ":")
+	return strings.Join([]string{redisExecutionKeyPrefix, iid}, "/")
 }
 
-func (c *collector) Append(ctx context.Context, iid string, execution *iepb.Execution) error {
+func (c *collector) Append(ctx context.Context, iid string, execution *repb.StoredExecution) error {
 	b, err := proto.Marshal(execution)
 	if err != nil {
 		return err
@@ -52,14 +52,14 @@ func (c *collector) Append(ctx context.Context, iid string, execution *iepb.Exec
 	return c.rbuf.RPush(ctx, getKey(iid), string(b))
 }
 
-func (c *collector) ListRange(ctx context.Context, iid string, start, stop int64) ([]*iepb.Execution, error) {
+func (c *collector) ListRange(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error) {
 	serializedResults, err := c.rdb.LRange(ctx, getKey(iid), start, stop).Result()
 	if err != nil {
 		return nil, err
 	}
-	res := make([]*iepb.Execution, 0)
+	res := make([]*repb.StoredExecution, 0)
 	for _, serializedResult := range serializedResults {
-		execution := &iepb.Execution{}
+		execution := &repb.StoredExecution{}
 		if err := proto.Unmarshal([]byte(serializedResult), execution); err != nil {
 			return nil, err
 		}
