@@ -463,16 +463,18 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             onClick={this.onOpenSortMenu.bind(this)}>
             {sortOrderValue === "asc" && <SortAsc className="icon" />}
             {sortOrderValue === "desc" && <SortDesc className="icon" />}
-            <span>
-              {sortByValue === "start-time" && "Start time"}
-              {sortByValue === "end-time" && "End time"}
-              {sortByValue === "duration" && "Duration"}
-              {sortByValue === "ac-hit-ratio" && "AC hit ratio"}
-              {sortByValue === "cas-hit-ratio" && "CAS hit ratio"}
-              {sortByValue === "cache-down" && "Cache download"}
-              {sortByValue === "cache-up" && "Cache upload"}
-              {sortByValue === "cache-xfer" && "Cache transfer"}
-            </span>
+            {sortByValue !== "" && (
+              <span>
+                {sortByValue === "start-time" && "Start time"}
+                {sortByValue === "end-time" && "End time"}
+                {sortByValue === "duration" && "Duration"}
+                {sortByValue === "ac-hit-ratio" && "AC hit ratio"}
+                {sortByValue === "cas-hit-ratio" && "CAS hit ratio"}
+                {sortByValue === "cache-down" && "Cache download"}
+                {sortByValue === "cache-up" && "Cache upload"}
+                {sortByValue === "cache-xfer" && "Cache transfer"}
+              </span>
+            )}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isSortMenuOpen}
