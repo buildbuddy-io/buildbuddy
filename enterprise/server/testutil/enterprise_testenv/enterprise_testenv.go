@@ -37,7 +37,6 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 		cache := redis_cache.NewCache(redisClient)
 		env.SetCache(cache)
 	}
-
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
 	if err != nil {
 		assert.FailNow(t, "could not create user DB", err.Error())
