@@ -129,6 +129,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.editor = monaco.editor.create(this.codeViewer.current, {
       value: ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n"),
       theme: "vs",
+      readOnly: this.isSingleFile(),
     });
 
     let bytestreamURL = this.props.search.get("bytestream_url");
@@ -138,9 +139,6 @@ export default class CodeComponent extends React.Component<Props, State> {
       rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result: any) => {
         this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
       });
-    }
-
-    if (!this.isSingleFile()) {
       return;
     }
 
