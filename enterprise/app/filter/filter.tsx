@@ -31,8 +31,8 @@ import router, {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
-  SORT_BY_NAME,
-  SORT_ORDER_NAME,
+  SORT_BY_PARAM_NAME,
+  SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import {
@@ -114,8 +114,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       commit: search.get(COMMIT_PARAM_NAME),
       host: search.get(HOST_PARAM_NAME),
       command: search.get(COMMAND_PARAM_NAME),
-      sortBy: search.get(SORT_BY_NAME),
-      sortOrder: search.get(SORT_ORDER_NAME),
+      sortBy: search.get(SORT_BY_PARAM_NAME),
+      sortOrder: search.get(SORT_ORDER_PARAM_NAME),
     };
   }
 
@@ -200,14 +200,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   private onSortByChange(sortBy: string) {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [SORT_BY_NAME]: sortBy,
+      [SORT_BY_PARAM_NAME]: sortBy,
     });
   }
 
   private onSortOrderChange(sortOrder: string) {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [SORT_ORDER_NAME]: sortOrder,
+      [SORT_ORDER_PARAM_NAME]: sortOrder,
     });
   }
 
@@ -311,8 +311,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       };
     });
 
-    const sortByValue = this.props.search.get(SORT_BY_NAME) || "";
-    const sortOrderValue = this.props.search.get(SORT_ORDER_NAME) || "desc";
+    const sortByValue = this.props.search.get(SORT_BY_PARAM_NAME) || "";
+    const sortOrderValue = this.props.search.get(SORT_ORDER_PARAM_NAME) || "desc";
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
@@ -456,7 +456,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           </Popup>
         </div>
         <div className="popup-wrapper">
-          <OutlinedButton className="sort-button icon-text-button" onClick={this.onOpenSortMenu.bind(this)}>
+          <OutlinedButton
+            className={`sort-button icon-text-button ${sortByValue !== "" ? "" : "square"}`}
+            onClick={this.onOpenSortMenu.bind(this)}>
             {sortOrderValue === "asc" && <SortAsc className="icon" />}
             {sortOrderValue === "desc" && <SortDesc className="icon" />}
             <span>

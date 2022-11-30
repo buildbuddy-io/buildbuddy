@@ -14,8 +14,8 @@ import {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
-  SORT_BY_NAME,
-  SORT_ORDER_NAME,
+  SORT_BY_PARAM_NAME,
+  SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router";
 
 // URL param value representing the empty role (""), which is the default.
@@ -25,8 +25,16 @@ export const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 
 export const DEFAULT_LAST_N_DAYS = 30;
 
-export type SortBy = 'start-time' | 'end-time' | 'duration' | 'ac-hit-ratio' | 'cas-hit-ratio' | 'cache-down' | 'cache-up' | 'cache-xfer';
-export type SortOrder = 'asc' | 'desc';
+export type SortBy =
+  | "start-time"
+  | "end-time"
+  | "duration"
+  | "ac-hit-ratio"
+  | "cas-hit-ratio"
+  | "cache-down"
+  | "cache-up"
+  | "cache-xfer";
+export type SortOrder = "asc" | "desc";
 
 export interface ProtoFilterParams {
   role?: string[];
@@ -62,8 +70,8 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     host: search.get(HOST_PARAM_NAME),
     command: search.get(COMMAND_PARAM_NAME),
 
-    sortBy: search.get(SORT_BY_NAME),
-    sortOrder: search.get(SORT_ORDER_NAME),
+    sortBy: search.get(SORT_BY_PARAM_NAME),
+    sortOrder: search.get(SORT_ORDER_PARAM_NAME),
   };
 }
 
