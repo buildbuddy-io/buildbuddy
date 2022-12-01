@@ -14,7 +14,7 @@ import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
-import { getProtoFilterParams } from "../filter/filter_util";
+import { ProtoFilterParams, getProtoFilterParams } from "../filter/filter_util";
 import Spinner from "../../../app/components/spinner/spinner";
 import { BarChart2, CheckCircle, Clock, GitCommit, Github, Hash, Percent, XCircle } from "lucide-react";
 
@@ -78,6 +78,27 @@ export default class HistoryComponent extends React.Component<Props, State> {
     return this.props.search?.get(ROLE_PARAM_NAME) === "CI_RUNNER";
   }
 
+  private getSortField(filterParams: ProtoFilterParams) {
+    if (filterParams.sortBy === "start-time") {
+      return invocation.InvocationSort.SortField.CREATED_AT_USEC_SORT_FIELD;
+    } else if (filterParams.sortBy === "end-time") {
+      return invocation.InvocationSort.SortField.UPDATED_AT_USEC_SORT_FIELD;
+    } else if (filterParams.sortBy === "duration") {
+      return invocation.InvocationSort.SortField.DURATION_SORT_FIELD;
+    } else if (filterParams.sortBy === "ac-hit-ratio") {
+      return invocation.InvocationSort.SortField.ACTION_CACHE_HIT_RATIO_SORT_FIELD;
+    } else if (filterParams.sortBy === "cas-hit-ratio") {
+      return invocation.InvocationSort.SortField.CONTENT_ADDRESSABLE_STORE_CACHE_HIT_RATIO_SORT_FIELD;
+    } else if (filterParams.sortBy === "cache-down") {
+      return invocation.InvocationSort.SortField.CACHE_DOWNLOADED_SORT_FIELD;
+    } else if (filterParams.sortBy === "cache-up") {
+      return invocation.InvocationSort.SortField.CACHE_UPLOADED_SORT_FIELD;
+    } else if (filterParams.sortBy === "cache-xfer") {
+      return invocation.InvocationSort.SortField.CACHE_TRANSFERRED_SORT_FIELD;
+    }
+    return invocation.InvocationSort.SortField.UNKNOWN_SORT_FIELD;
+  }
+
   getInvocations(nextPage?: boolean) {
     this.setState({
       loadingInvocations: true,
@@ -96,6 +117,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
         commitSha: this.props.commit || filterParams.commit,
         command: filterParams.command,
         groupId: this.props.user?.selectedGroup?.id,
+      }),
+      sort: new invocation.InvocationSort({
+        sortField: this.getSortField(filterParams),
+        ascending: filterParams.sortOrder === "asc",
       }),
       pageToken: nextPage ? this.state.pageToken : "",
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.

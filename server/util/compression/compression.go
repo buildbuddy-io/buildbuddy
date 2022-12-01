@@ -111,7 +111,7 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
-// NewZstdChunkingCompressor returns a reader that reads chunks from the given
+// NewZstdCompressingReader returns a reader that reads chunks from the given
 // reader into the read buffer, and makes the zstd-compressed chunks available
 // on the output reader. Each chunk read into the read buffer is immediately
 // compressed, independently of other chunks, and piped to the output reader.
@@ -130,7 +130,7 @@ func (d *zstdDecompressor) Close() error {
 // compression buffer is allocated internally. This scenario should be rare if
 // the data is even modestly compressible and the compression buffer capacity is
 // at least a few hundred bytes.
-func NewZstdChunkingCompressor(reader io.Reader, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
+func NewZstdCompressingReader(reader io.Reader, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	go func() {
 		for {
@@ -148,6 +148,29 @@ func NewZstdChunkingCompressor(reader io.Reader, readBuf []byte, compressBuf []b
 			}
 		}
 	}()
+	return pr, nil
+}
+
+// NewZstdDecompressingReader reads zstd-compressed data from the input
+// reader and makes the decompressed data available on the output reader
+func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
+	// Stream data from reader to decoder
+	decoder, err := zstdDecoderPool.Get(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	pr, pw := io.Pipe()
+	go func() {
+		// Write decoded bytes to pw and pipe to pr
+		_, err = decoder.WriteTo(pw)
+		pw.CloseWithError(err)
+
+		if err := zstdDecoderPool.Put(decoder); err != nil {
+			log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
+		}
+	}()
+
 	return pr, nil
 }
 

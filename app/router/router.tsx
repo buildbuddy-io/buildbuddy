@@ -19,6 +19,11 @@ export const COMMIT_PARAM_NAME = "commit";
 export const HOST_PARAM_NAME = "host";
 export const COMMAND_PARAM_NAME = "command";
 
+// Sort params for the global filter.
+
+export const SORT_BY_PARAM_NAME = "sort-by";
+export const SORT_ORDER_PARAM_NAME = "sort-order";
+
 const GLOBAL_FILTER_PARAM_NAMES = [
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
@@ -33,6 +38,10 @@ const GLOBAL_FILTER_PARAM_NAMES = [
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
 ];
+
+const GLOBAL_SORT_PARAM_NAMES = [SORT_BY_PARAM_NAME, SORT_ORDER_PARAM_NAME];
+
+const PERSISTENT_URL_PARAMS = [...GLOBAL_FILTER_PARAM_NAMES, ...GLOBAL_SORT_PARAM_NAMES];
 
 class Router {
   register(pathChangeHandler: VoidFunction) {
@@ -73,8 +82,8 @@ class Router {
       return;
     }
 
-    // Preserve global filter params.
-    for (const key of GLOBAL_FILTER_PARAM_NAMES) {
+    // Preserve persistent URL params.
+    for (const key of PERSISTENT_URL_PARAMS) {
       if (!newUrl.searchParams.get(key) && oldUrl.searchParams.get(key)) {
         newUrl.searchParams.set(key, oldUrl.searchParams.get(key));
       }

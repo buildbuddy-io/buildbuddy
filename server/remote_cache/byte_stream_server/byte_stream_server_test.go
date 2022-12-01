@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -279,7 +280,7 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 			require.NoError(t, err)
 			uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
 
-			mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+			mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob, true)
 
 			sc := hit_tracker.ScoreCard(ctx, te, rmd.ToolInvocationId)
 			require.Len(t, sc.Results, 1)
@@ -350,7 +351,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 
 		// Upload the compressed blob.
 		uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
-		mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+		mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob, true)
 
 		// Read back the compressed blob we just uploaded, but reference the
 		// decompressed resource name. Server should decompress it for us.
@@ -372,7 +373,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 
 		// Now try uploading a duplicate. The duplicate upload should not fail,
 		// and we should still be able to read the blob.
-		mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob)
+		mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob, false)
 
 		downloadBuf = []byte{}
 		downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
@@ -408,7 +409,7 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 
 		// Upload uncompressed via bytestream.
 		uploadResourceName := fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
-		mustUploadChunked(t, ctx, bsClient, uploadResourceName, blob)
+		mustUploadChunked(t, ctx, bsClient, uploadResourceName, blob, true)
 
 		// Read back the blob we just uploaded, but reference the compressed resource
 		// name. Server should serve it back compressed since there is no overhead
@@ -433,6 +434,121 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 	}
 }
 
+func Test_CacheHandlesCompression(t *testing.T) {
+	// Make blob big enough to require multiple chunks to upload
+	blob := compressibleBlobOfSize(5e6)
+	compressedBlob := compression.CompressZstd(nil, blob)
+	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name                        string
+		uploadResourceName          string
+		uploadBlob                  []byte
+		downloadResourceName        string
+		expectedDownloadCompression repb.Compressor_Value
+	}{
+		{
+			name:                        "Write compressed, read compressed",
+			uploadResourceName:          fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:                  compressedBlob,
+			downloadResourceName:        fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_ZSTD,
+		},
+		{
+			name:                        "Write compressed, read decompressed",
+			uploadResourceName:          fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:                  compressedBlob,
+			downloadResourceName:        fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_IDENTITY,
+		},
+		{
+			name:                        "Write decompressed, read decompressed",
+			uploadResourceName:          fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:                  blob,
+			downloadResourceName:        fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_IDENTITY,
+		},
+		{
+			name:                        "Write decompressed, read compressed",
+			uploadResourceName:          fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadBlob:                  blob,
+			downloadResourceName:        fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_ZSTD,
+		},
+	}
+	for _, tc := range testCases {
+		{
+			te := testenv.GetTestEnv(t)
+			ctx := context.Background()
+
+			// Enable compression
+			flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
+
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+			require.NoError(t, err)
+			clientConn := runByteStreamServer(ctx, te, t)
+			bsClient := bspb.NewByteStreamClient(clientConn)
+
+			// Upload the blob
+			mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob, true)
+
+			// Read back the blob we just uploaded
+			downloadBuf := []byte{}
+			downloadStream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+				ResourceName: tc.downloadResourceName,
+			})
+			require.NoError(t, err, tc.name)
+			for {
+				res, err := downloadStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err, tc.name)
+				downloadBuf = append(downloadBuf, res.Data...)
+			}
+
+			if tc.expectedDownloadCompression == repb.Compressor_IDENTITY {
+				require.Equal(t, blob, downloadBuf, tc.name)
+			} else if tc.expectedDownloadCompression == repb.Compressor_ZSTD {
+				decompressedDownloadBuf, err := compression.DecompressZstd(nil, downloadBuf)
+				require.NoError(t, err, tc.name)
+				require.Equal(t, blob, decompressedDownloadBuf, tc.name)
+			}
+
+			// Now try uploading a duplicate. The duplicate upload should not fail,
+			// and we should still be able to read the blob.
+			mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob, false)
+
+			downloadBuf = []byte{}
+			downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
+				ResourceName: tc.downloadResourceName,
+			})
+			require.NoError(t, err, tc.name)
+			for {
+				res, err := downloadStream.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err, tc.name)
+				downloadBuf = append(downloadBuf, res.Data...)
+			}
+
+			if tc.expectedDownloadCompression == repb.Compressor_IDENTITY {
+				require.Equal(t, blob, downloadBuf, tc.name)
+			} else if tc.expectedDownloadCompression == repb.Compressor_ZSTD {
+				decompressedDownloadBuf, err := compression.DecompressZstd(nil, downloadBuf)
+				require.NoError(t, err, tc.name)
+				require.Equal(t, blob, decompressedDownloadBuf, tc.name)
+			}
+		}
+	}
+}
+
 func compressibleBlobOfSize(sizeBytes int) []byte {
 	out := make([]byte, 0, sizeBytes)
 	for len(out) < sizeBytes {
@@ -449,7 +565,7 @@ func compressibleBlobOfSize(sizeBytes int) []byte {
 	return out
 }
 
-func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, uploadResourceName string, blob []byte) {
+func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, uploadResourceName string, blob []byte, expectFullStreamRead bool) {
 	uploadStream, err := bsClient.Write(ctx)
 	require.NoError(t, err)
 
@@ -487,7 +603,9 @@ func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 	// server needs all chunks in order to know the committed size. See
 	// https://github.com/bazelbuild/bazel/issues/14654
 	require.Equal(t, int64(len(blob)), res.CommittedSize)
-	require.Len(t, remaining, 0, "upload was unexpectedly short-circuited")
+	if expectFullStreamRead {
+		require.Len(t, remaining, 0, "upload was unexpectedly short-circuited")
+	}
 }
 
 func zstdDecompress(t *testing.T, b []byte) []byte {

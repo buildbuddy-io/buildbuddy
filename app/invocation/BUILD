@@ -35,6 +35,7 @@ ts_library(
         "//app/target",
         "//app/terminal",
         "//app/util:clipboard",
+        "//app/util:color",
         "//app/util:errors",
         "//app/util:proto",
         "//proto:acl_ts_proto",

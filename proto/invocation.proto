@@ -255,6 +255,12 @@ message InvocationSort {
     UNKNOWN_SORT_FIELD = 0;
     CREATED_AT_USEC_SORT_FIELD = 1;
     UPDATED_AT_USEC_SORT_FIELD = 2;
+    DURATION_SORT_FIELD = 3;
+    ACTION_CACHE_HIT_RATIO_SORT_FIELD = 4;
+    CONTENT_ADDRESSABLE_STORE_CACHE_HIT_RATIO_SORT_FIELD = 5;
+    CACHE_DOWNLOADED_SORT_FIELD = 6;
+    CACHE_UPLOADED_SORT_FIELD = 7;
+    CACHE_TRANSFERRED_SORT_FIELD = 8;
   }
 
   // The field to sort results by.
@@ -442,6 +448,15 @@ message TrendStat {
   int64 branch_count = 20;
 }
 
+message ExecutionStat {
+  // The duration between the execution task is queued and the worker starts.
+  int64 queue_duration_usec_p50 = 1;
+  int64 queue_duration_usec_p75 = 2;
+  int64 queue_duration_usec_p90 = 3;
+  int64 queue_duration_usec_p95 = 4;
+  int64 queue_duration_usec_p99 = 5;
+}
+
 message TrendQuery {
   // The search parameters in this query will be ANDed when performing a
   // query -- so if a client specifies both "user" and "host", all results
@@ -497,4 +512,7 @@ message GetTrendResponse {
 
   // The list of trend stats found.
   repeated TrendStat trend_stat = 2;
+
+  // The list of execution stats found.
+  repeated ExecutionStat execution_stat = 3;
 }

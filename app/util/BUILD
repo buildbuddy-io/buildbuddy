@@ -43,6 +43,11 @@ ts_library(
 )
 
 ts_library(
+    name = "color",
+    srcs = ["color.ts"],
+)
+
+ts_library(
     name = "dom",
     srcs = ["dom.ts"],
     deps = [

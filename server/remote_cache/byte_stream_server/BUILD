@@ -35,6 +35,7 @@ go_test(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/remote_cache/hit_tracker",
+        "//server/testutil/testcompression",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/bazel_request",

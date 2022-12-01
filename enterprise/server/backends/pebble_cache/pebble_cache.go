@@ -26,6 +26,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -65,6 +67,7 @@ var (
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	isolateByGroupIDsFlag     = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys for AC records will include groupIDs")
+	enableCompressionFlag     = flag.Bool("cache.pebble.enable_zstd_compression", false, "If set, zstd compressed files can be saved to the cache. Otherwise only decompressed bytes should be stored.")
 
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
@@ -112,6 +115,10 @@ const (
 	// already been flushed due to throughput)
 	atimeFlushPeriod = 10 * time.Second
 
+	// CompressorBufSizeBytes is the buffer size we use for each chunk when compressing data
+	// It should be relatively large to get a good compression ratio bc each chunk is compressed independently
+	CompressorBufSizeBytes = 4e6 // 4 MB
+
 	// Default values for Options
 	DefaultBlockCacheSizeBytes    = int64(1000 * megabyte)
 	DefaultMaxInlineFileSizeBytes = int64(1024)
@@ -121,10 +128,11 @@ const (
 // Options is a struct containing the pebble cache configuration options.
 // Once a cache is created, the options may not be changed.
 type Options struct {
-	RootDirectory     string
-	Partitions        []disk.Partition
-	PartitionMappings []disk.PartitionMapping
-	IsolateByGroupIDs bool
+	RootDirectory         string
+	Partitions            []disk.Partition
+	PartitionMappings     []disk.PartitionMapping
+	IsolateByGroupIDs     bool
+	EnableZstdCompression bool
 
 	MaxSizeBytes           int64
 	BlockCacheSizeBytes    int64
@@ -180,6 +188,9 @@ type PebbleCache struct {
 	orphanedFilesDone chan struct{}
 
 	fileStorer filestore.Store
+	bufferPool *bytebufferpool.Pool
+
+	enableZstdCompression bool
 
 	// TODO(Maggie): Clean this up after the isolateByGroupIDs migration
 	isolateByGroupIDs bool
@@ -218,6 +229,7 @@ func Register(env environment.Env) error {
 		Partitions:             *partitionsFlag,
 		PartitionMappings:      *partitionMappingsFlag,
 		IsolateByGroupIDs:      *isolateByGroupIDsFlag,
+		EnableZstdCompression:  *enableCompressionFlag,
 		BlockCacheSizeBytes:    *blockCacheSizeBytesFlag,
 		MaxSizeBytes:           cache_config.MaxSizeBytes(),
 		MaxInlineFileSizeBytes: *maxInlineFileSizeBytesFlag,
@@ -373,7 +385,9 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
 		fileStorer:             filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
+		enableZstdCompression:  opts.EnableZstdCompression,
 		isolateByGroupIDs:      opts.IsolateByGroupIDs,
+		bufferPool:             bytebufferpool.New(CompressorBufSizeBytes),
 	}
 
 	peMu := sync.Mutex{}
@@ -772,7 +786,8 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceNa
 			PartitionId:        partID,
 			GroupId:            groupID,
 		},
-		Digest: r.GetDigest(),
+		Digest:     r.GetDigest(),
+		Compressor: r.GetCompressor(),
 	}, nil
 }
 
@@ -947,6 +962,11 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 			continue
 		}
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
+
+		rc, err = p.readerForCompressionType(rc, r, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+		if err != nil {
+			return nil, err
+		}
 
 		_, copyErr := io.Copy(buf, rc)
 		closeErr := rc.Close()
@@ -1123,6 +1143,11 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offs
 		return nil, err
 	}
 
+	rc, err = p.readerForCompressionType(rc, r, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+	if err != nil {
+		return nil, err
+	}
+
 	// Grab another lease and pass the Close function to the reader
 	// so it will be closed when the reader is.
 	db, err = p.leaser.DB()
@@ -1154,6 +1179,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
+// TODO(Maggie): Compress all data above a given size before writing it
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -1833,6 +1859,67 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 				metrics.DiskCacheFilesystemAvailBytes.Set(float64(fsu.Avail))
 			}
 		}
+	}
+}
+
+func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	switch compressor {
+	case repb.Compressor_IDENTITY:
+		return true
+	case repb.Compressor_ZSTD:
+		return p.enableZstdCompression
+	default:
+		return false
+	}
+}
+
+// compressionReader helps manage resources associated with a compression.NewZstdCompressingReader
+type compressionReader struct {
+	io.ReadCloser
+	readBuf     []byte
+	compressBuf []byte
+	bufferPool  *bytebufferpool.Pool
+}
+
+func (r *compressionReader) Close() error {
+	err := r.ReadCloser.Close()
+	r.bufferPool.Put(r.readBuf)
+	r.bufferPool.Put(r.compressBuf)
+	return err
+}
+
+func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, resource *resource.ResourceName, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
+	if requestedCompression == cachedCompression {
+		return reader, nil
+	}
+
+	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
+		bufSize := int64(CompressorBufSizeBytes)
+		resourceSize := resource.GetDigest().GetSizeBytes()
+		if resourceSize > 0 && resourceSize < bufSize {
+			bufSize = resourceSize
+		}
+
+		readBuf := p.bufferPool.Get(bufSize)
+		compressBuf := p.bufferPool.Get(bufSize)
+
+		cr, err := compression.NewZstdCompressingReader(reader, readBuf[:bufSize], compressBuf[:bufSize])
+		if err != nil {
+			p.bufferPool.Put(readBuf)
+			p.bufferPool.Put(compressBuf)
+			return nil, err
+		}
+		return &compressionReader{
+			ReadCloser:  cr,
+			readBuf:     readBuf,
+			compressBuf: compressBuf,
+			bufferPool:  p.bufferPool,
+		}, err
+	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
+		return compression.NewZstdDecompressingReader(reader)
+	} else {
+		return nil, fmt.Errorf("unsupported compressor %v requested for %v reader, cached compression is %v",
+			requestedCompression, resource, cachedCompression)
 	}
 }
 

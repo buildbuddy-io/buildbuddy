@@ -39,6 +39,10 @@ func HandlePrint(args []string) (int, error) {
 		return -1, nil
 	}
 	if err := arg.ParseFlagSet(flags, args[idx+1:]); err != nil {
+		if err == flag.ErrHelp {
+			log.Print(usage)
+			return 1, nil
+		}
 		return -1, err
 	}
 	if *grpcLog != "" {

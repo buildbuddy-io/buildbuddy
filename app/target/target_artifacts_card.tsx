@@ -1,4 +1,4 @@
-import { ArrowDownCircle } from "lucide-react";
+import { ArrowDownCircle, FileCode } from "lucide-react";
 import React from "react";
 
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
@@ -29,13 +29,26 @@ export default class TargetArtifactsCardComponent extends React.Component<Props>
         <div className="content">
           <div className="title">Artifacts</div>
           <div className="details">
-            {this.props.files.map((file) => (
-              <a
-                href={rpcService.getBytestreamUrl(file.uri, this.props.invocationId, { filename: file.name })}
-                className="artifact-name"
-                onClick={this.handleArtifactClicked.bind(this, file.uri, file.name)}>
-                {file.name}
-              </a>
+            {this.props.files.map((output) => (
+              <div className="artifact-line">
+                <a
+                  href={rpcService.getBytestreamUrl(output.uri, this.props.invocationId, {
+                    filename: output.name,
+                  })}
+                  className="artifact-name"
+                  onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
+                  {output.name}
+                </a>
+                {output.uri?.startsWith("bytestream://") && (
+                  <a
+                    className="artifact-view"
+                    href={`/code/buildbuddy-io/buildbuddy/?bytestream_url=${encodeURIComponent(
+                      output.uri
+                    )}&invocation_id=${this.props.invocationId}&filename=${output.name}`}>
+                    <FileCode /> View
+                  </a>
+                )}
+              </div>
             ))}
           </div>
           {this.props.files.length == 0 && <span>No artifacts</span>}
