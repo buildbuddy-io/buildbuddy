@@ -15,11 +15,14 @@ message Key {
 }
 
 message ReadRequest {
-  Isolation isolation = 4;
   reserved 1;
-  Key key = 2;
   int64 offset = 3;
   int64 limit = 5;
+  resource.ResourceName resource = 6;
+
+  // Deprecated fields - use resource field instead
+  Isolation isolation = 4;
+  Key key = 2;
 }
 
 message ReadResponse {
@@ -27,15 +30,18 @@ message ReadResponse {
 }
 
 message WriteRequest {
-  Isolation isolation = 6;
   reserved 1;
-  Key key = 2;
   bool finish_write = 3;
   bytes data = 4;
+  resource.ResourceName resource = 7;
 
   // A node that this data should eventually be handed off to.
   // Clients should attempt to replicate this data when possible.
   string handoff_peer = 5;
+
+  // Deprecated fields - use resource field instead
+  Isolation isolation = 6;
+  Key key = 2;
 }
 
 message WriteResponse {
@@ -43,6 +49,9 @@ message WriteResponse {
 }
 
 message DeleteRequest {
+  resource.ResourceName resource = 3;
+
+  // Deprecated fields - use resource field instead
   Isolation isolation = 1;
   Key key = 2;
 }
@@ -50,6 +59,9 @@ message DeleteRequest {
 message DeleteResponse {}
 
 message FindMissingRequest {
+  repeated resource.ResourceName resources = 3;
+
+  // Deprecated fields - use resource field instead
   Isolation isolation = 1;
   repeated Key key = 2;
 }
@@ -59,6 +71,9 @@ message FindMissingResponse {
 }
 
 message MetadataRequest {
+  resource.ResourceName resource = 3;
+
+  // Deprecated fields - use resource field instead
   Isolation isolation = 1;
   Key key = 2;
 }
@@ -75,8 +90,11 @@ message KV {
 }
 
 message GetMultiRequest {
-  Isolation isolation = 3;
   reserved 1;
+  repeated resource.ResourceName resources = 4;
+
+  // Deprecated fields - use resource field instead
+  Isolation isolation = 3;
   repeated Key key = 2;
 }
 

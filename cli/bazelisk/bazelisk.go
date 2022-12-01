@@ -1,6 +1,7 @@
 package bazelisk
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
 )
 
@@ -30,54 +30,30 @@ func RunWithPlugins(args []string, outputPath string, plugins []*plugin.Plugin) 
 	// post_bazel output will get intermingled with bazel output.
 	defer wc.Close()
 
-	return Run(args, outputPath, wc)
-}
-
-func Run(args []string, outputPath string, w io.Writer) (int, error) {
-	// If we were already invoked via bazelisk, then set the bazel version to
-	// the next version appearing in the .bazelversion file so that bazelisk
-	// doesn't just invoke us again (resulting in an infinite loop).
-	if err := setBazelVersion(); err != nil {
-		log.Fatalf("failed to set bazel version: %s", err)
-	}
-
 	log.Debugf("Calling bazelisk with %+v", args)
 
-	gcs := &repositories.GCSRepo{}
-	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
-	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
-
+	// Create the output path where the original bazel output will be written,
+	// for post-bazel plugins to read.
 	output, err := os.Create(outputPath)
 	if err != nil {
-		return -1, status.FailedPreconditionErrorf("failed to create output file: %s", err)
+		return -1, fmt.Errorf("failed to create output file: %s", err)
 	}
 	defer output.Close()
-
-	// Temporarily redirect stdout/stderr so that we can capture the bazelisk
-	// output.
-	// Note, we might be able to use Bazel's "command.log" file instead, but
-	// would need to find a way to avoid a race condition if another Bazel
-	// command is run concurrently (since it will clear out command.log as
-	// soon as our bazelisk invocation below is complete and it is able to
-	// grab the workspace lock).
-	realStdout, realStderr := os.Stdout, os.Stderr
-	defer func() {
-		os.Stdout, os.Stderr = realStdout, realStderr
-	}()
 
 	// If bb's output is connected to a terminal, then allocate a pty so that
 	// bazel thinks it's writing to a terminal, even though we're capturing its
 	// output via a Writer that is not a terminal. This enables ANSI colors,
 	// proper truncation of progress messages, etc.
-	isStdoutTTY, err := terminal.IsTTY(realStdout)
+	isStdoutTTY, err := terminal.IsTTY(os.Stdout)
 	if err != nil {
-		return -1, status.UnknownErrorf("failed to determine whether stdout is a terminal: %s", err)
+		return -1, fmt.Errorf("failed to determine whether stdout is a terminal: %s", err)
 	}
+	w := io.MultiWriter(output, wc)
+	opts := &RunOpts{Stdout: w, Stderr: w}
 	if isStdoutTTY {
 		ptmx, tty, err := pty.Open()
 		if err != nil {
-			return -1, status.UnknownErrorf("failed to allocate pty: %s", err)
+			return -1, fmt.Errorf("failed to allocate pty: %s", err)
 		}
 		defer func() {
 			// 	Close pty/tty (best effort).
@@ -85,34 +61,59 @@ func Run(args []string, outputPath string, w io.Writer) (int, error) {
 			_ = ptmx.Close()
 		}()
 		if err := pty.InheritSize(os.Stdout, tty); err != nil {
-			return -1, status.UnknownErrorf("failed to inherit terminal size: %s", err)
+			return -1, fmt.Errorf("failed to inherit terminal size: %s", err)
 		}
 		// Note: we don't listen to resize events (SIGWINCH) and re-inherit the
 		// size, because Bazel itself doesn't do that currently. So it wouldn't
 		// make a difference either way.
-		os.Stdout = tty
-		os.Stderr = tty
-		go io.Copy(io.MultiWriter(output, w), ptmx)
+		opts.Stdout = tty
+		opts.Stderr = tty
+		go io.Copy(w, ptmx)
 	} else {
-		stdoutPipe, closeStdoutPipe, err := makePipeWriter(io.MultiWriter(output, w))
-		if err != nil {
-			return -1, err
-		}
-		defer closeStdoutPipe()
-		stderrPipe, closeStderrPipe, err := makePipeWriter(io.MultiWriter(output, w))
-		if err != nil {
-			return -1, err
-		}
-		defer closeStderrPipe()
-		os.Stdout = stdoutPipe
-		os.Stderr = stderrPipe
+		opts.Stdout = w
+		opts.Stderr = w
 	}
 
-	exitCode, err := core.RunBazelisk(args, repos)
-	if err != nil {
-		return -1, status.InternalErrorf("failed to run bazelisk: %s", err)
+	return Run(args, opts)
+}
+
+type RunOpts struct {
+	// Stdout is the Writer where bazelisk should write its stdout.
+	// Defaults to os.Stdout if nil.
+	Stdout io.Writer
+
+	// Stderr is the Writer where bazelisk should write its stderr.
+	// Defaults to os.Stderr if nil.
+	Stderr io.Writer
+}
+
+func Run(args []string, opts *RunOpts) (exitCode int, err error) {
+	// If we were already invoked via bazelisk, then set the bazel version to
+	// the next version appearing in the .bazelversion file so that bazelisk
+	// doesn't just invoke us again (resulting in an infinite loop).
+	if err := setBazelVersion(); err != nil {
+		return -1, fmt.Errorf("failed to set bazel version: %s", err)
 	}
-	return exitCode, nil
+	gcs := &repositories.GCSRepo{}
+	gitHub := repositories.CreateGitHubRepo(core.GetEnvOrConfig("BAZELISK_GITHUB_TOKEN"))
+	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
+	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gitHub, true)
+
+	if opts.Stdout != nil {
+		close, err := redirectStdio(opts.Stdout, &os.Stdout)
+		if err != nil {
+			return -1, err
+		}
+		defer close()
+	}
+	if opts.Stderr != nil {
+		close, err := redirectStdio(opts.Stderr, &os.Stderr)
+		if err != nil {
+			return -1, err
+		}
+		defer close()
+	}
+	return core.RunBazelisk(args, repos)
 }
 
 // ConfigureRunScript adds `--script_path` to a bazel run command so that we can
@@ -178,6 +179,30 @@ func makePipeWriter(w io.Writer) (pw *os.File, closeFunc func(), err error) {
 		<-done
 	}
 	return
+}
+
+// Redirects either os.Stdout or os.Stderr to the given writer. Calling the
+// returned close function stops redirection.
+func redirectStdio(w io.Writer, stdio **os.File) (close func(), err error) {
+	original := *stdio
+	var closePipe func()
+	f, ok := w.(*os.File)
+	if !ok {
+		pw, c, err := makePipeWriter(w)
+		if err != nil {
+			return nil, err
+		}
+		closePipe = c
+		f = pw
+	}
+	*stdio = f
+	close = func() {
+		if closePipe != nil {
+			closePipe()
+		}
+		*stdio = original
+	}
+	return close, nil
 }
 
 func setBazelVersion() error {

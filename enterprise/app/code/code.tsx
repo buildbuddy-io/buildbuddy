@@ -9,7 +9,7 @@ import * as diff from "diff";
 import { runner } from "../../../proto/runner_ts_proto";
 import CodeBuildButton from "./code_build_button";
 import CodeEmptyStateComponent from "./code_empty";
-import { ArrowUpCircle, Code, Link, PlusCircle, Send, XCircle } from "lucide-react";
+import { ArrowLeft, ArrowUpCircle, Code, Download, Link, PlusCircle, Send, XCircle } from "lucide-react";
 import Spinner from "../../../app/components/spinner/spinner";
 import { OutlinedButton, FilledButton } from "../../../app/components/button/button";
 import { createPullRequest, updatePullRequest } from "./code_pull_request";
@@ -115,16 +115,32 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.diffEditor?.layout();
   }
 
+  isSingleFile() {
+    return Boolean(this.props.search.get("bytestream_url"));
+  }
+
   componentDidMount() {
-    if (!this.currentRepo()) {
+    if (!this.currentRepo() && !this.isSingleFile()) {
       return;
     }
 
     window.addEventListener("resize", () => this.handleWindowResize());
+
     this.editor = monaco.editor.create(this.codeViewer.current, {
       value: ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n"),
       theme: "vs",
+      readOnly: this.isSingleFile(),
     });
+
+    let bytestreamURL = this.props.search.get("bytestream_url");
+    let invocationID = this.props.search.get("invocation_id");
+    let filename = this.props.search.get("filename");
+    if (this.isSingleFile()) {
+      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result: any) => {
+        this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
+      });
+      return;
+    }
 
     if (this.currentPath()) {
       if (this.state.mergeConflicts.has(this.currentPath())) {
@@ -630,7 +646,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   // TODO(siggisim): Make sidebar look nice
   // TODO(siggisim): Make the diff view look nicer
   render() {
-    if (!this.currentRepo()) {
+    if (!this.currentRepo() && !this.isSingleFile()) {
       return <CodeEmptyStateComponent />;
     }
 
@@ -643,110 +659,145 @@ export default class CodeComponent extends React.Component<Props, State> {
       <div className="code-editor">
         <div className="code-menu">
           <div className="code-menu-logo">
+            {this.isSingleFile() && (
+              <a href="javascript:history.back()">
+                <ArrowLeft className="code-menu-back" />
+              </a>
+            )}
             <a href="/">
               <img alt="BuildBuddy Code" src="/image/logo_dark.svg" className="logo" /> Code{" "}
               <Code className="icon code-logo" />
             </a>
           </div>
           <div className="code-menu-breadcrumbs">
-            <div className="code-menu-breadcrumbs-environment">
-              {/* <a href="#">my-workspace</a> /{" "} TODO: add workspace to breadcrumb */}
-              <a target="_blank" href={`http://github.com/${this.currentOwner()}`}>
-                {this.currentOwner()}
-              </a>{" "}
-              /{" "}
-              <a target="_blank" href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}`}>
-                {this.currentRepo()}
-              </a>{" "}
-              {/* <a href="#">master</a> / TODO: add branch to breadcrumb  */}@{" "}
-              <a
-                target="_blank"
-                title={this.state.commitSHA}
-                href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${this.state.commitSHA}`}>
-                {this.state.commitSHA?.slice(0, 7)}
-              </a>{" "}
-              <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
-                <ArrowUpCircle className="code-update-commit" />
-              </span>{" "}
-            </div>
-            <div className="code-menu-breadcrumbs-filename">
-              {this.currentPath() ? (
-                <>
-                  <a href="#">{this.currentPath()}</a>
-                </>
-              ) : undefined}
-            </div>
-          </div>
-          <div className="code-menu-actions">
-            {this.state.changes.size > 0 && !this.state.prBranch && (
-              <OutlinedButton
-                disabled={this.state.requestingReview}
-                className="request-review-button"
-                onClick={this.handleShowReviewModalClicked.bind(this)}>
-                {this.state.requestingReview ? (
-                  <>
-                    <Spinner className="icon" /> Requesting...
-                  </>
-                ) : (
-                  <>
-                    <Send className="icon blue" /> Request Review
-                  </>
-                )}
-              </OutlinedButton>
+            {this.isSingleFile() && (
+              <div className="code-menu-breadcrumbs-filename">{this.props.search.get("filename")}</div>
+              // todo show hash and size
+              // todo show warning message for files larger than ~50mb
             )}
-            {this.state.changes.size > 0 && this.state.prBranch && (
-              <OutlinedButton
-                disabled={this.state.updatingPR}
-                className="request-review-button"
-                onClick={this.handleUpdatePR.bind(this)}>
-                {this.state.updatingPR ? (
-                  <>
-                    <Spinner className="icon" /> Updating...
-                  </>
-                ) : (
-                  <>
-                    <Send className="icon blue" /> Update PR
-                  </>
-                )}
-              </OutlinedButton>
+            {!this.isSingleFile() && (
+              <>
+                <div className="code-menu-breadcrumbs-environment">
+                  {/* <a href="#">my-workspace</a> /{" "} TODO: add workspace to breadcrumb */}
+                  <a target="_blank" href={`http://github.com/${this.currentOwner()}`}>
+                    {this.currentOwner()}
+                  </a>{" "}
+                  /{" "}
+                  <a target="_blank" href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}`}>
+                    {this.currentRepo()}
+                  </a>{" "}
+                  {/* <a href="#">master</a> / TODO: add branch to breadcrumb  */}@{" "}
+                  <a
+                    target="_blank"
+                    title={this.state.commitSHA}
+                    href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${
+                      this.state.commitSHA
+                    }`}>
+                    {this.state.commitSHA?.slice(0, 7)}
+                  </a>{" "}
+                  <span onClick={this.handleUpdateCommitSha.bind(this, undefined)}>
+                    <ArrowUpCircle className="code-update-commit" />
+                  </span>{" "}
+                </div>
+                <div className="code-menu-breadcrumbs-filename">
+                  {this.currentPath() ? (
+                    <>
+                      <a href="#">{this.currentPath()}</a>
+                    </>
+                  ) : undefined}
+                </div>
+              </>
             )}
-            <CodeBuildButton
-              onCommandClicked={this.handleBuildClicked.bind(this)}
-              isLoading={this.state.isBuilding}
-              project={`${this.currentOwner()}/${this.currentRepo()}}`}
-            />
           </div>
+          {this.isSingleFile() && (
+            <div className="code-menu-actions">
+              <OutlinedButton
+                className="code-menu-download-button"
+                onClick={() =>
+                  rpcService.downloadBytestreamFile(
+                    this.props.search.get("filename"),
+                    this.props.search.get("bytestream_url"),
+                    this.props.search.get("invocation_id")
+                  )
+                }>
+                <Download /> Download File
+              </OutlinedButton>
+            </div>
+          )}
+          {!this.isSingleFile() && (
+            <div className="code-menu-actions">
+              {this.state.changes.size > 0 && !this.state.prBranch && (
+                <OutlinedButton
+                  disabled={this.state.requestingReview}
+                  className="request-review-button"
+                  onClick={this.handleShowReviewModalClicked.bind(this)}>
+                  {this.state.requestingReview ? (
+                    <>
+                      <Spinner className="icon" /> Requesting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="icon blue" /> Request Review
+                    </>
+                  )}
+                </OutlinedButton>
+              )}
+              {this.state.changes.size > 0 && this.state.prBranch && (
+                <OutlinedButton
+                  disabled={this.state.updatingPR}
+                  className="request-review-button"
+                  onClick={this.handleUpdatePR.bind(this)}>
+                  {this.state.updatingPR ? (
+                    <>
+                      <Spinner className="icon" /> Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="icon blue" /> Update PR
+                    </>
+                  )}
+                </OutlinedButton>
+              )}
+              <CodeBuildButton
+                onCommandClicked={this.handleBuildClicked.bind(this)}
+                isLoading={this.state.isBuilding}
+                project={`${this.currentOwner()}/${this.currentRepo()}}`}
+              />
+            </div>
+          )}
         </div>
         <div className="code-main">
-          <div className="code-sidebar">
-            <div className="code-sidebar-tree">
-              {this.state.repoResponse &&
-                this.state.repoResponse.data.tree
-                  .sort(compareNodes)
-                  .map((node: any) => (
-                    <SidebarNodeComponent
-                      node={node}
-                      treeShaToExpanded={this.state.treeShaToExpanded}
-                      treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                      handleFileClicked={this.handleFileClicked.bind(this)}
-                      fullPath={node.path}
-                    />
-                  ))}
-            </div>
-            <div className="code-sidebar-actions">
-              {!this.props.user.githubToken && (
-                <button onClick={this.handleGitHubClicked.bind(this)}>
-                  <Link className="icon" /> Link GitHub
+          {!this.isSingleFile() && (
+            <div className="code-sidebar">
+              <div className="code-sidebar-tree">
+                {this.state.repoResponse &&
+                  this.state.repoResponse.data.tree
+                    .sort(compareNodes)
+                    .map((node: any) => (
+                      <SidebarNodeComponent
+                        node={node}
+                        treeShaToExpanded={this.state.treeShaToExpanded}
+                        treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                        handleFileClicked={this.handleFileClicked.bind(this)}
+                        fullPath={node.path}
+                      />
+                    ))}
+              </div>
+              <div className="code-sidebar-actions">
+                {!this.props.user.githubToken && (
+                  <button onClick={this.handleGitHubClicked.bind(this)}>
+                    <Link className="icon" /> Link GitHub
+                  </button>
+                )}
+                <button onClick={this.handleNewFileClicked.bind(this)}>
+                  <PlusCircle className="icon green" /> New
                 </button>
-              )}
-              <button onClick={this.handleNewFileClicked.bind(this)}>
-                <PlusCircle className="icon green" /> New
-              </button>
-              <button onClick={this.handleDeleteClicked.bind(this)}>
-                <XCircle className="icon red" /> Delete
-              </button>
+                <button onClick={this.handleDeleteClicked.bind(this)}>
+                  <XCircle className="icon red" /> Delete
+                </button>
+              </div>
             </div>
-          </div>
+          )}
           <div className="code-container">
             <div className="code-viewer-container">
               <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />

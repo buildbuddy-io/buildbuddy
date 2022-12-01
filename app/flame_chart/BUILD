@@ -15,6 +15,7 @@ ts_library(
         "//app/components/scrollbar",
         "//app/util:animated_value",
         "//app/util:animation_loop",
+        "//app/util:color",
         "//app/util:dom",
         "//app/util:math",
         "@npm//@types/react",

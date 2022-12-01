@@ -1,8 +1,39 @@
+/**
+ * A subset of material colors arranged so that adjacent colors in the list are
+ * visually distinct.
+ */
+const MATERIAL_CHART_COLORS = [
+  "#4CAF50", // green-500
+  "#03A9F4", // blue-500
+  "#FF9800", // orange-500
+  "#9C27B0", // purple-500
+  "#F44336", // red-500
+  "#009688", // teal-500
+  "#3F51B5", // indigo-500
+];
+
+/**
+ * Returns a color suitable for use in charts. The input parameter is an index
+ * representing the color's position relative to other chart elements, starting
+ * from 0. Indexes that are one apart from each other will have visually
+ * distinct colors.
+ *
+ * If the index exceeds the number of pre-configured material colors, the
+ * returned color falls back to a less pretty set of colors but with uniform
+ * perceived brightness.
+ */
+export function getChartColor(index: number) {
+  if (index < 0 || index >= MATERIAL_CHART_COLORS.length) {
+    return getUniformBrightnessColor(String(index));
+  }
+  return MATERIAL_CHART_COLORS[index];
+}
+
 // See https://perceived-brightness.vercel.app/
 // These colors were generated using a perceived brightness of 156 +/- 3
 // We want the perceived brightness to be constant so that text always
 // displays consistently against flame chart colors.
-const colors = [
+const UNIFORM_BRIGHTNESS_COLORS = [
   "#17b51a",
   "#36a9c5",
   "#64ad02",
@@ -141,7 +172,9 @@ const colors = [
  * All colors returned have the same approximate perceived brightness
  * to avoid issues with color contrast.
  */
-const getColor = (id: string) => colors[Math.abs(hash(id) % colors.length)];
+export function getUniformBrightnessColor(id: string) {
+  return UNIFORM_BRIGHTNESS_COLORS[Math.abs(hash(id) % UNIFORM_BRIGHTNESS_COLORS.length)];
+}
 
 function hash(value: string) {
   let hash = 0;
@@ -150,5 +183,3 @@ function hash(value: string) {
   }
   return hash;
 }
-
-export default getColor;
