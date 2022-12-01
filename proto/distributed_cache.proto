@@ -112,7 +112,6 @@ service DistributedCache {
   rpc Metadata(MetadataRequest) returns (MetadataResponse);
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc Write(stream WriteRequest) returns (WriteResponse);
-  rpc UnaryRead(ReadRequest) returns (ReadResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);

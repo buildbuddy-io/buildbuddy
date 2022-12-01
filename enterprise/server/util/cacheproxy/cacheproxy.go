@@ -2,7 +2,6 @@ package cacheproxy
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -34,7 +33,6 @@ import (
 
 const (
 	readBufSizeBytes     = 1000000               // 1MB
-	maxUnaryRPCSizeBytes = readBufSizeBytes * 10 // 10MB
 )
 
 type dcClient struct {
@@ -305,33 +303,6 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 	return len(buf), err
 }
 
-func (c *CacheProxy) UnaryRead(ctx context.Context, req *dcpb.ReadRequest) (*dcpb.ReadResponse, error) {
-	ctx, err := c.readWriteContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	up, _ := prefix.UserPrefixFromContext(ctx)
-	rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
-
-	buf, err := c.cache.Get(ctx, rn)
-	if err != nil {
-		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
-		return nil, err
-	}
-	if int(req.GetOffset()+req.GetLimit()) > len(buf) {
-		return nil, status.InvalidArgumentErrorf("Offset + Limit (%d) greater than digest size: %d", req.GetOffset()+req.GetLimit(), len(buf))
-	}
-	if req.GetOffset() > 0 {
-		buf = buf[req.GetOffset():]
-	}
-	if req.GetLimit() > 0 {
-		buf = buf[:req.GetLimit()]
-	}
-	return &dcpb.ReadResponse{
-		Data: buf,
-	}, nil
-}
-
 func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
@@ -351,8 +322,10 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if resourceSize > 0 && resourceSize < bufSize {
 		bufSize = resourceSize
 	}
+	bufferedReader := bufio.NewReaderSize(reader, int(bufSize))
+	_ = bufferedReader
 	copyBuf := c.bufferPool.Get(bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
+	_, err = io.CopyBuffer(&streamWriter{stream}, bufferedReader, copyBuf[:bufSize])
 	c.bufferPool.Put(copyBuf)
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 	return err
@@ -557,14 +530,6 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *resource.
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
-	}
-
-	if r.GetDigest().GetSizeBytes() < maxUnaryRPCSizeBytes {
-		rsp, err := client.UnaryRead(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		return io.NopCloser(bytes.NewReader(rsp.GetData())), nil
 	}
 
 	stream, err := client.Read(ctx, req)
