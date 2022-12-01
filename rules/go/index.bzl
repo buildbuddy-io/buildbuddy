@@ -16,9 +16,29 @@ def _go_sdk_tool_impl(ctx):
         fail("could not locate SDK tool '%s'" % tool_path)
 
     # Declare an executable symlink to the tool File.
-    out = ctx.actions.declare_file(ctx.attr.name)
-    ctx.actions.symlink(output = out, target_file = tool, is_executable = True)
-    return [DefaultInfo(files = depset([out]), executable = out)]
+    tool_symlink = ctx.actions.declare_file(ctx.attr.name)
+    ctx.actions.symlink(output = tool_symlink, target_file = tool, is_executable = True)
+
+    # Declare a launcher script that changes to the current
+    # directory before running, since `bazel run` executes
+    # the tool under the build runfiles dir by default.
+    launcher_script = ctx.actions.declare_file(ctx.attr.name + "_launcher.sh")
+    ctx.actions.write(
+        launcher_script,
+        """#!/usr/bin/env bash
+        set -eu
+        TOOL_PATH="$(readlink ./%s)"
+        cd "$BUILD_WORKING_DIRECTORY"
+        exec "$TOOL_PATH" "$@"
+        """ % ctx.attr.name,
+        is_executable = True,
+    )
+
+    return [DefaultInfo(
+        files = depset([tool_symlink, launcher_script]),
+        runfiles = ctx.runfiles(files = [tool_symlink]),
+        executable = launcher_script,
+    )]
 
 go_sdk_tool = rule(
     doc = "Declares a run target from the go SDK.",
