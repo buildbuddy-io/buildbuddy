@@ -1,6 +1,7 @@
 package cacheproxy
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -363,20 +364,6 @@ func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer string, r *re
 	}
 }
 
-func (c *CacheProxy) UnaryWrite(ctx context.Context, req *dcpb.WriteRequest) (*dcpb.WriteResponse, error) {
-	ctx, err := c.readWriteContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	up, _ := prefix.UserPrefixFromContext(ctx)
-	rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
-	if err := c.cache.Set(ctx, rn, req.GetData()); err != nil {
-		c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
-		return nil, err
-	}
-	return &dcpb.WriteResponse{CommittedSize: rn.GetDigest().GetSizeBytes()}, nil
-}
-
 func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
@@ -663,6 +650,29 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
+type bufferedStreamWriteCloser struct {
+	*streamWriteCloser
+	bufferedWriter *bufio.Writer
+}
+
+func (bc *bufferedStreamWriteCloser) Write(data []byte) (int, error) {
+	return bc.bufferedWriter.Write(data)
+}
+
+func (bc *bufferedStreamWriteCloser) Commit() error {
+	if err := bc.bufferedWriter.Flush(); err != nil {
+		return err
+	}
+	return bc.streamWriteCloser.Commit()
+}
+
+func newBufferedStreadWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
+	return &bufferedStreamWriteCloser{
+		streamWriteCloser: swc,
+		bufferedWriter: bufio.NewWriterSize(swc, readBufSizeBytes),
+	}
+}
+
 func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	// Stopping a write mid-stream is difficult because Write streams are
 	// unidirectional. The server can close the stream early, but this does
@@ -686,24 +696,6 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		RemoteInstanceName: r.GetInstanceName(),
 	}
 
-	if r.GetDigest().GetSizeBytes() < maxUnaryRPCSizeBytes {
-		var buffer bytes.Buffer
-		wc := ioutil.NewCustomCommitWriteCloser(&buffer)
-		wc.CommitFn = func(int64) error {
-			req := &dcpb.WriteRequest{
-				Isolation:   isolation,
-				Key:         digestToKey(r.GetDigest()),
-				Data:        buffer.Bytes(),
-				FinishWrite: true,
-				HandoffPeer: handoffPeer,
-				Resource:    r,
-			}
-			_, err := client.UnaryWrite(ctx, req)
-			return err
-		}
-		return wc, nil
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
@@ -720,7 +712,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		stream:        stream,
 		r:             r,
 	}
-	return wc, nil
+	return newBufferedStreadWriteCloser(wc), nil
 }
 
 func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {
