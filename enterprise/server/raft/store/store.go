@@ -1333,7 +1333,7 @@ func (s *Store) waitForReplicaToCatchUp(ctx context.Context, clusterID uint64, d
 	for {
 		select {
 		case <-ctx.Done():
-			return status.FailedPreconditionError("timed out waiting for cluster to catch up")
+			return ctx.Err()
 		default:
 			break
 		}
