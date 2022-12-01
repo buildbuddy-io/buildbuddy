@@ -567,18 +567,19 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *resource.
 		Resource:  r,
 	}
 
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, err
+	}
+
 	if r.GetDigest().GetSizeBytes() < maxUnaryRPCSizeBytes {
-		rsp, err := c.UnaryRead(ctx, req)
+		rsp, err := client.UnaryRead(ctx, req)
 		if err != nil {
 			return nil, err
 		}
 		return io.NopCloser(bytes.NewReader(rsp.GetData())), nil
 	}
 
-	client, err := c.getClient(ctx, peer)
-	if err != nil {
-		return nil, err
-	}
 	stream, err := client.Read(ctx, req)
 	if err != nil {
 		return nil, err
@@ -697,7 +698,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 				HandoffPeer: handoffPeer,
 				Resource:    r,
 			}
-			_, err := c.UnaryWrite(ctx, req)
+			_, err := client.UnaryWrite(ctx, req)
 			return err
 		}
 		return wc, nil
