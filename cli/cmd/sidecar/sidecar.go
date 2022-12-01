@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/cache_proxy"
 	"github.com/buildbuddy-io/buildbuddy/cli/devnull"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc/metadata"
 
 	"google.golang.org/grpc"
@@ -38,7 +38,7 @@ var (
 	serverType = flag.String("server_type", "sidecar", "The server type to match on health checks")
 
 	listenAddr  = flag.String("listen_addr", "localhost:1991", "Local address to listen on.")
-	besBackend  = flag.String("bes_backend", "grpcs://remote.buildbuddy.io:443", "Server address to proxy build events to.")
+	besBackend  = flag.String("bes_backend", "", "Server address to proxy build events to.")
 	remoteCache = flag.String("remote_cache", "", "Server address to cache events to.")
 
 	cacheDir          = flag.String("cache_dir", "", "Root directory to use for local cache")
@@ -154,7 +154,6 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	besTarget := normalizeGrpcTarget(*besBackend)
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
 	buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget))
-	log.Debugf("Proxy: forwarding build events to: %q", besTarget)
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 
 	// Register to handle build event protocol messages.
@@ -163,6 +162,7 @@ func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 		log.Fatalf("Error initializing BuildEventProtocolServer: %s", err.Error())
 	}
 	pepb.RegisterPublishBuildEventServer(grpcServer, buildEventServer)
+	log.Infof("BES proxy: will proxy requests to %q", besTarget)
 }
 
 func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpcServer *grpc.Server) {
@@ -179,12 +179,12 @@ func registerCacheProxy(ctx context.Context, env *real_environment.RealEnv, grpc
 	repb.RegisterActionCacheServer(grpcServer, cacheProxy)
 	repb.RegisterContentAddressableStorageServer(grpcServer, cacheProxy)
 	repb.RegisterCapabilitiesServer(grpcServer, cacheProxy)
+	log.Infof("Cache proxy: will proxy requests to %s", cacheTarget)
 }
 
 type sidecarService struct{}
 
 func (s *sidecarService) Ping(ctx context.Context, req *scpb.PingRequest) (*scpb.PingResponse, error) {
-	log.Printf("PONG")
 	return &scpb.PingResponse{}, nil
 }
 
@@ -218,6 +218,10 @@ func Handle() {
 	flag.Parse()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	if err := log.Configure(); err != nil {
+		log.Fatalf("Failed to configure logging: %s", err)
+	}
 
 	env := initializeEnv()
 	grpcServer, lis := initializeGRPCServer(env)
