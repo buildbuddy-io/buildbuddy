@@ -55,7 +55,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
       { value: checkCache, name: "Checking cache hits" },
       { value: uploadMissing, name: "Uploading missing inputs" },
       { value: downloadOuputs, name: "Downloading outputs" },
-      { value: uploadOutputs, name: "Uploading inputs" },
+      { value: uploadOutputs, name: "Uploading outputs" },
       { value: detectModifiedOutput, name: "Detect modified output files" },
       { value: stableStatus, name: "Generating stable-status.txt" },
       { value: compilingSwift, name: "Compiling Swift" },
