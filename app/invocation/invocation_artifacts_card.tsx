@@ -2,7 +2,7 @@ import React from "react";
 import InvocationModel from "./invocation_model";
 import rpcService from "../service/rpc_service";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { ArrowDownCircle } from "lucide-react";
+import { ArrowDownCircle, FileCode } from "lucide-react";
 
 interface Props {
   model: InvocationModel;
@@ -85,14 +85,25 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                 <div className="artifact-section-title">{target.label}</div>
                 <div className="artifact-list">
                   {target.outputs.map((output) => (
-                    <a
-                      href={rpcService.getBytestreamUrl(output.uri, this.props.model.getId(), {
-                        filename: output.name,
-                      })}
-                      className="artifact-name"
-                      onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
-                      {output.name}
-                    </a>
+                    <div className="artifact-line">
+                      <a
+                        href={rpcService.getBytestreamUrl(output.uri, this.props.model.getId(), {
+                          filename: output.name,
+                        })}
+                        className="artifact-name"
+                        onClick={this.handleArtifactClicked.bind(this, output.uri, output.name)}>
+                        {output.name}
+                      </a>
+                      {output.uri?.startsWith("bytestream://") && (
+                        <a
+                          className="artifact-view"
+                          href={`/code/buildbuddy-io/buildbuddy/?bytestream_url=${encodeURIComponent(
+                            output.uri
+                          )}&invocation_id=${this.props.model.getId()}&filename=${output.name}`}>
+                          <FileCode /> View
+                        </a>
+                      )}
+                    </div>
                   ))}
                   {target.hiddenOutputCount > 0 && (
                     <div className="artifact-hidden-count">

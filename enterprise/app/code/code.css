@@ -25,6 +25,9 @@
   font-family: monospace;
   flex-shrink: 0;
   margin-right: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .code-menu-logo .logo {
@@ -44,11 +47,20 @@
   justify-content: center;
 }
 
+.code-menu-back {
+  margin-right: 16px;
+  color: #000;
+}
+
 .code-menu-actions {
   min-width: 1px;
   white-space: nowrap;
   display: flex;
   align-items: center;
+}
+
+.code-menu-download-button {
+  gap: 8px;
 }
 
 .code-menu-breadcrumbs {

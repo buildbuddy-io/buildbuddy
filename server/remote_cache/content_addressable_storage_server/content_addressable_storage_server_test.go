@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -264,6 +265,120 @@ func TestBatchUpdateRejectCorruptBlobs(t *testing.T) {
 	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[0].GetStatus().GetCode())
 	assert.Equal(t, int32(gcodes.DataLoss), rsp.GetResponses()[1].GetStatus().GetCode())
 	assert.Equal(t, int32(gcodes.OK), rsp.GetResponses()[2].GetStatus().GetCode())
+}
+
+func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
+	blob := []byte("AAAAAAAAAAAAAAAAAAAAAAAAA")
+	compressedBlob := compression.CompressZstd(nil, blob)
+
+	testCases := []struct {
+		name                string
+		uploadCompression   repb.Compressor_Value
+		downloadCompression repb.Compressor_Value
+	}{
+		{
+			name:                "Write compressed, read compressed",
+			uploadCompression:   repb.Compressor_ZSTD,
+			downloadCompression: repb.Compressor_ZSTD,
+		},
+		{
+			name:                "Write compressed, read decompressed",
+			uploadCompression:   repb.Compressor_ZSTD,
+			downloadCompression: repb.Compressor_IDENTITY,
+		},
+		{
+			name:                "Write decompressed, read decompressed",
+			uploadCompression:   repb.Compressor_IDENTITY,
+			downloadCompression: repb.Compressor_IDENTITY,
+		},
+		{
+			name:                "Write decompressed, read compressed",
+			uploadCompression:   repb.Compressor_IDENTITY,
+			downloadCompression: repb.Compressor_ZSTD,
+		},
+	}
+
+	for _, tc := range testCases {
+		{
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			te.SetCache(&testcompression.CompressionCache{Cache: te.GetCache()})
+			flags.Set(t, "cache.zstd_transcoding_enabled", true)
+			flags.Set(t, "cache.detailed_stats_enabled", true)
+			mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+			require.NoError(t, err)
+			te.SetMetricsCollector(mc)
+			clientConn := runCASServer(ctx, te, t)
+			casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+			uploadBlob := blob
+			if tc.uploadCompression == repb.Compressor_ZSTD {
+				uploadBlob = compressedBlob
+			}
+			expectedDownloadBlob := blob
+			if tc.downloadCompression == repb.Compressor_ZSTD {
+				expectedDownloadBlob = compressedBlob
+			}
+
+			// Note: Digest is of uncompressed contents
+			d, err := digest.Compute(bytes.NewReader(blob))
+			require.NoError(t, err, tc.name)
+
+			// FindMissingBlobs should report that the blob is missing, initially.
+			missingResp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+				BlobDigests: []*repb.Digest{d},
+			})
+			require.NoError(t, err, tc.name)
+			require.Equal(t, digestStrings(d), digestStrings(missingResp.MissingBlobDigests...), tc.name)
+
+			// Upload blob via BatchUpdate.
+			// Use an invocation context scoped just to this request.
+			{
+				iid, err := uuid.NewRandom()
+				require.NoError(t, err, tc.name)
+				rmd := &repb.RequestMetadata{ToolInvocationId: iid.String(), ActionMnemonic: "GoCompile"}
+				ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
+				require.NoError(t, err, tc.name)
+				batchUpdateResp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+					Requests: []*repb.BatchUpdateBlobsRequest_Request{
+						{Digest: d, Data: uploadBlob, Compressor: tc.uploadCompression},
+					},
+				})
+				require.NoError(t, err, tc.name)
+				for i, resp := range batchUpdateResp.Responses {
+					require.Equal(t, "", resp.Status.Message, tc.name)
+					require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchUpdateResponse[%d].Status != OK", i, tc.name)
+				}
+				sc := hit_tracker.ScoreCard(ctx, te, iid.String())
+				require.Len(t, sc.Results, 1, tc.name)
+				assert.Equal(t, tc.uploadCompression, sc.Results[0].Compressor, tc.name)
+				assert.Equal(t, int64(len(uploadBlob)), sc.Results[0].TransferredSizeBytes, tc.name)
+			}
+
+			// Read back the blob we just uploaded
+			// Use a new invocation context to get a new cache scorecard.
+			iid, err := uuid.NewRandom()
+			require.NoError(t, err, tc.name)
+			rmd := &repb.RequestMetadata{ToolInvocationId: iid.String(), ActionMnemonic: "GoCompile"}
+			ctx, err = bazel_request.WithRequestMetadata(ctx, rmd)
+			require.NoError(t, err, tc.name)
+			readResp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+				Digests:               []*repb.Digest{d},
+				AcceptableCompressors: []repb.Compressor_Value{tc.downloadCompression},
+			})
+
+			require.NoError(t, err, tc.name)
+			sc := hit_tracker.ScoreCard(ctx, te, iid.String())
+			require.Len(t, sc.Results, len(readResp.Responses), tc.name)
+			downloadedBlobs := make([][]byte, len(readResp.Responses))
+			for i, resp := range readResp.Responses {
+				require.Equal(t, int32(codes.OK), resp.Status.Code, "BatchReadResponse[%d].Status != OK", i, tc.name)
+				assert.Equal(t, int64(len(resp.Data)), sc.Results[i].TransferredSizeBytes, tc.name)
+				downloadedBlobs[i] = resp.Data
+			}
+			require.Equal(t, [][]byte{expectedDownloadBlob}, downloadedBlobs, tc.name)
+		}
+	}
 }
 
 func TestMalevolentCache(t *testing.T) {

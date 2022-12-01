@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/log",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/util/log/gcp",
         "//server/util/status",
         "@com_github_rs_zerolog//:zerolog",
         "@com_github_rs_zerolog//log",

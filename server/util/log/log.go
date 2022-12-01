@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log/gcp"
 	"google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -109,8 +110,9 @@ func init() {
 	}
 }
 
-func LocalLogger() zerolog.Logger {
-	output := zerolog.ConsoleWriter{Out: os.Stderr}
+func LocalWriter() *zerolog.ConsoleWriter {
+	zerolog.TimeFieldFormat = time.RFC3339Nano
+	output := &zerolog.ConsoleWriter{Out: os.Stderr}
 	output.FormatCaller = func(i interface{}) string {
 		s, ok := i.(string)
 		if !ok {
@@ -120,20 +122,27 @@ func LocalLogger() zerolog.Logger {
 		// we're not going to have any file names longer than that... right?
 		return fmt.Sprintf("%41s >", filepath.Base(s))
 	}
-	zerolog.TimeFieldFormat = time.RFC3339Nano
 	output.TimeFormat = "2006/01/02 15:04:05.000"
 	// Skipping 3 frames prints the correct source file + line number, rather
 	// than printing a line number in this file or in the zerolog library.
-	return zerolog.New(output).With().Timestamp().Logger()
+	return output
 }
 
-func StructuredLogger() zerolog.Logger {
+func StructuredWriter() *zerolog.ConsoleWriter {
 	// These overrides configure the logger to emit structured
 	// events compatible with GCP's logging infrastructure.
 	zerolog.LevelFieldName = "severity"
 	zerolog.TimestampFieldName = "timestamp"
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	return zerolog.New(os.Stdout).With().Timestamp().Logger()
+	output := &zerolog.ConsoleWriter{Out: os.Stdout}
+	return output
+}
+
+func NewConsoleWriter() *zerolog.ConsoleWriter {
+	if *EnableStructuredLogging {
+		return StructuredWriter()
+	}
+	return LocalWriter()
 }
 
 type gcpLoggingCallerHook struct{}
@@ -145,25 +154,25 @@ func (h gcpLoggingCallerHook) Run(e *zerolog.Event, level zerolog.Level, msg str
 		return
 	}
 	sourceLocation := zerolog.Dict().Str("file", filepath.Base(file)).Str("line", strconv.Itoa(line))
-	e.Dict("logging.googleapis.com/sourceLocation", sourceLocation)
+	e.Dict(gcp.SourceLocationFieldName, sourceLocation)
 }
 
 func Configure() error {
-	var logger zerolog.Logger
-	if *EnableStructuredLogging {
-		logger = StructuredLogger()
+	writers := []io.Writer{}
+	if logWriter, err := gcp.NewLogWriter(); err != nil {
+		return err
+	} else if logWriter != nil {
+		writers = append(writers, logWriter)
+	}
+	// The ConsoleWriter comes last in the MultiLevelWriter because it writes to
+	// its sub-writers in sequence, and consoleWriter will exit after logging when
+	// we log fatal errors.
+	logger := zerolog.New(zerolog.MultiLevelWriter(append(writers, NewConsoleWriter())...)).With().Timestamp().Logger()
+	if l, err := zerolog.ParseLevel(*LogLevel); err != nil {
+		return err
 	} else {
-		logger = LocalLogger()
+		logger.Level(l)
 	}
-	intLogLevel := zerolog.InfoLevel
-	if *LogLevel != "" {
-		if l, err := zerolog.ParseLevel(*LogLevel); err == nil {
-			intLogLevel = l
-		} else {
-			return err
-		}
-	}
-	logger = logger.Level(intLogLevel)
 	if *IncludeShortFileName {
 		if *EnableStructuredLogging && *EnableGCPLoggingFormat {
 			logger = logger.Hook(gcpLoggingCallerHook{})

@@ -121,8 +121,12 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackEmptyHit()
 		return nil
 	}
-	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName()).ToProto()
-	reader, err := s.cache.Reader(ctx, cacheRN, req.ReadOffset, req.ReadLimit)
+
+	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
+	if s.cache.SupportsCompressor(r.GetCompressor()) {
+		cacheRN.SetCompressor(r.GetCompressor())
+	}
+	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		ht.TrackMiss(r.GetDigest())
 		return err
@@ -134,12 +138,14 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		bufSize = r.GetDigest().GetSizeBytes()
 	}
 
-	if r.GetCompressor() == repb.Compressor_ZSTD {
+	// If the cache doesn't support the requested compression, it will cache decompressed bytes and the server
+	// is in charge of compressing it
+	if r.GetCompressor() == repb.Compressor_ZSTD && !s.cache.SupportsCompressor(r.GetCompressor()) {
 		rbuf := s.bufferPool.Get(bufSize)
 		defer s.bufferPool.Put(rbuf)
 		cbuf := s.bufferPool.Get(bufSize)
 		defer s.bufferPool.Put(cbuf)
-		reader, err = compression.NewZstdChunkingCompressor(reader, rbuf[:bufSize], cbuf[:bufSize])
+		reader, err = compression.NewZstdCompressingReader(reader, rbuf[:bufSize], cbuf[:bufSize])
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}
@@ -232,6 +238,10 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		resourceNameString: req.ResourceName,
 	}
 
+	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
+	if s.cache.SupportsCompressor(r.GetCompressor()) {
+		casRN.SetCompressor(r.GetCompressor())
+	}
 	// The protocol says it is *optional* to allow overwriting, but does
 	// not specify what errors should be returned in that case. We would
 	// like to return an "AlreadyExists" error here, but it causes errors
@@ -240,8 +250,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	// Protocol does say that if another parallel write had finished while
 	// this one was ongoing, we can immediately return a response with the
 	// committed size, so we'll just do that.
-	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName()).ToProto()
-	exists, err := s.cache.Contains(ctx, casRN)
+	exists, err := s.cache.Contains(ctx, casRN.ToProto())
 	if err != nil {
 		return nil, err
 	}
@@ -249,12 +258,9 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		return nil, status.AlreadyExistsError("Already exists")
 	}
 
-	ws.checksum = NewChecksum()
-	ws.writer = ws.checksum
 	var committedWriteCloser interfaces.CommittedWriteCloser
-
 	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
-		cacheWriter, err := s.cache.Writer(ctx, casRN)
+		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
 		}
@@ -264,16 +270,30 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 	ws.cacheCommitter = committedWriteCloser
 	ws.cacheCloser = committedWriteCloser
+	ws.checksum = NewChecksum()
 	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		decompressor, err := compression.NewZstdDecompressor(ws.writer)
-		if err != nil {
-			return nil, err
+		if s.cache.SupportsCompressor(r.GetCompressor()) {
+			// If the cache supports compression, write compressed bytes to the cache with committedWriteCloser
+			// but wrap the checksum in a decompressor to validate the decompressed data
+			decompressingChecksum, err := compression.NewZstdDecompressor(ws.checksum)
+			if err != nil {
+				return nil, err
+			}
+			ws.writer = io.MultiWriter(decompressingChecksum, committedWriteCloser)
+			ws.decompressorCloser = decompressingChecksum
+		} else {
+			// If the cache doesn't support compression, wrap both the checksum and cache writer in a decompressor
+			decompressor, err := compression.NewZstdDecompressor(ws.writer)
+			if err != nil {
+				return nil, err
+			}
+			ws.writer = decompressor
+			ws.decompressorCloser = decompressor
 		}
-		ws.writer = decompressor
-		ws.decompressorCloser = decompressor
 	}
+
 	return ws, nil
 }
 

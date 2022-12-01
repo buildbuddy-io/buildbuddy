@@ -240,3 +240,7 @@ func (m *MemoryCache) Start() error {
 func (m *MemoryCache) Stop() error {
 	return nil
 }
+
+func (m *MemoryCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	return compressor == repb.Compressor_IDENTITY
+}

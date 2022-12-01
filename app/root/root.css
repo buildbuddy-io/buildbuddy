@@ -1121,11 +1121,29 @@ code .comment {
   cursor: pointer;
 }
 
+.artifact-line {
+  display: flex;
+}
+
 .artifact-name {
   font-weight: 600;
   text-decoration: underline;
   cursor: pointer;
-  display: block;
+}
+
+.artifact-view {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.artifact-view svg {
+  width: 16px;
+  height: 16px;
 }
 
 .artifact-section-title {
@@ -1137,7 +1155,7 @@ code .comment {
   padding-left: 32px;
 }
 
-.artifacts :is(.artifact-name, .artifact-hidden-count) {
+.artifacts :is(.artifact-line, .artifact-hidden-count) {
   margin-top: 4px;
 }
 

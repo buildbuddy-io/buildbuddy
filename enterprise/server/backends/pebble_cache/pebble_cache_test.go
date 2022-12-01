@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -33,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -800,6 +802,214 @@ func TestSizeLimit(t *testing.T) {
 	dirSize, err := disk.DirSize(rootDir)
 	require.NoError(t, err)
 	require.LessOrEqual(t, dirSize, maxSizeBytes)
+}
+
+func TestCompression(t *testing.T) {
+	// Make blob big enough to require multiple chunks to compress
+	blob := compressibleBlobOfSize(pebble_cache.CompressorBufSizeBytes + 1)
+	compressedBuf := compression.CompressZstd(nil, blob)
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob))
+	require.NoError(t, err)
+
+	compressedRN := &resource.ResourceName{
+		Digest:     d,
+		CacheType:  resource.CacheType_CAS,
+		Compressor: repb.Compressor_ZSTD,
+	}
+	decompressedRN := &resource.ResourceName{
+		Digest:     d,
+		CacheType:  resource.CacheType_CAS,
+		Compressor: repb.Compressor_IDENTITY,
+	}
+
+	testCases := []struct {
+		name        string
+		rnToWrite   *resource.ResourceName
+		dataToWrite []byte
+	}{
+		{
+			name:        "Write compressed data",
+			rnToWrite:   compressedRN,
+			dataToWrite: compressedBuf,
+		},
+		{
+			name:        "Write decompressed data",
+			rnToWrite:   decompressedRN,
+			dataToWrite: blob,
+		},
+	}
+
+	for _, tc := range testCases {
+		{
+			te := testenv.GetTestEnv(t)
+			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+			ctx := getAnonContext(t, te)
+
+			maxSizeBytes := int64(1_000_000_000) // 1GB
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pc.Start()
+			defer pc.Stop()
+
+			// Write data to cache
+			wc, err := pc.Writer(ctx, tc.rnToWrite)
+			require.NoError(t, err, tc.name)
+			n, err := wc.Write(tc.dataToWrite)
+			require.NoError(t, err, tc.name)
+			require.Equal(t, len(tc.dataToWrite), n)
+			err = wc.Commit()
+			require.NoError(t, err, tc.name)
+			err = wc.Close()
+			require.NoError(t, err, tc.name)
+
+			// Read data in compressed form
+			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
+			require.NoError(t, err, tc.name)
+			defer reader.Close()
+			data, err := io.ReadAll(reader)
+			require.NoError(t, err, tc.name)
+			decompressed, err := compression.DecompressZstd(nil, data)
+			require.Equal(t, blob, decompressed, tc.name)
+
+			// Read data non-compressed
+			reader, err = pc.Reader(ctx, decompressedRN, 0, 0)
+			require.NoError(t, err, tc.name)
+			defer reader.Close()
+			data, err = io.ReadAll(reader)
+			require.NoError(t, err, tc.name)
+			require.Equal(t, blob, data, tc.name)
+		}
+	}
+}
+
+func TestCompression_BufferPoolReuse(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(1000)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	// Do multiple reads to reuse buffers in bufferpool
+	for i := 0; i < 5; i++ {
+		blob := compressibleBlobOfSize(100)
+
+		// Note: Digest is of uncompressed contents
+		d, err := digest.Compute(bytes.NewReader(blob))
+		require.NoError(t, err)
+		decompressedRN := &resource.ResourceName{
+			Digest:     d,
+			CacheType:  resource.CacheType_CAS,
+			Compressor: repb.Compressor_IDENTITY,
+		}
+
+		// Write non-compressed data to cache
+		wc, err := pc.Writer(ctx, decompressedRN)
+		require.NoError(t, err)
+		n, err := wc.Write(blob)
+		require.NoError(t, err)
+		require.Equal(t, len(blob), n)
+		err = wc.Commit()
+		require.NoError(t, err)
+		err = wc.Close()
+		require.NoError(t, err)
+
+		// Read data in compressed form
+		compressedRN := &resource.ResourceName{
+			Digest:     d,
+			CacheType:  resource.CacheType_CAS,
+			Compressor: repb.Compressor_ZSTD,
+		}
+		reader, err := pc.Reader(ctx, compressedRN, 0, 0)
+		require.NoError(t, err)
+		defer reader.Close()
+		data, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		decompressed, err := compression.DecompressZstd(nil, data)
+		require.Equal(t, blob, decompressed)
+	}
+}
+
+func TestCompression_ParallelRequests(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	maxSizeBytes := int64(1000)
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: testfs.MakeTempDir(t), MaxSizeBytes: maxSizeBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	eg := errgroup.Group{}
+	for i := 0; i < 10; i++ {
+		eg.Go(func() error {
+			blob := compressibleBlobOfSize(100)
+
+			// Note: Digest is of uncompressed contents
+			d, err := digest.Compute(bytes.NewReader(blob))
+			require.NoError(t, err)
+			decompressedRN := &resource.ResourceName{
+				Digest:     d,
+				CacheType:  resource.CacheType_CAS,
+				Compressor: repb.Compressor_IDENTITY,
+			}
+
+			// Write non-compressed data to cache
+			wc, err := pc.Writer(ctx, decompressedRN)
+			require.NoError(t, err)
+			n, err := wc.Write(blob)
+			require.NoError(t, err)
+			require.Equal(t, len(blob), n)
+			err = wc.Commit()
+			require.NoError(t, err)
+			err = wc.Close()
+			require.NoError(t, err)
+
+			// Read data in compressed form
+			compressedRN := &resource.ResourceName{
+				Digest:     d,
+				CacheType:  resource.CacheType_CAS,
+				Compressor: repb.Compressor_ZSTD,
+			}
+			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
+			require.NoError(t, err)
+			defer reader.Close()
+			data, err := io.ReadAll(reader)
+			require.NoError(t, err)
+			decompressed, err := compression.DecompressZstd(nil, data)
+			require.Equal(t, blob, decompressed)
+			return nil
+		})
+	}
+	eg.Wait()
+}
+
+func compressibleBlobOfSize(sizeBytes int) []byte {
+	out := make([]byte, 0, sizeBytes)
+	for len(out) < sizeBytes {
+		runEnd := len(out) + 100 + rand.Intn(100)
+		if runEnd > sizeBytes {
+			runEnd = sizeBytes
+		}
+
+		runChar := byte(rand.Intn('Z'-'A'+1)) + 'A'
+		for len(out) < runEnd {
+			out = append(out, runChar)
+		}
+	}
+	return out
 }
 
 func TestFindMissing(t *testing.T) {

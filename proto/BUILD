@@ -21,6 +21,11 @@ proto_library(
 )
 
 proto_library(
+    name = "bazel_query_proto",
+    srcs = ["bazel_query.proto"],
+)
+
+proto_library(
     name = "build_status_proto",
     srcs = [
         "build_status.proto",
@@ -481,6 +486,12 @@ go_proto_library(
     deps = [
         ":context_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "bazel_query_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/bazel_query",
+    proto = ":bazel_query_proto",
 )
 
 go_proto_library(

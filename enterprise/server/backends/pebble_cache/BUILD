@@ -20,6 +20,8 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/util/alert",
+        "//server/util/bytebufferpool",
+        "//server/util/compression",
         "//server/util/disk",
         "//server/util/flagutil",
         "//server/util/ioutil",
@@ -53,6 +55,7 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/compression",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/prefix",
@@ -61,5 +64,6 @@ go_test(
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_x_sync//errgroup",
     ],
 )

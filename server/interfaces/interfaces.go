@@ -226,6 +226,9 @@ type Cache interface {
 	// Low level interface used for seeking and stream-writing.
 	Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error)
 	Writer(ctx context.Context, r *resource.ResourceName) (CommittedWriteCloser, error)
+
+	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
+	SupportsCompressor(compressor repb.Compressor_Value) bool
 }
 
 type StoppableCache interface {
