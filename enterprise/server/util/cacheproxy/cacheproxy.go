@@ -1,6 +1,7 @@
 package cacheproxy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -30,7 +31,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-const readBufSizeBytes = 1000000 // 1MB
+const (
+	readBufSizeBytes     = 1000000               // 1MB
+	maxUnaryRPCSizeBytes = readBufSizeBytes * 10 // 10MB
+)
 
 type dcClient struct {
 	dcpb.DistributedCacheClient
@@ -300,6 +304,33 @@ func (w *streamWriter) Write(buf []byte) (int, error) {
 	return len(buf), err
 }
 
+func (c *CacheProxy) UnaryRead(ctx context.Context, req *dcpb.ReadRequest) (*dcpb.ReadResponse, error) {
+	ctx, err := c.readWriteContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	up, _ := prefix.UserPrefixFromContext(ctx)
+	rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
+
+	buf, err := c.cache.Get(ctx, rn)
+	if err != nil {
+		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
+		return nil, err
+	}
+	if int(req.GetOffset()+req.GetLimit()) > len(buf) {
+		return nil, status.InvalidArgumentErrorf("Offset + Limit (%d) greater than digest size: %d", req.GetOffset()+req.GetLimit(), len(buf))
+	}
+	if req.GetOffset() > 0 {
+		buf = buf[req.GetOffset():]
+	}
+	if req.GetLimit() > 0 {
+		buf = buf[:req.GetLimit()]
+	}
+	return &dcpb.ReadResponse{
+		Data: buf,
+	}, nil
+}
+
 func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
@@ -330,6 +361,20 @@ func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer string, r *re
 	if c.hintedHandoffCallback != nil {
 		c.hintedHandoffCallback(ctx, peer, r)
 	}
+}
+
+func (c *CacheProxy) UnaryWrite(ctx context.Context, req *dcpb.WriteRequest) (*dcpb.WriteResponse, error) {
+	ctx, err := c.readWriteContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	up, _ := prefix.UserPrefixFromContext(ctx)
+	rn := getResource(req.GetResource(), req.GetIsolation(), req.GetKey())
+	if err := c.cache.Set(ctx, rn, req.GetData()); err != nil {
+		c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
+		return nil, err
+	}
+	return &dcpb.WriteResponse{CommittedSize: rn.GetDigest().GetSizeBytes()}, nil
 }
 
 func (c *CacheProxy) Write(stream dcpb.DistributedCache_WriteServer) error {
@@ -521,6 +566,15 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *resource.
 		Limit:     limit,
 		Resource:  r,
 	}
+
+	if r.GetDigest().GetSizeBytes() < maxUnaryRPCSizeBytes {
+		rsp, err := c.UnaryRead(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return io.NopCloser(bytes.NewReader(rsp.GetData())), nil
+	}
+
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -625,6 +679,30 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	if err != nil {
 		return nil, err
 	}
+
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
+
+	if r.GetDigest().GetSizeBytes() < maxUnaryRPCSizeBytes {
+		var buffer bytes.Buffer
+		wc := ioutil.NewCustomCommitWriteCloser(&buffer)
+		wc.CommitFn = func(int64) error {
+			req := &dcpb.WriteRequest{
+				Isolation:   isolation,
+				Key:         digestToKey(r.GetDigest()),
+				Data:        buffer.Bytes(),
+				FinishWrite: true,
+				HandoffPeer: handoffPeer,
+				Resource:    r,
+			}
+			_, err := c.UnaryWrite(ctx, req)
+			return err
+		}
+		return wc, nil
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
@@ -632,10 +710,6 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		return nil, err
 	}
 
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
 	wc := &streamWriteCloser{
 		cancelFunc:    cancel,
 		isolation:     isolation,
