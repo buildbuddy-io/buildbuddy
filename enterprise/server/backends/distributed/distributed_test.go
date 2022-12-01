@@ -1,6 +1,7 @@
 package distributed
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -11,9 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/assert"
@@ -136,6 +139,110 @@ func TestBasicReadWrite(t *testing.T) {
 			assert.Nil(t, err)
 			assert.True(t, exists)
 			readAndCompareDigest(t, ctx, baseCache, rn)
+		}
+	}
+}
+
+func TestReadWrite_Compression(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+
+	testCases := []struct {
+		name             string
+		writeCompression repb.Compressor_Value
+		readCompression  repb.Compressor_Value
+	}{
+		{
+			name:             "Write compressed, read compressed",
+			writeCompression: repb.Compressor_ZSTD,
+			readCompression:  repb.Compressor_ZSTD,
+		},
+		{
+			name:             "Write compressed, read decompressed",
+			writeCompression: repb.Compressor_ZSTD,
+			readCompression:  repb.Compressor_IDENTITY,
+		},
+		{
+			name:             "Write decompressed, read decompressed",
+			writeCompression: repb.Compressor_IDENTITY,
+			readCompression:  repb.Compressor_IDENTITY,
+		},
+		{
+			name:             "Write decompressed, read compressed",
+			writeCompression: repb.Compressor_IDENTITY,
+			readCompression:  repb.Compressor_ZSTD,
+		},
+	}
+
+	for _, tc := range testCases {
+		{
+			// Setup distributed cache
+			peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+			peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+			peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+			baseConfig := CacheConfig{
+				ReplicationFactor:  3,
+				Nodes:              []string{peer1, peer2, peer3},
+				DisableLocalLookup: true,
+			}
+
+			config1 := baseConfig
+			config1.ListenAddr = peer1
+			cache1 := &testcompression.CompressionCache{Cache: env.GetCache()}
+			dc1 := startNewDCache(t, env, config1, cache1)
+
+			config2 := baseConfig
+			config2.ListenAddr = peer2
+			cache2 := &testcompression.CompressionCache{Cache: env.GetCache()}
+			dc2 := startNewDCache(t, env, config2, cache2)
+
+			config3 := baseConfig
+			config3.ListenAddr = peer3
+			cache3 := &testcompression.CompressionCache{Cache: env.GetCache()}
+			dc3 := startNewDCache(t, env, config3, cache3)
+
+			waitForReady(t, config1.ListenAddr)
+			waitForReady(t, config2.ListenAddr)
+			waitForReady(t, config3.ListenAddr)
+
+			baseCaches := []interfaces.Cache{
+				cache1,
+				cache2,
+				cache3,
+			}
+			distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+			for i := 0; i < 10; i++ {
+				// Do a write, and ensure it was written to all nodes.
+				d, buf := testdigest.NewRandomDigestBuf(t, 100)
+				compressedBuf := compression.CompressZstd(nil, buf)
+				writeRN := &resource.ResourceName{
+					Digest:     d,
+					CacheType:  resource.CacheType_CAS,
+					Compressor: tc.writeCompression,
+				}
+
+				bufToWrite := buf
+				if tc.writeCompression == repb.Compressor_ZSTD {
+					bufToWrite = compressedBuf
+				}
+				err := distributedCaches[i%3].Set(ctx, writeRN, bufToWrite)
+				require.NoError(t, err)
+
+				readRN := &resource.ResourceName{
+					Digest:     d,
+					CacheType:  resource.CacheType_CAS,
+					Compressor: tc.readCompression,
+				}
+				bufToRead := buf
+				if tc.readCompression == repb.Compressor_ZSTD {
+					bufToRead = compressedBuf
+				}
+				for _, baseCache := range baseCaches {
+					actual, err := baseCache.Get(ctx, readRN)
+					assert.NoError(t, err)
+					require.True(t, bytes.Equal(bufToRead, actual))
+				}
+			}
 		}
 	}
 }
@@ -1121,5 +1228,71 @@ func TestDelete_NonExistentFile(t *testing.T) {
 		// Do a delete on a file that does not exist.
 		err := distributedCaches[i%3].Delete(ctx, rn)
 		assert.NoError(t, err)
+	}
+}
+
+func TestSupportsCompressor(t *testing.T) {
+	singleCacheSizeBytes := int64(1000000)
+	env := testenv.GetTestEnv(t)
+
+	testCases := []struct {
+		name                     string
+		compressionLookupEnabled bool
+		cache1                   interfaces.Cache
+		cache2                   interfaces.Cache
+		expected                 bool
+	}{
+		{
+			name:                     "supports zstd",
+			compressionLookupEnabled: true,
+			cache1:                   &testcompression.CompressionCache{Cache: env.GetCache()},
+			cache2:                   &testcompression.CompressionCache{Cache: env.GetCache()},
+			expected:                 true,
+		},
+		{
+			name:                     "does not support zstd",
+			compressionLookupEnabled: true,
+			cache1:                   newMemoryCache(t, singleCacheSizeBytes),
+			cache2:                   newMemoryCache(t, singleCacheSizeBytes),
+			expected:                 false,
+		},
+		{
+			name:                     "compression lookup disabled",
+			compressionLookupEnabled: false,
+			cache1:                   &testcompression.CompressionCache{Cache: env.GetCache()},
+			cache2:                   &testcompression.CompressionCache{Cache: env.GetCache()},
+			expected:                 false,
+		},
+	}
+
+	for _, tc := range testCases {
+		{
+			// Setup distributed cache
+			peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+			peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+			baseConfig := CacheConfig{
+				ReplicationFactor:            2,
+				Nodes:                        []string{peer1, peer2},
+				DisableLocalLookup:           true,
+				EnableLocalCompressionLookup: tc.compressionLookupEnabled,
+			}
+
+			config1 := baseConfig
+			config1.ListenAddr = peer1
+			dc1 := startNewDCache(t, env, config1, tc.cache1)
+
+			config2 := baseConfig
+			config2.ListenAddr = peer2
+			dc2 := startNewDCache(t, env, config2, tc.cache2)
+
+			waitForReady(t, config1.ListenAddr)
+			waitForReady(t, config2.ListenAddr)
+
+			sc := dc1.SupportsCompressor(repb.Compressor_ZSTD)
+			require.Equal(t, tc.expected, sc)
+
+			sc = dc2.SupportsCompressor(repb.Compressor_ZSTD)
+			require.Equal(t, tc.expected, sc)
+		}
 	}
 }
