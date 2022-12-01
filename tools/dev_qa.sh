@@ -6,7 +6,7 @@
 
 set -e
 
-: "${QA_ROOT:=~/buildbuddy-qa}"
+: "${QA_ROOT:=$HOME/buildbuddy-qa}"
 
 mkdir -p "$QA_ROOT"
 cd "$QA_ROOT"
