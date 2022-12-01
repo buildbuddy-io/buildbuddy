@@ -32,7 +32,9 @@ import (
 )
 
 const (
-	readBufSizeBytes     = 1000000               // 1MB
+	// Keep under the limit of ~4MB (save 256KB).
+	// (Match the readBufSizeBytes in byte_stream_server.go)
+	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
 )
 
 type dcClient struct {
@@ -634,7 +636,7 @@ func (bc *bufferedStreamWriteCloser) Commit() error {
 func newBufferedStreadWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
 	return &bufferedStreamWriteCloser{
 		streamWriteCloser: swc,
-		bufferedWriter: bufio.NewWriterSize(swc, readBufSizeBytes),
+		bufferedWriter:    bufio.NewWriterSize(swc, readBufSizeBytes),
 	}
 }
 

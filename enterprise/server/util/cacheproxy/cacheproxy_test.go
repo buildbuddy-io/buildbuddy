@@ -796,9 +796,9 @@ func TestEmptyRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = r.Read(nil)
-	if err != io.EOF {
-		t.Fatal(err)
+	n, err := io.ReadFull(r, nil)
+	if n != 0 {
+		t.Fatal("Empty read failed")
 	}
 
 }
