@@ -170,7 +170,7 @@ func Configure() error {
 	if l, err := zerolog.ParseLevel(*LogLevel); err != nil {
 		return err
 	} else {
-		logger.Level(l)
+		logger = logger.Level(l)
 	}
 	if *IncludeShortFileName {
 		if *EnableStructuredLogging && *EnableGCPLoggingFormat {
