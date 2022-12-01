@@ -17,6 +17,5 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
-        "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
     ],
 )
