@@ -3,48 +3,19 @@ import React from "react";
 import * as format from "../../../app/format/format";
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Line, Legend, Tooltip } from "recharts";
 
-interface Props {
+export interface PercentilesChartProps {
   title: string;
   data: any[];
-  extractLabel: (datum: any) => string;
-  formatHoverLabel: (datum: any) => string;
-  extractP50: (datum: any) => number;
-  extractP75: (datum: any) => number;
-  extractP90: (datum: any) => number;
-  extractP95: (datum: any) => number;
-  extractP99: (datum: any) => number;
+  extractLabel: (datum: string) => string;
+  formatHoverLabel: (datum: string) => string;
+  extractP50: (datum: string) => number;
+  extractP75: (datum: string) => number;
+  extractP90: (datum: string) => number;
+  extractP95: (datum: string) => number;
+  extractP99: (datum: string) => number;
 }
 
-const PercentilesChartTooltip = ({
-  active,
-  payload,
-  labelFormatter,
-  extractP50,
-  extractP75,
-  extractP90,
-  extractP95,
-  extractP99,
-}: any) => {
-  if (active) {
-    let data = payload[0].payload;
-    return (
-      <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
-        <div className="trend-chart-hover-value">
-          <div>p50: {format.durationSec(extractP50(data) || 0)}</div>
-          <div>p75: {format.durationSec(extractP75(data) || 0)}</div>
-          <div>p90: {format.durationSec(extractP90(data) || 0)}</div>
-          <div>p95: {format.durationSec(extractP95(data) || 0)}</div>
-          <div>p99: {format.durationSec(extractP99(data) || 0)}</div>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
-};
-
-export default class PercentilesChartComponent extends React.Component<Props> {
+export default class PercentilesChartComponent extends React.Component<PercentilesChartProps> {
   render() {
     return (
       <div className="trend-chart">
@@ -78,3 +49,33 @@ export default class PercentilesChartComponent extends React.Component<Props> {
     );
   }
 }
+
+function PercentilesChartTooltip ({
+  active,
+  payload,
+  labelFormatter,
+  extractP50,
+  extractP75,
+  extractP90,
+  extractP95,
+  extractP99,
+}: any) {
+  if (active) {
+    let data = payload[0].payload;
+    return (
+      <div className="trend-chart-hover">
+        <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
+        <div className="trend-chart-hover-value">
+          <div>p50: {format.compactDurationSec(extractP50(data))}</div>
+          <div>p75: {format.compactDurationSec(extractP75(data))}</div>
+          <div>p90: {format.compactDurationSec(extractP90(data))}</div>
+          <div>p95: {format.compactDurationSec(extractP95(data))}</div>
+          <div>p99: {format.compactDurationSec(extractP99(data))}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+};
+
