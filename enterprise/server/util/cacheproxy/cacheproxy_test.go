@@ -351,7 +351,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	readBuf := make([]byte, size)
-	n, err := reader.Read(readBuf)
+	n, err := io.ReadFull(reader, readBuf)
 	require.EqualValues(t, limit, n)
 	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
 }
@@ -884,9 +884,9 @@ func TestEmptyRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = r.Read(nil)
-	if err != io.EOF {
-		t.Fatal(err)
+	n, err := io.ReadFull(r, nil)
+	if n != 0 {
+		t.Fatal("Empty read failed")
 	}
 
 }

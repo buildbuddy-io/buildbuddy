@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -459,7 +460,7 @@ func TestReadOffsetLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	readBuf := make([]byte, d.GetSizeBytes())
-	n, err := reader.Read(readBuf)
+	n, err := io.ReadFull(reader, readBuf)
 	require.EqualValues(t, limit, n)
 	require.Equal(t, buf[offset:offset+limit], readBuf[:limit])
 }

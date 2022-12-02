@@ -1,6 +1,7 @@
 package cacheproxy
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -30,7 +31,11 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-const readBufSizeBytes = 1000000 // 1MB
+const (
+	// Keep under the limit of ~4MB (save 256KB).
+	// (Match the readBufSizeBytes in byte_stream_server.go)
+	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
+)
 
 type dcClient struct {
 	dcpb.DistributedCacheClient
@@ -521,10 +526,12 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *resource.
 		Limit:     limit,
 		Resource:  r,
 	}
+
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
 	}
+
 	stream, err := client.Read(ctx, req)
 	if err != nil {
 		return nil, err
@@ -608,6 +615,29 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
+type bufferedStreamWriteCloser struct {
+	*streamWriteCloser
+	bufferedWriter *bufio.Writer
+}
+
+func (bc *bufferedStreamWriteCloser) Write(data []byte) (int, error) {
+	return bc.bufferedWriter.Write(data)
+}
+
+func (bc *bufferedStreamWriteCloser) Commit() error {
+	if err := bc.bufferedWriter.Flush(); err != nil {
+		return err
+	}
+	return bc.streamWriteCloser.Commit()
+}
+
+func newBufferedStreadWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
+	return &bufferedStreamWriteCloser{
+		streamWriteCloser: swc,
+		bufferedWriter:    bufio.NewWriterSize(swc, readBufSizeBytes),
+	}
+}
+
 func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	// Stopping a write mid-stream is difficult because Write streams are
 	// unidirectional. The server can close the stream early, but this does
@@ -625,6 +655,12 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 	if err != nil {
 		return nil, err
 	}
+
+	isolation := &dcpb.Isolation{
+		CacheType:          r.GetCacheType(),
+		RemoteInstanceName: r.GetInstanceName(),
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
@@ -632,10 +668,6 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		return nil, err
 	}
 
-	isolation := &dcpb.Isolation{
-		CacheType:          r.GetCacheType(),
-		RemoteInstanceName: r.GetInstanceName(),
-	}
 	wc := &streamWriteCloser{
 		cancelFunc:    cancel,
 		isolation:     isolation,
@@ -645,7 +677,7 @@ func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string,
 		stream:        stream,
 		r:             r,
 	}
-	return wc, nil
+	return newBufferedStreadWriteCloser(wc), nil
 }
 
 func (c *CacheProxy) SendHeartbeat(ctx context.Context, peer string) error {
