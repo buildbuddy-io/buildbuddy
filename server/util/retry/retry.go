@@ -1,4 +1,4 @@
-//Package retry implements a exponential weighted backoff retry function.
+// Package retry implements a exponential weighted backoff retry function.
 package retry
 
 import (
@@ -64,9 +64,10 @@ func New(ctx context.Context, opts *Options) *Retry {
 // Example usage:
 // ...
 // retrier := retry.DefaultWithContext(ctx)
-// for retrier.Next() {
-//   doSomething()
-// }
+//
+//	for retrier.Next() {
+//	  doSomething()
+//	}
 func DefaultWithContext(ctx context.Context) *Retry {
 	return New(
 		ctx,

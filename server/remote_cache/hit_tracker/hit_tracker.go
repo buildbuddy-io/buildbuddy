@@ -189,9 +189,10 @@ func makeTargetField(actionMnemonic, targetID, actionID string) string {
 // Example Usage:
 //
 // ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
-// if err := ht.TrackMiss(); err != nil {
-//   log.Printf("Error counting cache miss.")
-// }
+//
+//	if err := ht.TrackMiss(); err != nil {
+//	  log.Printf("Error counting cache miss.")
+//	}
 func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 	start := time.Now()
 	metrics.CacheEvents.With(prometheus.Labels{

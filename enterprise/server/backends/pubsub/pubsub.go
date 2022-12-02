@@ -32,11 +32,12 @@ func (p *PubSub) Publish(ctx context.Context, channelName string, message string
 
 // To prevent resource leakage, you should close the subscriber when done.
 // For example:
-//  subscriber := ps.Subscribe(ctx, channelName)
-//  defer subscriber.Close()
-//  for m := range subscriber.Chan() {
-//    // GOT CALLBACK!
-//  }
+//
+//	subscriber := ps.Subscribe(ctx, channelName)
+//	defer subscriber.Close()
+//	for m := range subscriber.Chan() {
+//	  // GOT CALLBACK!
+//	}
 func (p *PubSub) Subscribe(ctx context.Context, channelName string) interfaces.Subscriber {
 	return &Subscriber{
 		ps:  p.rdb.Subscribe(ctx, channelName),

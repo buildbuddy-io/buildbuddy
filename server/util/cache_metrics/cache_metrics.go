@@ -18,7 +18,7 @@ import (
 // is changed. For example, to get cache metrics for the in-memory tier only (without having
 // to explicitly refer to "redis", "memcached", etc.), one could write this query:
 //
-//     sum by (backend) (rate(buildbuddy_cache_write_count{tier="memory"}[5m])
+//	sum by (backend) (rate(buildbuddy_cache_write_count{tier="memory"}[5m])
 //
 // These types of queries are useful when monitoring the cache because caches
 // at different tiers will have observed latencies at different orders of magnitude,

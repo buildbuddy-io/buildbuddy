@@ -723,9 +723,9 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 //
 // Example:
 //
-//     `INSERT `+db.InsertIgnoreModifier()+` INTO MyTable
-//      (potentially_already_existing_key)
-//      VALUES ("key_value")`
+//	`INSERT `+db.InsertIgnoreModifier()+` INTO MyTable
+//	 (potentially_already_existing_key)
+//	 VALUES ("key_value")`
 func (h *DBHandle) InsertIgnoreModifier() string {
 	if h.driver == sqliteDriver {
 		return "OR IGNORE"
@@ -738,8 +738,8 @@ func (h *DBHandle) InsertIgnoreModifier() string {
 //
 // Example:
 //
-//     `SELECT column FROM MyTable
-//      WHERE id=<some id> `+db.SelectForUpdateModifier()
+//	`SELECT column FROM MyTable
+//	 WHERE id=<some id> `+db.SelectForUpdateModifier()
 func (h *DBHandle) SelectForUpdateModifier() string {
 	if h.driver == sqliteDriver {
 		return ""
