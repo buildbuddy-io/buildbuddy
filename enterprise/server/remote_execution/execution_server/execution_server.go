@@ -303,7 +303,7 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	}
 	var executionPrimaryDB tables.Execution
 	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
-		return status.InternalErrorf("failed to record execution: %s", err)
+		return status.InternalErrorf("failed to look up execution: %s", err)
 	}
 	links, err := s.getInvocationLinks(ctx, executionID)
 	if err != nil {

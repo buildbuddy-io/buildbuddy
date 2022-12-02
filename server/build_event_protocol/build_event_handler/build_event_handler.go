@@ -84,6 +84,7 @@ var (
 	enableChunkedEventLogs            = flag.Bool("storage.enable_chunked_event_logs", true, "If true, Event logs will be stored separately from the invocation proto in chunks.")
 	requireInvocationEventParseOnRead = flag.Bool("app.require_invocation_event_parse_on_read", false, "If true, invocation responses will be filled from database values and then by parsing the events on read.")
 	writeToOLAPDBEnabled              = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
+	writeExecutionsToOLAPDBEnabled    = flag.Bool("app.enable_write_executions_to_olap_db", false, "If enabled, complete Executions will be flushed to OLAP DB")
 
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
@@ -307,6 +308,10 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 			log.CtxErrorf(ctx, "failed to clean up executions in collector: %s", err)
 		}
 	}()
+
+	if !*writeExecutionsToOLAPDBEnabled {
+		return nil
+	}
 
 	for {
 		endIndex = startIndex + batchSize - 1
