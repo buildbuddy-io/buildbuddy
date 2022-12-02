@@ -346,6 +346,8 @@ func buildExecution(in *repb.StoredExecution, inv *tables.Invocation) *Execution
 		CommitSHA:                          inv.CommitSHA,
 		RepoURL:                            inv.RepoURL,
 		Command:                            inv.Command,
+		Success:                            inv.Success,
+		InvocationStatus:                   inv.InvocationStatus,
 	}
 }
 
