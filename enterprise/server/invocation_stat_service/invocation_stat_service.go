@@ -23,8 +23,8 @@ import (
 )
 
 var (
-	readFromOLAPDBEnabled = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
-	executionTrendEnabled = flag.Bool("app.enable_execution_trend", false, "If enabled, fill execution trend stat in GetTrendResponse")
+	readFromOLAPDBEnabled  = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
+	executionTrendsEnabled = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
 )
 
 type InvocationStatService struct {
@@ -198,6 +198,9 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *inp
 		}
 		res = append(res, stat)
 	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scan rows: %s", err)
+	}
 	sort.Slice(res, func(i, j int) bool {
 		// Name is a date of the form "YYYY-MM-DD" so lexicographic
 		// sorting is correct.
@@ -213,6 +216,12 @@ func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int
 	`
 }
 
+// The innerQuery is expected to return rows with the following columns:
+//   (1) name; and
+//   (2) queue_duration_usec_quantiles, an array of p50, p75, p90, p95, p99
+//   queue duration.
+// The returned "flattened" query will return row with the following column
+//    name | p50 | ... | p99
 func getQueryWithFlattenedArray(innerQuery string) string {
 	return `SELECT name, 
 	arrayElement(queue_duration_usec_quantiles, 1) as queue_duration_usec_p50,
@@ -224,7 +233,7 @@ func getQueryWithFlattenedArray(innerQuery string) string {
 }
 
 func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *inpb.GetTrendRequest) ([]*inpb.ExecutionStat, error) {
-	if !i.isOLAPDBEnabled() || !*executionTrendEnabled {
+	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled {
 		return nil, nil
 	}
 	reqCtx := req.GetRequestContext()
@@ -250,6 +259,9 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *inpb
 			return nil, err
 		}
 		res = append(res, stat)
+	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scan rows: %s", err)
 	}
 	sort.Slice(res, func(i, j int) bool {
 		// Name is a date of the form "YYYY-MM-DD" so lexicographic
