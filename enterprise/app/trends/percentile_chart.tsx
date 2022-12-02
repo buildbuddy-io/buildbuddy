@@ -25,7 +25,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
-            <YAxis yAxisId="duration" tickFormatter={format.durationSec} allowDecimals={false} />
+            <YAxis yAxisId="duration" tickFormatter={format.compactDurationSec} allowDecimals={false} />
             <Tooltip
               content={
                 <PercentilesChartTooltip
@@ -38,11 +38,11 @@ export default class PercentilesChartComponent extends React.Component<Percentil
                 />
               }
             />
-            <Line yAxisId="duration" name="P50" dataKey={(datum) => this.props.extractP50(datum)} stroke="#067BC2" />
-            <Line yAxisId="duration" name="P75" dataKey={(datum) => this.props.extractP75(datum)} stroke="#84BCDA" />
-            <Line yAxisId="duration" name="P90" dataKey={(datum) => this.props.extractP90(datum)} stroke="#ECC30B" />
-            <Line yAxisId="duration" name="P95" dataKey={(datum) => this.props.extractP95(datum)} stroke="#F37748" />
-            <Line yAxisId="duration" name="P99" dataKey={(datum) => this.props.extractP99(datum)} stroke="#D56062" />
+            <Line yAxisId="duration" name="P50" dataKey={(datum) => this.props.extractP50(datum)} stroke="#067BC2" dot={false}/>
+            <Line yAxisId="duration" name="P75" dataKey={(datum) => this.props.extractP75(datum)} stroke="#84BCDA" dot={false} />
+            <Line yAxisId="duration" name="P90" dataKey={(datum) => this.props.extractP90(datum)} stroke="#ECC30B" dot={false}/>
+            <Line yAxisId="duration" name="P95" dataKey={(datum) => this.props.extractP95(datum)} stroke="#F37748" dot={false}/>
+            <Line yAxisId="duration" name="P99" dataKey={(datum) => this.props.extractP99(datum)} stroke="#D56062" dot={false}/>
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -66,11 +66,11 @@ function PercentilesChartTooltip ({
       <div className="trend-chart-hover">
         <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
         <div className="trend-chart-hover-value">
-          <div>p50: {format.compactDurationSec(extractP50(data))}</div>
-          <div>p75: {format.compactDurationSec(extractP75(data))}</div>
-          <div>p90: {format.compactDurationSec(extractP90(data))}</div>
-          <div>p95: {format.compactDurationSec(extractP95(data))}</div>
-          <div>p99: {format.compactDurationSec(extractP99(data))}</div>
+          <div>p50: {format.durationSec(extractP50(data))}</div>
+          <div>p75: {format.durationSec(extractP75(data))}</div>
+          <div>p90: {format.durationSec(extractP90(data))}</div>
+          <div>p95: {format.durationSec(extractP95(data))}</div>
+          <div>p99: {format.durationSec(extractP99(data))}</div>
         </div>
       </div>
     );
