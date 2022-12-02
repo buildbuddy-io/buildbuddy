@@ -49,6 +49,7 @@ func TestConfigureLevel(t *testing.T) {
 func TestConfigureDisableStructuredLogging(t *testing.T) {
 	flags.Set(t, "app.enable_structured_logging", false)
 	log.Configure()
+	// Check that Configure left these vars untouched
 	assert.Equal(t, zl.LevelFieldName, "level")
 	assert.Equal(t, zl.TimestampFieldName, "time")
 }
@@ -56,6 +57,7 @@ func TestConfigureDisableStructuredLogging(t *testing.T) {
 func TestConfigureEnableStructuredLogging(t *testing.T) {
 	flags.Set(t, "app.enable_structured_logging", true)
 	log.Configure()
+	// Check that Configure changed these vars to conform with GCP logging.
 	assert.Equal(t, zl.LevelFieldName, "severity")
 	assert.Equal(t, zl.TimestampFieldName, "timestamp")
 }
