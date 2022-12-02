@@ -17,5 +17,6 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
+        "@org_golang_x_sync//errgroup",
     ],
 )

@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -267,16 +268,27 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
-	var err error
 	rsp := &inpb.GetTrendResponse{}
-	if rsp.TrendStat, err = i.getInvocationTrend(ctx, req); err != nil {
+
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		var err error
+		if rsp.TrendStat, err = i.getInvocationTrend(ctx, req); err != nil {
+			return err
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		var err error
+		if rsp.ExecutionStat, err = i.getExecutionTrend(ctx, req); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-
-	if rsp.ExecutionStat, err = i.getExecutionTrend(ctx, req); err != nil {
-		return nil, err
-	}
-
 	return rsp, nil
 }
 
