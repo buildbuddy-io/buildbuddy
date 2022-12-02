@@ -34,6 +34,11 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
+const (
+	// Default max size for the sidecar's local cache.
+	defaultMaxCacheSizeBytes = 10_000_000_000 // 10 GB
+)
+
 var (
 	serverType = flag.String("server_type", "sidecar", "The server type to match on health checks")
 
@@ -196,7 +201,7 @@ func normalizeGrpcTarget(target string) string {
 }
 
 func initializeDiskCache(env *real_environment.RealEnv) {
-	maxSizeBytes := int64(1e9) // 1 GB
+	maxSizeBytes := int64(defaultMaxCacheSizeBytes)
 	if *cacheMaxSizeBytes != 0 {
 		maxSizeBytes = *cacheMaxSizeBytes
 	}
