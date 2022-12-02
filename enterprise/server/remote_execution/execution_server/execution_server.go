@@ -53,7 +53,7 @@ const (
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 	enableActionMerging               = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
-	writeExecutionToRedisEnabled      = flag.Bool("remote_execution.enable_write_to_redis", true, "If enabled, complete executions will be written to Redis.")
+	writeExecutionToRedisEnabled      = flag.Bool("remote_execution.enable_write_to_redis", false, "If enabled, complete executions will be written to Redis.")
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
