@@ -542,6 +542,12 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		return nil, err
 	}
 
+	if req.GetLastAppliedIndex() > 0 {
+		if err := s.waitForReplicaToCatchUp(ctx, req.GetClusterId(), req.GetLastAppliedIndex()); err != nil {
+			return nil, err
+		}
+	}
+
 	rsp := &rfpb.StartClusterResponse{}
 	if req.GetBatch() == nil || len(req.GetInitialMember()) == 0 {
 		return rsp, nil
@@ -1251,6 +1257,38 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	return splitRsp, nil
 }
 
+func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {
+	r, _, err := s.validatedRange(header)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastAppliedIndex()
+}
+
+func (s *Store) waitForReplicaToCatchUp(ctx context.Context, clusterID uint64, desiredLastAppliedIndex uint64) error {
+	start := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			break
+		}
+		if rd := s.lookupRange(clusterID); rd != nil {
+			if r, err := s.GetReplica(rd.GetRangeId()); err == nil {
+				if lastApplied, err := r.LastAppliedIndex(); err == nil {
+					if lastApplied >= desiredLastAppliedIndex {
+						s.log.Infof("Cluster %d took %s to catch up", clusterID, time.Since(start))
+						break
+					}
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil
+}
+
 func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64, error) {
 	var membership *dragonboat.Membership
 	var err error
@@ -1317,6 +1355,13 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 	if err != nil {
 		return nil, err
 	}
+	lastAppliedIndex, err := s.getLastAppliedIndex(&rfpb.Header{
+		RangeId:    rd.GetRangeId(),
+		Generation: rd.GetGeneration(),
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	// Gossip the address of the node that is about to be added.
 	s.registry.Add(clusterID, newNodeID, node.GetNhid())
@@ -1336,9 +1381,10 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 		return nil, err
 	}
 	_, err = c.StartCluster(ctx, &rfpb.StartClusterRequest{
-		ClusterId: clusterID,
-		NodeId:    newNodeID,
-		Join:      true,
+		ClusterId:        clusterID,
+		NodeId:           newNodeID,
+		Join:             true,
+		LastAppliedIndex: lastAppliedIndex,
 	})
 	if err != nil {
 		return nil, err
