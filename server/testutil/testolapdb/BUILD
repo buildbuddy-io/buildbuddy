@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testolapdb",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:remote_execution_go_proto",
         "//server/tables",
         "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",

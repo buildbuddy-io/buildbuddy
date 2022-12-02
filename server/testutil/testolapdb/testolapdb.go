@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	iepb "github.com/buildbuddy-io/buildbuddy/proto/internal_execution"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 type Handle struct {
@@ -36,7 +36,7 @@ func (h *Handle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation
 	return nil
 }
 
-func (h *Handle) FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*iepb.Execution) error {
+func (h *Handle) FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*repb.StoredExecution) error {
 	executionIDs := make([]string, 0, len(executions))
 	for _, e := range executions {
 		executionIDs = append(executionIDs, e.GetExecutionId())
