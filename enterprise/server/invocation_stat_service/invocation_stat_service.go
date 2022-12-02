@@ -233,7 +233,7 @@ func getQueryWithFlattenedArray(innerQuery string) string {
 }
 
 func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *inpb.GetTrendRequest) ([]*inpb.ExecutionStat, error) {
-	if !i.isOLAPDBEnabled() || !*executionTrendEnabled {
+	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled {
 		return nil, nil
 	}
 	reqCtx := req.GetRequestContext()
