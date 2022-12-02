@@ -50,6 +50,17 @@ export default class PercentilesChartComponent extends React.Component<Percentil
   }
 }
 
+interface PercentilesChartTooltipProps {
+  active: boolean;
+  payload: any[];
+  labelFormaatter: (datum: string) => string;
+  extractP50: (datum: string) => number;
+  extractP75: (datum: string) => number;
+  extractP90: (datum: string) => number;
+  extractP95: (datum: string) => number;
+  extractP99: (datum: string) => number;
+}
+
 function PercentilesChartTooltip ({
   active,
   payload,
@@ -59,7 +70,7 @@ function PercentilesChartTooltip ({
   extractP90,
   extractP95,
   extractP99,
-}: any) {
+}: PercentilesChartTooltipProps) {
   if (active) {
     let data = payload[0].payload;
     return (
