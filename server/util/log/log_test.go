@@ -3,13 +3,12 @@ package log_test
 import (
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 
 	zl "github.com/rs/zerolog"
 	zllog "github.com/rs/zerolog/log"
-
 )
 
 func TestConfigureLevel(t *testing.T) {
