@@ -44,7 +44,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
@@ -756,19 +755,6 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
-	case serf.EventQuery:
-		query, ok := event.(*serf.Query)
-		if !ok || query.Payload == nil {
-			return
-		}
-
-		ctx, cancel := context.WithDeadline(context.Background(), query.Deadline())
-		defer cancel()
-
-		switch query.Name {
-		case constants.PlacementDriverQueryEvent:
-			s.handlePlacementQuery(ctx, query)
-		}
 	case serf.EventMemberJoin, serf.EventMemberUpdate:
 		memberEvent, _ := event.(serf.MemberEvent)
 		for _, member := range memberEvent.Members {
@@ -804,17 +790,9 @@ func (s *Store) renewNodeLiveness() {
 	}
 }
 
-type stats struct {
-	RangeCount     int
-	LeaseCount     int
-	ReadQPS        int64
-	RaftProposeQPS int64
-	TotalSizeBytes int64
-}
-
 func (s *Store) Usage() *rfpb.StoreUsage {
 	su := &rfpb.StoreUsage{
-		Node: s.MyNodeDescriptor(),
+		Node: s.NodeDescriptor(),
 	}
 
 	s.rangeMu.Lock()
@@ -912,48 +890,7 @@ func (s *Store) broadcast() error {
 	return nil
 }
 
-func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
-	pq := &rfpb.PlacementQuery{}
-	if err := proto.Unmarshal(query.Payload, pq); err != nil {
-		return
-	}
-	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	if nodeHostInfo != nil {
-		for _, logInfo := range nodeHostInfo.LogInfo {
-			if pq.GetTargetClusterId() == logInfo.ClusterID {
-				s.log.Debugf("%q ignoring placement query: already have cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
-				return
-			}
-		}
-	}
-
-	// Do not respond if this node is over 95% full.
-	member := s.gossipManager.LocalMember()
-	usageBuf, ok := member.Tags[constants.NodeUsageTag]
-	if !ok {
-		s.log.Errorf("Ignoring placement query: couldn't determine node usage")
-		return
-	}
-	usage := &rfpb.NodeUsage{}
-	if err := prototext.Unmarshal([]byte(usageBuf), usage); err != nil {
-		return
-	}
-	myDiskUsage := float64(usage.GetDiskBytesUsed()) / float64(usage.GetDiskBytesTotal())
-	if myDiskUsage > maximumDiskCapacity {
-		s.log.Debugf("Ignoring placement query: node is over capacity")
-		return
-	}
-
-	nodeBuf, err := proto.Marshal(s.MyNodeDescriptor())
-	if err != nil {
-		return
-	}
-	if err := query.Respond(nodeBuf); err != nil {
-		s.log.Errorf("Error responding to gossip query: %s", err)
-	}
-}
-
-func (s *Store) MyNodeDescriptor() *rfpb.NodeDescriptor {
+func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 	return &rfpb.NodeDescriptor{
 		Nhid:        s.nodeHost.ID(),
 		RaftAddress: s.nodeHost.RaftAddress(),
@@ -1512,7 +1449,7 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 	s.rangeMu.RUnlock()
 
 	rsp := &rfpb.ListClusterResponse{
-		Node: s.MyNodeDescriptor(),
+		Node: s.NodeDescriptor(),
 	}
 	for _, rd := range openRanges {
 		if req.GetLeasedOnly() {
