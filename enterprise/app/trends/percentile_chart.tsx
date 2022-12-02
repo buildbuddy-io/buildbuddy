@@ -82,8 +82,8 @@ export default class PercentilesChartComponent extends React.Component<Percentil
 
 interface PercentilesChartTooltipProps {
   active: boolean;
-  payload: any[];
-  labelFormaatter: (datum: string) => string;
+  payload: string[];
+  labelFormatter: (datum: string) => string;
   extractP50: (datum: string) => number;
   extractP75: (datum: string) => number;
   extractP90: (datum: string) => number;
@@ -101,21 +101,20 @@ function PercentilesChartTooltip({
   extractP95,
   extractP99,
 }: PercentilesChartTooltipProps) {
-  if (active) {
-    let data = payload[0].payload;
-    return (
-      <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
-        <div className="trend-chart-hover-value">
-          <div>p50: {format.durationSec(extractP50(data))}</div>
-          <div>p75: {format.durationSec(extractP75(data))}</div>
-          <div>p90: {format.durationSec(extractP90(data))}</div>
-          <div>p95: {format.durationSec(extractP95(data))}</div>
-          <div>p99: {format.durationSec(extractP99(data))}</div>
-        </div>
+  if (!active) return null;
+  let data = payload[0].payload;
+  return (
+    <div className="trend-chart-hover">
+      <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
+      <div className="trend-chart-hover-value">
+        <div>p50: {format.durationSec(extractP50(data))}</div>
+        <div>p75: {format.durationSec(extractP75(data))}</div>
+        <div>p90: {format.durationSec(extractP90(data))}</div>
+        <div>p95: {format.durationSec(extractP95(data))}</div>
+        <div>p99: {format.durationSec(extractP99(data))}</div>
       </div>
-    );
-  }
+    </div>
+  );
 
   return null;
 }

@@ -384,27 +384,29 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 name="repos with builds"
                 onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#repos") : null}
               />
-              <PercentilesChartComponent
-                title="Remote Execution Queue Duration"
-                data={this.state.dates}
-                extractLabel={this.formatShortDate}
-                formatHoverLabel={this.formatLongDate}
-                extractP50={(date) =>
-                  +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP50 * SECONDS_PER_MICROSECOND
-                }
-                extractP75={(date) =>
-                  +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP75 * SECONDS_PER_MICROSECOND
-                }
-                extractP90={(date) =>
-                  +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP90 * SECONDS_PER_MICROSECOND
-                }
-                extractP95={(date) =>
-                  +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP95 * SECONDS_PER_MICROSECOND
-                }
-                extractP99={(date) =>
-                  +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP99 * SECONDS_PER_MICROSECOND
-                }
-              />
+              {this.state.dateToExecutionStatMap.size > 0 && (
+                <PercentilesChartComponent
+                  title="Remote Execution Queue Duration"
+                  data={this.state.dates}
+                  extractLabel={this.formatShortDate}
+                  formatHoverLabel={this.formatLongDate}
+                  extractP50={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP50 * SECONDS_PER_MICROSECOND
+                  }
+                  extractP75={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP75 * SECONDS_PER_MICROSECOND
+                  }
+                  extractP90={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP90 * SECONDS_PER_MICROSECOND
+                  }
+                  extractP95={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP95 * SECONDS_PER_MICROSECOND
+                  }
+                  extractP99={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP99 * SECONDS_PER_MICROSECOND
+                  }
+                />
+              )}
             </>
           )}
         </div>
