@@ -38,11 +38,41 @@ export default class PercentilesChartComponent extends React.Component<Percentil
                 />
               }
             />
-            <Line yAxisId="duration" name="P50" dataKey={(datum) => this.props.extractP50(datum)} stroke="#067BC2" dot={false}/>
-            <Line yAxisId="duration" name="P75" dataKey={(datum) => this.props.extractP75(datum)} stroke="#84BCDA" dot={false} />
-            <Line yAxisId="duration" name="P90" dataKey={(datum) => this.props.extractP90(datum)} stroke="#ECC30B" dot={false}/>
-            <Line yAxisId="duration" name="P95" dataKey={(datum) => this.props.extractP95(datum)} stroke="#F37748" dot={false}/>
-            <Line yAxisId="duration" name="P99" dataKey={(datum) => this.props.extractP99(datum)} stroke="#D56062" dot={false}/>
+            <Line
+              yAxisId="duration"
+              name="P50"
+              dataKey={(datum) => this.props.extractP50(datum)}
+              stroke="#067BC2"
+              dot={false}
+            />
+            <Line
+              yAxisId="duration"
+              name="P75"
+              dataKey={(datum) => this.props.extractP75(datum)}
+              stroke="#84BCDA"
+              dot={false}
+            />
+            <Line
+              yAxisId="duration"
+              name="P90"
+              dataKey={(datum) => this.props.extractP90(datum)}
+              stroke="#ECC30B"
+              dot={false}
+            />
+            <Line
+              yAxisId="duration"
+              name="P95"
+              dataKey={(datum) => this.props.extractP95(datum)}
+              stroke="#F37748"
+              dot={false}
+            />
+            <Line
+              yAxisId="duration"
+              name="P99"
+              dataKey={(datum) => this.props.extractP99(datum)}
+              stroke="#D56062"
+              dot={false}
+            />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -61,7 +91,7 @@ interface PercentilesChartTooltipProps {
   extractP99: (datum: string) => number;
 }
 
-function PercentilesChartTooltip ({
+function PercentilesChartTooltip({
   active,
   payload,
   labelFormatter,
@@ -88,5 +118,4 @@ function PercentilesChartTooltip ({
   }
 
   return null;
-};
-
+}
