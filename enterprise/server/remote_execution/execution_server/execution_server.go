@@ -53,7 +53,7 @@ const (
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 	enableActionMerging               = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
-	writeExecutionToRedisEnabled      = flag.Bool("remote_execution.enable_write_to_redis", true, "If enabled, complete executions will be written to Redis.")
+	writeExecutionToRedisEnabled      = flag.Bool("remote_execution.enable_write_to_redis", false, "If enabled, complete executions will be written to Redis.")
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -303,7 +303,7 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	}
 	var executionPrimaryDB tables.Execution
 	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
-		return status.InternalErrorf("failed to record execution: %s", err)
+		return status.InternalErrorf("failed to look up execution: %s", err)
 	}
 	links, err := s.getInvocationLinks(ctx, executionID)
 	if err != nil {
