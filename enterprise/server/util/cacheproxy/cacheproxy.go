@@ -324,9 +324,8 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	if resourceSize > 0 && resourceSize < bufSize {
 		bufSize = resourceSize
 	}
-	bufferedReader := bufio.NewReaderSize(reader, int(bufSize))
 	copyBuf := c.bufferPool.Get(bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, bufferedReader, copyBuf[:bufSize])
+	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
 	c.bufferPool.Put(copyBuf)
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 	return err
