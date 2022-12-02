@@ -14,7 +14,7 @@ This script will do the following:
   1) Check that your working repository is clean.
   2) Compute a new version tag by bumping the latest remote version tag,
      and create the tag pointing at HEAD.
-  4) Pushes the tag to GitHub.
+  3) Pushes the tag to GitHub.
      This kicks off some workflows which will build the release artifacts.
   4) Builds and tags new Docker images locally, and pushes them to the registry.
      Also updates the ":latest" tag for each image.
@@ -145,7 +145,7 @@ def main():
 
     if workspace_is_clean():
         print("Workspace is clean!")
-    if args.allow_dirty:
+    elif args.allow_dirty:
         print("WARNING: Workspace contains uncommitted changes; ignoring due to --allow_dirty.")
     else:
         die('Your workspace has uncommitted changes. ' +
