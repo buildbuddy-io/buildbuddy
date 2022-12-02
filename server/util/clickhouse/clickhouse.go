@@ -210,14 +210,16 @@ type Execution struct {
 	DoNotCache   bool
 
 	// Fields from Invocations
-	User       string
-	Host       string
-	Pattern    string
-	Role       string
-	BranchName string
-	CommitSHA  string
-	RepoURL    string
-	Command    string
+	User             string
+	Host             string
+	Pattern          string
+	Role             string
+	BranchName       string
+	CommitSHA        string
+	RepoURL          string
+	Command          string
+	InvocationStatus int64
+	Success          bool
 }
 
 func (e *Execution) TableName() string {
@@ -250,6 +252,8 @@ func (e *Execution) AdditionalFields() []string {
 		"CommitSHA",
 		"RepoURL",
 		"Command",
+		"InvocationStatus",
+		"Success",
 		"InvocationLinkType",
 	}
 }
