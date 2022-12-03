@@ -147,6 +147,7 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 		AtimeWriteBatchSize:    cfg.AtimeWriteBatchSize,
 		AtimeBufferSize:        cfg.AtimeBufferSize,
 		MinEvictionAge:         cfg.MinEvictionAge,
+		EnableZstdCompression:  cfg.EnableZstdCompression,
 	}
 	c, err := pebble_cache.NewPebbleCache(env, opts)
 	if err != nil {
@@ -232,9 +233,15 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 	// Some implementations of FindMissing sort the resources slice, which can cause a race condition if both
 	// the src and dest cache try to sort at the same time. Copy the slice to prevent this
 	var resourcesCopy []*resource.ResourceName
+	var hashToResource map[string]*resource.ResourceName
 	if doubleRead {
 		resourcesCopy = make([]*resource.ResourceName, len(resources))
 		copy(resourcesCopy, resources)
+
+		hashToResource = make(map[string]*resource.ResourceName)
+		for _, r := range resources {
+			hashToResource[r.GetDigest().GetHash()] = r
+		}
 	}
 
 	eg.Go(func() error {
@@ -267,15 +274,8 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 				log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
 			}
 
-			instanceName := resources[0].GetInstanceName()
-			cacheType := resources[0].GetCacheType()
 			for _, d := range missingOnlyInDest {
-				r := &resource.ResourceName{
-					Digest:       d,
-					InstanceName: instanceName,
-					Compressor:   repb.Compressor_IDENTITY,
-					CacheType:    cacheType,
-				}
+				r := hashToResource[d.GetHash()]
 				mc.sendNonBlockingCopy(ctx, r, false /*=onlyCopyMissing*/)
 			}
 		}
@@ -835,6 +835,9 @@ func (mc *MigrationCache) Stop() error {
 	return dstShutdownErr
 }
 
+// Compression should only be enabled during a migration if both the source and destination caches support the
+// compressor, in order to reduce complexity around trying to double read/write compressed bytes to one cache and
+// decompressed bytes to another
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
-	return false
+	return mc.src.SupportsCompressor(compressor) && mc.dest.SupportsCompressor(compressor)
 }

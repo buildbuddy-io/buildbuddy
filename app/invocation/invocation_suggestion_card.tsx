@@ -56,6 +56,38 @@ const IOS_EXECUTION_FILTER = {
   noRemoteExec: ["BundleResources", "ImportedDynamicFrameworkProcessor"],
 };
 
+export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
+  if (!capabilities.config.expandedSuggestionsEnabled) return null;
+
+  const hasRemoteTimingProfile = model.buildToolLogs?.log.find((log) => log.uri?.startsWith("bytestream://"));
+  if (!hasRemoteTimingProfile) return null;
+
+  const recommendedOptions: Record<string, boolean> = {
+    slim_profile: false,
+    experimental_profile_include_target_label: true,
+    experimental_profile_include_primary_output: true,
+  };
+
+  const missingFlags = Object.keys(recommendedOptions).filter((flag) => !model.optionsMap.get(flag));
+
+  return {
+    level: SuggestionLevel.INFO,
+    message: (
+      <>
+        <div className="details">
+          For a more detailed timing profile, try using these flags:{" "}
+          {missingFlags.map((flag) => (
+            <>
+              <BazelFlag>{`--${recommendedOptions[flag] ? "" : "no"}${flag}`}</BazelFlag>{" "}
+            </>
+          ))}
+        </div>
+      </>
+    ),
+    reason: <>Shown because these flags are neither enabled nor explicitly disabled.</>,
+  };
+};
+
 // TODO(siggisim): server side suggestion storing, parsing, and fetching.
 const matchers: SuggestionMatcher[] = [
   buildLogRegex({
@@ -243,6 +275,8 @@ const matchers: SuggestionMatcher[] = [
       reason: <>Shown because this build has remote execution enabled, but a jobs count is not configured.</>,
     };
   },
+  // Suggest timing profile flags
+  getTimingDataSuggestion,
   // Suggest using remote_download_minimal
   ({ model }) => {
     // TODO(https://github.com/bazelbuild/bazel/issues/10880):
@@ -402,15 +436,6 @@ export function getSuggestions({
 }
 
 export default class SuggestionCardComponent extends React.Component<Props> {
-  renderIcon(level: SuggestionLevel) {
-    switch (level) {
-      case SuggestionLevel.INFO:
-        return <HelpCircle className="icon" />;
-      case SuggestionLevel.ERROR:
-        return <AlertCircle className="icon red" />;
-    }
-  }
-
   render() {
     const suggestions = this.props.suggestions;
     if (!suggestions.length) return null;
@@ -421,7 +446,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
       const hiddenSuggestionsCount = suggestions.length - 1;
       return (
         <div className="card card-suggestion">
-          {this.renderIcon(suggestion.level)}
+          {renderIcon(suggestion.level)}
           <div className="content">
             <div className="title">Suggestion{suggestions.length === 1 ? "" : "s"} from the BuildBuddy Team</div>
             <div className="details">
@@ -442,15 +467,7 @@ export default class SuggestionCardComponent extends React.Component<Props> {
     return (
       <div className="suggestions">
         {suggestions.map((suggestion) => (
-          <div className="card card-suggestion">
-            {this.renderIcon(suggestion.level)}
-            <div className="content">
-              <div className="details">
-                <div className="card-suggestion-message">{suggestion.message}</div>
-                <div className="card-suggestion-reason">{suggestion.reason}</div>
-              </div>
-            </div>
-          </div>
+          <SuggestionComponent suggestion={suggestion} />
         ))}
         {this.props.user.canCall("updateGroup") && (
           <TextLink className="settings-link" href="/settings/org/details">
@@ -460,6 +477,33 @@ export default class SuggestionCardComponent extends React.Component<Props> {
       </div>
     );
   }
+}
+
+function renderIcon(level: SuggestionLevel) {
+  switch (level) {
+    case SuggestionLevel.INFO:
+      return <HelpCircle className="icon" />;
+    case SuggestionLevel.ERROR:
+      return <AlertCircle className="icon red" />;
+  }
+}
+
+export interface SuggestionComponentProps {
+  suggestion: Suggestion;
+}
+
+export function SuggestionComponent({ suggestion }: SuggestionComponentProps) {
+  return (
+    <div className="card card-suggestion">
+      {renderIcon(suggestion.level)}
+      <div className="content">
+        <div className="details">
+          <div className="card-suggestion-message">{suggestion.message}</div>
+          <div className="card-suggestion-reason">{suggestion.reason}</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Returns the given suggestion message if the given regex matches the build logs. */
