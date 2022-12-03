@@ -1,52 +1,49 @@
 #!/usr/bin/env python3
 import argparse
-import json
-import os
+import re
 import subprocess
 import sys
 import tempfile
 import time
-from urllib.error import HTTPError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 """
 release.py - A simple script to create a release.
+
 This script will do the following:
-  1) Check that your working repository is clean. x
-  2) Bump the version.
-  3) Commit the bumped version.
-  4) Create a tag in buildbuddy-io/buildbuddy at the new bumped version.
-  5) Build any artifacts.
-  6) Upload the artifacts to github to the repo.
-  7) Finalize the release.
+
+  1) Check that your working repository is clean.
+  2) Compute a new version tag by bumping the latest remote version tag,
+     and create the tag pointing at HEAD.
+  3) Pushes the tag to GitHub.
+     This kicks off some workflows which will build the release artifacts.
+  4) Builds and tags new Docker images locally, and pushes them to the registry.
+     Also updates the ":latest" tag for each image.
 """
 
 def die(message):
     print(message)
     sys.exit(1)
 
-def run_or_die(cmd):
+def run_or_die(cmd, capture_stdout=False):
     print("(debug) running cmd: %s" % cmd)
-    p = subprocess.Popen(cmd,
-                         shell=True,
-                         stdout=sys.stdout,
-                         stderr=sys.stderr,
-                         universal_newlines=True)
-    p.wait()
+    stdout = sys.stdout
+    if capture_stdout:
+        stdout = subprocess.PIPE
+    p = subprocess.run(cmd, shell=True, stdout=stdout, stderr=sys.stderr, encoding='utf-8')
     if p.returncode != 0:
-        print(p.returncode)
         die("Command failed with code %d" % (p.returncode))
+    return p
+
+def nonempty_lines(text):
+    lines = text.split('\n')
+    lines = [line for line in lines if line]
+    return lines
 
 def workspace_is_clean():
     p = subprocess.Popen('git status --untracked-files=no --porcelain',
                          shell=True, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)
     return len(p.stdout.readlines()) == 0
-
-def read_version(file):
-    with open(file) as f:
-        return f.read().replace('\n', '').replace('\t', '').strip()
 
 def bump_patch_version(version):
     parts = version.split(".")
@@ -67,14 +64,6 @@ def confirm_new_version(version):
         version = input('What version do you want to release?\n').lower().strip()
     return version
 
-def update_version_in_file(old_version, new_version, version_file):
-    edit_cmd = 'sed -i \'s/%s/%s/g\' %s' % (old_version, new_version, version_file)
-    run_or_die(edit_cmd)
-
-def commit_version_bump(old_version, new_version, version_file):
-    commit_cmd = 'git commit -m "Bump version %s -> %s (release.py)" %s' % (old_version, new_version, version_file)
-    run_or_die(commit_cmd)
-
 def create_and_push_tag(old_version, new_version, release_notes=''):
     commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
     if len(release_notes) > 0:
@@ -90,24 +79,40 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
-def update_docker_image(new_version, update_latest_tag):
+def push_image(target, version_tag, image_tag):
+    # Note:
+    # The flag "--define=version=..." sets the Docker image tag.
+    # The flag "--//server/version:version_tag" sets the embedded
+    # git version tag which is printed on server startup.
+    command = (
+        'bazel run -c opt --stamp '+
+        '--define=release=true '+
+        '--define=version={image_tag} '+
+        '--//server/version:version_tag={version_tag} '+
+        '{target}'
+    ).format(image_tag=image_tag, version_tag=version_tag, target=target)
+    run_or_die(command)
+
+def update_docker_images(version_tag, update_latest_tag):
     clean_cmd = 'bazel clean --expunge'
     run_or_die(clean_cmd)
 
-    build_oss_app_cmd = 'bazel run -c opt --stamp --define version=%s --define release=true deployment:release_onprem' % new_version
-    run_or_die(build_oss_app_cmd)
-
-    build_enterprise_app_cmd = 'bazel run -c opt --stamp --define version=enterprise-%s --define release=true enterprise/deployment:release_enterprise' % new_version
-    run_or_die(build_enterprise_app_cmd)
-
-    build_executor_cmd = 'bazel run -c opt --stamp --define version=enterprise-%s --define release=true enterprise/deployment:release_executor_enterprise' % new_version
-    run_or_die(build_executor_cmd)
+    # OSS app
+    push_image('//deployment:release_onprem', version_tag, image_tag=version_tag)
+    # Enterprise app
+    push_image('//enterprise/deployment:release_enterprise', version_tag, image_tag='enterprise-'+version_tag)
+    # Enterprise executor
+    push_image('//enterprise/deployment:release_executor_enterprise', version_tag, image_tag='enterprise-'+version_tag)
 
     # update "latest" tags
     if update_latest_tag:
-        run_or_die('bazel run -c opt --stamp --define version=latest --define release=true deployment:release_onprem')
-        run_or_die('bazel run -c opt --stamp --define version=latest --define release=true enterprise/deployment:release_enterprise')
-        run_or_die('bazel run -c opt --stamp --define version=latest --define release=true enterprise/deployment:release_executor_enterprise')
+        # OSS app
+        push_image('//deployment:release_onprem', version_tag, image_tag='latest')
+        # Enterprise app
+        push_image('//enterprise/deployment:release_enterprise', version_tag, image_tag='latest')
+        # Enterprise executor
+        push_image('//enterprise/deployment:release_executor_enterprise', version_tag, image_tag='latest')
+
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
@@ -120,95 +125,13 @@ def generate_release_notes(old_version):
         buf += line.decode("utf-8")
     return buf
 
-def github_make_request(
-        auth_token=None,
-        repo=None,
-        data=None,
-        extra_headers=None,
-        path='',
-        subdomain='api',
-        url_params=None,
-        **extra_request_args
-):
-        headers = {'Accept': 'application/vnd.github.v3+json'}
-        if extra_headers is not None:
-            headers.update(extra_headers)
-        if auth_token is not None:
-            headers['Authorization'] = 'token ' + auth_token
-        if url_params is not None:
-            path += '?' + urlencode(url_params)
-        request = Request(
-            'https://' + subdomain + '.github.com/repos/' + repo + path,
-            headers=headers,
-            data=data,
-            **extra_request_args
-        )
-        response_body = urlopen(request).read().decode()
-        if response_body:
-            _json = json.loads(response_body)
-        else:
-            _json = {}
-        return _json
-
-def get_or_create_release(repo, version):
-    token = os.environ['GITHUB_TOKEN']
-    tag = version
-    # Check if the release already exists?
-    try:
-        _json = github_make_request(auth_token=token, repo=repo, path='/releases/tags/' + tag)
-    except HTTPError as e:
-        if e.code != 404:
-            raise e
-    else:
-        return _json['id']
-
-    # Create the release if not.
-    _json = github_make_request(
-        auth_token=token,
-        repo=repo,
-        data=json.dumps({
-            'tag_name': tag,
-            'name': tag,
-            'prerelease': True,
-        }).encode(),
-        path='/releases'
-    )
-    return _json['id']    
-
-def create_release_and_upload_artifacts(repo, version, artifacts):
-    artifact_set = set(artifacts)
-    release_id = get_or_create_release(repo, version)
-    token = os.environ['GITHUB_TOKEN']
-    
-    # Clear the prebuilts for a upload.
-    _json = github_make_request(
-        repo=repo,
-        path=('/releases/' + str(release_id) + '/assets'),
-    )
-    for asset in _json:
-        if asset['name'] in artifact_set:
-            _json = github_make_request(
-                auth_token=token,
-                repo=repo,
-                path=('/releases/assets/' + str(asset['id'])),
-                method='DELETE',
-            )
-            break
-        
-    # Upload the artifacts.
-    for artifact in artifacts:
-        name = os.path.split(artifact)[-1]
-        with open(artifact, 'rb') as myfile:
-            content = myfile.read()
-            _json = github_make_request(
-                auth_token=token,
-                repo=repo,
-                data=content,
-                extra_headers={'Content-Type': 'application/zip'},
-                path=('/releases/' + str(release_id) + '/assets'),
-                subdomain='uploads',
-                url_params={'name': name},
-            )
+def get_latest_remote_version():
+    run_or_die('git fetch --all --tags')
+    p = run_or_die("git tag -l 'v*' --sort=creatordate", capture_stdout=True)
+    sorted_tags = nonempty_lines(p.stdout)
+    # Further validate to make sure the tag looks like "vX.Y.Z"
+    sorted_tags = [t for t in sorted_tags if re.search(r'^v\d+\.\d+\.\d+$', t)]
+    return sorted_tags[-1]
 
 def main():
     parser = argparse.ArgumentParser()
@@ -220,23 +143,17 @@ def main():
     bump_version = not args.skip_version_bump
     update_latest_tag = not args.skip_latest_tag
 
-    if args.allow_dirty or workspace_is_clean():
-        print("workspace is clean!")
+    if workspace_is_clean():
+        print("Workspace is clean!")
+    elif args.allow_dirty:
+        print("WARNING: Workspace contains uncommitted changes; ignoring due to --allow_dirty.")
     else:
         die('Your workspace has uncommitted changes. ' +
             'Please run this in a clean workspace!')
-    gh_token = os.environ.get('GITHUB_TOKEN')
-    if not gh_token or gh_token == '':
-        die('GITHUB_TOKEN env variable not set. Please go get a repo_token from'
-            ' https://github.com/settings/tokens')
 
-    version_file = 'VERSION'
-    org_name = "buildbuddy-io"
-    repo_name = "buildbuddy"
-
-    new_version = read_version(version_file)
+    old_version = get_latest_remote_version()
+    new_version = old_version
     if bump_version:
-        old_version = read_version(version_file)
         new_version = bump_patch_version(old_version)
         release_notes = generate_release_notes(old_version)
         print("release notes:\n %s" % release_notes)
@@ -245,19 +162,11 @@ def main():
         print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
         time.sleep(2)
-        update_version_in_file(old_version, new_version, version_file)
-        commit_version_bump(old_version, new_version, version_file)
         create_and_push_tag(old_version, new_version, release_notes)
         print("Pushed tag for new version %s" % new_version)
 
-    update_docker_image(new_version, update_latest_tag)
-    print("Pushed docker image for new version %s" % new_version)
-
-    ## Don't need this because github automatically creates a source archive when we
-    ## make a new tag. Useful when we have artifacts to upload.
-    #artifacts = build_artifacts(repo_name, new_version)
-    #create_release_and_upload_artifacts("/".join([org_name, repo_name]), new_version, artifacts)
-
+    update_docker_images(new_version, update_latest_tag)
+    print("Pushed docker images for new version %s" % new_version)
     print("Done -- proceed with the release guide!")
 
 if __name__ == "__main__":

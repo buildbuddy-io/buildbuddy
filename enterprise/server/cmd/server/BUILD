@@ -73,7 +73,6 @@ go_binary(
         "--app_directory=/enterprise/app",
     ],
     data = [
-        "//:VERSION",
         "//enterprise:config_files",
         "//enterprise:licenses",
         "//enterprise/app:app_bundle",
