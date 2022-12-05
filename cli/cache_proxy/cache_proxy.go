@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"time"
@@ -16,9 +15,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -67,7 +68,7 @@ func startServerLocally(ctx context.Context, localBSS bspb.ByteStreamServer) (*g
 	bspb.RegisterByteStreamServer(localGRPCServer, localBSS)
 	go func() {
 		if err := localGRPCServer.Serve(listener); err != nil {
-			log.Printf("error serving locally: %s", err.Error())
+			log.Errorf("error serving locally: %s", err.Error())
 		}
 		listener.Close()
 		localGRPCServer.Stop()
@@ -113,7 +114,13 @@ func NewCacheProxy(ctx context.Context, env environment.Env, conn *grpc.ClientCo
 }
 
 func (p *CacheProxy) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
-	return p.cpbClient.GetCapabilities(ctx, req)
+	res, err := p.cpbClient.GetCapabilities(ctx, req)
+	if err == nil {
+		if b, err := protojson.Marshal(res); err == nil {
+			log.Infof("Remote capabilities: %s", string(b))
+		}
+	}
+	return res, err
 }
 
 func (p *CacheProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
@@ -208,7 +215,7 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 				if localFile != nil {
 					resourceName := digest.NewResourceName(d, instanceName)
 					if _, err := cachetools.UploadFromReader(ctx, p.localBSSClient, resourceName, localFile); err != nil {
-						log.Printf("error uploading from reader: %s", err.Error())
+						log.Errorf("error uploading from reader: %s", err.Error())
 					}
 				}
 				break
@@ -220,7 +227,7 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 		}
 		if localFile != nil {
 			if _, err := localFile.Write(msg.GetData()); err != nil {
-				log.Printf("error writing data to local file: %s", err.Error())
+				log.Errorf("error writing data to local file: %s", err.Error())
 			}
 		}
 	}
@@ -251,7 +258,7 @@ func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 			}
 			if *writeThrough {
 				if err := p.qWorker.EnqueueRemoteWrite(wreq); err != nil {
-					log.Printf("Error enqueueing write request to remote: %s", err.Error())
+					log.Errorf("Error enqueueing write request to remote: %s", err.Error())
 				}
 			}
 			return stream.SendAndClose(lastRsp)
@@ -320,7 +327,7 @@ func (qw *queueWorker) handleWriteRequest(qreq queueReq) error {
 	if _, err := cachetools.UploadFromReader(qw.ctx, qw.remoteClient, resourceName, tmpFile); err != nil {
 		return err
 	}
-	log.Printf("Handled write request: %s in %s", qreq.writeResourceName, time.Since(start))
+	log.Debugf("Handled write request: %s in %s", qreq.writeResourceName, time.Since(start))
 	return nil
 }
 

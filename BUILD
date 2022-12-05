@@ -64,7 +64,6 @@ exports_files([
     ".swcrc",
     "package.json",
     "yarn.lock",
-    "VERSION",
 ])
 
 ts_config(

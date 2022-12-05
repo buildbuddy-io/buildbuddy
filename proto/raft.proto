@@ -430,6 +430,9 @@ message StartClusterRequest {
   BatchCmdRequest batch = 4;
 
   bool join = 5;
+
+  // Don't mark self as ready until this index has been applied.
+  uint64 last_applied_index = 6;
 }
 
 message StartClusterResponse {

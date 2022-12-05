@@ -194,7 +194,9 @@ type redlock struct {
 // in the sense that:
 //
 // (a) It is not resilient to Redis nodes failing (even if
-//     the given Redis client points to a Redis cluster)
+//
+//	the given Redis client points to a Redis cluster)
+//
 // (b) It does not retry failed locking attempts.
 //
 // See https://redis.io/topics/distlock
@@ -400,9 +402,9 @@ func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...interfa
 // the same as if those commands were issued directly to Redis. For example,
 // consider the following sequence of buffered commands:
 //
-//     INCRBY key 1
-//     EXPIRE key 0
-//     EXPIRE key 3600
+//	INCRBY key 1
+//	EXPIRE key 0
+//	EXPIRE key 3600
 //
 // The `EXPIRE key 0` command is effectively dropped from the buffer since the
 // later `EXPIRE` command overwrites it, whereas Redis would delete the key

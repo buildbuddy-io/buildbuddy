@@ -27,7 +27,10 @@ done
 c_yellow="\x1b[33m"
 c_reset="\x1b[0m"
 
-BAZEL_QUIET_FLAGS=(--ui_event_filters=-info,-stdout,-stderr --noshow_progress)
+BAZEL_QUIET_FLAGS=(
+  "--ui_event_filters=-info,-stdout,-stderr"
+  "--noshow_progress"
+)
 
 # buildifier format all BUILD files
 echo "Formatting WORKSPACE/BUILD files..."
@@ -54,16 +57,12 @@ echo "Formatting frontend and markup files with prettier..."
 
 if ((GO_DEPS)); then
   echo "Fixing go.mod, go.sum, and deps.bzl..."
-  GAZELLE_PATH=$(which gazelle || true) ./tools/fix_go_deps.sh
+  ./tools/fix_go_deps.sh
 fi
 
 if ((GAZELLE)); then
   echo "Fixing BUILD deps with gazelle..."
-  if which gazelle &>/dev/null; then
-    gazelle
-  else
-    bazel run //:gazelle
-  fi
+  bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gazelle
 fi
 
 echo 'All done!'

@@ -2,5 +2,6 @@ app:
   log_error_stack_traces: true
 storage:
   ttl_seconds: 86400 # One day in seconds.
+  enable_chunked_event_logs: true
 cache:
   max_size_bytes: 1000000000 # 1 GB

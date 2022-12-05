@@ -34,7 +34,7 @@ import (
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
 
-//An interface representing a mux for handling/serving http requests.
+// An interface representing a mux for handling/serving http requests.
 type HttpServeMux interface {
 	Handle(pattern string, handler http.Handler)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
@@ -508,7 +508,20 @@ type SchedulerService interface {
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
-	GetGroupIDAndDefaultPoolForUser(ctx context.Context, os string, useSelfHosted bool) (string, string, error)
+	GetPoolInfo(ctx context.Context, os, requestedPool string, useSelfHosted bool) (*PoolInfo, error)
+}
+
+// PoolInfo holds high level metadata for an executor pool.
+type PoolInfo struct {
+	// GroupID is the group that owns the executor. This will be set even for
+	// shared executors, in which case it will be the shared owner group ID.
+	GroupID string
+
+	// Name is the pool name.
+	Name string
+
+	// IsSelfHosted is whether the pool consists of self-hosted executors.
+	IsSelfHosted bool
 }
 
 type ExecutionService interface {

@@ -277,6 +277,15 @@ func (sm *Replica) lookup(db ReplicaReader, query []byte) ([]byte, error) {
 	return val, nil
 }
 
+func (sm *Replica) LastAppliedIndex() (uint64, error) {
+	readDB, err := sm.leaser.DB()
+	if err != nil {
+		return 0, err
+	}
+	defer readDB.Close()
+	return sm.getLastAppliedIndex(readDB)
+}
+
 func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
 	val, err := sm.lookup(db, []byte(constants.LastAppliedIndexKey))
 	if err != nil {

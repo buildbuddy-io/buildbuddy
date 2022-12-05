@@ -57,8 +57,8 @@ func StartWithLateFn(expectedDuration time.Duration, lateFn CanaryFunc, doneFn C
 // finish when expected.
 //
 // Example:
-//  defer canary.Start(100 * time.Millisecond)()
 //
+//	defer canary.Start(100 * time.Millisecond)()
 func Start(expectedDuration time.Duration) CancelFunc {
 	location := "unknown"
 	if pc, _, _, ok := runtime.Caller(1); ok {

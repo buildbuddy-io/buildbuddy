@@ -136,6 +136,9 @@ const (
 	// Describes the type of cache request
 	CacheRequestType = "type"
 
+	// Describes the type of compression
+	CompressionType = "compression"
+
 	/// The name of the table in Clickhouse
 	ClickhouseTableName = "clickhouse_table_name"
 
@@ -1416,6 +1419,24 @@ var (
 	}, []string{
 		ClickhouseTableName,
 		ClickhouseStatusLabel,
+	})
+
+	BytesCompressed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "bytes_compressed",
+		Help:      "The number of decompressed bytes passed into compressors",
+	}, []string{
+		CompressionType,
+	})
+
+	BytesDecompressed = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "bytes_decompressed",
+		Help:      "The number of decompressed bytes passed out of decompressors",
+	}, []string{
+		CompressionType,
 	})
 
 	/// ### Raft cache metrics

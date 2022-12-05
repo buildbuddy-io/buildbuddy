@@ -58,25 +58,29 @@ func namespace(netNamespace string, args ...string) []string {
 }
 
 // CreateNetNamespace is equivalent to:
-//   $ sudo ip netns add "netNamespace"
+//
+//	$ sudo ip netns add "netNamespace"
 func CreateNetNamespace(ctx context.Context, netNamespace string) error {
 	return runCommand(ctx, "ip", "netns", "add", netNamespace)
 }
 
 // CreateTapInNamespace is equivalent to:
-//  $ sudo ip netns exec "netNamespace" ip tuntap add name "tapName" mode tap
+//
+//	$ sudo ip netns exec "netNamespace" ip tuntap add name "tapName" mode tap
 func CreateTapInNamespace(ctx context.Context, netNamespace, tapName string) error {
 	return runCommand(ctx, namespace(netNamespace, "ip", "tuntap", "add", "name", tapName, "mode", "tap")...)
 }
 
 // ConfigureTapInNamespace is equivalent to:
-//  $ sudo ip netns exec "netNamespace" ip addr add "address" dev "tapName"
+//
+//	$ sudo ip netns exec "netNamespace" ip addr add "address" dev "tapName"
 func ConfigureTapInNamespace(ctx context.Context, netNamespace, tapName, tapAddr string) error {
 	return runCommand(ctx, namespace(netNamespace, "ip", "addr", "add", tapAddr, "dev", tapName)...)
 }
 
 // BringUpTapInNamespace is equivalent to:
-//  $ sudo ip netns exec "netNamespace" ip link set "tapName" up
+//
+//	$ sudo ip netns exec "netNamespace" ip link set "tapName" up
 func BringUpTapInNamespace(ctx context.Context, netNamespace, tapName string) error {
 	return runCommand(ctx, namespace(netNamespace, "ip", "link", "set", tapName, "up")...)
 }
@@ -162,39 +166,39 @@ func DeleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
 //
 // It is equivalent to:
 //
-//  # create a new veth pair
-//  $ sudo ip netns exec fc0 ip link add veth1 type veth peer name veth0
+//	# create a new veth pair
+//	$ sudo ip netns exec fc0 ip link add veth1 type veth peer name veth0
 //
-//  # move the veth1 end of the pair into the root namespace
-//  $ sudo ip netns exec fc0 ip link set veth1 netns 1
+//	# move the veth1 end of the pair into the root namespace
+//	$ sudo ip netns exec fc0 ip link set veth1 netns 1
 //
-//  # add the ip addr 10.0.0.2/24 to the veth0 end of the pair
-//  $ sudo ip netns exec fc0 ip addr add 10.0.0.2/24 dev veth0
+//	# add the ip addr 10.0.0.2/24 to the veth0 end of the pair
+//	$ sudo ip netns exec fc0 ip addr add 10.0.0.2/24 dev veth0
 //
-//  # bring the veth0 end of the pair up
-//  $ sudo ip netns exec fc0 ip link set dev veth0 up
+//	# bring the veth0 end of the pair up
+//	$ sudo ip netns exec fc0 ip link set dev veth0 up
 //
-//  # add the ip addr 10.0.0.1/24 to the veth1 end of the pair
-//  $ sudo ip addr add 10.0.0.1/24 dev veth1
+//	# add the ip addr 10.0.0.1/24 to the veth1 end of the pair
+//	$ sudo ip addr add 10.0.0.1/24 dev veth1
 //
-//  # add a firewall rule to allow forwarding traffic from the veth1 pair to the
-//  # default device, in case forwarding is not allowed by default
-//  $ sudo iptables -A FORWARD -i veth1 -o eth0 -j ACCEPT
+//	# add a firewall rule to allow forwarding traffic from the veth1 pair to the
+//	# default device, in case forwarding is not allowed by default
+//	$ sudo iptables -A FORWARD -i veth1 -o eth0 -j ACCEPT
 //
-//  # bring the veth1 end of the pair up
-//  $ sudo ip link set dev veth1 up
+//	# bring the veth1 end of the pair up
+//	$ sudo ip link set dev veth1 up
 //
-//  # add a default route in the namespace to use 10.0.0.1 (aka the veth1 end of the pair)
-//  $ sudo ip netns exec fc0 ip route add default via 10.0.0.1
+//	# add a default route in the namespace to use 10.0.0.1 (aka the veth1 end of the pair)
+//	$ sudo ip netns exec fc0 ip route add default via 10.0.0.1
 //
-//  # add an iptables mapping inside the namespace to rewrite 192.168.241.2 -> 192.168.0.3
-//  $ sudo ip netns exec fc0 iptables -t nat -A POSTROUTING -o veth0 -s 192.168.241.2 -j SNAT --to 192.168.0.3
+//	# add an iptables mapping inside the namespace to rewrite 192.168.241.2 -> 192.168.0.3
+//	$ sudo ip netns exec fc0 iptables -t nat -A POSTROUTING -o veth0 -s 192.168.241.2 -j SNAT --to 192.168.0.3
 //
-//  # add an iptables mapping inside the namespace to rewrite 192.168.0.3 -> 192.168.241.2
-//  $ sudo ip netns exec fc0 iptables -t nat -A PREROUTING -i veth0 -d 192.168.0.3 -j DNAT --to 192.168.241.2
+//	# add an iptables mapping inside the namespace to rewrite 192.168.0.3 -> 192.168.241.2
+//	$ sudo ip netns exec fc0 iptables -t nat -A PREROUTING -i veth0 -d 192.168.0.3 -j DNAT --to 192.168.241.2
 //
-//  # add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
-//  $ sudo ip route add 192.168.0.3 via 10.0.0.2
+//	# add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
+//	$ sudo ip route add 192.168.0.3 via 10.0.0.2
 func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (func(context.Context) error, error) {
 	r, err := findRoute(ctx, *routePrefix)
 	device := r.device

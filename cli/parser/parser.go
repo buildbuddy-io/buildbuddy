@@ -484,8 +484,8 @@ func GetBazelCommandAndIndex(args []string) (string, int) {
 //
 // Examples:
 //
-//     getPhases("run")      // {"common", "build", "run"}
-//     getPhases("coverage") // {"common", "build", "test", "coverage"}
+//	getPhases("run")      // {"common", "build", "run"}
+//	getPhases("coverage") // {"common", "build", "test", "coverage"}
 func getPhases(command string) (out []string) {
 	for {
 		if command == "" {

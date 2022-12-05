@@ -79,10 +79,11 @@ type Options struct {
 
 // MigrateToV2Layout restructures the files under the root directory to conform to the "v2" layout.
 // Difference between v1 and v2:
-//  - Digests are now placed under a subdirectory based on the first 4 characters of the hash to avoid directories
-//    with large number of files.
-//  - Files in the default partition are now placed under a "PTdefault" partition subdirectory to be consistent with
-//    other partitions.
+//   - Digests are now placed under a subdirectory based on the first 4 characters of the hash to avoid directories
+//     with large number of files.
+//   - Files in the default partition are now placed under a "PTdefault" partition subdirectory to be consistent with
+//     other partitions.
+//
 // TODO(vadim): make this automatic so we can migrate onprem customers
 func MigrateToV2Layout(rootDir string) error {
 	log.Info("Starting digest migration.")

@@ -50,11 +50,9 @@ container_push(
     name = "push_rbeperf_image",
     format = "Docker",
     image = ":rbeperf_image",
-
-    # Any of these components may have variables. They are set by passing
-    # --define version=1.2.3 as arguments to the bazel build command.
     registry = "gcr.io",
     repository = "flame-build/rbeperf",  # Note flame-build, not flame-public.
-    tag = "$(version)",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )

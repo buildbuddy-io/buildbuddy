@@ -10,6 +10,7 @@ import { Clock, HelpCircle } from "lucide-react";
 import errorService from "../errors/error_service";
 import format from "../format/format";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
+import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
 
 interface Props {
   model: InvocationModel;
@@ -223,6 +224,11 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     );
   }
 
+  renderTimingSuggestionCard() {
+    const suggestion = getTimingDataSuggestion({ model: this.props.model, buildLogs: "" });
+    return suggestion ? <SuggestionComponent suggestion={suggestion} /> : null;
+  }
+
   render() {
     let threads = Array.from(this.state.threadMap.values());
 
@@ -245,21 +251,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
         <FlameChart profile={this.state.profile} />
         <InvocationBreakdownCardComponent durationMap={this.state.durationMap} />
 
-        <div className="card card-suggestion">
-          <HelpCircle className="icon" />
-          <div className="content">
-            <div className="title">Want better timing data?</div>
-            <div className="details">
-              <div className="suggestions-tab-link">
-                For a more detailed timing profile, try using these flags:{" "}
-                <span className="inline-code bazel-flag">--noslim_profile</span>{" "}
-                <span className="inline-code bazel-flag">--experimental_profile_include_target_label</span>{" "}
-                <span className="inline-code bazel-flag">--experimental_profile_include_primary_output</span>{" "}
-                {/* <TextLink href="#suggestions">Click here to view suggestions</TextLink> based on your timing profile! */}
-              </div>
-            </div>
-          </div>
-        </div>
+        {this.renderTimingSuggestionCard()}
 
         <div className="card timing">
           <Clock className="icon" />

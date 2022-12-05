@@ -217,11 +217,14 @@ func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int
 }
 
 // The innerQuery is expected to return rows with the following columns:
-//   (1) name; and
-//   (2) queue_duration_usec_quantiles, an array of p50, p75, p90, p95, p99
-//   queue duration.
+//
+//	(1) name; and
+//	(2) queue_duration_usec_quantiles, an array of p50, p75, p90, p95, p99
+//	queue duration.
+//
 // The returned "flattened" query will return row with the following column
-//    name | p50 | ... | p99
+//
+//	name | p50 | ... | p99
 func getQueryWithFlattenedArray(innerQuery string) string {
 	return `SELECT name, 
 	arrayElement(queue_duration_usec_quantiles, 1) as queue_duration_usec_p50,

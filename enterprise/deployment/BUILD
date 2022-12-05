@@ -8,12 +8,10 @@ container_push(
     name = "release_enterprise",
     format = "Docker",
     image = "//enterprise/server/cmd/server:buildbuddy_image",
-
-    # Any of these components may have variables. They are set by passing
-    # --define version=1.2.3 as arguments to the bazel build command.
     registry = "gcr.io",
     repository = "flame-public/buildbuddy-app-enterprise",
-    tag = "$(version)",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
 
@@ -23,12 +21,10 @@ container_push(
     name = "release_executor_enterprise",
     format = "Docker",
     image = "//enterprise/server/cmd/executor:executor_image",
-
-    # Any of these components may have variables. They are set by passing
-    # --define version=1.2.3 as arguments to the bazel build command.
     registry = "gcr.io",
     repository = "flame-public/buildbuddy-executor-enterprise",
-    tag = "$(version)",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
 
@@ -37,11 +33,9 @@ container_push(
     name = "executor_docker_default",
     format = "Docker",
     image = "//enterprise/server/cmd/executor:default_base_image",
-
-    # Any of these components may have variables. They are set by passing
-    # --define version=1.2.3 as arguments to the bazel build command.
     registry = "gcr.io",
     repository = "flame-public/executor-docker-default",  # Note flame-build, not flame-public.
-    tag = "$(version)",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )

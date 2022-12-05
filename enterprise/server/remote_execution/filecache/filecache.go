@@ -48,11 +48,15 @@ const (
 //
 // Usage:
 // When files are downloaded, clients notify fileCache by calling:
-//   AddFile(d *repb.Digest, existingFilePath string)
+//
+//	AddFile(d *repb.Digest, existingFilePath string)
+//
 // at which point they are tracked by digest in the fileCache LRU.
 //
 // When clients need to download a file, they can do so by calling:
-//   FastLinkFile(d *repb.Digest, outputPath string)
+//
+//	FastLinkFile(d *repb.Digest, outputPath string)
+//
 // which will, if the file is present in fileCache, create a hardlink at
 // outputPath and return true. If no file is found in the cache, fileCache
 // will return false.

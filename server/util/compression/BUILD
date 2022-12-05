@@ -6,8 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/compression",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/metrics",
         "//server/util/log",
         "@com_github_klauspost_compress//zstd",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 
