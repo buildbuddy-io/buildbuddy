@@ -170,7 +170,7 @@ func waitForLogsToEqual(t *testing.T, ctx context.Context, log *invocationLog, e
 }
 
 func TestBuildLogs_CompletedInvocation(t *testing.T) {
-	bb := buildbuddy_enterprise.Run(t)
+	bb := buildbuddy_enterprise.Run(t, "--storage.enable_chunked_event_logs=true")
 	bbClient := bb.BuildBuddyServiceClient(t)
 	iid := newUUID(t)
 	bep, err := build_event_publisher.New(bb.GRPCAddress(), "" /*=apiKey*/, iid)
@@ -224,7 +224,7 @@ func TestBuildLogs_CompletedInvocation(t *testing.T) {
 }
 
 func TestBuildLogs_InProgressInvocation(t *testing.T) {
-	bb := buildbuddy_enterprise.Run(t)
+	bb := buildbuddy_enterprise.Run(t, "--storage.enable_chunked_event_logs=true")
 	bbClient := bb.BuildBuddyServiceClient(t)
 	iid := newUUID(t)
 	bep, err := build_event_publisher.New(bb.GRPCAddress(), "" /*=apiKey*/, iid)
