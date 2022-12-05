@@ -1071,15 +1071,15 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			compressedRN := &resource.ResourceName{
 				Digest:     d,
 				CacheType:  resource.CacheType_CAS,
-				Compressor: repb.Compressor_IDENTITY,
+				Compressor: repb.Compressor_ZSTD,
 			}
 			reader, err := pc.Reader(ctx, compressedRN, 0, 0)
 			require.NoError(t, err)
 			defer reader.Close()
 			data, err := io.ReadAll(reader)
 			require.NoError(t, err)
-			//decompressed, err := compression.DecompressZstd(nil, data)
-			require.Equal(t, blob, data)
+			decompressed, err := compression.DecompressZstd(nil, data)
+			require.Equal(t, blob, decompressed)
 			return nil
 		})
 	}

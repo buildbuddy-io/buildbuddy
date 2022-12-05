@@ -1439,23 +1439,44 @@ var (
 		CompressionType,
 	})
 
-	BadCompressionRatioBufferSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	BadCompressionBufferSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "compressor",
-		Name:      "bad_compression_ratio_buffer_size",
+		Name:      "bad_compression_buffer_size",
+		Buckets:   exponentialBucketRange(1, 1_000_000_000, 10),
 		Help:      "The size of buffers that increased in size when decompressed",
 	}, []string{
 		CompressionType,
 	})
 
-	CompressionRatio = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Histogram with the count of elements in each bucket
+	/// # Visualize with the Bar Gauge type
+	/// # Legend: {{le}}
+	/// sum(buildbuddy_compressor_bad_compression_buffer_size) by(le)
+	/// ```
+
+	CompressionRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
-		Subsystem: "compressor",
+		Subsystem: "pebble",
 		Name:      "compression_ratio",
-		Help:      "The data compression ratio (decompressed bytes / compressed bytes)",
+		Buckets:   bucketsWithInterval(0, 2, 0.05),
+		Help: "The data compression ratio (compressed / decompressed bytes) per chunk of compressed data" +
+			" (as opposed to the whole stream)",
 	}, []string{
 		CompressionType,
 	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Histogram buckets with the count of elements in each compression ratio bucket
+	/// # Visualize with the Bar Gauge type
+	/// # Legend: {{le}}
+	/// sum(buildbuddy_pebble_compression_ratio_bucket) by(le)
+	/// ```
 
 	/// ### Raft cache metrics
 
@@ -1549,4 +1570,17 @@ func exponentialBucketRange(min, max, factor float64) []float64 {
 
 func durationUsecBuckets(min, max time.Duration, factor float64) []float64 {
 	return exponentialBucketRange(float64(min.Microseconds()), float64(max.Microseconds()), factor)
+}
+
+// bucketsWithInterval returns prometheus.Buckets at the given interval, specified in
+// terms of a min and max value, rather than needing to explicitly calculate the
+// number of buckets.
+func bucketsWithInterval(min, max, interval float64) []float64 {
+	buckets := []float64{}
+	current := min
+	for current < max {
+		buckets = append(buckets, current)
+		current += interval
+	}
+	return buckets
 }

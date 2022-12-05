@@ -1201,14 +1201,12 @@ func (z *zstdCompressor) Write(p []byte) (int, error) {
 	z.compressBuf = compression.CompressZstd(z.compressBuf, p)
 	n, err := z.CustomCommitWriteCloser.Write(z.compressBuf)
 	if err != nil {
-		z.bufferPool.Put(z.compressBuf)
-		z.compressBuf = nil
 		return 0, err
 	}
 
-	metrics.CompressionRatio.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Set(float64(len(p)) / float64(n))
+	metrics.CompressionRatio.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(len(p)) / float64(n))
 	if n > len(p) {
-		metrics.BadCompressionRatioBufferSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Set(float64(len(p)))
+		metrics.BadCompressionBufferSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(len(p)))
 	}
 
 	// Return the size of the original buffer even though a different compressed buffer size may have been written,
@@ -1217,9 +1215,8 @@ func (z *zstdCompressor) Write(p []byte) (int, error) {
 }
 
 func (z *zstdCompressor) Close() error {
-	err := z.CustomCommitWriteCloser.Close()
 	z.bufferPool.Put(z.compressBuf)
-	return err
+	return z.CustomCommitWriteCloser.Close()
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
