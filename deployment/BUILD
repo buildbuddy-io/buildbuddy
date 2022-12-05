@@ -24,13 +24,13 @@ k8s_objects(
 )
 
 # Set --//deployment:image_tag to set the tag when running container_push
-# targets. If unset, defaults to "latest".
+# targets. If unset, defaults to "development".
 #
 # Note that this tag is shared across all targets, which is fine since only one
 # container_push target can run at once.
 string_flag(
     name = "image_tag",
-    build_setting_default = "latest",
+    build_setting_default = "development",
 )
 
 write_flag_to_file(
