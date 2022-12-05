@@ -3,16 +3,14 @@ package telemetry
 import (
 	"flag"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
-	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/google/uuid"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
@@ -21,7 +19,6 @@ import (
 
 const (
 	unknownFieldValue        = "Unknown"
-	versionFilename          = "VERSION"
 	installationUUIDFilename = "buildbuddy_installation_uuid"
 	maxFailedLogs            = 365
 )
@@ -48,7 +45,7 @@ type TelemetryClient struct {
 func NewTelemetryClient(env environment.Env) *TelemetryClient {
 	return &TelemetryClient{
 		env:              env,
-		version:          getAppVersion(),
+		version:          version.AppVersion(),
 		instanceUUID:     getInstanceUUID(),
 		installationUUID: getInstallationUUID(env),
 		failedLogs:       []*telpb.TelemetryLog{},
@@ -138,21 +135,6 @@ func (t *TelemetryClient) logTelemetryData() {
 }
 
 // Getters
-
-func getAppVersion() string {
-	rfp, err := bazel.RunfilesPath()
-	if err != nil {
-		log.Debugf("Error reading getting version file path: %s", err)
-		return unknownFieldValue
-	}
-	versionBytes, err := os.ReadFile(filepath.Join(rfp, versionFilename))
-	if err != nil {
-		log.Debugf("Error reading version file: %s", err)
-		return unknownFieldValue
-	}
-
-	return strings.TrimSpace(string(versionBytes))
-}
 
 func getInstallationUUID(env environment.Env) string {
 	ctx := env.GetServerContext()

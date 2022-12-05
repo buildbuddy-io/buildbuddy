@@ -182,11 +182,11 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 //
 // Errors:
 //
-// * `INVALID_ARGUMENT`: One or more arguments are invalid.
-// * `FAILED_PRECONDITION`: One or more errors occurred in updating the
-//   action result, such as a missing command or action.
-// * `RESOURCE_EXHAUSTED`: There is insufficient storage space to add the
-//   entry to the cache.
+//   - `INVALID_ARGUMENT`: One or more arguments are invalid.
+//   - `FAILED_PRECONDITION`: One or more errors occurred in updating the
+//     action result, such as a missing command or action.
+//   - `RESOURCE_EXHAUSTED`: There is insufficient storage space to add the
+//     entry to the cache.
 func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	if req.ActionDigest == nil {
 		return nil, status.InvalidArgumentError("ActionDigest is a required field")

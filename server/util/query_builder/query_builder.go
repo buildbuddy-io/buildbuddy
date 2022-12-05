@@ -28,7 +28,8 @@ func pad(clause string) string {
 }
 
 // joinClause represents the following SQL statement:
-//   JOIN foo as f ON b.key = f.key
+//
+//	JOIN foo as f ON b.key = f.key
 type joinClause struct {
 	// This can be a table name or a sub query
 	tableSubquery *Query
