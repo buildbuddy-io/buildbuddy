@@ -36,85 +36,103 @@ func getScheduleServer(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, u
 	return s, ctx
 }
 
-func TestSchedulerServerGetGroupIDAndDefaultPoolForUserUserOwnedDisabled(t *testing.T) {
+func TestSchedulerServerGetPoolInfoUserOwnedDisabled(t *testing.T) {
 	s, ctx := getScheduleServer(t, false, false, "")
-	g, p, err := s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", false)
+	p, err := s.GetPoolInfo(ctx, "linux", "", false)
 	require.NoError(t, err)
-	require.Equal(t, "", g)
-	require.Equal(t, "defaultPoolName", p)
+	require.Equal(t, "", p.GroupID)
+	require.Equal(t, "defaultPoolName", p.Name)
 }
 
-func TestSchedulerServerGetGroupIDAndDefaultPoolForUserNoAuth(t *testing.T) {
+func TestSchedulerServerGetPoolInfoNoAuth(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "")
-	g, p, err := s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", false)
+	p, err := s.GetPoolInfo(ctx, "linux", "", false)
 	require.NoError(t, err)
-	require.Equal(t, "sharedGroupID", g)
-	require.Equal(t, "defaultPoolName", p)
+	require.Equal(t, "sharedGroupID", p.GroupID)
+	require.Equal(t, "defaultPoolName", p.Name)
 }
 
-func TestSchedulerServerGetGroupIDAndDefaultPoolForUserWithOS(t *testing.T) {
+func TestSchedulerServerGetPoolInfoWithOS(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, false, "user1")
 	s.forceUserOwnedDarwinExecutors = false
-	g, p, err := s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", false)
+	p, err := s.GetPoolInfo(ctx, "linux", "", false)
 	require.NoError(t, err)
-	require.Equal(t, "sharedGroupID", g)
-	require.Equal(t, "defaultPoolName", p)
+	require.Equal(t, "sharedGroupID", p.GroupID)
+	require.Equal(t, "defaultPoolName", p.Name)
 
-	g, p, err = s.GetGroupIDAndDefaultPoolForUser(ctx, "darwin", false)
+	p, err = s.GetPoolInfo(ctx, "darwin", "", false)
 	require.NoError(t, err)
-	require.Equal(t, "sharedGroupID", g)
-	require.Equal(t, "defaultPoolName", p)
+	require.Equal(t, "sharedGroupID", p.GroupID)
+	require.Equal(t, "defaultPoolName", p.Name)
 
 	s.forceUserOwnedDarwinExecutors = true
-	g, p, err = s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", false)
+	p, err = s.GetPoolInfo(ctx, "linux", "", false)
 	require.NoError(t, err)
-	require.Equal(t, "sharedGroupID", g)
-	require.Equal(t, "defaultPoolName", p)
+	require.Equal(t, "sharedGroupID", p.GroupID)
+	require.Equal(t, "defaultPoolName", p.Name)
 
-	g, p, err = s.GetGroupIDAndDefaultPoolForUser(ctx, "darwin", false)
+	p, err = s.GetPoolInfo(ctx, "darwin", "", false)
 	require.NoError(t, err)
-	require.Equal(t, "group1", g)
-	require.Equal(t, "", p)
+	require.Equal(t, "group1", p.GroupID)
+	require.Equal(t, "", p.Name)
 }
 
-func TestSchedulerServerGetGroupIDAndDefaultPoolForUserDarwin(t *testing.T) {
-	s, ctx := getScheduleServer(t, true, false, "")
-	g, p, err := s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", false)
-	require.NoError(t, err)
-	require.Equal(t, "sharedGroupID", g)
-	require.Equal(t, "defaultPoolName", p)
-}
-
-func TestSchedulerServerGetGroupIDAndDefaultPoolForUserDarwinNoAuth(t *testing.T) {
-	s, ctx := getScheduleServer(t, true, false, "")
-	s.forceUserOwnedDarwinExecutors = true
-	_, _, err := s.GetGroupIDAndDefaultPoolForUser(ctx, "darwin", false)
-	require.Error(t, err)
-}
-
-func TestSchedulerServerGetGroupIDAndDefaultPoolForUserSelfHostedNoAuth(t *testing.T) {
-	s, ctx := getScheduleServer(t, true, false, "")
-	_, _, err := s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", true)
-	require.Error(t, err)
-}
-
-func TestSchedulerServerGetGroupIDAndDefaultPoolForUserSelfHosted(t *testing.T) {
-	s, ctx := getScheduleServer(t, true, false, "user1")
-	g, p, err := s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", true)
-	require.NoError(t, err)
-	require.Equal(t, "group1", g)
-	require.Equal(t, "", p)
-}
-
-func TestSchedulerServerGetGroupIDAndDefaultPoolForUserSelfHostedByDefault(t *testing.T) {
+func TestSchedulerServerGetPoolInfoWithRequestedPoolWithAuth(t *testing.T) {
 	s, ctx := getScheduleServer(t, true, true, "user1")
-	g, p, err := s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", false)
+	s.forceUserOwnedDarwinExecutors = false
+	p, err := s.GetPoolInfo(ctx, "linux", "my-pool", false)
 	require.NoError(t, err)
-	require.Equal(t, "group1", g)
-	require.Equal(t, "", p)
+	require.Equal(t, "group1", p.GroupID)
+	require.Equal(t, "my-pool", p.Name)
+}
 
-	g, p, err = s.GetGroupIDAndDefaultPoolForUser(ctx, "linux", true)
+func TestSchedulerServerGetPoolInfoWithRequestedPoolWithNoAuth(t *testing.T) {
+	s, ctx := getScheduleServer(t, true, false, "")
+	s.forceUserOwnedDarwinExecutors = false
+	p, err := s.GetPoolInfo(ctx, "linux", "my-pool", false)
 	require.NoError(t, err)
-	require.Equal(t, "group1", g)
-	require.Equal(t, "", p)
+	require.Equal(t, "sharedGroupID", p.GroupID)
+	require.Equal(t, "my-pool", p.Name)
+}
+
+func TestSchedulerServerGetPoolInfoDarwin(t *testing.T) {
+	s, ctx := getScheduleServer(t, true, false, "")
+	p, err := s.GetPoolInfo(ctx, "linux", "", false)
+	require.NoError(t, err)
+	require.Equal(t, "sharedGroupID", p.GroupID)
+	require.Equal(t, "defaultPoolName", p.Name)
+}
+
+func TestSchedulerServerGetPoolInfoDarwinNoAuth(t *testing.T) {
+	s, ctx := getScheduleServer(t, true, false, "")
+	s.forceUserOwnedDarwinExecutors = true
+	_, err := s.GetPoolInfo(ctx, "darwin", "", false)
+	require.Error(t, err)
+}
+
+func TestSchedulerServerGetPoolInfoSelfHostedNoAuth(t *testing.T) {
+	s, ctx := getScheduleServer(t, true, false, "")
+	_, err := s.GetPoolInfo(ctx, "linux", "", true)
+	require.Error(t, err)
+}
+
+func TestSchedulerServerGetPoolInfoSelfHosted(t *testing.T) {
+	s, ctx := getScheduleServer(t, true, false, "user1")
+	p, err := s.GetPoolInfo(ctx, "linux", "", true)
+	require.NoError(t, err)
+	require.Equal(t, "group1", p.GroupID)
+	require.Equal(t, "", p.Name)
+}
+
+func TestSchedulerServerGetPoolInfoSelfHostedByDefault(t *testing.T) {
+	s, ctx := getScheduleServer(t, true, true, "user1")
+	p, err := s.GetPoolInfo(ctx, "linux", "", false)
+	require.NoError(t, err)
+	require.Equal(t, "group1", p.GroupID)
+	require.Equal(t, "", p.Name)
+
+	p, err = s.GetPoolInfo(ctx, "linux", "", true)
+	require.NoError(t, err)
+	require.Equal(t, "group1", p.GroupID)
+	require.Equal(t, "", p.Name)
 }

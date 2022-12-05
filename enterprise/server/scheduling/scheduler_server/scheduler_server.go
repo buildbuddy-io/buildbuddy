@@ -887,33 +887,51 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	return s, nil
 }
 
-func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, os string, useSelfHosted bool) (string, string, error) {
+func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool string, useSelfHosted bool) (*interfaces.PoolInfo, error) {
+	// Note: The defaultPoolName flag only applies to the shared executor pool.
+	// The pool name for self-hosted pools is always determined directly from
+	// platform props.
+	sharedPoolName := requestedPool
+	if sharedPoolName == "" {
+		sharedPoolName = *defaultPoolName
+	}
+
 	if !s.enableUserOwnedExecutors {
-		return "", *defaultPoolName, nil
+		return &interfaces.PoolInfo{Name: sharedPoolName}, nil
+	}
+
+	sharedPool := &interfaces.PoolInfo{
+		GroupID: *sharedExecutorPoolGroupID,
+		Name:    sharedPoolName,
 	}
 	user, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		if s.env.GetAuthenticator().AnonymousUsageEnabled() {
 			if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
-				return "", "", status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
+				return nil, status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
 			}
 			if useSelfHosted {
-				return "", "", status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
+				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
 			}
-			return *sharedExecutorPoolGroupID, *defaultPoolName, nil
+			return sharedPool, nil
 		}
-		return "", "", err
+		return nil, err
+	}
+	selfHostedPool := &interfaces.PoolInfo{
+		GroupID:      user.GetGroupID(),
+		IsSelfHosted: true,
+		Name:         requestedPool,
 	}
 	if user.GetUseGroupOwnedExecutors() {
-		return user.GetGroupID(), "", nil
+		return selfHostedPool, nil
 	}
 	if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
-		return user.GetGroupID(), "", nil
+		return selfHostedPool, nil
 	}
 	if useSelfHosted {
-		return user.GetGroupID(), "", nil
+		return selfHostedPool, nil
 	}
-	return *sharedExecutorPoolGroupID, *defaultPoolName, nil
+	return sharedPool, nil
 }
 
 func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
