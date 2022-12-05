@@ -1066,7 +1066,7 @@ func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetSizeBytes())
+	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetStoredSizeBytes())
 	return nil
 }
 
@@ -1096,7 +1096,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRec
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(partitionID, fileMetadataKey, -1*fileMetadata.GetSizeBytes())
+	p.sendSizeUpdate(partitionID, fileMetadataKey, -1*fileMetadata.GetStoredSizeBytes())
 	if err := disk.DeleteFile(ctx, fp); err != nil {
 		return err
 	}
@@ -1284,7 +1284,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: wcm.Metadata(),
-			SizeBytes:       bytesWritten,
+			StoredSizeBytes: bytesWritten,
 			LastAccessUsec:  now,
 			LastModifyUsec:  now,
 		}
@@ -1452,7 +1452,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
-		blobSizeBytes += fileMetadata.GetSizeBytes()
+		blobSizeBytes += fileMetadata.GetStoredSizeBytes()
 		metadataSizeBytes += int64(len(iter.Value()))
 
 		// identify and count CAS vs AC files.
@@ -1721,7 +1721,7 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 
 	ageUsec := float64(time.Since(time.Unix(0, sample.timestamp)).Microseconds())
 	metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: e.part.ID}).Set(ageUsec)
-	e.updateSize(sample.fileMetadataKey, -1*sample.fileMetadata.GetSizeBytes())
+	e.updateSize(sample.fileMetadataKey, -1*sample.fileMetadata.GetStoredSizeBytes())
 	return nil
 }
 
