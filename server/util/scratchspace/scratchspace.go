@@ -47,15 +47,14 @@ func tempDir() string {
 //
 // Example usage:
 //
-//     f, err := scratchspace.CreateTemp("download-*")
-//     if err != nil {
-//         return err
-//     }
-//     defer func() {
-//         f.Close()
-//         os.Remove(f.Name())
-//     }()
-//
+//	f, err := scratchspace.CreateTemp("download-*")
+//	if err != nil {
+//	    return err
+//	}
+//	defer func() {
+//	    f.Close()
+//	    os.Remove(f.Name())
+//	}()
 func CreateTemp(pattern string) (*os.File, error) {
 	return os.CreateTemp(tempDir(), pattern)
 }

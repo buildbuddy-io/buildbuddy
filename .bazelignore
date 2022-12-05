@@ -1,1 +1,5 @@
+bazel-bin
+bazel-buildbuddy
+bazel-out
+bazel-testlogs
 node_modules

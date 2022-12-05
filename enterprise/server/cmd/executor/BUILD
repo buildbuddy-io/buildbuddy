@@ -63,7 +63,6 @@ go_binary(
         "--max_shutdown_duration=3s",
     ],
     data = [
-        "//:VERSION",
         "//enterprise:config_files",
         "//enterprise:licenses",
     ],

@@ -44,7 +44,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
@@ -543,6 +542,12 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 		return nil, err
 	}
 
+	if req.GetLastAppliedIndex() > 0 {
+		if err := s.waitForReplicaToCatchUp(ctx, req.GetClusterId(), req.GetLastAppliedIndex()); err != nil {
+			return nil, err
+		}
+	}
+
 	rsp := &rfpb.StartClusterResponse{}
 	if req.GetBatch() == nil || len(req.GetInitialMember()) == 0 {
 		return rsp, nil
@@ -756,19 +761,6 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {
 	switch updateType {
-	case serf.EventQuery:
-		query, ok := event.(*serf.Query)
-		if !ok || query.Payload == nil {
-			return
-		}
-
-		ctx, cancel := context.WithDeadline(context.Background(), query.Deadline())
-		defer cancel()
-
-		switch query.Name {
-		case constants.PlacementDriverQueryEvent:
-			s.handlePlacementQuery(ctx, query)
-		}
 	case serf.EventMemberJoin, serf.EventMemberUpdate:
 		memberEvent, _ := event.(serf.MemberEvent)
 		for _, member := range memberEvent.Members {
@@ -804,17 +796,9 @@ func (s *Store) renewNodeLiveness() {
 	}
 }
 
-type stats struct {
-	RangeCount     int
-	LeaseCount     int
-	ReadQPS        int64
-	RaftProposeQPS int64
-	TotalSizeBytes int64
-}
-
 func (s *Store) Usage() *rfpb.StoreUsage {
 	su := &rfpb.StoreUsage{
-		Node: s.MyNodeDescriptor(),
+		Node: s.NodeDescriptor(),
 	}
 
 	s.rangeMu.Lock()
@@ -912,48 +896,7 @@ func (s *Store) broadcast() error {
 	return nil
 }
 
-func (s *Store) handlePlacementQuery(ctx context.Context, query *serf.Query) {
-	pq := &rfpb.PlacementQuery{}
-	if err := proto.Unmarshal(query.Payload, pq); err != nil {
-		return
-	}
-	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	if nodeHostInfo != nil {
-		for _, logInfo := range nodeHostInfo.LogInfo {
-			if pq.GetTargetClusterId() == logInfo.ClusterID {
-				s.log.Debugf("%q ignoring placement query: already have cluster %d", s.nodeHost.ID(), logInfo.ClusterID)
-				return
-			}
-		}
-	}
-
-	// Do not respond if this node is over 95% full.
-	member := s.gossipManager.LocalMember()
-	usageBuf, ok := member.Tags[constants.NodeUsageTag]
-	if !ok {
-		s.log.Errorf("Ignoring placement query: couldn't determine node usage")
-		return
-	}
-	usage := &rfpb.NodeUsage{}
-	if err := prototext.Unmarshal([]byte(usageBuf), usage); err != nil {
-		return
-	}
-	myDiskUsage := float64(usage.GetDiskBytesUsed()) / float64(usage.GetDiskBytesTotal())
-	if myDiskUsage > maximumDiskCapacity {
-		s.log.Debugf("Ignoring placement query: node is over capacity")
-		return
-	}
-
-	nodeBuf, err := proto.Marshal(s.MyNodeDescriptor())
-	if err != nil {
-		return
-	}
-	if err := query.Respond(nodeBuf); err != nil {
-		s.log.Errorf("Error responding to gossip query: %s", err)
-	}
-}
-
-func (s *Store) MyNodeDescriptor() *rfpb.NodeDescriptor {
+func (s *Store) NodeDescriptor() *rfpb.NodeDescriptor {
 	return &rfpb.NodeDescriptor{
 		Nhid:        s.nodeHost.ID(),
 		RaftAddress: s.nodeHost.RaftAddress(),
@@ -1085,15 +1028,15 @@ func casRevert(cas *rfpb.CASRequest) *rfpb.CASRequest {
 //
 // Splits happen in the following way:
 //
-// 1) The range to be split is locked for splitting. This prevents all
-//   further reads and writes.
-// 2) A new range is brought up on the same nodes as the range to be split.
-// 3) A split point is determined, and data is copied from the range to be split
-//   to the newly created range.
-// 4) The newly created range is activated (locally).
-// 5) The metarange is updated with the new range info, and the split range's
-//   new endpoints.
-// 6) The split range is unlocked.
+//  1. The range to be split is locked for splitting. This prevents all
+//     further reads and writes.
+//  2. A new range is brought up on the same nodes as the range to be split.
+//  3. A split point is determined, and data is copied from the range to be split
+//     to the newly created range.
+//  4. The newly created range is activated (locally).
+//  5. The metarange is updated with the new range info, and the split range's
+//     new endpoints.
+//  6. The split range is unlocked.
 func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
 	if !*enableSplittingReplicas {
 		return nil, status.FailedPreconditionError("Splitting not enabled")
@@ -1314,6 +1257,38 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 	return splitRsp, nil
 }
 
+func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {
+	r, _, err := s.validatedRange(header)
+	if err != nil {
+		return 0, err
+	}
+	return r.LastAppliedIndex()
+}
+
+func (s *Store) waitForReplicaToCatchUp(ctx context.Context, clusterID uint64, desiredLastAppliedIndex uint64) error {
+	start := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			break
+		}
+		if rd := s.lookupRange(clusterID); rd != nil {
+			if r, err := s.GetReplica(rd.GetRangeId()); err == nil {
+				if lastApplied, err := r.LastAppliedIndex(); err == nil {
+					if lastApplied >= desiredLastAppliedIndex {
+						s.log.Infof("Cluster %d took %s to catch up", clusterID, time.Since(start))
+						break
+					}
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil
+}
+
 func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64, error) {
 	var membership *dragonboat.Membership
 	var err error
@@ -1341,9 +1316,9 @@ func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64
 
 // AddClusterNode adds a new node to the specified cluster if pre-reqs are met.
 // Pre-reqs are:
-//  * The request must be valid and contain all information
-//  * This node must be a member of the cluster that is being added to
-//  * The provided range descriptor must be up to date
+//   - The request must be valid and contain all information
+//   - This node must be a member of the cluster that is being added to
+//   - The provided range descriptor must be up to date
 func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequest) (*rfpb.AddClusterNodeResponse, error) {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
@@ -1380,6 +1355,13 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 	if err != nil {
 		return nil, err
 	}
+	lastAppliedIndex, err := s.getLastAppliedIndex(&rfpb.Header{
+		RangeId:    rd.GetRangeId(),
+		Generation: rd.GetGeneration(),
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	// Gossip the address of the node that is about to be added.
 	s.registry.Add(clusterID, newNodeID, node.GetNhid())
@@ -1399,9 +1381,10 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 		return nil, err
 	}
 	_, err = c.StartCluster(ctx, &rfpb.StartClusterRequest{
-		ClusterId: clusterID,
-		NodeId:    newNodeID,
-		Join:      true,
+		ClusterId:        clusterID,
+		NodeId:           newNodeID,
+		Join:             true,
+		LastAppliedIndex: lastAppliedIndex,
 	})
 	if err != nil {
 		return nil, err
@@ -1425,9 +1408,9 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 
 // RemoveClusterNode removes a new node from the specified cluster if pre-reqs are
 // met. Pre-reqs are:
-//  * The request must be valid and contain all information
-//  * This node must be a member of the cluster that is being removed from
-//  * The provided range descriptor must be up to date
+//   - The request must be valid and contain all information
+//   - This node must be a member of the cluster that is being removed from
+//   - The provided range descriptor must be up to date
 func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNodeRequest) (*rfpb.RemoveClusterNodeResponse, error) {
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()
@@ -1512,7 +1495,7 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 	s.rangeMu.RUnlock()
 
 	rsp := &rfpb.ListClusterResponse{
-		Node: s.MyNodeDescriptor(),
+		Node: s.NodeDescriptor(),
 	}
 	for _, rd := range openRanges {
 		if req.GetLeasedOnly() {

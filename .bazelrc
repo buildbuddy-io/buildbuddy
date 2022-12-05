@@ -53,7 +53,7 @@ build:ci --repository_cache=/home/runner/repo-cache/
 build:ci --flaky_test_attempts=2
 build:ci --color=yes
 build:ci --disk_cache=
-build:ci --@io_bazel_rules_go//go/config:race
+# build:ci --@io_bazel_rules_go//go/config:race
 
 # Configuration used for untrusted GitHub actions-based CI
 build:untrusted-ci --config=remote
@@ -77,7 +77,8 @@ build:workflows --config=buildbuddy_bes_backend
 build:workflows --config=buildbuddy_bes_results_url
 build:workflows --config=buildbuddy_remote_cache
 build:workflows --config=buildbuddy_remote_executor
-build:workflows --@io_bazel_rules_go//go/config:race
+# TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1830): Re-enable
+# build:workflows --@io_bazel_rules_go//go/config:race
 
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
 build:mac-workflows --config=cache

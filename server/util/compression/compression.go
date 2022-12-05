@@ -7,8 +7,10 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/klauspost/compress/zstd"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -35,6 +37,7 @@ func mustGetZstdEncoder() *zstd.Encoder {
 // the default level. If dst is not big enough, then a new buffer will be
 // allocated.
 func CompressZstd(dst []byte, src []byte) []byte {
+	metrics.BytesCompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(len(src)))
 	return zstdEncoder.EncodeAll(src, dst[:0])
 }
 
@@ -50,7 +53,9 @@ func DecompressZstd(dst []byte, src []byte) ([]byte, error) {
 			log.Errorf("Failed to return zstd decoder to pool: %s", err)
 		}
 	}()
-	return dec.DecodeAll(src, dst[:0])
+	buf, err := dec.DecodeAll(src, dst[:0])
+	metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(len(buf)))
+	return buf, err
 }
 
 type zstdDecompressor struct {
@@ -81,7 +86,8 @@ func NewZstdDecompressor(writer io.Writer) (io.WriteCloser, error) {
 			}
 		}()
 		defer pr.Close()
-		_, err := decoder.WriteTo(writer)
+		n, err := decoder.WriteTo(writer)
+		metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
 		d.done <- err
 		close(d.done)
 	}()
@@ -163,8 +169,9 @@ func NewZstdDecompressingReader(reader io.Reader) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	go func() {
 		// Write decoded bytes to pw and pipe to pr
-		_, err = decoder.WriteTo(pw)
+		n, err := decoder.WriteTo(pw)
 		pw.CloseWithError(err)
+		metrics.BytesDecompressed.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Add(float64(n))
 
 		if err := zstdDecoderPool.Put(decoder); err != nil {
 			log.Errorf("Failed to return zstd decoder to pool: %s", err.Error())
