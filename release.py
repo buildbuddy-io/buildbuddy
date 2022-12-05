@@ -80,14 +80,12 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     run_or_die(push_tag_cmd)
 
 def push_image(target, version_tag, image_tag):
-    # Note:
-    # The flag "--define=version=..." sets the Docker image tag.
-    # The flag "--//server/version:version_tag" sets the embedded
-    # git version tag which is printed on server startup.
+    # Note: The flag "--//server/version:version_tag" sets the embedded git
+    # version tag which is printed on server startup.
     command = (
         'bazel run -c opt --stamp '+
         '--define=release=true '+
-        '--define=version={image_tag} '+
+        '--//deployment:image_tag={image_tag} '+
         '--//server/version:version_tag={version_tag} '+
         '{target}'
     ).format(image_tag=image_tag, version_tag=version_tag, target=target)

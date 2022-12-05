@@ -16,11 +16,9 @@ container_push(
     name = "nonroot_user_push",
     format = "Docker",
     image = "//dockerfiles/test_images:nonroot_user_container_image",
-
-    # Any of these components may have variables. They are set by passing
-    # --define version=1.2.3 as arguments to the bazel build command.
     registry = "gcr.io",
     repository = "flame-build/test-nonroot-user",
-    tag = "$(version)",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
