@@ -1028,15 +1028,15 @@ func casRevert(cas *rfpb.CASRequest) *rfpb.CASRequest {
 //
 // Splits happen in the following way:
 //
-// 1) The range to be split is locked for splitting. This prevents all
-//   further reads and writes.
-// 2) A new range is brought up on the same nodes as the range to be split.
-// 3) A split point is determined, and data is copied from the range to be split
-//   to the newly created range.
-// 4) The newly created range is activated (locally).
-// 5) The metarange is updated with the new range info, and the split range's
-//   new endpoints.
-// 6) The split range is unlocked.
+//  1. The range to be split is locked for splitting. This prevents all
+//     further reads and writes.
+//  2. A new range is brought up on the same nodes as the range to be split.
+//  3. A split point is determined, and data is copied from the range to be split
+//     to the newly created range.
+//  4. The newly created range is activated (locally).
+//  5. The metarange is updated with the new range info, and the split range's
+//     new endpoints.
+//  6. The split range is unlocked.
 func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest) (*rfpb.SplitClusterResponse, error) {
 	if !*enableSplittingReplicas {
 		return nil, status.FailedPreconditionError("Splitting not enabled")
@@ -1316,9 +1316,9 @@ func (s *Store) getConfigChangeID(ctx context.Context, clusterID uint64) (uint64
 
 // AddClusterNode adds a new node to the specified cluster if pre-reqs are met.
 // Pre-reqs are:
-//  * The request must be valid and contain all information
-//  * This node must be a member of the cluster that is being added to
-//  * The provided range descriptor must be up to date
+//   - The request must be valid and contain all information
+//   - This node must be a member of the cluster that is being added to
+//   - The provided range descriptor must be up to date
 func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequest) (*rfpb.AddClusterNodeResponse, error) {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
@@ -1408,9 +1408,9 @@ func (s *Store) AddClusterNode(ctx context.Context, req *rfpb.AddClusterNodeRequ
 
 // RemoveClusterNode removes a new node from the specified cluster if pre-reqs are
 // met. Pre-reqs are:
-//  * The request must be valid and contain all information
-//  * This node must be a member of the cluster that is being removed from
-//  * The provided range descriptor must be up to date
+//   - The request must be valid and contain all information
+//   - This node must be a member of the cluster that is being removed from
+//   - The provided range descriptor must be up to date
 func (s *Store) RemoveClusterNode(ctx context.Context, req *rfpb.RemoveClusterNodeRequest) (*rfpb.RemoveClusterNodeResponse, error) {
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()

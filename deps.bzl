@@ -1,5 +1,5 @@
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@bazel_gazelle//:deps.bzl", "go_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 load("@io_bazel_rules_go//extras:embed_data_deps.bzl", "go_embed_data_dependencies")
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_buildbuddy_dependencies
@@ -5531,60 +5531,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=",
         version = "v3.0.1",
     )
-    http_file(
-        name = "io_bazel_bazel-3.7-darwin-x86_64",
-        sha256 = "80c82e93a12ba30021692b11c78007807e82383a673be1602573b944beb359ab",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/3.7.2/bazel-3.7.2-darwin-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-3.7-linux-x86_64",
-        sha256 = "70dc0bee198a4c3d332925a32d464d9036a831977501f66d4996854ad4e4fc0d",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/3.7.2/bazel-3.7.2-linux-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-4.1-darwin-x86_64",
-        sha256 = "2eecc3abb0ff653ed0bffdb9fbfda7b08548c2868f13da4a995f01528db200a9",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/4.1.0/bazel-4.1.0-darwin-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-4.1-linux-x86_64",
-        sha256 = "0eb2e378d2782e7810753e2162245ad1179c1bb12f848c692b4a595b4edf779b",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/4.1.0/bazel-4.1.0-linux-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-5.3.0-darwin-x86_64",
-        sha256 = "483ed97c2f3c31c5b1c800f0e9dd8519a466c7afb847c56aef52dfaaf31d5fbc",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-darwin-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazel-5.3.0-linux-x86_64",
-        sha256 = "3d144b890b85d95fb13df941bfd010fc3628e9afaa4c85e7d1a002e4fd02b249",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-linux-x86_64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazelisk-1.10.1-darwin-amd64",
-        sha256 = "e485bbf84532d02a60b0eb23c702610b5408df3a199087a4f2b5e0995bbf2d5a",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-amd64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazelisk-1.10.1-darwin-arm64",
-        sha256 = "c22d48601466d9d3b043ccd74051f2f4230f9b9f4509f097017c97303aa88d13",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-arm64"],
-        executable = True,
-    )
-    http_file(
-        name = "io_bazel_bazelisk-1.10.1-linux-amd64",
-        sha256 = "4cb534c52cdd47a6223d4596d530e7c9c785438ab3b0a49ff347e991c210b2cd",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-linux-amd64"],
-        executable = True,
-    )
 
     go_repository(
         name = "io_etcd_go_bbolt",
@@ -6069,4 +6015,58 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "gotest.tools/v3",
         sum = "h1:4AuOwCGf4lLR9u3YOe2awrHygurzhO/HeQ6laiA6Sx0=",
         version = "v3.0.3",
+    )
+    http_file(
+        name = "io_bazel_bazel-3.7-darwin-x86_64",
+        sha256 = "80c82e93a12ba30021692b11c78007807e82383a673be1602573b944beb359ab",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/3.7.2/bazel-3.7.2-darwin-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-3.7-linux-x86_64",
+        sha256 = "70dc0bee198a4c3d332925a32d464d9036a831977501f66d4996854ad4e4fc0d",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/3.7.2/bazel-3.7.2-linux-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-4.1-darwin-x86_64",
+        sha256 = "2eecc3abb0ff653ed0bffdb9fbfda7b08548c2868f13da4a995f01528db200a9",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/4.1.0/bazel-4.1.0-darwin-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-4.1-linux-x86_64",
+        sha256 = "0eb2e378d2782e7810753e2162245ad1179c1bb12f848c692b4a595b4edf779b",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/4.1.0/bazel-4.1.0-linux-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-5.3.0-darwin-x86_64",
+        sha256 = "483ed97c2f3c31c5b1c800f0e9dd8519a466c7afb847c56aef52dfaaf31d5fbc",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-darwin-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazel-5.3.0-linux-x86_64",
+        sha256 = "3d144b890b85d95fb13df941bfd010fc3628e9afaa4c85e7d1a002e4fd02b249",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-linux-x86_64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazelisk-1.10.1-darwin-amd64",
+        sha256 = "e485bbf84532d02a60b0eb23c702610b5408df3a199087a4f2b5e0995bbf2d5a",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-amd64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazelisk-1.10.1-darwin-arm64",
+        sha256 = "c22d48601466d9d3b043ccd74051f2f4230f9b9f4509f097017c97303aa88d13",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-darwin-arm64"],
+        executable = True,
+    )
+    http_file(
+        name = "io_bazel_bazelisk-1.10.1-linux-amd64",
+        sha256 = "4cb534c52cdd47a6223d4596d530e7c9c785438ab3b0a49ff347e991c210b2cd",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-linux-amd64"],
+        executable = True,
     )
