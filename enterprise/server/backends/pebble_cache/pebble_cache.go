@@ -54,21 +54,22 @@ var (
 	partitionMappingsFlag      = flagutil.New("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
 	// TODO(tylerw): remove most of these flags post-migration.
-	migrateFromDiskDir        = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
-	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
-	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
-	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
-	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
-	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
-	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
-	atimeWriteBatchSizeFlag   = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
-	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
-	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
-	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
-	isolateByGroupIDsFlag     = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys for AC records will include groupIDs")
-	enableCompressionFlag     = flag.Bool("cache.pebble.enable_zstd_compression", false, "If set, zstd compressed files can be saved to the cache. Otherwise only decompressed bytes should be stored.")
-	compressWritesFlag        = flag.Bool("cache.pebble.compress_writes", false, "If set, data should be compressed before written to disk")
+	migrateFromDiskDir              = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
+	forceAllowMigration             = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
+	clearCacheBeforeMigration       = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
+	scanForOrphanedFiles            = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
+	orphanDeleteDryRun              = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
+	dirDeletionDelay                = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
+	atimeUpdateThresholdFlag        = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
+	atimeWriteBatchSizeFlag         = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
+	atimeBufferSizeFlag             = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	minEvictionAgeFlag              = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
+	forceCompaction                 = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
+	forceCalculateMetadata          = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
+	isolateByGroupIDsFlag           = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys for AC records will include groupIDs")
+	enableCompressionFlag           = flag.Bool("cache.pebble.enable_zstd_compression", false, "If set, zstd compressed files can be saved to the cache. Otherwise only decompressed bytes should be stored.")
+	compressWritesFlag              = flag.Bool("cache.pebble.compress_writes", false, "If set, data should be compressed before written to disk")
+	minCompressionFileSizeBytesFlag = flag.Int64("cache.pebble.min_compression_file_size_bytes", DefaultMaxInlineFileSizeBytes, "If compression is on, files larger than this will be compressed before written to disk.")
 
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
@@ -136,9 +137,10 @@ type Options struct {
 	EnableZstdCompression bool
 	CompressWrites        bool
 
-	MaxSizeBytes           int64
-	BlockCacheSizeBytes    int64
-	MaxInlineFileSizeBytes int64
+	MaxSizeBytes                int64
+	BlockCacheSizeBytes         int64
+	MaxInlineFileSizeBytes      int64
+	MinCompressionFileSizeBytes int64
 
 	AtimeUpdateThreshold *time.Duration
 	AtimeWriteBatchSize  int
@@ -163,9 +165,10 @@ type PebbleCache struct {
 	partitions        []disk.Partition
 	partitionMappings []disk.PartitionMapping
 
-	maxSizeBytes           int64
-	blockCacheSizeBytes    int64
-	maxInlineFileSizeBytes int64
+	maxSizeBytes                int64
+	blockCacheSizeBytes         int64
+	maxInlineFileSizeBytes      int64
+	minCompressionFileSizeBytes int64
 
 	atimeUpdateThreshold time.Duration
 	atimeWriteBatchSize  int
@@ -228,19 +231,20 @@ func Register(env environment.Env) error {
 		}
 	}
 	opts := &Options{
-		RootDirectory:          *rootDirectoryFlag,
-		Partitions:             *partitionsFlag,
-		PartitionMappings:      *partitionMappingsFlag,
-		IsolateByGroupIDs:      *isolateByGroupIDsFlag,
-		EnableZstdCompression:  *enableCompressionFlag,
-		CompressWrites:         *compressWritesFlag,
-		BlockCacheSizeBytes:    *blockCacheSizeBytesFlag,
-		MaxSizeBytes:           cache_config.MaxSizeBytes(),
-		MaxInlineFileSizeBytes: *maxInlineFileSizeBytesFlag,
-		AtimeUpdateThreshold:   atimeUpdateThresholdFlag,
-		AtimeWriteBatchSize:    *atimeWriteBatchSizeFlag,
-		AtimeBufferSize:        atimeBufferSizeFlag,
-		MinEvictionAge:         minEvictionAgeFlag,
+		RootDirectory:               *rootDirectoryFlag,
+		Partitions:                  *partitionsFlag,
+		PartitionMappings:           *partitionMappingsFlag,
+		IsolateByGroupIDs:           *isolateByGroupIDsFlag,
+		EnableZstdCompression:       *enableCompressionFlag,
+		CompressWrites:              *compressWritesFlag,
+		BlockCacheSizeBytes:         *blockCacheSizeBytesFlag,
+		MaxSizeBytes:                cache_config.MaxSizeBytes(),
+		MaxInlineFileSizeBytes:      *maxInlineFileSizeBytesFlag,
+		MinCompressionFileSizeBytes: *minCompressionFileSizeBytesFlag,
+		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
+		AtimeWriteBatchSize:         *atimeWriteBatchSizeFlag,
+		AtimeBufferSize:             atimeBufferSizeFlag,
+		MinEvictionAge:              minEvictionAgeFlag,
 	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
@@ -308,6 +312,9 @@ func SetOptionDefaults(opts *Options) {
 	if opts.MaxInlineFileSizeBytes == 0 {
 		opts.MaxInlineFileSizeBytes = DefaultMaxInlineFileSizeBytes
 	}
+	if opts.MinCompressionFileSizeBytes == 0 {
+		opts.MinCompressionFileSizeBytes = DefaultMaxInlineFileSizeBytes
+	}
 	if opts.AtimeUpdateThreshold == nil {
 		opts.AtimeUpdateThreshold = &DefaultAtimeUpdateThreshold
 	}
@@ -367,32 +374,33 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	pc := &PebbleCache{
-		rootDirectory:          opts.RootDirectory,
-		partitions:             opts.Partitions,
-		partitionMappings:      opts.PartitionMappings,
-		maxSizeBytes:           opts.MaxSizeBytes,
-		blockCacheSizeBytes:    opts.BlockCacheSizeBytes,
-		maxInlineFileSizeBytes: opts.MaxInlineFileSizeBytes,
-		atimeUpdateThreshold:   *opts.AtimeUpdateThreshold,
-		atimeWriteBatchSize:    opts.AtimeWriteBatchSize,
-		atimeBufferSize:        *opts.AtimeBufferSize,
-		minEvictionAge:         *opts.MinEvictionAge,
-		env:                    env,
-		db:                     db,
-		leaser:                 pebbleutil.NewDBLeaser(db),
-		brokenFilesDone:        make(chan struct{}),
-		orphanedFilesDone:      make(chan struct{}),
-		eg:                     &errgroup.Group{},
-		egSizeUpdates:          &errgroup.Group{},
-		statusMu:               &sync.Mutex{},
-		edits:                  make(chan *sizeUpdate, 1000),
-		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
-		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
-		fileStorer:             filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
-		enableZstdCompression:  opts.EnableZstdCompression,
-		compressWrites:         opts.CompressWrites,
-		isolateByGroupIDs:      opts.IsolateByGroupIDs,
-		bufferPool:             bytebufferpool.New(CompressorBufSizeBytes),
+		rootDirectory:               opts.RootDirectory,
+		partitions:                  opts.Partitions,
+		partitionMappings:           opts.PartitionMappings,
+		maxSizeBytes:                opts.MaxSizeBytes,
+		blockCacheSizeBytes:         opts.BlockCacheSizeBytes,
+		maxInlineFileSizeBytes:      opts.MaxInlineFileSizeBytes,
+		minCompressionFileSizeBytes: opts.MinCompressionFileSizeBytes,
+		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
+		atimeWriteBatchSize:         opts.AtimeWriteBatchSize,
+		atimeBufferSize:             *opts.AtimeBufferSize,
+		minEvictionAge:              *opts.MinEvictionAge,
+		env:                         env,
+		db:                          db,
+		leaser:                      pebbleutil.NewDBLeaser(db),
+		brokenFilesDone:             make(chan struct{}),
+		orphanedFilesDone:           make(chan struct{}),
+		eg:                          &errgroup.Group{},
+		egSizeUpdates:               &errgroup.Group{},
+		statusMu:                    &sync.Mutex{},
+		edits:                       make(chan *sizeUpdate, 1000),
+		accesses:                    make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
+		evictors:                    make([]*partitionEvictor, len(opts.Partitions)),
+		fileStorer:                  filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
+		enableZstdCompression:       opts.EnableZstdCompression,
+		compressWrites:              opts.CompressWrites,
+		isolateByGroupIDs:           opts.IsolateByGroupIDs,
+		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
 	}
 
 	peMu := sync.Mutex{}
@@ -1195,6 +1203,18 @@ type zstdCompressor struct {
 	*ioutil.CustomCommitWriteCloser
 	compressBuf []byte
 	bufferPool  *bytebufferpool.Pool
+
+	numDecompressedBytes int
+	numCompressedBytes   int
+}
+
+func NewZstdCompressor(wc *ioutil.CustomCommitWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
+	compressBuf := bp.Get(digestSize)
+	return &zstdCompressor{
+		CustomCommitWriteCloser: wc,
+		compressBuf:             compressBuf,
+		bufferPool:              bp,
+	}
 }
 
 func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
@@ -1204,10 +1224,8 @@ func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
 		return 0, err
 	}
 
-	metrics.CompressionRatio.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(compressedBytesWritten) / float64(len(decompressedBytes)))
-	if compressedBytesWritten > len(decompressedBytes) {
-		metrics.BadCompressionBufferSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(len(decompressedBytes)))
-	}
+	z.numDecompressedBytes += len(decompressedBytes)
+	z.numCompressedBytes += compressedBytesWritten
 
 	// Return the size of the original buffer even though a different compressed buffer size may have been written,
 	// or clients will return a short write error
@@ -1215,6 +1233,13 @@ func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
 }
 
 func (z *zstdCompressor) Close() error {
+	metrics.CompressionRatio.
+		With(prometheus.Labels{metrics.CompressionType: "zstd"}).
+		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
+	if z.numCompressedBytes > z.numDecompressedBytes {
+		metrics.BadCompressionStreamSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(z.numDecompressedBytes))
+	}
+
 	z.bufferPool.Put(z.compressBuf)
 	return z.CustomCommitWriteCloser.Close()
 }
@@ -1230,7 +1255,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	// Only compress data over a given size for more optimal compression ratios
 	shouldCompress := p.compressWrites && p.enableZstdCompression &&
 		r.GetCompressor() == repb.Compressor_IDENTITY &&
-		r.GetDigest().GetSizeBytes() >= p.maxInlineFileSizeBytes
+		r.GetDigest().GetSizeBytes() >= p.minCompressionFileSizeBytes
 	if shouldCompress {
 		r = &resource.ResourceName{
 			Digest:       r.GetDigest(),
@@ -1302,12 +1327,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	}
 
 	if shouldCompress {
-		compressBuf := p.bufferPool.Get(r.GetDigest().GetSizeBytes())
-		return &zstdCompressor{
-			CustomCommitWriteCloser: wc,
-			compressBuf:             compressBuf,
-			bufferPool:              p.bufferPool,
-		}, nil
+		return NewZstdCompressor(wc, p.bufferPool, r.GetDigest().GetSizeBytes()), nil
 	}
 
 	return wc, nil

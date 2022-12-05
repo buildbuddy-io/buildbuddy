@@ -33,19 +33,20 @@ type DiskCacheConfig struct {
 }
 
 type PebbleCacheConfig struct {
-	RootDirectory          string                  `yaml:"root_directory"`
-	Partitions             []disk.Partition        `yaml:"partitions"`
-	PartitionMappings      []disk.PartitionMapping `yaml:"partition_mappings"`
-	MaxSizeBytes           int64                   `yaml:"max_size_bytes"`
-	BlockCacheSizeBytes    int64                   `yaml:"block_cache_size_bytes"`
-	MaxInlineFileSizeBytes int64                   `yaml:"max_inline_file_size_bytes"`
-	AtimeUpdateThreshold   *time.Duration          `yaml:"atime_update_threshold"`
-	AtimeWriteBatchSize    int                     `yaml:"atime_write_batch_size"`
-	AtimeBufferSize        *int                    `yaml:"atime_buffer_size"`
-	MinEvictionAge         *time.Duration          `yaml:"min_eviction_age"`
-	IsolateByGroupIDs      bool                    `yaml:"isolate_by_group_ids"`
-	EnableZstdCompression  bool                    `yaml:"enable_zstd_compression"`
-	CompressWrites         bool                    `yaml:"compress_writes"`
+	RootDirectory               string                  `yaml:"root_directory"`
+	Partitions                  []disk.Partition        `yaml:"partitions"`
+	PartitionMappings           []disk.PartitionMapping `yaml:"partition_mappings"`
+	MaxSizeBytes                int64                   `yaml:"max_size_bytes"`
+	BlockCacheSizeBytes         int64                   `yaml:"block_cache_size_bytes"`
+	MaxInlineFileSizeBytes      int64                   `yaml:"max_inline_file_size_bytes"`
+	MinCompressionFileSizeBytes int64                   `yaml:"min_compression_file_size_bytes"`
+	AtimeUpdateThreshold        *time.Duration          `yaml:"atime_update_threshold"`
+	AtimeWriteBatchSize         int                     `yaml:"atime_write_batch_size"`
+	AtimeBufferSize             *int                    `yaml:"atime_buffer_size"`
+	MinEvictionAge              *time.Duration          `yaml:"min_eviction_age"`
+	IsolateByGroupIDs           bool                    `yaml:"isolate_by_group_ids"`
+	EnableZstdCompression       bool                    `yaml:"enable_zstd_compression"`
+	CompressWrites              bool                    `yaml:"compress_writes"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {

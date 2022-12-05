@@ -1439,12 +1439,12 @@ var (
 		CompressionType,
 	})
 
-	BadCompressionBufferSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	BadCompressionStreamSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "compressor",
-		Name:      "bad_compression_buffer_size",
+		Name:      "bad_compression_stream_size",
 		Buckets:   exponentialBucketRange(1, 1_000_000_000, 10),
-		Help:      "The size of buffers that increased in size when compressed",
+		Help:      "The size of data streams that increased in size when compressed",
 	}, []string{
 		CompressionType,
 	})
@@ -1462,9 +1462,9 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "pebble",
 		Name:      "compression_ratio",
-		Buckets:   bucketsWithInterval(0, 2, 0.05),
-		Help: "The data compression ratio (compressed / decompressed bytes) per chunk of compressed data" +
-			" (as opposed to the whole stream)",
+		Buckets:   prometheus.LinearBuckets(0, .05, 40),
+		Help: "The aggregate compression ratio (compressed / decompressed bytes) for a stream of data " +
+			"(as opposed to being calculated on a per-chunk basis for data in the stream)",
 	}, []string{
 		CompressionType,
 	})
@@ -1570,17 +1570,4 @@ func exponentialBucketRange(min, max, factor float64) []float64 {
 
 func durationUsecBuckets(min, max time.Duration, factor float64) []float64 {
 	return exponentialBucketRange(float64(min.Microseconds()), float64(max.Microseconds()), factor)
-}
-
-// bucketsWithInterval returns prometheus.Buckets at the given interval, specified in
-// terms of a min and max value, rather than needing to explicitly calculate the
-// number of buckets.
-func bucketsWithInterval(min, max, interval float64) []float64 {
-	buckets := []float64{}
-	current := min
-	for current < max {
-		buckets = append(buckets, current)
-		current += interval
-	}
-	return buckets
 }
