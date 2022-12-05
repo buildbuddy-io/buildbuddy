@@ -16,13 +16,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 var (
-	readFromOLAPDBEnabled = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
+	readFromOLAPDBEnabled  = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
+	executionTrendsEnabled = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
 )
 
 type InvocationStatService struct {
@@ -61,7 +63,7 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 	}
 }
 
-func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) string {
+func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) string {
 	q := ""
 	if i.isOLAPDBEnabled() {
 		q = fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
@@ -94,18 +96,8 @@ func (i *InvocationStatService) GetTrendBasicQuery(timezoneOffsetMinutes int32) 
 	return q
 }
 
-func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
+func addWhereClauses(q *query_builder.Query, req *inpb.GetTrendRequest) error {
 	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
-		return nil, err
-	}
-	if blocklist.IsBlockedForStatsQuery(groupID) {
-		return nil, status.ResourceExhaustedErrorf("Too many rows.")
-	}
-
-	reqCtx := req.GetRequestContext()
-
-	q := query_builder.NewQuery(i.GetTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
 
 	if user := req.GetQuery().GetUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
@@ -148,7 +140,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		lookbackWindowDays := 7 * 24 * time.Hour
 		if w := req.GetLookbackWindowDays(); w != 0 {
 			if w < 1 || w > 365 {
-				return nil, status.InvalidArgumentErrorf("lookback_window_days must be between 0 and 366")
+				return status.InvalidArgumentErrorf("lookback_window_days must be between 0 and 366")
 			}
 			lookbackWindowDays = time.Duration(w*24) * time.Hour
 		}
@@ -167,6 +159,16 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.SetGroupBy("name")
+	return nil
+}
+
+func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *inpb.GetTrendRequest) ([]*inpb.TrendStat, error) {
+	reqCtx := req.GetRequestContext()
+
+	q := query_builder.NewQuery(i.getTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
+	if err := addWhereClauses(q, req); err != nil {
+		return nil, err
+	}
 
 	qStr, qArgs := q.Build()
 	var rows *sql.Rows
@@ -181,8 +183,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 	}
 	defer rows.Close()
 
-	rsp := &inpb.GetTrendResponse{}
-	rsp.TrendStat = make([]*inpb.TrendStat, 0)
+	res := make([]*inpb.TrendStat, 0)
 
 	for rows.Next() {
 		stat := &inpb.TrendStat{}
@@ -195,13 +196,114 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 				return nil, err
 			}
 		}
-		rsp.TrendStat = append(rsp.TrendStat, stat)
+		res = append(res, stat)
 	}
-	sort.Slice(rsp.TrendStat, func(i, j int) bool {
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scan rows: %s", err)
+	}
+	sort.Slice(res, func(i, j int) bool {
 		// Name is a date of the form "YYYY-MM-DD" so lexicographic
 		// sorting is correct.
-		return rsp.TrendStat[i].Name < rsp.TrendStat[j].Name
+		return res[i].Name < res[j].Name
 	})
+	return res, nil
+}
+
+func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int32) string {
+	return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
+	quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles
+	FROM Executions
+	`
+}
+
+// The innerQuery is expected to return rows with the following columns:
+//
+//	(1) name; and
+//	(2) queue_duration_usec_quantiles, an array of p50, p75, p90, p95, p99
+//	queue duration.
+//
+// The returned "flattened" query will return row with the following column
+//
+//	name | p50 | ... | p99
+func getQueryWithFlattenedArray(innerQuery string) string {
+	return `SELECT name, 
+	arrayElement(queue_duration_usec_quantiles, 1) as queue_duration_usec_p50,
+	arrayElement(queue_duration_usec_quantiles, 2) as queue_duration_usec_p75,
+	arrayElement(queue_duration_usec_quantiles, 3) as queue_duration_usec_p90,
+	arrayElement(queue_duration_usec_quantiles, 4) as queue_duration_usec_p95,
+	arrayElement(queue_duration_usec_quantiles, 5) as queue_duration_usec_p99
+	FROM (` + innerQuery + ")"
+}
+
+func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *inpb.GetTrendRequest) ([]*inpb.ExecutionStat, error) {
+	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled {
+		return nil, nil
+	}
+	reqCtx := req.GetRequestContext()
+
+	q := query_builder.NewQuery(i.getExecutionTrendQuery(reqCtx.GetTimezoneOffsetMinutes()))
+	if err := addWhereClauses(q, req); err != nil {
+		return nil, err
+	}
+
+	qStr, qArgs := q.Build()
+	qStr = getQueryWithFlattenedArray(qStr)
+	rows, err := i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make([]*inpb.ExecutionStat, 0)
+
+	for rows.Next() {
+		stat := &inpb.ExecutionStat{}
+		if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+			return nil, err
+		}
+		res = append(res, stat)
+	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scan rows: %s", err)
+	}
+	sort.Slice(res, func(i, j int) bool {
+		// Name is a date of the form "YYYY-MM-DD" so lexicographic
+		// sorting is correct.
+		return res[i].Name < res[j].Name
+	})
+	return res, nil
+}
+
+func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
+		return nil, err
+	}
+	if blocklist.IsBlockedForStatsQuery(groupID) {
+		return nil, status.ResourceExhaustedErrorf("Too many rows.")
+	}
+
+	rsp := &inpb.GetTrendResponse{}
+
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		var err error
+		if rsp.TrendStat, err = i.getInvocationTrend(ctx, req); err != nil {
+			return err
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		var err error
+		if rsp.ExecutionStat, err = i.getExecutionTrend(ctx, req); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
 	return rsp, nil
 }
 
