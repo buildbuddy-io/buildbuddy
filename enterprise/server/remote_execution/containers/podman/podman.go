@@ -293,8 +293,8 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		args = append(args, "--network="+networkMode)
 	}
 	// "--dns" and "--dns=search" flags are invalid when --network is set to none
-	// or "containder:id"
-	if networkMode != "none" && strings.HasPrefix(networkMode, "container") {
+	// or "container:id"
+	if networkMode != "none" && !strings.HasPrefix(networkMode, "container") {
 		args = append(args, "--dns=8.8.8.8")
 		args = append(args, "--dns-search=.")
 	}
