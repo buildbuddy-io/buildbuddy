@@ -293,7 +293,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	md := &rfpb.FileMetadata{
 		FileRecord:      fr,
 		StorageMetadata: writeCloserMetadata.Metadata(),
-		SizeBytes:       int64(bytesWritten),
+		StoredSizeBytes: int64(bytesWritten),
 		LastModifyUsec:  now.UnixMicro(),
 		LastAccessUsec:  now.UnixMicro(),
 	}

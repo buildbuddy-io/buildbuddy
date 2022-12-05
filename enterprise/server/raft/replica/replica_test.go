@@ -110,7 +110,7 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: writeCloserMetadata.Metadata(),
-			SizeBytes:       bytesWritten,
+			StoredSizeBytes: bytesWritten,
 			LastModifyUsec:  now.UnixMicro(),
 			LastAccessUsec:  now.UnixMicro(),
 		}
