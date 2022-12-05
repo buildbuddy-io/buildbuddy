@@ -266,6 +266,7 @@ type OLAPDBHandle interface {
 	DB(ctx context.Context) *gorm.DB
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error
+	FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*repb.StoredExecution) error
 }
 
 type InvocationDB interface {
@@ -920,4 +921,15 @@ type SecretService interface {
 
 	// Internal use only -- fetches decoded secrets for use in running a command.
 	GetSecretEnvVars(ctx context.Context, groupID string) ([]*repb.Command_EnvironmentVariable, error)
+}
+
+// ExecutionCollector keeps track of a list of Executions for each invocation ID.
+type ExecutionCollector interface {
+	Append(ctx context.Context, iid string, execution *repb.StoredExecution) error
+	// ListRange fetches a range of executions for the given invocation ID. The
+	// range start and stop indexes are both inclusive. If the stop index is out
+	// of range, then the returned slice will contain as many executions are
+	// available starting from the start index.
+	ListRange(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
+	Delete(ctx context.Context, iid string) error
 }

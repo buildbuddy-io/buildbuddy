@@ -21,6 +21,7 @@ go_library(
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/backends/redis_cache",
         "//enterprise/server/backends/redis_client",
+        "//enterprise/server/backends/redis_execution_collector",
         "//enterprise/server/backends/redis_kvstore",
         "//enterprise/server/backends/redis_metrics_collector",
         "//enterprise/server/backends/s3_cache",

@@ -18,8 +18,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	gormclickhouse "gorm.io/driver/clickhouse"
 	"gorm.io/gorm"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gormclickhouse "gorm.io/driver/clickhouse"
 )
 
 var (
@@ -306,6 +308,49 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	}
 }
 
+func buildExecution(in *repb.StoredExecution, inv *tables.Invocation) *Execution {
+	return &Execution{
+		GroupID:                            in.GetGroupId(),
+		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
+		ExecutionID:                        in.GetExecutionId(),
+		InvocationUUID:                     in.GetInvocationUuid(),
+		CreatedAtUsec:                      in.GetCreatedAtUsec(),
+		UserID:                             in.GetUserId(),
+		Worker:                             in.GetWorker(),
+		Stage:                              in.GetStage(),
+		FileDownloadCount:                  in.GetFileDownloadCount(),
+		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),
+		FileDownloadDurationUsec:           in.GetFileDownloadDurationUsec(),
+		FileUploadCount:                    in.GetFileUploadCount(),
+		FileUploadSizeBytes:                in.GetFileUploadSizeBytes(),
+		FileUploadDurationUsec:             in.GetFileUploadDurationUsec(),
+		PeakMemoryBytes:                    in.GetPeakMemoryBytes(),
+		CPUNanos:                           in.GetCpuNanos(),
+		EstimatedMemoryBytes:               in.GetEstimatedMemoryBytes(),
+		EstimatedMilliCPU:                  in.GetEstimatedMilliCpu(),
+		QueuedTimestampUsec:                in.GetQueuedTimestampUsec(),
+		WorkerStartTimestampUsec:           in.GetWorkerStartTimestampUsec(),
+		WorkerCompletedTimestampUsec:       in.GetWorkerCompletedTimestampUsec(),
+		InputFetchStartTimestampUsec:       in.GetInputFetchStartTimestampUsec(),
+		InputFetchCompletedTimestampUsec:   in.GetInputFetchCompletedTimestampUsec(),
+		ExecutionStartTimestampUsec:        in.GetExecutionStartTimestampUsec(),
+		ExecutionCompletedTimestampUsec:    in.GetExecutionCompletedTimestampUsec(),
+		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
+		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
+		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
+		User:                               inv.User,
+		Host:                               inv.Host,
+		Pattern:                            inv.Pattern,
+		Role:                               inv.Role,
+		BranchName:                         inv.BranchName,
+		CommitSHA:                          inv.CommitSHA,
+		RepoURL:                            inv.RepoURL,
+		Command:                            inv.Command,
+		Success:                            inv.Success,
+		InvocationStatus:                   inv.InvocationStatus,
+	}
+}
+
 func isTimeout(err error) bool {
 	if err == nil {
 		return false
@@ -313,16 +358,15 @@ func isTimeout(err error) bool {
 	return strings.Contains(err.Error(), "i/o timeout")
 }
 
-func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
-	inv := ToInvocationFromPrimaryDB(ti)
+func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}) error {
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
 	for retrier.Next() {
-		res := h.DB(ctx).Create(inv)
+		res := h.DB(ctx).Create(value)
 		lastError = res.Error
 		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) {
 			// Retry since it's an transient error.
-			log.CtxInfof(ctx, "attempt (n=%d) to write invocation to clickhouse failed: %s", retrier.AttemptNumber(), res.Error)
+			log.CtxWarningf(ctx, "attempt (n=%d) to clickhouse table %q failed: %s", retrier.AttemptNumber(), tableName, res.Error)
 			continue
 		}
 		break
@@ -332,11 +376,32 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 		statusLabel = "error"
 	}
 	metrics.ClickhouseInsertedCount.With(prometheus.Labels{
-		metrics.ClickhouseTableName:   inv.TableName(),
+		metrics.ClickhouseTableName:   tableName,
 		metrics.ClickhouseStatusLabel: statusLabel,
-	}).Inc()
+	}).Add(float64(numEntries))
 	if lastError != nil {
-		return status.UnavailableErrorf("clickhouse.FlushInvocationStats exceeded retries (n=%d) for invocation id %q, err: %s", retrier.AttemptNumber(), ti.InvocationID, lastError)
+		return status.UnavailableErrorf("insertWithRetrier exceeded retries (n=%d), err: %s", retrier.AttemptNumber(), lastError)
+	}
+	return lastError
+
+}
+
+func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
+	inv := ToInvocationFromPrimaryDB(ti)
+	if err := h.insertWithRetrier(ctx, inv.TableName(), 1, inv); err != nil {
+		return status.UnavailableErrorf("failed to insert invocation (invocation_id = %q), err: %s", ti.InvocationID, err)
+	}
+	return nil
+}
+
+func (h *DBHandle) FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*repb.StoredExecution) error {
+	entries := make([]*Execution, 0, len(executions))
+	for _, e := range executions {
+		entries = append(entries, buildExecution(e, ti))
+	}
+	num := len(entries)
+	if err := h.insertWithRetrier(ctx, (&Execution{}).TableName(), num, &entries); err != nil {
+		return status.UnavailableErrorf("failed to insert %d execution(s) for invocation (invocation_id = %q), err: %s", num, ti.InvocationID, err)
 	}
 	return nil
 }

@@ -100,6 +100,7 @@ type RealEnv struct {
 	olapDBHandle                     interfaces.OLAPDBHandle
 	kms                              interfaces.KMS
 	secretService                    interfaces.SecretService
+	executionCollector               interfaces.ExecutionCollector
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -562,4 +563,12 @@ func (r *RealEnv) GetSecretService() interfaces.SecretService {
 }
 func (r *RealEnv) SetSecretService(s interfaces.SecretService) {
 	r.secretService = s
+}
+
+func (r *RealEnv) GetExecutionCollector() interfaces.ExecutionCollector {
+	return r.executionCollector
+}
+
+func (r *RealEnv) SetExecutionCollector(c interfaces.ExecutionCollector) {
+	r.executionCollector = c
 }

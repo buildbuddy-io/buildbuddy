@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/metrics",
         "//server/tables",

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/go-redis/redis/v8"
@@ -51,6 +53,7 @@ const (
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 	enableActionMerging               = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
+	writeExecutionToRedisEnabled      = flag.Bool("remote_execution.enable_write_to_redis", false, "If enabled, complete executions will be written to Redis.")
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -278,13 +281,67 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		}
 	}
 
-	return s.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
+	dbErr := s.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("upsert_execution"), func(tx *db.DB) error {
 		var existing tables.Execution
 		if err := tx.Where("execution_id = ?", executionID).First(&existing).Error; err != nil {
 			return err
 		}
 		return tx.Model(&existing).Where("execution_id = ? AND stage != ?", executionID, repb.ExecutionStage_COMPLETED).Updates(execution).Error
 	})
+
+	if stage == repb.ExecutionStage_COMPLETED {
+		if err := s.recordExecution(ctx, executionID); err != nil {
+			log.CtxErrorf(ctx, "failed to record execution: %s", err)
+		}
+	}
+	return dbErr
+}
+
+func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string) error {
+	if s.env.GetExecutionCollector() == nil || !*writeExecutionToRedisEnabled {
+		return nil
+	}
+	var executionPrimaryDB tables.Execution
+	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
+		return status.InternalErrorf("failed to look up execution: %s", err)
+	}
+	links, err := s.getInvocationLinks(ctx, executionID)
+	if err != nil {
+		return status.InternalErrorf("failed to get invocations for execution: %s", err)
+	}
+
+	for _, link := range links {
+		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
+		if err := s.env.GetExecutionCollector().Append(ctx, link.InvocationID, executionProto); err != nil {
+			log.CtxErrorf(ctx, "failed to append execution %q to invocation %q", executionID, link.InvocationID)
+		}
+	}
+	return nil
+}
+
+func (s *ExecutionServer) getInvocationLinks(ctx context.Context, executionID string) ([]*tables.InvocationExecution, error) {
+	dbh := s.env.GetDBHandle()
+	q := query_builder.NewQuery(`
+		SELECT invocation_id, type FROM InvocationExecutions
+	`)
+	queryStr, args := q.AddWhereClause(`execution_id = ?`, executionID).Build()
+	query := dbh.DB(ctx).Raw(queryStr, args...)
+	res := []*tables.InvocationExecution{}
+	rows, err := query.Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		link := &tables.InvocationExecution{}
+		if err := dbh.DB(ctx).ScanRows(rows, link); err != nil {
+			return nil, err
+		}
+		res = append(res, link)
+	}
+
+	return res, nil
+
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does

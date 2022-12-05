@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
@@ -194,6 +195,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := redis_metrics_collector.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := redis_execution_collector.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := usage.RegisterTracker(realEnv); err != nil {

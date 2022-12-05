@@ -147,4 +147,6 @@ type Env interface {
 	SetKMS(k interfaces.KMS)
 	GetSecretService() interfaces.SecretService
 	SetSecretService(s interfaces.SecretService)
+	GetExecutionCollector() interfaces.ExecutionCollector
+	SetExecutionCollector(c interfaces.ExecutionCollector)
 }
