@@ -1444,7 +1444,7 @@ var (
 		Subsystem: "compressor",
 		Name:      "bad_compression_buffer_size",
 		Buckets:   exponentialBucketRange(1, 1_000_000_000, 10),
-		Help:      "The size of buffers that increased in size when decompressed",
+		Help:      "The size of buffers that increased in size when compressed",
 	}, []string{
 		CompressionType,
 	})

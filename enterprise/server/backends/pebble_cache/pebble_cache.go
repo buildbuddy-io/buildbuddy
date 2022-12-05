@@ -1197,21 +1197,21 @@ type zstdCompressor struct {
 	bufferPool  *bytebufferpool.Pool
 }
 
-func (z *zstdCompressor) Write(p []byte) (int, error) {
-	z.compressBuf = compression.CompressZstd(z.compressBuf, p)
-	n, err := z.CustomCommitWriteCloser.Write(z.compressBuf)
+func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
+	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
+	compressedBytesWritten, err := z.CustomCommitWriteCloser.Write(z.compressBuf)
 	if err != nil {
 		return 0, err
 	}
 
-	metrics.CompressionRatio.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(len(p)) / float64(n))
-	if n > len(p) {
-		metrics.BadCompressionBufferSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(len(p)))
+	metrics.CompressionRatio.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(compressedBytesWritten) / float64(len(decompressedBytes)))
+	if compressedBytesWritten > len(decompressedBytes) {
+		metrics.BadCompressionBufferSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(len(decompressedBytes)))
 	}
 
 	// Return the size of the original buffer even though a different compressed buffer size may have been written,
 	// or clients will return a short write error
-	return len(p), nil
+	return len(decompressedBytes), nil
 }
 
 func (z *zstdCompressor) Close() error {
