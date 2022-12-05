@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -51,6 +52,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testolapdb"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fileresolver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -129,6 +131,11 @@ func (r *Env) GetRemoteExecutionTarget() string {
 	return fmt.Sprintf("grpc://localhost:%d", server.port)
 }
 
+func (r *Env) GetBuildBuddyServerTarget() string {
+	server := r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))]
+	return fmt.Sprintf("grpc://localhost:%d", server.port)
+}
+
 func (r *Env) GetByteStreamClient() bspb.ByteStreamClient {
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].byteStreamClient
 }
@@ -139,6 +146,28 @@ func (r *Env) GetContentAddressableStorageClient() repb.ContentAddressableStorag
 
 func (r *Env) GetActionResultStorageClient() repb.ActionCacheClient {
 	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].acClient
+}
+
+func (r *Env) GetOLAPDBHandle() *testolapdb.Handle {
+	return r.buildBuddyServers[rand.Intn(len(r.buildBuddyServers))].olapDBHandle
+}
+
+func (r *Env) ShutdownBuildBuddyServers() {
+	log.Info("Waiting for buildbuddy servers to shutdown")
+	var wg sync.WaitGroup
+	for _, app := range r.buildBuddyServers {
+		app := app
+		app.env.GetHealthChecker().Shutdown()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Infof("Waiting for buildbuddy server with port %d to shut down.", app.port)
+			app.env.GetHealthChecker().WaitForGracefulShutdown()
+			log.Infof("Waiting for buildbuddy server with port %d to shut down.", app.port)
+		}()
+	}
+	wg.Wait()
+	log.Info("Buildbuddy servers are shut down")
 }
 
 type envLike struct {
@@ -186,7 +215,11 @@ func NewRBETestEnv(t *testing.T) *Env {
 
 	redisTarget := testredis.Start(t).Target
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
+
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
+	flags.Set(t, "app.enable_write_to_olap_db", true)
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "remote_execution.enable_write_to_redis", true)
 	// Create a user and group in the DB for use in tests (this will also create
 	// an API key for the group).
 	// TODO(http://go/b/949): Add a fake OIDC provider and then just have a real
@@ -295,6 +328,7 @@ type BuildBuddyServer struct {
 	buildBuddyServiceClient bbspb.BuildBuddyServiceClient
 	acClient                repb.ActionCacheClient
 	capabilitiesClient      repb.CapabilitiesClient
+	olapDBHandle            *testolapdb.Handle
 }
 
 func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBuddyServerOptions) *BuildBuddyServer {
@@ -310,6 +344,9 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	executionServer, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err, "could not set up ExecutionServer")
 	env.SetRemoteExecutionService(executionServer)
+
+	olapDBHandle := testolapdb.NewHandle()
+	env.SetOLAPDBHandle(olapDBHandle)
 	env.SetBuildEventHandler(build_event_handler.NewBuildEventHandler(env))
 
 	if opts.EnvModifier != nil {
@@ -328,6 +365,9 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		/*zstd=*/ true,
 	)
 
+	err = redis_execution_collector.Register(env)
+	require.NoError(t, err, "could not set up ExecutionCollector")
+
 	server := &BuildBuddyServer{
 		t:                       t,
 		env:                     env,
@@ -337,6 +377,7 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 		buildBuddyServiceServer: buildBuddyServiceServer,
 		buildEventServer:        buildEventServer,
 		capabilitiesServer:      capabilitiesServer,
+		olapDBHandle:            olapDBHandle,
 	}
 	server.start()
 

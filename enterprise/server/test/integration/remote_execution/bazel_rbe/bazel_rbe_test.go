@@ -38,6 +38,11 @@ func TestSimpleAction_Exit0(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Contains(t, res.Stdout, "Success\n")
 	assert.Equal(t, 1, tasksStarted(t))
+
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestSimpleAction_Exit1(t *testing.T) {
@@ -48,6 +53,10 @@ func TestSimpleAction_Exit1(t *testing.T) {
 
 	require.Error(t, res.Error)
 	assert.Equal(t, 1, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestSimpleAction_TerminateWithSIGKILL(t *testing.T) {
@@ -64,6 +73,10 @@ func TestSimpleAction_TerminateWithSIGKILL(t *testing.T) {
 	assert.Contains(t, res.Stderr, "Resource Exhausted")
 	assert.Contains(t, res.Stderr, "signal: killed")
 	assert.Equal(t, 1+bazelRemoteRetries, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1+bazelRemoteRetries, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestSimpleAction_TerminateWithSIGABRT(t *testing.T) {
@@ -78,6 +91,10 @@ func TestSimpleAction_TerminateWithSIGABRT(t *testing.T) {
 		t, res.Stderr, "Aborting test action",
 		"Error message logged before aborting should be visible in bazel stderr")
 	assert.Equal(t, 1+bazelRemoteRetries, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1+bazelRemoteRetries, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestPersistentUnavailableError_Retried(t *testing.T) {
@@ -98,6 +115,10 @@ func TestPersistentUnavailableError_Retried(t *testing.T) {
 	assert.Contains(t, res.Stderr, "Unavailable")
 	assert.Contains(t, res.Stderr, errMsg)
 	assert.Equal(t, 1+bazelRemoteRetries, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1+bazelRemoteRetries, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestTransientUnavailableError_Retried(t *testing.T) {
@@ -118,6 +139,10 @@ func TestTransientUnavailableError_Retried(t *testing.T) {
 	assert.NotContains(t, res.Stderr, errMsg)
 	// 1 failed attempt due to transient error + 1 successful attempt
 	assert.Equal(t, 2, tasksStarted(t), "unexpected number of retries")
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 2, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestTransientInternalError_Retried(t *testing.T) {
@@ -138,6 +163,10 @@ func TestTransientInternalError_Retried(t *testing.T) {
 	assert.NotContains(t, res.Stderr, errMsg)
 	// 1 failed attempt due to transient error + 1 successful attempt
 	assert.Equal(t, 2, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 2, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestTransientAbortedError_Retried(t *testing.T) {
@@ -158,6 +187,10 @@ func TestTransientAbortedError_Retried(t *testing.T) {
 	assert.NotContains(t, res.Stderr, errMsg)
 	// 1 failed attempt due to transient error + 1 successful attempt
 	assert.Equal(t, 2, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 2, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestDeadlineExceededError_NotRetried(t *testing.T) {
@@ -177,6 +210,10 @@ func TestDeadlineExceededError_NotRetried(t *testing.T) {
 	require.Error(t, res.Error)
 	assert.Contains(t, res.Stderr, "failed due to timeout")
 	assert.Equal(t, 1, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestUnauthenticatedError_RetriedOnce(t *testing.T) {
@@ -199,6 +236,10 @@ func TestUnauthenticatedError_RetriedOnce(t *testing.T) {
 	// refreshing stale auth credentials. See:
 	// https://cs.github.com/bazelbuild/bazel/blob/93677c68f0bc688dbfa75484688160cdbdae7328/src/main/java/com/google/devtools/build/lib/remote/GrpcRemoteExecutor.java#L138
 	assert.Equal(t, 2, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 2, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestTransientExecutorShutdown_Retried(t *testing.T) {
@@ -223,6 +264,10 @@ func TestTransientExecutorShutdown_Retried(t *testing.T) {
 	assert.NotContains(t, res.Stderr, "SIGKILL")
 	assert.Equal(t, 2, tasksStarted(t))
 	assert.Contains(t, res.Stderr, "THIS_MSG_SHOULD_APPEAR_IN_BAZEL_STDERR")
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 2, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 // Note: This test scenario should almost never happen -- it would require a
@@ -250,6 +295,10 @@ func TestPersistentExecutorShutdown_Retried(t *testing.T) {
 		"command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 	assert.Equal(t, (1 + bazelRemoteRetries), tasksStarted(t))
 	assert.Contains(t, res.Stderr, "THIS_MSG_SHOULD_APPEAR_IN_BAZEL_STDERR")
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1+bazelRemoteRetries, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestTransientCacheNotFoundError_Retried(t *testing.T) {
@@ -267,6 +316,10 @@ func TestTransientCacheNotFoundError_Retried(t *testing.T) {
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, 2, tasksStarted(t), "transient NotFound errors should be retried")
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 2, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestActionWithContainerImage_InvalidArgument(t *testing.T) {
@@ -282,6 +335,10 @@ func TestActionWithContainerImage_InvalidArgument(t *testing.T) {
 		t, res.Stderr,
 		"Invalid Argument: error creating runner for command: Container images are not supported by this executor.")
 	assert.Equal(t, 1, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func TestActionWithRunnerRecycling_InvalidArgument(t *testing.T) {
@@ -299,6 +356,10 @@ func TestActionWithRunnerRecycling_InvalidArgument(t *testing.T) {
 		t, res.Stderr,
 		"Invalid Argument: error creating runner for command: runner recycling is not supported for anonymous builds")
 	assert.Equal(t, 1, tasksStarted(t))
+	// We need to wait the server side to finish process build events.
+	env.ShutdownBuildBuddyServers()
+	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
+	assert.Equal(t, 1, GetNumExecutionsFlushedToOLAPDB(t, env))
 }
 
 func setup(t *testing.T) *rbetest.Env {
@@ -319,6 +380,22 @@ func tasksStarted(t testing.TB) int {
 	diff := counterValue - previousTasksStarted
 	previousTasksStarted = counterValue
 	return diff
+}
+
+func GetNumInvocationsFlushedToOLAPDB(t *testing.T, env *rbetest.Env) int {
+	dbh := env.GetOLAPDBHandle()
+	invIDs := dbh.GetInvocationIDs()
+	return len(invIDs)
+}
+
+func GetNumExecutionsFlushedToOLAPDB(t *testing.T, env *rbetest.Env) int {
+	dbh := env.GetOLAPDBHandle()
+	invIDs := dbh.GetInvocationIDs()
+	res := 0
+	for _, iid := range invIDs {
+		res += len(dbh.GetExecutionIDsByInvID(t, iid))
+	}
+	return res
 }
 
 func runRemoteShellActionViaBazel(t *testing.T, ctx context.Context, env *rbetest.Env, shCommand string, extraBazelArgs ...string) *bazel.InvocationResult {
@@ -356,6 +433,7 @@ exec(name = "exec", command = """` + shCommand + `""")
 	buildArgs := []string{
 		":exec",
 		"--remote_executor=" + env.GetRemoteExecutionTarget(),
+		"--bes_backend=" + env.GetBuildBuddyServerTarget(),
 		"--remote_retries=" + fmt.Sprintf("%d", bazelRemoteRetries),
 	}
 	buildArgs = append(buildArgs, extraBazelArgs...)
