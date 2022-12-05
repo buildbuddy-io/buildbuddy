@@ -919,11 +919,25 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 		return err
 	}
 	counts := &tables.UsageCounts{}
+	// TODO: Incorporate remote-header overrides here.
 	plat := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+
+	executorGroupID, _, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, plat.OS, plat.UseSelfHostedExecutors)
+	if err != nil {
+		return status.InternalErrorf("failed to determine executor group ID: %s", err)
+	}
+	sharedExecutorPoolGroupID, err := s.env.GetSchedulerService().GetSharedExecutorPoolGroupID(ctx)
+	if err != nil {
+		return status.InternalErrorf("failed to determine shared executor pool group ID: %s", err)
+	}
+
 	if plat.OS == platform.DarwinOperatingSystemName {
 		counts.MacExecutionDurationUsec += dur.Microseconds()
 	} else if plat.OS == platform.LinuxOperatingSystemName {
-		counts.LinuxExecutionDurationUsec += dur.Microseconds()
+		// Only increment linux execution duration if using shared executors.
+		if executorGroupID == sharedExecutorPoolGroupID {
+			counts.LinuxExecutionDurationUsec += dur.Microseconds()
+		}
 	} else {
 		return status.InternalErrorf("Unsupported platform %s", plat.OS)
 	}

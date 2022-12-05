@@ -916,6 +916,10 @@ func (s *SchedulerServer) GetGroupIDAndDefaultPoolForUser(ctx context.Context, o
 	return *sharedExecutorPoolGroupID, *defaultPoolName, nil
 }
 
+func (s *SchedulerServer) GetSharedExecutorPoolGroupID(ctx context.Context) (string, error) {
+	return *sharedExecutorPoolGroupID, nil
+}
+
 func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
 	if node.GetHost() == "" || node.GetPort() == 0 {
 		return status.FailedPreconditionErrorf("Cannot register node with empty host/port: %s:%d", node.GetHost(), node.GetPort())
