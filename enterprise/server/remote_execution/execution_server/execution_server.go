@@ -418,13 +418,9 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		predictedSize = sizer.Predict(ctx, executionTask)
 	}
 
-	executorGroupID, defaultPool, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, props.OS, props.UseSelfHostedExecutors)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Pool, props.UseSelfHostedExecutors)
 	if err != nil {
 		return "", err
-	}
-
-	if props.Pool == "" {
-		props.Pool = defaultPool
 	}
 
 	metrics.RemoteExecutionRequests.With(prometheus.Labels{metrics.GroupID: taskGroupID, metrics.OS: props.OS, metrics.Arch: props.Arch}).Inc()
@@ -438,11 +434,11 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	schedulingMetadata := &scpb.SchedulingMetadata{
 		Os:                props.OS,
 		Arch:              props.Arch,
-		Pool:              props.Pool,
+		Pool:              pool.Name,
 		TaskSize:          taskSize,
 		MeasuredTaskSize:  measuredSize,
 		PredictedTaskSize: predictedSize,
-		ExecutorGroupId:   executorGroupID,
+		ExecutorGroupId:   pool.GroupID,
 		TaskGroupId:       taskGroupID,
 	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
@@ -922,22 +918,19 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	// TODO: Incorporate remote-header overrides here.
 	plat := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
 
-	executorGroupID, _, err := s.env.GetSchedulerService().GetGroupIDAndDefaultPoolForUser(ctx, plat.OS, plat.UseSelfHostedExecutors)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Pool, plat.UseSelfHostedExecutors)
 	if err != nil {
-		return status.InternalErrorf("failed to determine executor group ID: %s", err)
+		return status.InternalErrorf("failed to determine executor pool: %s", err)
 	}
-	sharedExecutorPoolGroupID, err := s.env.GetSchedulerService().GetSharedExecutorPoolGroupID(ctx)
-	if err != nil {
-		return status.InternalErrorf("failed to determine shared executor pool group ID: %s", err)
+	// Only increment execution counts if using shared executors.
+	if pool.IsSelfHosted {
+		return nil
 	}
 
 	if plat.OS == platform.DarwinOperatingSystemName {
 		counts.MacExecutionDurationUsec += dur.Microseconds()
 	} else if plat.OS == platform.LinuxOperatingSystemName {
-		// Only increment linux execution duration if using shared executors.
-		if executorGroupID == sharedExecutorPoolGroupID {
-			counts.LinuxExecutionDurationUsec += dur.Microseconds()
-		}
+		counts.LinuxExecutionDurationUsec += dur.Microseconds()
 	} else {
 		return status.InternalErrorf("Unsupported platform %s", plat.OS)
 	}
