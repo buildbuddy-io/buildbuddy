@@ -53,7 +53,7 @@ build:ci --repository_cache=/home/runner/repo-cache/
 build:ci --flaky_test_attempts=2
 build:ci --color=yes
 build:ci --disk_cache=
-build:ci --@io_bazel_rules_go//go/config:race
+# build:ci --@io_bazel_rules_go//go/config:race
 
 # Configuration used for untrusted GitHub actions-based CI
 build:untrusted-ci --config=remote
