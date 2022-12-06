@@ -40,7 +40,7 @@ var (
 	// parsed this way and have only the sub-values undergo redaction. This is
 	// the list of flag names that are permitted to be treated this way.
 	knownMultiFlags   = []string{"build_metadata"}
-	multiFlagKeyRegex = regexp.MustCompile(`[A-Z_]+=`)
+	multiFlagKeyRegex = regexp.MustCompile(`,[A-Z_]+=`)
 
 	knownGitRepoURLKeys = []string{
 		"REPO_URL", "GIT_URL", "TRAVIS_REPO_SLUG", "BUILDKITE_REPO",
@@ -108,14 +108,27 @@ func stripUrlSecretsFromMultiFlagValue(input string) string {
 // Splits the provided multi-flags into an array of regular ole' flags. So,
 // "ONE=foo,TWO=bar,THREE=baz" becomes ["ONE=foo", "TWO=bar", "THREE=baz"]
 func splitMultiFlag(input string) []string {
-	output := make([]string, strings.Count(input, "="))
+	// multiFlagKeyRegex only matches the flag name for the 2nd and beyond flags
+	// so prepend a 0 to capture the first sub-flag.
 	subFlags := multiFlagKeyRegex.FindAllStringIndex(input, -1 /* return all matches */)
+	subFlagStarts := make([]int, len(subFlags) + 1)
+	subFlagStarts[0] = 0
 	for i := 0; i < len(subFlags); i++ {
-		if i+1 >= len(subFlags) {
-			output[i] = input[subFlags[i][0]:len(input)]
-		} else {
-			output[i] = strings.TrimRight(input[subFlags[i][0]:subFlags[i+1][0]], ",")
+		subFlagStarts[i + 1] = subFlags[i][0]
+	}
+
+	output := make([]string, len(subFlagStarts))
+	for i := 0; i < len(subFlagStarts); i++ {
+		start := subFlagStarts[i]
+		if start > 0 {
+			// Skip the leading comma
+			start++
 		}
+		end := len(input)
+		if i + 1 < len(subFlagStarts) {
+			end = subFlagStarts[i+1]
+		}
+		output[i] = input[start:end]
 	}
 	return output
 }
