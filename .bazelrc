@@ -116,6 +116,7 @@ build --workspace_status_command=$(pwd)/workspace_status.sh
 
 # Misc remote cache optimizations
 build --experimental_remote_cache_async
+build --experimental_remote_build_event_upload=minimal
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 build --incompatible_strict_action_env
