@@ -267,10 +267,6 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		"--rm",
 		"--cidfile",
 		c.cidFilePath(),
-		"--dns",
-		"8.8.8.8",
-		"--dns-search",
-		".",
 		"--volume",
 		fmt.Sprintf(
 			"%s:%s",
@@ -295,6 +291,12 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	if networkMode != "" {
 		args = append(args, "--network="+networkMode)
+	}
+	// "--dns" and "--dns=search" flags are invalid when --network is set to none
+	// or "container:id"
+	if networkMode != "none" && !strings.HasPrefix(networkMode, "container") {
+		args = append(args, "--dns=8.8.8.8")
+		args = append(args, "--dns-search=.")
 	}
 	if c.options.CapAdd != "" {
 		args = append(args, "--cap-add="+c.options.CapAdd)
