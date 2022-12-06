@@ -74,6 +74,12 @@ const teamMembers = [
     blurb: "Previously Senior Software Engineer at Google — 10 years. Studied Software Engineering at McGill.",
     image: "iain.jpg",
   },
+  {
+    name: "Jim Hollenbach",
+    email: "jim@buildbuddy.io",
+    blurb: "Previously Staff Software Engineer at Google — 10 years. Studied Computer Science at MIT.",
+    image: "jim.jpg",
+  },
 ];
 
 function Team() {
