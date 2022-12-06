@@ -1,10 +1,12 @@
 package parser
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -266,4 +268,53 @@ func TestParseBazelrc_CircularImport(t *testing.T) {
 	_, err = expandConfigs(ws, []string{"build"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
+}
+
+func TestCanonicalizeArgs(t *testing.T) {
+	// Use some args that look like bazel commands but are actually
+	// specifying flag values.
+	args := []string{
+		"--output_base", "build",
+		"--host_jvm_args", "query",
+		"--unknown_plugin_flag", "unknown_plugin_flag_value",
+		"--ignore_all_rc_files",
+		"test",
+		"-c", "opt",
+		"--another_unknown_plugin_flag",
+		"--cache_test_results",
+		"--nocache_test_results",
+		"--bes_backend", "remote.buildbuddy.io",
+		"--bes_backend=",
+		"--remote_header", "x-buildbuddy-foo=1",
+		"--remote_header", "x-buildbuddy-bar=2",
+	}
+
+	canonicalArgs, err := canonicalizeArgs(args, staticHelpFromTestData)
+
+	require.NoError(t, err)
+	expectedCanonicalArgs := []string{
+		"--output_base=build",
+		"--host_jvm_args=query",
+		"--unknown_plugin_flag",
+		"unknown_plugin_flag_value",
+		"--ignore_all_rc_files",
+		"test",
+		"--compilation_mode=opt",
+		"--another_unknown_plugin_flag",
+		"--nocache_test_results",
+		"--bes_backend=",
+		"--remote_header=x-buildbuddy-foo=1",
+		"--remote_header=x-buildbuddy-bar=2",
+	}
+	require.Equal(t, expectedCanonicalArgs, canonicalArgs)
+}
+
+func staticHelpFromTestData(topic string) (string, error) {
+	if topic == "startup_options" {
+		return test_data.BazelHelpStartupOptionsOutput, nil
+	}
+	if topic == "test" {
+		return test_data.BazelHelpTestOutput, nil
+	}
+	return "", fmt.Errorf("testHelpProvider: no test data configured for `bazel help %s`", topic)
 }

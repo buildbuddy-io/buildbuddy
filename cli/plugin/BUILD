@@ -7,8 +7,11 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
+        "//cli/bazelisk",
         "//cli/log",
+        "//cli/parser",
         "//cli/storage",
+        "//cli/terminal",
         "//cli/workspace",
         "//server/util/disk",
         "//server/util/git",

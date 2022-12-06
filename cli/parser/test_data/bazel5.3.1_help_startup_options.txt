@@ -1,0 +1,48 @@
+                                                           [bazel release 5.3.1]
+Startup options
+===============
+
+These options affect how bazel starts up, or more specifically, how
+the virtual machine hosting bazel starts up, and how the bazel server
+starts up. These options must be specified to the left of the bazel
+command (e.g. 'build'), and they must not contain any space between
+option name and value.
+
+Example:
+  % bazel --host_jvm_args=-Xmx1400m --output_base=/tmp/foo build //base
+
+Options that appear before the command and are parsed by the client:
+  --[no]autodetect_server_javabase (a boolean; default: "true")
+  --[no]batch (a boolean; default: "false")
+  --[no]batch_cpu_scheduling (a boolean; default: "false")
+  --bazelrc (a string; default: see description)
+  --[no]block_for_lock (a boolean; default: "true")
+  --[no]client_debug (a boolean; default: "false")
+  --connect_timeout_secs (an integer; default: "30")
+  --[no]expand_configs_in_place (a boolean; default: "true")
+  --failure_detail_out (a path; default: see description)
+  --[no]home_rc (a boolean; default: "true")
+  --[no]idle_server_tasks (a boolean; default: "true")
+  --[no]ignore_all_rc_files (a boolean; default: "false")
+  --io_nice_level (an integer; default: "-1")
+  --local_startup_timeout_secs (an integer; default: "120")
+  --macos_qos_class (a string; default: "default")
+  --max_idle_secs (an integer; default: "10800")
+  --output_base (a path; default: see description)
+  --output_user_root (a path; default: see description)
+  --[no]preemptible (a boolean; default: "false")
+  --server_jvm_out (a path; default: see description)
+  --[no]shutdown_on_low_sys_mem (a boolean; default: "false")
+  --[no]system_rc (a boolean; default: "true")
+  --[no]unlimit_coredumps (a boolean; default: "false")
+  --[no]watchfs (a boolean; default: "false")
+  --[no]windows_enable_symlinks (a boolean; default: "false")
+  --[no]workspace_rc (a boolean; default: "true")
+
+Miscellaneous options, not otherwise categorized.:
+  --host_jvm_args (a string; may be used multiple times)
+  --host_jvm_debug
+  --host_jvm_profile (a string; default: "")
+  --server_javabase (a string; default: "")
+
+(Use 'help --long' for full details or --short to just enumerate options.)
