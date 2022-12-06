@@ -602,7 +602,6 @@ func TestMetadata(t *testing.T) {
 	options := &pebble_cache.Options{
 		RootDirectory:             testfs.MakeTempDir(t),
 		MaxSizeBytes:              maxSizeBytes,
-		AutoZstdCompressWrites:    true,
 		EnableZstdBlobCompression: true,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
@@ -929,7 +928,6 @@ func TestCompression(t *testing.T) {
 				RootDirectory:             testfs.MakeTempDir(t),
 				MaxSizeBytes:              maxSizeBytes,
 				EnableZstdBlobCompression: true,
-				AutoZstdCompressWrites:    true,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			if err != nil {
@@ -974,7 +972,6 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 		RootDirectory:             testfs.MakeTempDir(t),
 		MaxSizeBytes:              maxSizeBytes,
 		EnableZstdBlobCompression: true,
-		AutoZstdCompressWrites:    true,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	if err != nil {
@@ -1033,7 +1030,6 @@ func TestCompression_ParallelRequests(t *testing.T) {
 		RootDirectory:             testfs.MakeTempDir(t),
 		MaxSizeBytes:              maxSizeBytes,
 		EnableZstdBlobCompression: true,
-		AutoZstdCompressWrites:    true,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	if err != nil {
@@ -1115,7 +1111,6 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 		RootDirectory:             testfs.MakeTempDir(t),
 		MaxSizeBytes:              maxSizeBytes,
 		EnableZstdBlobCompression: true,
-		AutoZstdCompressWrites:    true,
 		MinEvictionAge:            &minEvictionAge,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
@@ -1123,7 +1118,7 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 	pc.Start()
 	defer pc.Stop()
 
-	// Write decompressed bytes to the cache. Because AutoZstdCompressWrites=true, pebble should compress before writing
+	// Write decompressed bytes to the cache. Because blob compression is enabled, pebble should compress before writing
 	for d, blob := range digestBlobs {
 		rn := &resource.ResourceName{
 			Digest:     d,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"math/big"
 	"math/rand"
 	"os"
@@ -69,9 +70,9 @@ var (
 	isolateByGroupIDsFlag     = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys for AC records will include groupIDs")
 
 	// Compression related flags
-	enableZstdBlobCompressionFlag   = flag.Bool("cache.pebble.enable_zstd_blob_compression", false, "If set, zstd compressed blobs can be saved to the cache. Otherwise only decompressed bytes should be stored.")
-	autoZstdCompressWritesFlag      = flag.Bool("cache.pebble.auto_zstd_compress_writes", false, "If set and enable_zstd_compression=true, blobs above the min compression size will be zstd compressed before written to disk.")
-	minCompressionBlobSizeBytesFlag = flag.Int64("cache.pebble.min_compression_blob_size_bytes", DefaultMaxInlineFileSizeBytes, "If compression is on, blobs larger than this will be compressed before written to disk.")
+	// TODO(Maggie): Remove enableZstdBlobCompressionFlag after migration
+	enableZstdBlobCompressionFlag = flag.Bool("cache.pebble.enable_zstd_blob_compression", false, "If set, zstd compressed blobs can be saved to the cache. Otherwise only decompressed bytes are stored.")
+	minBytesAutoZstdCompression   = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", math.MaxInt64, "Blobs larger than this will be zstd compressed before written to disk.")
 
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
@@ -138,8 +139,7 @@ type Options struct {
 	IsolateByGroupIDs bool
 
 	EnableZstdBlobCompression   bool
-	AutoZstdCompressWrites      bool
-	MinCompressionBlobSizeBytes int64
+	MinBytesAutoZstdCompression int64
 
 	MaxSizeBytes           int64
 	BlockCacheSizeBytes    int64
@@ -168,10 +168,9 @@ type PebbleCache struct {
 	partitions        []disk.Partition
 	partitionMappings []disk.PartitionMapping
 
-	maxSizeBytes                int64
-	blockCacheSizeBytes         int64
-	maxInlineFileSizeBytes      int64
-	minCompressionFileSizeBytes int64
+	maxSizeBytes           int64
+	blockCacheSizeBytes    int64
+	maxInlineFileSizeBytes int64
 
 	atimeUpdateThreshold time.Duration
 	atimeWriteBatchSize  int
@@ -198,8 +197,8 @@ type PebbleCache struct {
 	fileStorer filestore.Store
 	bufferPool *bytebufferpool.Pool
 
-	enableZstdBlobCompression bool
-	autoZstdCompressWrites    bool
+	enableZstdBlobCompression   bool
+	minBytesAutoZstdCompression int64
 
 	// TODO(Maggie): Clean this up after the isolateByGroupIDs migration
 	isolateByGroupIDs bool
@@ -239,11 +238,10 @@ func Register(env environment.Env) error {
 		PartitionMappings:           *partitionMappingsFlag,
 		IsolateByGroupIDs:           *isolateByGroupIDsFlag,
 		EnableZstdBlobCompression:   *enableZstdBlobCompressionFlag,
-		AutoZstdCompressWrites:      *autoZstdCompressWritesFlag,
 		BlockCacheSizeBytes:         *blockCacheSizeBytesFlag,
 		MaxSizeBytes:                cache_config.MaxSizeBytes(),
 		MaxInlineFileSizeBytes:      *maxInlineFileSizeBytesFlag,
-		MinCompressionBlobSizeBytes: *minCompressionBlobSizeBytesFlag,
+		MinBytesAutoZstdCompression: *minBytesAutoZstdCompression,
 		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
 		AtimeWriteBatchSize:         *atimeWriteBatchSizeFlag,
 		AtimeBufferSize:             atimeBufferSizeFlag,
@@ -301,6 +299,11 @@ func validateOpts(opts *Options) error {
 			return status.NotFoundErrorf("Mapping to unknown partition %q", pm.PartitionID)
 		}
 	}
+
+	if opts.MinBytesAutoZstdCompression < opts.MaxInlineFileSizeBytes {
+		return status.FailedPreconditionError("pebble cache should not compress inlined data because it is already compressed")
+	}
+
 	return nil
 }
 
@@ -315,8 +318,8 @@ func SetOptionDefaults(opts *Options) {
 	if opts.MaxInlineFileSizeBytes == 0 {
 		opts.MaxInlineFileSizeBytes = DefaultMaxInlineFileSizeBytes
 	}
-	if opts.MinCompressionBlobSizeBytes == 0 {
-		opts.MinCompressionBlobSizeBytes = DefaultMaxInlineFileSizeBytes
+	if opts.MinBytesAutoZstdCompression == 0 {
+		opts.MinBytesAutoZstdCompression = DefaultMaxInlineFileSizeBytes
 	}
 	if opts.AtimeUpdateThreshold == nil {
 		opts.AtimeUpdateThreshold = &DefaultAtimeUpdateThreshold
@@ -401,9 +404,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		fileStorer:                  filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
 		isolateByGroupIDs:           opts.IsolateByGroupIDs,
 		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
-		minCompressionFileSizeBytes: opts.MinCompressionBlobSizeBytes,
+		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
 		enableZstdBlobCompression:   opts.EnableZstdBlobCompression,
-		autoZstdCompressWrites:      opts.AutoZstdCompressWrites,
 	}
 
 	peMu := sync.Mutex{}
@@ -1256,9 +1258,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 
 	// If data is not already compressed, return a writer that will compress it before writing
 	// Only compress data over a given size for more optimal compression ratios
-	shouldCompress := p.autoZstdCompressWrites && p.enableZstdBlobCompression &&
+	shouldCompress := p.enableZstdBlobCompression &&
 		r.GetCompressor() == repb.Compressor_IDENTITY &&
-		r.GetDigest().GetSizeBytes() >= p.minCompressionFileSizeBytes
+		r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
 	if shouldCompress {
 		r = &resource.ResourceName{
 			Digest:       r.GetDigest(),

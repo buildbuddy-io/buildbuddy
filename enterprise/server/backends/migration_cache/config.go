@@ -46,8 +46,7 @@ type PebbleCacheConfig struct {
 	IsolateByGroupIDs      bool                    `yaml:"isolate_by_group_ids"`
 
 	EnableZstdBlobCompression   bool  `yaml:"enable_zstd_blob_compression"`
-	AutoZstdCompressWrites      bool  `yaml:"auto_zstd_compress_writes"`
-	MinCompressionBlobSizeBytes int64 `yaml:"min_compression_blob_size_bytes"`
+	MinBytesAutoZstdCompression int64 `yaml:"min_bytes_auto_zstd_compression"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {

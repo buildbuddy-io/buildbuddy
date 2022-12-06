@@ -143,13 +143,12 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 		MaxSizeBytes:                cfg.MaxSizeBytes,
 		BlockCacheSizeBytes:         cfg.BlockCacheSizeBytes,
 		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
-		MinCompressionBlobSizeBytes: cfg.MinCompressionBlobSizeBytes,
+		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
 		AtimeUpdateThreshold:        cfg.AtimeUpdateThreshold,
 		AtimeWriteBatchSize:         cfg.AtimeWriteBatchSize,
 		AtimeBufferSize:             cfg.AtimeBufferSize,
 		MinEvictionAge:              cfg.MinEvictionAge,
 		EnableZstdBlobCompression:   cfg.EnableZstdBlobCompression,
-		AutoZstdCompressWrites:      cfg.AutoZstdCompressWrites,
 	}
 	c, err := pebble_cache.NewPebbleCache(env, opts)
 	if err != nil {
