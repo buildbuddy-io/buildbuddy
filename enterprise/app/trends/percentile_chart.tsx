@@ -25,7 +25,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
-            <YAxis yAxisId="duration" tickFormatter={format.compactDurationSec} allowDecimals={false} />
+            <YAxis yAxisId="duration" tickFormatter={format.durationSec} allowDecimals={false} width={84}/>
             <Tooltip
               content={
                 <PercentilesChartTooltip
