@@ -600,10 +600,10 @@ func TestMetadata(t *testing.T) {
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	options := &pebble_cache.Options{
-		RootDirectory:          testfs.MakeTempDir(t),
-		MaxSizeBytes:           maxSizeBytes,
-		AutoZstdCompressWrites: true,
-		EnableZstdCompression:  true,
+		RootDirectory:             testfs.MakeTempDir(t),
+		MaxSizeBytes:              maxSizeBytes,
+		AutoZstdCompressWrites:    true,
+		EnableZstdBlobCompression: true,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	if err != nil {
@@ -926,10 +926,10 @@ func TestCompression(t *testing.T) {
 
 			maxSizeBytes := int64(1_000_000_000) // 1GB
 			opts := &pebble_cache.Options{
-				RootDirectory:          testfs.MakeTempDir(t),
-				MaxSizeBytes:           maxSizeBytes,
-				EnableZstdCompression:  true,
-				AutoZstdCompressWrites: true,
+				RootDirectory:             testfs.MakeTempDir(t),
+				MaxSizeBytes:              maxSizeBytes,
+				EnableZstdBlobCompression: true,
+				AutoZstdCompressWrites:    true,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			if err != nil {
@@ -971,10 +971,10 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 
 	maxSizeBytes := int64(1000)
 	opts := &pebble_cache.Options{
-		RootDirectory:          testfs.MakeTempDir(t),
-		MaxSizeBytes:           maxSizeBytes,
-		EnableZstdCompression:  true,
-		AutoZstdCompressWrites: true,
+		RootDirectory:             testfs.MakeTempDir(t),
+		MaxSizeBytes:              maxSizeBytes,
+		EnableZstdBlobCompression: true,
+		AutoZstdCompressWrites:    true,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	if err != nil {
@@ -1030,10 +1030,10 @@ func TestCompression_ParallelRequests(t *testing.T) {
 
 	maxSizeBytes := int64(1000)
 	opts := &pebble_cache.Options{
-		RootDirectory:          testfs.MakeTempDir(t),
-		MaxSizeBytes:           maxSizeBytes,
-		EnableZstdCompression:  true,
-		AutoZstdCompressWrites: true,
+		RootDirectory:             testfs.MakeTempDir(t),
+		MaxSizeBytes:              maxSizeBytes,
+		EnableZstdBlobCompression: true,
+		AutoZstdCompressWrites:    true,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	if err != nil {
@@ -1112,11 +1112,11 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 			float64(totalSizeCompresedData) *
 				(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 	opts := &pebble_cache.Options{
-		RootDirectory:          testfs.MakeTempDir(t),
-		MaxSizeBytes:           maxSizeBytes,
-		EnableZstdCompression:  true,
-		AutoZstdCompressWrites: true,
-		MinEvictionAge:         &minEvictionAge,
+		RootDirectory:             testfs.MakeTempDir(t),
+		MaxSizeBytes:              maxSizeBytes,
+		EnableZstdBlobCompression: true,
+		AutoZstdCompressWrites:    true,
+		MinEvictionAge:            &minEvictionAge,
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	require.NoError(t, err)
