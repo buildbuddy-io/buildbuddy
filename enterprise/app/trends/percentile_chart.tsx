@@ -5,7 +5,7 @@ import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Line, 
 
 export interface PercentilesChartProps {
   title: string;
-  data: any[];
+  data: string[];
   extractLabel: (datum: string) => string;
   formatHoverLabel: (datum: string) => string;
   extractP50: (datum: string) => number;
@@ -81,8 +81,8 @@ export default class PercentilesChartComponent extends React.Component<Percentil
 }
 
 interface PercentilesChartTooltipProps {
-  active: boolean;
-  payload: string[];
+  active?: boolean;
+  payload?: any[];
   labelFormatter: (datum: string) => string;
   extractP50: (datum: string) => number;
   extractP75: (datum: string) => number;
