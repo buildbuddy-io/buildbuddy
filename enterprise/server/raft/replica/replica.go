@@ -148,7 +148,7 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 	}
 	size := int64(len(val))
 	if md.GetStorageMetadata().GetFileMetadata() != nil {
-		size += md.GetSizeBytes()
+		size += md.GetStoredSizeBytes()
 	}
 	return size, nil
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"math/big"
 	"math/rand"
 	"os"
@@ -67,7 +68,11 @@ var (
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	isolateByGroupIDsFlag     = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys for AC records will include groupIDs")
-	enableCompressionFlag     = flag.Bool("cache.pebble.enable_zstd_compression", false, "If set, zstd compressed files can be saved to the cache. Otherwise only decompressed bytes should be stored.")
+
+	// Compression related flags
+	// TODO(Maggie): Remove enableZstdCompressionFlag after migration
+	enableZstdCompressionFlag   = flag.Bool("cache.pebble.enable_zstd_compression", false, "If set, zstd compressed blobs can be saved to the cache. Otherwise only decompressed bytes are stored.")
+	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", math.MaxInt64, "Blobs larger than this will be zstd compressed before written to disk.")
 
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
@@ -128,11 +133,13 @@ const (
 // Options is a struct containing the pebble cache configuration options.
 // Once a cache is created, the options may not be changed.
 type Options struct {
-	RootDirectory         string
-	Partitions            []disk.Partition
-	PartitionMappings     []disk.PartitionMapping
-	IsolateByGroupIDs     bool
-	EnableZstdCompression bool
+	RootDirectory     string
+	Partitions        []disk.Partition
+	PartitionMappings []disk.PartitionMapping
+	IsolateByGroupIDs bool
+
+	EnableZstdCompression       bool
+	MinBytesAutoZstdCompression int64
 
 	MaxSizeBytes           int64
 	BlockCacheSizeBytes    int64
@@ -190,7 +197,8 @@ type PebbleCache struct {
 	fileStorer filestore.Store
 	bufferPool *bytebufferpool.Pool
 
-	enableZstdCompression bool
+	enableZstdCompression       bool
+	minBytesAutoZstdCompression int64
 
 	// TODO(Maggie): Clean this up after the isolateByGroupIDs migration
 	isolateByGroupIDs bool
@@ -225,18 +233,19 @@ func Register(env environment.Env) error {
 		}
 	}
 	opts := &Options{
-		RootDirectory:          *rootDirectoryFlag,
-		Partitions:             *partitionsFlag,
-		PartitionMappings:      *partitionMappingsFlag,
-		IsolateByGroupIDs:      *isolateByGroupIDsFlag,
-		EnableZstdCompression:  *enableCompressionFlag,
-		BlockCacheSizeBytes:    *blockCacheSizeBytesFlag,
-		MaxSizeBytes:           cache_config.MaxSizeBytes(),
-		MaxInlineFileSizeBytes: *maxInlineFileSizeBytesFlag,
-		AtimeUpdateThreshold:   atimeUpdateThresholdFlag,
-		AtimeWriteBatchSize:    *atimeWriteBatchSizeFlag,
-		AtimeBufferSize:        atimeBufferSizeFlag,
-		MinEvictionAge:         minEvictionAgeFlag,
+		RootDirectory:               *rootDirectoryFlag,
+		Partitions:                  *partitionsFlag,
+		PartitionMappings:           *partitionMappingsFlag,
+		IsolateByGroupIDs:           *isolateByGroupIDsFlag,
+		EnableZstdCompression:       *enableZstdCompressionFlag,
+		BlockCacheSizeBytes:         *blockCacheSizeBytesFlag,
+		MaxSizeBytes:                cache_config.MaxSizeBytes(),
+		MaxInlineFileSizeBytes:      *maxInlineFileSizeBytesFlag,
+		MinBytesAutoZstdCompression: *minBytesAutoZstdCompression,
+		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
+		AtimeWriteBatchSize:         *atimeWriteBatchSizeFlag,
+		AtimeBufferSize:             atimeBufferSizeFlag,
+		MinEvictionAge:              minEvictionAgeFlag,
 	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
@@ -290,6 +299,11 @@ func validateOpts(opts *Options) error {
 			return status.NotFoundErrorf("Mapping to unknown partition %q", pm.PartitionID)
 		}
 	}
+
+	if opts.MinBytesAutoZstdCompression < opts.MaxInlineFileSizeBytes {
+		return status.FailedPreconditionError("pebble cache should not compress inlined data because it is already compressed")
+	}
+
 	return nil
 }
 
@@ -303,6 +317,9 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.MaxInlineFileSizeBytes == 0 {
 		opts.MaxInlineFileSizeBytes = DefaultMaxInlineFileSizeBytes
+	}
+	if opts.MinBytesAutoZstdCompression == 0 {
+		opts.MinBytesAutoZstdCompression = DefaultMaxInlineFileSizeBytes
 	}
 	if opts.AtimeUpdateThreshold == nil {
 		opts.AtimeUpdateThreshold = &DefaultAtimeUpdateThreshold
@@ -363,31 +380,32 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	pc := &PebbleCache{
-		rootDirectory:          opts.RootDirectory,
-		partitions:             opts.Partitions,
-		partitionMappings:      opts.PartitionMappings,
-		maxSizeBytes:           opts.MaxSizeBytes,
-		blockCacheSizeBytes:    opts.BlockCacheSizeBytes,
-		maxInlineFileSizeBytes: opts.MaxInlineFileSizeBytes,
-		atimeUpdateThreshold:   *opts.AtimeUpdateThreshold,
-		atimeWriteBatchSize:    opts.AtimeWriteBatchSize,
-		atimeBufferSize:        *opts.AtimeBufferSize,
-		minEvictionAge:         *opts.MinEvictionAge,
-		env:                    env,
-		db:                     db,
-		leaser:                 pebbleutil.NewDBLeaser(db),
-		brokenFilesDone:        make(chan struct{}),
-		orphanedFilesDone:      make(chan struct{}),
-		eg:                     &errgroup.Group{},
-		egSizeUpdates:          &errgroup.Group{},
-		statusMu:               &sync.Mutex{},
-		edits:                  make(chan *sizeUpdate, 1000),
-		accesses:               make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
-		evictors:               make([]*partitionEvictor, len(opts.Partitions)),
-		fileStorer:             filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
-		enableZstdCompression:  opts.EnableZstdCompression,
-		isolateByGroupIDs:      opts.IsolateByGroupIDs,
-		bufferPool:             bytebufferpool.New(CompressorBufSizeBytes),
+		rootDirectory:               opts.RootDirectory,
+		partitions:                  opts.Partitions,
+		partitionMappings:           opts.PartitionMappings,
+		maxSizeBytes:                opts.MaxSizeBytes,
+		blockCacheSizeBytes:         opts.BlockCacheSizeBytes,
+		maxInlineFileSizeBytes:      opts.MaxInlineFileSizeBytes,
+		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
+		atimeWriteBatchSize:         opts.AtimeWriteBatchSize,
+		atimeBufferSize:             *opts.AtimeBufferSize,
+		minEvictionAge:              *opts.MinEvictionAge,
+		env:                         env,
+		db:                          db,
+		leaser:                      pebbleutil.NewDBLeaser(db),
+		brokenFilesDone:             make(chan struct{}),
+		orphanedFilesDone:           make(chan struct{}),
+		eg:                          &errgroup.Group{},
+		egSizeUpdates:               &errgroup.Group{},
+		statusMu:                    &sync.Mutex{},
+		edits:                       make(chan *sizeUpdate, 1000),
+		accesses:                    make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
+		evictors:                    make([]*partitionEvictor, len(opts.Partitions)),
+		fileStorer:                  filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
+		isolateByGroupIDs:           opts.IsolateByGroupIDs,
+		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
+		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
+		enableZstdCompression:       opts.EnableZstdCompression,
 	}
 
 	peMu := sync.Mutex{}
@@ -878,8 +896,14 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	if err != nil {
 		return nil, err
 	}
+
+	// Return size from the original digest
+	// If data in the cache is compressed, this will return the decompressed size
+	cachedDigest := md.GetFileRecord().GetDigest()
+	originalSize := cachedDigest.GetSizeBytes()
+
 	return &interfaces.CacheMetadata{
-		SizeBytes:          md.GetSizeBytes(),
+		SizeBytes:          originalSize,
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
 	}, nil
@@ -1055,7 +1079,7 @@ func (p *PebbleCache) deleteMetadataOnly(fileMetadataKey []byte) error {
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetSizeBytes())
+	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), fileMetadataKey, -1*fileMetadata.GetStoredSizeBytes())
 	return nil
 }
 
@@ -1085,7 +1109,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRec
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(partitionID, fileMetadataKey, -1*fileMetadata.GetSizeBytes())
+	p.sendSizeUpdate(partitionID, fileMetadataKey, -1*fileMetadata.GetStoredSizeBytes())
 	if err := disk.DeleteFile(ctx, fp); err != nil {
 		return err
 	}
@@ -1179,13 +1203,72 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// TODO(Maggie): Compress all data above a given size before writing it
+// zstdCompressor compresses bytes before writing them to the nested writer
+type zstdCompressor struct {
+	*ioutil.CustomCommitWriteCloser
+	compressBuf []byte
+	bufferPool  *bytebufferpool.Pool
+
+	numDecompressedBytes int
+	numCompressedBytes   int
+}
+
+func NewZstdCompressor(wc *ioutil.CustomCommitWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
+	compressBuf := bp.Get(digestSize)
+	return &zstdCompressor{
+		CustomCommitWriteCloser: wc,
+		compressBuf:             compressBuf,
+		bufferPool:              bp,
+	}
+}
+
+func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
+	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
+	compressedBytesWritten, err := z.CustomCommitWriteCloser.Write(z.compressBuf)
+	if err != nil {
+		return 0, err
+	}
+
+	z.numDecompressedBytes += len(decompressedBytes)
+	z.numCompressedBytes += compressedBytesWritten
+
+	// Return the size of the original buffer even though a different compressed buffer size may have been written,
+	// or clients will return a short write error
+	return len(decompressedBytes), nil
+}
+
+func (z *zstdCompressor) Close() error {
+	metrics.CompressionRatio.
+		With(prometheus.Labels{metrics.CompressionType: "zstd"}).
+		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
+	if z.numCompressedBytes > z.numDecompressedBytes {
+		metrics.BadCompressionStreamSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(z.numDecompressedBytes))
+	}
+
+	z.bufferPool.Put(z.compressBuf)
+	return z.CustomCommitWriteCloser.Close()
+}
+
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
+
+	// If data is not already compressed, return a writer that will compress it before writing
+	// Only compress data over a given size for more optimal compression ratios
+	shouldCompress := p.enableZstdCompression &&
+		r.GetCompressor() == repb.Compressor_IDENTITY &&
+		r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
+	if shouldCompress {
+		r = &resource.ResourceName{
+			Digest:       r.GetDigest(),
+			InstanceName: r.GetInstanceName(),
+			Compressor:   repb.Compressor_ZSTD,
+			CacheType:    r.GetCacheType(),
+		}
+	}
 
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
@@ -1231,7 +1314,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: wcm.Metadata(),
-			SizeBytes:       bytesWritten,
+			StoredSizeBytes: bytesWritten,
 			LastAccessUsec:  now,
 			LastModifyUsec:  now,
 		}
@@ -1247,6 +1330,11 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		}
 		return err
 	}
+
+	if shouldCompress {
+		return NewZstdCompressor(wc, p.bufferPool, r.GetDigest().GetSizeBytes()), nil
+	}
+
 	return wc, nil
 }
 
@@ -1389,7 +1477,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
-		blobSizeBytes += fileMetadata.GetSizeBytes()
+		blobSizeBytes += fileMetadata.GetStoredSizeBytes()
 		metadataSizeBytes += int64(len(iter.Value()))
 
 		// identify and count CAS vs AC files.
@@ -1658,7 +1746,7 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 
 	ageUsec := float64(time.Since(time.Unix(0, sample.timestamp)).Microseconds())
 	metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: e.part.ID}).Set(ageUsec)
-	e.updateSize(sample.fileMetadataKey, -1*sample.fileMetadata.GetSizeBytes())
+	e.updateSize(sample.fileMetadataKey, -1*sample.fileMetadata.GetStoredSizeBytes())
 	return nil
 }
 

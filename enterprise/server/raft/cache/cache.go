@@ -398,7 +398,7 @@ func (rc *RaftCache) Writer(ctx context.Context, r *resource.ResourceName) (inte
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: writeCloserMetadata.Metadata(),
-			SizeBytes:       bytesWritten,
+			StoredSizeBytes: bytesWritten,
 			LastModifyUsec:  now.UnixMicro(),
 			LastAccessUsec:  now.UnixMicro(),
 		}

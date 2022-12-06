@@ -730,7 +730,7 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 			md := &rfpb.FileMetadata{
 				FileRecord:      req.GetFileRecord(),
 				StorageMetadata: writeCloser.Metadata(),
-				SizeBytes:       bytesWritten,
+				StoredSizeBytes: bytesWritten,
 				LastModifyUsec:  now.UnixMicro(),
 				LastAccessUsec:  now.UnixMicro(),
 			}

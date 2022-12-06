@@ -65,8 +65,8 @@ message FileMetadata {
   FileRecord file_record = 1;
   StorageMetadata storage_metadata = 2;
 
-  // Uncompressed size of the stored data.
-  int64 size_bytes = 3;
+  // If data is compressed, this will be the compressed size
+  int64 stored_size_bytes = 3;
 
   // Last access time of the record.
   int64 last_access_usec = 4;
