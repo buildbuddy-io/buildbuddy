@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2022-11-29T12:00:00.000Z</updated>
+    <updated>2022-12-06T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Welcoming Jim Hollenbach]]></title>
+        <id>welcoming-jim-hollenbach</id>
+        <link href="https://www.buildbuddy.io/blog/welcoming-jim-hollenbach"/>
+        <updated>2022-12-06T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, the most imporant thing we can do is hire incredible Software Engineers with experience building and scaling great software. That's why we're excited to share that Jim Hollenbach is joining BuildBuddy's engineering team!]]></summary>
+        <content type="html"><![CDATA[<p>To fulfill our mission of bringing the world&#x27;s best developer tools to every company, the most imporant thing we can do is hire incredible Software Engineers with experience building and scaling great software. That&#x27;s why we&#x27;re excited to share that <a href="https://www.linkedin.com/in/jim-hollenbach-5a49659/"><strong>Jim Hollenbach</strong></a> is joining BuildBuddy&#x27;s engineering team!</p><p>Jim joins us from Google, where he was a Staff Software Engineer. He spent over 10 years at Google working across Search, Maps, and more.</p><p><img src="../static/img/blog/welcome_jim.png"/></p><p>We look forward to working alongside Jim to build the future of developer tools.</p><p>Welcome to BuildBuddy, Jim!</p>]]></content>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/jim-hollenbach-5a49659/</uri>
+        </author>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Bazelcon 2022 Recap]]></title>
         <id>bazelcon</id>
