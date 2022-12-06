@@ -111,10 +111,10 @@ func splitMultiFlag(input string) []string {
 	// multiFlagKeyRegex only matches the flag name for the 2nd and beyond flags
 	// so prepend a 0 to capture the first sub-flag.
 	subFlags := multiFlagKeyRegex.FindAllStringIndex(input, -1 /* return all matches */)
-	subFlagStarts := make([]int, len(subFlags) + 1)
+	subFlagStarts := make([]int, len(subFlags)+1)
 	subFlagStarts[0] = 0
 	for i := 0; i < len(subFlags); i++ {
-		subFlagStarts[i + 1] = subFlags[i][0]
+		subFlagStarts[i+1] = subFlags[i][0]
 	}
 
 	output := make([]string, len(subFlagStarts))
@@ -125,7 +125,7 @@ func splitMultiFlag(input string) []string {
 			start++
 		}
 		end := len(input)
-		if i + 1 < len(subFlagStarts) {
+		if i+1 < len(subFlagStarts) {
 			end = subFlagStarts[i+1]
 		}
 		output[i] = input[start:end]
