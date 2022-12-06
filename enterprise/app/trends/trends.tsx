@@ -6,6 +6,7 @@ import { User } from "../../../app/auth/auth_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
+import PercentilesChartComponent from "./percentile_chart";
 import { Subscription } from "rxjs";
 import CheckboxButton from "../../../app/components/button/checkbox_button";
 import FilterComponent from "../filter/filter";
@@ -26,6 +27,7 @@ interface State {
   stats: invocation.ITrendStat[];
   loading: boolean;
   dateToStatMap: Map<string, invocation.ITrendStat>;
+  dateToExecutionStatMap: Map<string, invocation.IExecutionStat>;
   dates: string[];
   filterOnlyCI: boolean;
 }
@@ -37,6 +39,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     stats: [],
     loading: true,
     dateToStatMap: new Map<string, invocation.ITrendStat>(),
+    dateToExecutionStatMap: new Map<string, invocation.IExecutionStat>(),
     dates: [],
     filterOnlyCI: false,
   };
@@ -138,6 +141,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
       for (let stat of response.trendStat) {
         dateToStatMap.set(stat.name, stat);
       }
+      const dateToExecutionStatMap = new Map<string, invocation.IExecutionStat>();
+      for (let stat of response.executionStat) {
+        dateToExecutionStatMap.set(stat.name, stat);
+      }
       this.setState({
         ...this.state,
         stats: response.trendStat,
@@ -150,6 +157,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
             )
           : this.getLastNDates(request.lookbackWindowDays),
         dateToStatMap,
+        dateToExecutionStatMap,
         loading: false,
       });
     });
@@ -376,6 +384,29 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 name="repos with builds"
                 onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#repos") : null}
               />
+              {this.state.dateToExecutionStatMap.size > 0 && (
+                <PercentilesChartComponent
+                  title="Remote Execution Queue Duration"
+                  data={this.state.dates}
+                  extractLabel={this.formatShortDate}
+                  formatHoverLabel={this.formatLongDate}
+                  extractP50={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP50 * SECONDS_PER_MICROSECOND
+                  }
+                  extractP75={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP75 * SECONDS_PER_MICROSECOND
+                  }
+                  extractP90={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP90 * SECONDS_PER_MICROSECOND
+                  }
+                  extractP95={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP95 * SECONDS_PER_MICROSECOND
+                  }
+                  extractP99={(date) =>
+                    +this.state.dateToExecutionStatMap.get(date)?.queueDurationUsecP99 * SECONDS_PER_MICROSECOND
+                  }
+                />
+              )}
             </>
           )}
         </div>
