@@ -12,11 +12,8 @@ const (
 )
 
 // This is set by x_defs in the BUILD file.
-//
-//	x_defs = {
-//	    "commitSha": "{COMMIT_SHA}",
-//	},
 var commitSha string
+var versionTag string
 
 func Print() {
 	appVersion := fmt.Sprintf("BuildBuddy %s", AppVersion())
@@ -27,7 +24,7 @@ func Print() {
 }
 
 func AppVersion() string {
-	if versionTag != "" {
+	if versionTag != "" && versionTag != "{STABLE_VERSION_TAG}" {
 		return versionTag
 	}
 	return unknownValue
@@ -38,7 +35,7 @@ func GoVersion() string {
 }
 
 func Commit() string {
-	if commitSha != "" && commitSha != "{COMMIT_SHA}" {
+	if commitSha != "" && commitSha != "{STABLE_COMMIT_SHA}" {
 		return commitSha
 	}
 	return unknownValue

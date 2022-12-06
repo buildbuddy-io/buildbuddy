@@ -79,16 +79,13 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
-def push_image(target, version_tag, image_tag):
-    # Note: The flag "--//server/version:version_tag" sets the embedded git
-    # version tag which is printed on server startup.
+def push_image(target, image_tag):
     command = (
         'bazel run -c opt --stamp '+
         '--define=release=true '+
         '--//deployment:image_tag={image_tag} '+
-        '--//server/version:version_tag={version_tag} '+
         '{target}'
-    ).format(image_tag=image_tag, version_tag=version_tag, target=target)
+    ).format(image_tag=image_tag, target=target)
     run_or_die(command)
 
 def update_docker_images(version_tag, update_latest_tag):
@@ -96,20 +93,20 @@ def update_docker_images(version_tag, update_latest_tag):
     run_or_die(clean_cmd)
 
     # OSS app
-    push_image('//deployment:release_onprem', version_tag, image_tag=version_tag)
+    push_image('//deployment:release_onprem', image_tag=version_tag)
     # Enterprise app
-    push_image('//enterprise/deployment:release_enterprise', version_tag, image_tag='enterprise-'+version_tag)
+    push_image('//enterprise/deployment:release_enterprise', image_tag='enterprise-'+version_tag)
     # Enterprise executor
-    push_image('//enterprise/deployment:release_executor_enterprise', version_tag, image_tag='enterprise-'+version_tag)
+    push_image('//enterprise/deployment:release_executor_enterprise', image_tag='enterprise-'+version_tag)
 
     # update "latest" tags
     if update_latest_tag:
         # OSS app
-        push_image('//deployment:release_onprem', version_tag, image_tag='latest')
+        push_image('//deployment:release_onprem', image_tag='latest')
         # Enterprise app
-        push_image('//enterprise/deployment:release_enterprise', version_tag, image_tag='latest')
+        push_image('//enterprise/deployment:release_enterprise', image_tag='latest')
         # Enterprise executor
-        push_image('//enterprise/deployment:release_executor_enterprise', version_tag, image_tag='latest')
+        push_image('//enterprise/deployment:release_executor_enterprise', image_tag='latest')
 
 
 def generate_release_notes(old_version):
@@ -125,11 +122,8 @@ def generate_release_notes(old_version):
 
 def get_latest_remote_version():
     run_or_die('git fetch --all --tags')
-    p = run_or_die("git tag -l 'v*' --sort=creatordate", capture_stdout=True)
-    sorted_tags = nonempty_lines(p.stdout)
-    # Further validate to make sure the tag looks like "vX.Y.Z"
-    sorted_tags = [t for t in sorted_tags if re.search(r'^v\d+\.\d+\.\d+$', t)]
-    return sorted_tags[-1]
+    p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
+    return p.stdout.strip()
 
 def main():
     parser = argparse.ArgumentParser()

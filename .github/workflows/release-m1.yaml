@@ -40,6 +40,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           export DEVELOPER_DIR=/Applications/Xcode_12.4.app/Contents/Developer
-          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-m1 --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --//server/version:version_tag=${{ steps.tag.outputs.TAG }} //enterprise/server/cmd/executor:executor
+          "${GITHUB_WORKSPACE}/bin/bazel" build --config=release-m1 --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-arm64
           gh release upload ${{ steps.tag.outputs.TAG }} executor-enterprise-darwin-arm64 --clobber
