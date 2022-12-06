@@ -46,7 +46,7 @@ type PebbleCacheConfig struct {
 	MinEvictionAge              *time.Duration          `yaml:"min_eviction_age"`
 	IsolateByGroupIDs           bool                    `yaml:"isolate_by_group_ids"`
 	EnableZstdCompression       bool                    `yaml:"enable_zstd_compression"`
-	CompressWrites              bool                    `yaml:"compress_writes"`
+	AutoZstdCompressWrites      bool                    `yaml:"auto_zstd_compress_writes"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {
