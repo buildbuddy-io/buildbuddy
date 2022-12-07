@@ -78,7 +78,7 @@ var (
 	LastAppliedIndexKey = keys.MakeKey(LocalPrefix, []byte("lastAppliedIndex"))
 
 	// Number of file records in the range.
-	FileRecordCountKey = keys.MakeKey(LocalPrefix, []byte("file_record_count"))
+	PartitionMetadatasKey = keys.MakeKey(LocalPrefix, []byte("file_record_count"))
 
 	// The range that this statemachine holds.
 	LocalRangeKey      = keys.MakeKey(LocalPrefix, []byte("range"))

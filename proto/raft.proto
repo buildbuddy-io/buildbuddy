@@ -77,8 +77,11 @@ message FileMetadata {
 
 message PartitionMetadata {
   int64 size_bytes = 1;
+  // CAS count and AC count are not populated by Raft cache.
   int64 cas_count = 2;
   int64 ac_count = 3;
+  int64 total_count = 4;
+  string partition_id = 5;
 }
 
 message PartitionRecordCount {
@@ -86,8 +89,8 @@ message PartitionRecordCount {
   int64 count = 2;
 }
 
-message PartitionCounts {
-  repeated PartitionRecordCount counts = 1;
+message PartitionMetadatas {
+  repeated PartitionMetadata metadata = 1;
 }
 
 message FileDeleteRequest {

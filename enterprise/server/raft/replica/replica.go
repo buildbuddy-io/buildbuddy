@@ -67,6 +67,9 @@ type IStore interface {
 	Sender() *sender.Sender
 }
 
+type partitionMetadata struct {
+}
+
 // IOnDiskStateMachine is the interface to be implemented by application's
 // state machine when the state machine state is always persisted on disks.
 // IOnDiskStateMachine basically matches the state machine type described
@@ -108,8 +111,8 @@ type Replica struct {
 	lastAppliedIndex    uint64
 	lastUsageCheckIndex uint64
 
-	fileRecordCountMu sync.Mutex
-	fileRecordCount   map[string]int64
+	partitionMetadataMu sync.Mutex
+	partitionMetadata   map[string]*rfpb.PartitionMetadata
 
 	log             log.Logger
 	rangeMu         sync.RWMutex
@@ -142,7 +145,7 @@ func isLocalKey(key []byte) bool {
 }
 
 func isFileRecordKey(key []byte) bool {
-	return !isLocalKey(key) && bytes.Contains(key, []byte("/"))
+	return bytes.HasPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
 }
 
 func sizeOf(key []byte, val []byte) (int64, error) {
@@ -193,11 +196,11 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	}).Set(float64(estimatedBytesUsed))
 
 	var numFileRecords int64
-	sm.fileRecordCountMu.Lock()
-	for _, c := range sm.fileRecordCount {
-		numFileRecords += c
+	sm.partitionMetadataMu.Lock()
+	for _, c := range sm.partitionMetadata {
+		numFileRecords += c.GetTotalCount()
 	}
-	sm.fileRecordCountMu.Unlock()
+	sm.partitionMetadataMu.Unlock()
 	metrics.RaftRecords.With(prometheus.Labels{
 		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
 	}).Set(float64(numFileRecords))
@@ -258,7 +261,7 @@ func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 			sm.rangeMu.RUnlock()
 
 			if isFileRecordKey(key) {
-				if err := sm.updateAndFlushFileRecordCount(wb, key, fileRecordAdd); err != nil {
+				if err := sm.updateAndFlushPartitionMetadatas(wb, key, val, nil /*=fileMetadata*/, fileRecordAdd); err != nil {
 					return err
 				}
 			}
@@ -325,19 +328,19 @@ func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
 	return i, nil
 }
 
-func (sm *Replica) getFileRecordCounts(db ReplicaReader) (*rfpb.PartitionCounts, error) {
-	val, err := sm.lookup(db, constants.FileRecordCountKey)
+func (sm *Replica) getPartitionMetadatas(db ReplicaReader) (*rfpb.PartitionMetadatas, error) {
+	val, err := sm.lookup(db, constants.PartitionMetadatasKey)
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			return &rfpb.PartitionCounts{}, nil
+			return &rfpb.PartitionMetadatas{}, nil
 		}
 		return nil, err
 	}
-	var pu rfpb.PartitionCounts
-	if err := proto.Unmarshal(val, &pu); err != nil {
+	var pm rfpb.PartitionMetadatas
+	if err := proto.Unmarshal(val, &pm); err != nil {
 		return nil, err
 	}
-	return &pu, nil
+	return &pm, nil
 }
 
 type fileRecordOp int
@@ -347,35 +350,43 @@ const (
 	fileRecordDelete
 )
 
-func (sm *Replica) flushRecordCounts(wb *pebble.Batch) error {
-	sm.fileRecordCountMu.Lock()
-	defer sm.fileRecordCountMu.Unlock()
-	var cs rfpb.PartitionCounts
-	for id, c := range sm.fileRecordCount {
-		cs.Counts = append(cs.Counts, &rfpb.PartitionRecordCount{PartitionId: id, Count: c})
+func (sm *Replica) flushPartitionMetadatas(wb *pebble.Batch) error {
+	sm.partitionMetadataMu.Lock()
+	defer sm.partitionMetadataMu.Unlock()
+	var cs rfpb.PartitionMetadatas
+	for _, pm := range sm.partitionMetadata {
+		cs.Metadata = append(cs.Metadata, pm)
 	}
 	bs, err := proto.Marshal(&cs)
 	if err != nil {
 		return err
 	}
-	if err := wb.Set(constants.FileRecordCountKey, bs, nil); err != nil {
+	if err := wb.Set(constants.PartitionMetadatasKey, bs, nil); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (sm *Replica) updateFileRecordCount(wb *pebble.Batch, key []byte, op fileRecordOp) error {
-	sm.fileRecordCountMu.Lock()
-	defer sm.fileRecordCountMu.Unlock()
+func (sm *Replica) updatePartitionMetadata(wb *pebble.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+	if fileMetadata == nil {
+		fileMetadata = &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(val, fileMetadata); err != nil {
+			return err
+		}
+	}
+	sm.partitionMetadataMu.Lock()
+	defer sm.partitionMetadataMu.Unlock()
 
-	parts := bytes.SplitN(key, []byte("/"), 2)
-	if len(parts) != 2 {
-		return status.FailedPreconditionErrorf("not a valid file record key %q", string(key))
+	partID := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
+	pm, ok := sm.partitionMetadata[partID]
+	if !ok {
+		pm = &rfpb.PartitionMetadata{PartitionId: partID}
+		sm.partitionMetadata[partID] = pm
 	}
 
-	partID := string(parts[0])
 	if op == fileRecordDelete {
-		sm.fileRecordCount[partID]--
+		pm.TotalCount--
+		pm.SizeBytes -= fileMetadata.GetSizeBytes()
 	} else {
 		_, closer, err := wb.Get(key)
 		if err == nil {
@@ -385,16 +396,17 @@ func (sm *Replica) updateFileRecordCount(wb *pebble.Batch, key []byte, op fileRe
 		if err != nil && err != pebble.ErrNotFound {
 			return err
 		}
-		sm.fileRecordCount[partID]++
+		pm.TotalCount++
+		pm.SizeBytes += fileMetadata.GetSizeBytes()
 	}
 	return nil
 }
 
-func (sm *Replica) updateAndFlushFileRecordCount(wb *pebble.Batch, key []byte, op fileRecordOp) error {
-	if err := sm.updateFileRecordCount(wb, key, op); err != nil {
+func (sm *Replica) updateAndFlushPartitionMetadatas(wb *pebble.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+	if err := sm.updatePartitionMetadata(wb, key, val, fileMetadata, op); err != nil {
 		return err
 	}
-	return sm.flushRecordCounts(wb)
+	return sm.flushPartitionMetadatas(wb)
 }
 
 func (sm *Replica) getDBDir() string {
@@ -440,12 +452,12 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	sm.leaser = pebbleutil.NewDBLeaser(db)
 
 	sm.checkAndSetRangeDescriptor(db)
-	rc, err := sm.getFileRecordCounts(db)
+	pms, err := sm.getPartitionMetadatas(db)
 	if err != nil {
 		return 0, err
 	}
-	for _, c := range rc.GetCounts() {
-		sm.fileRecordCount[c.GetPartitionId()] = c.GetCount()
+	for _, pm := range pms.GetMetadata() {
+		sm.partitionMetadata[pm.GetPartitionId()] = pm
 	}
 	return sm.getLastAppliedIndex(db)
 }
@@ -482,7 +494,7 @@ func (sm *Replica) fileDelete(wb *pebble.Batch, req *rfpb.FileDeleteRequest) (*r
 	if err := wb.Delete(fileMetadataKey, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
-	if err := sm.updateAndFlushFileRecordCount(wb, fileMetadataKey, fileRecordDelete); err != nil {
+	if err := sm.updateAndFlushPartitionMetadatas(wb, fileMetadataKey, iter.Value(), fileMetadata, fileRecordDelete); err != nil {
 		return nil, err
 	}
 	return &rfpb.FileDeleteResponse{}, nil
@@ -501,7 +513,7 @@ func (sm *Replica) deleteRange(wb *pebble.Batch, req *rfpb.DeleteRangeRequest) (
 		}
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err == nil {
-			if err := sm.updateFileRecordCount(wb, iter.Key(), fileRecordDelete); err != nil {
+			if err := sm.updatePartitionMetadata(wb, iter.Key(), iter.Value(), fileMetadata, fileRecordDelete); err != nil {
 				return nil, err
 			}
 			if fileMetadata.GetFileRecord() != nil {
@@ -511,7 +523,7 @@ func (sm *Replica) deleteRange(wb *pebble.Batch, req *rfpb.DeleteRangeRequest) (
 			}
 		}
 	}
-	if err := sm.flushRecordCounts(wb); err != nil {
+	if err := sm.flushPartitionMetadatas(wb); err != nil {
 		return nil, err
 	}
 
@@ -1749,7 +1761,7 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore, partitions []di
 		NodeID:              nodeID,
 		timerMu:             &sync.Mutex{},
 		store:               store,
-		fileRecordCount:     make(map[string]int64),
+		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
 		partitions:          partitions,
 		lastUsageCheckIndex: 0,
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
