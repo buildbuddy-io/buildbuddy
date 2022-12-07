@@ -217,7 +217,7 @@ type commandRunner struct {
 	diskUsageBytes   int64
 }
 
-func (r *commandRunner) pullCredentials() container.PullCredentials {
+func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
 	return container.GetPullCredentials(r.env, r.PlatformProperties)
 }
 
@@ -237,9 +237,13 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
-	err := container.PullImageIfNecessary(
+	creds, err := r.pullCredentials()
+	if err != nil {
+		return err
+	}
+	err = container.PullImageIfNecessary(
 		ctx, r.env, r.imageCacheAuth,
-		r.Container, r.pullCredentials(), r.PlatformProperties.ContainerImage,
+		r.Container, creds, r.PlatformProperties.ContainerImage,
 	)
 	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
@@ -323,7 +327,11 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		return r.Container.Run(ctx, command, wsPath, r.pullCredentials())
+		creds, err := r.pullCredentials()
+		if err != nil {
+			return commandutil.ErrorResult(err)
+		}
+		return r.Container.Run(ctx, command, wsPath, creds)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
@@ -337,9 +345,13 @@ func (r *commandRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	r.p.mu.RUnlock()
 	switch s {
 	case initial:
-		err := container.PullImageIfNecessary(
+		creds, err := r.pullCredentials()
+		if err != nil {
+			return commandutil.ErrorResult(err)
+		}
+		err = container.PullImageIfNecessary(
 			ctx, r.env, r.imageCacheAuth,
-			r.Container, r.pullCredentials(), r.PlatformProperties.ContainerImage,
+			r.Container, creds, r.PlatformProperties.ContainerImage,
 		)
 		if err != nil {
 			return commandutil.ErrorResult(err)
@@ -797,7 +809,10 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 		return err
 	}
 
-	creds := container.GetPullCredentials(p.env, platProps)
+	creds, err := container.GetPullCredentials(p.env, platProps)
+	if err != nil {
+		return err
+	}
 	err = container.PullImageIfNecessary(
 		ctx, p.env, p.imageCacheAuth,
 		c, creds, platProps.ContainerImage,
