@@ -67,6 +67,9 @@ type IStore interface {
 	Sender() *sender.Sender
 }
 
+type partitionMetadata struct {
+}
+
 // IOnDiskStateMachine is the interface to be implemented by application's
 // state machine when the state machine state is always persisted on disks.
 // IOnDiskStateMachine basically matches the state machine type described

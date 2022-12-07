@@ -93,8 +93,8 @@ message PartitionRecordCount {
   int64 count = 2;
 }
 
-message PartitionCounts {
-  repeated PartitionRecordCount counts = 1;
+message PartitionMetadatas {
+  repeated PartitionMetadata metadata = 1;
 }
 
 message FileDeleteRequest {
