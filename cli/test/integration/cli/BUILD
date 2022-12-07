@@ -4,6 +4,7 @@ go_test(
     name = "cli_test",
     srcs = ["cli_test.go"],
     deps = [
+        "//cli/log",
         "//cli/testutil/testcli",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
