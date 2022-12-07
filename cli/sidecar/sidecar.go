@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
@@ -80,6 +81,9 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	args = append(args, fmt.Sprintf("--listen_addr=unix://%s", sockPath))
 	// Re-invoke ourselves in sidecar mode.
 	c := exec.Command(os.Args[0], append(args, "--sidecar=1")...)
+	// Start the sidecar in its own process group so that when we send Ctrl+C,
+	// the sidecar can keep running in the background.
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	c.Stdout = f
 	c.Stderr = f
 	log.Debugf("Running sidecar cmd: %s", c.String())
