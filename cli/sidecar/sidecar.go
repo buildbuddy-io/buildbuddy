@@ -96,23 +96,12 @@ func ConfigureSidecar(args []string) []string {
 	cacheDir, err := storage.CacheDir()
 	ctx := context.Background()
 	if err != nil {
-		log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
+		log.Warnf("Sidecar could not be initialized, continuing without sidecar: %s", err)
+		return args
 	}
 
 	// Re(Start) the sidecar if the flags set don't match.
-	sidecarArgs := []string{
-		// Allow the sidecar's cache proxy to handle ZSTD streams.
-		// Note that if the remote cache backend doesn't support ZSTD, then
-		// this transcoding functionality will go unused as bazel will see that
-		// compression is not enabled in the remote capabilities.
-		// TODO: Have the sidecar store artifacts compressed on disk once we
-		// support it, to avoid any local CPU overhead due to transcoding.
-		"--cache.zstd_transcoding_enabled=true",
-		// Use a much higher BEP proxy size than the default, since we typically
-		// only need to handle a small number of concurrent invocations and
-		// we don't want to drop events just because we're proxying.
-		fmt.Sprintf("--build_event_proxy.buffer_size=%d", 500_000),
-	}
+	sidecarArgs := []string{}
 	besBackendFlag := arg.Get(args, "bes_backend")
 	remoteCacheFlag := arg.Get(args, "remote_cache")
 	remoteExecFlag := arg.Get(args, "remote_executor")
@@ -133,11 +122,25 @@ func ConfigureSidecar(args []string) []string {
 		return args
 	}
 
+	sidecarArgs = append(sidecarArgs, []string{
+		// Allow the sidecar's cache proxy to handle ZSTD streams.
+		// Note that if the remote cache backend doesn't support ZSTD, then
+		// this transcoding functionality will go unused as bazel will see that
+		// compression is not enabled in the remote capabilities.
+		// TODO: Have the sidecar store artifacts compressed on disk once we
+		// support it, to avoid any local CPU overhead due to transcoding.
+		"--cache.zstd_transcoding_enabled=true",
+		// Use a much higher BEP proxy size than the default, since we typically
+		// only need to handle a small number of concurrent invocations and
+		// we don't want to drop events just because we're proxying.
+		fmt.Sprintf("--build_event_proxy.buffer_size=%d", 500_000),
+	}...)
+
 	var connectionErr error
 	for i := 0; i < numConnectionAttempts; i++ {
 		sidecarSocket, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
 		if err != nil {
-			log.Printf("Sidecar could not be initialized, continuing without sidecar: %s", err)
+			log.Warnf("Sidecar could not be initialized, continuing without sidecar: %s", err)
 			return args
 		}
 		if err := keepaliveSidecar(ctx, sidecarSocket); err != nil {

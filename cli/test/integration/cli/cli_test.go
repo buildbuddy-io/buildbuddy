@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -15,9 +16,12 @@ func TestBazelVersion(t *testing.T) {
 	cmd := testcli.Command(t, ws, "version")
 
 	b, err := testcli.CombinedOutput(cmd)
+	output := string(b)
 	require.NoError(t, err, "output: %s", string(b))
 
-	require.Contains(t, string(b), "Build label: "+testbazel.Version)
+	require.Contains(t, output, "Build label: "+testbazel.Version)
+	// Make sure we don't print any warnings.
+	require.NotContains(t, output, log.WarningPrefix)
 }
 
 func TestBazelBuildWithLocalPlugin(t *testing.T) {
@@ -56,4 +60,6 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	require.Contains(t, output, "--build_metadata FOO=bar was canonicalized as expected!")
 	require.Contains(t, output, "Hello from handle_bazel_output.sh! Build was successful.")
 	require.Contains(t, output, "Hello from post_bazel.sh!")
+	// Make sure we don't print any warnings.
+	require.NotContains(t, output, log.WarningPrefix)
 }
