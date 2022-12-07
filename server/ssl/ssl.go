@@ -33,6 +33,7 @@ var (
 	selfSigned       = flag.Bool("ssl.self_signed", false, "If true, a self-signed cert will be generated for TLS termination.")
 	clientCACertFile = flag.String("ssl.client_ca_cert_file", "", "Path to a PEM encoded certificate authority file used to issue client certificates for mTLS auth.")
 	clientCAKeyFile  = flag.String("ssl.client_ca_key_file", "", "Path to a PEM encoded certificate authority key file used to issue client certificates for mTLS auth.")
+	clientCertExp    = flag.Duration("ssl.client_cert_lifespan", 365*100*24*time.Hour, "The duration client certificates are valid for. Ex: '730h' for one month. If not set, defaults to 100 years.")
 	hostWhitelist    = flagutil.New("ssl.host_whitelist", []string{}, "Cloud-Only")
 	enableSSL        = flag.Bool("ssl.enable_ssl", false, "Whether or not to enable SSL/TLS on gRPC connections (gRPCS).")
 	useACME          = flag.Bool("ssl.use_acme", false, "Whether or not to automatically configure SSL certs using ACME. If ACME is enabled, cert_file and key_file should not be set.")
@@ -261,7 +262,7 @@ func generateCert(subject pkix.Name, caCert *CACert) (string, string, error) {
 		return "", "", err
 	}
 	notBefore := time.Now()
-	notAfter := notBefore.Add(100 * 365 * 24 * time.Hour)
+	notAfter := notBefore.Add(*clientCertExp)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
