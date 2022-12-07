@@ -28,7 +28,19 @@ const (
 )
 
 var (
-	urlSecretRegex = regexp.MustCompile(`[a-zA-Z-0-9-_=]+\@`)
+	urlSecretRegex = regexp.MustCompile(`[a-zA-Z0-9-_=]+\@`)
+
+	// There are some flags that contain multiple sub-flags which are
+	// specified as comma-separated KEY=VALUE pairs, e.g.:
+	//     --build_metadata=ONE=foo,TWO=bar,THREE=baz
+	// These can cause problems with the flag value redaction logic if the
+	// first character of the value is an '@' because 'NAME=@VALUE' matches the
+	// above regex. We could add some very fancy (complicated) flag parsing and
+	// redaction logic, but for now we'll just permit certain flags to be
+	// parsed this way and have only the sub-values undergo redaction. This is
+	// the list of flag names that are permitted to be treated this way.
+	knownMultiFlags   = []string{"build_metadata"}
+	multiFlagKeyRegex = regexp.MustCompile(`,[A-Z_]+=`)
 
 	knownGitRepoURLKeys = []string{
 		"REPO_URL", "GIT_URL", "TRAVIS_REPO_SLUG", "BUILDKITE_REPO",
@@ -62,19 +74,83 @@ func stripURLSecrets(input string) string {
 	return urlSecretRegex.ReplaceAllString(input, "")
 }
 
+// Strips URL secrets from the provided flag value, if there is a value.
+func stripUrlSecretsFromFlag(input string) string {
+	ck, cv := splitCombinedForm(input)
+	if cv == "" {
+		// No flag value to redact; keep flag name as-is.
+		return input
+	}
+	return ck + "=" + stripURLSecrets(cv)
+}
+
+// Strips URL secrets from all of the provided multi-flags. These are flags
+// that are specified as:
+//
+//	--flag_name=ONE=foo,TWO=BAR,THREE=baz
+//
+// This function will strip secrets from the "foo", "bar", and "baz" components,
+// leaving "--flag_name", "ONE", "TWO", and "THREE" intact.
+func stripUrlSecretsFromMultiFlag(input string) string {
+	key, val := splitCombinedForm(input)
+	return key + "=" + stripUrlSecretsFromMultiFlagValue(val)
+}
+
+// Same as above but expects to not get the "--flag_name=" part.
+func stripUrlSecretsFromMultiFlagValue(input string) string {
+	subFlags := splitMultiFlag(input)
+	for i, flag := range subFlags {
+		subFlags[i] = stripUrlSecretsFromFlag(flag)
+	}
+	return strings.Join(subFlags, ",")
+}
+
+// Splits the provided multi-flags into an array of regular ole' flags. So,
+// "ONE=foo,TWO=bar,THREE=baz" becomes ["ONE=foo", "TWO=bar", "THREE=baz"]
+func splitMultiFlag(input string) []string {
+	// multiFlagKeyRegex only matches the flag name for the 2nd and beyond flags
+	// so prepend a 0 to capture the first sub-flag.
+	subFlags := multiFlagKeyRegex.FindAllStringIndex(input, -1 /* return all matches */)
+	subFlagStarts := make([]int, len(subFlags)+1)
+	subFlagStarts[0] = 0
+	for i := 0; i < len(subFlags); i++ {
+		subFlagStarts[i+1] = subFlags[i][0]
+	}
+
+	output := make([]string, len(subFlagStarts))
+	for i := 0; i < len(subFlagStarts); i++ {
+		start := subFlagStarts[i]
+		if start > 0 {
+			// Skip the leading comma
+			start++
+		}
+		end := len(input)
+		if i+1 < len(subFlagStarts) {
+			end = subFlagStarts[i+1]
+		}
+		output[i] = input[start:end]
+	}
+	return output
+}
+
+func isKnownMultiFlag(input string) bool {
+	for _, knownMultiFlag := range knownMultiFlags {
+		if strings.HasPrefix(input, knownMultiFlag) || strings.HasPrefix(input, "--"+knownMultiFlag) {
+			return true
+		}
+	}
+	return false
+}
+
 func stripURLSecretsFromCmdLine(tokens []string) {
 	for i, token := range tokens {
-		// Prevent flag name from being included in redaction pattern.
-		if strings.HasPrefix(token, "--") {
-			ck, cv := splitCombinedForm(token)
-			if cv == "" {
-				// No flag value to redact; keep flag name as-is.
-				continue
-			}
-			tokens[i] = ck + "=" + stripURLSecrets(cv)
-			continue
+		if isKnownMultiFlag(token) {
+			tokens[i] = stripUrlSecretsFromMultiFlag(token)
+		} else if strings.HasPrefix(token, "--") {
+			tokens[i] = stripUrlSecretsFromFlag(token)
+		} else {
+			tokens[i] = stripURLSecrets(token)
 		}
-		tokens[i] = stripURLSecrets(token)
 	}
 }
 
@@ -164,9 +240,12 @@ func filterCommandLineOptions(options []*clpb.Option) []*clpb.Option {
 // splitCombinedForm splits a combined form like `--flag_name=value` around
 // the first "=", returning "--flag_name", "value".
 //
-// Note that the value may be empty, and the equal sign may be omitted. In both
-// cases, "--flag_name", "" would be returned. Note also that the value can
-// itself contain "=".
+// Notes:
+//   - The value may be empty (e.g. `--flag` returns "--flag", "")
+//   - If the equals sign is omitted, the flag is treated as above.
+//   - The value man contain equals signs (e.g. `--key=Q8s-=2` returns "--key",
+//     "Q8s-=2")
+//   - The leading dashes are not required and will be omitted if not provided.
 func splitCombinedForm(cf string) (string, string) {
 	i := strings.Index(cf, "=")
 	if i < 0 {
@@ -187,9 +266,13 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			// gitutil.StripRepoURLCredentials is URL-aware. Then fall back to
 			// regex-based stripping.
 			stripRepoURLCredentialsFromCommandLineOption(option)
-			option.OptionValue = stripURLSecrets(option.OptionValue)
-			if name, value := splitCombinedForm(option.CombinedForm); value != "" {
-				option.CombinedForm = name + "=" + stripURLSecrets(value)
+
+			if isKnownMultiFlag(option.OptionName) {
+				option.OptionValue = stripUrlSecretsFromMultiFlagValue(option.OptionValue)
+				option.CombinedForm = stripUrlSecretsFromMultiFlag(option.CombinedForm)
+			} else {
+				option.OptionValue = stripURLSecrets(option.OptionValue)
+				option.CombinedForm = stripUrlSecretsFromFlag(option.CombinedForm)
 			}
 
 			// Redact remote header values

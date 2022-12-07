@@ -109,6 +109,9 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
+		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=bar,BAZ="},
+		{"build_metadata", "FOO=A=1,BAR=SECRET=SECRET@buildbuddy.io", "FOO=A=1,BAR=buildbuddy.io"},
+		{"some_other_flag", "PATTERN=@//foo", "//foo"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
@@ -141,16 +144,46 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	optionsParsed := &bespb.OptionsParsed{
-		CmdLine:         []string{"213wZJyTUyhXkj381312@foo", "--flag=@repo//package", "--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET"},
-		ExplicitCmdLine: []string{"213wZJyTUyhXkj381312@explicit", "--flag=@repo//package", "--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT"},
+		CmdLine: []string{
+			"213wZJyTUyhXkj381312@foo",
+			"--flag=@repo//package",
+			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET@",
+			"--some_other_flag=SUBFLAG=@//foo",
+		},
+		ExplicitCmdLine: []string{
+			"213wZJyTUyhXkj381312@explicit",
+			"--flag=@repo//package",
+			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET_EXPLICIT@",
+			"--some_other_flag=SUBFLAG=@//foo",
+		},
 	}
 
 	redactor.RedactMetadata(&bespb.BuildEvent{
 		Payload: &bespb.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
 	})
 
-	assert.Equal(t, []string{"foo", "--flag=@repo//package", "--remote_header=<REDACTED>"}, optionsParsed.CmdLine)
-	assert.Equal(t, []string{"explicit", "--flag=@repo//package", "--remote_header=<REDACTED>"}, optionsParsed.ExplicitCmdLine)
+	assert.Equal(
+		t,
+		[]string{
+			"foo",
+			"--flag=@repo//package",
+			"--remote_header=<REDACTED>",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=",
+			"--some_other_flag=//foo",
+		},
+		optionsParsed.CmdLine)
+	assert.Equal(
+		t,
+		[]string{
+			"explicit",
+			"--flag=@repo//package",
+			"--remote_header=<REDACTED>",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=",
+			"--some_other_flag=//foo",
+		},
+		optionsParsed.ExplicitCmdLine)
 }
 
 func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
