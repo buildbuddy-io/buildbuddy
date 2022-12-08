@@ -69,6 +69,7 @@ export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
   };
 
   const missingFlags = Object.keys(recommendedOptions).filter((flag) => !model.optionsMap.get(flag));
+  if (!missingFlags.length) return null;
 
   return {
     level: SuggestionLevel.INFO,
