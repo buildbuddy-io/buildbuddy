@@ -897,13 +897,8 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 		return nil, err
 	}
 
-	// Return size from the original digest
-	// If data in the cache is compressed, this will return the decompressed size
-	cachedDigest := md.GetFileRecord().GetDigest()
-	originalSize := cachedDigest.GetSizeBytes()
-
 	return &interfaces.CacheMetadata{
-		SizeBytes:          originalSize,
+		SizeBytes:          md.GetStoredSizeBytes(),
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
 	}, nil
