@@ -3,6 +3,7 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -25,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
+	"github.com/google/shlex"
 	"gopkg.in/yaml.v2"
 )
 
@@ -201,16 +203,12 @@ func installPlugin(plugin *PluginConfig, configPath string) error {
 	}
 
 	// Make sure the plugin is not already installed.
-	pluginPath, err := p.Path()
-	if err != nil {
-		return err
-	}
 	for _, p := range configFile.Plugins {
-		existingPath, err := (&Plugin{configFile: configFile, config: p}).Path()
+		existingPath, err := (&Plugin{configFile: configFile, config: p}).ResolvePath()
 		if err != nil {
 			return fmt.Errorf("invalid config: failed to determine existing plugin path: %s", err)
 		}
-		if pluginPath == existingPath {
+		if p.Path == existingPath {
 			return fmt.Errorf("plugin is already installed")
 		}
 	}
@@ -295,6 +293,86 @@ func installPlugin(plugin *PluginConfig, configPath string) error {
 		return fmt.Errorf("failed to move temp config to %s: %s", configPath, err)
 	}
 	return nil
+}
+
+type CmdOption func(cmd *exec.Cmd)
+
+// startPluginHook attempts to start the given hook if it exists. If the hook
+// exists, it returns either the successfully-started command started or any
+// error encountered. If the hook does not exist, it returns nil.
+func startPluginHook(execPath string, args []string, opts ...CmdOption) (*exec.Cmd, error) {
+	cmd := exec.Command(execPath, args...)
+	for _, opt := range opts {
+		opt(cmd)
+	}
+	if err := cmd.Start(); os.IsPermission(err) {
+		l, err := getShebangLineFromFile(execPath)
+		if err != nil {
+			return nil, status.InternalErrorf(
+				"File was not executable and the following error was encountered "+
+					"when falling back to retrieving a shebang line from the file: %s",
+				err,
+			)
+		}
+		shebangArgs, err := shlex.Split(l)
+		if err != nil {
+			return nil, status.InternalErrorf(
+				"File was not executable and the following error was encountered "+
+					"when lexing the shebang line from the file: %s",
+				err,
+			)
+		}
+		if len(shebangArgs) == 0 {
+			return nil, status.InternalErrorf(
+				"File was not executable and the shebang line from the file was empty.",
+			)
+		}
+		cmd = exec.Command(shebangArgs[0], append(append(shebangArgs[1:], execPath), args...)...)
+		for _, opt := range opts {
+			opt(cmd)
+		}
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+	} else if os.IsNotExist(err) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
+// getShebangLineFromFile returns the line following a `#!` at the beginning of
+// the specified file, if any.
+func getShebangLineFromFile(filepath string) (string, error) {
+	f, err := os.Open(filepath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	shebang := make([]byte, 2, 2)
+	if _, err := f.Read(shebang); err != nil && !errors.Is(err, io.EOF) {
+		return "", status.InternalErrorf("error reading file: %s", err)
+	}
+	if string(shebang) != "#!" {
+		return "", status.FailedPreconditionError("File did not begin with shebang (#!).")
+	}
+	// shebang line > 128 characters is unsupported on most systems.
+	b := make([]byte, 129, 129)
+	n, err := f.Read(b)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", status.InternalErrorf("error reading file: %s", err)
+	}
+	if n < len(b) {
+		// If the file ended early, add a new line after the data to indicate the
+		// end of the data is the end of a line for when we use strings.Index().
+		b[n] = '\n'
+	}
+	i := strings.Index(string(b), "\n")
+	if i == -1 {
+		return "", status.FailedPreconditionError("Shebang lines exceeding 128 characters are unsupported.")
+	}
+	return string(b[0:i]), nil
 }
 
 // ConfigFile represents a decoded config file along its file metadata.
@@ -415,6 +493,9 @@ type Plugin struct {
 	// This dir lasts only for the current CLI invocation and is visible
 	// to all hooks.
 	tempDir string
+	// Path is populated with the path to the plugin when the plugin
+	// is initially loaded.
+	Path string
 }
 
 // LoadAll loads all plugins from the combined user and workspace configs, and
@@ -590,6 +671,10 @@ func (p *Plugin) repoClonePath() (string, error) {
 // load downloads the plugin from the specified repo, if applicable.
 func (p *Plugin) load() error {
 	if p.config.Repo == "" {
+		var err error
+		if p.Path, err = p.ResolvePath(); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -605,6 +690,9 @@ func (p *Plugin) load() error {
 		return err
 	}
 	if exists {
+		if p.Path, err = p.ResolvePath(); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -647,6 +735,9 @@ func (p *Plugin) load() error {
 		return fmt.Errorf("failed to add cloned repo to plugins dir: %s", err)
 	}
 
+	if p.Path, err = p.ResolvePath(); err != nil {
+		return err
+	}
 	if err := p.validate(); err != nil {
 		return err
 	}
@@ -657,11 +748,7 @@ func (p *Plugin) load() error {
 // validate makes sure the plugin's path spec points to a valid path within the
 // source repository.
 func (p *Plugin) validate() error {
-	path, err := p.Path()
-	if err != nil {
-		return err
-	}
-	exists, err := disk.FileExists(context.TODO(), path)
+	exists, err := disk.FileExists(context.TODO(), p.Path)
 	if err != nil {
 		return err
 	}
@@ -674,8 +761,8 @@ func (p *Plugin) validate() error {
 	return nil
 }
 
-// Path returns the absolute root path of the plugin.
-func (p *Plugin) Path() (string, error) {
+// ResolvePath returns the absolute root path of the plugin.
+func (p *Plugin) ResolvePath() (string, error) {
 	if p.config.Repo != "" {
 		repoPath, err := p.repoClonePath()
 		if err != nil {
@@ -701,7 +788,7 @@ func (p *Plugin) commandEnv() []string {
 // be fed to the next plugin in the pipeline, or passed to Bazel if this is the
 // last plugin.
 //
-// See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
+// See cli/example_plugins/ping-remote/pre_bazel for an example.
 func (p *Plugin) PreBazel(args []string) ([]string, error) {
 	// Write args to a file so the plugin can manipulate them.
 	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
@@ -717,30 +804,28 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 		return nil, err
 	}
 
-	path, err := p.Path()
+	execPath := filepath.Join(p.Path, "pre_bazel")
+	// TODO: Prefix output with "output from [plugin]" ?
+	cmd, err := startPluginHook(
+		execPath,
+		[]string{argsFile.Name()},
+		func(cmd *exec.Cmd) { cmd.Dir = p.Path },
+		func(cmd *exec.Cmd) { cmd.Stderr = os.Stderr },
+		func(cmd *exec.Cmd) { cmd.Stdout = os.Stdout },
+		func(cmd *exec.Cmd) { cmd.Env = p.commandEnv() },
+	)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
-	scriptPath := filepath.Join(path, "pre_bazel.sh")
-	exists, err := disk.FileExists(context.TODO(), scriptPath)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		log.Debugf("Bazel hook not found at %s", scriptPath)
+	if cmd == nil {
+		log.Debugf("Bazel hook not found at %s", execPath)
 		return args, nil
 	}
-	log.Debugf("Running pre-bazel hook for %s/%s", p.config.Repo, p.config.Path)
-	// TODO: support "pre_bazel.<any-extension>" as long as the file is
-	// executable and has a shebang line
-	cmd := exec.Command("/usr/bin/env", "bash", scriptPath, argsFile.Name())
-	// TODO: Prefix output with "output from [plugin]" ?
-	cmd.Dir = path
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.Env = p.commandEnv()
-	if err := cmd.Run(); err != nil {
-		return nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
+	log.Debugf("Started pre-bazel hook for %s/%s", p.config.Repo, p.config.Path)
+	if err := cmd.Wait(); err != nil {
+		log.Debugf("Command failed: %s", err)
+	} else {
+		log.Debugf("Command %s completed", cmd.Args)
 	}
 
 	newArgs, err := readArgsFile(argsFile.Name())
@@ -761,30 +846,29 @@ func (p *Plugin) PreBazel(args []string) ([]string, error) {
 // Currently the invocation data is fed as plain text via a file. The file path
 // is passed as the first argument.
 //
-// See cli/example_plugins/go-deps/post_bazel.sh for an example.
+// See cli/example_plugins/go-deps/post_bazel for an example.
 func (p *Plugin) PostBazel(bazelOutputPath string) error {
-	path, err := p.Path()
+	execPath := filepath.Join(p.Path, "post_bazel")
+	cmd, err := startPluginHook(
+		execPath,
+		[]string{bazelOutputPath},
+		func(cmd *exec.Cmd) { cmd.Dir = p.Path },
+		func(cmd *exec.Cmd) { cmd.Stderr = os.Stderr },
+		func(cmd *exec.Cmd) { cmd.Stdout = os.Stdout },
+		func(cmd *exec.Cmd) { cmd.Env = p.commandEnv() },
+	)
 	if err != nil {
-		return err
+		return status.InternalErrorf("Post-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
-	scriptPath := filepath.Join(path, "post_bazel.sh")
-	exists, err := disk.FileExists(context.TODO(), scriptPath)
-	if err != nil {
-		return err
-	}
-	if !exists {
+	if cmd == nil {
+		log.Debugf("Bazel hook not found at %s", execPath)
 		return nil
 	}
-	log.Debugf("Running post-bazel hook for %s/%s", p.config.Repo, p.config.Path)
-	cmd := exec.Command("/usr/bin/env", "bash", scriptPath, bazelOutputPath)
-	// TODO: Prefix stderr output with "output from [plugin]" ?
-	cmd.Dir = path
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.Stdin = os.Stdin
-	cmd.Env = p.commandEnv()
-	if err := cmd.Run(); err != nil {
-		return status.InternalErrorf("Post-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
+	log.Debugf("Started post-bazel hook for %s/%s", p.config.Repo, p.config.Path)
+	if err := cmd.Wait(); err != nil {
+		log.Debugf("Command failed: %s", err)
+	} else {
+		log.Debugf("Command %s completed", cmd.Args)
 	}
 	return nil
 }
@@ -797,41 +881,42 @@ func (p *Plugin) PostBazel(bazelOutputPath string) error {
 // It returns the original reader if no output handler is configured for this
 // plugin.
 //
-// See cli/example_plugins/go-highlight/handle_bazel_output.sh for an example.
+// See cli/example_plugins/go-highlight/handle_bazel_output for an example.
 func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
-	path, err := p.Path()
-	if err != nil {
-		return nil, err
-	}
-	scriptPath := filepath.Join(path, "handle_bazel_output.sh")
-	exists, err := disk.FileExists(context.TODO(), scriptPath)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return r, nil
-	}
-	cmd := exec.Command("/usr/bin/env", "bash", scriptPath)
 	pr, pw := io.Pipe()
-	cmd.Dir = path
 	// Write command output to a pty to ensure line buffering.
 	ptmx, tty, err := pty.Open()
 	if err != nil {
+		pw.Close()
 		return nil, status.InternalErrorf("failed to open pty: %s", err)
 	}
-	cmd.Stdout = tty
-	cmd.Stderr = tty
-	cmd.Stdin = r
-	// Prevent output handlers from receiving Ctrl+C, to prevent things like
-	// "KeyboardInterrupt" being printed in Python plugins. Instead, plugins
-	// will just receive EOF on stdin and exit normally.
-	// TODO: Should we still have a way for plugins to listen to Ctrl+C?
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-	cmd.Env = p.commandEnv()
-	if err := cmd.Start(); err != nil {
+	execPath := filepath.Join(p.Path, "handle_bazel_output")
+	cmd, err := startPluginHook(
+		execPath,
+		[]string{},
+		func(cmd *exec.Cmd) { cmd.Dir = p.Path },
+		func(cmd *exec.Cmd) { cmd.Stdout = tty },
+		func(cmd *exec.Cmd) { cmd.Stderr = tty },
+		func(cmd *exec.Cmd) { cmd.Stdin = r },
+		// Prevent output handlers from receiving Ctrl+C, to prevent things like
+		// "KeyboardInterrupt" being printed in Python plugins. Instead, plugins
+		// will just receive EOF on stdin and exit normally.
+		// TODO: Should we still have a way for plugins to listen to Ctrl+C?
+		func(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} },
+		func(cmd *exec.Cmd) { cmd.Env = p.commandEnv() },
+	)
+	if err != nil {
+		tty.Close()
+		ptmx.Close()
+		pw.Close()
 		return nil, status.InternalErrorf("failed to start plugin bazel output handler: %s", err)
+	}
+	if cmd == nil {
+		tty.Close()
+		ptmx.Close()
+		pw.Close()
+		log.Debugf("Bazel hook not found at %s", execPath)
+		return r, nil
 	}
 	go func() {
 		// Copy pty output to the next pipeline stage.

@@ -27,16 +27,18 @@ func TestBazelVersion(t *testing.T) {
 func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"plugins/test/pre_bazel.sh": `
-			echo 'Hello from pre_bazel.sh!'
+		"plugins/test/pre_bazel": `#!/usr/bin/env bash
+			echo 'Hello from pre_bazel!'
 			if grep '\--build_metadata=FOO=bar' "$1" >/dev/null ; then
 				echo "--build_metadata FOO=bar was canonicalized as expected!"
 			fi
 		`,
-		"plugins/test/post_bazel.sh": `echo 'Hello from post_bazel.sh!'`,
-		"plugins/test/handle_bazel_output.sh": `
+		"plugins/test/post_bazel": `#!/usr/bin/env bash
+			echo 'Hello from post_bazel!'
+		`,
+		"plugins/test/handle_bazel_output": `#!/usr/bin/env bash
 			if grep 'Build completed successfully'; then
-				echo 'Hello from handle_bazel_output.sh! Build was successful.'
+				echo 'Hello from handle_bazel_output! Build was successful.'
 			fi
 		`,
 	})
@@ -56,10 +58,10 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	require.NoError(t, err)
 	output := strings.ReplaceAll(string(b), "\r\n", "\n")
 
-	require.Contains(t, output, "Hello from pre_bazel.sh!")
+	require.Contains(t, output, "Hello from pre_bazel!")
 	require.Contains(t, output, "--build_metadata FOO=bar was canonicalized as expected!")
-	require.Contains(t, output, "Hello from handle_bazel_output.sh! Build was successful.")
-	require.Contains(t, output, "Hello from post_bazel.sh!")
+	require.Contains(t, output, "Hello from handle_bazel_output! Build was successful.")
+	require.Contains(t, output, "Hello from post_bazel!")
 	// Make sure we don't print any warnings.
 	require.NotContains(t, output, log.WarningPrefix)
 }
