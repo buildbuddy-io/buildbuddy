@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"io/fs"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -8,20 +9,22 @@ import (
 )
 
 func TestParseDataSource(t *testing.T) {
-	_, err := db.ParseDatasource("", &db.AdvancedConfig{})
+	var fileResolver fs.FS
+
+	_, err := db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{})
 	require.ErrorContains(t, err, "no database configured")
 
-	_, err = db.ParseDatasource("foo", &db.AdvancedConfig{})
+	_, err = db.ParseDatasource(fileResolver, "foo", &db.AdvancedConfig{})
 	require.ErrorContains(t, err, "malformed")
 
-	ds, err := db.ParseDatasource("foo://bar/baz?abc=xyz", &db.AdvancedConfig{})
+	ds, err := db.ParseDatasource(fileResolver, "foo://bar/baz?abc=xyz", &db.AdvancedConfig{})
 	require.NoError(t, err)
 	require.Equal(t, "foo", ds.DriverName())
 	dsn, err := ds.DSN()
 	require.NoError(t, err)
 	require.Equal(t, "bar/baz?abc=xyz", dsn)
 
-	ds, err = db.ParseDatasource("", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
 		Driver:   "sqlite3",
 		Endpoint: "/tmp/mydb",
 	})
@@ -31,7 +34,7 @@ func TestParseDataSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/mydb", dsn)
 
-	ds, err = db.ParseDatasource("", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
 		Driver:   "sqlite3",
 		Endpoint: "/tmp/mydb",
 		Params:   "foo=bar",
@@ -42,7 +45,7 @@ func TestParseDataSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/mydb?foo=bar", dsn)
 
-	ds, err = db.ParseDatasource("", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
 		Driver:   "mysql",
 		Endpoint: "host:port",
 		Username: "user",
@@ -55,7 +58,7 @@ func TestParseDataSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "user:pass@tcp(host:port)/db", dsn)
 
-	ds, err = db.ParseDatasource("", &db.AdvancedConfig{
+	ds, err = db.ParseDatasource(fileResolver, "", &db.AdvancedConfig{
 		Driver:   "mysql",
 		Endpoint: "host:port",
 		Username: "user",

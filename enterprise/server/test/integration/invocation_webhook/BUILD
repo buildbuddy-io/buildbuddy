@@ -6,6 +6,7 @@ go_test(
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//proto:invocation_go_proto",
+        "//server/real_environment",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
         "//server/testutil/testhealthcheck",

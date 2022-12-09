@@ -135,7 +135,7 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	if *useMySQL {
 		flags.Set(t, "database.data_source", testmysql.GetOrStart(t))
 	}
-	dbHandle, err := db.GetConfiguredDatabase(healthChecker)
+	dbHandle, err := db.GetConfiguredDatabase(te)
 	if err != nil {
 		t.Fatal(err)
 	}

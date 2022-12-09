@@ -156,7 +156,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 	realEnv.SetAuthenticator(&nullauth.NullAuthenticator{})
 	configureFilesystemsOrDie(realEnv)
 
-	dbHandle, err := db.GetConfiguredDatabase(healthChecker)
+	dbHandle, err := db.GetConfiguredDatabase(realEnv)
 	if err != nil {
 		log.Fatalf("Error configuring database: %s", err)
 	}
