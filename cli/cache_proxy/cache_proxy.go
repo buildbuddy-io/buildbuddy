@@ -31,7 +31,7 @@ var (
 )
 
 const (
-	queueBufferSize = 100
+	queueBufferSize = 10_000
 )
 
 // CacheProxy implements a local GRPC cache that proxies a remote GRPC cache.
