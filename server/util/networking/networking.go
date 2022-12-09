@@ -17,7 +17,18 @@ import (
 )
 
 var (
-	routePrefix = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	routePrefix = flag.String(
+		"executor.route_prefix",
+		"default",
+		`The prefix in the ip route to locate a device: either 'default' or `,
+		`the ip range of the subnet e.g. 172.24.0.0/18`)
+	preserveExistingNetNamespaces = flag.Boolean(
+		"executor.preserve_existing_netns",
+		false,
+		`Preserve existing bb-executor net namespaces. By default all `,
+		`"bb-executor" net namespaces are removed on executor startup, but if `,
+		`multiple executors are running on the same machine this behavior `,
+		`should be disabled to prevent them from interfering with each other.`)
 )
 
 const (
@@ -73,7 +84,7 @@ func DeleteNetNamespaces(ctx context.Context) error {
 //
 //	$ sudo ip netns add "netNamespace"
 func CreateNetNamespace(ctx context.Context, netNamespace string) error {
-	return runCommand(ctx, "ip", "netns", "add", netNamespacePrefix + netNamespace)
+	return runCommand(ctx, "ip", "netns", "add", netNamespacePrefix+netNamespace)
 }
 
 // CreateTapInNamespace is equivalent to:
@@ -554,4 +565,8 @@ func IsSecondaryNetworkEnabled() bool {
 		return false
 	}
 	return true
+}
+
+func PreserveExistingNetNamespaces() bool {
+	return *preserveExistingNetNamespaces
 }
