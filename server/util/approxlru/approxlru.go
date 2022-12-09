@@ -65,6 +65,7 @@ type OnRefresh[T any] func(ctx context.Context, key T) (skip bool, timestamp tim
 // the oldest entries in the pool and resamples to maintain the pool size.
 //
 // For more details, see:
+//
 //	https://github.com/redis/redis/blob/unstable/src/evict.c#L118 and
 //	http://antirez.com/news/109
 type LRU[T Key] struct {
