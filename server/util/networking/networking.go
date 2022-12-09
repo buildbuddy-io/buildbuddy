@@ -26,6 +26,8 @@ const (
 	routingTableID = 1
 	// The routingTableName for the new routing table we add.
 	routingTableName = "rt1"
+	// netns prefix to use to identify executor namespaces.
+	netNamespacePrefix = "bb-executor-"
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -54,20 +56,24 @@ func runCommand(ctx context.Context, args ...string) error {
 // namespace prepends the provided command with 'ip netns exec "netNamespace"'
 // so that the provided command is run inside the network namespace.
 func namespace(netNamespace string, args ...string) []string {
-	return append([]string{"ip", "netns", "exec", netNamespace}, args...)
+	return append([]string{"ip", "netns", "exec", netNamespacePrefix + netNamespace}, args...)
 }
 
-// Deletes all of the net namespaces. These can be left behind if the executor
-// doesn't exit gracefully.
+// Deletes all of the executor net namespaces. These can be left behind if the
+// executor doesn't exit gracefully. Unfortunately, "ip netns delete" doesn't
+// support patterns, so this runs a short shell for-loop.
 func DeleteNetNamespaces(ctx context.Context) error {
-	return runCommand(ctx, "ip", "--all", "netns", "delete")
+	return runCommand(ctx, "sh", "-c",
+		`for ns in $(ip netns list | grep ^bb-executor | cut -d \" \" -f 1);
+		do ip netns delete $ns;
+		done`)
 }
 
 // CreateNetNamespace is equivalent to:
 //
 //	$ sudo ip netns add "netNamespace"
 func CreateNetNamespace(ctx context.Context, netNamespace string) error {
-	return runCommand(ctx, "ip", "netns", "add", netNamespace)
+	return runCommand(ctx, "ip", "netns", "add", netNamespacePrefix + netNamespace)
 }
 
 // CreateTapInNamespace is equivalent to:
