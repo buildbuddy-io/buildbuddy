@@ -44,11 +44,6 @@ type replicaStruct struct {
 	nhid      string
 }
 
-type observation struct {
-	seen      time.Time
-	sizeBytes int64
-}
-
 type moveInstruction struct {
 	from    string
 	to      string
@@ -74,14 +69,6 @@ func (rs replicaSet) Contains(r replicaStruct) bool {
 	_, ok := rs[r]
 	return ok
 }
-func (rs replicaSet) ContainsCluster(clusterID uint64) bool {
-	for r := range rs {
-		if r.clusterID == clusterID {
-			return true
-		}
-	}
-	return false
-}
 
 func variance(samples []float64, mean float64) float64 {
 	if len(samples) <= 1 {
@@ -97,9 +84,6 @@ func variance(samples []float64, mean float64) float64 {
 type clusterMap struct {
 	mu *sync.RWMutex
 
-	nodeReplicas map[string]replicaSet
-	observations map[replicaStruct]observation
-
 	// a map of nhid -> *StoreUsage
 	lastUsage map[string]*rfpb.StoreUsage
 
@@ -112,9 +96,6 @@ func NewClusterMap() *clusterMap {
 	return &clusterMap{
 		mu: &sync.RWMutex{},
 
-		nodeReplicas: make(map[string]replicaSet, 0),
-		observations: make(map[replicaStruct]observation, 0),
-
 		lastUsage: make(map[string]*rfpb.StoreUsage, 0),
 		leaveTime: make(map[string]time.Time, 0),
 	}
@@ -125,7 +106,7 @@ func (cm *clusterMap) String() string {
 	defer cm.mu.Unlock()
 
 	nodeStrings := make(map[string]string, 0)
-	nhids := make([]string, 0, len(cm.nodeReplicas))
+	nhids := make([]string, 0, len(cm.lastUsage))
 	for nhid, lastUsage := range cm.lastUsage {
 		nhids = append(nhids, nhid)
 		nodeStrings[nhid] = fmt.Sprintf("%+v", lastUsage)
@@ -136,23 +117,6 @@ func (cm *clusterMap) String() string {
 		buf += fmt.Sprintf("\t%q: %s\n", nhid, nodeStrings[nhid])
 	}
 	return buf
-}
-
-func (cm *clusterMap) RemoveNode(nodeID uint64) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	for _, set := range cm.nodeReplicas {
-		for rs := range set {
-			if rs.nodeID == nodeID {
-				set.Remove(rs)
-			}
-		}
-	}
-	for rs, _ := range cm.observations {
-		if rs.nodeID == nodeID {
-			delete(cm.observations, rs)
-		}
-	}
 }
 
 func (d *Driver) LookupNodehost(nhid string) *rfpb.NodeDescriptor {
@@ -313,7 +277,7 @@ func (cm *clusterMap) FitScore(potentialMoves ...moveInstruction) float64 {
 			moveOffsets[move.from] -= 1
 		}
 	}
-	samples := make([]float64, 0, len(cm.nodeReplicas))
+	samples := make([]float64, 0, len(cm.lastUsage))
 
 	for nhid, usage := range cm.lastUsage {
 		count := usage.GetReplicaCount()
@@ -433,7 +397,6 @@ type clusterState struct {
 	node *rfpb.NodeDescriptor
 
 	// Information about our own replicas.
-	myClusters uint64Set
 	myNodes    uint64Set
 
 	// map of clusterID -> RangeDescriptor
@@ -456,7 +419,6 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 	}
 	state := &clusterState{
 		node:       rsp.GetNode(),
-		myClusters: make(uint64Set, len(rsp.GetRangeReplicas())),
 		myNodes:    make(uint64Set, len(rsp.GetRangeReplicas())),
 
 		// clusterID -> range
@@ -469,7 +431,6 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 	for _, rr := range rsp.GetRangeReplicas() {
 		for i, replica := range rr.GetRange().GetReplicas() {
 			if i == 0 {
-				state.myClusters[replica.GetClusterId()] = struct{}{}
 				state.managedRanges[replica.GetClusterId()] = rr.GetRange()
 			}
 			nhid, _, err := d.nodeRegistry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
@@ -555,7 +516,7 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 		// if the move failed, don't try the remove
 		return err
 	}
-	log.Printf("AddClusterNode succeeded")
+	log.Printf("Added %q to range: %+v", toNode, rd)
 
 	// apply the remove, and if it succeeds, remove the node
 	// from the clusterMap to avoid spuriously doing this again.
@@ -564,8 +525,7 @@ func (d *Driver) applyMove(ctx context.Context, move moveInstruction, state *clu
 		NodeId: move.replica.nodeID,
 	})
 	if err == nil {
-		log.Printf("RemoveClusterNode succeeded")
-		d.clusterMap.RemoveNode(move.replica.nodeID)
+		log.Printf("Removed %q from range: %+v", toNode, rsp.GetRange())
 	}
 	return err
 }
@@ -587,15 +547,11 @@ func (d *Driver) modifyCluster(ctx context.Context, state *clusterState, changes
 	}
 	if *enableMovingReplicas {
 		optionalMoves := d.makeMoveInstructions(state, changes.moveableReplicas)
-		log.Printf("optionalMoves: %+v", optionalMoves)
 		currentFitScore := d.clusterMap.FitScore()
-		log.Printf("currentFitScore: %2.2f", currentFitScore)
 		for _, move := range optionalMoves {
-			log.Printf("Considering move: %+v", move)
 			if d.clusterMap.FitScore(move) >= currentFitScore {
 				continue
 			}
-			log.Printf("Making optional move: %+v", move)
 			if err := d.applyMove(ctx, move, state); err != nil {
 				log.Warningf("Error applying move: %s", err)
 			}
@@ -622,7 +578,7 @@ func (d *Driver) manageClusters() error {
 	if err != nil {
 		return err
 	}
-	if len(state.myClusters) == 0 {
+	if len(state.managedRanges) == 0 {
 		// If we don't manage any clusters, exit now.
 		return nil
 	}
@@ -649,8 +605,8 @@ func (d *Driver) Statusz(ctx context.Context) string {
 		return fmt.Sprintf("Error computing state: %s", err)
 	}
 	buf := "<pre>"
-	if len(state.myClusters) == 0 {
-		buf += "no managed clusters</pre>"
+	if len(state.managedRanges) == 0 {
+		buf += "no managed ranges</pre>"
 		return buf
 	}
 	buf += fmt.Sprintf("state: %+v\n", state)
