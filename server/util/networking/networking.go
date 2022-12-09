@@ -17,18 +17,8 @@ import (
 )
 
 var (
-	routePrefix = flag.String(
-		"executor.route_prefix",
-		"default",
-		`The prefix in the ip route to locate a device: either 'default' or `,
-		`the ip range of the subnet e.g. 172.24.0.0/18`)
-	preserveExistingNetNamespaces = flag.Boolean(
-		"executor.preserve_existing_netns",
-		false,
-		`Preserve existing bb-executor net namespaces. By default all `,
-		`"bb-executor" net namespaces are removed on executor startup, but if `,
-		`multiple executors are running on the same machine this behavior `,
-		`should be disabled to prevent them from interfering with each other.`)
+	routePrefix = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 )
 
 const (
@@ -75,9 +65,7 @@ func namespace(netNamespace string, args ...string) []string {
 // support patterns, so this runs a short shell for-loop.
 func DeleteNetNamespaces(ctx context.Context) error {
 	return runCommand(ctx, "sh", "-c",
-		`for ns in $(ip netns list | grep ^bb-executor | cut -d \" \" -f 1);
-		do ip netns delete $ns;
-		done`)
+		"for ns in $(ip netns list | grep ^bb-executor | cut -d \" \" -f 1); do ip netns delete $ns; done")
 }
 
 // CreateNetNamespace is equivalent to:
