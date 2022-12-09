@@ -77,8 +77,8 @@ var (
 	// The last index that was applied by a statemachine.
 	LastAppliedIndexKey = keys.MakeKey(LocalPrefix, []byte("lastAppliedIndex"))
 
-	// Number of file records in the range.
-	PartitionMetadatasKey = keys.MakeKey(LocalPrefix, []byte("file_record_count"))
+	// Key that contains partition metadata (size, counts).
+	PartitionMetadatasKey = keys.MakeKey(LocalPrefix, []byte("partition_metadatas"))
 
 	// The range that this statemachine holds.
 	LocalRangeKey      = keys.MakeKey(LocalPrefix, []byte("range"))
