@@ -26,9 +26,9 @@ import (
 var (
 	enableMovingReplicas    = flag.Bool("cache.raft.enable_moving_replicas", true, "If set, allow moving replicas between nodes")
 	enableReplacingReplicas = flag.Bool("cache.raft.enable_replacing_replicas", true, "If set, allow replacing dead / down replicas")
-	deadReplicaTimeout      = flag.Duration("cache.raft.dead_replica_timeout", 5*time.Second, "After this time, consider a node dead")
-	driverPollInterval      = flag.Duration("cache.raft.driver_poll_interval", time.Second, "Poll the cluster for moves/replacements this often")
-	driverStartupDelay      = flag.Duration("cache.raft.driver_startup_delay", 10*time.Second, "Don't allow driver to propose any changes until this window has passed")
+	driverPollInterval      = flag.Duration("cache.raft.driver_poll_interval", 10*time.Second, "Poll the cluster for moves/replacements this often")
+	driverStartupDelay      = flag.Duration("cache.raft.driver_startup_delay", 1*time.Minute, "Don't allow driver to propose any changes until this window has passed")
+	deadReplicaTimeout      = flag.Duration("cache.raft.dead_replica_timeout", 5*time.Minute, "After this time, consider a node dead")
 )
 
 const (
