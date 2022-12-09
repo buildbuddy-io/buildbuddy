@@ -163,7 +163,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
 
-	md := &rfpb.FileMetadata{SizeBytes: 123}
+	md := &rfpb.FileMetadata{StoredSizeBytes: 123}
 	val, err := proto.Marshal(md)
 	require.NoError(t, err)
 

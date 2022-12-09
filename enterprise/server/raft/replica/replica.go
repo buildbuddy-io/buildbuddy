@@ -383,7 +383,7 @@ func (sm *Replica) updatePartitionMetadata(wb *pebble.Batch, key, val []byte, fi
 
 	if op == fileRecordDelete {
 		pm.TotalCount--
-		pm.SizeBytes -= fileMetadata.GetSizeBytes()
+		pm.SizeBytes -= fileMetadata.GetStoredSizeBytes()
 	} else {
 		_, closer, err := wb.Get(key)
 		if err == nil {
@@ -394,7 +394,7 @@ func (sm *Replica) updatePartitionMetadata(wb *pebble.Batch, key, val []byte, fi
 			return err
 		}
 		pm.TotalCount++
-		pm.SizeBytes += fileMetadata.GetSizeBytes()
+		pm.SizeBytes += fileMetadata.GetStoredSizeBytes()
 	}
 	return nil
 }
