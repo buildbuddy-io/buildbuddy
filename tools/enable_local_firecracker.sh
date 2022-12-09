@@ -79,9 +79,5 @@ if [ "$FOUND_ENTRY" != "$IP_ENTRY" ]; then
     echo "$IP_ENTRY" | EDITOR='tee -a' visudo >/dev/null
 fi
 
-# Clean up vestigial network namespaces, these can be left around if firecracker
-# doesn't exit cleanly and interfere with subsequent VM startup.
-ip --all netns delete
-
 echo "All done! You should be ready to run the executor as your user now."
 echo "You will need to run this program again if you restart or update the jailer binary"

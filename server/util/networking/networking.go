@@ -57,6 +57,12 @@ func namespace(netNamespace string, args ...string) []string {
 	return append([]string{"ip", "netns", "exec", netNamespace}, args...)
 }
 
+// Deletes all of the net namespaces. These can be left behind if the executor
+// doesn't exit gracefully.
+func DeleteNetNamespaces(ctx context.Context) error {
+	return runCommand(ctx, "ip", "--all", "netns", "delete")
+}
+
 // CreateNetNamespace is equivalent to:
 //
 //	$ sudo ip netns add "netNamespace"
