@@ -427,12 +427,18 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <b>Target</b> <span>{result.targetId}</span>
           </>
         ) : null}
-        {result.actionMnemonic || result.actionId ? (
+        {result.actionMnemonic && (
           <>
-            <b>{result.actionMnemonic ? "Action" : "Digest"}</b>
-            <span>{result.actionMnemonic || result.actionId}</span>
+            <b>Action mnemonic</b>
+            <span>{result.actionMnemonic}</span>
           </>
-        ) : null}
+        )}
+        {result.actionId && (
+          <>
+            <b>Action ID</b>
+            <span>{result.actionId}</span>
+          </>
+        )}
         {result.name ? (
           <>
             <b>File</b>{" "}
@@ -540,13 +546,27 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <div className="group">
               <div className="group-title action-id row">
                 <div className="row action-label">
-                  <div>{group.results[0]?.targetId || group.results[0]?.actionId}</div>
-                  {group.actionId && group.results[0]?.actionMnemonic && (
+                  {/* Always render the target label when grouping by target or action. */}
+                  <div>{group.results[0]?.targetId || "(Unknown target)"}</div>
+                  {/* Then if grouping by action, show a chevron (">") followed by the action name. */}
+                  {this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
                     <>
                       <ChevronRight className="icon chevron" />
-                      <TextLink className="action-mnemonic" href={this.getActionUrl(group.actionId)}>
-                        {group.results[0]?.actionMnemonic}
-                      </TextLink>
+                      {/* If we have an action ID that looks like a digest, render it as a link
+                          to the action page. */}
+                      {looksLikeDigest(group.actionId) && (
+                        <TextLink className="action-mnemonic" href={this.getActionUrl(group.actionId)}>
+                          {group.results[0]?.actionMnemonic || `(Unknown action ${group.actionId})`}
+                        </TextLink>
+                      )}
+                      {/* Otherwise render the mnemonic (if available) or the plaintext action ID,
+                          which will be something like "bes-upload" or "remote-download".
+                        */}
+                      {!looksLikeDigest(group.actionId) && (
+                        <div className="action-mnemonic">
+                          {group.results[0]?.actionMnemonic || group.results[0]?.actionId || "(Unknown action)"}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
