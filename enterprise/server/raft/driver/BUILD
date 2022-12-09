@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver",
     deps = [
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/registry",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/gossip",

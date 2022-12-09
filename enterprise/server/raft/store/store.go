@@ -130,6 +130,9 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 	listener.DefaultListener().RegisterLeaderUpdatedCB(&s.leaderUpdatedCB)
 	statusz.AddSection("raft_store", "Store", s)
+
+	go s.broadcast()
+
 	return s
 }
 
@@ -802,7 +805,7 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	}
 
 	s.rangeMu.Lock()
-	su.RangeCount = int64(len(s.openRanges))
+	su.ReplicaCount = int64(len(s.openRanges))
 	s.rangeMu.Unlock()
 
 	s.leases.Range(func(key, value any) bool {
