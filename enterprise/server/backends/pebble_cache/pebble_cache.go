@@ -897,6 +897,10 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 		return nil, err
 	}
 
+	if md.GetStoredSizeBytes() != md.GetFileRecord().GetDigest().GetSizeBytes() {
+		log.CtxInfof(ctx, "Pebble metadata size mismatch: %v", md)
+	}
+
 	return &interfaces.CacheMetadata{
 		SizeBytes:          md.GetStoredSizeBytes(),
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
