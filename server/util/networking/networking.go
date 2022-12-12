@@ -35,8 +35,10 @@ const (
 // not already root. Output and errors are returned.
 func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 	// If we're not running as root, use sudo.
+	// Use "-A" to ensure we never get stuck prompting for
+	// a password interactively.
 	if unix.Getuid() != 0 {
-		args = append([]string{"sudo"}, args...)
+		args = append([]string{"sudo", "-A"}, args...)
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	out, err := cmd.CombinedOutput()
@@ -64,8 +66,23 @@ func namespace(netNamespace string, args ...string) []string {
 // executor doesn't exit gracefully. Unfortunately, "ip netns delete" doesn't
 // support patterns, so this runs a short shell for-loop.
 func DeleteNetNamespaces(ctx context.Context) error {
-	return runCommand(ctx, "sh", "-c",
-		"for ns in $(ip netns list | grep ^bb-executor | cut -d \" \" -f 1); do ip netns delete $ns; done")
+	b, err := sudoCommand(ctx, "ip", "netns", "list")
+	if err != nil {
+		return err
+	}
+	output := strings.TrimSpace(string(b))
+	if len(output) == 0 {
+		return nil
+	}
+	for _, ns := range strings.Split(output, "\n") {
+		if !strings.HasPrefix(ns, netNamespacePrefix) {
+			continue
+		}
+		if _, err := sudoCommand(ctx, "ip", "netns", "delete", ns); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CreateNetNamespace is equivalent to:
