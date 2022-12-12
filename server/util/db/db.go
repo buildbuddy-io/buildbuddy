@@ -9,6 +9,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 	golog "log"
 
 	"github.com/aws/aws-sdk-go/service/rds/rdsutils"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
@@ -355,8 +358,8 @@ func (c *connector) Driver() driver.Driver {
 	return c.d
 }
 
-func openDB(dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
-	ds, err := ParseDatasource(dataSource, advancedConfig)
+func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
+	ds, err := ParseDatasource(fileResolver, dataSource, advancedConfig)
 	if err != nil {
 		return nil, "", err
 	}
@@ -460,7 +463,24 @@ func (aid *awsIAMDataSource) DSN() (string, error) {
 	return dsn.String(), nil
 }
 
-func ParseDatasource(datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
+func loadAWSRDSCACerts(fileResolver fs.FS) (*x509.CertPool, error) {
+	certPool := x509.NewCertPool()
+	f, err := fileResolver.Open("rds-combined-ca-bundle.pem")
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not open RDS CA bundle: %s", err)
+	}
+	defer f.Close()
+	pem, err := io.ReadAll(f)
+	if err != nil {
+		return nil, status.UnavailableErrorf("could not read RDS CA bundle: %s", err)
+	}
+	if !certPool.AppendCertsFromPEM(pem) {
+		return nil, status.UnavailableErrorf("could not parse RDS CA bundle")
+	}
+	return certPool, nil
+}
+
+func ParseDatasource(fileResolver fs.FS, datasource string, advancedConfig *AdvancedConfig) (DataSource, error) {
 	if *advancedConfig != (AdvancedConfig{}) {
 		ac := advancedConfig
 		dsn := &dsnFormatter{
@@ -485,15 +505,9 @@ func ParseDatasource(datasource string, advancedConfig *AdvancedConfig) (DataSou
 			}
 
 			if ac.Driver == mysqlDriver {
-				certPool := x509.NewCertPool()
-				// This file is packaged in the enterprise docker image.
-				pem, err := os.ReadFile("/rds-combined-ca-bundle.pem")
-				// This file is packaged in the enterprise docker image.
+				certPool, err := loadAWSRDSCACerts(fileResolver)
 				if err != nil {
-					return nil, status.UnavailableErrorf("could not read RDS CA bundle: %s", err)
-				}
-				if !certPool.AppendCertsFromPEM(pem) {
-					return nil, status.UnavailableErrorf("could not parse RDS CA bundle")
+					return nil, err
 				}
 				if err = gomysql.RegisterTLSConfig("rds", &tls.Config{RootCAs: certPool}); err != nil {
 					return nil, status.UnknownErrorf("could not configure RDS CA bundle for mysql: %s", err)
@@ -616,11 +630,21 @@ func (r *dbStatsRecorder) recordStats() {
 	r.lastRecordedStats = stats
 }
 
-func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, error) {
+func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	if *dataSource == "" {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
-	primaryDB, driverName, err := openDB(*dataSource, advDataSource)
+
+	if env.GetFileResolver() != nil {
+		// Verify that the AWS RDS certs are properly packaged.
+		// They won't actually be used unless the AWS IAM feature is enabled.
+		_, err := loadAWSRDSCACerts(env.GetFileResolver())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	primaryDB, driverName, err := openDB(env.GetFileResolver(), *dataSource, advDataSource)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
@@ -657,13 +681,13 @@ func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, er
 		db:     primaryDB,
 		driver: driverName,
 	}
-	hc.AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
+	env.GetHealthChecker().AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
 		return primarySQLDB.Ping()
 	}))
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
-		replicaDB, readDialect, err := openDB(*readReplica, advReadReplica)
+		replicaDB, readDialect, err := openDB(env.GetFileResolver(), *readReplica, advReadReplica)
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("could not configure read replica database: %s", err)
 		}
@@ -681,7 +705,7 @@ func GetConfiguredDatabase(hc interfaces.HealthChecker) (interfaces.DBHandle, er
 		}
 		go statsRecorder.poll()
 
-		hc.AddHealthCheck("sql_read_replica", interfaces.CheckerFunc(func(ctx context.Context) error {
+		env.GetHealthChecker().AddHealthCheck("sql_read_replica", interfaces.CheckerFunc(func(ctx context.Context) error {
 			return replicaSQLDB.Ping()
 		}))
 	}

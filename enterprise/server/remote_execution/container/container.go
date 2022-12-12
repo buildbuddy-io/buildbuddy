@@ -331,27 +331,35 @@ func (a *ImageCacheAuthenticator) purgeExpiredTokens() {
 // ref. If credentials are not returned, container implementations may still
 // invoke locally available credential helpers (for example, via `docker pull`
 // or `skopeo copy`)
-func GetPullCredentials(env environment.Env, props *platform.Properties) PullCredentials {
+func GetPullCredentials(env environment.Env, props *platform.Properties) (PullCredentials, error) {
 	imageRef := props.ContainerImage
 	if imageRef == "" {
-		return PullCredentials{}
+		return PullCredentials{}, nil
 	}
 
-	if props.ContainerRegistryUsername != "" || props.ContainerRegistryPassword != "" {
+	username := props.ContainerRegistryUsername
+	password := props.ContainerRegistryPassword
+	if username != "" && password == "" {
+		return PullCredentials{}, status.InvalidArgumentError(
+			"Received container-registry-username with no container-registry-password")
+	} else if username == "" && password != "" {
+		return PullCredentials{}, status.InvalidArgumentError(
+			"Received container-registry-password with no container-registry-username")
+	} else if username != "" || password != "" {
 		return PullCredentials{
-			Username: props.ContainerRegistryUsername,
-			Password: props.ContainerRegistryPassword,
-		}
+			Username: username,
+			Password: password,
+		}, nil
 	}
 
 	if len(*containerRegistries) == 0 {
-		return PullCredentials{}
+		return PullCredentials{}, nil
 	}
 
 	ref, err := reference.ParseNormalizedNamed(imageRef)
 	if err != nil {
 		log.Debugf("Failed to parse image ref %q: %s", imageRef, err)
-		return PullCredentials{}
+		return PullCredentials{}, nil
 	}
 	refHostname := reference.Domain(ref)
 	for _, cfg := range *containerRegistries {
@@ -360,12 +368,12 @@ func GetPullCredentials(env environment.Env, props *platform.Properties) PullCre
 				return PullCredentials{
 					Username: cfg.Username,
 					Password: cfg.Password,
-				}
+				}, nil
 			}
 		}
 	}
 
-	return PullCredentials{}
+	return PullCredentials{}, nil
 }
 
 // TracedCommandContainer is a wrapper that creates tracing spans for all CommandContainer methods.

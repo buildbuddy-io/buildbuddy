@@ -83,7 +83,7 @@ def _main(version):
     except KeyboardInterrupt:
         print()
         return 1
-    subprocess.run(["cli/update_docs.sh"])
+    subprocess.run(["cli/update_docs.sh", version])
 
 
 def sh(command, stream_stdout=True, **kwargs):

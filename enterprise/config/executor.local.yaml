@@ -3,6 +3,7 @@ executor:
   docker_socket: /var/run/docker.sock
   docker_inherit_user_ids: true
   enable_firecracker: true
+  firecracker_cgroup_version: 2
   app_target: "grpc://localhost:1985"
   local_cache_directory: "/tmp/filecache"
   local_cache_size_bytes: 10000000000 # 10GB

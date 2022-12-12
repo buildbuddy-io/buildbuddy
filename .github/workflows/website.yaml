@@ -20,7 +20,7 @@ jobs:
 
       - name: Build Website
         run: |
-          bazel build //website:website
+          bazel build //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           rm -rf website/build
           mkdir -p website/build
           cd website/build

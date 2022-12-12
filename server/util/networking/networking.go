@@ -17,7 +17,8 @@ import (
 )
 
 var (
-	routePrefix = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	routePrefix                   = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 )
 
 const (
@@ -26,14 +27,18 @@ const (
 	routingTableID = 1
 	// The routingTableName for the new routing table we add.
 	routingTableName = "rt1"
+	// netns prefix to use to identify executor namespaces.
+	netNamespacePrefix = "bb-executor-"
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root. Output and errors are returned.
 func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 	// If we're not running as root, use sudo.
+	// Use "-A" to ensure we never get stuck prompting for
+	// a password interactively.
 	if unix.Getuid() != 0 {
-		args = append([]string{"sudo"}, args...)
+		args = append([]string{"sudo", "-A"}, args...)
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	out, err := cmd.CombinedOutput()
@@ -54,14 +59,49 @@ func runCommand(ctx context.Context, args ...string) error {
 // namespace prepends the provided command with 'ip netns exec "netNamespace"'
 // so that the provided command is run inside the network namespace.
 func namespace(netNamespace string, args ...string) []string {
-	return append([]string{"ip", "netns", "exec", netNamespace}, args...)
+	return append([]string{"ip", "netns", "exec", netNamespacePrefix + netNamespace}, args...)
+}
+
+// Deletes all of the executor net namespaces. These can be left behind if the
+// executor doesn't exit gracefully.
+func DeleteNetNamespaces(ctx context.Context) error {
+	// "ip netns delete" doesn't support patterns, so we list all
+	// namespaces then delete the ones that match the bb executor pattern.
+	b, err := sudoCommand(ctx, "ip", "netns", "list")
+	if err != nil {
+		return err
+	}
+	output := strings.TrimSpace(string(b))
+	if len(output) == 0 {
+		return nil
+	}
+	var lastErr error
+	for _, ns := range strings.Split(output, "\n") {
+		// Sometimes the output contains spaces, like
+		//     bb-executor-1
+		//     bb-executor-2
+		//     3fe4313e-eb76-4b6d-9d61-53caf12b87e6 (id: 344)
+		//     2ab15e85-d1c3-47bc-ad40-74e2941157a4 (id: 332)
+		// So we get just the first column here.
+		fields := strings.Fields(ns)
+		if len(fields) > 0 {
+			ns = fields[0]
+		}
+		if !strings.HasPrefix(ns, netNamespacePrefix) {
+			continue
+		}
+		if _, err := sudoCommand(ctx, "ip", "netns", "delete", ns); err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
 }
 
 // CreateNetNamespace is equivalent to:
 //
 //	$ sudo ip netns add "netNamespace"
 func CreateNetNamespace(ctx context.Context, netNamespace string) error {
-	return runCommand(ctx, "ip", "netns", "add", netNamespace)
+	return runCommand(ctx, "ip", "netns", "add", netNamespacePrefix+netNamespace)
 }
 
 // CreateTapInNamespace is equivalent to:
@@ -542,4 +582,8 @@ func IsSecondaryNetworkEnabled() bool {
 		return false
 	}
 	return true
+}
+
+func PreserveExistingNetNamespaces() bool {
+	return *preserveExistingNetNamespaces
 }

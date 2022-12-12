@@ -1439,6 +1439,45 @@ var (
 		CompressionType,
 	})
 
+	BadCompressionStreamSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "compressor",
+		Name:      "bad_compression_stream_size",
+		Buckets:   exponentialBucketRange(1, 1_000_000_000, 10),
+		Help:      "The size of data streams that increased in size when compressed",
+	}, []string{
+		CompressionType,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Histogram with the count of elements in each bucket
+	/// # Visualize with the Bar Gauge type
+	/// # Legend: {{le}}
+	/// sum(buildbuddy_compressor_bad_compression_buffer_size) by(le)
+	/// ```
+
+	CompressionRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "pebble",
+		Name:      "compression_ratio",
+		Buckets:   prometheus.LinearBuckets(0, .05, 40),
+		Help: "The aggregate compression ratio (compressed / decompressed bytes) for a stream of data " +
+			"(as opposed to being calculated on a per-chunk basis for data in the stream)",
+	}, []string{
+		CompressionType,
+	})
+
+	/// #### Examples
+	///
+	/// ```promql
+	/// # Histogram buckets with the count of elements in each compression ratio bucket
+	/// # Visualize with the Bar Gauge type
+	/// # Legend: {{le}}
+	/// sum(buildbuddy_pebble_compression_ratio_bucket) by(le)
+	/// ```
+
 	/// ### Raft cache metrics
 
 	RaftRanges = promauto.NewGaugeVec(prometheus.GaugeOpts{

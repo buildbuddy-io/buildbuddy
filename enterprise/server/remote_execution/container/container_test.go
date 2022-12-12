@@ -254,6 +254,22 @@ func TestGetPullCredentials(t *testing.T) {
 		},
 	)
 
+	props := &platform.Properties{
+		ContainerImage:            "missing-password.io",
+		ContainerRegistryUsername: "username",
+		ContainerRegistryPassword: "",
+	}
+	_, err := container.GetPullCredentials(env, props)
+	assert.True(t, status.IsInvalidArgumentError(err))
+
+	props = &platform.Properties{
+		ContainerImage:            "missing-username.io",
+		ContainerRegistryUsername: "",
+		ContainerRegistryPassword: "password",
+	}
+	_, err = container.GetPullCredentials(env, props)
+	assert.True(t, status.IsInvalidArgumentError(err))
+
 	for _, testCase := range []struct {
 		imageRef            string
 		expectedCredentials container.PullCredentials
@@ -285,10 +301,11 @@ func TestGetPullCredentials(t *testing.T) {
 		{"marketplace.gcr.io/foo/bar:latest", creds("gcruser", "gcrpass")},
 		{"marketplace.gcr.io/foo/bar@sha256:eb3e4e175ba6d212ba1d6e04fc0782916c08e1c9d7b45892e9796141b1d379ae", creds("gcruser", "gcrpass")},
 	} {
-		props := &platform.Properties{ContainerImage: testCase.imageRef}
+		props = &platform.Properties{ContainerImage: testCase.imageRef}
 
-		creds := container.GetPullCredentials(env, props)
+		creds, err := container.GetPullCredentials(env, props)
 
+		assert.NoError(t, err)
 		assert.Equal(
 			t, testCase.expectedCredentials, creds,
 			"unexpected credentials for image ref %q: %q",

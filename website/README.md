@@ -34,4 +34,4 @@ bazel build website
 
 ## Deployment
 
-To deploy the marketing website, just commit your changes.
+To deploy the marketing website, just commit your changes and make sure the Deploy Website action succeeds.

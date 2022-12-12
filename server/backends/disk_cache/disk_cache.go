@@ -904,9 +904,9 @@ func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
 					Filename: path,
 				},
 			},
-			SizeBytes:      info.Size(),
-			LastAccessUsec: getLastUseNanos(info),
-			LastModifyUsec: getLastModifyTimeNanos(info),
+			StoredSizeBytes: info.Size(),
+			LastAccessUsec:  getLastUseNanos(info),
+			LastModifyUsec:  getLastModifyTimeNanos(info),
 		}
 		scanned <- fm
 		return nil

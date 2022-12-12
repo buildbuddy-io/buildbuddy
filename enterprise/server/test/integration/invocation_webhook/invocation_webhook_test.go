@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck"
@@ -44,7 +45,8 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	// (For now, manual SQL is the only way to set up invocation webhooks.)
 	flags.Set(t, "database.data_source", dataSource)
 	hc := testhealthcheck.NewTestingHealthChecker()
-	dbh, err := db.GetConfiguredDatabase(hc)
+	env := real_environment.NewRealEnv(hc)
+	dbh, err := db.GetConfiguredDatabase(env)
 	require.NoError(t, err)
 	ctx := context.Background()
 	db := dbh.DB(ctx)

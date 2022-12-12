@@ -8,7 +8,7 @@ import (
 
 const (
 	debugPrefix   = "\x1b[33m[bb-debug]\x1b[m "
-	warningPrefix = "\x1b[33mWarning:\x1b[m "
+	WarningPrefix = "\x1b[33mWarning:\x1b[m "
 )
 
 var verbose bool
@@ -43,11 +43,11 @@ func Printf(format string, v ...interface{}) {
 }
 
 func Warn(v ...any) {
-	log.Print(append([]any{warningPrefix}, v...)...)
+	log.Print(append([]any{WarningPrefix}, v...)...)
 }
 
 func Warnf(format string, v ...interface{}) {
-	log.Printf(warningPrefix+format, v...)
+	log.Printf(WarningPrefix+format, v...)
 }
 
 func Fatalf(format string, v ...interface{}) {

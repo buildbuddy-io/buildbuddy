@@ -113,23 +113,36 @@ config_setting(
     values = {"compilation_mode": "fastbuild"},
 )
 
+# Synthesize a copy of the file in the current package so it can be embedded.
+genrule(
+    name = "aws_rds_certs",
+    srcs = ["@aws_rds_certs//file:rds-combined-ca-bundle.pem"],
+    outs = ["rds-combined-ca-bundle.pem"],
+    cmd_bash = "cp $(SRCS) $@",
+)
+
+# Certs that are distributed with the server binary.
+filegroup(
+    name = "embedded_certs",
+    srcs = [":rds-combined-ca-bundle.pem"],
+)
+
 # N.B. this is ignored by gazelle so must be updated by hand.
 # It must live at the repo root to be able to bundle other files using
 # "go:embed".
 go_library(
     name = "bundle",
     srcs = ["bundle.go"],
-    embedsrcs = select({
-        ":fastbuild": [
-            "//:config_files",
-            "//static",
-        ],
+    embedsrcs = [
+        "//:config_files",
+        "//:embedded_certs",
+        "//static",
+    ] + select({
+        ":fastbuild": [],
         "//conditions:default": [
-            "//:config_files",
             "//app:app_bundle",
             "//app:style.css",
             "//app:sha",
-            "//static",
         ],
     }),
     importpath = "github.com/buildbuddy-io/buildbuddy",

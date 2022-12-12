@@ -136,18 +136,19 @@ func diskCacheFromConfig(env environment.Env, cfg *DiskCacheConfig) (*disk_cache
 
 func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble_cache.PebbleCache, error) {
 	opts := &pebble_cache.Options{
-		RootDirectory:          cfg.RootDirectory,
-		Partitions:             cfg.Partitions,
-		PartitionMappings:      cfg.PartitionMappings,
-		IsolateByGroupIDs:      cfg.IsolateByGroupIDs,
-		MaxSizeBytes:           cfg.MaxSizeBytes,
-		BlockCacheSizeBytes:    cfg.BlockCacheSizeBytes,
-		MaxInlineFileSizeBytes: cfg.MaxInlineFileSizeBytes,
-		AtimeUpdateThreshold:   cfg.AtimeUpdateThreshold,
-		AtimeWriteBatchSize:    cfg.AtimeWriteBatchSize,
-		AtimeBufferSize:        cfg.AtimeBufferSize,
-		MinEvictionAge:         cfg.MinEvictionAge,
-		EnableZstdCompression:  cfg.EnableZstdCompression,
+		RootDirectory:               cfg.RootDirectory,
+		Partitions:                  cfg.Partitions,
+		PartitionMappings:           cfg.PartitionMappings,
+		IsolateByGroupIDs:           cfg.IsolateByGroupIDs,
+		MaxSizeBytes:                cfg.MaxSizeBytes,
+		BlockCacheSizeBytes:         cfg.BlockCacheSizeBytes,
+		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
+		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
+		AtimeUpdateThreshold:        cfg.AtimeUpdateThreshold,
+		AtimeWriteBatchSize:         cfg.AtimeWriteBatchSize,
+		AtimeBufferSize:             cfg.AtimeBufferSize,
+		MinEvictionAge:              cfg.MinEvictionAge,
+		EnableZstdCompression:       cfg.EnableZstdCompression,
 	}
 	c, err := pebble_cache.NewPebbleCache(env, opts)
 	if err != nil {

@@ -924,6 +924,10 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	sesh, err := authDB.ReadSession(ctx, sessionID)
 	if err != nil {
 		log.Debugf("Session not found: %s", err)
+		// Clear auth cookies if the session is not found. This allows the login
+		// flow to request a refresh token, since otherwise the login flow will
+		// assume (based on the existence of this cookie) that a valid session exists with a refresh token already set.
+		clearLoginCookie(a.env, w)
 		return nil, ut, status.PermissionDeniedErrorf("%s: session not found", loggedOutMsg)
 	}
 

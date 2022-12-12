@@ -98,6 +98,87 @@ configuration steps are the same as when running Bazel locally. See the
 
 :::
 
+### Secrets
+
+Trusted workflow executions can access [secrets](secrets) using
+environment variables.
+
+Environment variables are expanded inline in the `bazel_commands` list.
+For example, if we have a secret named `REGISTRY_TOKEN` and we want to set
+the remote header `x-buildbuddy-platform.container-registry-password` to
+the value of that secret, we can get the secret value using
+`$REGISTRY_TOKEN`, as in the following example:
+
+```yaml
+# ...
+bazel_commands:
+  - "test ... --remote_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
+```
+
+To access the environment variables within `build` or `test` actions, you
+may need to explicitly expose the environment variable to the actions by
+using a bazel flag like
+[`--action_env`](https://bazel.build/reference/command-line-reference#flag--action_env)
+or
+[`--test_env`](https://bazel.build/reference/command-line-reference#flag--test_env):
+
+```yaml
+# ...
+bazel_commands:
+  - "test ... --test_env=REGISTRY_TOKEN"
+```
+
+### Dynamic bazel flags
+
+Sometimes, you may wish to set a bazel flag using a shell command. For
+example, you might want to set image pull credentials using a command like
+`aws` that requests an image pull token on the fly.
+
+To do this, we recommend using a setup script that generates a `bazelrc`
+file.
+
+For example, in `/buildbuddy.yaml`, you would write:
+
+```yaml
+# ...
+bazel_commands:
+  - bazel run :generate_ci_bazelrc
+  - bazel --bazelrc=ci.bazelrc test //...
+```
+
+In `/BUILD`, you'd declare an `sh_binary` target for your setup script:
+
+```python
+sh_binary(name = "generate_ci_bazelrc", srcs = ["generate_ci_bazelrc.sh"])
+```
+
+Then in `/generate_ci_bazelrc.sh`, you'd generate the `ci.bazelrc` file in
+the workspace root (make sure to make this file executable with `chmod +x`):
+
+```shell
+#!/usr/bin/env bash
+set -e
+# Change to the WORKSPACE directory
+cd "$BUILD_WORKSPACE_DIRECTORY"
+# Run a command to request image pull credentials:
+REGISTRY_PASSWORD=$(some-command)
+# Write the credentials to ci.bazelrc in the workspace root directory:
+echo >ci.bazelrc "
+build --remote_header=x-buildbuddy-platform.container-registry-password=${REGISTRY_PASSWORD}
+"
+```
+
+:::tip
+
+This `generate_ci_bazelrc.sh` script can access workflow secrets using
+environment variables.
+
+For Linux workflows, the script can also install system dependencies using
+`apt-get` if needed, although if possible we recommend using Bazel to
+build or fetch these dependencies.
+
+:::
+
 ## Mac configuration
 
 By default, workflows will execute on BuildBuddy's Linux executors,

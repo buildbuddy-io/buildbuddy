@@ -19,4 +19,4 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Build Website
-        run: bazel build //website:website
+        run: bazel build //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
