@@ -10,13 +10,13 @@ def main():
 
 
     # TODO: More robust parsing (handle --open false, --noopen, --open=1 etc.)
-    if '--open' not in args:
+    args, url_suffix = consume_open_arg(args)
+    if url_suffix is None:
         return
-    args = [a for a in args if a != '--open']
 
     bes_results_url = get_flag_value(args, 'bes_results_url')
     if bes_results_url:
-        write_invocation_url(args, bes_results_url)
+        write_invocation_url(args, bes_results_url, url_suffix)
     else:
         sys.stderr.write("\x1b[33mWarning: --bes_results_url is not configured; --open flag will be ignored\x1b[m\n")
 
@@ -24,7 +24,20 @@ def main():
     with open(args_file_path, 'w') as f:
         f.write('\n'.join(args))
 
-def write_invocation_url(args, bes_results_url):
+def consume_open_arg(args):
+    new_args = []
+    url_suffix = None
+    for arg in args:
+        if arg == '--open':
+            url_suffix = ''
+            continue
+        if arg.startswith('--open='):
+            url_suffix = arg[len('--open='):]
+            continue
+        new_args.append(arg)
+    return new_args, url_suffix
+
+def write_invocation_url(args, bes_results_url, url_suffix):
     # Add --invocation_id flag if not already set.
     invocation_id = get_flag_value(args, 'invocation_id')
     if not invocation_id:
@@ -35,7 +48,7 @@ def write_invocation_url(args, bes_results_url):
     # knows which URL to open.
     url_file_path = os.path.join(os.environ['PLUGIN_TEMPDIR'], 'invocation_url.txt')
     with open(url_file_path, 'w') as f:
-        f.write(bes_results_url + invocation_id)
+        f.write(bes_results_url + invocation_id + url_suffix)
 
 
 # TODO: Provide a library function for this?
