@@ -747,10 +747,10 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 }
 
 func nonCmdExit(err error) *interfaces.CommandResult {
-	log.Errorf("nonCmdExit returning error: %s", err)
 	if *dieOnFirecrackerFailure {
-		log.Errorf("--executor.die_on_firecracker_failure=true executor is dying now")
-		os.Exit(1)
+		log.Fatalf("dying on firecracker error: %s", err)
+	} else {
+		log.Errorf("nonCmdExit returning error: %s", err)
 	}
 	return &interfaces.CommandResult{
 		Error:    err,
