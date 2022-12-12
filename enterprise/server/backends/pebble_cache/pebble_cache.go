@@ -1359,12 +1359,6 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
 		}
 
-		fr := md.GetFileRecord()
-		if fr.GetCompressor() == repb.Compressor_IDENTITY &&
-			md.GetStoredSizeBytes() != fr.GetDigest().GetSizeBytes() {
-			log.CtxInfof(ctx, "Pebble write metadata size mismatch: %v", md)
-		}
-
 		return err
 	}
 
