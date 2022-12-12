@@ -804,7 +804,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 
 	if c.constants.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs
-		netNS = "/var/run/netns/" + c.id
+		netNS = "/var/run/netns/bb-executor-" + c.id
 	}
 
 	// End the kernel args, before passing some more args to init.
