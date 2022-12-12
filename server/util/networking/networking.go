@@ -17,7 +17,8 @@ import (
 )
 
 var (
-	routePrefix = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	routePrefix                   = flag.String("executor.route_prefix", "default", "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
+	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 )
 
 const (
@@ -26,6 +27,8 @@ const (
 	routingTableID = 1
 	// The routingTableName for the new routing table we add.
 	routingTableName = "rt1"
+	// netns prefix to use to identify executor namespaces.
+	netNamespacePrefix = "bb-executor-"
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -54,14 +57,22 @@ func runCommand(ctx context.Context, args ...string) error {
 // namespace prepends the provided command with 'ip netns exec "netNamespace"'
 // so that the provided command is run inside the network namespace.
 func namespace(netNamespace string, args ...string) []string {
-	return append([]string{"ip", "netns", "exec", netNamespace}, args...)
+	return append([]string{"ip", "netns", "exec", netNamespacePrefix + netNamespace}, args...)
+}
+
+// Deletes all of the executor net namespaces. These can be left behind if the
+// executor doesn't exit gracefully. Unfortunately, "ip netns delete" doesn't
+// support patterns, so this runs a short shell for-loop.
+func DeleteNetNamespaces(ctx context.Context) error {
+	return runCommand(ctx, "sh", "-c",
+		"for ns in $(ip netns list | grep ^bb-executor | cut -d \" \" -f 1); do ip netns delete $ns; done")
 }
 
 // CreateNetNamespace is equivalent to:
 //
 //	$ sudo ip netns add "netNamespace"
 func CreateNetNamespace(ctx context.Context, netNamespace string) error {
-	return runCommand(ctx, "ip", "netns", "add", netNamespace)
+	return runCommand(ctx, "ip", "netns", "add", netNamespacePrefix+netNamespace)
 }
 
 // CreateTapInNamespace is equivalent to:
@@ -542,4 +553,8 @@ func IsSecondaryNetworkEnabled() bool {
 		return false
 	}
 	return true
+}
+
+func PreserveExistingNetNamespaces() bool {
+	return *preserveExistingNetNamespaces
 }
