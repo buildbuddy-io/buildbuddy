@@ -351,7 +351,7 @@ message ReplicaUsage {
 
 message StoreUsage {
   NodeDescriptor node = 1;
-  int64 range_count = 2;
+  int64 replica_count = 2;
   int64 lease_count = 3;
   int64 read_qps = 4;
   int64 raft_propose_qps = 5;
