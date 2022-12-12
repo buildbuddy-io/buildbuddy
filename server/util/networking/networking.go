@@ -59,7 +59,17 @@ func runCommand(ctx context.Context, args ...string) error {
 // namespace prepends the provided command with 'ip netns exec "netNamespace"'
 // so that the provided command is run inside the network namespace.
 func namespace(netNamespace string, args ...string) []string {
-	return append([]string{"ip", "netns", "exec", netNamespacePrefix + netNamespace}, args...)
+	return append([]string{"ip", "netns", "exec", NetNamespace(netNamespace)}, args...)
+}
+
+// Returns the full network namespace of the provided network namespace ID.
+func NetNamespace(netNamespaceId string) string {
+	return netNamespacePrefix + netNamespaceId
+}
+
+// Returns the full filesystem path of the provided network namespace ID.
+func NetNamespacePath(netNamespaceId string) string {
+	return "/var/run/netns/" + NetNamespace(netNamespaceId)
 }
 
 // Deletes all of the executor net namespaces. These can be left behind if the
@@ -101,7 +111,7 @@ func DeleteNetNamespaces(ctx context.Context) error {
 //
 //	$ sudo ip netns add "netNamespace"
 func CreateNetNamespace(ctx context.Context, netNamespace string) error {
-	return runCommand(ctx, "ip", "netns", "add", netNamespacePrefix+netNamespace)
+	return runCommand(ctx, "ip", "netns", "add", NetNamespace(netNamespace))
 }
 
 // CreateTapInNamespace is equivalent to:
@@ -185,7 +195,7 @@ func removeForwardAcceptRule(ctx context.Context, vethName, defaultDevice string
 func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	// This will delete the veth pair too, and the address attached
 	// to the host-size of the veth pair.
-	return runCommand(ctx, "ip", "netns", "delete", netNamespace)
+	return runCommand(ctx, "ip", "netns", "delete", NetNamespace(netNamespace))
 }
 
 func DeleteRoute(ctx context.Context, vmIdx int) error {

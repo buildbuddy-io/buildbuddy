@@ -586,7 +586,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 
 	var netNS string
 	if c.constants.EnableNetworking {
-		netNS = "/var/run/netns/" + c.id
+		netNS = networking.NetNamespacePath(c.id)
 	}
 
 	var stdout io.Writer = c.vmLog
@@ -804,7 +804,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 
 	if c.constants.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs
-		netNS = "/var/run/netns/" + c.id
+		netNS = networking.NetNamespacePath(c.id)
 	}
 
 	// End the kernel args, before passing some more args to init.
