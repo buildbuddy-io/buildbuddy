@@ -109,12 +109,18 @@ func (cm *clusterMap) String() string {
 	nhids := make([]string, 0, len(cm.lastUsage))
 	for nhid, lastUsage := range cm.lastUsage {
 		nhids = append(nhids, nhid)
-		nodeStrings[nhid] = fmt.Sprintf("%+v", lastUsage)
+		deadOrAliveString := ""
+		if leftAt, ok := cm.leaveTime[nhid]; ok {
+			if time.Since(leftAt) > *deadReplicaTimeout {
+				deadOrAliveString = "(dead)"
+			}
+		}
+		nodeStrings[nhid] = fmt.Sprintf("%+v %s", lastUsage, deadOrAliveString)
 	}
 	sort.Strings(nhids)
 	buf := ""
 	for _, nhid := range nhids {
-		buf += fmt.Sprintf("\t%q: %s\n", nhid, nodeStrings[nhid])
+		buf += fmt.Sprintf("\t%s\n", nodeStrings[nhid])
 	}
 	return buf
 }
@@ -140,7 +146,7 @@ func (d *Driver) LookupNodehostForReplica(rs replicaStruct) *rfpb.NodeDescriptor
 // DeadReplicas returns a slice of replicaStructs that:
 //   - Are members of clusters this node manages
 //   - Have not been seen in the last `timeout`
-func (d *Driver) DeadReplicas(managedRanges map[uint64]*rfpb.RangeDescriptor) replicaSet {
+func (d *Driver) DeadReplicas(state *clusterState) replicaSet {
 	cm := d.clusterMap
 
 	cm.mu.RLock()
@@ -149,24 +155,13 @@ func (d *Driver) DeadReplicas(managedRanges map[uint64]*rfpb.RangeDescriptor) re
 	deadReplicas := make(replicaSet, 0)
 	now := time.Now()
 
-	for _, rd := range managedRanges {
-		for _, replica := range rd.GetReplicas() {
-			nhid, _, err := d.nodeRegistry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
-			if err != nil {
-				log.Warningf("Error resolving NHID of c%dn%d: %s", replica.GetClusterId(), replica.GetNodeId(), err)
-				continue
-			}
-			leftAt, ok := d.clusterMap.leaveTime[nhid]
-			if !ok {
-				continue
-			}
-			if now.Sub(leftAt) > *deadReplicaTimeout {
-				deadReplicas.Add(replicaStruct{
-					clusterID: replica.GetClusterId(),
-					nodeID:    replica.GetNodeId(),
-					nhid:      nhid,
-				})
-			}
+	for rep := range state.allReplicas {
+		leftAt, ok := d.clusterMap.leaveTime[rep.nhid]
+		if !ok {
+			continue
+		}
+		if now.Sub(leftAt) > *deadReplicaTimeout {
+			deadReplicas.Add(rep)
 		}
 	}
 
@@ -397,7 +392,7 @@ type clusterState struct {
 	node *rfpb.NodeDescriptor
 
 	// Information about our own replicas.
-	myNodes    uint64Set
+	myNodes uint64Set
 
 	// map of clusterID -> RangeDescriptor
 	managedRanges map[uint64]*rfpb.RangeDescriptor
@@ -418,8 +413,8 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 		return nil, err
 	}
 	state := &clusterState{
-		node:       rsp.GetNode(),
-		myNodes:    make(uint64Set, len(rsp.GetRangeReplicas())),
+		node:    rsp.GetNode(),
+		myNodes: make(uint64Set, len(rsp.GetRangeReplicas())),
 
 		// clusterID -> range
 		managedRanges: make(map[uint64]*rfpb.RangeDescriptor, 0),
@@ -459,7 +454,7 @@ type clusterChanges struct {
 
 func (d *Driver) proposeChanges(state *clusterState) *clusterChanges {
 	changes := &clusterChanges{
-		deadReplicas:     d.DeadReplicas(state.managedRanges),
+		deadReplicas:     d.DeadReplicas(state),
 		moveableReplicas: d.MoveableReplicas(state),
 	}
 	return changes
@@ -474,7 +469,7 @@ func (d *Driver) makeMoveInstructions(state *clusterState, replicas replicaSet) 
 		currentLocation := rep.nhid
 		potentialHomes := d.clusterMap.FindHome(state, rep.clusterID)
 		if len(potentialHomes) == 0 {
-			log.Warningf("No possible homes found for cluster: %d", rep.clusterID)
+			log.Debugf("No possible homes found for cluster: %d", rep.clusterID)
 			continue
 		}
 		sort.Slice(potentialHomes, func(i, j int) bool {
