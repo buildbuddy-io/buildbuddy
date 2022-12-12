@@ -228,8 +228,7 @@ func main() {
 	// Clean up net namespaces in case vestiges remain from a previous executor.
 	if !networking.PreserveExistingNetNamespaces() {
 		if err := networking.DeleteNetNamespaces(rootContext); err != nil {
-			fmt.Printf("Error cleaning up old net namespaces:  %s", err)
-			os.Exit(1)
+			log.Debugf("Error cleaning up old net namespaces:  %s", err)
 		}
 	}
 	if err := networking.ConfigurePolicyBasedRoutingForSecondaryNetwork(rootContext); err != nil {
