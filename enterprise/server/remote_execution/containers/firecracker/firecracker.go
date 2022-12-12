@@ -586,7 +586,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 
 	var netNS string
 	if c.constants.EnableNetworking {
-		netNS = "/var/run/netns/" + c.id
+		netNS = "/var/run/netns/bb-executor-" + c.id
 	}
 
 	var stdout io.Writer = c.vmLog

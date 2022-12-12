@@ -185,7 +185,7 @@ func removeForwardAcceptRule(ctx context.Context, vethName, defaultDevice string
 func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	// This will delete the veth pair too, and the address attached
 	// to the host-size of the veth pair.
-	return runCommand(ctx, "ip", "netns", "delete", netNamespace)
+	return runCommand(ctx, "ip", "netns", "delete", netNamespacePrefix+netNamespace)
 }
 
 func DeleteRoute(ctx context.Context, vmIdx int) error {
