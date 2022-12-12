@@ -34,10 +34,10 @@ var (
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 
-	blobSize        = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
-	recycleRate     = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
-	timeout         = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
-	continueOnError = flag.Bool("continue_on_error", false, "If true, warn on errors but continue running")
+	blobSize    = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
+	recycleRate = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
+	timeout     = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
+	keepGoing   = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
 )
 
 const (
@@ -187,7 +187,7 @@ func main() {
 				cancel()
 				if err != nil {
 					log.Errorf("Write err: %s", err)
-					if *continueOnError {
+					if *keepGoing {
 						return nil
 					}
 					return err
@@ -228,7 +228,7 @@ func main() {
 					cancel()
 					if err != nil {
 						log.Errorf("Read err: %s", err)
-						if *continueOnError {
+						if *keepGoing {
 							continue
 						}
 						return err
