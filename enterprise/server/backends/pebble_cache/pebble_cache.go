@@ -839,7 +839,9 @@ func lookupFileMetadata(ctx context.Context, iter *pebble.Iterator, fileMetadata
 		return nil, err
 	}
 
-	if fileMetadata.GetStoredSizeBytes() != fileMetadata.GetFileRecord().GetDigest().GetSizeBytes() {
+	fileRecord := fileMetadata.GetFileRecord()
+	if fileRecord.GetCompressor() == repb.Compressor_IDENTITY &&
+		fileMetadata.GetStoredSizeBytes() != fileRecord.GetDigest().GetSizeBytes() {
 		log.CtxInfof(ctx, "Pebble lookup metadata size mismatch: %v", fileMetadata)
 	}
 
@@ -856,7 +858,9 @@ func readFileMetadata(reader pebble.Reader, fileMetadataKey []byte) (*rfpb.FileM
 		return nil, err
 	}
 
-	if fileMetadata.GetStoredSizeBytes() != fileMetadata.GetFileRecord().GetDigest().GetSizeBytes() {
+	fileRecord := fileMetadata.GetFileRecord()
+	if fileRecord.GetCompressor() == repb.Compressor_IDENTITY &&
+		fileMetadata.GetStoredSizeBytes() != fileRecord.GetDigest().GetSizeBytes() {
 		log.Infof("Pebble read metadata size mismatch: %v", fileMetadata)
 	}
 
@@ -1355,7 +1359,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
 		}
 
-		if md.GetStoredSizeBytes() != md.GetFileRecord().GetDigest().GetSizeBytes() {
+		fr := md.GetFileRecord()
+		if fr.GetCompressor() == repb.Compressor_IDENTITY &&
+			md.GetStoredSizeBytes() != fr.GetDigest().GetSizeBytes() {
 			log.CtxInfof(ctx, "Pebble write metadata size mismatch: %v", md)
 		}
 
