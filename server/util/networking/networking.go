@@ -74,15 +74,24 @@ func DeleteNetNamespaces(ctx context.Context) error {
 	if len(output) == 0 {
 		return nil
 	}
+	var lastErr error
 	for _, ns := range strings.Split(output, "\n") {
+		// Sometimes the output contains spaces, like
+		//     bb-executor-1
+		//     bb-executor-2 3fe4313e-eb76-4b6d-9d61-53caf12b87e6 (id: 344) 2ab15e85-d1c3-47bc-ad40-74e2941157a4 (id: 332)
+		// So we get just the first column here.
+		fields := strings.Fields(ns)
+		if len(fields) > 0 {
+			ns = fields[0]
+		}
 		if !strings.HasPrefix(ns, netNamespacePrefix) {
 			continue
 		}
 		if _, err := sudoCommand(ctx, "ip", "netns", "delete", ns); err != nil {
-			return err
+			lastErr = err
 		}
 	}
-	return nil
+	return lastErr
 }
 
 // CreateNetNamespace is equivalent to:
