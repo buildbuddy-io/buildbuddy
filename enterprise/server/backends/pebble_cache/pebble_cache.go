@@ -462,6 +462,13 @@ func (p *PebbleCache) batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte
 	if err != nil {
 		return err
 	}
+
+	fileRecord := fileMetadata.GetFileRecord()
+	if fileRecord.GetCompressor() == repb.Compressor_IDENTITY &&
+		fileMetadata.GetStoredSizeBytes() != fileRecord.GetDigest().GetSizeBytes() {
+		log.Infof("Pebble write metadata size mismatch, batchEditAtime: %v", fileMetadata)
+	}
+
 	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 }
 
@@ -690,6 +697,13 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 			return err
 		}
 		inserted += 1
+
+		fileRecord := fileMetadata.GetFileRecord()
+		if fileRecord.GetCompressor() == repb.Compressor_IDENTITY &&
+			fileMetadata.GetStoredSizeBytes() != fileRecord.GetDigest().GetSizeBytes() {
+			log.Infof("Pebble write metadata size mismatch, MigrateFromDiskDir: %v", fileMetadata)
+		}
+
 		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 	})
 	if err != nil {
@@ -1321,6 +1335,13 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		if err != nil {
 			return err
 		}
+
+		fr := md.GetFileRecord()
+		if fr.GetCompressor() == repb.Compressor_IDENTITY &&
+			md.GetStoredSizeBytes() != fr.GetDigest().GetSizeBytes() {
+			log.Infof("Pebble write metadata size mismatch, writer: %v", md)
+		}
+
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		if err == nil {
 			partitionID := fileRecord.GetIsolation().GetPartitionId()
