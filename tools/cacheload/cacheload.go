@@ -34,9 +34,10 @@ var (
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 
-	blobSize    = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
-	recycleRate = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
-	timeout     = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
+	blobSize        = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
+	recycleRate     = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
+	timeout         = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
+	continueOnError = flag.Bool("continue_on_error", false, "If true, warn on errors but continue running")
 )
 
 const (
@@ -131,17 +132,21 @@ func main() {
 	digestGenerator = digest.RandomGenerator(time.Now().Unix())
 	ctx := context.Background()
 
+	if *writeQPS == 0 {
+		log.Fatalf("Write QPS cannot be 0 -- data must be written before it can be read")
+	}
 	blobSizeDesc := fmt.Sprintf("size %d bytes", *blobSize)
 	if *blobSize < 0 {
 		blobSizeDesc = "simulating real blob sizes."
 	}
-	log.Printf("Applying load to cache W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
+	log.Printf("Cache loadtesting target %q", *cacheTarget)
+	log.Printf("Planned load W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
 
 	conn, err := grpc_client.DialTargetWithOptions(*cacheTarget, false, grpc.WithBlock(), grpc.WithTimeout(*timeout))
 	if err != nil {
-		log.Fatalf("Unable to connect to cache '%s': %s", *cacheTarget, err)
+		log.Fatalf("Unable to connect to target '%s': %s", *cacheTarget, err)
 	}
-	log.Printf("Connected to cache: %q", *cacheTarget)
+	log.Printf("Connected to target: %q", *cacheTarget)
 
 	bsClient := bspb.NewByteStreamClient(conn)
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
@@ -182,9 +187,16 @@ func main() {
 				cancel()
 				if err != nil {
 					log.Errorf("Write err: %s", err)
+					if *continueOnError {
+						return nil
+					}
 					return err
 				}
 				writeQPSCounter.Inc()
+
+				if *readQPS == 0 {
+					return nil
+				}
 
 				select {
 				case writtenDigests <- d:
@@ -216,6 +228,9 @@ func main() {
 					cancel()
 					if err != nil {
 						log.Errorf("Read err: %s", err)
+						if *continueOnError {
+							continue
+						}
 						return err
 					}
 					readQPSCounter.Inc()
