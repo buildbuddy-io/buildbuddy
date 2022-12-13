@@ -189,7 +189,7 @@ func attachAddressToVeth(ctx context.Context, netNamespace, ipAddr, vethName str
 }
 
 func removeForwardAcceptRule(ctx context.Context, vethName, defaultDevice string) error {
-	return runCommand(ctx, "iptables", "--delete", "FORWARD", "-i", vethName, "-o", defaultDevice, "-j", "ACCEPT")
+	return runCommand(ctx, "iptables", "--wait", "--delete", "FORWARD", "-i", vethName, "-o", defaultDevice, "-j", "ACCEPT")
 }
 
 func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
@@ -332,12 +332,12 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		return nil, err
 	}
 
-	err = runCommand(ctx, namespace(netNamespace, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", veth0, "-s", vmIP, "-j", "SNAT", "--to", cloneIP)...)
+	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", veth0, "-s", vmIP, "-j", "SNAT", "--to", cloneIP)...)
 	if err != nil {
 		return nil, err
 	}
 
-	err = runCommand(ctx, namespace(netNamespace, "iptables", "-t", "nat", "-A", "PREROUTING", "-i", veth0, "-d", cloneIP, "-j", "DNAT", "--to", vmIP)...)
+	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", veth0, "-d", cloneIP, "-j", "DNAT", "--to", vmIP)...)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +361,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		}
 	}
 
-	err = runCommand(ctx, "iptables", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
+	err = runCommand(ctx, "iptables", "--wait", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
 	if err != nil {
 		return nil, err
 	}
@@ -467,11 +467,11 @@ func EnableMasquerading(ctx context.Context) error {
 		return err
 	}
 	// Skip appending the rule if it's already in the table.
-	err = runCommand(ctx, "iptables", "-t", "nat", "--check", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
+	err = runCommand(ctx, "iptables", "--wait", "-t", "nat", "--check", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
 	if err == nil {
 		return nil
 	}
-	return runCommand(ctx, "iptables", "-t", "nat", "-A", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
+	return runCommand(ctx, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
 }
 
 // AddRoutingTableEntryIfNotPresent adds [tableID, tableName] name pair to /etc/iproute2/rt_tables if
