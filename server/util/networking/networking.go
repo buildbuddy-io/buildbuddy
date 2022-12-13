@@ -210,6 +210,24 @@ func DeleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
 	return runCommand(ctx, "ip", "rule", "del", "from", getCloneIP(vmIdx))
 }
 
+func routeExists(ctx context.Context, source string, gateway string) (bool, error) {
+	b, err := sudoCommand(ctx, "ip", "route")
+	if err != nil {
+		return false, err
+	}
+	output := strings.TrimSpace(string(b))
+	if len(output) == 0 {
+		return false, nil
+	}
+	providedRoute := source + " via " + gateway
+	for _, route := range strings.Split(output, "\n") {
+		if strings.HasPrefix(route, providedRoute) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // SetupVethPair creates a new veth pair with one end in the given network
 // namespace and the other end in the root namespace. It returns a cleanup
 // function that removes firewall rules associated with the pair.
@@ -310,9 +328,16 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		return nil, err
 	}
 
-	err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
+	exists, err := routeExists(ctx, cloneIP, cloneEndpointAddr)
 	if err != nil {
 		return nil, err
+	} else if !exists {
+		err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		log.Debugf("ip route %s via %s already exists", cloneIP, cloneEndpointAddr)
 	}
 
 	if IsSecondaryNetworkEnabled() {
