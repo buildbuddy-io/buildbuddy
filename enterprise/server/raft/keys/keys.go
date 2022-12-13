@@ -38,6 +38,8 @@ func IsLocalKey(key Key) bool {
 	return key[0] == '\x01'
 }
 
+// Range returns a pair of keys that represent the upper and lower bounds of a
+// range identified by the given key prefix.
 func Range(key []byte) ([]byte, []byte) {
 	return MakeKey(key, []byte{MinByte}), MakeKey(key, []byte{MaxByte})
 }
