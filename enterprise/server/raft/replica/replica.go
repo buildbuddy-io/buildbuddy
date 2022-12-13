@@ -64,7 +64,7 @@ var (
 type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
-	NotifyUsage(ru *rfpb.ReplicaUsage, pu []*rfpb.PartitionMetadata)
+	NotifyUsage(ru *rfpb.ReplicaUsage)
 	Sender() *sender.Sender
 }
 
@@ -162,7 +162,7 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 	return size, nil
 }
 
-func (sm *Replica) Usage() (*rfpb.ReplicaUsage, []*rfpb.PartitionMetadata, error) {
+func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
 			ClusterId: sm.ClusterID,
@@ -173,12 +173,11 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, []*rfpb.PartitionMetadata, error
 	rd := sm.rangeDescriptor
 	sm.rangeMu.RUnlock()
 	if rd == nil {
-		return nil, nil, status.FailedPreconditionError("range descriptor is not set")
+		return nil, status.FailedPreconditionError("range descriptor is not set")
 	}
 	ru.Generation = rd.GetGeneration()
 	ru.RangeId = rd.GetRangeId()
 
-	var partitionUsages []*rfpb.PartitionMetadata
 	var numFileRecords, sizeBytes int64
 	sm.partitionMetadataMu.Lock()
 	for _, p := range sm.partitions {
@@ -186,7 +185,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, []*rfpb.PartitionMetadata, error
 		if !ok {
 			continue
 		}
-		partitionUsages = append(partitionUsages, proto.Clone(pm).(*rfpb.PartitionMetadata))
+		ru.Partitions = append(ru.Partitions, proto.Clone(pm).(*rfpb.PartitionMetadata))
 		numFileRecords += pm.GetTotalCount()
 		sizeBytes += pm.GetSizeBytes()
 	}
@@ -204,7 +203,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, []*rfpb.PartitionMetadata, error
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
 
-	return ru, partitionUsages, nil
+	return ru, nil
 }
 
 func (sm *Replica) String() string {
@@ -1433,11 +1432,11 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	}
 
 	if sm.lastAppliedIndex-sm.lastUsageCheckIndex > entriesBetweenUsageChecks {
-		usage, partitionUsages, err := sm.Usage()
+		usage, err := sm.Usage()
 		if err != nil {
 			sm.log.Warningf("Error computing usage: %s", err)
 		} else {
-			sm.store.NotifyUsage(usage, partitionUsages)
+			sm.store.NotifyUsage(usage)
 		}
 		sm.lastUsageCheckIndex = sm.lastAppliedIndex
 	}

@@ -358,6 +358,8 @@ message ReplicaUsage {
   int64 estimated_disk_bytes_used = 4;
   int64 read_qps = 5;
   int64 raft_propose_qps = 6;
+
+  repeated PartitionMetadata partitions = 7;
 }
 
 message StoreUsage {

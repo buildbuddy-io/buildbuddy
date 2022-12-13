@@ -50,7 +50,7 @@ func (fs *fakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 func (fs *fakeStore) Sender() *sender.Sender {
 	return nil
 }
-func (fs *fakeStore) NotifyUsage(ru *rfpb.ReplicaUsage, pu []*rfpb.PartitionMetadata) {}
+func (fs *fakeStore) NotifyUsage(ru *rfpb.ReplicaUsage) {}
 func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 	fs.fileReadFn = fn
 	return fs
@@ -784,15 +784,15 @@ func TestUsage(t *testing.T) {
 	rt.writeRandom(header, anotherPartition, 300)
 
 	{
-		ru, pm, err := repl.Usage()
+		ru, err := repl.Usage()
 		require.NoError(t, err)
 
 		require.EqualValues(t, 2100, ru.GetEstimatedDiskBytesUsed())
-		require.Len(t, pm, 2)
-		defaultUsage := pm[0]
+		require.Len(t, ru.GetPartitions(), 2)
+		defaultUsage := ru.GetPartitions()[0]
 		require.EqualValues(t, 1500, defaultUsage.GetSizeBytes())
 		require.EqualValues(t, 2, defaultUsage.GetTotalCount())
-		anotherUsage := pm[1]
+		anotherUsage := ru.GetPartitions()[1]
 		require.EqualValues(t, 600, anotherUsage.GetSizeBytes())
 		require.EqualValues(t, 3, anotherUsage.GetTotalCount())
 	}
@@ -801,15 +801,15 @@ func TestUsage(t *testing.T) {
 	rt.delete(frDefault)
 
 	{
-		ru, pm, err := repl.Usage()
+		ru, err := repl.Usage()
 		require.NoError(t, err)
 
 		require.EqualValues(t, 1100, ru.GetEstimatedDiskBytesUsed())
-		require.Len(t, pm, 2)
-		defaultUsage := pm[0]
+		require.Len(t, ru.GetPartitions(), 2)
+		defaultUsage := ru.GetPartitions()[0]
 		require.EqualValues(t, 500, defaultUsage.GetSizeBytes())
 		require.EqualValues(t, 1, defaultUsage.GetTotalCount())
-		anotherUsage := pm[1]
+		anotherUsage := ru.GetPartitions()[1]
 		require.EqualValues(t, 600, anotherUsage.GetSizeBytes())
 		require.EqualValues(t, 3, anotherUsage.GetTotalCount())
 	}

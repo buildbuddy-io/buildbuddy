@@ -354,7 +354,7 @@ func (ut *usageTracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 }
 
 // LocalUpdate processes a usage update from a local replica.
-func (ut *usageTracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage, partitionUsages []*rfpb.PartitionMetadata) {
+func (ut *usageTracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage) {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
 
@@ -366,7 +366,7 @@ func (ut *usageTracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage, pa
 		return
 	}
 
-	for _, u := range partitionUsages {
+	for _, u := range usage.GetPartitions() {
 		ud, ok := ut.byPartition[u.GetPartitionId()]
 		if !ok {
 			log.Warningf("unknown partition %q", u.GetPartitionId())
@@ -554,7 +554,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	for _, r := range replicas {
 		cluster := fmt.Sprintf("(c%03dn%03d)", r.ClusterID, r.NodeID)
 
-		usage, _, err := r.Usage()
+		usage, err := r.Usage()
 		if err != nil {
 			buf += fmt.Sprintf("\t%s error: %s\n", cluster, err)
 			continue
@@ -587,7 +587,7 @@ func (s *Store) onLeaderUpdated(info raftio.LeaderInfo) {
 	go s.maybeAcquireRangeLease(rd)
 }
 
-func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage, partitionUsages []*rfpb.PartitionMetadata) {
+func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage) {
 	clusterID := usage.GetReplica().GetClusterId()
 	if usage.GetEstimatedDiskBytesUsed() > *replicaSplitSizeBytes {
 		s.RequestSplit(clusterID)
@@ -597,7 +597,7 @@ func (s *Store) NotifyUsage(usage *rfpb.ReplicaUsage, partitionUsages []*rfpb.Pa
 	if rd == nil {
 		return
 	}
-	s.usages.LocalUpdate(rd.GetRangeId(), usage, partitionUsages)
+	s.usages.LocalUpdate(rd.GetRangeId(), usage)
 }
 
 func (s *Store) RequestSplit(clusterID uint64) {
@@ -787,11 +787,11 @@ func (s *Store) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
 }
 
 func (s *Store) updateUsages(r *replica.Replica) error {
-	usage, partitionUsages, err := r.Usage()
+	usage, err := r.Usage()
 	if err != nil {
 		return err
 	}
-	s.usages.LocalUpdate(usage.GetRangeId(), usage, partitionUsages)
+	s.usages.LocalUpdate(usage.GetRangeId(), usage)
 	return nil
 }
 
@@ -1970,7 +1970,7 @@ func (s *Store) ListCluster(ctx context.Context, req *rfpb.ListClusterRequest) (
 			Range: rd,
 		}
 		if replica, err := s.GetReplica(rd.GetRangeId()); err == nil {
-			usage, _, err := replica.Usage()
+			usage, err := replica.Usage()
 			if err == nil {
 				rr.ReplicaUsage = usage
 			}
