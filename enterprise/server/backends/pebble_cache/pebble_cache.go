@@ -1611,9 +1611,11 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
 
 	partitionMD := &rfpb.PartitionMetadata{
-		SizeBytes: totalSizeBytes,
-		CasCount:  totalCasCount,
-		AcCount:   totalAcCount,
+		PartitionId: e.part.ID,
+		SizeBytes:   totalSizeBytes,
+		CasCount:    totalCasCount,
+		AcCount:     totalAcCount,
+		TotalCount:  totalCasCount + totalAcCount,
 	}
 
 	db, err := e.dbGetter.DB()

@@ -104,8 +104,12 @@ type Replica struct {
 	splitTag  string
 
 	store               IStore
+	partitions          []disk.Partition
 	lastAppliedIndex    uint64
 	lastUsageCheckIndex uint64
+
+	partitionMetadataMu sync.Mutex
+	partitionMetadata   map[string]*rfpb.PartitionMetadata
 
 	log             log.Logger
 	rangeMu         sync.RWMutex
@@ -135,6 +139,10 @@ func isLocalKey(key []byte) bool {
 	return bytes.HasPrefix(key, constants.LocalPrefix) ||
 		bytes.HasPrefix(key, constants.SystemPrefix) ||
 		bytes.HasPrefix(key, constants.MetaRangePrefix)
+}
+
+func isFileRecordKey(key []byte) bool {
+	return bytes.HasPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
 }
 
 func sizeOf(key []byte, val []byte) (int64, error) {
@@ -183,7 +191,16 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	metrics.RaftBytes.With(prometheus.Labels{
 		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
 	}).Set(float64(estimatedBytesUsed))
-	// TODO(tylerw): compute number of keys here too.
+
+	var numFileRecords int64
+	sm.partitionMetadataMu.Lock()
+	for _, c := range sm.partitionMetadata {
+		numFileRecords += c.GetTotalCount()
+	}
+	sm.partitionMetadataMu.Unlock()
+	metrics.RaftRecords.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
+	}).Set(float64(numFileRecords))
 
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
@@ -239,6 +256,13 @@ func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	if !keys.IsLocalKey(key) {
 		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
 			sm.rangeMu.RUnlock()
+
+			if isFileRecordKey(key) {
+				if err := sm.updateAndFlushPartitionMetadatas(wb, key, val, nil /*=fileMetadata*/, fileRecordAdd); err != nil {
+					return err
+				}
+			}
+
 			return wb.Set(key, val, nil /*ignored write options*/)
 		}
 		sm.rangeMu.RUnlock()
@@ -287,7 +311,7 @@ func (sm *Replica) LastAppliedIndex() (uint64, error) {
 }
 
 func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
-	val, err := sm.lookup(db, []byte(constants.LastAppliedIndexKey))
+	val, err := sm.lookup(db, constants.LastAppliedIndexKey)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			return 0, nil
@@ -299,6 +323,87 @@ func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
 	}
 	i := bytesToUint64(val)
 	return i, nil
+}
+
+func (sm *Replica) getPartitionMetadatas(db ReplicaReader) (*rfpb.PartitionMetadatas, error) {
+	val, err := sm.lookup(db, constants.PartitionMetadatasKey)
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			return &rfpb.PartitionMetadatas{}, nil
+		}
+		return nil, err
+	}
+	var pm rfpb.PartitionMetadatas
+	if err := proto.Unmarshal(val, &pm); err != nil {
+		return nil, err
+	}
+	return &pm, nil
+}
+
+type fileRecordOp int
+
+const (
+	fileRecordAdd fileRecordOp = iota
+	fileRecordDelete
+)
+
+func (sm *Replica) flushPartitionMetadatas(wb *pebble.Batch) error {
+	sm.partitionMetadataMu.Lock()
+	defer sm.partitionMetadataMu.Unlock()
+	var cs rfpb.PartitionMetadatas
+	for _, pm := range sm.partitionMetadata {
+		cs.Metadata = append(cs.Metadata, pm)
+	}
+	bs, err := proto.Marshal(&cs)
+	if err != nil {
+		return err
+	}
+	if err := wb.Set(constants.PartitionMetadatasKey, bs, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (sm *Replica) updatePartitionMetadata(wb *pebble.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+	if fileMetadata == nil {
+		fileMetadata = &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(val, fileMetadata); err != nil {
+			return err
+		}
+	}
+	sm.partitionMetadataMu.Lock()
+	defer sm.partitionMetadataMu.Unlock()
+
+	partID := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
+	pm, ok := sm.partitionMetadata[partID]
+	if !ok {
+		pm = &rfpb.PartitionMetadata{PartitionId: partID}
+		sm.partitionMetadata[partID] = pm
+	}
+
+	if op == fileRecordDelete {
+		pm.TotalCount--
+		pm.SizeBytes -= fileMetadata.GetStoredSizeBytes()
+	} else {
+		_, closer, err := wb.Get(key)
+		if err == nil {
+			// Skip increment on duplicate write.
+			return closer.Close()
+		}
+		if err != nil && err != pebble.ErrNotFound {
+			return err
+		}
+		pm.TotalCount++
+		pm.SizeBytes += fileMetadata.GetStoredSizeBytes()
+	}
+	return nil
+}
+
+func (sm *Replica) updateAndFlushPartitionMetadatas(wb *pebble.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+	if err := sm.updatePartitionMetadata(wb, key, val, fileMetadata, op); err != nil {
+		return err
+	}
+	return sm.flushPartitionMetadatas(wb)
 }
 
 func (sm *Replica) getDBDir() string {
@@ -344,6 +449,13 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	sm.leaser = pebbleutil.NewDBLeaser(db)
 
 	sm.checkAndSetRangeDescriptor(db)
+	pms, err := sm.getPartitionMetadatas(db)
+	if err != nil {
+		return 0, err
+	}
+	for _, pm := range pms.GetMetadata() {
+		sm.partitionMetadata[pm.GetPartitionId()] = pm
+	}
 	return sm.getLastAppliedIndex(db)
 }
 
@@ -379,6 +491,9 @@ func (sm *Replica) fileDelete(wb *pebble.Batch, req *rfpb.FileDeleteRequest) (*r
 	if err := wb.Delete(fileMetadataKey, nil /*ignored write options*/); err != nil {
 		return nil, err
 	}
+	if err := sm.updateAndFlushPartitionMetadatas(wb, fileMetadataKey, iter.Value(), fileMetadata, fileRecordDelete); err != nil {
+		return nil, err
+	}
 	return &rfpb.FileDeleteResponse{}, nil
 }
 
@@ -395,12 +510,18 @@ func (sm *Replica) deleteRange(wb *pebble.Batch, req *rfpb.DeleteRangeRequest) (
 		}
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err == nil {
+			if err := sm.updatePartitionMetadata(wb, iter.Key(), iter.Value(), fileMetadata, fileRecordDelete); err != nil {
+				return nil, err
+			}
 			if fileMetadata.GetFileRecord() != nil {
 				if err := sm.fileStorer.DeleteStoredFile(context.TODO(), sm.fileDir, fileMetadata.GetStorageMetadata()); err != nil {
 					log.Errorf("Error deleting stored file: %s", err)
 				}
 			}
 		}
+	}
+	if err := sm.flushPartitionMetadatas(wb); err != nil {
+		return nil, err
 	}
 
 	return &rfpb.DeleteRangeResponse{}, nil
@@ -1624,7 +1745,7 @@ func (sm *Replica) Close() error {
 }
 
 // CreateReplica creates an ondisk statemachine.
-func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
+func New(rootDir string, clusterID, nodeID uint64, store IStore, partitions []disk.Partition) *Replica {
 	fileDir := filepath.Join(rootDir, fmt.Sprintf("files-c%dn%d", clusterID, nodeID))
 	if err := disk.EnsureDirectoryExists(fileDir); err != nil {
 		log.Errorf("Error creating fileDir %q for replica: %s", fileDir, err)
@@ -1637,6 +1758,8 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore) *Replica {
 		NodeID:              nodeID,
 		timerMu:             &sync.Mutex{},
 		store:               store,
+		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
+		partitions:          partitions,
 		lastUsageCheckIndex: 0,
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 		fileStorer: filestore.New(filestore.Opts{

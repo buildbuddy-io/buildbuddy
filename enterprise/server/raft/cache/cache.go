@@ -218,7 +218,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	rc.apiClient = client.NewAPIClient(env, rc.nodeHost.ID())
 	rc.sender = sender.New(rc.rangeCache, rc.registry, rc.apiClient)
-	rc.store = store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient)
+	rc.store = store.New(conf.RootDir, rc.nodeHost, rc.gossipManager, rc.sender, rc.registry, rc.apiClient, rc.conf.Partitions)
 	if err := rc.store.Start(rc.grpcAddress); err != nil {
 		return nil, err
 	}

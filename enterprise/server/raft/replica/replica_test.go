@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -26,6 +27,10 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
+)
+
+var (
+	partitions = []disk.Partition{}
 )
 
 type fileReadFn func(fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
@@ -48,7 +53,7 @@ func (fs *fakeStore) WithFileReadFn(fn fileReadFn) *fakeStore {
 func TestOpenCloseReplica(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -148,7 +153,7 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 func TestReplicaDirectReadWrite(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -158,11 +163,15 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
 
+	md := &rfpb.FileMetadata{StoredSizeBytes: 123}
+	val, err := proto.Marshal(md)
+	require.NoError(t, err)
+
 	// Do a DirectWrite.
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
 			Key:   []byte("key-name"),
-			Value: []byte("key-value"),
+			Value: val,
 		},
 	}))
 	entries := []dbsm.Entry{entry}
@@ -181,7 +190,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	directRead, err := readBatch.DirectReadResponse(0)
 	require.NoError(t, err)
 
-	require.Equal(t, []byte("key-value"), directRead.GetKv().GetValue())
+	require.Equal(t, val, directRead.GetKv().GetValue())
 
 	err = repl.Close()
 	require.NoError(t, err)
@@ -190,7 +199,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 func TestReplicaIncrement(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -237,7 +246,7 @@ func TestReplicaIncrement(t *testing.T) {
 func TestReplicaCAS(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -247,10 +256,12 @@ func TestReplicaCAS(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
 
+	key := constants.LocalRangeKey
+
 	// Do a DirectWrite.
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   []byte("key-name"),
+			Key:   key,
 			Value: []byte("key-value"),
 		},
 	}))
@@ -263,7 +274,7 @@ func TestReplicaCAS(t *testing.T) {
 	//   2) the current value is returned.
 	entry = em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   []byte("key-name"),
+			Key:   key,
 			Value: []byte("new-key-value"),
 		},
 		ExpectedValue: []byte("bogus-expected-value"),
@@ -280,7 +291,7 @@ func TestReplicaCAS(t *testing.T) {
 	// the value was written.
 	entry = em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   []byte("key-name"),
+			Key:   key,
 			Value: []byte("new-key-value"),
 		},
 		ExpectedValue: []byte("key-value"),
@@ -300,7 +311,7 @@ func TestReplicaCAS(t *testing.T) {
 func TestReplicaScan(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -407,7 +418,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -464,7 +475,7 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 
 	// Restore a new replica from the created snapshot.
 	rootDir2 := testfs.MakeTempDir(t)
-	repl2 := replica.New(rootDir2, 2, 2, store)
+	repl2 := replica.New(rootDir2, 2, 2, store, partitions)
 	require.NotNil(t, repl2)
 	_, err = repl2.Open(stopc)
 	require.NoError(t, err)
@@ -482,7 +493,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -539,7 +550,7 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 func TestReplicaSplitLease(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})
@@ -631,7 +642,7 @@ func TestReplicaSplitLease(t *testing.T) {
 func TestFindSplitPoint(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	store := &fakeStore{}
-	repl := replica.New(rootDir, 1, 1, store)
+	repl := replica.New(rootDir, 1, 1, store, partitions)
 	require.NotNil(t, repl)
 
 	stopc := make(chan struct{})

@@ -75,6 +75,9 @@ var (
 	// The last index that was applied by a statemachine.
 	LastAppliedIndexKey = keys.MakeKey(LocalPrefix, []byte("lastAppliedIndex"))
 
+	// Key that contains partition metadata (size, counts).
+	PartitionMetadatasKey = keys.MakeKey(LocalPrefix, []byte("partition_metadatas"))
+
 	// The range that this statemachine holds.
 	LocalRangeKey      = keys.MakeKey(LocalPrefix, []byte("range"))
 	LocalRangeLeaseKey = keys.MakeKey(LocalPrefix, []byte("rangelease"))

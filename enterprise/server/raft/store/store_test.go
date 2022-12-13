@@ -93,7 +93,7 @@ type TestingStore struct {
 }
 
 func (ts *TestingStore) NewReplica(clusterID, nodeID uint64) *replica.Replica {
-	return replica.New(ts.RootDir, clusterID, nodeID, ts.Store)
+	return replica.New(ts.RootDir, clusterID, nodeID, ts.Store, []disk.Partition{})
 }
 
 func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeHost) {
@@ -140,7 +140,7 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	gm.AddListener(rc)
 	ts.Sender = sender.New(rc, reg, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
-	s := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, apiClient)
+	s := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, apiClient, []disk.Partition{})
 	require.NotNil(t, s)
 	s.Start(ts.GRPCAddress)
 	ts.Store = s
