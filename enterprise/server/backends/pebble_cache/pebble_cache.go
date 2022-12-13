@@ -465,6 +465,7 @@ func (p *PebbleCache) batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte
 
 	fileRecord := fileMetadata.GetFileRecord()
 	if fileRecord.GetCompressor() == repb.Compressor_IDENTITY &&
+		fileRecord.GetIsolation().GetCacheType() == resource.CacheType_CAS &&
 		fileMetadata.GetStoredSizeBytes() != fileRecord.GetDigest().GetSizeBytes() {
 		log.Infof("Pebble write metadata size mismatch, batchEditAtime: %v", fileMetadata)
 	}
@@ -700,6 +701,7 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 
 		fileRecord := fileMetadata.GetFileRecord()
 		if fileRecord.GetCompressor() == repb.Compressor_IDENTITY &&
+			fileRecord.GetIsolation().GetCacheType() == resource.CacheType_CAS &&
 			fileMetadata.GetStoredSizeBytes() != fileRecord.GetDigest().GetSizeBytes() {
 			log.Infof("Pebble write metadata size mismatch, MigrateFromDiskDir: %v", fileMetadata)
 		}
@@ -841,6 +843,7 @@ func lookupFileMetadata(ctx context.Context, iter *pebble.Iterator, fileMetadata
 
 	fileRecord := fileMetadata.GetFileRecord()
 	if fileRecord.GetCompressor() == repb.Compressor_IDENTITY &&
+		fileRecord.GetIsolation().GetCacheType() == resource.CacheType_CAS &&
 		fileMetadata.GetStoredSizeBytes() != fileRecord.GetDigest().GetSizeBytes() {
 		log.CtxInfof(ctx, "Pebble lookup metadata size mismatch: %v", fileMetadata)
 	}
@@ -860,6 +863,7 @@ func readFileMetadata(reader pebble.Reader, fileMetadataKey []byte) (*rfpb.FileM
 
 	fileRecord := fileMetadata.GetFileRecord()
 	if fileRecord.GetCompressor() == repb.Compressor_IDENTITY &&
+		fileRecord.GetIsolation().GetCacheType() == resource.CacheType_CAS &&
 		fileMetadata.GetStoredSizeBytes() != fileRecord.GetDigest().GetSizeBytes() {
 		log.Infof("Pebble read metadata size mismatch: %v", fileMetadata)
 	}
@@ -1348,6 +1352,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 
 		fr := md.GetFileRecord()
 		if fr.GetCompressor() == repb.Compressor_IDENTITY &&
+			fr.GetIsolation().GetCacheType() == resource.CacheType_CAS &&
 			md.GetStoredSizeBytes() != fr.GetDigest().GetSizeBytes() {
 			log.Infof("Pebble write metadata size mismatch, writer: %v", md)
 		}
