@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -509,6 +510,8 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
+		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+		defer cancel()
 		_ = s.deletePendingExecution(ctx, executionID)
 		return "", status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
 	}
