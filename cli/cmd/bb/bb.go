@@ -124,7 +124,6 @@ func run() (exitCode int, err error) {
 	// Fiddle with Bazel args
 	// TODO(bduffany): model these as "built-in" plugins
 	args = tooltag.ConfigureToolTag(args)
-	args = sidecar.ConfigureSidecar(args)
 	args = login.ConfigureAPIKey(args)
 
 	// Prepare convenience env vars for plugins
@@ -143,6 +142,11 @@ func run() (exitCode int, err error) {
 			return -1, err
 		}
 	}
+
+	// Note: sidecar is configured after pre-bazel plugins, since pre-bazel
+	// plugins may change the value of bes_backend, remote_cache,
+	// remote_instance_name, etc.
+	args = sidecar.ConfigureSidecar(args)
 
 	// Handle remote bazel. Note, pre-bazel hooks apply to remote bazel, but not
 	// output handlers or post-bazel hooks.
