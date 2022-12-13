@@ -272,6 +272,8 @@ func (s *Store) Start(grpcAddress string) error {
 }
 
 func (s *Store) Stop(ctx context.Context) error {
+	s.dropLeadershipForShutdown()
+
 	close(s.quitChan)
 	if err := s.eg.Wait(); err != nil {
 		return err
@@ -295,6 +297,38 @@ func (s *Store) lookupRange(clusterID uint64) *rfpb.RangeDescriptor {
 		}
 	}
 	return nil
+}
+
+func (s *Store) dropLeadershipForShutdown() {
+	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
+		SkipLogInfo: true,
+	})
+	if nodeHostInfo == nil {
+		return
+	}
+	eg := errgroup.Group{}
+	for _, clusterInfo := range nodeHostInfo.ClusterInfoList {
+		if !clusterInfo.IsLeader {
+			continue
+		}
+
+		// Pick the first node in the map that isn't us. Map ordering is
+		// random; which is a good thing, it means we're randomly picking
+		// another node in the cluster and requesting they take the lead.
+		for nodeID := range clusterInfo.Nodes {
+			if nodeID == clusterInfo.NodeID {
+				continue
+			}
+			eg.Go(func() error {
+				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ClusterID, nodeID); err != nil {
+					log.Warningf("Error transferring leadership: %s", err)
+				}
+				return nil
+			})
+			break
+		}
+	}
+	eg.Wait()
 }
 
 func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
