@@ -929,8 +929,15 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 		return nil, err
 	}
 
+	sizeBytes := md.GetStoredSizeBytes()
+	if r.GetCacheType() == resource.CacheType_CAS {
+		// For CAS records, return the size of the uncompressed blob, even if the cached data is compressed
+		cachedDigest := md.GetFileRecord().GetDigest()
+		sizeBytes = cachedDigest.GetSizeBytes()
+	}
+
 	return &interfaces.CacheMetadata{
-		SizeBytes:          md.GetStoredSizeBytes(),
+		SizeBytes:          sizeBytes,
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
 	}, nil
