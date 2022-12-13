@@ -199,50 +199,19 @@ func TestFillInvocation(t *testing.T) {
 		InvocationId:     "test-invocation",
 		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
 	}
-	parser := event_parser.NewStreamingEventParser(nil)
+	parser := event_parser.NewStreamingEventParser(invocation)
 	for _, event := range events {
 		parser.ParseEvent(event)
 	}
-	parser.FillInvocation(invocation)
 
-	assert.Equal(t, "test-invocation", invocation.InvocationId)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Empty(t, invocation.Event, "parser should not keep the full events list in memory")
+	assert.Empty(t, invocation.StructuredCommandLine, "parser should not keep the full events list in memory")
 
-	assert.Equal(t, "", invocation.Event[0].BuildEvent.GetProgress().Stderr)
-	assert.Equal(t, "", invocation.Event[0].BuildEvent.GetProgress().Stdout)
-	assert.Equal(t, "", invocation.ConsoleBuffer)
+	assert.Equal(t, "test-invocation", invocation.InvocationId, "parser should keep original invocation properties")
+	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus, "parser should keep original invocation properties")
 
 	assert.Equal(t, "test", invocation.Command)
-	assert.Equal(t, "foo", invocation.Event[1].BuildEvent.GetStarted().OptionsDescription)
-
-	assert.Equal(t, []string{"foo"}, invocation.Event[4].BuildEvent.GetOptionsParsed().CmdLine)
-	assert.Equal(t, []string{"explicit"}, invocation.Event[4].BuildEvent.GetOptionsParsed().ExplicitCmdLine)
-
-	assert.Equal(t, "uri", invocation.Event[6].BuildEvent.GetAction().Stdout.GetUri())
-	assert.Equal(t, "uri", invocation.Event[6].BuildEvent.GetAction().Stderr.GetUri())
-	assert.Equal(t, "uri", invocation.Event[6].BuildEvent.GetAction().PrimaryOutput.GetUri())
-	assert.Equal(t, 1, len(invocation.Event[6].BuildEvent.GetAction().ActionMetadataLogs))
-	assert.Equal(t, "uri", invocation.Event[6].BuildEvent.GetAction().ActionMetadataLogs[0].GetUri())
-
-	assert.Equal(t, 1, len(invocation.Event[7].BuildEvent.GetNamedSetOfFiles().Files))
-	assert.Equal(t, "uri", invocation.Event[7].BuildEvent.GetNamedSetOfFiles().Files[0].GetUri())
-
-	assert.Equal(t, 1, len(invocation.Event[8].BuildEvent.GetCompleted().DirectoryOutput))
-	assert.Equal(t, "uri", invocation.Event[8].BuildEvent.GetCompleted().DirectoryOutput[0].GetUri())
-
-	assert.Equal(t, 1, len(invocation.Event[9].BuildEvent.GetTestResult().TestActionOutput))
-	assert.Equal(t, "uri", invocation.Event[9].BuildEvent.GetTestResult().TestActionOutput[0].GetUri())
-
-	assert.Equal(t, 1, len(invocation.Event[10].BuildEvent.GetTestSummary().Passed))
-	assert.Equal(t, 1, len(invocation.Event[10].BuildEvent.GetTestSummary().Failed))
-	assert.Equal(t, "uri", invocation.Event[10].BuildEvent.GetTestSummary().Passed[0].GetUri())
-	assert.Equal(t, "uri", invocation.Event[10].BuildEvent.GetTestSummary().Failed[0].GetUri())
-
 	assert.Equal(t, int64(1000), invocation.DurationUsec)
-
-	assert.Equal(t, "SHELL=/bin/bash", invocation.StructuredCommandLine[0].Sections[0].GetOptionList().Option[0].OptionValue)
-	assert.Equal(t, "SECRET=<REDACTED>", invocation.StructuredCommandLine[0].Sections[0].GetOptionList().Option[1].OptionValue)
-
 	assert.Equal(t, "WORKSPACE_STATUS_BUILD_USER", invocation.User)
 	assert.Equal(t, "METADATA_CI", invocation.Role)
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", invocation.RepoUrl)
