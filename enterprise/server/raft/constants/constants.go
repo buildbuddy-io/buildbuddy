@@ -12,14 +12,12 @@ const (
 	RaftAddressTag = "raft_address"
 	GRPCAddressTag = "grpc_address"
 	MetaRangeTag   = "meta_range"
-	NodeUsageTag   = "node_usage"
 	ZoneTag        = "zone"
 	StoreUsageTag  = "store_usage"
 
 	RegistryUpdateEvent       = "registry_update_event"
 	RegistryQueryEvent        = "registry_query_event"
 	AutoBringupEvent          = "auto_bringup_event"
-	NodeUsageEvent            = "node_usage_event"
 	PlacementDriverQueryEvent = "placement_driver_query_event"
 )
 
