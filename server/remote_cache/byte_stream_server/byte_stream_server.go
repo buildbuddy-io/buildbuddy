@@ -3,7 +3,6 @@ package byte_stream_server
 import (
 	"context"
 	"crypto/sha256"
-	"flag"
 	"fmt"
 	"hash"
 	"io"
@@ -29,10 +28,6 @@ import (
 const (
 	// Keep under the limit of ~4MB (save 256KB).
 	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
-)
-
-var (
-	enableQueryWriteStatusCacheCheck = flag.Bool("cache.enable_query_write_status_cache_check", false, "If enabled, QueryWriteStatus ByteStream RPC will check whether digest is present in the cache.")
 )
 
 type ByteStreamServer struct {
