@@ -6041,15 +6041,15 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-5.3.0-darwin-x86_64",
-        sha256 = "483ed97c2f3c31c5b1c800f0e9dd8519a466c7afb847c56aef52dfaaf31d5fbc",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-darwin-x86_64"],
+        name = "io_bazel_bazel-5.3.2-darwin-x86_64",
+        sha256 = "fe01824013184899386a4807435e38811949ca13f46713e7fc39c70fa1528a17",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-darwin-x86_64"],
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-5.3.0-linux-x86_64",
-        sha256 = "3d144b890b85d95fb13df941bfd010fc3628e9afaa4c85e7d1a002e4fd02b249",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.0/bazel-5.3.0-linux-x86_64"],
+        name = "io_bazel_bazel-5.3.2-linux-x86_64",
+        sha256 = "973e213b1e9207ccdd3ea4730c0f92cbef769ec112ac2b84980583220d8db845",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-x86_64"],
         executable = True,
     )
     http_file(

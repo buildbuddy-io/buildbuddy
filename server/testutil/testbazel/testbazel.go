@@ -18,7 +18,7 @@ import (
 
 const (
 	// Version is the bazel version of the embedded test bazel binary.
-	Version = "5.3.0"
+	Version = "5.3.2"
 
 	// BazelBinaryPath specifies the path to the bazel binary used for
 	// invocations. Must match the path in the build rule.
@@ -97,4 +97,12 @@ func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
 		require.NoError(t, err, "failed to create bazel workspace contents")
 	}
 	return workspaceDir
+}
+
+// CopyTestRulesLib copies the test_rules.bzl in this directory to the given
+// path under the given workspace dir.
+func CopyTestRulesLib(t *testing.T, workspaceDir, path string) {
+	rulesPath, err := bazelgo.Runfile("server/testutil/testbazel/test_rules.bzl")
+	require.NoError(t, err)
+	testfs.CopyFile(t, rulesPath, workspaceDir, path)
 }

@@ -97,8 +97,9 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 func ConfigureSidecar(args []string) []string {
 	log.Debugf("Configuring sidecar")
 
-	cacheDir, err := storage.CacheDir()
 	ctx := context.Background()
+
+	cacheDir, err := storage.CacheDir()
 	if err != nil {
 		log.Warnf("Sidecar could not be initialized, continuing without sidecar: %s", err)
 		return args

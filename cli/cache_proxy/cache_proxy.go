@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -257,7 +258,7 @@ func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			if *writeThrough {
-				if err := p.qWorker.EnqueueRemoteWrite(wreq); err != nil {
+				if err := p.qWorker.EnqueueRemoteWrite(stream.Context(), wreq); err != nil {
 					log.Errorf("Error enqueueing write request to remote: %s", err.Error())
 				}
 			}
@@ -272,6 +273,7 @@ func (p *CacheProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteS
 }
 
 type queueReq struct {
+	metadata          metadata.MD
 	writeResourceName string
 }
 type queueWorker struct {
@@ -318,21 +320,25 @@ func (qw *queueWorker) handleWriteRequest(qreq queueReq) error {
 		return err
 	}
 	defer os.Remove(tmpFile.Name())
-	if err := cachetools.GetBlob(qw.ctx, qw.localClient, resourceName, tmpFile); err != nil {
+	ctx := qw.ctx
+	ctx = metadata.NewOutgoingContext(ctx, qreq.metadata)
+	if err := cachetools.GetBlob(ctx, qw.localClient, resourceName, tmpFile); err != nil {
 		return err
 	}
 	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	if _, err := cachetools.UploadFromReader(qw.ctx, qw.remoteClient, resourceName, tmpFile); err != nil {
+	if _, err := cachetools.UploadFromReader(ctx, qw.remoteClient, resourceName, tmpFile); err != nil {
 		return err
 	}
 	log.Debugf("Handled write request: %s in %s", qreq.writeResourceName, time.Since(start))
 	return nil
 }
 
-func (qw *queueWorker) EnqueueRemoteWrite(wreq *bspb.WriteRequest) error {
+func (qw *queueWorker) EnqueueRemoteWrite(ctx context.Context, wreq *bspb.WriteRequest) error {
+	md, _ := metadata.FromIncomingContext(ctx)
 	req := queueReq{
+		metadata:          md,
 		writeResourceName: wreq.GetResourceName(),
 	}
 	select {
