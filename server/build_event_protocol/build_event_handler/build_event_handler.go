@@ -125,7 +125,6 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	buildEventAccumulator := accumulator.NewBEValues(iid)
-	ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
 	val, ok := b.cancelFnsByInvID.Load(iid)
 	if ok {
 		cancelFn := val.(context.CancelFunc)
