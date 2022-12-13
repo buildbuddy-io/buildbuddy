@@ -667,16 +667,10 @@ func TestMetadata(t *testing.T) {
 				CacheType: tc.cacheType,
 			}
 
-			// For AC records, should return size of data written (compressed size if compressed)
-			expectedSize := int64(len(dataToWrite))
-			if tc.cacheType == resource.CacheType_CAS {
-				// For CAS records, should always return uncompressed size
-				expectedSize = testSize
-			}
-
 			md, err := pc.Metadata(ctx, rWrongSize)
 			require.NoError(t, err, tc.name)
-			require.Equal(t, expectedSize, md.SizeBytes, tc.name)
+			require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+			require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
 			lastAccessTime1 := md.LastAccessTimeUsec
 			lastModifyTime1 := md.LastModifyTimeUsec
 			require.NotZero(t, lastAccessTime1)
@@ -685,7 +679,8 @@ func TestMetadata(t *testing.T) {
 			// Last access time should not update since last call to Metadata()
 			md, err = pc.Metadata(ctx, rWrongSize)
 			require.NoError(t, err, tc.name)
-			require.Equal(t, expectedSize, md.SizeBytes, tc.name)
+			require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+			require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
 			lastAccessTime2 := md.LastAccessTimeUsec
 			lastModifyTime2 := md.LastModifyTimeUsec
 			require.Equal(t, lastAccessTime1, lastAccessTime2)
@@ -695,7 +690,8 @@ func TestMetadata(t *testing.T) {
 			err = pc.Set(ctx, r, dataToWrite)
 			md, err = pc.Metadata(ctx, rWrongSize)
 			require.NoError(t, err, tc.name)
-			require.Equal(t, expectedSize, md.SizeBytes, tc.name)
+			require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+			require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
 			lastAccessTime3 := md.LastAccessTimeUsec
 			lastModifyTime3 := md.LastModifyTimeUsec
 			require.Greater(t, lastAccessTime3, lastAccessTime1)

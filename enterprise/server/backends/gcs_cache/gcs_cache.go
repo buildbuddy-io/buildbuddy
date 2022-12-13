@@ -371,9 +371,17 @@ func (g *GCSCache) Metadata(ctx context.Context, r *resource.ResourceName) (*int
 		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
+
+	// TODO - Add digest size support for AC
+	digestSizeBytes := int64(-1)
+	if r.GetCacheType() == resource.CacheType_CAS {
+		digestSizeBytes = metadata.Size
+	}
+
 	return &interfaces.CacheMetadata{
-		SizeBytes:          metadata.Size,
+		StoredSizeBytes:    metadata.Size,
 		LastModifyTimeUsec: metadata.Updated.UnixMicro(),
+		DigestSizeBytes:    digestSizeBytes,
 	}, nil
 }
 

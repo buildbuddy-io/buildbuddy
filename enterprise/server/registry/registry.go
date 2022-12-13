@@ -210,7 +210,7 @@ func (r *registry) getBlobSize(ctx context.Context, h v1.Hash) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return md.SizeBytes, nil
+	return md.StoredSizeBytes, nil
 }
 
 func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, name, refName string) {

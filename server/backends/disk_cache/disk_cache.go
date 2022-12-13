@@ -342,8 +342,15 @@ func (c *DiskCache) Metadata(ctx context.Context, r *resource.ResourceName) (*in
 	lastUseNanos := getLastUseNanos(fileInfo)
 	lastModifyNanos := getLastModifyTimeNanos(fileInfo)
 
+	// TODO - Add digest size support for AC
+	digestSizeBytes := int64(-1)
+	if r.GetCacheType() == resource.CacheType_CAS {
+		digestSizeBytes = fileInfo.Size()
+	}
+
 	return &interfaces.CacheMetadata{
-		SizeBytes:          fileInfo.Size(),
+		StoredSizeBytes:    fileInfo.Size(),
+		DigestSizeBytes:    digestSizeBytes,
 		LastAccessTimeUsec: lastUseNanos / 1000,
 		LastModifyTimeUsec: lastModifyNanos / 1000,
 	}, nil

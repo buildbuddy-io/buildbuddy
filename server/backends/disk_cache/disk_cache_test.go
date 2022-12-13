@@ -126,7 +126,7 @@ func TestMetadata(t *testing.T) {
 
 		md, err := dc.Metadata(ctx, rn)
 		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
+		require.Equal(t, testSize, md.StoredSizeBytes)
 		lastAccessTime1 := md.LastAccessTimeUsec
 		lastModifyTime1 := md.LastModifyTimeUsec
 		require.NotZero(t, lastAccessTime1)
@@ -135,7 +135,7 @@ func TestMetadata(t *testing.T) {
 		// Last access time should not update since last call to Metadata()
 		md, err = dc.Metadata(ctx, rn)
 		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
+		require.Equal(t, testSize, md.StoredSizeBytes)
 		lastAccessTime2 := md.LastAccessTimeUsec
 		lastModifyTime2 := md.LastModifyTimeUsec
 		require.Equal(t, lastAccessTime1, lastAccessTime2)
@@ -146,7 +146,7 @@ func TestMetadata(t *testing.T) {
 		err = dc.Set(ctx, rn, buf)
 		md, err = dc.Metadata(ctx, rn)
 		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
+		require.Equal(t, testSize, md.StoredSizeBytes)
 		lastAccessTime3 := md.LastAccessTimeUsec
 		lastModifyTime3 := md.LastModifyTimeUsec
 		require.Greater(t, lastAccessTime3, lastAccessTime1)

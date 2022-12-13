@@ -984,7 +984,8 @@ func TestMetadata(t *testing.T) {
 		t.Fatalf("Error fetching metadata from underlying cache: %s", err)
 	}
 	require.NoError(t, err)
-	require.Equal(t, cacheMetadata.SizeBytes, cacheproxyMetadata.SizeBytes)
+	require.Equal(t, cacheMetadata.StoredSizeBytes, cacheproxyMetadata.StoredSizeBytes)
+	require.Equal(t, cacheMetadata.DigestSizeBytes, cacheproxyMetadata.DigestSizeBytes)
 	require.Equal(t, cacheMetadata.LastAccessTimeUsec, cacheproxyMetadata.LastAccessUsec)
 	require.Equal(t, cacheMetadata.LastModifyTimeUsec, cacheproxyMetadata.LastModifyUsec)
 }

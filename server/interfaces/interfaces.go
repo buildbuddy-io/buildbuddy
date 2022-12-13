@@ -201,10 +201,9 @@ type Blobstore interface {
 }
 
 type CacheMetadata struct {
-	// For CAS records, is the size of the uncompressed blob. Even if the data stored in the cache
-	// is compressed, this is the uncompressed size.
-	// For AC records, is the size of the cached contents. If the data is compressed, this will be the compressed size
-	SizeBytes          int64
+	// Size of the cached data. If the data was compressed, this is the compressed size
+	StoredSizeBytes    int64
+	DigestSizeBytes    int64
 	LastAccessTimeUsec int64
 	LastModifyTimeUsec int64
 }

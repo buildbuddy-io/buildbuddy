@@ -117,7 +117,17 @@ func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	if !ok {
 		return nil, status.InternalErrorf("not a []byte")
 	}
-	return &interfaces.CacheMetadata{SizeBytes: int64(len(vb))}, nil
+
+	// TODO - Add digest size support for AC
+	digestSizeBytes := int64(-1)
+	if r.GetCacheType() == resource.CacheType_CAS {
+		digestSizeBytes = int64(len(vb))
+	}
+
+	return &interfaces.CacheMetadata{
+		StoredSizeBytes: int64(len(vb)),
+		DigestSizeBytes: digestSizeBytes,
+	}, nil
 }
 
 func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {

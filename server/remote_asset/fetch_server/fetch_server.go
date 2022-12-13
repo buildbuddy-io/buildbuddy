@@ -137,7 +137,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				log.CtxInfof(ctx, "FetchServer failed to get metadata for %s: %s", expectedSHA256, err)
 				continue
 			}
-			blobDigest.SizeBytes = md.SizeBytes
+			blobDigest.SizeBytes = md.DigestSizeBytes
 			// Even though we successfully fetched metadata, we need to renew
 			// the cache entry (using Contains()) to ensure that it doesn't
 			// expire by the time the client requests it from cache.
