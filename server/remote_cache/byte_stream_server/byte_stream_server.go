@@ -426,59 +426,11 @@ func (s *ByteStreamServer) supportsCompressor(compression repb.Compressor_Value)
 // resource name, the sequence of returned `committed_size` values will be
 // non-decreasing.
 func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
-	if !*enableQueryWriteStatusCacheCheck {
-		// If the data has not been committed to the cache, then just tell the
-		//client that we don't have anything and let them retry it.
-		return &bspb.QueryWriteStatusResponse{
-			CommittedSize: 0,
-			Complete:      false,
-		}, nil
-	}
-
-	rn, err := digest.ParseUploadResourceName(req.GetResourceName())
-	if err != nil {
-		// If we can't parse the resource name, then tell the client we
-		// don't know anything about the write and let them retry it.
-		return &bspb.QueryWriteStatusResponse{
-			CommittedSize: 0,
-			Complete:      false,
-		}, nil
-	}
-	if rn.GetCompressor() != repb.Compressor_IDENTITY {
-		// When the upload is compressed, we don't know what value to return,
-		// since the committed size depends on how the client compressed the
-		// contents. So return 0 here and let it retry the upload.
-		// TODO(bduffany): For Bazel versions 5.1 and later, we can return
-		// {CommittedSize: -1, Complete: true}.
-		// See https://github.com/bazelbuild/bazel/issues/14654 for context.
-		return &bspb.QueryWriteStatusResponse{
-			CommittedSize: 0,
-			Complete:      false,
-		}, nil
-	}
-	casRN := digest.NewCASResourceName(rn.GetDigest(), rn.GetInstanceName())
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
-	if err != nil {
-		return nil, err
-	}
-
-	md, err := s.cache.Metadata(ctx, casRN.ToProto())
-	if err != nil {
-		// If the data has not been committed to the cache, then just tell the
-		// client that we don't have anything and let them retry it.
-		if status.IsNotFoundError(err) {
-			return &bspb.QueryWriteStatusResponse{
-				CommittedSize: 0,
-				Complete:      false,
-			}, nil
-		}
-		return nil, err
-	}
-
+	// If the data has not been committed to the cache, then just tell the
+	//client that we don't have anything and let them retry it.
 	return &bspb.QueryWriteStatusResponse{
-		CommittedSize: md.SizeBytes,
-		Complete:      true,
+		CommittedSize: 0,
+		Complete:      false,
 	}, nil
 }
 
