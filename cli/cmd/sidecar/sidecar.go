@@ -158,7 +158,11 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 func registerBESProxy(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	besTarget := normalizeGrpcTarget(*besBackend)
 	buildEventProxyClients := make([]pepb.PublishBuildEventClient, 0)
-	buildEventProxyClients = append(buildEventProxyClients, build_event_proxy.NewBuildEventProxyClient(env, besTarget))
+	bepProxyClient := build_event_proxy.NewBuildEventProxyClient(env, besTarget)
+	if *remoteCache != "" {
+		bepProxyClient.SetBytestreamURISubstitution(*listenAddr, *remoteCache)
+	}
+	buildEventProxyClients = append(buildEventProxyClients, bepProxyClient)
 	env.SetBuildEventProxyClients(buildEventProxyClients)
 
 	// Register to handle build event protocol messages.

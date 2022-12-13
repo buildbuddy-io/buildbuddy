@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/besutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/codes"
@@ -302,27 +303,7 @@ func ExtractFiles(invocation *inpb.Invocation) map[string]*bespb.File {
 	}
 
 	for _, event := range invocation.Event {
-		switch p := event.BuildEvent.Payload.(type) {
-		case *bespb.BuildEvent_NamedSetOfFiles:
-			maybeAddToMap(p.NamedSetOfFiles.GetFiles()...)
-		case *bespb.BuildEvent_BuildToolLogs:
-			maybeAddToMap(p.BuildToolLogs.GetLog()...)
-		case *bespb.BuildEvent_TestResult:
-			maybeAddToMap(p.TestResult.GetTestActionOutput()...)
-		case *bespb.BuildEvent_TestSummary:
-			maybeAddToMap(p.TestSummary.GetPassed()...)
-			maybeAddToMap(p.TestSummary.GetFailed()...)
-		case *bespb.BuildEvent_RunTargetAnalyzed:
-			maybeAddToMap(p.RunTargetAnalyzed.GetRunfiles()...)
-		case *bespb.BuildEvent_Action:
-			maybeAddToMap(p.Action.GetStdout())
-			maybeAddToMap(p.Action.GetStderr())
-			maybeAddToMap(p.Action.GetPrimaryOutput())
-			maybeAddToMap(p.Action.GetActionMetadataLogs()...)
-		case *bespb.BuildEvent_Completed:
-			maybeAddToMap(p.Completed.GetImportantOutput()...)
-			maybeAddToMap(p.Completed.GetDirectoryOutput()...)
-		}
+		besutil.VisitFiles(event.BuildEvent, maybeAddToMap)
 	}
 
 	return out

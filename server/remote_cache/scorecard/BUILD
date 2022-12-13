@@ -11,6 +11,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:pagination_go_proto",
         "//server/environment",
+        "//server/util/besutil",
         "//server/util/paging",
         "//server/util/status",
         "@org_golang_google_grpc//codes",

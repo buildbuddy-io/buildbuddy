@@ -4,15 +4,20 @@ import (
 	"context"
 	"flag"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/besutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
@@ -22,10 +27,14 @@ var (
 )
 
 type BuildEventProxyClient struct {
-	client    pepb.PublishBuildEventClient
-	rootCtx   context.Context
-	target    string
+	rootCtx context.Context
+	target  string
+
+	bytestreamPrefixToReplace   string
+	bytestreamPrefixReplacement string
+
 	clientMux sync.Mutex // PROTECTS(client)
+	client    pepb.PublishBuildEventClient
 }
 
 func (c *BuildEventProxyClient) reconnectIfNecessary() {
@@ -62,6 +71,11 @@ func NewBuildEventProxyClient(env environment.Env, target string) *BuildEventPro
 	}
 	c.reconnectIfNecessary()
 	return c
+}
+
+func (c *BuildEventProxyClient) SetBytestreamURISubstitution(oldTarget, newTarget string) {
+	c.bytestreamPrefixToReplace = bytestreamPrefixFromTarget(oldTarget)
+	c.bytestreamPrefixReplacement = bytestreamPrefixFromTarget(newTarget)
 }
 
 func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pepb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
@@ -118,6 +132,7 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 			if !ok {
 				break
 			}
+			c.prepareForSend(req)
 			err := stream.Send(req)
 			if err != nil {
 				log.Warningf("Error sending req on stream: %s", err.Error())
@@ -127,6 +142,40 @@ func (c *BuildEventProxyClient) newAsyncStreamProxy(ctx context.Context, opts ..
 		stream.CloseSend()
 	}()
 	return asp
+}
+
+func (c *BuildEventProxyClient) prepareForSend(req *pepb.PublishBuildToolEventStreamRequest) {
+	// Short-circuit if there are no modifications to be made, to avoid
+	// unmarshaling unnecessarily.
+	if c.bytestreamPrefixReplacement == "" {
+		return
+	}
+
+	bazelEventAny := req.GetOrderedBuildEvent().GetEvent().GetBazelEvent()
+	if bazelEventAny == nil {
+		return
+	}
+	bazelEvent := &bespb.BuildEvent{}
+	if err := bazelEventAny.UnmarshalTo(bazelEvent); err != nil {
+		log.Warningf("Failed to unmarshal bazel event: %s", err)
+		return
+	}
+	changed := false
+	visitFiles := func(files ...*bespb.File) {
+		changed = true
+		c.replaceAllFileURIs(files...)
+	}
+	besutil.VisitFiles(bazelEvent, visitFiles)
+	// Only re-pack the bazel event if it was changed.
+	if !changed {
+		return
+	}
+	bazelEventAny, err := anypb.New(bazelEvent)
+	if err != nil {
+		log.Warningf("Failed to marshal modified bazel event: %s", err)
+		return
+	}
+	req.GetOrderedBuildEvent().Event.Event = &bepb.BuildEvent_BazelEvent{BazelEvent: bazelEventAny}
 }
 
 func (asp *asyncStreamProxy) Send(req *pepb.PublishBuildToolEventStreamRequest) error {
@@ -151,4 +200,44 @@ func (asp *asyncStreamProxy) CloseSend() error {
 func (c *BuildEventProxyClient) PublishBuildToolEventStream(_ context.Context, opts ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
 	c.reconnectIfNecessary()
 	return c.newAsyncStreamProxy(c.rootCtx, opts...), nil
+}
+
+func (c *BuildEventProxyClient) replaceAllFileURIs(files ...*bespb.File) {
+	for _, f := range files {
+		switch f.File.(type) {
+		case *bespb.File_Uri:
+			replacement := c.replaceFileURI(f.GetUri())
+			f.File = &bespb.File_Uri{Uri: replacement}
+		}
+	}
+}
+
+func (c *BuildEventProxyClient) replaceFileURI(uri string) string {
+	if strings.HasPrefix(uri, c.bytestreamPrefixToReplace) {
+		return c.bytestreamPrefixReplacement + strings.TrimPrefix(uri, c.bytestreamPrefixToReplace)
+	}
+	return uri
+}
+
+// Returns the expected "bytestream://DOMAIN" prefix that would appear in BES
+// file URIs for a given remote cache target. Example: for a target of
+// "grpcs://remote.buildbuddy.io", this returns
+// "bytestream://remote.buildbuddy.io".
+func bytestreamPrefixFromTarget(target string) string {
+	const bytestreamPrefix = "bytestream://"
+	if strings.HasPrefix(target, "unix:") {
+		// If the target is a unix socket like "unix:///tmp/foo.sock", then
+		// bazel will determine the bystream target as
+		// "bytestream://///tmp/foo.sock". Presumably, there are 5 slashes
+		// because bazel is stripping just "unix:" instead of "unix://", so we
+		// replicate that here (even though it seems inconsistent with how
+		// grpc:// and grpcs:// are handled).
+		return bytestreamPrefix + strings.TrimPrefix(target, "unix:")
+	}
+	for _, scheme := range []string{"grpc://", "grpcs://", "http://", "https://"} {
+		if strings.HasPrefix(target, scheme) {
+			return bytestreamPrefix + strings.TrimPrefix(target, scheme)
+		}
+	}
+	return bytestreamPrefix + target
 }
