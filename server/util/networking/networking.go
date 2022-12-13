@@ -210,6 +210,38 @@ func DeleteRuleIfSecondaryNetworkEnabled(ctx context.Context, vmIdx int) error {
 	return runCommand(ctx, "ip", "rule", "del", "from", getCloneIP(vmIdx))
 }
 
+func routeExists(ctx context.Context, source string, gateway string) (bool, error) {
+	// TODO(iain): this doesn't need to be run with sudo.
+	b, err := sudoCommand(ctx, "ip", "route")
+	if err != nil {
+		return false, err
+	}
+	output := strings.TrimSpace(string(b))
+	if len(output) == 0 {
+		return false, nil
+	}
+
+	// The output of ip route looks like:
+	// $ ip route
+	// default via 192.168.86.1 dev enp42s0 proto dhcp metric 100
+	// 169.254.0.0/16 dev virbr0 scope link metric 1000 linkdown
+	// 172.17.0.0/16 dev docker0 proto kernel scope link src 172.17.0.1 linkdown
+	// 172.18.0.0/16 dev br-dc55a4120505 proto kernel scope link src 172.18.0.1 linkdown
+	// 172.19.0.0/16 dev br-8fb25e7ab173 proto kernel scope link src 172.19.0.1 linkdown
+	// 192.168.0.35 via 192.168.0.38 dev veth1h7IgR
+	//
+	// We're looking for the "via" routes like the one at the end, and it
+	// doesn't matter what's at the end (it'll be dev and then veth followed by
+	// a random string), so just search for the prefix.
+	providedRoute := source + " via " + gateway
+	for _, route := range strings.Split(output, "\n") {
+		if strings.HasPrefix(route, providedRoute) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // SetupVethPair creates a new veth pair with one end in the given network
 // namespace and the other end in the root namespace. It returns a cleanup
 // function that removes firewall rules associated with the pair.
@@ -310,9 +342,16 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (f
 		return nil, err
 	}
 
-	err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
+	exists, err := routeExists(ctx, cloneIP, cloneEndpointAddr)
 	if err != nil {
 		return nil, err
+	} else if !exists {
+		err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		log.Debugf("ip route %s via %s already exists", cloneIP, cloneEndpointAddr)
 	}
 
 	if IsSecondaryNetworkEnabled() {
