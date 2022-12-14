@@ -80,11 +80,10 @@ const (
 )
 
 var (
-	chunkFileSizeBytes                = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
-	enableChunkedEventLogs            = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
-	requireInvocationEventParseOnRead = flag.Bool("app.require_invocation_event_parse_on_read", false, "If true, invocation responses will be filled from database values and then by parsing the events on read.")
-	writeToOLAPDBEnabled              = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
-	writeExecutionsToOLAPDBEnabled    = flag.Bool("app.enable_write_executions_to_olap_db", false, "If enabled, complete Executions will be flushed to OLAP DB")
+	chunkFileSizeBytes             = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	enableChunkedEventLogs         = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	writeToOLAPDBEnabled           = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
+	writeExecutionsToOLAPDBEnabled = flag.Bool("app.enable_write_executions_to_olap_db", false, "If enabled, complete Executions will be flushed to OLAP DB")
 
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
@@ -1030,13 +1029,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 			}
 		}
 	}
-	if *requireInvocationEventParseOnRead {
-		if isWorkspaceStatusEvent(event.BuildEvent) {
-			if err := e.writeBuildMetadata(e.ctx, iid); err != nil {
-				return err
-			}
-		}
-	} else if len(e.unprocessedStartingEvents) > 0 {
+	if len(e.unprocessedStartingEvents) > 0 {
 		if _, ok := e.unprocessedStartingEvents[event.BuildEvent.Id.String()]; ok {
 			delete(e.unprocessedStartingEvents, event.BuildEvent.Id.String())
 			if len(e.unprocessedStartingEvents) == 0 {
@@ -1270,7 +1263,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			redactor = redact.NewStreamingRedactor(env)
 		}
 		var parser *event_parser.StreamingEventParser
-		if *requireInvocationEventParseOnRead || redactor != nil {
+		if redactor != nil {
 			parser = event_parser.NewStreamingEventParser(screenWriter)
 		}
 		events := []*inpb.InvocationEvent{}
