@@ -201,8 +201,9 @@ type Blobstore interface {
 }
 
 type CacheMetadata struct {
-	// Size of the cache contents (uncompressed).
-	SizeBytes          int64
+	// Size of the cached data. If the data was compressed, this is the compressed size
+	StoredSizeBytes    int64
+	DigestSizeBytes    int64
 	LastAccessTimeUsec int64
 	LastModifyTimeUsec int64
 }

@@ -829,7 +829,7 @@ func TestMetadata(t *testing.T) {
 				CacheType:    resource.CacheType_CAS,
 			})
 			require.NoError(t, err)
-			require.Equal(t, testSize, md.SizeBytes)
+			require.Equal(t, testSize, md.StoredSizeBytes)
 		}
 	}
 }

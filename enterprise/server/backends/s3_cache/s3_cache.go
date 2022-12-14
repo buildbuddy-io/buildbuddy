@@ -426,8 +426,16 @@ func (s3c *S3Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*in
 		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
+
+	// TODO - Add digest size support for AC
+	digestSizeBytes := int64(-1)
+	if r.GetCacheType() == resource.CacheType_CAS {
+		digestSizeBytes = *metadata.ContentLength
+	}
+
 	return &interfaces.CacheMetadata{
-		SizeBytes:          *metadata.ContentLength,
+		StoredSizeBytes:    *metadata.ContentLength,
+		DigestSizeBytes:    digestSizeBytes,
 		LastModifyTimeUsec: metadata.LastModified.UnixMicro(),
 	}, nil
 }

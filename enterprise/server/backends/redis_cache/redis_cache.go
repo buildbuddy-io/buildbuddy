@@ -170,8 +170,15 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 		return nil, err
 	}
 
+	// TODO - Add digest size support for AC
+	digestSizeBytes := int64(-1)
+	if r.GetCacheType() == resource.CacheType_CAS {
+		digestSizeBytes = blobLen
+	}
+
 	return &interfaces.CacheMetadata{
-		SizeBytes: blobLen,
+		StoredSizeBytes: blobLen,
+		DigestSizeBytes: digestSizeBytes,
 	}, nil
 }
 
