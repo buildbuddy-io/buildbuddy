@@ -30,7 +30,13 @@ import (
 )
 
 var (
-	partitions = []disk.Partition{}
+	defaultPartition = "default"
+	anotherPartition = "another"
+
+	partitions = []disk.Partition{
+		{ID: defaultPartition, MaxSizeBytes: 10_000},
+		{ID: anotherPartition, MaxSizeBytes: 10_000},
+	}
 )
 
 type fileReadFn func(fileRecord *rfpb.FileRecord) (io.ReadCloser, error)
@@ -148,6 +154,48 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 		RangeId:    1,
 		Generation: 1,
 	})
+}
+
+func randomRecord(t *testing.T, partition string, sizeBytes int64) (*rfpb.FileRecord, []byte) {
+	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
+	return &rfpb.FileRecord{
+		Isolation: &rfpb.Isolation{
+			CacheType:   resource.CacheType_CAS,
+			PartitionId: partition,
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest: d,
+	}, buf
+}
+
+type replicaTester struct {
+	t    *testing.T
+	em   *entryMaker
+	repl *replica.Replica
+}
+
+func newWriteTester(t *testing.T, em *entryMaker, repl *replica.Replica) *replicaTester {
+	return &replicaTester{t, em, repl}
+}
+
+func (wt *replicaTester) writeRandom(header *rfpb.Header, partition string, sizeBytes int64) *rfpb.FileRecord {
+	fr, buf := randomRecord(wt.t, partition, sizeBytes)
+	wc := writer(wt.t, wt.em, wt.repl, header, fr)
+	_, err := wc.Write(buf)
+	require.NoError(wt.t, err)
+	require.NoError(wt.t, wc.Commit())
+	require.NoError(wt.t, wc.Close())
+	return fr
+}
+
+func (wt *replicaTester) delete(fileRecord *rfpb.FileRecord) {
+	entry := wt.em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
+		FileRecord: fileRecord,
+	}))
+	entries := []dbsm.Entry{entry}
+	deleteRsp, err := wt.repl.Update(entries)
+	require.NoError(wt.t, err)
+	require.Equal(wt.t, 1, len(deleteRsp))
 }
 
 func TestReplicaDirectReadWrite(t *testing.T) {
@@ -710,5 +758,59 @@ func TestFindSplitPoint(t *testing.T) {
 		// Left and right side of split should both be approximately 50%
 		require.Equal(t, int64(10), splitRsp.GetLeftSizeBytes()/100000)
 		require.Equal(t, int64(10), splitRsp.GetRightSizeBytes()/100000)
+	}
+}
+
+func TestUsage(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	store := &fakeStore{}
+	repl := replica.New(rootDir, 1, 1, store, partitions)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl)
+
+	rt := newWriteTester(t, em, repl)
+
+	header := &rfpb.Header{RangeId: 1, Generation: 1}
+	frDefault := rt.writeRandom(header, defaultPartition, 1000)
+	rt.writeRandom(header, defaultPartition, 500)
+	rt.writeRandom(header, anotherPartition, 100)
+	rt.writeRandom(header, anotherPartition, 200)
+	rt.writeRandom(header, anotherPartition, 300)
+
+	{
+		ru, err := repl.Usage()
+		require.NoError(t, err)
+
+		require.EqualValues(t, 2100, ru.GetEstimatedDiskBytesUsed())
+		require.Len(t, ru.GetPartitions(), 2)
+		defaultUsage := ru.GetPartitions()[0]
+		require.EqualValues(t, 1500, defaultUsage.GetSizeBytes())
+		require.EqualValues(t, 2, defaultUsage.GetTotalCount())
+		anotherUsage := ru.GetPartitions()[1]
+		require.EqualValues(t, 600, anotherUsage.GetSizeBytes())
+		require.EqualValues(t, 3, anotherUsage.GetTotalCount())
+	}
+
+	// Delete a single record and verify updated usage.
+	rt.delete(frDefault)
+
+	{
+		ru, err := repl.Usage()
+		require.NoError(t, err)
+
+		require.EqualValues(t, 1100, ru.GetEstimatedDiskBytesUsed())
+		require.Len(t, ru.GetPartitions(), 2)
+		defaultUsage := ru.GetPartitions()[0]
+		require.EqualValues(t, 500, defaultUsage.GetSizeBytes())
+		require.EqualValues(t, 1, defaultUsage.GetTotalCount())
+		anotherUsage := ru.GetPartitions()[1]
+		require.EqualValues(t, 600, anotherUsage.GetSizeBytes())
+		require.EqualValues(t, 3, anotherUsage.GetTotalCount())
 	}
 }

@@ -22,6 +22,7 @@ service Api {
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
 
   // Data API.
+  rpc Metadata(MetadataRequest) returns (MetadataResponse);
   rpc Read(ReadRequest) returns (stream ReadResponse);
   rpc FindMissing(FindMissingRequest) returns (FindMissingResponse);
   rpc GetMulti(GetMultiRequest) returns (GetMultiResponse);

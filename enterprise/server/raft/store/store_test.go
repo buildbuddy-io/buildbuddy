@@ -140,7 +140,8 @@ func (sf *storeFactory) NewStore(t *testing.T) (*TestingStore, *dragonboat.NodeH
 	gm.AddListener(rc)
 	ts.Sender = sender.New(rc, reg, apiClient)
 	reg.AddNode(nodeHost.ID(), ts.RaftAddress, ts.GRPCAddress)
-	s := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, apiClient, []disk.Partition{})
+	s, err := store.New(ts.RootDir, nodeHost, gm, ts.Sender, reg, apiClient, []disk.Partition{})
+	require.NoError(t, err)
 	require.NotNil(t, s)
 	s.Start(ts.GRPCAddress)
 	ts.Store = s

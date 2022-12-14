@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -177,27 +178,24 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	ru.Generation = rd.GetGeneration()
 	ru.RangeId = rd.GetRangeId()
 
-	db, err := sm.leaser.DB()
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	estimatedBytesUsed, err := db.EstimateDiskUsage(rd.GetLeft(), rd.GetRight())
-	if err != nil {
-		return nil, err
-	}
-	ru.EstimatedDiskBytesUsed = int64(estimatedBytesUsed)
-	metrics.RaftBytes.With(prometheus.Labels{
-		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
-	}).Set(float64(estimatedBytesUsed))
-
-	var numFileRecords int64
+	var numFileRecords, sizeBytes int64
 	sm.partitionMetadataMu.Lock()
-	for _, c := range sm.partitionMetadata {
-		numFileRecords += c.GetTotalCount()
+	for _, p := range sm.partitions {
+		pm, ok := sm.partitionMetadata[p.ID]
+		if !ok {
+			continue
+		}
+		ru.Partitions = append(ru.Partitions, proto.Clone(pm).(*rfpb.PartitionMetadata))
+		numFileRecords += pm.GetTotalCount()
+		sizeBytes += pm.GetSizeBytes()
 	}
 	sm.partitionMetadataMu.Unlock()
+
+	ru.EstimatedDiskBytesUsed = sizeBytes
+	metrics.RaftBytes.With(prometheus.Labels{
+		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
+	}).Set(float64(sizeBytes))
+
 	metrics.RaftRecords.With(prometheus.Labels{
 		metrics.RaftRangeIDLabel: strconv.Itoa(int(rd.GetRangeId())),
 	}).Set(float64(numFileRecords))
@@ -1166,6 +1164,67 @@ func (sm *Replica) sendAccessTimeUpdate(fileMetadata *rfpb.FileMetadata) {
 			log.Warningf("Dropping atime update for %+v", fileMetadata.GetFileRecord())
 		}
 	}
+}
+
+var digestRunes = []rune("abcdef1234567890")
+
+func randomKey(partitionID string, n int) []byte {
+	randKey := filestore.PartitionDirectoryPrefix + partitionID + "/"
+	for i := 0; i < n; i++ {
+		randKey += string(digestRunes[rand.Intn(len(digestRunes))])
+	}
+	return []byte(randKey)
+}
+
+func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rfpb.FileMetadata, error) {
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	start, end := keys.Range([]byte(filestore.PartitionDirectoryPrefix + partitionID + "/"))
+	iter := db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	defer iter.Close()
+
+	samples := make([]*rfpb.FileMetadata, 0, n)
+	// generate k random digests and for each:
+	//   - seek to the next valid key, and return that file record
+	for i := 0; i < n*2; i++ {
+		randKey := randomKey(partitionID, 64)
+		valid := iter.SeekGE(randKey)
+		if !valid {
+			continue
+		}
+		fileMetadata := &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+			return nil, err
+		}
+
+		samples = append(samples, fileMetadata)
+		if len(samples) == n {
+			break
+		}
+	}
+
+	return samples, nil
+}
+
+func (sm *Replica) Metadata(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	if err := sm.validateRange(header); err != nil {
+		return nil, err
+	}
+
+	return sm.metadataForRecord(db, fileRecord)
 }
 
 func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
