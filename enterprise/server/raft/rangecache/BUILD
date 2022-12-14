@@ -26,6 +26,7 @@ go_test(
     deps = [
         ":rangecache",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
         "//server/util/log",
         "@com_github_hashicorp_serf//serf",

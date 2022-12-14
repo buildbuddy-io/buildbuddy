@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease",
     deps = [
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/sender",
@@ -26,6 +27,7 @@ go_test(
     deps = [
         ":rangelease",
         "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//proto:raft_go_proto",
         "//server/util/log",
