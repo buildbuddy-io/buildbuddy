@@ -916,7 +916,7 @@ func TestMetadata(t *testing.T) {
 
 	md, err := mc.Metadata(ctx, r)
 	require.NoError(t, err)
-	require.Equal(t, int64(100), md.SizeBytes)
+	require.Equal(t, int64(100), md.StoredSizeBytes)
 
 	notWrittenDigest, _ := testdigest.NewRandomDigestBuf(t, 100)
 	md, err = mc.Metadata(ctx, &resource.ResourceName{
@@ -949,7 +949,7 @@ func TestMetadata_DestErr(t *testing.T) {
 	// Should return data from src cache without error
 	md, err := mc.Metadata(ctx, r)
 	require.NoError(t, err)
-	require.Equal(t, int64(100), md.SizeBytes)
+	require.Equal(t, int64(100), md.StoredSizeBytes)
 }
 
 func TestFindMissing(t *testing.T) {

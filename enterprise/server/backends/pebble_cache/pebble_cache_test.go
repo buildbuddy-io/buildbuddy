@@ -600,10 +600,10 @@ func TestMetadata(t *testing.T) {
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	options := &pebble_cache.Options{
-		RootDirectory: testfs.MakeTempDir(t),
-		MaxSizeBytes:  maxSizeBytes,
-		// TODO(Maggie): Re-enable compression for this test once we figure out metadata bug
-		//EnableZstdCompression: true,
+		RootDirectory:               testfs.MakeTempDir(t),
+		MaxSizeBytes:                maxSizeBytes,
+		EnableZstdCompression:       true,
+		MinBytesAutoZstdCompression: math.MaxInt64, // Turn off automatic compression
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	if err != nil {
@@ -612,52 +612,91 @@ func TestMetadata(t *testing.T) {
 	pc.Start()
 	defer pc.Stop()
 
+	testCases := []struct {
+		name       string
+		cacheType  resource.CacheType
+		compressor repb.Compressor_Value
+	}{
+		{
+			name:       "CAS uncompressed",
+			cacheType:  resource.CacheType_CAS,
+			compressor: repb.Compressor_IDENTITY,
+		},
+		{
+			name:       "CAS compressed",
+			cacheType:  resource.CacheType_CAS,
+			compressor: repb.Compressor_ZSTD,
+		},
+		{
+			name:       "AC uncompressed",
+			cacheType:  resource.CacheType_AC,
+			compressor: repb.Compressor_IDENTITY,
+		},
+		{
+			name:       "AC compressed",
+			cacheType:  resource.CacheType_AC,
+			compressor: repb.Compressor_ZSTD,
+		},
+	}
+
 	testSizes := []int64{
 		1, 10, 100, 1000, 10000, 1000000, 10000000,
 	}
-	for _, testSize := range testSizes {
-		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		r := &resource.ResourceName{
-			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+	for _, tc := range testCases {
+		for _, testSize := range testSizes {
+			d, buf := testdigest.NewRandomDigestBuf(t, testSize)
+
+			dataToWrite := buf
+			if tc.compressor == repb.Compressor_ZSTD {
+				dataToWrite = compression.CompressZstd(nil, buf)
+			}
+			r := &resource.ResourceName{
+				Digest:     d, // Digest contains uncompressed size
+				CacheType:  tc.cacheType,
+				Compressor: tc.compressor,
+			}
+
+			// Set data in the cache.
+			err := pc.Set(ctx, r, dataToWrite)
+			require.NoError(t, err, tc.name)
+
+			// Metadata should return correct size, regardless of queried size.
+			digestWrongSize := &repb.Digest{Hash: d.GetHash(), SizeBytes: 1}
+			rWrongSize := &resource.ResourceName{
+				Digest:    digestWrongSize,
+				CacheType: tc.cacheType,
+			}
+
+			md, err := pc.Metadata(ctx, rWrongSize)
+			require.NoError(t, err, tc.name)
+			require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+			require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
+			lastAccessTime1 := md.LastAccessTimeUsec
+			lastModifyTime1 := md.LastModifyTimeUsec
+			require.NotZero(t, lastAccessTime1)
+			require.NotZero(t, lastModifyTime1)
+
+			// Last access time should not update since last call to Metadata()
+			md, err = pc.Metadata(ctx, rWrongSize)
+			require.NoError(t, err, tc.name)
+			require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+			require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
+			lastAccessTime2 := md.LastAccessTimeUsec
+			lastModifyTime2 := md.LastModifyTimeUsec
+			require.Equal(t, lastAccessTime1, lastAccessTime2)
+			require.Equal(t, lastModifyTime1, lastModifyTime2)
+
+			// After updating data, last access and modify time should update
+			err = pc.Set(ctx, r, dataToWrite)
+			md, err = pc.Metadata(ctx, rWrongSize)
+			require.NoError(t, err, tc.name)
+			require.Equal(t, int64(len(dataToWrite)), md.StoredSizeBytes, tc.name)
+			require.Equal(t, testSize, md.DigestSizeBytes, tc.name)
+			lastAccessTime3 := md.LastAccessTimeUsec
+			lastModifyTime3 := md.LastModifyTimeUsec
+			require.Greater(t, lastAccessTime3, lastAccessTime1)
+			require.Greater(t, lastModifyTime3, lastModifyTime2)
 		}
-		// Set() the bytes in the cache.
-		err := pc.Set(ctx, r, buf)
-		require.NoError(t, err)
-
-		// Metadata should return true size of the blob, regardless of queried size.
-		digestWrongSize := &repb.Digest{Hash: d.GetHash(), SizeBytes: 1}
-		rWrongSize := &resource.ResourceName{
-			Digest:    digestWrongSize,
-			CacheType: resource.CacheType_CAS,
-		}
-
-		md, err := pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime1 := md.LastAccessTimeUsec
-		lastModifyTime1 := md.LastModifyTimeUsec
-		require.NotZero(t, lastAccessTime1)
-		require.NotZero(t, lastModifyTime1)
-
-		// Last access time should not update since last call to Metadata()
-		md, err = pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime2 := md.LastAccessTimeUsec
-		lastModifyTime2 := md.LastModifyTimeUsec
-		require.Equal(t, lastAccessTime1, lastAccessTime2)
-		require.Equal(t, lastModifyTime1, lastModifyTime2)
-
-		// After updating data, last access and modify time should update
-		err = pc.Set(ctx, r, buf)
-		md, err = pc.Metadata(ctx, rWrongSize)
-		require.NoError(t, err)
-		require.Equal(t, testSize, md.SizeBytes)
-		lastAccessTime3 := md.LastAccessTimeUsec
-		lastModifyTime3 := md.LastModifyTimeUsec
-		require.Greater(t, lastAccessTime3, lastAccessTime1)
-		require.Greater(t, lastModifyTime3, lastModifyTime2)
 	}
 }
 

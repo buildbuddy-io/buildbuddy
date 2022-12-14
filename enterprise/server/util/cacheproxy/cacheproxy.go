@@ -238,9 +238,10 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 		return nil, err
 	}
 	return &dcpb.MetadataResponse{
-		SizeBytes:      md.SizeBytes,
-		LastModifyUsec: md.LastModifyTimeUsec,
-		LastAccessUsec: md.LastAccessTimeUsec,
+		StoredSizeBytes: md.StoredSizeBytes,
+		DigestSizeBytes: md.DigestSizeBytes,
+		LastModifyUsec:  md.LastModifyTimeUsec,
+		LastAccessUsec:  md.LastAccessTimeUsec,
 	}, nil
 }
 
@@ -430,7 +431,8 @@ func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, r *resourc
 		return nil, err
 	}
 	return &interfaces.CacheMetadata{
-		SizeBytes:          md.GetSizeBytes(),
+		StoredSizeBytes:    md.GetStoredSizeBytes(),
+		DigestSizeBytes:    md.GetDigestSizeBytes(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
 	}, nil

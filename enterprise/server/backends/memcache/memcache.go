@@ -136,7 +136,17 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 		d := r.GetDigest()
 		return nil, status.NotFoundErrorf("Digest '%s/%d' not found in cache", d.GetHash(), d.GetSizeBytes())
 	}
-	return &interfaces.CacheMetadata{SizeBytes: int64(len(data))}, nil
+
+	// TODO - Add digest size support for AC
+	digestSizeBytes := int64(-1)
+	if r.GetCacheType() == resource.CacheType_CAS {
+		digestSizeBytes = int64(len(data))
+	}
+
+	return &interfaces.CacheMetadata{
+		StoredSizeBytes: int64(len(data)),
+		DigestSizeBytes: digestSizeBytes,
+	}, nil
 }
 
 func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {

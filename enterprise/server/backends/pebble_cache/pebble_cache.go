@@ -930,7 +930,8 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	}
 
 	return &interfaces.CacheMetadata{
-		SizeBytes:          md.GetStoredSizeBytes(),
+		StoredSizeBytes:    md.GetStoredSizeBytes(),
+		DigestSizeBytes:    md.GetFileRecord().GetDigest().GetSizeBytes(),
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
 	}, nil
