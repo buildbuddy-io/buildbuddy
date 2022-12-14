@@ -543,17 +543,11 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	ps := c.readPeers(d)
-	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
-			c.log.Debugf("Error backfilling peers: %s", err)
-		}
-	}
 
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		md, err := c.remoteMetadata(ctx, peer, r)
 		if err == nil {
 			c.log.Debugf("Metadata(%q) found on peer %q", d, peer)
-			backfill()
 			return md, nil
 		}
 		if status.IsNotFoundError(err) {
