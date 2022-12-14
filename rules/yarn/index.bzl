@@ -8,7 +8,7 @@ def yarn(name, srcs, package, command = "build", deps = [], yarn = "@yarn//:yarn
     cmd = """
         export ROOTDIR=$$(pwd) && 
         export PACKAGEDIR=$$(dirname $(location %s)) && 
-        export PATH=$$PATH:$$ROOTDIR/$$(dirname $(location %s)):$$ROOTDIR/$$(dirname $(location %s)) && 
+        export PATH=$$ROOTDIR/$$(dirname $(location %s)):$$ROOTDIR/$$(dirname $(location %s)):$$PATH && 
         cd $$PACKAGEDIR && 
         yarn install && 
         yarn %s && 
