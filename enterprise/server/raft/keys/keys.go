@@ -5,12 +5,12 @@ import (
 	"math"
 )
 
-const (
-	MinByte = 0
-	MaxByte = math.MaxUint8
-)
-
 type Key []byte
+
+var (
+	MinByte Key = []byte{0}
+	MaxByte Key = []byte{math.MaxUint8}
+)
 
 func MakeKey(keys ...[]byte) []byte {
 	return bytes.Join(keys, nil)
@@ -41,5 +41,5 @@ func IsLocalKey(key Key) bool {
 // Range returns a pair of keys that represent the upper and lower bounds of a
 // range identified by the given key prefix.
 func Range(key []byte) ([]byte, []byte) {
-	return MakeKey(key, []byte{MinByte}), MakeKey(key, []byte{MaxByte})
+	return MakeKey(key, MinByte), MakeKey(key, MaxByte)
 }

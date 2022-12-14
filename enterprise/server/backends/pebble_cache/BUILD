@@ -7,8 +7,8 @@ go_library(
     srcs = ["pebble_cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache",
     deps = [
-        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/filestore",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/util/pebbleutil",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
@@ -44,7 +44,7 @@ go_test(
     shard_count = 8,
     deps = [
         ":pebble_cache",
-        "//enterprise/server/raft/constants",
+        "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

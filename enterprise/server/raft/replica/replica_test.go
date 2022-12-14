@@ -368,7 +368,7 @@ func TestReplicaScan(t *testing.T) {
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
 	writeLocalRangeDescriptor(t, em, repl, &rfpb.RangeDescriptor{
-		Left:       []byte{constants.MinByte},
+		Left:       keys.MinByte,
 		Right:      []byte("z"),
 		RangeId:    1,
 		Generation: 1,

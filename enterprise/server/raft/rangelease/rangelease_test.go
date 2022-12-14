@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -120,7 +121,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	liveness := nodeliveness.New("nodeID-2", proposer)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    []byte{constants.MinByte},
+		Left:    keys.MinByte,
 		Right:   []byte("z"),
 		RangeId: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
@@ -155,7 +156,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	liveness := nodeliveness.New("nodeID-3", proposer)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    []byte{constants.MinByte},
+		Left:    keys.MinByte,
 		Right:   []byte("z"),
 		RangeId: 3,
 		Replicas: []*rfpb.ReplicaDescriptor{

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -31,7 +32,7 @@ const (
 
 func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
-	return r.Contains([]byte{constants.MinByte}) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
+	return r.Contains(keys.MinByte) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
 }
 
 type Lease struct {

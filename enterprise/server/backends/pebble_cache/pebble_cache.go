@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -254,7 +254,7 @@ func Register(env environment.Env) error {
 	if *forceCompaction {
 		log.Infof("Pebble Cache: starting manual compaction...")
 		start := time.Now()
-		err := c.db.Compact([]byte{constants.MinByte}, []byte{constants.MaxByte}, true /*=parallelize*/)
+		err := c.db.Compact(keys.MinByte, keys.MaxByte, true /*=parallelize*/)
 		log.Infof("Pebble Cache: manual compaction finished in %s", time.Since(start))
 		if err != nil {
 			log.Errorf("Error during compaction: %s", err)
@@ -444,7 +444,7 @@ func keyPrefix(prefix, key []byte) []byte {
 }
 
 func keyRange(key []byte) ([]byte, []byte) {
-	return keyPrefix(key, []byte{constants.MinByte}), keyPrefix(key, []byte{constants.MaxByte})
+	return keyPrefix(key, keys.MinByte), keyPrefix(key, keys.MaxByte)
 }
 
 func olderThanThreshold(t time.Time, threshold time.Duration) bool {
@@ -557,8 +557,8 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 
 	const sep = "/"
 	iter := db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte{constants.MinByte},
-		UpperBound: []byte{constants.MaxByte},
+		LowerBound: keys.MinByte,
+		UpperBound: keys.MaxByte,
 	})
 	defer iter.Close()
 
@@ -634,8 +634,8 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 	defer db.Close()
 
 	iter := db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte{constants.MinByte},
-		UpperBound: []byte{constants.MaxByte},
+		LowerBound: keys.MinByte,
+		UpperBound: keys.MaxByte,
 	})
 	defer iter.Close()
 
@@ -764,7 +764,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 
 	buf := "<pre>"
 	buf += db.Metrics().String()
-	diskEstimateBytes, err := db.EstimateDiskUsage([]byte{constants.MinByte}, []byte{constants.MaxByte})
+	diskEstimateBytes, err := db.EstimateDiskUsage(keys.MinByte, keys.MaxByte)
 	if err == nil {
 		buf += fmt.Sprintf("Estimated pebble DB disk usage: %d bytes\n", diskEstimateBytes)
 	}
@@ -1607,8 +1607,8 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		}
 	}
 
-	start := append([]byte(e.part.ID+"/"), constants.MinByte)
-	end := append([]byte(e.part.ID+"/"), constants.MaxByte)
+	start := append([]byte(e.part.ID+"/"), keys.MinByte...)
+	end := append([]byte(e.part.ID+"/"), keys.MaxByte...)
 	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
 
 	partitionMD := &rfpb.PartitionMetadata{

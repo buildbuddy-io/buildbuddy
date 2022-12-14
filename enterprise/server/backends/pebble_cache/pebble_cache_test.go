@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -1629,10 +1629,10 @@ func TestDeleteOrphans(t *testing.T) {
 	deletedDigests := make(map[string]*digestAndType, 0)
 
 	iter := db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte{constants.MinByte},
-		UpperBound: []byte{constants.MaxByte},
+		LowerBound: keys.MinByte,
+		UpperBound: keys.MaxByte,
 	})
-	iter.SeekLT([]byte{constants.MinByte})
+	iter.SeekLT(keys.MinByte)
 
 	for iter.Next() {
 		if rand.Intn(2) == 0 {

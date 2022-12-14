@@ -1,8 +1,6 @@
 package constants
 
 import (
-	"math"
-
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 )
 
@@ -46,10 +44,6 @@ const (
 	InitialClusterID = 1
 	InitialNodeID    = 1
 	InitialRangeID   = 1
-
-	// TODO(vadim): migrate users to keys.MinByte/MaxByte
-	MinByte = 0
-	MaxByte = math.MaxUint8
 
 	UnsplittableMaxByte = systemMaxByte
 )

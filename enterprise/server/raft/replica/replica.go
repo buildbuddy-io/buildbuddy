@@ -1586,7 +1586,7 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 	defer wb.Close()
 
 	// Delete everything in the current database first.
-	if err := wb.DeleteRange(keys.Key{constants.MinByte}, keys.Key{constants.MaxByte}, nil /*ignored write options*/); err != nil {
+	if err := wb.DeleteRange(keys.MinByte, keys.MaxByte, nil /*ignored write options*/); err != nil {
 		return err
 	}
 
@@ -1706,7 +1706,7 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")
 	}
 	defer snap.Close()
-	return sm.SaveSnapshotToWriter(w, snap, []byte{constants.MinByte}, []byte{constants.MaxByte})
+	return sm.SaveSnapshotToWriter(w, snap, keys.MinByte, keys.MaxByte)
 }
 
 func (sm *Replica) SaveSnapshotRange(preparedSnap interface{}, w io.Writer, start, end []byte) error {

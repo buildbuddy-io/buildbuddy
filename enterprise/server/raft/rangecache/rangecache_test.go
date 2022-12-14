@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/hashicorp/serf/serf"
@@ -56,8 +57,8 @@ func TestMemberEvent(t *testing.T) {
 
 	// Advertise a (fake) range advertisement.
 	rc.OnEvent(metaRangeEvent(t, "nhid-11", &rfpb.RangeDescriptor{
-		Left:       []byte{constants.MinByte},
-		Right:      []byte{constants.MaxByte},
+		Left:       keys.MinByte,
+		Right:      keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ClusterId: 1, NodeId: 1},
@@ -79,8 +80,8 @@ func TestMultipleNodesInRange(t *testing.T) {
 	}
 
 	rd := &rfpb.RangeDescriptor{
-		Left:       []byte{constants.MinByte},
-		Right:      []byte{constants.MaxByte},
+		Left:       keys.MinByte,
+		Right:      keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ClusterId: 1, NodeId: 1},
@@ -105,8 +106,8 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 	rc := rangecache.New()
 
 	rd1 := &rfpb.RangeDescriptor{
-		Left:       []byte{constants.MinByte},
-		Right:      []byte{constants.MaxByte},
+		Left:       keys.MinByte,
+		Right:      keys.MaxByte,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
 			{ClusterId: 1, NodeId: 1},
@@ -119,7 +120,7 @@ func TestRangeUpdatedMemberEvent(t *testing.T) {
 	rc.OnEvent(metaRangeEvent(t, "nhid-11", rd1))
 
 	rd2 := &rfpb.RangeDescriptor{
-		Left:       []byte{constants.MinByte},
+		Left:       keys.MinByte,
 		Right:      []byte("z"),
 		Generation: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
