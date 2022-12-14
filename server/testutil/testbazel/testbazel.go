@@ -98,11 +98,3 @@ func MakeTempWorkspace(t *testing.T, contents map[string]string) string {
 	}
 	return workspaceDir
 }
-
-// CopyTestRulesLib copies the test_rules.bzl in this directory to the given
-// path under the given workspace dir.
-func CopyTestRulesLib(t *testing.T, workspaceDir, path string) {
-	rulesPath, err := bazelgo.Runfile("server/testutil/testbazel/test_rules.bzl")
-	require.NoError(t, err)
-	testfs.CopyFile(t, rulesPath, workspaceDir, path)
-}

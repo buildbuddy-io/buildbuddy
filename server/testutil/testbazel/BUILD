@@ -5,7 +5,6 @@ go_library(
     testonly = 1,
     srcs = ["testbazel.go"],
     data = [
-        ":test_rules.bzl",
         "//server/util/bazel:bazel-5.3.2_crossplatform",
         "//server/util/bazel:bazel-5.3.2_extract_installation",
     ],

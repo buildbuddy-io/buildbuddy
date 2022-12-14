@@ -75,12 +75,11 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 
 func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
-	testbazel.CopyTestRulesLib(t, ws, "rules.bzl")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD": `
-load(":rules.bzl", "run_shell")
-run_shell(name = "nop", script = "")`,
+		"BUILD":  `sh_binary(name = "nop", srcs = ["nop.sh"])`,
+		"nop.sh": "",
 	})
+	testfs.MakeExecutable(t, ws, "nop.sh")
 	app := buildbuddy.Run(t, "--cache.detailed_stats_enabled=true")
 	args := []string{"build", ":nop"}
 	args = append(args, app.BESBazelFlags()...)
