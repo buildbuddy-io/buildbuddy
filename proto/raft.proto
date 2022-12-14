@@ -366,12 +366,6 @@ message StoreUsage {
   int64 raft_propose_qps = 5;
   int64 total_bytes_used = 6;
   int64 total_bytes_free = 7;
-message PartitionUsage {
-  string partition_id = 1;
-  int64 size_bytes = 2;
-  int64 record_count = 3;
-}
-
 }
 
 message NodePartitionUsage {
