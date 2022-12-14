@@ -88,10 +88,6 @@ message PartitionMetadatas {
   repeated PartitionMetadata metadata = 1;
 }
 
-message PartitionMetadatas {
-  repeated PartitionMetadata metadata = 1;
-}
-
 message FileDeleteRequest {
   FileRecord file_record = 1;
 }
@@ -502,7 +498,6 @@ message RangeReplica {
 message ListClusterResponse {
   NodeDescriptor node = 1;
   repeated RangeReplica range_replicas = 2;
-  repeated PartitionUsage partitions = 3;
 }
 
 message CreateSnapshotRequest {
