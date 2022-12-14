@@ -121,7 +121,7 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 	liveness := nodeliveness.New("nodeID-2", proposer)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    []byte{keys.MinByte},
+		Left:    keys.MinByte,
 		Right:   []byte("z"),
 		RangeId: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
@@ -156,7 +156,7 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	liveness := nodeliveness.New("nodeID-3", proposer)
 
 	rd := &rfpb.RangeDescriptor{
-		Left:    []byte{keys.MinByte},
+		Left:    keys.MinByte,
 		Right:   []byte("z"),
 		RangeId: 3,
 		Replicas: []*rfpb.ReplicaDescriptor{

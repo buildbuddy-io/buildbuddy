@@ -32,7 +32,7 @@ const (
 
 func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 	r := rangemap.Range{Left: rd.Left, Right: rd.Right}
-	return r.Contains([]byte{keys.MinByte}) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
+	return r.Contains(keys.MinByte) && r.Contains([]byte{constants.UnsplittableMaxByte - 1})
 }
 
 type Lease struct {

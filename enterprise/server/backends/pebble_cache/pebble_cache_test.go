@@ -1629,10 +1629,10 @@ func TestDeleteOrphans(t *testing.T) {
 	deletedDigests := make(map[string]*digestAndType, 0)
 
 	iter := db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte{keys.MinByte},
-		UpperBound: []byte{keys.MaxByte},
+		LowerBound: keys.MinByte,
+		UpperBound: keys.MaxByte,
 	})
-	iter.SeekLT([]byte{keys.MinByte})
+	iter.SeekLT(keys.MinByte)
 
 	for iter.Next() {
 		if rand.Intn(2) == 0 {
