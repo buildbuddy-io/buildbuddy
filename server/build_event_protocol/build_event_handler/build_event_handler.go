@@ -50,9 +50,11 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
 	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
+	olapdb_config "github.com/buildbuddy-io/buildbuddy/server/olapdb/config"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -80,10 +82,9 @@ const (
 )
 
 var (
-	chunkFileSizeBytes             = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
-	enableChunkedEventLogs         = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
-	writeToOLAPDBEnabled           = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
-	writeExecutionsToOLAPDBEnabled = flag.Bool("app.enable_write_executions_to_olap_db", false, "If enabled, complete Executions will be flushed to OLAP DB")
+	chunkFileSizeBytes     = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	enableChunkedEventLogs = flag.Bool("storage.enable_chunked_event_logs", false, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	writeToOLAPDBEnabled   = flag.Bool("app.enable_write_to_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
 
 	cacheStatsFinalizationDelay = flag.Duration(
 		"cache_stats_finalization_delay", 500*time.Millisecond,
@@ -307,8 +308,16 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		}
 	}()
 
-	if !*writeExecutionsToOLAPDBEnabled {
+	if !olapdb_config.WriteExecutionsToOLAPDBEnabled() {
 		return nil
+	}
+
+	// Add the invocation to redis to signal to the executors that they can flush
+	// complete Executions into clickhouse directly, in case the PublishOperation
+	// is received after the Invocation is complete.
+	storedInv := toStoredInvocation(inv)
+	if err = r.env.GetExecutionCollector().AddInvocation(ctx, storedInv); err != nil {
+		log.CtxErrorf(ctx, "failed to write the complete Invocation to redis: %s", err)
 	}
 
 	for {
@@ -320,7 +329,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		if len(executions) == 0 {
 			break
 		}
-		err = r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, executions)
+		err = r.env.GetOLAPDBHandle().FlushExecutionStats(ctx, storedInv, executions)
 		if err != nil {
 			break
 		}
@@ -1429,4 +1438,19 @@ func GetStreamIdFromInvocationIdAndAttempt(iid string, attempt uint64) string {
 		return iid
 	}
 	return iid + "/" + strconv.FormatUint(attempt, 10)
+}
+
+func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
+	return &sipb.StoredInvocation{
+		InvocationId:     inv.InvocationID,
+		User:             inv.User,
+		Pattern:          inv.Pattern,
+		Role:             inv.Role,
+		BranchName:       inv.BranchName,
+		CommitSha:        inv.CommitSHA,
+		RepoUrl:          inv.RepoURL,
+		Command:          inv.Command,
+		InvocationStatus: inv.InvocationStatus,
+		Success:          inv.Success,
+	}
 }

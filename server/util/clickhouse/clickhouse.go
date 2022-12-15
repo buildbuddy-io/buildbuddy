@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gormclickhouse "gorm.io/driver/clickhouse"
 )
 
@@ -308,7 +309,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	}
 }
 
-func buildExecution(in *repb.StoredExecution, inv *tables.Invocation) *Execution {
+func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *Execution {
 	return &Execution{
 		GroupID:                            in.GetGroupId(),
 		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
@@ -338,16 +339,16 @@ func buildExecution(in *repb.StoredExecution, inv *tables.Invocation) *Execution
 		OutputUploadStartTimestampUsec:     in.GetOutputUploadStartTimestampUsec(),
 		OutputUploadCompletedTimestampUsec: in.GetOutputUploadCompletedTimestampUsec(),
 		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
-		User:                               inv.User,
-		Host:                               inv.Host,
-		Pattern:                            inv.Pattern,
-		Role:                               inv.Role,
-		BranchName:                         inv.BranchName,
-		CommitSHA:                          inv.CommitSHA,
-		RepoURL:                            inv.RepoURL,
-		Command:                            inv.Command,
-		Success:                            inv.Success,
-		InvocationStatus:                   inv.InvocationStatus,
+		User:                               inv.GetUser(),
+		Host:                               inv.GetHost(),
+		Pattern:                            inv.GetPattern(),
+		Role:                               inv.GetRole(),
+		BranchName:                         inv.GetBranchName(),
+		CommitSHA:                          inv.GetCommitSha(),
+		RepoURL:                            inv.GetRepoUrl(),
+		Command:                            inv.GetCommand(),
+		Success:                            inv.GetSuccess(),
+		InvocationStatus:                   inv.GetInvocationStatus(),
 	}
 }
 
@@ -394,14 +395,14 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
-func (h *DBHandle) FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*repb.StoredExecution) error {
+func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	entries := make([]*Execution, 0, len(executions))
 	for _, e := range executions {
-		entries = append(entries, buildExecution(e, ti))
+		entries = append(entries, buildExecution(e, inv))
 	}
 	num := len(entries)
 	if err := h.insertWithRetrier(ctx, (&Execution{}).TableName(), num, &entries); err != nil {
-		return status.UnavailableErrorf("failed to insert %d execution(s) for invocation (invocation_id = %q), err: %s", num, ti.InvocationID, err)
+		return status.UnavailableErrorf("failed to insert %d execution(s) for invocation (invocation_id = %q), err: %s", num, inv.GetInvocationId(), err)
 	}
 	return nil
 }

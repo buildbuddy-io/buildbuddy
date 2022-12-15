@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
+        "//proto:stored_invocation_go_proto",
         "//server/environment",
         "@com_github_go_redis_redis_v8//:redis",
         "@org_golang_google_protobuf//proto",
