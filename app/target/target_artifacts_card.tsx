@@ -37,12 +37,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       (file: build_event_stream.File) => true && file.name === "test.outputs__outputs.zip"
     )?.uri;
 
-    if (!testLogUrl) {
-      return;
-    }
-
-    if (!testLogUrl.startsWith("bytestream://")) {
-      this.setState({ ...this.state, cacheEnabled: false });
+    if (!testLogUrl || !testLogUrl.startsWith("bytestream://")) {
       return;
     }
 
