@@ -887,7 +887,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	return s, nil
 }
 
-func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool string, useSelfHosted bool) (*interfaces.PoolInfo, error) {
+func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, useSelfHosted bool) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from
 	// platform props.
@@ -904,6 +904,12 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool str
 		GroupID: *sharedExecutorPoolGroupID,
 		Name:    sharedPoolName,
 	}
+
+	// Linux workflows are currently only supported on shared executors.
+	if os == platform.LinuxOperatingSystemName && workflowID != "" {
+		return sharedPool, nil
+	}
+
 	user, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		if s.env.GetAuthenticator().AnonymousUsageEnabled() {
