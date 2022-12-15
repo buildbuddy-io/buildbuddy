@@ -425,6 +425,7 @@ instead of being fully supported by standalone Starlark rules.
 
 - [D8 is now the default desugarer.](https://github.com/bazelbuild/bazel/commit/ff311f618a602c15f5848a317561934b0154132b)
 - [D8 is now the default dexer.](https://github.com/bazelbuild/bazel/commit/66d07f096cb697bdadb6f9d9fbc1c4fe33be6d59)
+- [The D8 jar from Maven is used instead of Android Studio's.](https://github.com/bazelbuild/bazel/commit/ae247145b897d0f41cdf2b317f5c7b856845e303)
 - [Added the `android_binary.min_sdk_version` attribute.](https://github.com/bazelbuild/bazel/commit/4c3219ec5fc2f74b45f7b29b029caf56ed8a1b4d)
 - [Added the `ApkInfo.signing_min_v3_rotation_api_version` attribute.](https://github.com/bazelbuild/bazel/commit/f6dbd1e4a127b95276127afe64a095345678019b)
 - [Added the `--mobile_install_run_deployer` flag to the `mobile-install` command, which allows skipping the deployer after building.](https://github.com/bazelbuild/bazel/commit/021665748680b415704d70698d13b4efb9e0e9dc)
@@ -527,6 +528,7 @@ In the following sections I summarize the notable changes in support of these la
 ### Objective-C
 
 - [Added support for Objective-C specific features to `cc_common.configure_features`.](https://github.com/bazelbuild/bazel/commit/68f29c67098cedbfaa3ef011eef4df661860ac36)
+- [`objc_library` now requires `CcInfo` in its deps.](https://github.com/bazelbuild/bazel/commit/540892d788727f414cc0cd3ea2ae4d4445914366)
 - [Removed the `ObjcProvider.direct_headers` attribute.](https://github.com/bazelbuild/bazel/commit/8a2b711a2700740575904682066dbe1e5c9f6d02)
 
 ### Python
@@ -556,6 +558,8 @@ or even expand what is possible to do with them.
 These changes expanded their capabilities:
 
 - [Added the `--aspects_parameters` flag, which allows passing parameters to command-line aspects.](https://github.com/bazelbuild/bazel/commit/37710728712e00e8bd7145662668d72591204146)
+- [Added support for using `attr.bool()`.](https://github.com/bazelbuild/bazel/commit/30fd508bf68c8bb9cf32839b71f79a9aa4bd069a)
+- [Added support for using `attr.int()`.](https://github.com/bazelbuild/bazel/commit/14292d176cb85d1cf6e20f79fde0249b0fe6ba24)
 - [Added support for setting exec_compatible_with and exec_group on aspects.](https://github.com/bazelbuild/bazel/commit/7e3755d3bf1443a0f2a780bc8efff658c464c3a5)
 - [Aspects now inherit fragments from required aspects and from targets they are attached to.](https://github.com/bazelbuild/bazel/commit/b3e12bad9852a068ed8687d39e278441b52c910d)
 
@@ -589,6 +593,7 @@ the Starlark language itself received performance and feature improvements:
 - [Added the `--experimental_lazy_template_expansion` flag, which adds support for lazily computed substitutions to `ctx.actions.expand_template()`.](https://github.com/bazelbuild/bazel/commit/cc74b11bc1a0a0150abd37e82f913c4b95eb16bb)
 - [Added `dict` union operators (`|` and `|=`).](https://github.com/bazelbuild/bazel/commit/b1deea40aeb81f4c7e23594e0166a6a653a75b65)
 - [Added the `coverage_support_files` and `coverage_environment` parameters to `coverage_common.instrumented_files_info`.](https://github.com/bazelbuild/bazel/commit/0a13dd69aa27ec643dd44637712b70c24b924c49)
+- [Added the `init` parameter to `provider()`, which allows for performing pre-processing and validation of field values.](https://github.com/bazelbuild/bazel/commit/fc13ba271f138c804869d0f99d751e25518b5326)
 - [Added `load` visibility.](https://bazel.build/concepts/visibility#load-visibility)
 - [`dict()` and `dict.update()` now accept arbitrary maps, not just `dict`s.](https://github.com/bazelbuild/bazel/commit/dfa9c62abda21dcf187df9d2a2c00ecefda223e0)
 - [`testing.ExecutionInfo` can now be used as a provider key.](https://github.com/bazelbuild/bazel/commit/40a6cb093e9a9902a35943b97e2ae6b362a5f005)
