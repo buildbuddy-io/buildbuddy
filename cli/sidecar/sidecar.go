@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -164,11 +165,32 @@ func ConfigureSidecar(args []string) []string {
 		}
 		if remoteCacheFlag != "" && remoteExecFlag == "" {
 			args = append(args, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
+			// Set bytestream URI prefix to match the actual remote cache
+			// backend, rather than the sidecar socket.
+			instanceName := arg.Get(args, "remote_instance_name")
+			args = append(args, fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName)))
 		}
 		return args
 	}
 	log.Warnf("Could not connect to sidecar, continuing without sidecar: %s", connectionErr)
 	return args
+}
+
+func bytestreamURIPrefix(cacheTarget, instanceName string) string {
+	prefix := stripProtocol(cacheTarget)
+	if instanceName != "" {
+		prefix += "/" + instanceName
+	}
+	return prefix
+}
+
+func stripProtocol(target string) string {
+	for _, protocol := range []string{"grpc://", "grpcs://", "http://", "https://"} {
+		if strings.HasPrefix(target, protocol) {
+			return strings.TrimPrefix(target, protocol)
+		}
+	}
+	return target
 }
 
 // keepaliveSidecar validates the connection to the sidecar and keeps the
