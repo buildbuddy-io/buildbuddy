@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/olapdbconfig"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -54,7 +55,6 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
 	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
-	olapdb_config "github.com/buildbuddy-io/buildbuddy/server/olapdb/config"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -308,7 +308,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 		}
 	}()
 
-	if !olapdb_config.WriteExecutionsToOLAPDBEnabled() {
+	if !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
 	}
 

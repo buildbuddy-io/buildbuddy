@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/olapdbconfig"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -43,7 +44,6 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	olapdb_config "github.com/buildbuddy-io/buildbuddy/server/olapdb/config"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -299,7 +299,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 }
 
 func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string) error {
-	if s.env.GetExecutionCollector() == nil || !olapdb_config.WriteExecutionsToOLAPDBEnabled() {
+	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
 	}
 	var executionPrimaryDB tables.Execution

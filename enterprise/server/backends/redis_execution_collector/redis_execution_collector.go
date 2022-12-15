@@ -16,9 +16,9 @@ import (
 
 const (
 	redisExecutionKeyPrefix  = "exec"
-	redisInvocationKeyPrefix = "inv"
+	redisInvocationKeyPrefix = "invocation"
 
-	invExpiration = 24 * time.Hour
+	invocationExpiration = 24 * time.Hour
 )
 
 type collector struct {
@@ -58,7 +58,7 @@ func (c *collector) AddInvocation(ctx context.Context, inv *sipb.StoredInvocatio
 	if err != nil {
 		return err
 	}
-	return c.rdb.Set(ctx, getInvocationKey(inv.GetInvocationId()), string(b), invExpiration).Err()
+	return c.rdb.Set(ctx, getInvocationKey(inv.GetInvocationId()), string(b), invocationExpiration).Err()
 }
 
 func (c *collector) GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error) {

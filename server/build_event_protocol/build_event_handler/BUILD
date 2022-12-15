@@ -28,7 +28,7 @@ go_library(
         "//server/eventlog",
         "//server/interfaces",
         "//server/metrics",
-        "//server/olapdb/config",
+        "//server/olapdbconfig",
         "//server/remote_cache/hit_tracker",
         "//server/remote_cache/scorecard",
         "//server/tables",
