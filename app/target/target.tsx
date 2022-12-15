@@ -181,6 +181,10 @@ export default class TargetComponent extends React.Component<Props> {
     return `/tests/?${search}`;
   }
 
+  generateRunName(testResult: build_event_stream.BuildEventId.ITestResultId) {
+    return `Run ${testResult.run} (Attempt ${testResult.attempt}, Shard ${testResult.shard})`;
+  }
+
   render() {
     let historyURL = this.getTargetHistoryURL();
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
@@ -251,7 +255,7 @@ export default class TargetComponent extends React.Component<Props> {
               {resultEvents.map((result, index) => (
                 <a
                   href={`#${index + 1}`}
-                  title={`Run ${result.buildEvent.id.testResult.run} (Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard})`}
+                  title={this.generateRunName(result.buildEvent.id.testResult)}
                   className={`run ${this.getStatusClass(result.buildEvent.testResult.status)} ${
                     (this.props.hash || "#1") == `#${index + 1}` ? "selected" : ""
                   }`}>
@@ -294,9 +298,8 @@ export default class TargetComponent extends React.Component<Props> {
             )
             .map((result) => (
               <div>
-                <p>{result.buildEvent.testResult.testActionOutput.entries[0]}</p>
-                <TargetTestArtifactsCardComponent
-                  name={`Run ${result.buildEvent.id.testResult.run}, Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard}`}
+                <TargetArtifactsCardComponent
+                  name={this.generateRunName(result.buildEvent.id.testResult)}
                   invocationId={this.props.invocationId}
                   files={result.buildEvent?.testResult?.testActionOutput as build_event_stream.File[]}
                 />
