@@ -340,7 +340,7 @@ Here are some changes that were made to the `query` family of commands:
 
 A new dependency system named [Bzlmod][bzlmod] was added in Bazel 5.0,
 and made non-experimental in Bazel 6.0.
-Besides for all of the changes needed to support Bzlmod,
+Besides all of the changes needed to support Bzlmod,
 these were some other notable dependency management related changes:
 
 - [Added the `--experimental_check_external_repository_files` flag, which allows disabling checking for modifications to files in external repositories.](https://github.com/bazelbuild/bazel/commit/123da96ef501457193f6ff52f42522249f5e3737)
