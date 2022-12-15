@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -148,7 +149,14 @@ func (asp *asyncStreamProxy) CloseSend() error {
 	return nil
 }
 
-func (c *BuildEventProxyClient) PublishBuildToolEventStream(_ context.Context, opts ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
+func (c *BuildEventProxyClient) PublishBuildToolEventStream(ctx context.Context, opts ...grpc.CallOption) (pepb.PublishBuildEvent_PublishBuildToolEventStreamClient, error) {
 	c.reconnectIfNecessary()
-	return c.newAsyncStreamProxy(c.rootCtx, opts...), nil
+	// Copy gRPC metadata to the outgoing stream, since the background context
+	// doesn't have any outgoing metadata attached to it.
+	asyncCtx := c.rootCtx
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		asyncCtx = metadata.NewOutgoingContext(asyncCtx, md)
+	}
+	return c.newAsyncStreamProxy(asyncCtx, opts...), nil
 }
