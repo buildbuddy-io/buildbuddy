@@ -18,7 +18,7 @@ import (
 
 const (
 	// Version is the bazel version of the embedded test bazel binary.
-	Version = "5.3.0"
+	Version = "5.3.2"
 
 	// BazelBinaryPath specifies the path to the bazel binary used for
 	// invocations. Must match the path in the build rule.

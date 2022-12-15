@@ -1,14 +1,23 @@
 package cli_test
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 func TestBazelVersion(t *testing.T) {
@@ -62,4 +71,68 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	require.Contains(t, output, "Hello from post_bazel.sh!")
 	// Make sure we don't print any warnings.
 	require.NotContains(t, output, log.WarningPrefix)
+}
+
+func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD":  `sh_binary(name = "nop", srcs = ["nop.sh"])`,
+		"nop.sh": "",
+	})
+	testfs.MakeExecutable(t, ws, "nop.sh")
+	app := buildbuddy.Run(t, "--cache.detailed_stats_enabled=true")
+	args := []string{"build", ":nop"}
+	args = append(args, app.BESBazelFlags()...)
+	args = append(args, app.RemoteCacheBazelFlags()...)
+	args = append(args, "--remote_upload_local_results")
+	uid, err := uuid.NewRandom()
+	iid := uid.String()
+	require.NoError(t, err)
+	args = append(args, "--invocation_id="+iid)
+
+	cmd := testcli.Command(t, ws, args...)
+
+	err = cmd.Run()
+
+	require.NoError(t, err)
+	bbs := app.BuildBuddyServiceClient(t)
+
+	ctx := context.Background()
+	retryUntilSuccess(t, func() error {
+		invReq := &inpb.GetInvocationRequest{
+			Lookup: &inpb.InvocationLookup{InvocationId: iid},
+		}
+		_, err := bbs.GetInvocation(ctx, invReq)
+		if err != nil {
+			return err
+		}
+
+		scReq := &capb.GetCacheScoreCardRequest{
+			InvocationId: iid,
+		}
+		sc, err := bbs.GetCacheScoreCard(ctx, scReq)
+		if err != nil {
+			return err
+		}
+		if len(sc.Results) == 0 {
+			return fmt.Errorf("scorecard results list is empty")
+		}
+
+		return nil
+	})
+}
+
+func retryUntilSuccess(t *testing.T, f func() error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r := retry.DefaultWithContext(ctx)
+	var err error
+	for r.Next() {
+		err = f()
+		if err == nil {
+			return
+		}
+	}
+	// testcli.DumpSidecarLog(t)
+	require.FailNowf(t, "timed out waiting for function to succeed", "last error: %s", err)
 }

@@ -4,12 +4,16 @@ package testcli
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
@@ -17,6 +21,7 @@ import (
 
 var (
 	streamOutputs = flag.Bool("test_stream_cli_output", false, "Show live CLI output during test execution.")
+	verbose       = flag.Bool("test_cli_verbose", false, "Whether to add --verbose=1 to the CLI.")
 
 	initEnvOnce sync.Once
 )
@@ -28,9 +33,15 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 		home := testfs.MakeTempDir(t)
 		err := os.Setenv("HOME", home)
 		require.NoError(t, err)
+		// Always run the sidecar in debug mode for tests.
+		err = os.Setenv("BB_SIDECAR_ARGS", "--app.log_level=debug")
+		require.NoError(t, err)
 	})
 
 	path := testfs.RunfilePath(t, "cli/cmd/bb/bb_/bb")
+	if *verbose {
+		args = append(args, "--verbose=1")
+	}
 	cmd := exec.Command(path, args...)
 	cmd.Dir = workspacePath
 	if *streamOutputs {
@@ -62,4 +73,22 @@ func NewWorkspace(t *testing.T) string {
 		".bazelversion": testbazel.BinaryPath(t),
 	})
 	return ws
+}
+
+// DumpSidecarLog dumps the sidecar log to the terminal. Useful for debugging.
+func DumpSidecarLog(t *testing.T) {
+	cacheDir, err := storage.CacheDir()
+	require.NoError(t, err)
+	entries, err := os.ReadDir(cacheDir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".log") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(cacheDir, entry.Name()))
+		require.NoError(t, err)
+		fmt.Printf("--- Sidecar log ---\n%s", string(b))
+		return
+	}
+	require.FailNowf(t, "could not find sidecar logs in cache dir", "")
 }

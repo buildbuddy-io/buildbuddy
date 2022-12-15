@@ -54,9 +54,9 @@ func Invoke(ctx context.Context, bazelBinary string, workspaceDir string, subCom
 	cmd.Stderr = stderrHandler
 	cmd.Dir = workspaceDir
 	// Bazel needs a HOME dir to store its local cache; store it under ".home" in the workspace.
-	cmd.Env = []string{
+	cmd.Env = append(os.Environ(), []string{
 		fmt.Sprintf("HOME=%s", filepath.Join(workspaceDir, ".home")),
-	}
+	}...)
 	err := cmd.Run()
 	if err != nil {
 		if err, ok := err.(*exec.ExitError); ok {

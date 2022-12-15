@@ -5,4 +5,5 @@ go_library(
     srcs = ["terminal.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/terminal",
     visibility = ["//visibility:public"],
+    deps = ["@com_github_mattn_go_isatty//:go-isatty"],
 )

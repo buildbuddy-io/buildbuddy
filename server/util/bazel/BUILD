@@ -27,21 +27,21 @@ genrule(
 )
 
 genrule(
-    name = "bazel-5.3.0_crossplatform",
+    name = "bazel-5.3.2_crossplatform",
     srcs = select({
-        "@bazel_tools//src/conditions:darwin": ["@io_bazel_bazel-5.3.0-darwin-x86_64//file:downloaded"],
-        "//conditions:default": ["@io_bazel_bazel-5.3.0-linux-x86_64//file:downloaded"],
+        "@bazel_tools//src/conditions:darwin": ["@io_bazel_bazel-5.3.2-darwin-x86_64//file:downloaded"],
+        "//conditions:default": ["@io_bazel_bazel-5.3.2-linux-x86_64//file:downloaded"],
     }),
-    outs = ["bazel-5.3.0"],
+    outs = ["bazel-5.3.2"],
     cmd_bash = "cp $(SRCS) $@",
     executable = True,
     visibility = ["//visibility:public"],
 )
 
 extract_bazel_installation(
-    name = "bazel-5.3.0_extract_installation",
-    bazel = ":bazel-5.3.0_crossplatform",
-    out_dir = "bazel-5.3.0_install",
+    name = "bazel-5.3.2_extract_installation",
+    bazel = ":bazel-5.3.2_crossplatform",
+    out_dir = "bazel-5.3.2_install",
     visibility = ["//visibility:public"],
 )
 

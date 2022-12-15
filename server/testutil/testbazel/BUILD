@@ -5,8 +5,8 @@ go_library(
     testonly = 1,
     srcs = ["testbazel.go"],
     data = [
-        "//server/util/bazel:bazel-5.3.0_crossplatform",
-        "//server/util/bazel:bazel-5.3.0_extract_installation",
+        "//server/util/bazel:bazel-5.3.2_crossplatform",
+        "//server/util/bazel:bazel-5.3.2_extract_installation",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel",
     visibility = ["//visibility:public"],
