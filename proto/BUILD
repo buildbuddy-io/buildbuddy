@@ -21,6 +21,15 @@ proto_library(
 )
 
 proto_library(
+    name = "archive_proto",
+    srcs = ["archive.proto"],
+    deps = [
+        ":context_proto",
+        ":remote_execution_proto",
+    ],
+)
+
+proto_library(
     name = "bazel_query_proto",
     srcs = ["bazel_query.proto"],
 )
@@ -351,6 +360,7 @@ proto_library(
     srcs = ["buildbuddy_service.proto"],
     deps = [
         ":api_key_proto",
+        ":archive_proto",
         ":bazel_config_proto",
         ":cache_proto",
         ":eventlog_proto",
@@ -490,6 +500,16 @@ go_proto_library(
     proto = ":api_key_proto",
     deps = [
         ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "archive_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/archive",
+    proto = ":archive_proto",
+    deps = [
+        ":context_go_proto",
+        ":remote_execution_go_proto",
     ],
 )
 
@@ -760,6 +780,7 @@ go_proto_library(
     proto = ":buildbuddy_service_proto",
     deps = [
         ":api_key_go_proto",
+        ":archive_go_proto",
         ":bazel_config_go_proto",
         ":cache_go_proto",
         ":eventlog_go_proto",
@@ -961,6 +982,11 @@ ts_proto_library(
 ts_proto_library(
     name = "api_key_ts_proto",
     proto = ":api_key_proto",
+)
+
+ts_proto_library(
+    name = "archive_ts_proto",
+    proto = ":archive_proto",
 )
 
 ts_proto_library(

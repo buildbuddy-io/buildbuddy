@@ -16,6 +16,7 @@ ts_library(
         "//app/terminal",
         "//app/util:clipboard",
         "//app/util:proto",
+        "//proto:archive_ts_proto",
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",

@@ -14,6 +14,7 @@ import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import { timestampToDateWithFallback } from "../util/proto";
 import { OutlinedLinkButton } from "../components/button/link_button";
+import TargetTestArtifactsCardComponent from "./target_test_artifacts_card";
 
 interface Props {
   invocationId: string;
@@ -184,10 +185,7 @@ export default class TargetComponent extends React.Component<Props> {
     let historyURL = this.getTargetHistoryURL();
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
     let actionEvents = this.props.actionEvents?.sort(this.actionSort) || [];
-    let files = this.props.files || [];
-    for (const resultEvent of resultEvents) {
-      files = files.concat(resultEvent?.buildEvent?.testResult?.testActionOutput || []);
-    }
+
     return (
       <div className="target-page">
         <div className="shelf">
@@ -282,10 +280,28 @@ export default class TargetComponent extends React.Component<Props> {
           {actionEvents.map((action) => (
             <ActionCardComponent dark={this.props.dark} invocationId={this.props.invocationId} action={action} />
           ))}
-          <TargetArtifactsCardComponent
-            invocationId={this.props.invocationId}
-            files={files as build_event_stream.File[]}
-          />
+          {this.props.files && (
+            <TargetArtifactsCardComponent
+              name={"Target outputs"}
+              invocationId={this.props.invocationId}
+              files={this.props.files as build_event_stream.File[]}
+            />
+          )}
+          {resultEvents
+            .filter(
+              (value, index) =>
+                `#${index + 1}` == (this.props.hash || "#1") && value.buildEvent?.testResult?.testActionOutput
+            )
+            .map((result) => (
+              <div>
+                <p>{result.buildEvent.testResult.testActionOutput.entries[0]}</p>
+                <TargetTestArtifactsCardComponent
+                  name={`Run ${result.buildEvent.id.testResult.run}, Attempt ${result.buildEvent.id.testResult.attempt}, Shard ${result.buildEvent.id.testResult.shard}`}
+                  invocationId={this.props.invocationId}
+                  files={result.buildEvent?.testResult?.testActionOutput as build_event_stream.File[]}
+                />
+              </div>
+            ))}
         </div>
       </div>
     );

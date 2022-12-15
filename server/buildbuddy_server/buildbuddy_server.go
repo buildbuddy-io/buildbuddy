@@ -32,6 +32,7 @@ import (
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	arpb "github.com/buildbuddy-io/buildbuddy/proto/archive"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -143,6 +144,18 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	}
 
 	return &inpb.DeleteInvocationResponse{}, nil
+}
+
+func (s *BuildBuddyServer) GetArchiveManifest(ctx context.Context, req *arpb.GetArchiveManifestRequest) (*arpb.GetArchiveManifestResponse, error) {
+	u, err := url.Parse(req.GetUri())
+	if err != nil {
+		return nil, err
+	}
+	man, err := bytestream.FetchBytestreamZipManifest(ctx, s.env, u)
+	if err != nil {
+		return nil, err
+	}
+	return &arpb.GetArchiveManifestResponse{Manifest: man}, nil
 }
 
 func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.CancelExecutionsRequest) (*inpb.CancelExecutionsResponse, error) {
@@ -1036,14 +1049,27 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
+	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
+
+	var archiveReference = params.Get("z")
+	if len(archiveReference) > 0 {
+		// XXX: Parse filename, output mime type from manifest.
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", "fff.png"))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		err = bytestream.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, archiveReference, w)
+		if err != nil {
+			log.Warningf("Error downloading zip file contents: %s", err.Error())
+			http.Error(w, "File not found", http.StatusNotFound)
+		}
+		return
+	}
+
 	// Stream the file back to our client
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
-	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
-
-	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, func(data []byte) {
+	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, 0, func(data []byte) {
 		w.Write(data)
 	})
 

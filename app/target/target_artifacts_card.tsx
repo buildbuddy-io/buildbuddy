@@ -5,6 +5,7 @@ import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import rpcService from "../service/rpc_service";
 
 interface Props {
+  name: string;
   files: build_event_stream.File[];
   invocationId: string;
 }
@@ -27,7 +28,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props>
       <div className="card artifacts">
         <ArrowDownCircle className="icon brown" />
         <div className="content">
-          <div className="title">Artifacts</div>
+          <div className="title">Artifacts: {this.props.name}</div>
           <div className="details">
             {this.props.files.map((output) => (
               <div className="artifact-line">
