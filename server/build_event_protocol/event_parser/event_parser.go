@@ -16,17 +16,18 @@ const (
 	envVarSeparator  = "="
 )
 
-// eventPriority represents the priority of an invocation event
-// when setting invocation fields. For example, if the build USER is set in
-// build metadata, that always overrides the USER value from workspace status,
-// even if the workspace status event came later in the stream.
-type eventPriority int
-
 const (
-	envPriority                eventPriority = 1
-	workspaceStatusPriority    eventPriority = 2
-	buildMetadataPriority      eventPriority = 3
-	workflowConfiguredPriority eventPriority = 4
+	// Priorities determine the precedence of different events as they apply to
+	// invocation fields.
+	//
+	// For example, a RepoUrl setting in BuildMetadata takes priority over a
+	// repo URL set via WorkspaceStatus, even if the workspace status event came
+	// after the build metadata event in the stream.
+
+	envPriority                = 1
+	workspaceStatusPriority    = 2
+	buildMetadataPriority      = 3
+	workflowConfiguredPriority = 4
 )
 
 func parseEnv(commandLine *command_line.CommandLine) map[string]string {
@@ -62,16 +63,27 @@ type StreamingEventParser struct {
 	invocation *inpb.Invocation
 	startTime  *time.Time
 
-	// fieldPriority maps invocation field pointers to the priority of the event
-	// which set the field. This allows us to set invocation fields only if a
-	// previous event of higher priority hasn't already set the field.
-	fieldPriority map[any]eventPriority
+	priority fieldPriorities
+}
+
+// fieldPriorities keeps track of all the priorities currently assigned to each
+// field. For consistency, the field names here are named exactly after the
+// invocation proto fields.
+type fieldPriorities struct {
+	Host,
+	User,
+	Role,
+	ReadPermission,
+	RepoUrl,
+	BranchName,
+	CommitSha,
+	Command,
+	Pattern int
 }
 
 func NewStreamingEventParser(invocation *inpb.Invocation) *StreamingEventParser {
 	return &StreamingEventParser{
-		invocation:    invocation,
-		fieldPriority: make(map[any]eventPriority, 0),
+		invocation: invocation,
 	}
 }
 
@@ -184,160 +196,202 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 	}
 }
 
-// setField sets an invocation field from a build event, but only if the current
-// field value was not already set by an event of higher priority (note, if the
-// field was already set by an event with the *same* priority, then the field is
-// overridden).
-func setField[T any](sep *StreamingEventParser, priority eventPriority, field *T, value T) {
-	if sep.fieldPriority[field] > priority {
-		return
-	}
-	*field = value
-	sep.fieldPriority[field] = priority
-}
-
 func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine) {
 	envVarMap := parseEnv(commandLine)
-	invocation := sep.invocation
 	if user, ok := envVarMap["USER"]; ok && user != "" {
-		setField(sep, envPriority, &invocation.User, user)
+		sep.setUser(user, envPriority)
 	}
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
-		setField(sep, envPriority, &invocation.RepoUrl, url)
+		sep.setRepoUrl(url, envPriority)
 	}
 	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
-		setField(sep, envPriority, &invocation.RepoUrl, url)
+		sep.setRepoUrl(url, envPriority)
 	}
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
-		setField(sep, envPriority, &invocation.RepoUrl, url)
+		sep.setRepoUrl(url, envPriority)
 	}
 	if url, ok := envVarMap["REPO_URL"]; ok && url != "" {
-		setField(sep, envPriority, &invocation.RepoUrl, url)
+		sep.setRepoUrl(url, envPriority)
 	}
 	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
-		setField(sep, envPriority, &invocation.RepoUrl, url)
+		sep.setRepoUrl(url, envPriority)
 	}
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
-		setField(sep, envPriority, &invocation.RepoUrl, url)
+		sep.setRepoUrl(url, envPriority)
 	}
 	if branch, ok := envVarMap["TRAVIS_BRANCH"]; ok && branch != "" {
-		setField(sep, envPriority, &invocation.BranchName, branch)
+		sep.setBranchName(branch, envPriority)
 	}
 	if branch, ok := envVarMap["GIT_BRANCH"]; ok && branch != "" {
-		setField(sep, envPriority, &invocation.BranchName, branch)
+		sep.setBranchName(branch, envPriority)
 	}
 	if branch, ok := envVarMap["BUILDKITE_BRANCH"]; ok && branch != "" {
-		setField(sep, envPriority, &invocation.BranchName, branch)
+		sep.setBranchName(branch, envPriority)
 	}
 	if branch, ok := envVarMap["CIRCLE_BRANCH"]; ok && branch != "" {
-		setField(sep, envPriority, &invocation.BranchName, branch)
+		sep.setBranchName(branch, envPriority)
 	}
 	if branch, ok := envVarMap["GITHUB_REF"]; ok && strings.HasPrefix(branch, "refs/heads/") {
-		setField(sep, envPriority, &invocation.BranchName, strings.TrimPrefix(branch, "refs/heads/"))
+		sep.setBranchName(strings.TrimPrefix(branch, "refs/heads/"), envPriority)
 	}
 	if branch, ok := envVarMap["GITHUB_HEAD_REF"]; ok && branch != "" {
-		setField(sep, envPriority, &invocation.BranchName, branch)
+		sep.setBranchName(branch, envPriority)
 	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
-		setField(sep, envPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, envPriority)
 	}
 	if sha, ok := envVarMap["GIT_COMMIT"]; ok && sha != "" {
-		setField(sep, envPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, envPriority)
 	}
 	if sha, ok := envVarMap["BUILDKITE_COMMIT"]; ok && sha != "" {
-		setField(sep, envPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, envPriority)
 	}
 	if sha, ok := envVarMap["CIRCLE_SHA1"]; ok && sha != "" {
-		setField(sep, envPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, envPriority)
 	}
 	if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
-		setField(sep, envPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, envPriority)
 	}
 	if sha, ok := envVarMap["COMMIT_SHA"]; ok && sha != "" {
-		setField(sep, envPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, envPriority)
 	}
 	if sha, ok := envVarMap["VOLATILE_GIT_COMMIT"]; ok && sha != "" {
-		setField(sep, envPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, envPriority)
 	}
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
-		setField(sep, envPriority, &invocation.Role, "CI")
+		sep.setRole("CI", envPriority)
 	}
 	if ciRunner, ok := envVarMap["CI_RUNNER"]; ok && ciRunner != "" {
-		setField(sep, envPriority, &invocation.Role, "CI_RUNNER")
+		sep.setRole("CI_RUNNER", envPriority)
 	}
 
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
-		setField(sep, envPriority, &invocation.RepoUrl, url)
+		sep.setRepoUrl(url, envPriority)
 	}
 	if branch, ok := envVarMap["CI_COMMIT_BRANCH"]; ok && branch != "" {
-		setField(sep, envPriority, &invocation.BranchName, branch)
+		sep.setBranchName(branch, envPriority)
 	}
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
-		setField(sep, envPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, envPriority)
 	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus) {
-	invocation := sep.invocation
 	for _, item := range workspaceStatus.Item {
 		if item.Value == "" {
 			continue
 		}
 		switch item.Key {
 		case "BUILD_USER":
-			setField(sep, workspaceStatusPriority, &invocation.User, item.Value)
+			sep.setUser(item.Value, workspaceStatusPriority)
 		case "USER":
-			setField(sep, workspaceStatusPriority, &invocation.User, item.Value)
+			sep.setUser(item.Value, workspaceStatusPriority)
 		case "BUILD_HOST":
-			setField(sep, workspaceStatusPriority, &invocation.Host, item.Value)
+			sep.setHost(item.Value, workspaceStatusPriority)
 		case "HOST":
-			setField(sep, workspaceStatusPriority, &invocation.Host, item.Value)
+			sep.setHost(item.Value, workspaceStatusPriority)
 		case "PATTERN":
-			setField(sep, workspaceStatusPriority, &invocation.Pattern, strings.Split(item.Value, " "))
+			sep.setPattern(strings.Split(item.Value, " "), workspaceStatusPriority)
 		case "ROLE":
-			setField(sep, workspaceStatusPriority, &invocation.Role, item.Value)
+			sep.setRole(item.Value, workspaceStatusPriority)
 		case "REPO_URL":
-			setField(sep, workspaceStatusPriority, &invocation.RepoUrl, item.Value)
+			sep.setRepoUrl(item.Value, workspaceStatusPriority)
 		case "GIT_BRANCH":
-			setField(sep, workspaceStatusPriority, &invocation.BranchName, item.Value)
+			sep.setBranchName(item.Value, workspaceStatusPriority)
 		case "COMMIT_SHA":
-			setField(sep, workspaceStatusPriority, &invocation.CommitSha, item.Value)
+			sep.setCommitSha(item.Value, workspaceStatusPriority)
 		}
 	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) {
-	invocation := sep.invocation
 	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
-		setField(sep, buildMetadataPriority, &invocation.CommitSha, sha)
+		sep.setCommitSha(sha, buildMetadataPriority)
 	}
 	if branch, ok := metadata["BRANCH_NAME"]; ok && branch != "" {
-		setField(sep, buildMetadataPriority, &invocation.BranchName, branch)
+		sep.setBranchName(branch, buildMetadataPriority)
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
-		setField(sep, buildMetadataPriority, &invocation.RepoUrl, url)
+		sep.setRepoUrl(url, buildMetadataPriority)
 	}
 	if user, ok := metadata["USER"]; ok && user != "" {
-		setField(sep, buildMetadataPriority, &invocation.User, user)
+		sep.setUser(user, buildMetadataPriority)
 	}
 	if host, ok := metadata["HOST"]; ok && host != "" {
-		setField(sep, buildMetadataPriority, &invocation.Host, host)
+		sep.setHost(host, buildMetadataPriority)
 	}
 	if pattern, ok := metadata["PATTERN"]; ok && pattern != "" {
-		setField(sep, buildMetadataPriority, &invocation.Pattern, strings.Split(pattern, " "))
+		sep.setPattern(strings.Split(pattern, " "), buildMetadataPriority)
 	}
 	if role, ok := metadata["ROLE"]; ok && role != "" {
-		setField(sep, buildMetadataPriority, &invocation.Role, role)
+		sep.setRole(role, buildMetadataPriority)
 	}
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
-		setField(sep, buildMetadataPriority, &invocation.ReadPermission, inpb.InvocationPermission_PUBLIC)
+		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, buildMetadataPriority)
 	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured) {
-	invocation := sep.invocation
-	setField(sep, workflowConfiguredPriority, &invocation.Command, "workflow run")
-	setField(sep, workflowConfiguredPriority, &invocation.Pattern, []string{workflowConfigured.ActionName})
+	sep.setCommand("workflow run", workflowConfiguredPriority)
+	sep.setPattern([]string{workflowConfigured.ActionName}, workflowConfiguredPriority)
+}
+
+// All the funcs below set invocation fields only if they haven't already been
+// set by an event with higher priority.
+
+func (sep *StreamingEventParser) setHost(value string, priority int) {
+	if sep.priority.Host <= priority {
+		sep.priority.Host = priority
+		sep.invocation.Host = value
+	}
+}
+func (sep *StreamingEventParser) setUser(value string, priority int) {
+	if sep.priority.User <= priority {
+		sep.priority.User = priority
+		sep.invocation.User = value
+	}
+}
+func (sep *StreamingEventParser) setRole(value string, priority int) {
+	if sep.priority.Role <= priority {
+		sep.priority.Role = priority
+		sep.invocation.Role = value
+	}
+}
+func (sep *StreamingEventParser) setReadPermission(value inpb.InvocationPermission, priority int) {
+	if sep.priority.ReadPermission <= priority {
+		sep.priority.ReadPermission = priority
+		sep.invocation.ReadPermission = value
+	}
+}
+func (sep *StreamingEventParser) setRepoUrl(value string, priority int) {
+	if sep.priority.RepoUrl <= priority {
+		sep.priority.RepoUrl = priority
+		sep.invocation.RepoUrl = value
+	}
+}
+func (sep *StreamingEventParser) setBranchName(value string, priority int) {
+	if sep.priority.BranchName <= priority {
+		sep.priority.BranchName = priority
+		sep.invocation.BranchName = value
+	}
+}
+func (sep *StreamingEventParser) setCommitSha(value string, priority int) {
+	if sep.priority.CommitSha <= priority {
+		sep.priority.CommitSha = priority
+		sep.invocation.CommitSha = value
+	}
+}
+func (sep *StreamingEventParser) setCommand(value string, priority int) {
+	if sep.priority.Command <= priority {
+		sep.priority.Command = priority
+		sep.invocation.Command = value
+	}
+}
+func (sep *StreamingEventParser) setPattern(value []string, priority int) {
+	if sep.priority.Pattern <= priority {
+		sep.priority.Pattern = priority
+		sep.invocation.Pattern = value
+	}
 }

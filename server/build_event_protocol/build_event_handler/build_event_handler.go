@@ -694,7 +694,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
-	ti, err := e.tableInvocationFromProto(invocation)
+	ti, err := e.tableInvocationFromProto(invocation, iid)
 	if err != nil {
 		return err
 	}
@@ -1075,16 +1075,16 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 }
 
 func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID string) error {
-	invocation := e.parser.GetInvocation()
+	db := e.env.GetInvocationDB()
+	invocationProto := e.parser.GetInvocation()
 	if e.logWriter != nil {
-		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
+		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
-	ti, err := e.tableInvocationFromProto(invocation)
+	ti, err := e.tableInvocationFromProto(invocationProto, "" /*=blobID*/)
 	if err != nil {
 		return err
 	}
 	ti.Attempt = e.attempt
-	db := e.env.GetInvocationDB()
 	updated, err := db.UpdateInvocation(ctx, ti)
 	if err != nil {
 		return err
@@ -1236,7 +1236,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 					screenWriter.Write([]byte(p.Progress.Stderr))
 					screenWriter.Write([]byte(p.Progress.Stdout))
 				}
-				// Don't serve progress events to the UI since they are too
+				// Don't serve progress event contents to the UI since they are too
 				// large. Instead, logs are available either via the
 				// console_buffer field or the separate logs RPC.
 				p.Progress.Stderr = ""
@@ -1263,7 +1263,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	return invocation, nil
 }
 
-func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation) (*tables.Invocation, error) {
+func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
 	uuid, err := uuid.StringToBytes(p.InvocationId)
 	if err != nil {
 		return nil, err
@@ -1288,7 +1288,7 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation) (*tables.Inv
 		i.Pattern = invocation_format.ShortFormatPatterns(p.Pattern)
 	}
 	i.ActionCount = p.ActionCount
-	i.BlobID = p.InvocationId
+	i.BlobID = blobID
 	i.InvocationStatus = int64(p.InvocationStatus)
 	i.LastChunkId = p.LastChunkId
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
