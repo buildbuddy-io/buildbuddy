@@ -1269,9 +1269,6 @@ func (z *zstdCompressor) Close() error {
 	metrics.CompressionRatio.
 		With(prometheus.Labels{metrics.CompressionType: "zstd"}).
 		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
-	if z.numCompressedBytes > z.numDecompressedBytes {
-		metrics.BadCompressionStreamSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(z.numDecompressedBytes))
-	}
 
 	z.bufferPool.Put(z.compressBuf)
 	return z.CustomCommitWriteCloser.Close()
