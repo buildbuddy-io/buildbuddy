@@ -236,11 +236,10 @@ func (d *Driver) MoveableReplicas(state *clusterState) replicaSet {
 	return candidates
 }
 
-// MoveableLeases returns a slice of replicaStructs that:
-//   - Are members of clusters this node manages
-//   - Are not located on this node
-//   - If moved, would bring this node back within the ideal # of replicas
-//     threshold.
+// MoveableLeases returns a set of clusterIDs that:
+//   - Are clusters this node manages
+//   - Have more QPS than avg
+//   - Contribute to this node's above-average propose QPS
 func (d *Driver) MoveableLeases(state *clusterState) uint64Set {
 	cm := d.clusterMap
 
