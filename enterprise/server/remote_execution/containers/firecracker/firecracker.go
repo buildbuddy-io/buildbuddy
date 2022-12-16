@@ -58,7 +58,7 @@ import (
 )
 
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
-var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "1", "Specifies the cgroup version for firecracker to use.")
+var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 
 const (
@@ -174,6 +174,32 @@ func openFile(ctx context.Context, env environment.Env, fileName string) (io.Rea
 
 	// Otherwise try to find it in the bundle or runfiles.
 	return env.GetFileResolver().Open(fileName)
+}
+
+// Returns the cgroup version available on this machine, which is returned from
+//
+//	stat -fc %T /sys/fs/cgroup/
+//
+// and should be either 'cgroup2fs' (version 2) or 'tmpfs' (version 1)
+//
+// More info here: https://kubernetes.io/docs/concepts/architecture/cgroups/
+// TODO(iain): preemptively get this in a provider a la Provider in podman.go.
+func getCgroupVersion() (string, error) {
+	if *firecrackerCgroupVersion != "" {
+		return *firecrackerCgroupVersion, nil
+	}
+	b, err := exec.Command("stat", "-fc", "%T", "/sys/fs/cgroup/").Output()
+	if err != nil {
+		return "", status.UnavailableErrorf("Error determining system cgroup version: %v", err)
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "cgroup2fs" {
+		return "2", nil
+	} else if v == "tmpfs" {
+		return "1", nil
+	} else {
+		return "", status.InternalErrorf("No cgroup version found (system reported %s)", v)
+	}
 }
 
 // putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
@@ -597,6 +623,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		stderr = io.MultiWriter(stderr, os.Stderr)
 	}
 
+	cgroupVersion, err := getCgroupVersion()
+	if err != nil {
+		return err
+	}
+
 	// We start firecracker with this reduced config because we will load a
 	// snapshot that is already configured.
 	cfg := fcclient.Config{
@@ -615,7 +646,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
 			Stdout:         stdout,
 			Stderr:         stderr,
-			CgroupVersion:  *firecrackerCgroupVersion,
+			CgroupVersion:  cgroupVersion,
 		},
 		Snapshot: fcclient.SnapshotConfig{
 			MemFilePath:         fullMemSnapshotName,
@@ -829,6 +860,10 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 	if c.constants.InitDockerd {
 		bootArgs = "-init_dockerd " + bootArgs
 	}
+	cgroupVersion, err := getCgroupVersion()
+	if err != nil {
+		return nil, err
+	}
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
@@ -874,7 +909,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
 			Stdout:         stdout,
 			Stderr:         stderr,
-			CgroupVersion:  *firecrackerCgroupVersion,
+			CgroupVersion:  cgroupVersion,
 		},
 		MachineCfg: fcmodels.MachineConfiguration{
 			VcpuCount:       fcclient.Int64(c.constants.NumCPUs),
