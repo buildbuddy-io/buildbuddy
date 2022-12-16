@@ -223,17 +223,17 @@ func (s *BuildBuddyServer) getUser(ctx context.Context, req *uspb.GetUserRequest
 		selectedGroupID = g.Group.GroupID
 		selectedGroupRole = role.Role(g.Role)
 	}
-	allowedRPCs := role_filter.RoleIndependentRPCs
+	allowedRPCs := role_filter.RoleIndependentRPCs()
 	if selectedGroupRole&role.Admin > 0 {
-		allowedRPCs = append(allowedRPCs, role_filter.GroupAdminOnlyRPCs...)
+		allowedRPCs = append(allowedRPCs, role_filter.GroupAdminOnlyRPCs()...)
 	}
 	if selectedGroupRole&(role.Admin|role.Developer) > 0 {
-		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs...)
+		allowedRPCs = append(allowedRPCs, role_filter.GroupDeveloperRPCs()...)
 	}
 	if serverAdminGID := s.env.GetAuthenticator().AdminGroupID(); serverAdminGID != "" {
 		for _, gr := range tu.Groups {
 			if gr.Group.GroupID == serverAdminGID && gr.Role == uint32(role.Admin) {
-				allowedRPCs = append(allowedRPCs, role_filter.ServerAdminOnlyRPCs...)
+				allowedRPCs = append(allowedRPCs, role_filter.ServerAdminOnlyRPCs()...)
 				break
 			}
 		}

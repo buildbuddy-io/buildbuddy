@@ -207,7 +207,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
                     </div>
                   ))}
                 </div>
-                {this.props.user && (
+                {this.props.user && router.canCreateOrg(this.props.user) && (
                   <div className="sidebar-item create-organization" onClick={this.handleCreateOrgClicked.bind(this)}>
                     <PlusCircle className="icon" />
                     Create org
