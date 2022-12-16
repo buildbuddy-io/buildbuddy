@@ -330,7 +330,7 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 		return status.InvalidArgumentErrorf("Invalid URL")
 	}
 
-	return bytestream.StreamBytestreamFile(ctx, s.env, parsedURL, 0, func(data []byte) {
+	return bytestream.StreamBytestreamFile(ctx, s.env, parsedURL, func(data []byte) {
 		server.Send(&apipb.GetFileResponse{
 			Data: data,
 		})
@@ -401,7 +401,7 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = bytestream.StreamBytestreamFile(r.Context(), s.env, parsedURL, 0, func(data []byte) {
+	err = bytestream.StreamBytestreamFile(r.Context(), s.env, parsedURL, func(data []byte) {
 		w.Write(data)
 	})
 	if err != nil {

@@ -116,8 +116,7 @@ func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, baseOffs
 	var directoryEndOffset int64 = -1
 	bLen := int64(len(input))
 	if bLen > trueSize {
-		// XXX: error
-		bLen = trueSize
+		return nil, 0, ErrFormat // This... shouldn't happen.
 	}
 
 	if p := findSignatureInBlock(input); p >= 0 {
@@ -193,6 +192,10 @@ func readDirectoryHeader(buf []byte, d *directoryEnd) ([]*arpb.ManifestEntry, er
 		h.Crc32 = b.uint32()
 		h.CompressedSize = int64(b.uint32())
 		h.UncompressedSize = int64(b.uint32())
+		if h.GetCompressedSize() == 0xffffffff || h.GetUncompressedSize() == 0xffffffff {
+			// These values indicate zip64 format.
+			return nil, ErrZip64
+		}
 		filenameLen := int(b.uint16())
 		extraLen := int(b.uint16())
 		commentLen := int(b.uint16())
@@ -205,7 +208,5 @@ func readDirectoryHeader(buf []byte, d *directoryEnd) ([]*arpb.ManifestEntry, er
 		b = b[(filenameLen + extraLen + commentLen):]
 	}
 
-	// XXX: fail on zip64.
-	// XXX: more validation..
 	return headers, nil
 }

@@ -14,7 +14,6 @@ import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import { timestampToDateWithFallback } from "../util/proto";
 import { OutlinedLinkButton } from "../components/button/link_button";
-import TargetTestArtifactsCardComponent from "./target_test_artifacts_card";
 
 interface Props {
   invocationId: string;
@@ -189,7 +188,6 @@ export default class TargetComponent extends React.Component<Props> {
     let historyURL = this.getTargetHistoryURL();
     let resultEvents = this.props.testResultEvents?.sort(this.resultSort) || [];
     let actionEvents = this.props.actionEvents?.sort(this.actionSort) || [];
-
     return (
       <div className="target-page">
         <div className="shelf">
