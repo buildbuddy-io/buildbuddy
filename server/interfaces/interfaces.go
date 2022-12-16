@@ -509,7 +509,7 @@ type SchedulerService interface {
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
-	GetPoolInfo(ctx context.Context, os, requestedPool string, useSelfHosted bool) (*PoolInfo, error)
+	GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, useSelfHosted bool) (*PoolInfo, error)
 }
 
 // PoolInfo holds high level metadata for an executor pool.

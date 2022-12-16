@@ -476,7 +476,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		predictedSize = sizer.Predict(ctx, executionTask)
 	}
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Pool, props.UseSelfHostedExecutors)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, props.OS, props.Pool, props.WorkflowID, props.UseSelfHostedExecutors)
 	if err != nil {
 		return "", err
 	}
@@ -978,7 +978,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	// TODO: Incorporate remote-header overrides here.
 	plat := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
 
-	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Pool, plat.UseSelfHostedExecutors)
+	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Pool, plat.WorkflowID, plat.UseSelfHostedExecutors)
 	if err != nil {
 		return status.InternalErrorf("failed to determine executor pool: %s", err)
 	}
