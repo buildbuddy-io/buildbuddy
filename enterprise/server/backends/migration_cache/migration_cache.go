@@ -750,6 +750,16 @@ func (mc *MigrationCache) monitorCopyChanFullness() {
 func (mc *MigrationCache) copy(c *copyData) {
 	defer c.ctxCancel()
 
+	destContains, err := mc.dest.Contains(c.ctx, c.d)
+	if err != nil {
+		log.Warningf("Migration copy err: Could not call contains on dest cache %v: %s", c.d, err)
+		return
+	}
+	if destContains {
+		log.Debugf("Migration already copied on dequeue, returning early: digest %v", c.d)
+		return
+	}
+
 	srcReader, err := mc.src.Reader(c.ctx, c.d, 0, 0)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
