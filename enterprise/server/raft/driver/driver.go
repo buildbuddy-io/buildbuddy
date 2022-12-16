@@ -449,7 +449,7 @@ type clusterState struct {
 	// Information about our own replicas.
 	myNodes uint64Set
 
-	// map of clusterID -> RangeDescriptor
+	// map of clusterID -> RangeReplica
 	managedRanges map[uint64]*rfpb.RangeReplica
 
 	// set of all replicas we know about and their locations
@@ -509,7 +509,7 @@ type clusterChanges struct {
 	// maybe (if it results in a better fit score), move these
 	moveableReplicas replicaSet
 
-	// leases that we should maybe transfer to another ndoe
+	// leases that we should consider transferring to another node
 	moveableLeases uint64Set
 }
 
