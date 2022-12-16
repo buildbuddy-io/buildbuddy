@@ -190,8 +190,7 @@ func getCgroupVersion() (string, error) {
 	}
 	b, err := exec.Command("stat", "-fc", "%T", "/sys/fs/cgroup/").Output()
 	if err != nil {
-		log.Debugf("Error determining system cgroup version: %s", err.Error())
-		return "", err
+		return "", status.UnavailableErrorf("Error determining system cgroup version: %v", err)
 	}
 	v := strings.TrimSpace(string(b))
 	if v == "cgroup2fs" {
@@ -199,7 +198,6 @@ func getCgroupVersion() (string, error) {
 	} else if v == "tmpfs" {
 		return "1", nil
 	} else {
-		log.Debugf("Error determining system cgroup version. System-reported version: %s", v)
 		return "", status.InternalErrorf("No cgroup version found (system reported %s)", v)
 	}
 }
