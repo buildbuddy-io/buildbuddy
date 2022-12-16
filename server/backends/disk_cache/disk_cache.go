@@ -583,7 +583,7 @@ func (p *partition) evictFn(value interface{}) {
 		if err == nil {
 			lastUse := time.Unix(0, getLastUseNanos(i))
 			ageUsec := float64(time.Now().Sub(lastUse).Microseconds())
-			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id}).Set(ageUsec)
+			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}).Set(ageUsec)
 		}
 		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
 			log.Warningf("Could not delete evicted file: %s", err)

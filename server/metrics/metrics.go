@@ -384,6 +384,7 @@ var (
 		Help:      "The age of the item most recently evicted from the cache, in **microseconds**.",
 	}, []string{
 		PartitionID,
+		CacheNameLabel,
 	})
 
 	DiskCacheDuplicateWrites = promauto.NewCounterVec(prometheus.CounterOpts{
