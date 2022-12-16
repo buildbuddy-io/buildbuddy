@@ -450,6 +450,20 @@ var (
 		Help:      "Number of digests queued to be copied during a cache migration.",
 	})
 
+	MigrationBytesCopied = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "migration_bytes_copied",
+		Help:      "Number of bytes copied from the source to destination cache during a cache migration.",
+	})
+
+	MigrationBlobsCopied = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "migration_blobs_copied",
+		Help:      "Number of blobs copied from the source to destination cache during a cache migration.",
+	})
+
 	/// ## Remote execution metrics
 
 	RemoteExecutionCount = promauto.NewCounterVec(prometheus.CounterOpts{
