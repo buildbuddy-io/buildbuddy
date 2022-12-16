@@ -15,10 +15,8 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/flagutil",
         "//server/util/grpc_client",
-        "//server/util/log",
         "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
-        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//proto",
     ],
 )

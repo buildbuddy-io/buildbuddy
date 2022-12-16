@@ -505,8 +505,6 @@ message TargetConfigured {
 }
 
 message File {
-  string group_name = 5;
-
   // A sequence of prefixes to apply to the file name to construct a full path.
   // In most but not all cases, there will be 3 entries:
   //  1. A root output directory, eg "bazel-out"

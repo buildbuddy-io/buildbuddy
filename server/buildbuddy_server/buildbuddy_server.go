@@ -2,6 +2,7 @@ package buildbuddy_server
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"net/http"
@@ -52,6 +53,7 @@ import (
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
+	proto "google.golang.org/protobuf/proto"
 )
 
 var (
@@ -1054,10 +1056,22 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var archiveReference = params.Get("z")
 	if len(archiveReference) > 0 {
-		// XXX: Parse filename, output mime type from manifest.
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", "fff.png"))
+		// TODO(jdhollen): Parse filename, output mime type from manifest.
+		b, err := base64.StdEncoding.DecodeString(archiveReference)
+		if err != nil {
+			log.Warningf("Error downloading file: %s", err.Error())
+			http.Error(w, "File not found", http.StatusBadRequest)
+			return
+		}
+		entry := &arpb.ManifestEntry{}
+		if err := proto.Unmarshal(b, entry); err != nil {
+			log.Warningf("Error downloading file: %s", err.Error())
+			http.Error(w, "File not found", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", entry.GetName()))
 		w.Header().Set("Content-Type", "application/octet-stream")
-		err = bytestream.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, archiveReference, w)
+		err = bytestream.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
 		if err != nil {
 			log.Warningf("Error downloading zip file contents: %s", err.Error())
 			http.Error(w, "File not found", http.StatusNotFound)

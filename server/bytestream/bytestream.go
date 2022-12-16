@@ -3,7 +3,6 @@ package bytestream
 import (
 	"compress/flate"
 	"context"
-	"encoding/base64"
 	"io"
 	"net/url"
 	"strconv"
@@ -72,22 +71,10 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 	return out, nil
 }
 
-func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, base64ManifestEntry string, out io.Writer) error {
-	// Input request should have a direct pointer; trust that it's the requested
-	// file, go straight to it. NO. Compare everything, check CRC, etc.
-
-	b, err := base64.StdEncoding.DecodeString(base64ManifestEntry)
-	if err != nil {
-		return err
-	}
-	entry := &arpb.ManifestEntry{}
-	if err := proto.Unmarshal(b, entry); err != nil {
-		return err
-	}
-
+func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *arpb.ManifestEntry, out io.Writer) error {
 	reader, writer := io.Pipe()
 	go func() {
-		err = StreamBytestreamFile(ctx, env, url, entry.GetHeaderOffset(), func(data []byte) {
+		err := StreamBytestreamFile(ctx, env, url, entry.GetHeaderOffset(), func(data []byte) {
 			writer.Write(data)
 		})
 		writer.CloseWithError(err)
@@ -122,7 +109,7 @@ func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env,
 	}
 
 	names := make([]byte, filenameLen+extraLen)
-	if _, err = io.ReadFull(reader, names); err != nil {
+	if _, err := io.ReadFull(reader, names); err != nil {
 		return err
 	}
 
@@ -137,7 +124,7 @@ func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env,
 	} else if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_NONE {
 		outReader = io.LimitReader(reader, int64(entry.GetCompressedSize()))
 	} else {
-		return err
+		return ErrAlgorithm
 	}
 
 	// XXX: Buffer?
