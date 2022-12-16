@@ -33,7 +33,6 @@ import (
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	arpb "github.com/buildbuddy-io/buildbuddy/proto/archive"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -50,6 +49,7 @@ import (
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
@@ -148,7 +148,7 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	return &inpb.DeleteInvocationResponse{}, nil
 }
 
-func (s *BuildBuddyServer) GetArchiveManifest(ctx context.Context, req *arpb.GetArchiveManifestRequest) (*arpb.GetArchiveManifestResponse, error) {
+func (s *BuildBuddyServer) GetZipManifest(ctx context.Context, req *zipb.GetZipManifestRequest) (*zipb.GetZipManifestResponse, error) {
 	u, err := url.Parse(req.GetUri())
 	if err != nil {
 		return nil, err
@@ -157,7 +157,7 @@ func (s *BuildBuddyServer) GetArchiveManifest(ctx context.Context, req *arpb.Get
 	if err != nil {
 		return nil, err
 	}
-	return &arpb.GetArchiveManifestResponse{Manifest: man}, nil
+	return &zipb.GetZipManifestResponse{Manifest: man}, nil
 }
 
 func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.CancelExecutionsRequest) (*inpb.CancelExecutionsResponse, error) {
@@ -1054,15 +1054,15 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
 	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
 
-	var archiveReference = params.Get("z")
-	if len(archiveReference) > 0 {
-		b, err := base64.StdEncoding.DecodeString(archiveReference)
+	var zipReference = params.Get("z")
+	if len(zipReference) > 0 {
+		b, err := base64.StdEncoding.DecodeString(zipReference)
 		if err != nil {
 			log.Warningf("Error downloading file: %s", err.Error())
 			http.Error(w, "File not found", http.StatusBadRequest)
 			return
 		}
-		entry := &arpb.ManifestEntry{}
+		entry := &zipb.ZipManifestEntry{}
 		if err := proto.Unmarshal(b, entry); err != nil {
 			log.Warningf("Failed to unmarshal ManifestEntry: %s", err.Error())
 			http.Error(w, "File not found", http.StatusBadRequest)

@@ -2,10 +2,9 @@ syntax = "proto3";
 
 import "proto/context.proto";
 
-package archive;
+package zip;
 
-// An entry for a single file in a ZIP-format archive.
-message ManifestEntry {
+message ZipManifestEntry {
   // The full path of the file as specified in the archive.
   string name = 1;
 
@@ -36,22 +35,20 @@ message ManifestEntry {
   uint32 crc32 = 7;
 }
 
-// A summary of the contents of an archive in ZIP format (could be a zip, a jar,
-// or whatever else).
-message ArchiveManifest {
+message ZipManifest {
   // Individual summaries of the files in this archive.
-  repeated ManifestEntry entry = 1;
+  repeated ZipManifestEntry entry = 1;
 }
 
-message GetArchiveManifestRequest {
+message GetZipManifestRequest {
   context.RequestContext request_context = 1;
 
   // Bytestream URI for the archive.
   string uri = 2;
 }
 
-message GetArchiveManifestResponse {
+message GetZipManifestResponse {
   context.ResponseContext response_context = 1;
 
-  optional ArchiveManifest manifest = 2;
+  optional ZipManifest manifest = 2;
 }

@@ -15,12 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/ziputil"
 	"google.golang.org/protobuf/proto"
 
-	arpb "github.com/buildbuddy-io/buildbuddy/proto/archive"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *url.URL) (*arpb.ArchiveManifest, error) {
+func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *url.URL) (*zipb.ZipManifest, error) {
 	r, err := digest.ParseDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
 	if err != nil {
 		return nil, err
@@ -56,13 +56,13 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 	cdStart := eocd.DirectoryOffset - offset
 	cdEnd := cdStart + eocd.DirectorySize
 
-	out := &arpb.ArchiveManifest{}
+	out := &zipb.ZipManifest{}
 	entries, err := ziputil.ReadDirectoryHeader(footer[cdStart:cdEnd], eocd)
 	out.Entry = entries
 	return out, nil
 }
 
-func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *arpb.ManifestEntry) (int, error) {
+func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ZipManifestEntry) (int, error) {
 	reader, writer := io.Pipe()
 	go func() {
 		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, func(data []byte) {
@@ -77,7 +77,7 @@ func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.
 	return ziputil.ValidateLocalFileHeader(header, entry)
 }
 
-func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *arpb.ManifestEntry, out io.Writer) error {
+func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ZipManifestEntry, out io.Writer) error {
 	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, env, url, entry)
 	if err != nil {
 		return err

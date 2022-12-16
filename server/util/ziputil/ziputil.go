@@ -38,7 +38,7 @@ import (
 	"errors"
 	"io"
 
-	arpb "github.com/buildbuddy-io/buildbuddy/proto/archive"
+	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 )
 
 const (
@@ -95,20 +95,20 @@ func findSignatureInBlock(b []byte) int {
 	return -1
 }
 
-func compressionTypeToEnum(compression uint16) arpb.ManifestEntry_CompressionType {
+func compressionTypeToEnum(compression uint16) zipb.ZipManifestEntry_CompressionType {
 	switch compression {
 	case 0:
-		return arpb.ManifestEntry_COMPRESSION_TYPE_NONE
+		return zipb.ZipManifestEntry_COMPRESSION_TYPE_NONE
 	case 8:
-		return arpb.ManifestEntry_COMPRESSION_TYPE_FLATE
+		return zipb.ZipManifestEntry_COMPRESSION_TYPE_FLATE
 	default:
-		return arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN
+		return zipb.ZipManifestEntry_COMPRESSION_TYPE_UNKNOWN
 	}
 }
 
 // The returned value is equal to the number of bytes that are expected in the
 // remaining (dynamically sized) header fields, or -1 if the header didn't validate.
-func ValidateLocalFileHeader(header []byte, entry *arpb.ManifestEntry) (int, error) {
+func ValidateLocalFileHeader(header []byte, entry *zipb.ZipManifestEntry) (int, error) {
 	buf := readBuf(header[:])
 	if sig := buf.uint32(); sig != FileHeaderSignature {
 		return 1, ErrFormat
@@ -116,7 +116,7 @@ func ValidateLocalFileHeader(header []byte, entry *arpb.ManifestEntry) (int, err
 
 	buf = buf[4:] // Skip version, bitmap
 	compressionType := compressionTypeToEnum(buf.uint16())
-	if compressionType == arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN {
+	if compressionType == zipb.ZipManifestEntry_COMPRESSION_TYPE_UNKNOWN {
 		return -1, ErrAlgorithm
 	}
 	buf = buf[4:] // Skip modification time, modification date.
@@ -138,7 +138,7 @@ func ValidateLocalFileHeader(header []byte, entry *arpb.ManifestEntry) (int, err
 	return filenameLen + extraLen, nil
 }
 
-func ValidateLocalFileNameAndExtras(input []byte, entry *arpb.ManifestEntry) error {
+func ValidateLocalFileNameAndExtras(input []byte, entry *zipb.ZipManifestEntry) error {
 	if string(input[:len(entry.GetName())]) != entry.GetName() {
 		return ErrFormat
 	}
@@ -183,8 +183,8 @@ func ReadDirectoryEnd(input []byte, trueSize int64) (dir *DirectoryEnd, err erro
 // readDirectoryHeader attempts to read a directory header from r.
 // It returns io.ErrUnexpectedEOF if it cannot read a complete header,
 // and ErrFormat if it doesn't find a valid header signature.
-func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*arpb.ManifestEntry, error) {
-	var headers []*arpb.ManifestEntry
+func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*zipb.ZipManifestEntry, error) {
+	var headers []*zipb.ZipManifestEntry
 
 	b := readBuf(buf[:])
 	if len(b) < int(d.DirectorySize) {
@@ -192,7 +192,7 @@ func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*arpb.ManifestEntry, er
 	}
 
 	for i := 0; i < int(d.DirectoryRecords); i++ {
-		var h = &arpb.ManifestEntry{}
+		var h = &zipb.ZipManifestEntry{}
 		headers = append(headers, h)
 		if len(b) < DirectoryHeaderLen {
 			return nil, ErrFormat
@@ -202,7 +202,7 @@ func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*arpb.ManifestEntry, er
 		}
 		b = b[6:] // Skip CreatorVersion, ReaderVersion, Flags
 		var compressionType = compressionTypeToEnum(b.uint16())
-		if compressionType == arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN {
+		if compressionType == zipb.ZipManifestEntry_COMPRESSION_TYPE_UNKNOWN {
 			return nil, ErrAlgorithm
 		}
 		h.Compression = compressionType
@@ -229,12 +229,12 @@ func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*arpb.ManifestEntry, er
 	return headers, nil
 }
 
-func DecompressAndStream(writer io.Writer, reader io.Reader, entry *arpb.ManifestEntry) error {
+func DecompressAndStream(writer io.Writer, reader io.Reader, entry *zipb.ZipManifestEntry) error {
 	var outReader io.Reader
-	if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_FLATE {
+	if entry.GetCompression() == zipb.ZipManifestEntry_COMPRESSION_TYPE_FLATE {
 		// TODO(jdhollen): maybe validate crc32?
 		outReader = flate.NewReader(io.LimitReader(reader, int64(entry.GetCompressedSize())))
-	} else if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_NONE {
+	} else if entry.GetCompression() == zipb.ZipManifestEntry_COMPRESSION_TYPE_NONE {
 		outReader = io.LimitReader(reader, int64(entry.GetCompressedSize()))
 	} else {
 		return ErrAlgorithm

@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 import "proto/api_key.proto";
-import "proto/archive.proto";
 import "proto/bazel_config.proto";
 import "proto/cache.proto";
 import "proto/eventlog.proto";
@@ -17,6 +16,7 @@ import "proto/usage.proto";
 import "proto/github.proto";
 import "proto/quota.proto";
 import "proto/secrets.proto";
+import "proto/zip.proto";
 
 package buildbuddy.service;
 
@@ -41,9 +41,9 @@ service BuildBuddyService {
   rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
       returns (invocation.GetInvocationOwnerResponse);
 
-  // Archive API
-  rpc GetArchiveManifest(archive.GetArchiveManifestRequest)
-      returns (archive.GetArchiveManifestResponse);
+  // Zip archive API
+  rpc GetZipManifest(zip.GetZipManifestRequest)
+      returns (zip.GetZipManifestResponse);
 
   // Bazel Config API
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)

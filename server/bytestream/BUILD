@@ -6,8 +6,8 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/bytestream",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:archive_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:zip_go_proto",
         "//server/environment",
         "//server/remote_cache/digest",
         "//server/util/flagutil",

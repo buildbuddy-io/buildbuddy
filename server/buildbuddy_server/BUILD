@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/config",
         "//proto:api_key_go_proto",
-        "//proto:archive_go_proto",
         "//proto:bazel_config_go_proto",
         "//proto:cache_go_proto",
         "//proto:eventlog_go_proto",
@@ -25,6 +24,7 @@ go_library(
         "//proto:user_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
+        "//proto:zip_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/bytestream",
         "//server/endpoint_urls/build_buddy_url",

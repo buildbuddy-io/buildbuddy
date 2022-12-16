@@ -6,6 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/ziputil",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:archive_go_proto",
+        "//proto:zip_go_proto",
     ],
 )

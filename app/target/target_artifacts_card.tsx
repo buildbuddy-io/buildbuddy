@@ -1,7 +1,7 @@
 import { ArrowDownCircle, FileCode } from "lucide-react";
 import React from "react";
 
-import { archive } from "../../proto/archive_ts_proto";
+import { zip } from "../../proto/zip_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import rpcService from "../service/rpc_service";
 
@@ -13,7 +13,7 @@ interface Props {
 
 interface State {
   loading: boolean;
-  manifest: archive.IArchiveManifest;
+  manifest: zip.IZipManifest;
 }
 
 export default class TargetArtifactsCardComponent extends React.Component<Props, State> {
@@ -44,10 +44,10 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     }
 
     this.setState({ ...this.state, loading: true });
-    const request = new archive.GetArchiveManifestRequest();
+    const request = new zip.GetZipManifestRequest();
     request.uri = testOutputsUri;
     rpcService.service
-      .getArchiveManifest(request)
+      .getZipManifest(request)
       .then((response) => {
         this.setState({ ...this.state, manifest: response.manifest, loading: false });
       })
@@ -60,15 +60,15 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       });
   }
 
-  encodeManifestEntry(entry: archive.IManifestEntry): string {
+  encodeManifestEntry(entry: zip.IZipManifestEntry): string {
     return btoa(
-      archive.ManifestEntry.encode(entry)
+      zip.ZipManifestEntry.encode(entry)
         .finish()
         .reduce((str, b) => str + String.fromCharCode(b), "")
     );
   }
 
-  makeArtifactUri(baseUri: string, entry: archive.IManifestEntry): string {
+  makeArtifactUri(baseUri: string, entry: zip.IZipManifestEntry): string {
     return rpcService.getBytestreamUrl(baseUri, this.props.invocationId, {
       filename: entry.name,
       zip: this.encodeManifestEntry(entry),
@@ -87,12 +87,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     return false;
   }
 
-  handleZipArtifactClicked(
-    outputUri: string,
-    outputFilename: string,
-    entry: archive.IManifestEntry,
-    event: MouseEvent
-  ) {
+  handleZipArtifactClicked(outputUri: string, outputFilename: string, entry: zip.IZipManifestEntry, event: MouseEvent) {
     event.preventDefault();
     if (!outputUri) return false;
 
