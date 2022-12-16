@@ -787,9 +787,19 @@ func (mc *MigrationCache) copy(c *copyData) {
 		return
 	}
 
-	metrics.MigrationBlobsCopied.Inc()
-	metrics.MigrationBytesCopied.Add(float64(n))
+	ctLabel := cacheTypeLabel(c.d.GetCacheType())
+	metrics.MigrationBlobsCopied.With(prometheus.Labels{metrics.CacheTypeLabel: ctLabel}).Inc()
+	metrics.MigrationBytesCopied.With(prometheus.Labels{metrics.CacheTypeLabel: ctLabel}).Add(float64(n))
 	log.Debugf("Migration successfully copied to dest cache: digest %v", c.d)
+}
+
+func cacheTypeLabel(ct resource.CacheType) string {
+	switch ct {
+	case resource.CacheType_AC:
+		return "action"
+	default:
+		return "cas"
+	}
 }
 
 func (mc *MigrationCache) Start() error {
