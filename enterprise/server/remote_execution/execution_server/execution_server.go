@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/olapdbconfig"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -54,7 +55,6 @@ const (
 var (
 	enableRedisAvailabilityMonitoring = flag.Bool("remote_execution.enable_redis_availability_monitoring", false, "If enabled, the execution server will detect if Redis has lost state and will ask Bazel to retry executions.")
 	enableActionMerging               = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
-	writeExecutionToRedisEnabled      = flag.Bool("remote_execution.enable_write_to_redis", false, "If enabled, complete executions will be written to Redis.")
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -299,7 +299,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 }
 
 func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string) error {
-	if s.env.GetExecutionCollector() == nil || !*writeExecutionToRedisEnabled {
+	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
 	}
 	var executionPrimaryDB tables.Execution
@@ -313,9 +313,26 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 
 	for _, link := range links {
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
-		if err := s.env.GetExecutionCollector().Append(ctx, link.InvocationID, executionProto); err != nil {
-			log.CtxErrorf(ctx, "failed to append execution %q to invocation %q", executionID, link.InvocationID)
+		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.InvocationID)
+		if err != nil {
+			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.InvocationID, err)
+			continue
 		}
+		if inv == nil {
+			// The invocation hasn't finished yet. Add the execution to ExecutionCollector, and flush it once
+			// the invocation is complete
+			if err := s.env.GetExecutionCollector().Append(ctx, link.InvocationID, executionProto); err != nil {
+				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.InvocationID, err)
+			}
+		} else {
+			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
+			if err != nil {
+				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.InvocationID, err)
+			} else {
+				log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.InvocationID)
+			}
+		}
+
 	}
 	return nil
 }

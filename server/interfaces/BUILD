@@ -21,6 +21,7 @@ go_library(
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:secrets_go_proto",
+        "//proto:stored_invocation_go_proto",
         "//proto:telemetry_go_proto",
         "//proto:usage_go_proto",
         "//proto:workflow_go_proto",

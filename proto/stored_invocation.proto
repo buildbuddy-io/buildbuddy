@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package stored_invocation;
+
+// Proto representation of the Invocation fields stored in Execution table in
+// OLAP DB. Only used in backends.
+message StoredInvocation {
+  string invocation_id = 1;
+  string user = 2;
+  string host = 3;
+  string pattern = 4;
+  string role = 5;
+  string branch_name = 6;
+  string commit_sha = 7;
+  string repo_url = 8;
+  string command = 9;
+  int64 invocation_status = 10;
+  bool success = 11;
+}

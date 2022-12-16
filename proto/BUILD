@@ -468,6 +468,11 @@ proto_library(
     srcs = ["worker.proto"],
 )
 
+proto_library(
+    name = "stored_invocation_proto",
+    srcs = ["stored_invocation.proto"],
+)
+
 # Go proto rules below here
 
 go_proto_library(
@@ -938,6 +943,12 @@ go_proto_library(
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/worker",
     proto = ":worker_proto",
+)
+
+go_proto_library(
+    name = "stored_invocation_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation",
+    proto = ":stored_invocation_proto",
 )
 
 # TypeScript proto rules below here

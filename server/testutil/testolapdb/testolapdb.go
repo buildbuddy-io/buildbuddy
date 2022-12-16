@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
 
 type Handle struct {
@@ -36,12 +37,12 @@ func (h *Handle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation
 	return nil
 }
 
-func (h *Handle) FlushExecutionStats(ctx context.Context, ti *tables.Invocation, executions []*repb.StoredExecution) error {
+func (h *Handle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error {
 	executionIDs := make([]string, 0, len(executions))
 	for _, e := range executions {
 		executionIDs = append(executionIDs, e.GetExecutionId())
 	}
-	h.executionIDsByInvID.Store(ti.InvocationID, executionIDs)
+	h.executionIDsByInvID.Store(inv.GetInvocationId(), executionIDs)
 	return nil
 }
 

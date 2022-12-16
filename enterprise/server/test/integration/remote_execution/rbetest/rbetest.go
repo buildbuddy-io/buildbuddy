@@ -219,7 +219,6 @@ func NewRBETestEnv(t *testing.T) *Env {
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
 	flags.Set(t, "app.enable_write_to_olap_db", true)
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
-	flags.Set(t, "remote_execution.enable_write_to_redis", true)
 	// Create a user and group in the DB for use in tests (this will also create
 	// an API key for the group).
 	// TODO(http://go/b/949): Add a fake OIDC provider and then just have a real

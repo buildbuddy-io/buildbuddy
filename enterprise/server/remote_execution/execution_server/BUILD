@@ -19,6 +19,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/metrics",
+        "//server/olapdbconfig",
         "//server/remote_cache/action_cache_server",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
