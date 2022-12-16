@@ -48,6 +48,7 @@ import (
 )
 
 var (
+	nameFlag                   = flag.String("cache.pebble.name", DefaultName, "The name used in reporting cache metrics and status.")
 	rootDirectoryFlag          = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
 	blockCacheSizeBytesFlag    = flag.Int64("cache.pebble.block_cache_size_bytes", DefaultBlockCacheSizeBytes, "How much ram to give the block cache")
 	maxInlineFileSizeBytesFlag = flag.Int64("cache.pebble.max_inline_file_size_bytes", DefaultMaxInlineFileSizeBytes, "Files smaller than this may be inlined directly into pebble")
@@ -81,6 +82,7 @@ var (
 	DefaultAtimeBufferSize      = 100000
 	DefaultMinEvictionAge       = 6 * time.Hour
 
+	DefaultName         = "pebble_cache"
 	DefaultMaxSizeBytes = cache_config.MaxSizeBytes()
 
 	// Prefix used to store non-record data.
@@ -133,6 +135,7 @@ const (
 // Options is a struct containing the pebble cache configuration options.
 // Once a cache is created, the options may not be changed.
 type Options struct {
+	Name              string
 	RootDirectory     string
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
@@ -164,6 +167,7 @@ type accessTimeUpdate struct {
 // PebbleCache implements the cache interface by storing metadata in a pebble
 // database and storing cache entry contents on disk.
 type PebbleCache struct {
+	name              string
 	rootDirectory     string
 	partitions        []disk.Partition
 	partitionMappings []disk.PartitionMapping
@@ -233,6 +237,7 @@ func Register(env environment.Env) error {
 		}
 	}
 	opts := &Options{
+		Name:                        *nameFlag,
 		RootDirectory:               *rootDirectoryFlag,
 		Partitions:                  *partitionsFlag,
 		PartitionMappings:           *partitionMappingsFlag,
@@ -309,6 +314,9 @@ func validateOpts(opts *Options) error {
 
 // SetOptionDefaults sets default values on Options if they are not set
 func SetOptionDefaults(opts *Options) {
+	if opts.Name == "" {
+		opts.Name = DefaultName
+	}
 	if opts.MaxSizeBytes == 0 {
 		opts.MaxSizeBytes = DefaultMaxSizeBytes
 	}
@@ -380,6 +388,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	pc := &PebbleCache{
+		name:                        opts.Name,
 		rootDirectory:               opts.RootDirectory,
 		partitions:                  opts.Partitions,
 		partitionMappings:           opts.PartitionMappings,
@@ -418,7 +427,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
 			if err != nil {
 				return err
 			}
@@ -432,7 +441,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 
-	statusz.AddSection("pebble_cache", "On disk LRU cache", pc)
+	statusz.AddSection(opts.Name, "On disk LRU cache", pc)
 	return pc, nil
 }
 
@@ -1233,6 +1242,8 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 
 // zstdCompressor compresses bytes before writing them to the nested writer
 type zstdCompressor struct {
+	cacheName string
+
 	*ioutil.CustomCommitWriteCloser
 	compressBuf []byte
 	bufferPool  *bytebufferpool.Pool
@@ -1241,9 +1252,10 @@ type zstdCompressor struct {
 	numCompressedBytes   int
 }
 
-func NewZstdCompressor(wc *ioutil.CustomCommitWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
+func NewZstdCompressor(cacheName string, wc *ioutil.CustomCommitWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
 	compressBuf := bp.Get(digestSize)
 	return &zstdCompressor{
+		cacheName:               cacheName,
 		CustomCommitWriteCloser: wc,
 		compressBuf:             compressBuf,
 		bufferPool:              bp,
@@ -1267,7 +1279,7 @@ func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
 
 func (z *zstdCompressor) Close() error {
 	metrics.CompressionRatio.
-		With(prometheus.Labels{metrics.CompressionType: "zstd"}).
+		With(prometheus.Labels{metrics.CompressionType: "zstd", metrics.CacheNameLabel: z.cacheName}).
 		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
 	if z.numCompressedBytes > z.numDecompressedBytes {
 		metrics.BadCompressionStreamSize.With(prometheus.Labels{metrics.CompressionType: "zstd"}).Observe(float64(z.numDecompressedBytes))
@@ -1312,8 +1324,8 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	defer iter.Close()
 	alreadyExists := pebbleutil.IterHasKey(iter, fileMetadataKey)
 	if alreadyExists {
-		metrics.DiskCacheDuplicateWrites.Inc()
-		metrics.DiskCacheDuplicateWritesBytes.Add(float64(r.GetDigest().GetSizeBytes()))
+		metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
+		metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(r.GetDigest().GetSizeBytes()))
 	}
 
 	var wcm interfaces.MetadataWriteCloser
@@ -1362,14 +1374,14 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		if err == nil {
 			partitionID := fileRecord.GetIsolation().GetPartitionId()
 			p.sendSizeUpdate(partitionID, fileMetadataKey, bytesWritten)
-			metrics.DiskCacheAddedFileSizeBytes.Observe(float64(bytesWritten))
+			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
 		}
 
 		return err
 	}
 
 	if shouldCompress {
-		return NewZstdCompressor(wc, p.bufferPool, r.GetDigest().GetSizeBytes()), nil
+		return NewZstdCompressor(p.name, wc, p.bufferPool, r.GetDigest().GetSizeBytes()), nil
 	}
 
 	return wc, nil
@@ -1431,6 +1443,7 @@ type partitionEvictor struct {
 	mu         *sync.Mutex
 	part       disk.Partition
 	fileStorer filestore.Store
+	cacheName  string
 	blobDir    string
 	dbGetter   pebbleutil.Leaser
 	accesses   chan<- *accessTimeUpdate
@@ -1446,7 +1459,7 @@ type partitionEvictor struct {
 	minEvictionAge  time.Duration
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:              &sync.Mutex{},
 		part:            part,
@@ -1457,6 +1470,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		accesses:        accesses,
 		atimeBufferSize: atimeBufferSize,
 		minEvictionAge:  minEvictionAge,
+		cacheName:       cacheName,
 	}
 	start := time.Now()
 	log.Infof("Pebble Cache: Initializing cache partition %q...", part.ID)
@@ -1784,7 +1798,7 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 	}
 
 	ageUsec := float64(time.Since(time.Unix(0, sample.timestamp)).Microseconds())
-	metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: e.part.ID}).Set(ageUsec)
+	metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}).Set(ageUsec)
 	e.updateSize(sample.fileMetadataKey, -1*sample.fileMetadata.GetStoredSizeBytes())
 	return nil
 }
@@ -1982,8 +1996,8 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 			if err := fsu.Get(p.rootDirectory); err != nil {
 				log.Warningf("could not retrieve filesystem stats: %s", err)
 			} else {
-				metrics.DiskCacheFilesystemTotalBytes.Set(float64(fsu.Total))
-				metrics.DiskCacheFilesystemAvailBytes.Set(float64(fsu.Avail))
+				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Set(float64(fsu.Total))
+				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Set(float64(fsu.Avail))
 			}
 		}
 	}
