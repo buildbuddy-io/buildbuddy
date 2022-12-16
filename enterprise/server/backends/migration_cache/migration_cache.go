@@ -699,7 +699,7 @@ type copyData struct {
 }
 
 func (mc *MigrationCache) copyDataInBackground() error {
-	rateLimiter := rate.NewLimiter(rate.Every(time.Second), mc.maxCopiesPerSec)
+	rateLimiter := rate.NewLimiter(rate.Limit(mc.maxCopiesPerSec), 1)
 
 	for {
 		if err := rateLimiter.Wait(context.Background()); err != nil {

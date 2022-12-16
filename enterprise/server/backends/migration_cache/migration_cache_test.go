@@ -518,7 +518,7 @@ func TestCopyDataInBackground_ExceedsCopyChannelSize(t *testing.T) {
 	eg.Wait()
 }
 
-func TestCopyDataInBackground_RateLimit(t *testing.T) {
+func TestCopyDataInBackground_RateLimitMax(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx := getAnonContext(t, te)
 	maxSizeBytes := int64(defaultExt4BlockSize * 10)
@@ -573,6 +573,63 @@ func TestCopyDataInBackground_RateLimit(t *testing.T) {
 
 	// Should wait at least 1 second before the second digest is copied
 	require.True(t, time.Since(start) >= 1*time.Second)
+}
+
+func TestCopyDataInBackground_RateLimitMin(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx := getAnonContext(t, te)
+	maxSizeBytes := int64(defaultExt4BlockSize * 10)
+	rootDirSrc := testfs.MakeTempDir(t)
+	rootDirDest := testfs.MakeTempDir(t)
+
+	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
+	require.NoError(t, err)
+	destCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirDest}, maxSizeBytes)
+	require.NoError(t, err)
+
+	config := &migration_cache.MigrationConfig{
+		CopyChanBufferSize: 10,
+		MaxCopiesPerSec:    10,
+	}
+	config.SetConfigDefaults()
+	mc := migration_cache.NewMigrationCache(config, srcCache, destCache)
+	mc.Start() // Starts copying in background
+	defer mc.Stop()
+
+	eg, ctx := errgroup.WithContext(ctx)
+	lock := sync.RWMutex{}
+	start := time.Now()
+
+	for i := 0; i < 10; i++ {
+		eg.Go(func() error {
+			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			r := &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			}
+			lock.Lock()
+			defer lock.Unlock()
+
+			err = srcCache.Set(ctx, r, buf)
+			require.NoError(t, err)
+
+			// Get should queue copy in background
+			data, err := mc.Get(ctx, &resource.ResourceName{
+				Digest:    d,
+				CacheType: resource.CacheType_CAS,
+			})
+			require.NoError(t, err)
+			require.True(t, bytes.Equal(buf, data))
+
+			// Expect copy
+			waitForCopy(t, ctx, destCache, r)
+			return nil
+		})
+	}
+	eg.Wait()
+
+	// Copies should not be rate limited, and should complete within 1 second
+	require.True(t, time.Since(start) <= 1*time.Second)
 }
 
 func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
