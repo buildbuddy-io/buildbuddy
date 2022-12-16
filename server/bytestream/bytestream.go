@@ -1,7 +1,6 @@
 package bytestream
 
 import (
-	"compress/flate"
 	"context"
 	"io"
 	"net/url"
@@ -13,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ziputil"
 	"google.golang.org/protobuf/proto"
 
 	arpb "github.com/buildbuddy-io/buildbuddy/proto/archive"
@@ -48,16 +48,16 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 	}
 
 	// Find and parse the End of Central Directory header or fail.
-	eocd, err := readDirectoryEnd(footer, r.GetDigest().GetSizeBytes())
+	eocd, err := ziputil.ReadDirectoryEnd(footer, r.GetDigest().GetSizeBytes())
 	if err != nil {
 		return nil, err
 	}
 
-	cdStart := eocd.directoryOffset - offset
-	cdEnd := cdStart + eocd.directorySize
+	cdStart := eocd.DirectoryOffset - offset
+	cdEnd := cdStart + eocd.DirectorySize
 
 	out := &arpb.ArchiveManifest{}
-	entries, err := readDirectoryHeader(footer[cdStart:cdEnd], eocd)
+	entries, err := ziputil.ReadDirectoryHeader(footer[cdStart:cdEnd], eocd)
 	out.Entry = entries
 	return out, nil
 }
@@ -65,79 +65,44 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *arpb.ManifestEntry) (int, error) {
 	reader, writer := io.Pipe()
 	go func() {
-		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset(), fileHeaderLen, func(data []byte) {
+		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, func(data []byte) {
 			writer.Write(data)
 		})
 		writer.CloseWithError(err)
 	}()
-
-	header := make([]byte, fileHeaderLen)
+	header := make([]byte, ziputil.FileHeaderLen)
 	if _, err := io.ReadFull(reader, header); err != nil {
 		return -1, err
 	}
-	buf := readBuf(header[:])
-	if sig := buf.uint32(); sig != fileHeaderSignature {
-		return 1, ErrFormat
-	}
-
-	buf = buf[4:] // Skip version, bitmap
-	compressionType := compressionTypeToEnum(buf.uint16())
-	if compressionType == arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN {
-		return -1, ErrAlgorithm
-	}
-	buf = buf[4:] // Skip modification time, modification date.
-
-	crc32 := buf.uint32()
-	compsize := int64(buf.uint32())
-	uncompsize := int64(buf.uint32())
-	if entry.GetCompressedSize() == 0xffffffff || entry.GetUncompressedSize() == 0xffffffff {
-		// These values indicate zip64 format.
-		return -1, ErrZip64
-	}
-	if entry.GetCrc32() != crc32 || entry.GetCompressedSize() != compsize || entry.GetUncompressedSize() != uncompsize {
-		return -1, ErrFormat
-	}
-
-	filenameLen := int(buf.uint16())
-	extraLen := int(buf.uint16())
-
-	return filenameLen + extraLen, nil
+	return ziputil.ValidateLocalFileHeader(header, entry)
 }
 
 func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *arpb.ManifestEntry, out io.Writer) error {
-	reader, writer := io.Pipe()
 	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, env, url, entry)
 	if err != nil {
 		return err
 	}
 
+	// Stream the dynamic portion of the header and the compressed file as one read.
+	reader, writer := io.Pipe()
 	go func() {
-		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset()+fileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), func(data []byte) {
+		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), func(data []byte) {
 			writer.Write(data)
 		})
 		writer.CloseWithError(err)
 	}()
 
-	names := make([]byte, dynamicHeaderBytes)
-	if _, err := io.ReadFull(reader, names); err != nil {
+	// Validate that the dynamic portion of the file header makes sense.
+	extras := make([]byte, dynamicHeaderBytes)
+	if _, err := io.ReadFull(reader, extras); err != nil {
+		return err
+	}
+	if err := ziputil.ValidateLocalFileNameAndExtras(extras, entry); err != nil {
 		return err
 	}
 
-	if string(names[:len(entry.GetName())]) != entry.GetName() {
-		return ErrFormat
-	}
-
-	var outReader io.Reader
-	if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_FLATE {
-		// TODO(jdhollen): maybe validate crc32?
-		outReader = flate.NewReader(io.LimitReader(reader, int64(entry.GetCompressedSize())))
-	} else if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_NONE {
-		outReader = io.LimitReader(reader, int64(entry.GetCompressedSize()))
-	} else {
-		return ErrAlgorithm
-	}
-
-	if _, err := io.Copy(out, outReader); err != nil {
+	// And, finally, actually decompress.
+	if err := ziputil.DecompressAndStream(out, reader, entry); err != nil {
 		return err
 	}
 

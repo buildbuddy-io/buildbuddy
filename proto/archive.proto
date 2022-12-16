@@ -4,6 +4,7 @@ import "proto/context.proto";
 
 package archive;
 
+// An entry for a single file in a ZIP-format archive.
 message ManifestEntry {
   // The full path of the file as specified in the archive.
   string name = 1;
@@ -35,6 +36,8 @@ message ManifestEntry {
   uint32 crc32 = 7;
 }
 
+// A summary of the contents of an archive in ZIP format (could be a zip, a jar,
+// or whatever else).
 message ArchiveManifest {
   // Individual summaries of the files in this archive.
   repeated ManifestEntry entry = 1;

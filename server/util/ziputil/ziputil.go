@@ -30,21 +30,23 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-package bytestream
+package ziputil
 
 import (
+	"compress/flate"
 	"encoding/binary"
 	"errors"
+	"io"
 
 	arpb "github.com/buildbuddy-io/buildbuddy/proto/archive"
 )
 
 const (
-	fileHeaderSignature      = 0x04034b50
-	directoryHeaderSignature = 0x02014b50
-	directoryEndLen          = 22
-	directoryHeaderLen       = 46
-	fileHeaderLen            = 30
+	FileHeaderSignature      = 0x04034b50
+	DirectoryHeaderSignature = 0x02014b50
+	DirectoryEndLen          = 22
+	DirectoryHeaderLen       = 46
+	FileHeaderLen            = 30
 )
 
 var (
@@ -54,10 +56,10 @@ var (
 	ErrZip64     = errors.New("zip: zip64 not supported")
 )
 
-type directoryEnd struct {
-	directoryRecords int64
-	directorySize    int64
-	directoryOffset  int64
+type DirectoryEnd struct {
+	DirectoryRecords int64
+	DirectorySize    int64
+	DirectoryOffset  int64
 	commentLen       uint16
 	comment          string
 }
@@ -77,15 +79,15 @@ func (b *readBuf) uint32() uint32 {
 }
 
 func findSignatureInBlock(b []byte) int {
-	if len(b) < directoryEndLen {
+	if len(b) < DirectoryEndLen {
 		return -1
 	}
-	for i := len(b) - directoryEndLen; i >= 0; i-- {
+	for i := len(b) - DirectoryEndLen; i >= 0; i-- {
 		// defined from directoryEndSignature in struct.go
 		if b[i] == 'P' && b[i+1] == 'K' && b[i+2] == 0x05 && b[i+3] == 0x06 {
 			// n is length of comment
-			n := int(b[i+directoryEndLen-2]) | int(b[i+directoryEndLen-1])<<8
-			if n+directoryEndLen+i <= len(b) {
+			n := int(b[i+DirectoryEndLen-2]) | int(b[i+DirectoryEndLen-1])<<8
+			if n+DirectoryEndLen+i <= len(b) {
 				return i
 			}
 		}
@@ -104,7 +106,46 @@ func compressionTypeToEnum(compression uint16) arpb.ManifestEntry_CompressionTyp
 	}
 }
 
-func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, err error) {
+// The returned value is equal to the number of bytes that are expected in the
+// remaining (dynamically sized) header fields, or -1 if the header didn't validate.
+func ValidateLocalFileHeader(header []byte, entry *arpb.ManifestEntry) (int, error) {
+	buf := readBuf(header[:])
+	if sig := buf.uint32(); sig != FileHeaderSignature {
+		return 1, ErrFormat
+	}
+
+	buf = buf[4:] // Skip version, bitmap
+	compressionType := compressionTypeToEnum(buf.uint16())
+	if compressionType == arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN {
+		return -1, ErrAlgorithm
+	}
+	buf = buf[4:] // Skip modification time, modification date.
+
+	crc32 := buf.uint32()
+	compsize := int64(buf.uint32())
+	uncompsize := int64(buf.uint32())
+	if entry.GetCompressedSize() == 0xffffffff || entry.GetUncompressedSize() == 0xffffffff {
+		// These values indicate zip64 format.
+		return -1, ErrZip64
+	}
+	if entry.GetCrc32() != crc32 || entry.GetCompressedSize() != compsize || entry.GetUncompressedSize() != uncompsize {
+		return -1, ErrFormat
+	}
+
+	filenameLen := int(buf.uint16())
+	extraLen := int(buf.uint16())
+
+	return filenameLen + extraLen, nil
+}
+
+func ValidateLocalFileNameAndExtras(input []byte, entry *arpb.ManifestEntry) error {
+	if string(input[:len(entry.GetName())]) != entry.GetName() {
+		return ErrFormat
+	}
+	return nil
+}
+
+func ReadDirectoryEnd(input []byte, trueSize int64) (dir *DirectoryEnd, err error) {
 
 	if int64(len(input)) > trueSize {
 		return nil, ErrFormat
@@ -116,10 +157,10 @@ func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, err erro
 	}
 
 	b := readBuf(input[10:]) // skip signature, disk fields
-	d := &directoryEnd{
-		directoryRecords: int64(b.uint16()),
-		directorySize:    int64(b.uint32()),
-		directoryOffset:  int64(b.uint32()),
+	d := &DirectoryEnd{
+		DirectoryRecords: int64(b.uint16()),
+		DirectorySize:    int64(b.uint32()),
+		DirectoryOffset:  int64(b.uint32()),
 		commentLen:       b.uint16(),
 	}
 	l := int(d.commentLen)
@@ -129,12 +170,12 @@ func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, err erro
 	d.comment = string(b[:l])
 
 	// These values mean that the file can be a zip64 file
-	if d.directoryRecords == 0xffff || d.directorySize == 0xffff || d.directoryOffset == 0xffffffff {
+	if d.DirectoryRecords == 0xffff || d.DirectorySize == 0xffff || d.DirectoryOffset == 0xffffffff {
 		return nil, ErrZip64
 	}
 
 	// Make sure directoryOffset points to somewhere in our file.
-	if d.directoryOffset < 0 || d.directoryOffset+d.directorySize > trueSize {
+	if d.DirectoryOffset < 0 || d.DirectoryOffset+d.DirectorySize > trueSize {
 		return nil, ErrFormat
 	}
 	return d, nil
@@ -143,21 +184,21 @@ func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, err erro
 // readDirectoryHeader attempts to read a directory header from r.
 // It returns io.ErrUnexpectedEOF if it cannot read a complete header,
 // and ErrFormat if it doesn't find a valid header signature.
-func readDirectoryHeader(buf []byte, d *directoryEnd) ([]*arpb.ManifestEntry, error) {
+func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*arpb.ManifestEntry, error) {
 	var headers []*arpb.ManifestEntry
 
 	b := readBuf(buf[:])
-	if len(b) < int(d.directorySize) {
+	if len(b) < int(d.DirectorySize) {
 		return nil, ErrFormat
 	}
 
-	for i := 0; i < int(d.directoryRecords); i++ {
+	for i := 0; i < int(d.DirectoryRecords); i++ {
 		var h = &arpb.ManifestEntry{}
 		headers = append(headers, h)
-		if len(b) < directoryHeaderLen {
+		if len(b) < DirectoryHeaderLen {
 			return nil, ErrFormat
 		}
-		if sig := b.uint32(); sig != directoryHeaderSignature {
+		if sig := b.uint32(); sig != DirectoryHeaderSignature {
 			return nil, ErrFormat
 		}
 		b = b[6:] // Skip CreatorVersion, ReaderVersion, Flags
@@ -187,4 +228,21 @@ func readDirectoryHeader(buf []byte, d *directoryEnd) ([]*arpb.ManifestEntry, er
 	}
 
 	return headers, nil
+}
+
+func DecompressAndStream(writer io.Writer, reader io.Reader, entry *arpb.ManifestEntry) error {
+	var outReader io.Reader
+	if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_FLATE {
+		// TODO(jdhollen): maybe validate crc32?
+		outReader = flate.NewReader(io.LimitReader(reader, int64(entry.GetCompressedSize())))
+	} else if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_NONE {
+		outReader = io.LimitReader(reader, int64(entry.GetCompressedSize()))
+	} else {
+		return ErrAlgorithm
+	}
+
+	if _, err := io.Copy(writer, outReader); err != nil {
+		return err
+	}
+	return nil
 }
