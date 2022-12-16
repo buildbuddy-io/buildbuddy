@@ -14,6 +14,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/monitoring",
         "//server/util/qps",
         "//server/util/retry",
         "//server/util/status",

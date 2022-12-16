@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -37,10 +38,12 @@ var (
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 
-	blobSize    = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
-	recycleRate = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
-	timeout     = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
-	keepGoing   = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
+	blobSize       = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
+	recycleRate    = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
+	timeout        = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
+	keepGoing      = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
+	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	monitoringPort = flag.Int("monitoring_port", 0, "The port to listen for monitoring traffic on")
 )
 
 const (
@@ -107,7 +110,7 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 }
 
 func incrementPromErrorMetric(err error) {
-	if err != nil {
+	if err == nil {
 		return
 	}
 	CacheloadErrorCount.With(prometheus.Labels{
@@ -164,6 +167,10 @@ func main() {
 	}
 	log.Printf("Cache loadtesting target %q", *cacheTarget)
 	log.Printf("Planned load W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
+
+	if *monitoringPort > 0 {
+		monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+	}
 
 	conn, err := grpc_client.DialTargetWithOptions(*cacheTarget, false, grpc.WithBlock(), grpc.WithTimeout(*timeout))
 	if err != nil {
