@@ -11,13 +11,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -34,10 +38,12 @@ var (
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 
-	blobSize    = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
-	recycleRate = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
-	timeout     = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
-	keepGoing   = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
+	blobSize       = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
+	recycleRate    = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
+	timeout        = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
+	keepGoing      = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
+	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	monitoringPort = flag.Int("monitoring_port", 0, "The port to listen for monitoring traffic on")
 )
 
 const (
@@ -56,6 +62,15 @@ var (
 	histBuckets     = []int{1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
 	histCounts      = []int{23, 33611, 33498, 20473, 10036, 3265, 504, 62}
 	histCountsTotal int
+
+	CacheloadErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "buildbuddy",
+		Subsystem: "cacheload",
+		Name:      "error_count",
+		Help:      "The total number of cacheload errors.",
+	}, []string{
+		metrics.StatusHumanReadableLabel,
+	})
 )
 
 func init() {
@@ -94,12 +109,22 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 	return d, buf
 }
 
+func incrementPromErrorMetric(err error) {
+	if err == nil {
+		return
+	}
+	CacheloadErrorCount.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Inc()
+}
+
 func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
 	retrier := retry.DefaultWithContext(ctx)
 	var err error
 	for retrier.Next() {
 		_, err = cachetools.UploadBlob(ctx, client, *instanceName, bytes.NewReader(buf))
+		incrementPromErrorMetric(err)
 		if err == nil {
 			return d, nil
 		} else if status.IsUnavailableError(err) {
@@ -116,6 +141,7 @@ func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest)
 	var err error
 	for retrier.Next() {
 		err := cachetools.GetBlob(ctx, client, resourceName, io.Discard)
+		incrementPromErrorMetric(err)
 		if err == nil {
 			return nil
 		} else if status.IsUnavailableError(err) {
@@ -141,6 +167,10 @@ func main() {
 	}
 	log.Printf("Cache loadtesting target %q", *cacheTarget)
 	log.Printf("Planned load W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
+
+	if *monitoringPort > 0 {
+		monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+	}
 
 	conn, err := grpc_client.DialTargetWithOptions(*cacheTarget, false, grpc.WithBlock(), grpc.WithTimeout(*timeout))
 	if err != nil {
