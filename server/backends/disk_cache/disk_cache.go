@@ -54,6 +54,9 @@ const (
 	// for automatic deletion
 	staleFilePeriod = 15 * time.Minute
 
+	// cacheName is used for reporting metrics and statusz
+	cacheName = "disk_cache"
+
 	DefaultPartitionID       = "default"
 	PartitionDirectoryPrefix = "PT"
 	HashPrefixDirPrefixLen   = 4
@@ -271,7 +274,7 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	c.partitions = partitions
 	c.defaultPartition = defaultPartition
 
-	statusz.AddSection("disk_cache", "On disk LRU cache", c)
+	statusz.AddSection(cacheName, "On disk LRU cache", c)
 	return c, nil
 }
 
@@ -580,7 +583,7 @@ func (p *partition) evictFn(value interface{}) {
 		if err == nil {
 			lastUse := time.Unix(0, getLastUseNanos(i))
 			ageUsec := float64(time.Now().Sub(lastUse).Microseconds())
-			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id}).Set(ageUsec)
+			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}).Set(ageUsec)
 		}
 		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
 			log.Warningf("Could not delete evicted file: %s", err)
@@ -1153,7 +1156,7 @@ func (p *partition) set(ctx context.Context, r *resource.ResourceName, data []by
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.lruAdd(record)
-	metrics.DiskCacheAddedFileSizeBytes.Observe(float64(n))
+	metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Observe(float64(n))
 	return err
 }
 
@@ -1231,8 +1234,8 @@ func (p *partition) writer(ctx context.Context, r *resource.ResourceName) (inter
 	p.mu.Unlock()
 
 	if alreadyExists {
-		metrics.DiskCacheDuplicateWrites.Inc()
-		metrics.DiskCacheDuplicateWritesBytes.Add(float64(r.GetDigest().GetSizeBytes()))
+		metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Inc()
+		metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Add(float64(r.GetDigest().GetSizeBytes()))
 	}
 
 	fw, err := disk.FileWriter(ctx, k.FullPath())
@@ -1248,7 +1251,7 @@ func (p *partition) writer(ctx context.Context, r *resource.ResourceName) (inter
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		p.lruAdd(record)
-		metrics.DiskCacheAddedFileSizeBytes.Observe(float64(totalBytesWritten))
+		metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Observe(float64(totalBytesWritten))
 		return nil
 	}
 	return cwc, nil

@@ -33,6 +33,7 @@ type DiskCacheConfig struct {
 }
 
 type PebbleCacheConfig struct {
+	Name                   string                  `yaml:"name"`
 	RootDirectory          string                  `yaml:"root_directory"`
 	Partitions             []disk.Partition        `yaml:"partitions"`
 	PartitionMappings      []disk.PartitionMapping `yaml:"partition_mappings"`

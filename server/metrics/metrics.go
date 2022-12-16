@@ -37,6 +37,9 @@ const (
 	/// Cache event type: `hit`, `miss`, or `upload`.
 	CacheEventTypeLabel = "cache_event_type"
 
+	/// Cache name: Custom name to describe the cache, like "pebble-cache".
+	CacheNameLabel = "cache_name"
+
 	/// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
 
@@ -381,13 +384,16 @@ var (
 		Help:      "The age of the item most recently evicted from the cache, in **microseconds**.",
 	}, []string{
 		PartitionID,
+		CacheNameLabel,
 	})
 
-	DiskCacheDuplicateWrites = promauto.NewCounter(prometheus.CounterOpts{
+	DiskCacheDuplicateWrites = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "disk_cache_duplicate_writes",
 		Help:      "Number of writes for digests that already exist.",
+	}, []string{
+		CacheNameLabel,
 	})
 
 	DiskCacheUsecSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -398,26 +404,32 @@ var (
 		Buckets:   durationUsecBuckets(1*time.Microsecond, 30*day, 10),
 	})
 
-	DiskCacheAddedFileSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+	DiskCacheAddedFileSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "disk_cache_added_file_size_bytes",
 		Help:      "Size of artifacts added to the file cache, in **bytes**.",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 40),
+	}, []string{
+		CacheNameLabel,
 	})
 
-	DiskCacheFilesystemTotalBytes = promauto.NewGauge(prometheus.GaugeOpts{
+	DiskCacheFilesystemTotalBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "disk_cache_filesystem_total_bytes",
 		Help:      "Total size of the underlying filesystem.",
+	}, []string{
+		CacheNameLabel,
 	})
 
-	DiskCacheFilesystemAvailBytes = promauto.NewGauge(prometheus.GaugeOpts{
+	DiskCacheFilesystemAvailBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "disk_cache_filesystem_avail_bytes",
 		Help:      "Available bytes in the underlying filesystem.",
+	}, []string{
+		CacheNameLabel,
 	})
 
 	/// #### Examples
@@ -427,11 +439,13 @@ var (
 	/// sum(buildbuddy_remote_cache_duplicate_writes)
 	/// ```
 
-	DiskCacheDuplicateWritesBytes = promauto.NewCounter(prometheus.CounterOpts{
+	DiskCacheDuplicateWritesBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "disk_cache_duplicate_writes_bytes",
 		Help:      "Number of bytes written that already existed in the cache.",
+	}, []string{
+		CacheNameLabel,
 	})
 
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -1465,6 +1479,7 @@ var (
 		Help: "The aggregate compression ratio (compressed / decompressed bytes) for a stream of data " +
 			"(as opposed to being calculated on a per-chunk basis for data in the stream)",
 	}, []string{
+		CacheNameLabel,
 		CompressionType,
 	})
 

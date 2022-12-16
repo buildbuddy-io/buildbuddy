@@ -136,6 +136,7 @@ func diskCacheFromConfig(env environment.Env, cfg *DiskCacheConfig) (*disk_cache
 
 func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble_cache.PebbleCache, error) {
 	opts := &pebble_cache.Options{
+		Name:                        cfg.Name,
 		RootDirectory:               cfg.RootDirectory,
 		Partitions:                  cfg.Partitions,
 		PartitionMappings:           cfg.PartitionMappings,
