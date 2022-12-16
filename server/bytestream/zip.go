@@ -55,23 +55,14 @@ var (
 )
 
 type directoryEnd struct {
-	diskNbr            uint32 // unused
-	dirDiskNbr         uint32 // unused
-	dirRecordsThisDisk uint64 // unused
-	directoryRecords   uint64
-	directorySize      uint64
-	directoryOffset    uint64 // relative to file
-	commentLen         uint16
-	comment            string
+	directoryRecords int64
+	directorySize    int64
+	directoryOffset  int64
+	commentLen       uint16
+	comment          string
 }
 
 type readBuf []byte
-
-func (b *readBuf) uint8() uint8 {
-	v := (*b)[0]
-	*b = (*b)[1:]
-	return v
-}
 
 func (b *readBuf) uint16() uint16 {
 	v := binary.LittleEndian.Uint16(*b)
@@ -83,18 +74,6 @@ func (b *readBuf) uint32() uint32 {
 	v := binary.LittleEndian.Uint32(*b)
 	*b = (*b)[4:]
 	return v
-}
-
-func (b *readBuf) uint64() uint64 {
-	v := binary.LittleEndian.Uint64(*b)
-	*b = (*b)[8:]
-	return v
-}
-
-func (b *readBuf) sub(n int) readBuf {
-	b2 := (*b)[:n]
-	*b = (*b)[n:]
-	return b2
 }
 
 func findSignatureInBlock(b []byte) int {
@@ -136,16 +115,12 @@ func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, err erro
 		return nil, ErrFormat
 	}
 
-	// read header into struct
-	b := readBuf(input[4:]) // skip signature
+	b := readBuf(input[10:]) // skip signature, disk fields
 	d := &directoryEnd{
-		diskNbr:            uint32(b.uint16()),
-		dirDiskNbr:         uint32(b.uint16()),
-		dirRecordsThisDisk: uint64(b.uint16()),
-		directoryRecords:   uint64(b.uint16()),
-		directorySize:      uint64(b.uint32()),
-		directoryOffset:    uint64(b.uint32()),
-		commentLen:         b.uint16(),
+		directoryRecords: int64(b.uint16()),
+		directorySize:    int64(b.uint32()),
+		directoryOffset:  int64(b.uint32()),
+		commentLen:       b.uint16(),
 	}
 	l := int(d.commentLen)
 	if l > len(b) {
@@ -159,7 +134,7 @@ func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, err erro
 	}
 
 	// Make sure directoryOffset points to somewhere in our file.
-	if d.directoryOffset < 0 || d.directoryOffset+d.directorySize > uint64(trueSize) {
+	if d.directoryOffset < 0 || d.directoryOffset+d.directorySize > trueSize {
 		return nil, ErrFormat
 	}
 	return d, nil

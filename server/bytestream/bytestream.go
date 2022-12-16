@@ -41,10 +41,7 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 		writer.CloseWithError(err)
 	}()
 
-	if err != nil {
-		return nil, err
-	}
-
+	// Dump the full contents out into a buffer (should be 64K or less).
 	footer, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, err
@@ -56,8 +53,7 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 		return nil, err
 	}
 
-	// baseOffset can't be negative, so this is a safe conversion.
-	cdStart := eocd.directoryOffset - uint64(offset)
+	cdStart := eocd.directoryOffset - offset
 	cdEnd := cdStart + eocd.directorySize
 
 	out := &arpb.ArchiveManifest{}
@@ -89,7 +85,7 @@ func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.
 	if compressionType == arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN {
 		return -1, ErrAlgorithm
 	}
-	buf = buf[4:] // Skip modification time, modificatoin date.
+	buf = buf[4:] // Skip modification time, modification date.
 
 	crc32 := buf.uint32()
 	compsize := int64(buf.uint32())

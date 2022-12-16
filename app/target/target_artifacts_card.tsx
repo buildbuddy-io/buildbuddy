@@ -17,6 +17,8 @@ interface State {
 }
 
 export default class TargetArtifactsCardComponent extends React.Component<Props, State> {
+  static readonly ZIPPED_OUTPUTS_FILE: string = "test.outputs__outputs.zip";
+
   state: State = {
     loading: false,
     manifest: null,
@@ -33,17 +35,17 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
   }
 
   maybeFetchOutputManifest() {
-    let testLogUrl = this.props.files.find(
-      (file: build_event_stream.File) => true && file.name === "test.outputs__outputs.zip"
+    let testOutputsUri = this.props.files.find(
+      (file: build_event_stream.File) => true && file.name === TargetArtifactsCardComponent.ZIPPED_OUTPUTS_FILE
     )?.uri;
 
-    if (!testLogUrl || !testLogUrl.startsWith("bytestream://")) {
+    if (!testOutputsUri || !testOutputsUri.startsWith("bytestream://")) {
       return;
     }
 
     this.setState({ ...this.state, loading: true });
     const request = new archive.GetArchiveManifestRequest();
-    request.uri = testLogUrl;
+    request.uri = testOutputsUri;
     rpcService.service
       .getArchiveManifest(request)
       .then((response) => {
@@ -135,7 +137,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
                     </a>
                   )}
                 </div>
-                {output.name === "test.outputs__outputs.zip" &&
+                {output.name === TargetArtifactsCardComponent.ZIPPED_OUTPUTS_FILE &&
                   this.state.manifest &&
                   this.state.manifest.entry?.map((entry) => (
                     <div className="artifact-line sub-item">

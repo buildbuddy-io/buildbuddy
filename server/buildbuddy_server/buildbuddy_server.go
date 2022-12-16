@@ -1056,7 +1056,6 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var archiveReference = params.Get("z")
 	if len(archiveReference) > 0 {
-		// TODO(jdhollen): Parse filename, output mime type from manifest.
 		b, err := base64.StdEncoding.DecodeString(archiveReference)
 		if err != nil {
 			log.Warningf("Error downloading file: %s", err.Error())
@@ -1070,6 +1069,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", entry.GetName()))
+		// TODO(jdhollen): Parse output mime type from bazel-generated MANIFEST file.
 		w.Header().Set("Content-Type", "application/octet-stream")
 		err = bytestream.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
 		if err != nil {
