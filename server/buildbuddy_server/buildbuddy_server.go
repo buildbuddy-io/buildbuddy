@@ -1064,7 +1064,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		entry := &arpb.ManifestEntry{}
 		if err := proto.Unmarshal(b, entry); err != nil {
-			log.Warningf("Error downloading file: %s", err.Error())
+			log.Warningf("Failed to unmarshal ManifestEntry: %s", err.Error())
 			http.Error(w, "File not found", http.StatusBadRequest)
 			return
 		}
