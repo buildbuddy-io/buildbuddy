@@ -123,7 +123,7 @@ func RoleIndependentRPCs() []string {
 }
 
 func GroupDeveloperRPCs() []string {
-	return roleIndependentRPCs
+	return groupDeveloperRPCs
 }
 
 func GroupAdminOnlyRPCs() []string {
@@ -135,7 +135,7 @@ func GroupAdminOnlyRPCs() []string {
 }
 
 func ServerAdminOnlyRPCs() []string {
-	return roleIndependentRPCs
+	return serverAdminOnlyRPCs
 }
 
 // AuthorizeRPC applies a coarse-grained authorization check on an RPC to ensure
