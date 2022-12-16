@@ -98,6 +98,9 @@ func (b *readBuf) sub(n int) readBuf {
 }
 
 func findSignatureInBlock(b []byte) int {
+	if len(b) < directoryEndLen {
+		return -1
+	}
 	for i := len(b) - directoryEndLen; i >= 0; i-- {
 		// defined from directoryEndSignature in struct.go
 		if b[i] == 'P' && b[i+1] == 'K' && b[i+2] == 0x05 && b[i+3] == 0x06 {
@@ -111,20 +114,26 @@ func findSignatureInBlock(b []byte) int {
 	return -1
 }
 
-func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, baseOffset int64, err error) {
-
-	var directoryEndOffset int64 = -1
-	bLen := int64(len(input))
-	if bLen > trueSize {
-		return nil, 0, ErrFormat // This... shouldn't happen.
+func compressionTypeToEnum(compression uint16) arpb.ManifestEntry_CompressionType {
+	switch compression {
+	case 0:
+		return arpb.ManifestEntry_COMPRESSION_TYPE_NONE
+	case 8:
+		return arpb.ManifestEntry_COMPRESSION_TYPE_FLATE
+	default:
+		return arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN
 	}
+}
 
+func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, err error) {
+
+	if int64(len(input)) > trueSize {
+		return nil, ErrFormat
+	}
 	if p := findSignatureInBlock(input); p >= 0 {
 		input = input[p:]
-		directoryEndOffset = trueSize - bLen + int64(p)
-	}
-	if directoryEndOffset < 0 {
-		return nil, 0, ErrFormat
+	} else {
+		return nil, ErrFormat
 	}
 
 	// read header into struct
@@ -140,22 +149,20 @@ func readDirectoryEnd(input []byte, trueSize int64) (dir *directoryEnd, baseOffs
 	}
 	l := int(d.commentLen)
 	if l > len(b) {
-		return nil, 0, errors.New("zip: invalid comment length")
+		return nil, errors.New("zip: invalid comment length")
 	}
 	d.comment = string(b[:l])
 
 	// These values mean that the file can be a zip64 file
 	if d.directoryRecords == 0xffff || d.directorySize == 0xffff || d.directoryOffset == 0xffffffff {
-		return nil, 0, ErrZip64
+		return nil, ErrZip64
 	}
-
-	baseOffset = directoryEndOffset - int64(d.directorySize) - int64(d.directoryOffset)
 
 	// Make sure directoryOffset points to somewhere in our file.
-	if o := baseOffset + int64(d.directoryOffset); o < 0 || o >= trueSize {
-		return nil, 0, ErrFormat
+	if d.directoryOffset < 0 || d.directoryOffset+d.directorySize > uint64(trueSize) {
+		return nil, ErrFormat
 	}
-	return d, baseOffset, nil
+	return d, nil
 }
 
 // readDirectoryHeader attempts to read a directory header from r.
@@ -179,15 +186,11 @@ func readDirectoryHeader(buf []byte, d *directoryEnd) ([]*arpb.ManifestEntry, er
 			return nil, ErrFormat
 		}
 		b = b[6:] // Skip CreatorVersion, ReaderVersion, Flags
-		var compressionType = b.uint16()
-		switch compressionType {
-		case 0:
-			h.Compression = arpb.ManifestEntry_COMPRESSION_TYPE_NONE
-		case 8:
-			h.Compression = arpb.ManifestEntry_COMPRESSION_TYPE_FLATE
-		default:
+		var compressionType = compressionTypeToEnum(b.uint16())
+		if compressionType == arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN {
 			return nil, ErrAlgorithm
 		}
+		h.Compression = compressionType
 		b = b[4:] // Skip ModifiedTime, ModifiedDate
 		h.Crc32 = b.uint32()
 		h.CompressedSize = int64(b.uint32())

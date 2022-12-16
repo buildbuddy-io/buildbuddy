@@ -34,9 +34,8 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 	}
 
 	reader, writer := io.Pipe()
-	// XXX: Fix offset (need to update directory reading below too to account)
 	go func() {
-		err = StreamBytestreamFileChunk(ctx, env, url, 0, 0, func(data []byte) {
+		err = StreamBytestreamFileChunk(ctx, env, url, offset, r.GetDigest().GetSizeBytes()-offset, func(data []byte) {
 			writer.Write(data)
 		})
 		writer.CloseWithError(err)
@@ -52,17 +51,16 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 	}
 
 	// Find and parse the End of Central Directory header or fail.
-	eocd, _, err := readDirectoryEnd(footer, r.GetDigest().GetSizeBytes())
+	eocd, err := readDirectoryEnd(footer, r.GetDigest().GetSizeBytes())
 	if err != nil {
 		return nil, err
 	}
 
-	// XXX: account for base offset
-	cdStart := eocd.directoryOffset
-	cdEnd := eocd.directoryOffset + eocd.directorySize
+	// baseOffset can't be negative, so this is a safe conversion.
+	cdStart := eocd.directoryOffset - uint64(offset)
+	cdEnd := cdStart + eocd.directorySize
 
 	out := &arpb.ArchiveManifest{}
-	// XXX: account for base offset
 	entries, err := readDirectoryHeader(footer[cdStart:cdEnd], eocd)
 	out.Entry = entries
 	return out, nil
@@ -86,8 +84,12 @@ func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.
 		return 1, ErrFormat
 	}
 
-	buf = buf[10:] // Skip junk we don't care about.
-	// XXX: Check compression.
+	buf = buf[4:] // Skip version, bitmap
+	compressionType := compressionTypeToEnum(buf.uint16())
+	if compressionType == arpb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN {
+		return -1, ErrAlgorithm
+	}
+	buf = buf[4:] // Skip modification time, modificatoin date.
 
 	crc32 := buf.uint32()
 	compsize := int64(buf.uint32())
@@ -131,7 +133,7 @@ func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env,
 
 	var outReader io.Reader
 	if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_FLATE {
-		// XXX: Validate CRC32?
+		// TODO(jdhollen): maybe validate crc32?
 		outReader = flate.NewReader(io.LimitReader(reader, int64(entry.GetCompressedSize())))
 	} else if entry.GetCompression() == arpb.ManifestEntry_COMPRESSION_TYPE_NONE {
 		outReader = io.LimitReader(reader, int64(entry.GetCompressedSize()))
@@ -142,11 +144,6 @@ func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env,
 	if _, err := io.Copy(out, outReader); err != nil {
 		return err
 	}
-
-	// XXX: Is this right?
-	// XXX: Need to close the flate reader.
-	reader.Close()
-	writer.Close()
 
 	return nil
 }
