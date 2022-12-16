@@ -675,15 +675,6 @@ func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID st
 	return nil
 }
 
-func (e *EventChannel) writeCompletedBlob(ctx context.Context, blobID string, invocation *inpb.Invocation) error {
-	protoBytes, err := proto.Marshal(invocation)
-	if err != nil {
-		return err
-	}
-	_, err = e.env.GetBlobstore().WriteBlob(ctx, blobID, protoBytes)
-	return err
-}
-
 func (e *EventChannel) Context() context.Context {
 	return e.ctx
 }
