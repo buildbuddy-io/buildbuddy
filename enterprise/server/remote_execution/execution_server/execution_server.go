@@ -315,19 +315,19 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.InvocationID)
 		if err != nil {
-			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector", link.InvocationID)
+			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.InvocationID, err)
 			continue
 		}
 		if inv == nil {
 			// The invocation hasn't finished yet. Add the execution to ExecutionCollector, and flush it once
 			// the invocation is complete
 			if err := s.env.GetExecutionCollector().Append(ctx, link.InvocationID, executionProto); err != nil {
-				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q", executionID, link.InvocationID)
+				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.InvocationID, err)
 			}
 		} else {
 			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
 			if err != nil {
-				log.CtxErrorf(ctx, "failed to flush execution %q to invocation %q", executionID, link.InvocationID)
+				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.InvocationID, err)
 			} else {
 				log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.InvocationID)
 			}
