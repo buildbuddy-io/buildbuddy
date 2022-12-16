@@ -1457,25 +1457,6 @@ var (
 		CompressionType,
 	})
 
-	BadCompressionStreamSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "compressor",
-		Name:      "bad_compression_stream_size",
-		Buckets:   exponentialBucketRange(1, 1_000_000_000, 10),
-		Help:      "The size of data streams that increased in size when compressed",
-	}, []string{
-		CompressionType,
-	})
-
-	/// #### Examples
-	///
-	/// ```promql
-	/// # Histogram with the count of elements in each bucket
-	/// # Visualize with the Bar Gauge type
-	/// # Legend: {{le}}
-	/// sum(buildbuddy_compressor_bad_compression_buffer_size) by(le)
-	/// ```
-
 	CompressionRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "pebble",
@@ -1493,7 +1474,12 @@ var (
 	/// # Histogram buckets with the count of elements in each compression ratio bucket
 	/// # Visualize with the Bar Gauge type
 	/// # Legend: {{le}}
+	/// # Format: Heatmap
 	/// sum(buildbuddy_pebble_compression_ratio_bucket) by(le)
+	///
+	/// # Percentage of elements that increased in size when compressed (compression ratio > 1)
+	/// # Visualize with the Stat type
+	/// (sum(buildbuddy_pebble_compression_ratio_count) - sum(buildbuddy_pebble_compression_ratio_bucket{le="1.0"})) / sum(buildbuddy_pebble_compression_ratio_count)
 	/// ```
 
 	/// ### Raft cache metrics
