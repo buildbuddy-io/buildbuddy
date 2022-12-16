@@ -38,7 +38,7 @@ const (
 	CacheEventTypeLabel = "cache_event_type"
 
 	/// Cache name: Custom name to describe the cache, like "pebble-cache".
-	CacheNameLabel = "cache_name_label"
+	CacheNameLabel = "cache_name"
 
 	/// Process exit code of an executed action.
 	ExitCodeLabel = "exit_code"
