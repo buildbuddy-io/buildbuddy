@@ -567,7 +567,7 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *resource.ResourceName) 
 	eg.Wait()
 
 	if srcErr != nil {
-		if destWriter == nil {
+		if destWriter != nil {
 			err := destWriter.Close()
 			if err != nil {
 				log.Warningf("Migration dest writer close err: %s", err)
@@ -776,15 +776,30 @@ func (mc *MigrationCache) copy(c *copyData) {
 	}
 	defer destWriter.Close()
 
-	if _, err = io.Copy(destWriter, srcReader); err != nil {
-		log.Warningf("Migration copy err: Could not create %v writer to dest cache: %s", c.d, err)
+	n, err := io.Copy(destWriter, srcReader)
+	if err != nil {
+		log.Warningf("Migration copy err: Could not copy %v to dest cache: %s", c.d, err)
+		return
 	}
 
 	if err := destWriter.Commit(); err != nil {
 		log.Warningf("Migration copy err: destination commit failed: %s", err)
+		return
 	}
 
+	ctLabel := cacheTypeLabel(c.d.GetCacheType())
+	metrics.MigrationBlobsCopied.With(prometheus.Labels{metrics.CacheTypeLabel: ctLabel}).Inc()
+	metrics.MigrationBytesCopied.With(prometheus.Labels{metrics.CacheTypeLabel: ctLabel}).Add(float64(n))
 	log.Debugf("Migration successfully copied to dest cache: digest %v", c.d)
+}
+
+func cacheTypeLabel(ct resource.CacheType) string {
+	switch ct {
+	case resource.CacheType_AC:
+		return "action"
+	default:
+		return "cas"
+	}
 }
 
 func (mc *MigrationCache) Start() error {
