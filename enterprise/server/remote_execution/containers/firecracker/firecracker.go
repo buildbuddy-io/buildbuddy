@@ -176,6 +176,30 @@ func openFile(ctx context.Context, env environment.Env, fileName string) (io.Rea
 	return env.GetFileResolver().Open(fileName)
 }
 
+// Returns the cgroup version available on this machine, which is returned from
+//
+//	stat -fc %T /sys/fs/cgroup/
+//
+// and should be either 'cgroup2fs' (version 2) or 'tmpfs' (version 1)
+//
+// More info here: https://kubernetes.io/docs/concepts/architecture/cgroups/
+func getCgroupVersion() string {
+	b, err := exec.Command("stat", "-fc", "%T", "/sys/fs/cgroup/").Output()
+	if err != nil {
+		log.Debugf("Error determining system cgroup version. Falling back to --executor.firecracker_cgroup_version (which is \"%s\"). Error: %s", *firecrackerCgroupVersion, err.Error())
+		return *firecrackerCgroupVersion
+	}
+	v := strings.TrimSpace(string(b))
+	if v == "cgroup2fs" {
+		return "2"
+	} else if v == "tmpfs" {
+		return "1"
+	} else {
+		log.Debugf("Error determining system cgroup version. Falling back to --executor.firecracker_cgroup_version (which is \"%s\"). Found version: %s", *firecrackerCgroupVersion, v)
+		return *firecrackerCgroupVersion
+	}
+}
+
 // putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
 // in the bundle. It then puts that file into destdir (via hardlink or copying)
 // and returns a path to the file in the new location. Files are written in
@@ -615,7 +639,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
 			Stdout:         stdout,
 			Stderr:         stderr,
-			CgroupVersion:  *firecrackerCgroupVersion,
+			CgroupVersion:  getCgroupVersion(),
 		},
 		Snapshot: fcclient.SnapshotConfig{
 			MemFilePath:         fullMemSnapshotName,
@@ -874,7 +898,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
 			Stdout:         stdout,
 			Stderr:         stderr,
-			CgroupVersion:  *firecrackerCgroupVersion,
+			CgroupVersion:  getCgroupVersion(),
 		},
 		MachineCfg: fcmodels.MachineConfiguration{
 			VcpuCount:       fcclient.Int64(c.constants.NumCPUs),
