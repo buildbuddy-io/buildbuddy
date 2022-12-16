@@ -146,7 +146,6 @@ func ValidateLocalFileNameAndExtras(input []byte, entry *arpb.ManifestEntry) err
 }
 
 func ReadDirectoryEnd(input []byte, trueSize int64) (dir *DirectoryEnd, err error) {
-
 	if int64(len(input)) > trueSize {
 		return nil, ErrFormat
 	}
