@@ -94,7 +94,7 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
           <div className="container">
             <form autoComplete="off" className="workflow-form" onSubmit={this.onSubmit.bind(this)}>
               <div className="form-row">
-                <label htmlFor="gitRepo.repoUrl">Git repository URL</label>
+                <label htmlFor="gitRepo.repoUrl">GitHub repository URL</label>
                 <Input
                   name="gitRepo.repoUrl"
                   value={this.state.request.gitRepo.repoUrl}
@@ -113,8 +113,8 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
                   {...{ autocomplete: "false" }} // Silence devtools warning.
                 />
                 <div className="explanation">
-                  The access token must have repository permissions. For improved security, generate a new token just
-                  for this workflow, and don't use it anywhere else.
+                  The access token must have <b>repo</b> and <b>admin:repo_hook</b> permissions. For improved security,
+                  generate a new token just for this workflow, and don't use it anywhere else.
                 </div>
               </div>
               <Button type="submit" disabled={submitting || submitted}>

@@ -157,7 +157,7 @@ export default class GitHubImport extends React.Component<GitHubRepoPickerProps,
               className="create-other clickable"
               href="/workflows/new/custom"
               onClick={this.onClickAddOther.bind(this)}>
-              Add from another Git provider <ArrowRight className="icon" />
+              Enter details manually <ArrowRight className="icon" />
             </a>
           </div>
         </div>
