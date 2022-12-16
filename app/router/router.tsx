@@ -297,6 +297,10 @@ class Router {
     return Boolean(user?.canCall("updateGroupUsers"));
   }
 
+  canCreateOrg(user: User | null) {
+    return Boolean(user?.canCall("createGroup"));
+  }
+
   canAccessOrgGitHubLinkPage(user: User | null) {
     // GitHub linking does not call updateGroup, but the required permissions
     // are equivalent.

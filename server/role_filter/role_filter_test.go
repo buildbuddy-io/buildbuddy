@@ -23,10 +23,10 @@ func TestAllRPCsHaveExplicitRolesSpecified(t *testing.T) {
 	}
 
 	allDefinedMethods := []string{}
-	allDefinedMethods = append(allDefinedMethods, role_filter.RoleIndependentRPCs...)
-	allDefinedMethods = append(allDefinedMethods, role_filter.GroupAdminOnlyRPCs...)
-	allDefinedMethods = append(allDefinedMethods, role_filter.GroupDeveloperRPCs...)
-	allDefinedMethods = append(allDefinedMethods, role_filter.ServerAdminOnlyRPCs...)
+	allDefinedMethods = append(allDefinedMethods, role_filter.RoleIndependentRPCs()...)
+	allDefinedMethods = append(allDefinedMethods, role_filter.GroupAdminOnlyRPCs()...)
+	allDefinedMethods = append(allDefinedMethods, role_filter.GroupDeveloperRPCs()...)
+	allDefinedMethods = append(allDefinedMethods, role_filter.ServerAdminOnlyRPCs()...)
 
 	assert.Subset(
 		t, allDefinedMethods, serviceMethodNames,

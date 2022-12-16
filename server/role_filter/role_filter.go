@@ -2,6 +2,7 @@ package role_filter
 
 import (
 	"context"
+	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -15,9 +16,11 @@ const (
 )
 
 var (
+	adminOnlyCreateGroup = flag.Bool("app.admin_only_create_group", false, "If true, only admins of an existing group can create a new groups.")
+
 	// RoleIndependentRPCs do not require a particular group role for auth. They
 	// may rely on other forms of authorization if appropriate.
-	RoleIndependentRPCs = []string{
+	roleIndependentRPCs = []string{
 		// RPCs that happen pre-login and don't require group membership.
 		"GetUser",
 		"GetImpersonatedUser",
@@ -33,7 +36,6 @@ var (
 		"GetExecution",
 		// Users do not need any particular role within their current group to be
 		// able to create another group or request to join an existing group.
-		"CreateGroup",
 		"JoinGroup",
 		// Anonymous users can see the Bazel config required to use BuildBuddy, so
 		// don't require a group role.
@@ -52,7 +54,7 @@ var (
 
 	// DeveloperRPCs can be called only by developers or admins of the selected
 	// group.
-	GroupDeveloperRPCs = []string{
+	groupDeveloperRPCs = []string{
 		// Invocation history and historical data for the org
 		"SearchInvocation",
 		"GetInvocationStat",
@@ -69,7 +71,7 @@ var (
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
-	GroupAdminOnlyRPCs = []string{
+	groupAdminOnlyRPCs = []string{
 		// Org details management
 		"UpdateGroup",
 		// Org members management
@@ -101,7 +103,7 @@ var (
 	// from AdminOnlyRPCs in that it requires the authenticated user to be an
 	// admin of the configured server-admin group, and not just an admin of
 	// their authenticated group.
-	ServerAdminOnlyRPCs = []string{
+	serverAdminOnlyRPCs = []string{
 		"GetInvocationOwner",
 
 		// Quota APIs
@@ -112,13 +114,37 @@ var (
 	}
 )
 
+func RoleIndependentRPCs() []string {
+	r := roleIndependentRPCs
+	if !*adminOnlyCreateGroup {
+		r = append(r, "CreateGroup")
+	}
+	return r
+}
+
+func GroupDeveloperRPCs() []string {
+	return groupDeveloperRPCs
+}
+
+func GroupAdminOnlyRPCs() []string {
+	r := groupAdminOnlyRPCs
+	if *adminOnlyCreateGroup {
+		r = append(r, "CreateGroup")
+	}
+	return r
+}
+
+func ServerAdminOnlyRPCs() []string {
+	return serverAdminOnlyRPCs
+}
+
 // AuthorizeRPC applies a coarse-grained authorization check on an RPC to ensure
 // that the user has the appropriate role within their org to call the RPC.
 //
 // If the RPC accesses any specific resources within the org, further
 // authorization checks may be needed beyond this coarse-grained filter.
 func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) error {
-	if stringSliceContains(RoleIndependentRPCs, rpcName) {
+	if stringSliceContains(RoleIndependentRPCs(), rpcName) {
 		return nil
 	}
 
@@ -131,7 +157,7 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 		return nil
 	}
 
-	if stringSliceContains(ServerAdminOnlyRPCs, rpcName) {
+	if stringSliceContains(ServerAdminOnlyRPCs(), rpcName) {
 		serverAdminGID := env.GetAuthenticator().AdminGroupID()
 		if serverAdminGID == "" {
 			return status.PermissionDeniedError("Permission Denied.")
@@ -150,7 +176,7 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 	}
 
 	allowedRoles := role.Admin | role.Developer
-	if stringSliceContains(GroupAdminOnlyRPCs, rpcName) {
+	if stringSliceContains(GroupAdminOnlyRPCs(), rpcName) {
 		allowedRoles = role.Admin
 	}
 
