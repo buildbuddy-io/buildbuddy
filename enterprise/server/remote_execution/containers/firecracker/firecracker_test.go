@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"syscall"
 	"testing"
 	"time"
@@ -529,7 +530,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	require.NoError(t, res.Error)
 	require.Empty(t, string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
-	require.Equal(t, "uid=65534(nobody) gid=65534(nobody)\n", string(res.Stdout))
+	require.Regexp(t, regexp.MustCompile("uid=[0-9]+\\(nobody\\) gid=[0-9]+\\(nobody\\)"), string(res.Stdout))
 }
 
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
