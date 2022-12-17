@@ -1905,7 +1905,7 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 	return lastEvicted, nil
 }
 
-func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
+func (e *partitionEvictor) ttl(quitChan chan struct{}) {
 	e.mu.Lock()
 	maxAllowedSize := int64(JanitorCutoffThreshold * float64(e.part.MaxSizeBytes))
 	e.mu.Unlock()
@@ -1922,7 +1922,7 @@ func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
 
 		select {
 		case <-quitChan:
-			return nil
+			return
 		default:
 			break
 		}
@@ -1934,7 +1934,9 @@ func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
 
 		lastEvicted, err := e.evict(numToEvict)
 		if err != nil {
-			return err
+			log.Warningf("Evictor %q couldn't run: %s", e.part.ID, err)
+			time.Sleep(time.Second)
+			continue
 		}
 
 		// If we attempted to evict and were unable to, sleep for a
@@ -1948,7 +1950,6 @@ func (e *partitionEvictor) ttl(quitChan chan struct{}) error {
 		e.lastEvicted = lastEvicted
 		e.mu.Unlock()
 	}
-	return nil
 }
 
 func (e *partitionEvictor) run(quitChan chan struct{}) error {
@@ -1957,9 +1958,7 @@ func (e *partitionEvictor) run(quitChan chan struct{}) error {
 		case <-quitChan:
 			return nil
 		case <-time.After(JanitorCheckPeriod):
-			if err := e.ttl(quitChan); err != nil {
-				return err
-			}
+			e.ttl(quitChan)
 		}
 	}
 }
