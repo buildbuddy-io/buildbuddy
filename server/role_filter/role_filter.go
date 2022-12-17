@@ -31,7 +31,7 @@ var (
 		"GetCacheMetadata",
 		"GetTarget",
 		"GetExecution",
-		"GetArchiveManifest",
+		"GetZipManifest",
 		// Users do not need any particular role within their current group to be
 		// able to create another group or request to join an existing group.
 		"CreateGroup",

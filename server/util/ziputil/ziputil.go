@@ -50,10 +50,10 @@ const (
 )
 
 var (
-	ErrFormat    = errors.New("zip: not a valid zip file")
-	ErrAlgorithm = errors.New("zip: unsupported compression algorithm")
-	ErrChecksum  = errors.New("zip: checksum error")
-	ErrZip64     = errors.New("zip: zip64 not supported")
+	errFormat    = errors.New("zip: not a valid zip file")
+	errAlgorithm = errors.New("zip: unsupported compression algorithm")
+	errChecksum  = errors.New("zip: checksum error")
+	errZip64     = errors.New("zip: zip64 not supported")
 )
 
 type DirectoryEnd struct {
@@ -111,13 +111,13 @@ func compressionTypeToEnum(compression uint16) zipb.ZipManifestEntry_Compression
 func ValidateLocalFileHeader(header []byte, entry *zipb.ZipManifestEntry) (int, error) {
 	buf := readBuf(header[:])
 	if sig := buf.uint32(); sig != FileHeaderSignature {
-		return 1, ErrFormat
+		return 1, errFormat
 	}
 
 	buf = buf[4:] // Skip version, bitmap
 	compressionType := compressionTypeToEnum(buf.uint16())
 	if compressionType == zipb.ZipManifestEntry_COMPRESSION_TYPE_UNKNOWN {
-		return -1, ErrAlgorithm
+		return -1, errAlgorithm
 	}
 	buf = buf[4:] // Skip modification time, modification date.
 
@@ -126,10 +126,10 @@ func ValidateLocalFileHeader(header []byte, entry *zipb.ZipManifestEntry) (int, 
 	uncompsize := int64(buf.uint32())
 	if entry.GetCompressedSize() == 0xffffffff || entry.GetUncompressedSize() == 0xffffffff {
 		// These values indicate zip64 format.
-		return -1, ErrZip64
+		return -1, errZip64
 	}
 	if entry.GetCrc32() != crc32 || entry.GetCompressedSize() != compsize || entry.GetUncompressedSize() != uncompsize {
-		return -1, ErrFormat
+		return -1, errFormat
 	}
 
 	filenameLen := int(buf.uint16())
@@ -140,19 +140,19 @@ func ValidateLocalFileHeader(header []byte, entry *zipb.ZipManifestEntry) (int, 
 
 func ValidateLocalFileNameAndExtras(input []byte, entry *zipb.ZipManifestEntry) error {
 	if string(input[:len(entry.GetName())]) != entry.GetName() {
-		return ErrFormat
+		return errFormat
 	}
 	return nil
 }
 
 func ReadDirectoryEnd(input []byte, trueSize int64) (dir *DirectoryEnd, err error) {
 	if int64(len(input)) > trueSize {
-		return nil, ErrFormat
+		return nil, errFormat
 	}
 	if p := findSignatureInBlock(input); p >= 0 {
 		input = input[p:]
 	} else {
-		return nil, ErrFormat
+		return nil, errFormat
 	}
 
 	b := readBuf(input[10:]) // skip signature, disk fields
@@ -170,40 +170,40 @@ func ReadDirectoryEnd(input []byte, trueSize int64) (dir *DirectoryEnd, err erro
 
 	// These values mean that the file can be a zip64 file
 	if d.DirectoryRecords == 0xffff || d.DirectorySize == 0xffff || d.DirectoryOffset == 0xffffffff {
-		return nil, ErrZip64
+		return nil, errZip64
 	}
 
 	// Make sure directoryOffset points to somewhere in our file.
 	if d.DirectoryOffset < 0 || d.DirectoryOffset+d.DirectorySize > trueSize {
-		return nil, ErrFormat
+		return nil, errFormat
 	}
 	return d, nil
 }
 
 // readDirectoryHeader attempts to read a directory header from r.
 // It returns io.ErrUnexpectedEOF if it cannot read a complete header,
-// and ErrFormat if it doesn't find a valid header signature.
+// and errFormat if it doesn't find a valid header signature.
 func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*zipb.ZipManifestEntry, error) {
 	var headers []*zipb.ZipManifestEntry
 
 	b := readBuf(buf[:])
 	if len(b) < int(d.DirectorySize) {
-		return nil, ErrFormat
+		return nil, errFormat
 	}
 
 	for i := 0; i < int(d.DirectoryRecords); i++ {
 		var h = &zipb.ZipManifestEntry{}
 		headers = append(headers, h)
 		if len(b) < DirectoryHeaderLen {
-			return nil, ErrFormat
+			return nil, errFormat
 		}
 		if sig := b.uint32(); sig != DirectoryHeaderSignature {
-			return nil, ErrFormat
+			return nil, errFormat
 		}
 		b = b[6:] // Skip CreatorVersion, ReaderVersion, Flags
 		var compressionType = compressionTypeToEnum(b.uint16())
 		if compressionType == zipb.ZipManifestEntry_COMPRESSION_TYPE_UNKNOWN {
-			return nil, ErrAlgorithm
+			return nil, errAlgorithm
 		}
 		h.Compression = compressionType
 		b = b[4:] // Skip ModifiedTime, ModifiedDate
@@ -212,7 +212,7 @@ func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*zipb.ZipManifestEntry,
 		h.UncompressedSize = int64(b.uint32())
 		if h.GetCompressedSize() == 0xffffffff || h.GetUncompressedSize() == 0xffffffff {
 			// These values indicate zip64 format.
-			return nil, ErrZip64
+			return nil, errZip64
 		}
 		filenameLen := int(b.uint16())
 		extraLen := int(b.uint16())
@@ -220,7 +220,7 @@ func ReadDirectoryHeader(buf []byte, d *DirectoryEnd) ([]*zipb.ZipManifestEntry,
 		b = b[8:] // Skip StartingDiskNumber, InternalAttrs, ExternalAttrs
 		h.HeaderOffset = int64(b.uint32())
 		if len(b) < filenameLen+extraLen+commentLen {
-			return nil, ErrFormat
+			return nil, errFormat
 		}
 		h.Name = string(b[:filenameLen])
 		b = b[(filenameLen + extraLen + commentLen):]
@@ -237,7 +237,7 @@ func DecompressAndStream(writer io.Writer, reader io.Reader, entry *zipb.ZipMani
 	} else if entry.GetCompression() == zipb.ZipManifestEntry_COMPRESSION_TYPE_NONE {
 		outReader = io.LimitReader(reader, int64(entry.GetCompressedSize()))
 	} else {
-		return ErrAlgorithm
+		return errAlgorithm
 	}
 
 	if _, err := io.Copy(writer, outReader); err != nil {
