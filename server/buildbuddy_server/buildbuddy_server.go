@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/proto"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -53,7 +54,6 @@ import (
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
-	proto "google.golang.org/protobuf/proto"
 )
 
 var (
@@ -1058,13 +1058,13 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(zipReference) > 0 {
 		b, err := base64.StdEncoding.DecodeString(zipReference)
 		if err != nil {
-			log.Warningf("Error downloading file: %s", err.Error())
+			log.Warningf("Error downloading file: %s", err)
 			http.Error(w, "File not found", http.StatusBadRequest)
 			return
 		}
 		entry := &zipb.ZipManifestEntry{}
 		if err := proto.Unmarshal(b, entry); err != nil {
-			log.Warningf("Failed to unmarshal ManifestEntry: %s", err.Error())
+			log.Warningf("Failed to unmarshal ManifestEntry: %s", err)
 			http.Error(w, "File not found", http.StatusBadRequest)
 			return
 		}
@@ -1073,7 +1073,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		err = bytestream.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
 		if err != nil {
-			log.Warningf("Error downloading zip file contents: %s", err.Error())
+			log.Warningf("Error downloading zip file contents: %s", err)
 			http.Error(w, "File not found", http.StatusNotFound)
 		}
 		return
@@ -1083,12 +1083,10 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, func(data []byte) {
-		w.Write(data)
-	})
+	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, w)
 
 	if err != nil {
-		log.Warningf("Error downloading file: %s", err.Error())
+		log.Warningf("Error downloading file: %s", err)
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}

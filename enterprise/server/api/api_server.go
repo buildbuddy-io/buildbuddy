@@ -40,6 +40,10 @@ type APIServer struct {
 	env environment.Env
 }
 
+type GetFileServer struct {
+	s apipb.ApiService_GetFileServer
+}
+
 func Register(env environment.Env) error {
 	if api_config.APIEnabled() {
 		env.SetAPIService(NewAPIServer(env))
@@ -319,6 +323,13 @@ func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apip
 	}, nil
 }
 
+func (gfs *GetFileServer) Write(data []byte) (int, error) {
+	err := gfs.s.Send(&apipb.GetFileResponse{
+		Data: data,
+	})
+	return len(data), err
+}
+
 func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_GetFileServer) error {
 	ctx := server.Context()
 	if _, err := s.checkPreconditions(ctx); err != nil {
@@ -330,11 +341,9 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 		return status.InvalidArgumentErrorf("Invalid URL")
 	}
 
-	return bytestream.StreamBytestreamFile(ctx, s.env, parsedURL, func(data []byte) {
-		server.Send(&apipb.GetFileResponse{
-			Data: data,
-		})
-	})
+	writer := &GetFileServer{s: server}
+
+	return bytestream.StreamBytestreamFile(ctx, s.env, parsedURL, writer)
 }
 
 func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest) (*apipb.DeleteFileResponse, error) {
@@ -401,9 +410,7 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = bytestream.StreamBytestreamFile(r.Context(), s.env, parsedURL, func(data []byte) {
-		w.Write(data)
-	})
+	err = bytestream.StreamBytestreamFile(r.Context(), s.env, parsedURL, w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

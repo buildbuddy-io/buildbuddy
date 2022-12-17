@@ -1,6 +1,7 @@
 package bytestream
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/url"
@@ -33,19 +34,14 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 		offset = 0
 	}
 
-	reader, writer := io.Pipe()
-	go func() {
-		err = StreamBytestreamFileChunk(ctx, env, url, offset, r.GetDigest().GetSizeBytes()-offset, func(data []byte) {
-			writer.Write(data)
-		})
-		writer.CloseWithError(err)
-	}()
-
-	// Dump the full contents out into a buffer (should be 64K or less).
-	footer, err := io.ReadAll(reader)
+	var buf bytes.Buffer
+	err = StreamBytestreamFileChunk(ctx, env, url, offset, r.GetDigest().GetSizeBytes()-offset, &buf)
 	if err != nil {
 		return nil, err
 	}
+
+	// Dump the full contents out into a buffer (should be 64K or less).
+	footer := buf.Bytes()
 
 	// Find and parse the End of Central Directory header or fail.
 	eocd, err := ziputil.ReadDirectoryEnd(footer, r.GetDigest().GetSizeBytes())
@@ -56,25 +52,21 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 	cdStart := eocd.DirectoryOffset - offset
 	cdEnd := cdStart + eocd.DirectorySize
 
-	out := &zipb.ZipManifest{}
 	entries, err := ziputil.ReadDirectoryHeader(footer[cdStart:cdEnd], eocd)
-	out.Entry = entries
-	return out, nil
+	if err != nil {
+		return nil, err
+	}
+
+	return &zipb.ZipManifest{Entry: entries}, nil
 }
 
 func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ZipManifestEntry) (int, error) {
-	reader, writer := io.Pipe()
-	go func() {
-		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, func(data []byte) {
-			writer.Write(data)
-		})
-		writer.CloseWithError(err)
-	}()
-	header := make([]byte, ziputil.FileHeaderLen)
-	if _, err := io.ReadFull(reader, header); err != nil {
+	var buf bytes.Buffer
+	err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
+	if err != nil {
 		return -1, err
 	}
-	return ziputil.ValidateLocalFileHeader(header, entry)
+	return ziputil.ValidateLocalFileHeader(buf.Bytes(), entry)
 }
 
 func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ZipManifestEntry, out io.Writer) error {
@@ -85,11 +77,13 @@ func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env,
 
 	// Stream the dynamic portion of the header and the compressed file as one read.
 	reader, writer := io.Pipe()
+	defer reader.Close()
 	go func() {
-		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), func(data []byte) {
-			writer.Write(data)
-		})
-		writer.CloseWithError(err)
+		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
+		// StreamBytestreamFileChunk shouldn't return EOF, but let's just be safe.
+		if err != nil && err != io.EOF {
+			writer.CloseWithError(err)
+		}
 	}()
 
 	// Validate that the dynamic portion of the file header makes sense.
@@ -109,11 +103,11 @@ func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env,
 	return nil
 }
 
-func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL, callback func([]byte)) error {
-	return StreamBytestreamFileChunk(ctx, env, url, 0, 0, callback)
+func StreamBytestreamFile(ctx context.Context, env environment.Env, url *url.URL, writer io.Writer) error {
+	return StreamBytestreamFileChunk(ctx, env, url, 0, 0, writer)
 }
 
-func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *url.URL, offset int64, limit int64, callback func([]byte)) error {
+func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *url.URL, offset int64, limit int64, writer io.Writer) error {
 	if url.Scheme != "bytestream" && url.Scheme != "actioncache" {
 		return status.InvalidArgumentErrorf("Only bytestream:// uris are supported")
 	}
@@ -128,23 +122,23 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 			grpcPort = strconv.Itoa(p)
 		}
 		localURL.Host = "localhost:" + grpcPort
-		err = streamFromUrl(ctx, localURL, false, offset, limit, callback)
+		err = streamFromUrl(ctx, localURL, false, offset, limit, writer)
 	}
 
 	// If that fails, try to connect over grpcs
 	if err != nil || env.GetCache() == nil {
-		err = streamFromUrl(ctx, url, true, offset, limit, callback)
+		err = streamFromUrl(ctx, url, true, offset, limit, writer)
 	}
 
 	// If that fails, try grpc
 	if err != nil {
-		err = streamFromUrl(ctx, url, false, offset, limit, callback)
+		err = streamFromUrl(ctx, url, false, offset, limit, writer)
 	}
 
 	return err
 }
 
-func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, limit int64, callback func([]byte)) error {
+func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) error {
 	if url.Port() == "" && grpcs {
 		url.Host = url.Hostname() + ":443"
 	} else if url.Port() == "" {
@@ -179,7 +173,7 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, 
 		if err != nil {
 			return err
 		}
-		callback(buf)
+		writer.Write(buf)
 		return nil
 	}
 	client := bspb.NewByteStreamClient(conn)
@@ -203,7 +197,9 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, 
 		if err != nil {
 			return err
 		}
-		callback(rsp.Data)
+		if _, err := writer.Write(rsp.Data); err != nil {
+			return err
+		}
 	}
 	return nil
 }
