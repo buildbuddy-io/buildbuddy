@@ -7,5 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:zip_go_proto",
+        "//server/util/status",
     ],
 )
