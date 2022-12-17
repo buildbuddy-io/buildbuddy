@@ -173,7 +173,9 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, 
 		if err != nil {
 			return err
 		}
-		writer.Write(buf)
+		if _, err := writer.Write(buf); err != nil {
+			return err
+		}
 		return nil
 	}
 	client := bspb.NewByteStreamClient(conn)

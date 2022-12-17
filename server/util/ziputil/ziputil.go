@@ -35,10 +35,10 @@ package ziputil
 import (
 	"compress/flate"
 	"encoding/binary"
-	"errors"
 	"io"
 
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
@@ -50,10 +50,9 @@ const (
 )
 
 var (
-	errFormat    = errors.New("zip: not a valid zip file")
-	errAlgorithm = errors.New("zip: unsupported compression algorithm")
-	errChecksum  = errors.New("zip: checksum error")
-	errZip64     = errors.New("zip: zip64 not supported")
+	errFormat    = status.FailedPreconditionError("zip: not a valid zip file")
+	errAlgorithm = status.UnimplementedError("zip: unsupported compression algorithm")
+	errZip64     = status.UnimplementedError("zip: zip64 not supported")
 )
 
 type DirectoryEnd struct {
@@ -164,7 +163,7 @@ func ReadDirectoryEnd(input []byte, trueSize int64) (dir *DirectoryEnd, err erro
 	}
 	l := int(d.commentLen)
 	if l > len(b) {
-		return nil, errors.New("zip: invalid comment length")
+		return nil, status.FailedPreconditionError("zip: invalid comment length")
 	}
 	d.comment = string(b[:l])
 
@@ -241,7 +240,7 @@ func DecompressAndStream(writer io.Writer, reader io.Reader, entry *zipb.ZipMani
 	}
 
 	if _, err := io.Copy(writer, outReader); err != nil {
-		return err
+		return status.UnavailableError(err.Error())
 	}
 	return nil
 }
