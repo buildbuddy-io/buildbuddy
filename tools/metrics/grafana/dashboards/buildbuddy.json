@@ -5939,7 +5939,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 10
       },
       "id": 264,
       "panels": [
@@ -6527,7 +6527,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 11
       },
       "id": 38,
       "panels": [
@@ -7035,7 +7035,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 12
       },
       "id": 458,
       "panels": [
@@ -7638,7 +7638,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 13
       },
       "id": 48,
       "panels": [
@@ -8021,7 +8021,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 14
       },
       "id": 107,
       "panels": [
@@ -8599,7 +8599,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 15
       },
       "id": 83,
       "panels": [
@@ -8968,7 +8968,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 16
       },
       "id": 71,
       "panels": [
@@ -9175,7 +9175,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 17
       },
       "id": 1088,
       "panels": [
@@ -9235,7 +9235,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 17
+            "y": 18
           },
           "id": 1127,
           "options": {
@@ -9321,7 +9321,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 17
+            "y": 18
           },
           "id": 1166,
           "options": {
@@ -9418,7 +9418,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 26
           },
           "id": 1168,
           "options": {
@@ -9461,7 +9461,7 @@
         }
       ],
       "repeat": "kubepool",
-      "title": "Kubernetes Nodes Overview (${kubepool})",
+      "title": "Nodes Overview (${kubepool})",
       "type": "row"
     },
     {
@@ -9470,7 +9470,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 18
       },
       "id": 962,
       "panels": [
@@ -9641,7 +9641,21 @@
           ],
           "title": "${kubenode} disk and network IO",
           "type": "timeseries"
-        },
+        }
+      ],
+      "title": "Node disk/network IO",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "id": 1975,
+      "panels": [
         {
           "fieldConfig": {
             "defaults": {
@@ -9774,7 +9788,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 27
+            "y": 20
           },
           "id": 1257,
           "maxPerRow": 2,
@@ -9855,7 +9869,121 @@
           ],
           "title": "${kubenode} memory usage",
           "type": "timeseries"
-        },
+        }
+      ],
+      "title": "Node memory usage",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 1988,
+      "panels": [
+        {
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "decbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 21
+          },
+          "id": 1991,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "repeat": "kubenode",
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "exemplar": true,
+              "expr": "node_memory_swap_used_bytes * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=\"${kubenode}\"})",
+              "interval": "",
+              "legendFormat": "Swap memory used",
+              "refId": "A"
+            }
+          ],
+          "title": "${kubenode} swap usage",
+          "type": "timeseries"
+        }
+      ],
+      "title": "Node swap usage",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "id": 1983,
+      "panels": [
         {
           "description": "",
           "fieldConfig": {
@@ -9943,7 +10071,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 35
+            "y": 22
           },
           "id": 1261,
           "options": {
@@ -9987,7 +10115,7 @@
           "type": "timeseries"
         }
       ],
-      "title": "Kubernetes Nodes",
+      "title": "Node swap rate",
       "type": "row"
     },
     {
@@ -9996,7 +10124,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 22
       },
       "id": 8,
       "panels": [
@@ -10282,7 +10410,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 23
       },
       "id": 1346,
       "panels": [
