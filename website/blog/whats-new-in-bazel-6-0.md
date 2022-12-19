@@ -11,7 +11,7 @@ image: /img/bazel_6_0.png
 tags: [bazel]
 ---
 
-Bazel 6.0 includes [over 3,100 changes][diff] since 5.4.
+[Bazel 6.0][bazel-6-0] includes [over 3,100 changes][diff] since 5.4.
 It's the latest major release,
 following the release of 5.0 in January of this year,
 and it's Bazel's [third LTS release][lts-releases].
@@ -19,8 +19,9 @@ Since there were so many changes,
 many of them quite impactful,
 I felt I needed to review them all and provide a nice summary for y'all.
 
+[bazel-6-0]: https://blog.bazel.build/2022/12/19/bazel-6.0.html
 [diff]: https://github.com/bazelbuild/bazel/compare/5.4.0...6.0.0
-[lts-releases]: https://bazel.build/release/versioning#lts-releases
+[lts-releases]: https://bazel.build/versions/6.0.0/release/versioning#lts-releases
 
 <!-- truncate -->
 
@@ -224,7 +225,7 @@ almost all of them behind new experimental flags:
 - [Added the `--experimental_dynamic_slow_remote_time` flag, which starts locally scheduling actions above a certain age in dynamic scheduling.](https://github.com/bazelbuild/bazel/commit/88f605c689881f50e8ec310f43878e411936f23c)
 - [Added the `--experimental_prioritize_local_actions` flag, which prioritizes local-only actions over dynamically executed actions for local resources.](https://github.com/bazelbuild/bazel/commit/8fa3ccbb072236a8d0a4937e9e4a0ced58268c25)
 
-[dynamic-execution]: https://bazel.build/remote/dynamic
+[dynamic-execution]: https://bazel.build/versions/6.0.0/remote/dynamic
 
 ### Local execution
 
@@ -272,8 +273,8 @@ though some are fixes and improvements:
 - [Changed the semantics of `build_event_stream.BuildMetrics.PackageMetrics.packages_loaded` to be the number of packages successfully loaded.](https://github.com/bazelbuild/bazel/commit/d8c25fcced761cb139e560076d24d9f179055548)
 - [Deprecated `AnomalyReport`.](https://github.com/bazelbuild/bazel/commit/286fb80081db0af43b1f86292ce417c6541d4ad4)
 
-[build_event_binary_file]: https://bazel.build/reference/command-line-reference#flag--build_event_binary_file
-[build_event_json_file]: https://bazel.build/reference/command-line-reference#flag--build_event_json_file
+[build_event_binary_file]: https://bazel.build/versions/6.0.0/reference/command-line-reference#flag--build_event_binary_file
+[build_event_json_file]: https://bazel.build/versions/6.0.0/reference/command-line-reference#flag--build_event_json_file
 
 ### Timing profile
 
@@ -289,8 +290,8 @@ These changes add more detail and clarity to the profile:
 - [Improved reporting of critical path components.](https://github.com/bazelbuild/bazel/commit/3d2bb2a400c48bc51e43db11ac154d999a97881b)
 - [Made the `sort_index` value always a string.](https://github.com/bazelbuild/bazel/commit/081f831e3c86b4a4c6d6107b29c4883581b94aee)
 
-[performance-profiling]: https://bazel.build/rules/performance#performance-profiling
-[profile]: https://bazel.build/reference/command-line-reference#flag--profile
+[performance-profiling]: https://bazel.build/versions/6.0.0/rules/performance#performance-profiling
+[profile]: https://bazel.build/versions/6.0.0/reference/command-line-reference#flag--profile
 
 ### Execution log
 
@@ -303,8 +304,8 @@ with just a few noticeable additions:
 - [Added the `SpawnExec.digest` field.](https://github.com/bazelbuild/bazel/commit/b2cbc9a17c90f9ddeb88eca4756cb2fc764abebe)
 - [Added the `SpawnExec.target_label` field.](https://github.com/bazelbuild/bazel/commit/9f908cada13c9015f267f368f263c361df812983)
 
-[execution_log_binary_file]: https://bazel.build/reference/command-line-reference#flag--execution_log_binary_file
-[execution_log_json_file]: https://bazel.build/reference/command-line-reference#flag--execution_log_json_file
+[execution_log_binary_file]: https://bazel.build/versions/6.0.0reference/command-line-reference#flag--execution_log_binary_file
+[execution_log_json_file]: https://bazel.build/versions/6.0.0/reference/command-line-reference#flag--execution_log_json_file
 [spawns]: bazels-remote-caching-and-remote-execution-explained.md#spawns
 
 ## Query
@@ -356,7 +357,7 @@ these were some other notable dependency management related changes:
 - [Removed support for managed directories.](https://github.com/bazelbuild/bazel/commit/cbf8159ba6190ab447ad54df63cb4db25763d755)
 - [When Bzlmod is enabled, canonical label literals are used.](https://docs.google.com/document/d/1N81qfCa8oskCk5LqTW-LNthy6EBrDot7bdUsjz6JFC4)
 
-[bzlmod]: https://bazel.build/build/bzlmod
+[bzlmod]: https://bazel.build/versions/6.0.0/build/bzlmod
 
 ## Platforms and toolchains
 
@@ -378,7 +379,7 @@ Here are some of the platforms and toolchains related changes which weren't tied
 - [The `exec` transition no longer resets any `TestConfiguration.TestOptions` options.](https://github.com/bazelbuild/bazel/commit/2adf0033bb4e71171e96f95bbd54ab783c6bb6d1)
 - [`platform.exec_properties` now become execution requirements.](https://github.com/bazelbuild/bazel/commit/e4c1c434d49062449c7a83dd753fe01923766b1d)
 
-[building-with-platforms]: https://bazel.build/concepts/platforms
+[building-with-platforms]: https://bazel.build/versions/6.0.0/concepts/platforms
 
 ## Execution platforms
 
@@ -390,7 +391,7 @@ I'm sure there were some for Windows as well,
 but since I don't use Bazel on Windows,
 none of the changes stood out to me as pertaining only to it.
 
-[platforms]: https://bazel.build/extending/platforms
+[platforms]: https://bazel.build/versions/6.0.0/extending/platforms
 
 ### Linux
 
@@ -542,7 +543,7 @@ Bazel 6.0 includes numerous changes that make custom rules more performant,
 easier to write,
 or even expand what is possible to do with them.
 
-[rules]: https://bazel.build/extending/rules
+[rules]: https://bazel.build/versions/6.0.0/extending/rules
 
 ### Aspects
 
@@ -555,7 +556,7 @@ These changes expanded their capabilities:
 - [Added support for setting exec_compatible_with and exec_group on aspects.](https://github.com/bazelbuild/bazel/commit/7e3755d3bf1443a0f2a780bc8efff658c464c3a5)
 - [Aspects now inherit fragments from required aspects and from targets they are attached to.](https://github.com/bazelbuild/bazel/commit/b3e12bad9852a068ed8687d39e278441b52c910d)
 
-[aspects]: https://bazel.build/extending/aspects
+[aspects]: https://bazel.build/versions/6.0.0/extending/aspects
 
 ### Persistent workers
 
@@ -566,7 +567,7 @@ Here are some notable changes to persistent worker support:
 - [Added the `--experimental_worker_multiplex_sandboxing` flag, which controls whether to sandbox multiplex workers that support it.](https://github.com/bazelbuild/bazel/commit/fb19a28db30c6937f0df4e143b2256e7e4743bd4)
 - [Added the `--experimental_worker_strict_flagfiles` flag, which checks if the worker argument list conforms to the spec.](https://github.com/bazelbuild/bazel/commit/cb2cd9fd2b65311da927777c35939701add5b879)
 
-[workers]: https://bazel.build/remote/persistent
+[workers]: https://bazel.build/versions/6.0.0/remote/persistent
 
 ### Starlark
 
@@ -586,7 +587,7 @@ the Starlark language itself received performance and feature improvements:
 - [Added `dict` union operators (`|` and `|=`).](https://github.com/bazelbuild/bazel/commit/b1deea40aeb81f4c7e23594e0166a6a653a75b65)
 - [Added the `coverage_support_files` and `coverage_environment` parameters to `coverage_common.instrumented_files_info`.](https://github.com/bazelbuild/bazel/commit/0a13dd69aa27ec643dd44637712b70c24b924c49)
 - [Added the `init` parameter to `provider()`, which allows for performing pre-processing and validation of field values.](https://github.com/bazelbuild/bazel/commit/fc13ba271f138c804869d0f99d751e25518b5326)
-- [Added `load` visibility.](https://bazel.build/concepts/visibility#load-visibility)
+- [Added `load` visibility.](https://bazel.build/versions/6.0.0/concepts/visibility#load-visibility)
 - [`dict()` and `dict.update()` now accept arbitrary maps, not just `dict`s.](https://github.com/bazelbuild/bazel/commit/dfa9c62abda21dcf187df9d2a2c00ecefda223e0)
 - [`testing.ExecutionInfo` can now be used as a provider key.](https://github.com/bazelbuild/bazel/commit/40a6cb093e9a9902a35943b97e2ae6b362a5f005)
 - [The `symlinks` and `root_symlinks` parameters of the `ctx.runfiles` function now accept `depset`s.](https://github.com/bazelbuild/bazel/commit/aaf87f4ef3e19cbf1e5ab28f50cd8fb90dfd115e)
@@ -633,4 +634,4 @@ Work on Bazel 7.0 is well underway as well,
 and I look forward to summarizing its changes next year.
 
 [bazel-6-1]: https://github.com/bazelbuild/bazel/milestone/46
-[rolling-releases]: https://bazel.build/release/versioning#rolling-releases
+[rolling-releases]: https://bazel.build/versions/6.0.0/release/versioning#rolling-releases
