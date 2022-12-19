@@ -343,7 +343,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 
 	// Check that the result has usage stats, but don't perform equality checks
 	// on them.
-	assert.True(res.UsageStats != nil)
+	assert.True(t, res.UsageStats != nil)
 	res.UsageStats = nil
 
 	assert.Equal(t, expectedResult, res)
