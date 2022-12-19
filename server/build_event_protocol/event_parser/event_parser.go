@@ -197,145 +197,149 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 }
 
 func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine) {
+	priority := envPriority
 	envVarMap := parseEnv(commandLine)
 	if user, ok := envVarMap["USER"]; ok && user != "" {
-		sep.setUser(user, envPriority)
+		sep.setUser(user, priority)
 	}
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
-		sep.setRepoUrl(url, envPriority)
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
-		sep.setRepoUrl(url, envPriority)
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
-		sep.setRepoUrl(url, envPriority)
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["REPO_URL"]; ok && url != "" {
-		sep.setRepoUrl(url, envPriority)
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
-		sep.setRepoUrl(url, envPriority)
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
-		sep.setRepoUrl(url, envPriority)
+		sep.setRepoUrl(url, priority)
 	}
 	if branch, ok := envVarMap["TRAVIS_BRANCH"]; ok && branch != "" {
-		sep.setBranchName(branch, envPriority)
+		sep.setBranchName(branch, priority)
 	}
 	if branch, ok := envVarMap["GIT_BRANCH"]; ok && branch != "" {
-		sep.setBranchName(branch, envPriority)
+		sep.setBranchName(branch, priority)
 	}
 	if branch, ok := envVarMap["BUILDKITE_BRANCH"]; ok && branch != "" {
-		sep.setBranchName(branch, envPriority)
+		sep.setBranchName(branch, priority)
 	}
 	if branch, ok := envVarMap["CIRCLE_BRANCH"]; ok && branch != "" {
-		sep.setBranchName(branch, envPriority)
+		sep.setBranchName(branch, priority)
 	}
 	if branch, ok := envVarMap["GITHUB_REF"]; ok && strings.HasPrefix(branch, "refs/heads/") {
-		sep.setBranchName(strings.TrimPrefix(branch, "refs/heads/"), envPriority)
+		sep.setBranchName(strings.TrimPrefix(branch, "refs/heads/"), priority)
 	}
 	if branch, ok := envVarMap["GITHUB_HEAD_REF"]; ok && branch != "" {
-		sep.setBranchName(branch, envPriority)
+		sep.setBranchName(branch, priority)
 	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
-		sep.setCommitSha(sha, envPriority)
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["GIT_COMMIT"]; ok && sha != "" {
-		sep.setCommitSha(sha, envPriority)
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["BUILDKITE_COMMIT"]; ok && sha != "" {
-		sep.setCommitSha(sha, envPriority)
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["CIRCLE_SHA1"]; ok && sha != "" {
-		sep.setCommitSha(sha, envPriority)
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
-		sep.setCommitSha(sha, envPriority)
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["COMMIT_SHA"]; ok && sha != "" {
-		sep.setCommitSha(sha, envPriority)
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["VOLATILE_GIT_COMMIT"]; ok && sha != "" {
-		sep.setCommitSha(sha, envPriority)
+		sep.setCommitSha(sha, priority)
 	}
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
-		sep.setRole("CI", envPriority)
+		sep.setRole("CI", priority)
 	}
 	if ciRunner, ok := envVarMap["CI_RUNNER"]; ok && ciRunner != "" {
-		sep.setRole("CI_RUNNER", envPriority)
+		sep.setRole("CI_RUNNER", priority)
 	}
 
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
-		sep.setRepoUrl(url, envPriority)
+		sep.setRepoUrl(url, priority)
 	}
 	if branch, ok := envVarMap["CI_COMMIT_BRANCH"]; ok && branch != "" {
-		sep.setBranchName(branch, envPriority)
+		sep.setBranchName(branch, priority)
 	}
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
-		sep.setCommitSha(sha, envPriority)
+		sep.setCommitSha(sha, priority)
 	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus) {
+	priority := workspaceStatusPriority
 	for _, item := range workspaceStatus.Item {
 		if item.Value == "" {
 			continue
 		}
 		switch item.Key {
 		case "BUILD_USER":
-			sep.setUser(item.Value, workspaceStatusPriority)
+			sep.setUser(item.Value, priority)
 		case "USER":
-			sep.setUser(item.Value, workspaceStatusPriority)
+			sep.setUser(item.Value, priority)
 		case "BUILD_HOST":
-			sep.setHost(item.Value, workspaceStatusPriority)
+			sep.setHost(item.Value, priority)
 		case "HOST":
-			sep.setHost(item.Value, workspaceStatusPriority)
+			sep.setHost(item.Value, priority)
 		case "PATTERN":
-			sep.setPattern(strings.Split(item.Value, " "), workspaceStatusPriority)
+			sep.setPattern(strings.Split(item.Value, " "), priority)
 		case "ROLE":
-			sep.setRole(item.Value, workspaceStatusPriority)
+			sep.setRole(item.Value, priority)
 		case "REPO_URL":
-			sep.setRepoUrl(item.Value, workspaceStatusPriority)
+			sep.setRepoUrl(item.Value, priority)
 		case "GIT_BRANCH":
-			sep.setBranchName(item.Value, workspaceStatusPriority)
+			sep.setBranchName(item.Value, priority)
 		case "COMMIT_SHA":
-			sep.setCommitSha(item.Value, workspaceStatusPriority)
+			sep.setCommitSha(item.Value, priority)
 		}
 	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) {
+	priority := buildMetadataPriority
 	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
-		sep.setCommitSha(sha, buildMetadataPriority)
+		sep.setCommitSha(sha, priority)
 	}
 	if branch, ok := metadata["BRANCH_NAME"]; ok && branch != "" {
-		sep.setBranchName(branch, buildMetadataPriority)
+		sep.setBranchName(branch, priority)
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
-		sep.setRepoUrl(url, buildMetadataPriority)
+		sep.setRepoUrl(url, priority)
 	}
 	if user, ok := metadata["USER"]; ok && user != "" {
-		sep.setUser(user, buildMetadataPriority)
+		sep.setUser(user, priority)
 	}
 	if host, ok := metadata["HOST"]; ok && host != "" {
-		sep.setHost(host, buildMetadataPriority)
+		sep.setHost(host, priority)
 	}
 	if pattern, ok := metadata["PATTERN"]; ok && pattern != "" {
-		sep.setPattern(strings.Split(pattern, " "), buildMetadataPriority)
+		sep.setPattern(strings.Split(pattern, " "), priority)
 	}
 	if role, ok := metadata["ROLE"]; ok && role != "" {
-		sep.setRole(role, buildMetadataPriority)
+		sep.setRole(role, priority)
 	}
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
-		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, buildMetadataPriority)
+		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured) {
-	sep.setCommand("workflow run", workflowConfiguredPriority)
-	sep.setPattern([]string{workflowConfigured.ActionName}, workflowConfiguredPriority)
+	priority := workflowConfiguredPriority
+	sep.setCommand("workflow run", priority)
+	sep.setPattern([]string{workflowConfigured.ActionName}, priority)
 }
 
 // All the funcs below set invocation fields only if they haven't already been
