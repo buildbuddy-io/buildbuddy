@@ -41,7 +41,7 @@ service BuildBuddyService {
   rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
       returns (invocation.GetInvocationOwnerResponse);
 
-  // Zip archive API
+  // Zip manifest API
   rpc GetZipManifest(zip.GetZipManifestRequest)
       returns (zip.GetZipManifestResponse);
 

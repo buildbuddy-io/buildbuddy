@@ -21,7 +21,7 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *url.URL) (*zipb.ZipManifest, error) {
+func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *url.URL) (*zipb.Manifest, error) {
 	r, err := digest.ParseDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
 	if err != nil {
 		return nil, err
@@ -57,10 +57,10 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 		return nil, err
 	}
 
-	return &zipb.ZipManifest{Entry: entries}, nil
+	return &zipb.Manifest{Entry: entries}, nil
 }
 
-func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ZipManifestEntry) (int, error) {
+func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry) (int, error) {
 	var buf bytes.Buffer
 	err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
 	if err != nil {
@@ -69,7 +69,7 @@ func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.
 	return ziputil.ValidateLocalFileHeader(buf.Bytes(), entry)
 }
 
-func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ZipManifestEntry, out io.Writer) error {
+func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
 	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, env, url, entry)
 	if err != nil {
 		return err

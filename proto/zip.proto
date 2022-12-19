@@ -4,7 +4,7 @@ import "proto/context.proto";
 
 package zip;
 
-message ZipManifestEntry {
+message ManifestEntry {
   // The full path of the file as specified in the archive.
   string name = 1;
 
@@ -35,9 +35,9 @@ message ZipManifestEntry {
   uint32 crc32 = 7;
 }
 
-message ZipManifest {
+message Manifest {
   // Individual summaries of the files in this archive.
-  repeated ZipManifestEntry entry = 1;
+  repeated ManifestEntry entry = 1;
 }
 
 message GetZipManifestRequest {
@@ -50,5 +50,5 @@ message GetZipManifestRequest {
 message GetZipManifestResponse {
   context.ResponseContext response_context = 1;
 
-  optional ZipManifest manifest = 2;
+  optional Manifest manifest = 2;
 }

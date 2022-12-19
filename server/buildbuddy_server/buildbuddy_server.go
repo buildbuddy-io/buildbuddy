@@ -1062,7 +1062,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "File not found", http.StatusBadRequest)
 			return
 		}
-		entry := &zipb.ZipManifestEntry{}
+		entry := &zipb.ManifestEntry{}
 		if err := proto.Unmarshal(b, entry); err != nil {
 			log.Warningf("Failed to unmarshal ManifestEntry: %s", err)
 			http.Error(w, "File not found", http.StatusBadRequest)
