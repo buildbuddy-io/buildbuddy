@@ -124,6 +124,7 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 }
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
+	invocation := &inpb.Invocation{InvocationId: iid}
 	buildEventAccumulator := accumulator.NewBEValues(iid)
 	val, ok := b.cancelFnsByInvID.Load(iid)
 	if ok {
@@ -146,6 +147,7 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		ctx:            ctx,
 		pw:             nil,
 		beValues:       buildEventAccumulator,
+		parser:         event_parser.NewStreamingEventParser(invocation),
 		redactor:       redact.NewStreamingRedactor(b.env),
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
@@ -637,6 +639,7 @@ type EventChannel struct {
 	env            environment.Env
 	pw             *protofile.BufferedProtoWriter
 	beValues       *accumulator.BEValues
+	parser         *event_parser.StreamingEventParser
 	redactor       *redact.StreamingRedactor
 	statusReporter *build_status_reporter.BuildStatusReporter
 	targetTracker  *target_tracker.TargetTracker
@@ -660,30 +663,6 @@ type EventChannel struct {
 	isVoid bool
 }
 
-func (e *EventChannel) fillInvocationFromEvents(ctx context.Context, streamID string, invocation *inpb.Invocation) error {
-	pr := protofile.NewBufferedProtoReader(e.env.GetBlobstore(), streamID)
-	var terminalWriter *terminal.ScreenWriter
-	if !invocation.HasChunkedEventLogs {
-		terminalWriter = terminal.NewScreenWriter()
-	}
-	parser := event_parser.NewStreamingEventParser(terminalWriter)
-	parser.FillInvocation(invocation)
-	for {
-		event := &inpb.InvocationEvent{}
-		err := pr.ReadProto(ctx, event)
-		if err == nil {
-			parser.ParseEvent(event)
-		} else if err == io.EOF {
-			break
-		} else {
-			log.CtxWarningf(ctx, "Error reading proto from log: %s", err)
-			return err
-		}
-	}
-	parser.FillInvocation(invocation)
-	return nil
-}
-
 func (e *EventChannel) Context() context.Context {
 	return e.ctx
 }
@@ -705,13 +684,11 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocationStatus = inpb.Invocation_COMPLETE_INVOCATION_STATUS
 	}
 
-	invocation := &inpb.Invocation{
-		InvocationId:        iid,
-		InvocationStatus:    invocationStatus,
-		Attempt:             e.attempt,
-		HasChunkedEventLogs: e.logWriter != nil,
-		BazelExitCode:       e.beValues.BuildExitCode(),
-	}
+	invocation := e.parser.GetInvocation()
+	invocation.InvocationStatus = invocationStatus
+	invocation.Attempt = e.attempt
+	invocation.HasChunkedEventLogs = e.logWriter != nil
+	invocation.BazelExitCode = e.beValues.BuildExitCode()
 
 	if e.pw != nil {
 		if err := e.pw.Flush(ctx); err != nil {
@@ -719,14 +696,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		}
 	}
 
-	err := e.fillInvocationFromEvents(
-		ctx,
-		GetStreamIdFromInvocationIdAndAttempt(iid, e.attempt),
-		invocation,
-	)
-	if err != nil {
-		return err
-	}
 	if e.logWriter != nil {
 		if err := e.logWriter.Close(ctx); err != nil {
 			return err
@@ -992,7 +961,10 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		return err
 	}
 	e.redactor.RedactMetadata(event.BuildEvent)
+	// TODO(bduffany): Consolidate beValues and parser since they basically
+	// serve the same purpose at this point.
 	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
+	e.parser.ParseEvent(event)
 
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
@@ -1113,22 +1085,11 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 
 func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID string) error {
 	db := e.env.GetInvocationDB()
-	ti := &tables.Invocation{
-		InvocationID: invocationID,
-	}
-	invocationProto := TableInvocationToProto(ti)
-	err := e.fillInvocationFromEvents(
-		ctx,
-		GetStreamIdFromInvocationIdAndAttempt(invocationID, e.attempt),
-		invocationProto,
-	)
-	if err != nil {
-		return err
-	}
+	invocationProto := e.parser.GetInvocation()
 	if e.logWriter != nil {
 		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
-	ti, err = e.tableInvocationFromProto(invocationProto, ti.BlobID)
+	ti, err := e.tableInvocationFromProto(invocationProto, "" /*=blobID*/)
 	if err != nil {
 		return err
 	}
@@ -1221,13 +1182,12 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		}
 	}
 
-	invocationMu := sync.Mutex{}
 	invocation := TableInvocationToProto(ti)
 	streamID := GetStreamIdFromInvocationIdAndAttempt(iid, ti.Attempt)
 
+	var scoreCard *capb.ScoreCard
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		var scoreCard *capb.ScoreCard
 		// When detailed stats are enabled, the scorecard is not inlined in the
 		// invocation.
 		if !hit_tracker.DetailedStatsEnabled() {
@@ -1244,11 +1204,6 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 				}
 			}
 		}
-		if scoreCard != nil {
-			invocationMu.Lock()
-			invocation.ScoreCard = scoreCard
-			invocationMu.Unlock()
-		}
 		return nil
 	})
 
@@ -1262,10 +1217,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			// only redact if we hadn't redacted enough, only parse again if we redact
 			redactor = redact.NewStreamingRedactor(env)
 		}
-		var parser *event_parser.StreamingEventParser
-		if redactor != nil {
-			parser = event_parser.NewStreamingEventParser(screenWriter)
-		}
+		parser := event_parser.NewStreamingEventParser(invocation)
 		events := []*inpb.InvocationEvent{}
 		structuredCommandLines := []*command_line.CommandLine{}
 		pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
@@ -1279,49 +1231,44 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 				log.Warningf("Error reading proto from log: %s", err)
 				return err
 			}
-			if parser != nil {
-				if redactor != nil {
-					if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
-						return err
-					}
-					redactor.RedactMetadata(event.BuildEvent)
+			if redactor != nil {
+				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
+					return err
 				}
+				redactor.RedactMetadata(event.BuildEvent)
 				parser.ParseEvent(event)
-			} else {
-				events = append(events, event)
-				switch p := event.BuildEvent.Payload.(type) {
-				case *build_event_stream.BuildEvent_Progress:
-					if screenWriter != nil {
-						screenWriter.Write([]byte(p.Progress.Stderr))
-						screenWriter.Write([]byte(p.Progress.Stdout))
-					}
-					// Now that we've updated our screenwriter, zero out
-					// progress output in the event so they don't eat up
-					// memory.
-					p.Progress.Stderr = ""
-					p.Progress.Stdout = ""
-				case *build_event_stream.BuildEvent_StructuredCommandLine:
-					structuredCommandLines = append(structuredCommandLines, p.StructuredCommandLine)
+			}
+			events = append(events, event)
+			switch p := event.BuildEvent.Payload.(type) {
+			case *build_event_stream.BuildEvent_Progress:
+				if screenWriter != nil {
+					screenWriter.Write([]byte(p.Progress.Stderr))
+					screenWriter.Write([]byte(p.Progress.Stdout))
 				}
+				// Don't serve progress event contents to the UI since they are too
+				// large. Instead, logs are available either via the
+				// console_buffer field or the separate logs RPC.
+				p.Progress.Stderr = ""
+				p.Progress.Stdout = ""
+			case *build_event_stream.BuildEvent_StructuredCommandLine:
+				structuredCommandLines = append(structuredCommandLines, p.StructuredCommandLine)
 			}
 		}
-		invocationMu.Lock()
-		if parser != nil {
-			parser.FillInvocation(invocation)
-		} else {
-			invocation.Event = events
-			invocation.StructuredCommandLine = structuredCommandLines
-			if screenWriter != nil {
-				invocation.ConsoleBuffer = string(screenWriter.Render())
-			}
+		invocation.Event = events
+		// TODO: Can we remove this StructuredCommandLine field? These are
+		// already available in the events list.
+		invocation.StructuredCommandLine = structuredCommandLines
+		if screenWriter != nil {
+			invocation.ConsoleBuffer = string(screenWriter.Render())
 		}
-		invocationMu.Unlock()
 		return nil
 	})
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+
+	invocation.ScoreCard = scoreCard
 	return invocation, nil
 }
 

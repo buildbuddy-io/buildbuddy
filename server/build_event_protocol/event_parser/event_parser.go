@@ -6,7 +6,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -15,6 +14,20 @@ import (
 const (
 	envVarOptionName = "client_env"
 	envVarSeparator  = "="
+)
+
+const (
+	// Priorities determine the precedence of different events as they apply to
+	// invocation fields.
+	//
+	// For example, a RepoUrl setting in BuildMetadata takes priority over a
+	// repo URL set via WorkspaceStatus, even if the workspace status event came
+	// after the build metadata event in the stream.
+
+	envPriority                = 1
+	workspaceStatusPriority    = 2
+	buildMetadataPriority      = 3
+	workflowConfiguredPriority = 4
 )
 
 func parseEnv(commandLine *command_line.CommandLine) map[string]string {
@@ -40,48 +53,48 @@ func parseEnv(commandLine *command_line.CommandLine) map[string]string {
 	return envVarMap
 }
 
+// StreamingEventParser consumes a stream of build events and populates an
+// invocation proto as it does so.
+//
+// To save memory, only the "summary" fields (like success, duration, etc.) in
+// the invocation are recorded by default, and any variable-length lists such as
+// events, console buffer etc. are not saved.
 type StreamingEventParser struct {
-	terminalWriter         *terminal.ScreenWriter
-	command                string
-	buildMetadata          []map[string]string
-	events                 []*inpb.InvocationEvent
-	structuredCommandLines []*command_line.CommandLine
-	workspaceStatuses      []*build_event_stream.WorkspaceStatus
-	workflowConfigurations []*build_event_stream.WorkflowConfigured
-	pattern                []string
-	startTime              *time.Time
-	endTime                *time.Time
-	actionCount            int64
-	success                bool
+	invocation *inpb.Invocation
+	startTime  *time.Time
+
+	priority fieldPriorities
 }
 
-func NewStreamingEventParser(screenWriter *terminal.ScreenWriter) *StreamingEventParser {
+// fieldPriorities keeps track of all the priorities currently assigned to each
+// field. For consistency, the field names here are named exactly after the
+// invocation proto fields.
+type fieldPriorities struct {
+	Host,
+	User,
+	Role,
+	ReadPermission,
+	RepoUrl,
+	BranchName,
+	CommitSha,
+	Command,
+	Pattern int
+}
+
+func NewStreamingEventParser(invocation *inpb.Invocation) *StreamingEventParser {
 	return &StreamingEventParser{
-		startTime:              nil,
-		endTime:                nil,
-		terminalWriter:         screenWriter,
-		structuredCommandLines: make([]*command_line.CommandLine, 0),
-		workspaceStatuses:      make([]*build_event_stream.WorkspaceStatus, 0),
-		workflowConfigurations: make([]*build_event_stream.WorkflowConfigured, 0),
-		buildMetadata:          make([]map[string]string, 0),
-		events:                 make([]*inpb.InvocationEvent, 0),
+		invocation: invocation,
 	}
 }
 
+func (sep *StreamingEventParser) GetInvocation() *inpb.Invocation {
+	return sep.invocation
+}
+
 func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
-	sep.events = append(sep.events, event)
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		{
-			if sep.terminalWriter != nil {
-				sep.terminalWriter.Write([]byte(p.Progress.Stderr))
-				sep.terminalWriter.Write([]byte(p.Progress.Stdout))
-			}
-			// Now that we've updated our screenwriter, zero out
-			// progress output in the event so they don't eat up
-			// memory.
-			p.Progress.Stderr = ""
-			p.Progress.Stdout = ""
 		}
 	case *build_event_stream.BuildEvent_Aborted:
 		{
@@ -90,13 +103,13 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		{
 			startTime := timeutil.GetTimeWithFallback(p.Started.StartTime, p.Started.StartTimeMillis)
 			sep.startTime = &startTime
-			sep.command = p.Started.Command
+			sep.invocation.Command = p.Started.Command
 			for _, child := range event.BuildEvent.Children {
 				// Here we are then. Knee-deep.
 				switch c := child.Id.(type) {
 				case *build_event_stream.BuildEventId_Pattern:
 					{
-						sep.pattern = c.Pattern.Pattern
+						sep.invocation.Pattern = c.Pattern.Pattern
 					}
 				}
 			}
@@ -106,14 +119,14 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 		}
 	case *build_event_stream.BuildEvent_StructuredCommandLine:
 		{
-			sep.structuredCommandLines = append(sep.structuredCommandLines, p.StructuredCommandLine)
+			sep.fillInvocationFromStructuredCommandLine(p.StructuredCommandLine)
 		}
 	case *build_event_stream.BuildEvent_OptionsParsed:
 		{
 		}
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
 		{
-			sep.workspaceStatuses = append(sep.workspaceStatuses, p.WorkspaceStatus)
+			sep.fillInvocationFromWorkspaceStatus(p.WorkspaceStatus)
 		}
 	case *build_event_stream.BuildEvent_Fetch:
 		{
@@ -145,15 +158,18 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 	case *build_event_stream.BuildEvent_Finished:
 		{
 			endTime := timeutil.GetTimeWithFallback(p.Finished.FinishTime, p.Finished.FinishTimeMillis)
-			sep.endTime = &endTime
-			sep.success = p.Finished.ExitCode.Code == 0
+			if sep.startTime != nil {
+				duration := endTime.Sub(*sep.startTime)
+				sep.invocation.DurationUsec = duration.Microseconds()
+			}
+			sep.invocation.Success = p.Finished.ExitCode.Code == 0
 		}
 	case *build_event_stream.BuildEvent_BuildToolLogs:
 		{
 		}
 	case *build_event_stream.BuildEvent_BuildMetrics:
 		{
-			sep.actionCount = p.BuildMetrics.ActionSummary.ActionsExecuted
+			sep.invocation.ActionCount = p.BuildMetrics.ActionSummary.ActionsExecuted
 		}
 	case *build_event_stream.BuildEvent_WorkspaceInfo:
 		{
@@ -164,7 +180,7 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 			if metadata == nil {
 				return
 			}
-			sep.buildMetadata = append(sep.buildMetadata, metadata)
+			sep.fillInvocationFromBuildMetadata(metadata)
 		}
 	case *build_event_stream.BuildEvent_ConvenienceSymlinksIdentified:
 		{
@@ -175,188 +191,211 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 			if wfc == nil {
 				return
 			}
-			sep.workflowConfigurations = append(sep.workflowConfigurations, wfc)
+			sep.fillInvocationFromWorkflowConfigured(wfc)
 		}
 	}
 }
 
-func (sep *StreamingEventParser) FillInvocation(invocation *inpb.Invocation) {
-	invocation.Command = sep.command
-	invocation.Pattern = sep.pattern
-	invocation.Event = sep.events
-	invocation.Success = sep.success
-	invocation.ActionCount = sep.actionCount
-
-	// Fill invocation in a deterministic order:
-	// - Environment variables
-	// - Workspace status
-	// - Build metadata
-
-	for _, commandLine := range sep.structuredCommandLines {
-		fillInvocationFromStructuredCommandLine(commandLine, invocation)
-	}
-	for _, workspaceStatus := range sep.workspaceStatuses {
-		fillInvocationFromWorkspaceStatus(workspaceStatus, invocation)
-	}
-	for _, buildMetadatum := range sep.buildMetadata {
-		fillInvocationFromBuildMetadata(buildMetadatum, invocation)
-	}
-	for _, workflowConfigured := range sep.workflowConfigurations {
-		fillInvocationFromWorkflowConfigured(workflowConfigured, invocation)
-	}
-
-	buildDuration := time.Duration(int64(0))
-	if sep.endTime != nil && sep.startTime != nil {
-		buildDuration = sep.endTime.Sub(*sep.startTime)
-	}
-	invocation.DurationUsec = buildDuration.Microseconds()
-	if sep.terminalWriter != nil {
-		// TODO(siggisim): Do this rendering once on write, rather than on every read.
-		invocation.ConsoleBuffer = string(sep.terminalWriter.Render())
-	}
-}
-
-func fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine, invocation *inpb.Invocation) {
+func (sep *StreamingEventParser) fillInvocationFromStructuredCommandLine(commandLine *command_line.CommandLine) {
+	priority := envPriority
 	envVarMap := parseEnv(commandLine)
-	if commandLine != nil {
-		invocation.StructuredCommandLine = append(invocation.StructuredCommandLine, commandLine)
-	}
 	if user, ok := envVarMap["USER"]; ok && user != "" {
-		invocation.User = user
+		sep.setUser(user, priority)
 	}
 	if url, ok := envVarMap["TRAVIS_REPO_SLUG"]; ok && url != "" {
-		invocation.RepoUrl = url
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["GIT_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["BUILDKITE_REPO"]; ok && url != "" {
-		invocation.RepoUrl = url
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["REPO_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["CIRCLE_REPOSITORY_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		sep.setRepoUrl(url, priority)
 	}
 	if url, ok := envVarMap["GITHUB_REPOSITORY"]; ok && url != "" {
-		invocation.RepoUrl = url
+		sep.setRepoUrl(url, priority)
 	}
 	if branch, ok := envVarMap["TRAVIS_BRANCH"]; ok && branch != "" {
-		invocation.BranchName = branch
+		sep.setBranchName(branch, priority)
 	}
 	if branch, ok := envVarMap["GIT_BRANCH"]; ok && branch != "" {
-		invocation.BranchName = branch
+		sep.setBranchName(branch, priority)
 	}
 	if branch, ok := envVarMap["BUILDKITE_BRANCH"]; ok && branch != "" {
-		invocation.BranchName = branch
+		sep.setBranchName(branch, priority)
 	}
 	if branch, ok := envVarMap["CIRCLE_BRANCH"]; ok && branch != "" {
-		invocation.BranchName = branch
+		sep.setBranchName(branch, priority)
 	}
 	if branch, ok := envVarMap["GITHUB_REF"]; ok && strings.HasPrefix(branch, "refs/heads/") {
-		invocation.BranchName = strings.TrimPrefix(branch, "refs/heads/")
+		sep.setBranchName(strings.TrimPrefix(branch, "refs/heads/"), priority)
 	}
 	if branch, ok := envVarMap["GITHUB_HEAD_REF"]; ok && branch != "" {
-		invocation.BranchName = branch
+		sep.setBranchName(branch, priority)
 	}
 	if sha, ok := envVarMap["TRAVIS_COMMIT"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["GIT_COMMIT"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["BUILDKITE_COMMIT"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["CIRCLE_SHA1"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["GITHUB_SHA"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["COMMIT_SHA"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 	if sha, ok := envVarMap["VOLATILE_GIT_COMMIT"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 	if ci, ok := envVarMap["CI"]; ok && ci != "" {
-		invocation.Role = "CI"
+		sep.setRole("CI", priority)
 	}
 	if ciRunner, ok := envVarMap["CI_RUNNER"]; ok && ciRunner != "" {
-		invocation.Role = "CI_RUNNER"
+		sep.setRole("CI_RUNNER", priority)
 	}
 
 	// Gitlab CI Environment Variables
 	// https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 	if url, ok := envVarMap["CI_REPOSITORY_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		sep.setRepoUrl(url, priority)
 	}
 	if branch, ok := envVarMap["CI_COMMIT_BRANCH"]; ok && branch != "" {
-		invocation.BranchName = branch
+		sep.setBranchName(branch, priority)
 	}
 	if sha, ok := envVarMap["CI_COMMIT_SHA"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 }
 
-func fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus, invocation *inpb.Invocation) {
+func (sep *StreamingEventParser) fillInvocationFromWorkspaceStatus(workspaceStatus *build_event_stream.WorkspaceStatus) {
+	priority := workspaceStatusPriority
 	for _, item := range workspaceStatus.Item {
 		if item.Value == "" {
 			continue
 		}
 		switch item.Key {
 		case "BUILD_USER":
-			invocation.User = item.Value
+			sep.setUser(item.Value, priority)
 		case "USER":
-			invocation.User = item.Value
+			sep.setUser(item.Value, priority)
 		case "BUILD_HOST":
-			invocation.Host = item.Value
+			sep.setHost(item.Value, priority)
 		case "HOST":
-			invocation.Host = item.Value
+			sep.setHost(item.Value, priority)
 		case "PATTERN":
-			invocation.Pattern = strings.Split(item.Value, " ")
+			sep.setPattern(strings.Split(item.Value, " "), priority)
 		case "ROLE":
-			invocation.Role = item.Value
+			sep.setRole(item.Value, priority)
 		case "REPO_URL":
-			invocation.RepoUrl = item.Value
+			sep.setRepoUrl(item.Value, priority)
 		case "GIT_BRANCH":
-			invocation.BranchName = item.Value
+			sep.setBranchName(item.Value, priority)
 		case "COMMIT_SHA":
-			invocation.CommitSha = item.Value
+			sep.setCommitSha(item.Value, priority)
 		}
 	}
 }
 
-func fillInvocationFromBuildMetadata(metadata map[string]string, invocation *inpb.Invocation) {
+func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[string]string) {
+	priority := buildMetadataPriority
 	if sha, ok := metadata["COMMIT_SHA"]; ok && sha != "" {
-		invocation.CommitSha = sha
+		sep.setCommitSha(sha, priority)
 	}
 	if branch, ok := metadata["BRANCH_NAME"]; ok && branch != "" {
-		invocation.BranchName = branch
+		sep.setBranchName(branch, priority)
 	}
 	if url, ok := metadata["REPO_URL"]; ok && url != "" {
-		invocation.RepoUrl = url
+		sep.setRepoUrl(url, priority)
 	}
 	if user, ok := metadata["USER"]; ok && user != "" {
-		invocation.User = user
+		sep.setUser(user, priority)
 	}
 	if host, ok := metadata["HOST"]; ok && host != "" {
-		invocation.Host = host
+		sep.setHost(host, priority)
 	}
 	if pattern, ok := metadata["PATTERN"]; ok && pattern != "" {
-		invocation.Pattern = strings.Split(pattern, " ")
+		sep.setPattern(strings.Split(pattern, " "), priority)
 	}
 	if role, ok := metadata["ROLE"]; ok && role != "" {
-		invocation.Role = role
+		sep.setRole(role, priority)
 	}
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
-		invocation.ReadPermission = inpb.InvocationPermission_PUBLIC
+		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
 }
 
-func fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured, invocation *inpb.Invocation) {
-	invocation.Command = "workflow run"
-	invocation.Pattern = []string{workflowConfigured.ActionName}
+func (sep *StreamingEventParser) fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured) {
+	priority := workflowConfiguredPriority
+	sep.setCommand("workflow run", priority)
+	sep.setPattern([]string{workflowConfigured.ActionName}, priority)
+}
+
+// All the funcs below set invocation fields only if they haven't already been
+// set by an event with higher priority.
+
+func (sep *StreamingEventParser) setHost(value string, priority int) {
+	if sep.priority.Host <= priority {
+		sep.priority.Host = priority
+		sep.invocation.Host = value
+	}
+}
+func (sep *StreamingEventParser) setUser(value string, priority int) {
+	if sep.priority.User <= priority {
+		sep.priority.User = priority
+		sep.invocation.User = value
+	}
+}
+func (sep *StreamingEventParser) setRole(value string, priority int) {
+	if sep.priority.Role <= priority {
+		sep.priority.Role = priority
+		sep.invocation.Role = value
+	}
+}
+func (sep *StreamingEventParser) setReadPermission(value inpb.InvocationPermission, priority int) {
+	if sep.priority.ReadPermission <= priority {
+		sep.priority.ReadPermission = priority
+		sep.invocation.ReadPermission = value
+	}
+}
+func (sep *StreamingEventParser) setRepoUrl(value string, priority int) {
+	if sep.priority.RepoUrl <= priority {
+		sep.priority.RepoUrl = priority
+		sep.invocation.RepoUrl = value
+	}
+}
+func (sep *StreamingEventParser) setBranchName(value string, priority int) {
+	if sep.priority.BranchName <= priority {
+		sep.priority.BranchName = priority
+		sep.invocation.BranchName = value
+	}
+}
+func (sep *StreamingEventParser) setCommitSha(value string, priority int) {
+	if sep.priority.CommitSha <= priority {
+		sep.priority.CommitSha = priority
+		sep.invocation.CommitSha = value
+	}
+}
+func (sep *StreamingEventParser) setCommand(value string, priority int) {
+	if sep.priority.Command <= priority {
+		sep.priority.Command = priority
+		sep.invocation.Command = value
+	}
+}
+func (sep *StreamingEventParser) setPattern(value []string, priority int) {
+	if sep.priority.Pattern <= priority {
+		sep.priority.Pattern = priority
+		sep.invocation.Pattern = value
+	}
 }
