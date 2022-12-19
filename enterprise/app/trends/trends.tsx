@@ -5,6 +5,7 @@ import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import TrendsChartComponent from "./trends_chart";
+import TrendsSummaryComponent from "./summary";
 import CacheChartComponent from "./cache_chart";
 import PercentilesChartComponent from "./percentile_chart";
 import { Subscription } from "rxjs";
@@ -228,6 +229,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.loading && <div className="loading"></div>}
           {!this.state.loading && (
             <>
+              <TrendsSummaryComponent title="Beer"></TrendsSummaryComponent>
               <TrendsChartComponent
                 title="Builds"
                 data={this.state.dates}
