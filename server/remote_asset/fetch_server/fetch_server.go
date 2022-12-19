@@ -137,13 +137,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				log.CtxInfof(ctx, "FetchServer failed to get metadata for %s: %s", expectedSHA256, err)
 				continue
 			}
-
-			// TODO(Maggie): Clean up after digest size is rolled out
-			digestSize := md.DigestSizeBytes
-			if digestSize == 0 {
-				digestSize = md.StoredSizeBytes
-			}
-			blobDigest.SizeBytes = digestSize
+			blobDigest.SizeBytes = md.DigestSizeBytes
 
 			// Even though we successfully fetched metadata, we need to renew
 			// the cache entry (using Contains()) to ensure that it doesn't
