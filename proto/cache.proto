@@ -225,7 +225,8 @@ message GetCacheMetadataRequest {
 
 message GetCacheMetadataResponse {
   context.ResponseContext response_context = 1;
-  int64 size_bytes = 2;
+  int64 stored_size_bytes = 2;
   int64 last_access_usec = 3;
   int64 last_modify_usec = 4;
+  int64 digest_size_bytes = 5;
 }

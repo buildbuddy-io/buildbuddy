@@ -900,11 +900,11 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 		return nil, err
 	}
 
-	// TODO(Maggie): Add digest size to response and rename size fields
 	return &capb.GetCacheMetadataResponse{
-		SizeBytes:      metadata.StoredSizeBytes,
-		LastAccessUsec: metadata.LastAccessTimeUsec,
-		LastModifyUsec: metadata.LastModifyTimeUsec,
+		StoredSizeBytes: metadata.StoredSizeBytes,
+		DigestSizeBytes: metadata.DigestSizeBytes,
+		LastAccessUsec:  metadata.LastAccessTimeUsec,
+		LastModifyUsec:  metadata.LastModifyTimeUsec,
 	}, nil
 }
 
