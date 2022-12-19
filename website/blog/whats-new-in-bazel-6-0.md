@@ -4,14 +4,14 @@ title: "What's New in Bazel 6.0"
 description: We reviewed over 3,100 commits and summarized them, again 😅, so you don't have to!
 author: Brentley Jones
 author_title: Developer Evangelist @ BuildBuddy
-date: 2022-12-15:12:00:00
+date: 2022-12-19:9:00:00
 author_url: https://brentleyjones.com
 author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/bazel_6_0.png
 tags: [bazel]
 ---
 
-[Bazel 6.0][bazel-6-0] includes [over 3,100 changes][diff] since 5.4.
+Bazel 6.0 includes [over 3,100 changes][diff] since 5.4.
 It's the latest major release,
 following the release of 5.0 in January of this year,
 and it's Bazel's [third LTS release][lts-releases].
@@ -19,8 +19,7 @@ Since there were so many changes,
 many of them quite impactful,
 I felt I needed to review them all and provide a nice summary for y'all.
 
-[bazel-6-0]: https://blog.bazel.build/2022/11/15/bazel-6.0.html
-[diff]: https://github.com/bazelbuild/bazel/compare/5.4.0...release-6.0.0
+[diff]: https://github.com/bazelbuild/bazel/compare/5.4.0...6.0.0
 [lts-releases]: https://bazel.build/release/versioning#lts-releases
 
 <!-- truncate -->
