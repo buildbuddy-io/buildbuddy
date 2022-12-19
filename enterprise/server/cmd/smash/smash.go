@@ -14,8 +14,10 @@ import (
 	"github.com/bojand/ghz/runner"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/jhump/protoreflect/desc"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
@@ -26,13 +28,15 @@ import (
 )
 
 var (
-	cacheTarget  = flag.String("cache_target", "localhost:1985", "Cache target to connect to.")
-	method       = flag.String("method", "google.bytestream.ByteStream/Write", "One of google.bytestream.ByteStream/{Read,Write},build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs.")
-	rps          = flag.Uint("rps", 1000, "How many requests per second to attempt.")
-	testDuration = flag.Duration("test_duration", 10*time.Second, "The duration of the loadtest.")
-	concurrency  = flag.Uint("concurrency", 10, "Number of concurrent workers to use")
-	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
-	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
+	cacheTarget       = flag.String("cache_target", "localhost:1985", "Cache target to connect to.")
+	method            = flag.String("method", "google.bytestream.ByteStream/Write", "One of google.bytestream.ByteStream/{Read,Write},build.bazel.remote.execution.v2.ContentAddressableStorage/FindMissingBlobs.")
+	rps               = flag.Uint("rps", 1000, "How many requests per second to attempt.")
+	testDuration      = flag.Duration("test_duration", 10*time.Second, "The duration of the loadtest.")
+	testTotalRequests = flag.Uint("test_total_requests", 0, "Number of requests to send. If non-zero, test_duration is ignored.")
+	concurrency       = flag.Uint("concurrency", 10, "Number of concurrent workers to use")
+	instanceName      = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
+	apiKey            = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
+	remoteHeaders     = flagutil.New("remote_header", []string{}, "Extra remote headers to send in RPC requests.")
 
 	randomSeed         = flag.Int64("random_seed", 0, "Random seed.")
 	realisticBlobSizes = flag.Bool("realistic_blob_sizes", true, "If true, use realistic blob sizes, ignoring blob_size flag.")
@@ -219,20 +223,30 @@ func main() {
 		blobSizeDesc = "simulating real blob sizes."
 	}
 
-	md := make(map[string]string)
+	md, err := mdutil.Parse(*remoteHeaders)
+	if err != nil {
+		log.Fatalf("Failed to parse remote_headers: %s", err)
+	}
 	if *apiKey != "" {
-		md["x-buildbuddy-api-key"] = *apiKey
+		md.Append("x-buildbuddy-api-key", *apiKey)
 	}
 	log.Printf("Running a %s test @ %d r/sec, concurrency: %d, %s", *testDuration, *rps, *concurrency, blobSizeDesc)
+	opts := []runner.Option{
+		runner.WithConcurrency(*concurrency),
+		runner.WithInsecure(!*ssl),
+		runner.WithBinaryDataFunc(dataFunc),
+		runner.WithMetadata(mdutil.MakeSingleValued(md)),
+	}
+	if *testTotalRequests > 0 {
+		opts = append(opts, runner.WithTotalRequests(*testTotalRequests))
+	} else {
+		opts = append(opts, runner.WithRPS(*rps), runner.WithRunDuration(*testDuration))
+	}
+
 	report, err := runner.Run(
 		*method,
 		*cacheTarget,
-		runner.WithConcurrency(*concurrency),
-		runner.WithRPS(*rps),
-		runner.WithRunDuration(*testDuration),
-		runner.WithInsecure(!*ssl),
-		runner.WithBinaryDataFunc(dataFunc),
-		runner.WithMetadata(md),
+		opts...,
 	)
 
 	if err != nil {
