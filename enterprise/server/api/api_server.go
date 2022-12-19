@@ -40,10 +40,6 @@ type APIServer struct {
 	env environment.Env
 }
 
-type GetFileServer struct {
-	s apipb.ApiService_GetFileServer
-}
-
 func Register(env environment.Env) error {
 	if api_config.APIEnabled() {
 		env.SetAPIService(NewAPIServer(env))
@@ -323,7 +319,11 @@ func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apip
 	}, nil
 }
 
-func (gfs *GetFileServer) Write(data []byte) (int, error) {
+type getFileWriter struct {
+	s apipb.ApiService_GetFileServer
+}
+
+func (gfs *getFileWriter) Write(data []byte) (int, error) {
 	err := gfs.s.Send(&apipb.GetFileResponse{
 		Data: data,
 	})
@@ -341,7 +341,7 @@ func (s *APIServer) GetFile(req *apipb.GetFileRequest, server apipb.ApiService_G
 		return status.InvalidArgumentErrorf("Invalid URL")
 	}
 
-	writer := &GetFileServer{s: server}
+	writer := &getFileWriter{s: server}
 
 	return bytestream.StreamBytestreamFile(ctx, s.env, parsedURL, writer)
 }
