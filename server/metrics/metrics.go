@@ -457,6 +457,15 @@ var (
 		CacheRequestType,
 	})
 
+	MigrationDoubleReadHitCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "migration_double_read_hit_count",
+		Help:      "Number of double read hits where the source and destination caches hold the same digests during a cache migration.",
+	}, []string{
+		CacheRequestType,
+	})
+
 	MigrationCopyChanSize = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
