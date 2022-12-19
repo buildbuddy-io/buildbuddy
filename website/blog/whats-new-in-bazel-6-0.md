@@ -369,14 +369,7 @@ to help the Bazel team discover any issues in the wide variety of projects that 
 
 Here are some of the platforms and toolchains related changes which weren't tied to any of those migrations:
 
-- The `host` configuration is deprecated,
-  and [a](https://github.com/bazelbuild/bazel/commit/6e6c4cf1bd6edaa15ecc4417cd0be70581181def)
-  [lot](https://github.com/bazelbuild/bazel/commit/32fc7cac3c62dcf1721e9093a449561eb854f241)
-  [of](https://github.com/bazelbuild/bazel/commit/790d7a75b34eb963c18f9165bd9608d7a8eb4f3d)
-  [changes](https://github.com/bazelbuild/bazel/commit/48e88685105c906ae52865422da01c39c580bf21)
-  [were](https://github.com/bazelbuild/bazel/commit/715c9faabba573501c9cb7604192759950633205)
-  [made](https://github.com/bazelbuild/bazel/commit/d988e8b3bace4b2bb2ec4adc17d9bf7b4f49a907)
-  to migrate away from it and to the `exec` configuration.
+- The `host` configuration is deprecated, and [a](https://github.com/bazelbuild/bazel/commit/6e6c4cf1bd6edaa15ecc4417cd0be70581181def) [lot](https://github.com/bazelbuild/bazel/commit/32fc7cac3c62dcf1721e9093a449561eb854f241) [of](https://github.com/bazelbuild/bazel/commit/790d7a75b34eb963c18f9165bd9608d7a8eb4f3d) [changes](https://github.com/bazelbuild/bazel/commit/48e88685105c906ae52865422da01c39c580bf21) [were](https://github.com/bazelbuild/bazel/commit/715c9faabba573501c9cb7604192759950633205) [made](https://github.com/bazelbuild/bazel/commit/d988e8b3bace4b2bb2ec4adc17d9bf7b4f49a907) to migrate away from it and to the `exec` configuration.
 - [Added the `--incompatible_disable_starlark_host_transitions` flag, which prevents rules from using the `host` configuration.](https://github.com/bazelbuild/bazel/commit/6464f1cbdf14f0b8e8f29f7b57990a40ea584062)
 - [Added the `--experimental_exec_configuration_distinguisher` flag, which changes how the `platform_suffix` is calculated.](https://github.com/bazelbuild/bazel/commit/51c90c7d7f749af99d66cbd21bbdda09b68f79ac)
 - [Added the `exec_group` argument to `testing.ExecutionInfo()`.](https://github.com/bazelbuild/bazel/commit/423fb20c2bc7773f8c9567be8056566ce4633e5f)
