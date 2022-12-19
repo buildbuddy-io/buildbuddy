@@ -70,6 +70,10 @@ const (
 	// to/from the outgoing/incoming request contexts.
 	contextTokenStringKey = "x-buildbuddy-jwt"
 
+	// The key the Claims are stored under in the context.
+	// If unset, the JWT can be used to reconstitute the claims.
+	contextClaimsKey = "auth.claims"
+
 	// The key that the basicAuth object is stored under in the
 	// context.
 	contextBasicAuthKey = "basicauth.user"
@@ -705,6 +709,7 @@ func authContextFromClaims(ctx context.Context, claims *Claims, err error) conte
 		return AuthContextWithError(ctx, err)
 	}
 	ctx = context.WithValue(ctx, contextTokenStringKey, tokenString)
+	ctx = context.WithValue(ctx, contextClaimsKey, claims)
 	// Note: we clear the error here in case it was set initially by the
 	// authentication handler, but then we want to re-authenticate later on in the
 	// request lifecycle, and authentication is successful.
@@ -988,6 +993,12 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 }
 
 func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, error) {
+	// If the context already contains trusted Claims, return them directly
+	// instead of re-parsing the JWT (which is expensive).
+	if claims, ok := ctx.Value(contextClaimsKey).(*Claims); ok && claims != nil {
+		return claims, nil
+	}
+
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(contextTokenStringKey).(string); ok && tokenString != "" {
 		claims := &Claims{}
