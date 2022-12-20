@@ -489,6 +489,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 	mc.sendNonBlockingCopy(ctx, r, true /*=onlyCopyMissing*/)
 
 	return &doubleReader{
+		r: r,
 		src:  srcReader,
 		dest: destReader,
 	}, nil
