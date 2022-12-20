@@ -35,6 +35,10 @@ const (
 	// A node must have this * idealReplicaCount number of replicas to be
 	// eligible for moving a replica to another node.
 	replicaMoveThreshold = 1.05
+
+	// If a node has more QPS than it's share * this ratio, leases may
+	// be moved to other nodes to more evenly balance load.
+	leaseMoveQPSThreshold = 1.05
 )
 
 // make a replica struct that can be used as a map key because protos cannot be.
@@ -52,6 +56,9 @@ type moveInstruction struct {
 
 type uint64Set map[uint64]struct{}
 
+func (s uint64Set) Add(id uint64) {
+	s[id] = struct{}{}
+}
 func (s uint64Set) Contains(id uint64) bool {
 	_, ok := s[id]
 	return ok
@@ -179,6 +186,17 @@ func (cm *clusterMap) idealReplicaCount() float64 {
 	return float64(numReplicas) / float64(numNodes)
 }
 
+func (cm *clusterMap) idealProposeQPS() float64 {
+	totalProposeQPS := int64(0)
+	numNodes := 0
+	for _, usage := range cm.lastUsage {
+		totalProposeQPS += usage.GetRaftProposeQps()
+		numNodes += 1
+	}
+
+	return float64(totalProposeQPS) / float64(numNodes)
+}
+
 // MoveableReplicas returns a slice of replicaStructs that:
 //   - Are members of clusters this node manages
 //   - Are not located on this node
@@ -216,6 +234,41 @@ func (d *Driver) MoveableReplicas(state *clusterState) replicaSet {
 	}
 
 	return candidates
+}
+
+// MoveableLeases returns a set of clusterIDs that:
+//   - Are clusters this node manages
+//   - Have more QPS than avg
+//   - Contribute to this node's above-average propose QPS
+func (d *Driver) MoveableLeases(state *clusterState) uint64Set {
+	cm := d.clusterMap
+
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	idealProposeQPS := cm.idealProposeQPS()
+	lastUsage := cm.lastUsage[state.node.GetNhid()]
+
+	if float64(lastUsage.GetRaftProposeQps()) <= idealProposeQPS*leaseMoveQPSThreshold {
+		return nil
+	}
+
+	localProposeQPS := int64(0)
+	for _, rangeReplica := range state.managedRanges {
+		replicaUsage := rangeReplica.GetReplicaUsage()
+		localProposeQPS += replicaUsage.GetRaftProposeQps()
+	}
+
+	avgQPSPerRange := int64(float64(localProposeQPS) / float64(len(state.managedRanges)))
+
+	myClusters := make(uint64Set, 0)
+	for clusterID, rangeReplica := range state.managedRanges {
+		replicaUsage := rangeReplica.GetReplicaUsage()
+		if replicaUsage.GetRaftProposeQps() > avgQPSPerRange {
+			myClusters.Add(clusterID)
+		}
+	}
+	return myClusters
 }
 
 func (cm *clusterMap) FindHome(state *clusterState, clusterID uint64) []string {
@@ -292,7 +345,7 @@ type Driver struct {
 	nodeRegistry  registry.NodeRegistry
 	mu            *sync.Mutex
 	started       bool
-	manageQuit    chan struct{}
+	quit          chan struct{}
 	clusterMap    *clusterMap
 	startTime     time.Time
 }
@@ -321,8 +374,8 @@ func (d *Driver) Start() error {
 		return nil
 	}
 
-	d.manageQuit = make(chan struct{})
-	go d.manageLoop()
+	d.quit = make(chan struct{})
+	go d.manageClustersLoop()
 
 	d.started = true
 	log.Debugf("Driver started")
@@ -335,22 +388,24 @@ func (d *Driver) Stop() error {
 	if !d.started {
 		return nil
 	}
-	close(d.manageQuit)
+	close(d.quit)
 	d.started = false
 	log.Debugf("Driver stopped")
 	return nil
 }
 
-// manageLoop does not return; call it from a goroutine.
-func (d *Driver) manageLoop() {
+// manageClustersLoop loops does not return; call it from a goroutine.
+// It will loop forever calling "manageClusters" until the quit channel
+// is closed by driver.Close().
+func (d *Driver) manageClustersLoop() {
 	for {
 		select {
-		case <-d.manageQuit:
+		case <-d.quit:
 			return
 		case <-time.After(*driverPollInterval):
 			err := d.manageClusters()
 			if err != nil {
-				log.Errorf("Manage error: %s", err)
+				log.Errorf("Manage clusters error: %s", err)
 			}
 		}
 	}
@@ -394,15 +449,18 @@ type clusterState struct {
 	// Information about our own replicas.
 	myNodes uint64Set
 
-	// map of clusterID -> RangeDescriptor
-	managedRanges map[uint64]*rfpb.RangeDescriptor
+	// map of clusterID -> RangeReplica
+	managedRanges map[uint64]*rfpb.RangeReplica
 
 	// set of all replicas we know about and their locations
 	allReplicas replicaSet
 }
 
 func (cs *clusterState) GetRange(clusterID uint64) *rfpb.RangeDescriptor {
-	return cs.managedRanges[clusterID]
+	if r, ok := cs.managedRanges[clusterID]; ok {
+		return r.GetRange()
+	}
+	return nil
 }
 
 func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
@@ -417,7 +475,7 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 		myNodes: make(uint64Set, len(rsp.GetRangeReplicas())),
 
 		// clusterID -> range
-		managedRanges: make(map[uint64]*rfpb.RangeDescriptor, 0),
+		managedRanges: make(map[uint64]*rfpb.RangeReplica, 0),
 
 		// set of all replicas we've seen
 		allReplicas: make(replicaSet, 0),
@@ -426,7 +484,7 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 	for _, rr := range rsp.GetRangeReplicas() {
 		for i, replica := range rr.GetRange().GetReplicas() {
 			if i == 0 {
-				state.managedRanges[replica.GetClusterId()] = rr.GetRange()
+				state.managedRanges[replica.GetClusterId()] = rr
 			}
 			nhid, _, err := d.nodeRegistry.ResolveNHID(replica.GetClusterId(), replica.GetNodeId())
 			if err != nil {
@@ -439,7 +497,7 @@ func (d *Driver) computeState(ctx context.Context) (*clusterState, error) {
 				nodeID:    replica.GetNodeId(),
 			})
 		}
-		state.myNodes[rr.GetReplicaUsage().GetReplica().GetNodeId()] = struct{}{}
+		state.myNodes.Add(rr.GetReplicaUsage().GetReplica().GetNodeId())
 	}
 	return state, nil
 }
@@ -450,12 +508,16 @@ type clusterChanges struct {
 
 	// maybe (if it results in a better fit score), move these
 	moveableReplicas replicaSet
+
+	// leases that we should consider transferring to another node
+	moveableLeases uint64Set
 }
 
 func (d *Driver) proposeChanges(state *clusterState) *clusterChanges {
 	changes := &clusterChanges{
 		deadReplicas:     d.DeadReplicas(state),
 		moveableReplicas: d.MoveableReplicas(state),
+		moveableLeases:   d.MoveableLeases(state),
 	}
 	return changes
 }
