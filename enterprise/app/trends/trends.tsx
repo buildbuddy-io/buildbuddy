@@ -319,7 +319,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.dates}
                 extractValue={(date) => +this.getStat(date).totalUploadSizeBytes}
                 extractSecondaryValue={(date) =>
-                  (+this.getStat(date).totalUploadUsec * BITS_PER_BYTE) /
+                  (+this.getStat(date).totalUploadSizeBytes * BITS_PER_BYTE) /
                   (+this.getStat(date).totalUploadUsec * SECONDS_PER_MICROSECOND)
                 }
                 extractLabel={this.formatShortDate}
