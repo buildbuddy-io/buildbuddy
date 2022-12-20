@@ -323,6 +323,8 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 			// the invocation is complete
 			if err := s.env.GetExecutionCollector().Append(ctx, link.InvocationID, executionProto); err != nil {
 				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.InvocationID, err)
+			} else {
+				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.InvocationID)
 			}
 		} else {
 			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
