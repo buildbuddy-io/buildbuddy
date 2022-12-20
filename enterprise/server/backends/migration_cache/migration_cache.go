@@ -396,6 +396,7 @@ func (mc *MigrationCache) Delete(ctx context.Context, r *resource.ResourceName) 
 }
 
 type doubleReader struct {
+	r    *resource.ResourceName
 	src  io.ReadCloser
 	dest io.ReadCloser
 }
@@ -404,19 +405,23 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 	var dstErr error
 	eg := &errgroup.Group{}
 
+	var srcBytesRead, destBytesRead int
 	if d.dest != nil {
 		eg.Go(func() error {
 			pCopy := make([]byte, len(p))
-			_, dstErr = d.dest.Read(pCopy)
+			dstN, err := d.dest.Read(pCopy)
+			dstErr = err
+			destBytesRead += dstN
 			return nil
 		})
 	}
 
 	srcN, srcErr := d.src.Read(p)
-
+	srcBytesRead += srcN
 	eg.Wait()
+
 	if dstErr != nil && dstErr != srcErr {
-		log.Warningf("Migration read err, src err: %s, dest err: %s", srcErr, dstErr)
+		log.Warningf("Migration read err %+v, src err: %s (bytes %d), dest err: %s (bytes %d)", d.r, srcErr, srcBytesRead, dstErr, destBytesRead)
 	}
 
 	return srcN, srcErr
