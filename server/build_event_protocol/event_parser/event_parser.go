@@ -91,8 +91,8 @@ func (sep *StreamingEventParser) GetInvocation() *inpb.Invocation {
 	return sep.invocation
 }
 
-func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
-	switch p := event.BuildEvent.Payload.(type) {
+func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent) {
+	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		{
 		}
@@ -104,7 +104,7 @@ func (sep *StreamingEventParser) ParseEvent(event *inpb.InvocationEvent) {
 			startTime := timeutil.GetTimeWithFallback(p.Started.StartTime, p.Started.StartTimeMillis)
 			sep.startTime = &startTime
 			sep.invocation.Command = p.Started.Command
-			for _, child := range event.BuildEvent.Children {
+			for _, child := range event.Children {
 				// Here we are then. Knee-deep.
 				switch c := child.Id.(type) {
 				case *build_event_stream.BuildEventId_Pattern:

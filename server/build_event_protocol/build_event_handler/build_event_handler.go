@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -125,7 +124,7 @@ func NewBuildEventHandler(env environment.Env) *BuildEventHandler {
 
 func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfaces.BuildEventChannel {
 	invocation := &inpb.Invocation{InvocationId: iid}
-	buildEventAccumulator := accumulator.NewBEValues(iid)
+	buildEventAccumulator := accumulator.NewBEValues(invocation)
 	val, ok := b.cancelFnsByInvID.Load(iid)
 	if ok {
 		cancelFn := val.(context.CancelFunc)
@@ -147,7 +146,6 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) interfa
 		ctx:            ctx,
 		pw:             nil,
 		beValues:       buildEventAccumulator,
-		parser:         event_parser.NewStreamingEventParser(invocation),
 		redactor:       redact.NewStreamingRedactor(b.env),
 		statusReporter: build_status_reporter.NewBuildStatusReporter(b.env, buildEventAccumulator),
 		targetTracker:  target_tracker.NewTargetTracker(b.env, buildEventAccumulator),
@@ -639,7 +637,6 @@ type EventChannel struct {
 	env            environment.Env
 	pw             *protofile.BufferedProtoWriter
 	beValues       *accumulator.BEValues
-	parser         *event_parser.StreamingEventParser
 	redactor       *redact.StreamingRedactor
 	statusReporter *build_status_reporter.BuildStatusReporter
 	targetTracker  *target_tracker.TargetTracker
@@ -684,7 +681,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocationStatus = inpb.Invocation_COMPLETE_INVOCATION_STATUS
 	}
 
-	invocation := e.parser.GetInvocation()
+	invocation := e.beValues.Invocation()
 	invocation.InvocationStatus = invocationStatus
 	invocation.Attempt = e.attempt
 	invocation.HasChunkedEventLogs = e.logWriter != nil
@@ -961,10 +958,8 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		return err
 	}
 	e.redactor.RedactMetadata(event.BuildEvent)
-	// TODO(bduffany): Consolidate beValues and parser since they basically
-	// serve the same purpose at this point.
-	e.beValues.AddEvent(event.BuildEvent) // in-memory structure to hold common values we want from the event.
-	e.parser.ParseEvent(event)
+	// Accumulate a subset of invocation fields in memory.
+	e.beValues.AddEvent(event.BuildEvent)
 
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
@@ -1085,7 +1080,7 @@ func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.Bu
 
 func (e *EventChannel) writeBuildMetadata(ctx context.Context, invocationID string) error {
 	db := e.env.GetInvocationDB()
-	invocationProto := e.parser.GetInvocation()
+	invocationProto := e.beValues.Invocation()
 	if e.logWriter != nil {
 		invocationProto.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
@@ -1217,7 +1212,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 			// only redact if we hadn't redacted enough, only parse again if we redact
 			redactor = redact.NewStreamingRedactor(env)
 		}
-		parser := event_parser.NewStreamingEventParser(invocation)
+		beValues := accumulator.NewBEValues(invocation)
 		events := []*inpb.InvocationEvent{}
 		structuredCommandLines := []*command_line.CommandLine{}
 		pr := protofile.NewBufferedProtoReader(env.GetBlobstore(), streamID)
@@ -1236,7 +1231,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 					return err
 				}
 				redactor.RedactMetadata(event.BuildEvent)
-				parser.ParseEvent(event)
+				beValues.AddEvent(event.BuildEvent)
 			}
 			events = append(events, event)
 			switch p := event.BuildEvent.Payload.(type) {

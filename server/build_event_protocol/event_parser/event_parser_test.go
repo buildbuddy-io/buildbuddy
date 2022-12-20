@@ -29,16 +29,14 @@ func singleFiles() []*build_event_stream.File {
 }
 
 func TestFillInvocation(t *testing.T) {
-	events := make([]*inpb.InvocationEvent, 0)
+	events := make([]*build_event_stream.BuildEvent, 0)
 
 	progress := &build_event_stream.Progress{
 		Stderr: "stderr",
 		Stdout: "stdout",
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Progress{Progress: progress},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_Progress{Progress: progress},
 	})
 
 	startTime := time.Now()
@@ -47,19 +45,15 @@ func TestFillInvocation(t *testing.T) {
 		Command:            "test",
 		OptionsDescription: "foo",
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Started{Started: buildStarted},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_Started{Started: buildStarted},
 	})
 
 	unstructuredCommandLine := &build_event_stream.UnstructuredCommandLine{
 		Args: []string{"foo", "bar", "baz"},
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: unstructuredCommandLine},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: unstructuredCommandLine},
 	})
 
 	shellOption := &command_line.Option{
@@ -88,20 +82,16 @@ func TestFillInvocation(t *testing.T) {
 			},
 		},
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_StructuredCommandLine{StructuredCommandLine: structuredCommandLine},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_StructuredCommandLine{StructuredCommandLine: structuredCommandLine},
 	})
 
 	optionsParsed := &build_event_stream.OptionsParsed{
 		CmdLine:         []string{"foo"},
 		ExplicitCmdLine: []string{"explicit"},
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_OptionsParsed{OptionsParsed: optionsParsed},
 	})
 
 	workspaceStatus := &build_event_stream.WorkspaceStatus{
@@ -112,10 +102,8 @@ func TestFillInvocation(t *testing.T) {
 			},
 		},
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_WorkspaceStatus{WorkspaceStatus: workspaceStatus},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_WorkspaceStatus{WorkspaceStatus: workspaceStatus},
 	})
 
 	actionExecuted := &build_event_stream.ActionExecuted{
@@ -124,49 +112,39 @@ func TestFillInvocation(t *testing.T) {
 		PrimaryOutput:      singleFile(),
 		ActionMetadataLogs: singleFiles(),
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Action{Action: actionExecuted},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_Action{Action: actionExecuted},
 	})
 
 	namedSetOfFiles := &build_event_stream.NamedSetOfFiles{
 		Files: singleFiles(),
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: namedSetOfFiles},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_NamedSetOfFiles{NamedSetOfFiles: namedSetOfFiles},
 	})
 
 	targetComplete := &build_event_stream.TargetComplete{
 		Success:         true,
 		DirectoryOutput: singleFiles(),
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Completed{Completed: targetComplete},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_Completed{Completed: targetComplete},
 	})
 
 	testResult := &build_event_stream.TestResult{
 		Status:           build_event_stream.TestStatus_PASSED,
 		TestActionOutput: singleFiles(),
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_TestResult{TestResult: testResult},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_TestResult{TestResult: testResult},
 	})
 
 	testSummary := &build_event_stream.TestSummary{
 		Passed: singleFiles(),
 		Failed: singleFiles(),
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_TestSummary{TestSummary: testSummary},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_TestSummary{TestSummary: testSummary},
 	})
 
 	finishTime := startTime.Add(time.Millisecond)
@@ -177,10 +155,8 @@ func TestFillInvocation(t *testing.T) {
 			Code: 0,
 		},
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_Finished{Finished: buildFinished},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_Finished{Finished: buildFinished},
 	})
 
 	buildMetadata := &build_event_stream.BuildMetadata{
@@ -190,10 +166,8 @@ func TestFillInvocation(t *testing.T) {
 			"REPO_URL":  "https://github.com/buildbuddy-io/metadata_repo_url",
 		},
 	}
-	events = append(events, &inpb.InvocationEvent{
-		BuildEvent: &build_event_stream.BuildEvent{
-			Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
-		},
+	events = append(events, &build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
 	})
 	invocation := &inpb.Invocation{
 		InvocationId:     "test-invocation",

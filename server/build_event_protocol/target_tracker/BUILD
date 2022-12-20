@@ -30,6 +30,7 @@ go_test(
     deps = [
         ":target_tracker",
         "//proto:build_event_stream_go_proto",
+        "//proto:invocation_go_proto",
         "//proto/api/v1:common_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
 type Row struct {
@@ -71,6 +72,12 @@ type fakeAccumulator struct {
 	command      string
 	repoURL      string
 	invocationID string
+}
+
+func (a *fakeAccumulator) Invocation() *inpb.Invocation {
+	return &inpb.Invocation{
+		InvocationId: a.invocationID,
+	}
 }
 
 func (a *fakeAccumulator) Role() string {
