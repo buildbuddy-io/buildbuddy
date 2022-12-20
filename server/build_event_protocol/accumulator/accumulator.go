@@ -6,10 +6,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
-
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
@@ -35,6 +37,15 @@ var (
 )
 
 type Accumulator interface {
+	// Invocation returns the accumulated invocation proto. Not all fields may
+	// be populated yet if the build is in progress. Only the "summary" fields
+	// such as command, pattern, etc. will be set. Fields that scale with the
+	// number of events received (such as the Events list or console buffer) are
+	// not present.
+	Invocation() *inpb.Invocation
+
+	// TODO(bduffany): Remove these methods in favor of reading them directly
+	// from the Invocation() proto fields.
 	InvocationID() string
 	StartTime() time.Time
 	RepoURL() string
@@ -62,22 +73,30 @@ type Accumulator interface {
 // in full (that data lives in blobstore).
 type BEValues struct {
 	valuesMap               map[string]string
-	invocationID            string
 	sawWorkspaceStatusEvent bool
 	sawBuildMetadataEvent   bool
 	buildStartTime          time.Time
 	exitCode                *string
+
+	// TODO(bduffany): Migrate all parser functionality directly into the
+	// accumulator. The parser is a separate entity only for historical reasons.
+	parser *event_parser.StreamingEventParser
 }
 
-func NewBEValues(invocationID string) *BEValues {
+func NewBEValues(invocation *inpb.Invocation) *BEValues {
 	return &BEValues{
-		invocationID:            invocationID,
-		valuesMap:               make(map[string]string, 0),
-		sawWorkspaceStatusEvent: false,
+		valuesMap: make(map[string]string, 0),
+		parser:    event_parser.NewStreamingEventParser(invocation),
 	}
 }
 
+func (v *BEValues) Invocation() *inpb.Invocation {
+	return v.parser.GetInvocation()
+}
+
 func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
+	v.parser.ParseEvent(event)
+
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
 		v.handleStartedEvent(event)
@@ -96,7 +115,7 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 	}
 }
 func (v *BEValues) InvocationID() string {
-	return v.invocationID
+	return v.Invocation().GetInvocationId()
 }
 func (v *BEValues) StartTime() time.Time {
 	return v.buildStartTime
