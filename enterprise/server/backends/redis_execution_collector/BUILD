@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector",
     visibility = ["//visibility:public"],
     deps = [
-        "//enterprise/server/util/redisutil",
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
         "//server/environment",
