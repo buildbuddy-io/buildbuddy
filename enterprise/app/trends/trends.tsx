@@ -242,8 +242,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.dates}
                 extractValue={(date) => +this.getStat(date).totalNumBuilds}
                 extractSecondaryValue={(date) => {
-                  let stat = this.getStat(date);
-                  return (+stat?.totalBuildTimeUsec * SECONDS_PER_MICROSECOND) / +stat?.completedInvocationCount;
+                  const stat = this.getStat(date);
+                  return (+stat.totalBuildTimeUsec * SECONDS_PER_MICROSECOND) / +stat.completedInvocationCount;
                 }}
                 extractLabel={this.formatShortDate}
                 formatTickValue={format.count}
@@ -262,8 +262,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 title="Build duration"
                 data={this.state.dates}
                 extractValue={(date) => {
-                  let stat = this.getStat(date);
-                  return +stat?.totalBuildTimeUsec / +stat?.completedInvocationCount / 1000000;
+                  const stat = this.getStat(date);
+                  return +stat.totalBuildTimeUsec / +stat.completedInvocationCount / 1000000;
                 }}
                 extractSecondaryValue={(date) => +this.getStat(date).maxDurationUsec / 1000000}
                 extractLabel={this.formatShortDate}
