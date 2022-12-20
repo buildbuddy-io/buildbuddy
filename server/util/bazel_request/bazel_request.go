@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -20,25 +21,55 @@ var (
 
 const RequestMetadataKey = "build.bazel.remote.execution.v2.requestmetadata-bin"
 
-func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
-	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		rmdVals := grpcMD[RequestMetadataKey]
-		for _, rmdVal := range rmdVals {
-			rmd := &repb.RequestMetadata{}
-			if err := proto.Unmarshal([]byte(rmdVal), rmd); err == nil {
-				return rmd
-			}
-		}
+func getRequestMetadataBytes(ctx context.Context) []byte {
+	vals := metadata.ValueFromIncomingContext(ctx, RequestMetadataKey)
+	if len(vals) == 0 {
+		return nil
 	}
-	return nil
+	return []byte(vals[0])
+}
+
+func GetRequestMetadata(ctx context.Context) *repb.RequestMetadata {
+	b := getRequestMetadataBytes(ctx)
+	if len(b) == 0 {
+		return nil
+	}
+	rmd := &repb.RequestMetadata{}
+	if err := proto.Unmarshal(b, rmd); err != nil {
+		return nil
+	}
+	return rmd
 }
 
 func GetInvocationID(ctx context.Context) string {
-	iid := ""
-	if rmd := GetRequestMetadata(ctx); rmd != nil {
-		iid = rmd.GetToolInvocationId()
+	const toolInvocationIDTag = 3
+
+	b := getRequestMetadataBytes(ctx)
+	// The proto wire representation is just a sequence of (tag, value) pairs.
+	// The loop below iterates through these pairs until hitting the
+	// tool_invocation_id field tag, then returns its string value.
+	// This lets us avoid a full parse of the RequestMetadata on every request.
+	for len(b) > 0 {
+		tag, typ, n := protowire.ConsumeTag(b)
+		if n < 0 {
+			return ""
+		}
+		b = b[n:]
+
+		if tag != toolInvocationIDTag {
+			n = protowire.ConsumeFieldValue(tag, typ, b)
+			if n < 0 {
+				return ""
+			}
+			b = b[n:]
+			continue
+		}
+
+		s, _ := protowire.ConsumeString(b)
+		return s
 	}
-	return iid
+
+	return ""
 }
 
 type Version struct {
