@@ -13,6 +13,31 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+func TestGetInvocationID(t *testing.T) {
+	for _, rmd := range []*repb.RequestMetadata{
+		{
+			ToolInvocationId: "455385a4-7773-4044-96b3-9fd0556ca5cd",
+		},
+		{
+			ToolDetails:             &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.0.0"},
+			ToolInvocationId:        "455385a4-7773-4044-96b3-9fd0556ca5cd",
+			CorrelatedInvocationsId: "1e24dd4a-8d5e-40c3-9be3-4ae250d3535e",
+		},
+		{
+			ToolDetails:             &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.0.0"},
+			ToolInvocationId:        "455385a4-7773-4044-96b3-9fd0556ca5cd",
+			CorrelatedInvocationsId: "1e24dd4a-8d5e-40c3-9be3-4ae250d3535e",
+			ActionMnemonic:          "CppCompile",
+			ActionId:                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			TargetId:                "//foo/bar/baz:baz",
+			ConfigurationId:         "5e8679d0116818e43799a512d0deb1a83982abbe3699eba0e69a85241d0a695a",
+		},
+	} {
+		ctx := withIncomingMetadata(t, context.Background(), rmd)
+		assert.Equal(t, rmd.GetToolInvocationId(), bazel_request.GetInvocationID(ctx))
+	}
+}
+
 func TestParseBazelVersion(t *testing.T) {
 	for _, testCase := range []struct {
 		Tool, Version   string
