@@ -145,21 +145,24 @@ func (pu *partitionUsage) RemoteUpdate(nhid string, update *rfpb.PartitionMetada
 	}
 }
 
-func (pu *partitionUsage) evict(ctx context.Context, key *ReplicaSample) (skip bool, err error) {
+func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) (skip bool, err error) {
 	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.FileDeleteRequest{
-		FileRecord: key.metadata.GetFileRecord(),
+		FileRecord: sample.Key.fileRecord,
 	})
-	rsp, err := client.SyncProposeLocalBatch(ctx, pu.store.nodeHost, key.header.GetReplica().GetClusterId(), deleteReq)
+	rsp, err := client.SyncProposeLocalBatch(ctx, pu.store.nodeHost, sample.Key.header.GetReplica().GetClusterId(), deleteReq)
 	if err != nil {
 		return false, status.InternalErrorf("could not propose eviction: %s", err)
 	}
 	if err := rsp.AnyError(); err != nil {
 		if status.IsNotFoundError(err) || status.IsOutOfRangeError(err) {
-			log.Infof("Skipping eviction for %q: %s", key, err)
+			log.Infof("Skipping eviction for %q: %s", sample.Key, err)
 			return true, nil
 		}
 		return false, status.InternalErrorf("eviction request failed: %s", rsp.AnyError())
 	}
+
+	ageUsec := float64(time.Since(sample.Timestamp).Microseconds())
+	metrics.RaftEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: pu.id}).Observe(ageUsec)
 
 	globalSizeBytes := pu.GlobalSizeBytes()
 
@@ -167,12 +170,12 @@ func (pu *partitionUsage) evict(ctx context.Context, key *ReplicaSample) (skip b
 	defer pu.mu.Unlock()
 	// Update local replica information to reflect the eviction. Don't need
 	// to wait for a proactive update from the replica.
-	u, ok := pu.replicas[key.header.GetRangeId()]
+	u, ok := pu.replicas[sample.Key.header.GetRangeId()]
 	if ok {
-		u.SizeBytes -= key.metadata.GetStoredSizeBytes()
+		u.SizeBytes -= sample.SizeBytes
 		u.TotalCount--
 	} else {
-		log.Warningf("eviction succeeded but range %d wasn't found", key.header.GetRangeId())
+		log.Warningf("eviction succeeded but range %d wasn't found", sample.Key.header.GetRangeId())
 	}
 
 	// Assume eviction on all stores is happening at a similar rate as on the
@@ -181,7 +184,7 @@ func (pu *partitionUsage) evict(ctx context.Context, key *ReplicaSample) (skip b
 	// When we do receive updates from other stores they will overwrite our
 	// speculative numbers.
 	for _, npu := range pu.nodes {
-		npu.sizeBytes -= int64(float64(key.metadata.GetStoredSizeBytes()) * float64(globalSizeBytes) / float64(npu.sizeBytes))
+		npu.sizeBytes -= int64(float64(sample.SizeBytes) * float64(globalSizeBytes) / float64(npu.sizeBytes))
 		if npu.sizeBytes < 0 {
 			npu.sizeBytes = 0
 		}
@@ -215,13 +218,7 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 				if err != nil {
 					return nil, status.InternalErrorf("could not sample partition %q: %s", pu.id, err)
 				}
-				for _, s := range ps {
-					samples = append(samples, &approxlru.Sample[*ReplicaSample]{
-						Key:       s,
-						SizeBytes: s.metadata.GetStoredSizeBytes(),
-						Timestamp: time.UnixMicro(s.metadata.GetLastAccessUsec()),
-					})
-				}
+				samples = append(samples, ps...)
 				break
 			}
 		}
@@ -230,7 +227,7 @@ func (pu *partitionUsage) sample(ctx context.Context, n int) ([]*approxlru.Sampl
 }
 
 func (pu *partitionUsage) refresh(ctx context.Context, key *ReplicaSample) (skip bool, timestamp time.Time, err error) {
-	rsp, err := pu.store.Metadata(ctx, &rfpb.MetadataRequest{Header: key.header, FileRecord: key.metadata.GetFileRecord()})
+	rsp, err := pu.store.Metadata(ctx, &rfpb.MetadataRequest{Header: key.header, FileRecord: key.fileRecord})
 	if err != nil {
 		if status.IsNotFoundError(err) || status.IsOutOfRangeError(err) {
 			log.Infof("Skipping refresh for %q: %s", key, err)
@@ -276,8 +273,8 @@ func newUsageTracker(store *Store, gossipManager *gossip.GossipManager, partitio
 		maxSizeBytes := int64(evictionCutoffThreshold * float64(p.MaxSizeBytes))
 		l, err := approxlru.New(&approxlru.Opts[*ReplicaSample]{
 			MaxSizeBytes: maxSizeBytes,
-			OnEvict: func(ctx context.Context, key *ReplicaSample) (skip bool, err error) {
-				return u.evict(ctx, key)
+			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) (skip bool, err error) {
+				return u.evict(ctx, sample)
 			},
 			OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*ReplicaSample], error) {
 				return u.sample(ctx, n)
@@ -943,9 +940,9 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 }
 
 type ReplicaSample struct {
-	header   *rfpb.Header
-	key      string
-	metadata *rfpb.FileMetadata
+	header     *rfpb.Header
+	key        string
+	fileRecord *rfpb.FileRecord
 }
 
 func (rs *ReplicaSample) ID() string {
@@ -953,10 +950,10 @@ func (rs *ReplicaSample) ID() string {
 }
 
 func (rs *ReplicaSample) String() string {
-	return fmt.Sprintf("sample {hdr %+v, key %s, size %d, last access %s}", rs.header, rs.key, rs.metadata.GetStoredSizeBytes(), time.UnixMicro(rs.metadata.GetLastAccessUsec()))
+	return fmt.Sprintf("hdr: %+v, key: %s", rs.header, rs.key)
 }
 
-func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*ReplicaSample, error) {
+func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*ReplicaSample], error) {
 	r, rd, err := s.replicaForRange(rangeID)
 	if err != nil {
 		return nil, err
@@ -966,20 +963,25 @@ func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n 
 		return nil, err
 	}
 
-	var rs []*ReplicaSample
+	var rs []*approxlru.Sample[*ReplicaSample]
 	for _, samp := range samples {
 		key, err := s.fileStorer.FileMetadataKey(samp.GetFileRecord())
 		if err != nil {
 			return nil, err
 		}
-		rs = append(rs, &ReplicaSample{
+		sampleKey := &ReplicaSample{
 			header: &rfpb.Header{
 				Replica:    rd.GetReplicas()[0],
 				RangeId:    rd.GetRangeId(),
 				Generation: rd.GetGeneration(),
 			},
-			key:      string(key),
-			metadata: samp,
+			key:        string(key),
+			fileRecord: samp.GetFileRecord(),
+		}
+		rs = append(rs, &approxlru.Sample[*ReplicaSample]{
+			Key:       sampleKey,
+			SizeBytes: samp.GetStoredSizeBytes(),
+			Timestamp: time.UnixMicro(samp.GetLastAccessUsec()),
 		})
 	}
 	return rs, nil

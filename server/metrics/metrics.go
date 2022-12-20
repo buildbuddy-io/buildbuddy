@@ -1572,6 +1572,16 @@ var (
 	}, []string{
 		RaftRangeIDLabel,
 	})
+
+	RaftEvictionAgeUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "eviction_age_usec",
+		Buckets:   durationUsecBuckets(1*time.Hour, 30*24*time.Hour, 2),
+		Help:      "Age of items evicted from the cache, in **microseconds**.",
+	}, []string{
+		PartitionID,
+	})
 )
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in

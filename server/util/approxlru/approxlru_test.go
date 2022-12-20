@@ -37,10 +37,11 @@ func (tc *testCache) Add(e *entry) {
 	tc.data = append(tc.data, e)
 }
 
-func (tc *testCache) evict(ctx context.Context, key *entry) (skip bool, err error) {
+func (tc *testCache) evict(ctx context.Context, sample *approxlru.Sample[*entry]) (skip bool, err error) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 
+	key := sample.Key
 	for i, v := range tc.data {
 		if v.ID() == key.ID() {
 			tc.evictions = append(tc.evictions, key)
@@ -87,8 +88,8 @@ func newCache(t *testing.T, maxSizeBytes int64) (*testCache, *approxlru.LRU[*ent
 	c := &testCache{}
 	l, err := approxlru.New(&approxlru.Opts[*entry]{
 		MaxSizeBytes: maxSizeBytes,
-		OnEvict: func(ctx context.Context, key *entry) (skip bool, err error) {
-			return c.evict(ctx, key)
+		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*entry]) (skip bool, err error) {
+			return c.evict(ctx, sample)
 		},
 		OnSample: func(ctx context.Context, n int) ([]*approxlru.Sample[*entry], error) {
 			return c.sample(ctx, n)

@@ -41,10 +41,14 @@ type Sample[T Key] struct {
 	Timestamp time.Time
 }
 
+func (s *Sample[T]) String() string {
+	return fmt.Sprintf("{key: %s, sizeBytes: %d, timestamp: %s}", s.Key, s.SizeBytes, s.Timestamp)
+}
+
 // OnEvict requests that the given key be evicted. The callback may return
 // skip=true to indicate that the given sample is no longer valid and should be
 // removed from the eviction pool.
-type OnEvict[T any] func(ctx context.Context, key T) (skip bool, err error)
+type OnEvict[T Key] func(ctx context.Context, sample *Sample[T]) (skip bool, err error)
 
 // OnSample requests that n random samples be provided from the underlying data.
 type OnSample[T Key] func(ctx context.Context, n int) ([]*Sample[T], error)
@@ -52,7 +56,7 @@ type OnSample[T Key] func(ctx context.Context, n int) ([]*Sample[T], error)
 // OnRefresh requests the latest access timestamp for the given key. The
 // callback may return skip=true to indicate that the given sample is no longer
 // valid and should be removed from the eviction pool.
-type OnRefresh[T any] func(ctx context.Context, key T) (skip bool, timestamp time.Time, error error)
+type OnRefresh[T Key] func(ctx context.Context, key T) (skip bool, timestamp time.Time, error error)
 
 // LRU implements a thread safe fixed size LRU cache using sampled eviction.
 //
@@ -219,7 +223,7 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 	for {
 		for i, sample := range l.samplePool {
 			log.Infof("Evictor attempting to evict %q", sample.Key)
-			skip, err := l.onEvict(l.ctx, sample.Key)
+			skip, err := l.onEvict(l.ctx, sample)
 			if err != nil {
 				log.Warningf("Could not evict %q: %s", sample.Key, err)
 				continue
