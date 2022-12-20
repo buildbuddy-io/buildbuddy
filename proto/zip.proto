@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package zip;
+
+message ManifestEntry {
+  // The full path of the file as specified in the archive.
+  string name = 1;
+
+  // The uncompressed size of the file in bytes.
+  int64 uncompressed_size = 2;
+
+  // The compressed size of the file in bytes.
+  int64 compressed_size = 3;
+
+  // The byte offset of the header for this file in the archive.
+  int64 header_offset = 4;
+
+  // The byte offset of the file content in the archive, as opposed to the file
+  // header--this lets us skip unneeded fields in the header and get right to
+  // decompressing.  This is an absolute position, NOT relative to the header.
+  int64 content_offset = 5;
+
+  // The type of compression used for this file.
+  enum CompressionType {
+    COMPRESSION_TYPE_UNKNOWN = 0;
+    COMPRESSION_TYPE_NONE = 1;
+    COMPRESSION_TYPE_FLATE = 2;
+  }
+  CompressionType compression = 6;
+
+  // Checksum (CRC32) for validating that the file contents have been
+  // decompressed properly.
+  uint32 crc32 = 7;
+}
+
+message Manifest {
+  // Individual summaries of the files in this archive.
+  repeated ManifestEntry entry = 1;
+}
+
+message GetZipManifestRequest {
+  context.RequestContext request_context = 1;
+
+  // Bytestream URI for the archive.
+  string uri = 2;
+}
+
+message GetZipManifestResponse {
+  context.ResponseContext response_context = 1;
+
+  optional Manifest manifest = 2;
+}
