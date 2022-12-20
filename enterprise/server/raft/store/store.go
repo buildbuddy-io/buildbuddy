@@ -70,17 +70,17 @@ const (
 	// considered to be full and eviction will kick in.
 	evictionCutoffThreshold = .90
 
-	// How often nodes wil check whether to gossip usage data if it is
+	// How often stores wil check whether to gossip usage data if it is
 	// sufficiently different from the last broadcast.
-	nodePartitionUsageCheckInterval = 15 * time.Second
+	storePartitionUsageCheckInterval = 15 * time.Second
 
-	// How often nodes can go without broadcasting usage information.
-	// Usage data will be gosipped after this time if no updated were triggered
+	// How often stores can go without broadcasting usage information.
+	// Usage data will be gossiped after this time if no updated were triggered
 	// based on data changes.
-	nodePartitionUsageMaxAge = 15 * time.Minute
+	storePartitionUsageMaxAge = 15 * time.Minute
 
-	// How old node partition usage data can be before we consider it invalid.
-	nodePartitionStalenessLimit = nodePartitionUsageMaxAge * 2
+	// How old store partition usage data can be before we consider it invalid.
+	storePartitionStalenessLimit = storePartitionUsageMaxAge * 2
 )
 
 var (
@@ -139,7 +139,7 @@ func (pu *partitionUsage) RemoteUpdate(nhid string, update *rfpb.PartitionMetada
 
 	// Prune stale data.
 	for id, n := range pu.nodes {
-		if time.Since(n.lastUpdate) > nodePartitionStalenessLimit {
+		if time.Since(n.lastUpdate) > storePartitionStalenessLimit {
 			delete(pu.nodes, id)
 		}
 	}
@@ -175,10 +175,10 @@ func (pu *partitionUsage) evict(ctx context.Context, key *ReplicaSample) (skip b
 		log.Warningf("eviction succeeded but range %d wasn't found", key.header.GetRangeId())
 	}
 
-	// Assume eviction on all nodes is happening at a similar rate as on the
-	// current node and update the usage information speculatively since we
-	// don't know when we'll receive the next usage update from remote nodes.
-	// When we do receive updates from other nodes they will overwrite our
+	// Assume eviction on all stores is happening at a similar rate as on the
+	// current store and update the usage information speculatively since we
+	// don't know when we'll receive the next usage update from remote stores.
+	// When we do receive updates from other stores they will overwrite our
 	// speculative numbers.
 	for _, npu := range pu.nodes {
 		npu.sizeBytes -= int64(float64(key.metadata.GetStoredSizeBytes()) * float64(globalSizeBytes) / float64(npu.sizeBytes))
@@ -379,8 +379,8 @@ func (ut *usageTracker) OnEvent(updateType serf.EventType, event serf.Event) {
 	ut.RemoteUpdate(nu)
 }
 
-// RemoteUpdate processes a usage update broadcast by Raft nodes.
-// Note that this also includes data broadcast by the local node.
+// RemoteUpdate processes a usage update broadcast by Raft stores.
+// Note that this also includes data broadcast by the local store.
 func (ut *usageTracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
@@ -485,17 +485,17 @@ func (ut *usageTracker) computeUsage() *rfpb.NodePartitionUsage {
 }
 
 func (ut *usageTracker) broadcastLoop() {
-	idleTimer := time.NewTimer(nodePartitionUsageMaxAge)
+	idleTimer := time.NewTimer(storePartitionUsageMaxAge)
 
 	for {
 		select {
 		case <-ut.quitChan:
 			return
-		case <-time.After(nodePartitionUsageCheckInterval):
+		case <-time.After(storePartitionUsageCheckInterval):
 			if !idleTimer.Stop() {
 				<-idleTimer.C
 			}
-			idleTimer.Reset(nodePartitionUsageMaxAge)
+			idleTimer.Reset(storePartitionUsageMaxAge)
 			if err := ut.broadcast(false /*=force*/); err != nil {
 				log.Warningf("could not gossip node partition usage info: %s", err)
 			}
