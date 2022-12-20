@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/protobuf/proto"
@@ -22,8 +21,7 @@ const (
 )
 
 type collector struct {
-	rdb  redis.UniversalClient
-	rbuf *redisutil.CommandBuffer
+	rdb redis.UniversalClient
 }
 
 func Register(env environment.Env) error {
@@ -31,17 +29,13 @@ func Register(env environment.Env) error {
 	if rdb == nil {
 		return nil
 	}
-	rbuf := redisutil.NewCommandBuffer(rdb)
-	rbuf.StartPeriodicFlush(context.Background())
-	env.GetHealthChecker().RegisterShutdownFunction(rbuf.StopPeriodicFlush)
-	env.SetExecutionCollector(New(rdb, rbuf))
+	env.SetExecutionCollector(New(rdb))
 	return nil
 }
 
-func New(rdb redis.UniversalClient, rbuf *redisutil.CommandBuffer) *collector {
+func New(rdb redis.UniversalClient) *collector {
 	return &collector{
-		rdb:  rdb,
-		rbuf: rbuf,
+		rdb: rdb,
 	}
 }
 
@@ -82,7 +76,7 @@ func (c *collector) Append(ctx context.Context, iid string, execution *repb.Stor
 	if err != nil {
 		return err
 	}
-	return c.rbuf.RPush(ctx, getExecutionKey(iid), string(b))
+	return c.rdb.RPush(ctx, getExecutionKey(iid), string(b)).Err()
 }
 
 func (c *collector) ListRange(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error) {
