@@ -318,6 +318,9 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	storedInv := toStoredInvocation(inv)
 	if err = r.env.GetExecutionCollector().AddInvocation(ctx, storedInv); err != nil {
 		log.CtxErrorf(ctx, "failed to write the complete Invocation to redis: %s", err)
+	} else {
+		// Temporary logging for debugging clickhouse missing data.
+		log.CtxDebug(ctx, "Successfully wrote invocation to redis")
 	}
 
 	for {
