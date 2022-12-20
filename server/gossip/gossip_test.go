@@ -76,12 +76,14 @@ func TestSendTag(t *testing.T) {
 	defer node1.Shutdown()
 
 	sawTag := make(chan struct{})
+	done := false
 	eventCB := func(eventType serf.EventType, event serf.Event) {
 		if memberEvent, ok := event.(serf.MemberEvent); ok {
 			for _, member := range memberEvent.Members {
 				tagVal, ok := member.Tags["testTagName"]
-				if ok && tagVal == "testTagValue" {
+				if ok && tagVal == "testTagValue" && !done {
 					close(sawTag)
+					done = true
 				}
 			}
 		}

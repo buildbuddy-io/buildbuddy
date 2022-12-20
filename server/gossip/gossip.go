@@ -168,9 +168,9 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	// Gossip logs are very verbose and there is
 	// very little useful info in DEBUG/INFO level logs.
 	if strings.Contains(s, "[DEBUG]") {
-		// log.Debug(s)
+		log.Debug(s)
 	} else if strings.Contains(s, "[INFO]") {
-		// log.Info(s)
+		log.Info(s)
 	} else {
 		log.Warning(s)
 	}
@@ -199,6 +199,12 @@ func NewGossipManager(name, listenAddress string, join []string) (*GossipManager
 	// this is the maximum value that serf supports.
 	serfConfig.UserEventSizeLimit = 9 * 1024
 	serfConfig.BroadcastTimeout = time.Second
+
+	serfConfig.CoalescePeriod = 10 * time.Second
+	serfConfig.QuiescentPeriod = time.Second
+
+	serfConfig.UserCoalescePeriod = 10 * time.Second
+	serfConfig.UserQuiescentPeriod = time.Second
 
 	ctx, cancel := context.WithCancel(context.TODO())
 
