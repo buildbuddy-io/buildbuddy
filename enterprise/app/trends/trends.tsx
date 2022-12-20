@@ -179,11 +179,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   getStat(date: string): invocation.TrendStat {
-    return this.state.dateToStatMap.get(date) || invocation.TrendStat.fromObject({});
+    return this.state.dateToStatMap.get(date) || new invocation.TrendStat();
   }
 
   getExecutionStat(date: string): invocation.ExecutionStat {
-    return this.state.dateToExecutionStatMap.get(date) || invocation.ExecutionStat.fromObject({});
+    return this.state.dateToExecutionStatMap.get(date) || new invocation.ExecutionStat();
   }
 
   handleCheckboxChange(event: any) {
@@ -240,7 +240,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <TrendsChartComponent
                 title="Builds"
                 data={this.state.dates}
-                extractValue={(date) => +this.getStat(date)?.totalNumBuilds}
+                extractValue={(date) => +this.getStat(date).totalNumBuilds}
                 extractSecondaryValue={(date) => {
                   let stat = this.getStat(date);
                   return (+stat?.totalBuildTimeUsec * SECONDS_PER_MICROSECOND) / +stat?.completedInvocationCount;
@@ -317,7 +317,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <TrendsChartComponent
                 title="Cache write throughput"
                 data={this.state.dates}
-                extractValue={(date) => +this.getStat(date)?.totalUploadSizeBytes}
+                extractValue={(date) => +this.getStat(date).totalUploadSizeBytes}
                 extractSecondaryValue={(date) =>
                   (+this.getStat(date).totalUploadUsec * BITS_PER_BYTE) /
                   (+this.getStat(date).totalUploadUsec * SECONDS_PER_MICROSECOND)
@@ -337,7 +337,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <TrendsChartComponent
                 title="Users with builds"
                 data={this.state.dates}
-                extractValue={(date) => +this.getStat(date)?.userCount}
+                extractValue={(date) => +this.getStat(date).userCount}
                 extractLabel={this.formatShortDate}
                 formatTickValue={format.count}
                 allowDecimals={false}
@@ -361,7 +361,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <TrendsChartComponent
                 title="Branches with builds"
                 data={this.state.dates}
-                extractValue={(date) => +this.getStat(date)?.branchCount}
+                extractValue={(date) => +this.getStat(date).branchCount}
                 extractLabel={this.formatShortDate}
                 formatTickValue={format.count}
                 allowDecimals={false}
@@ -401,8 +401,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatHoverLabel={this.formatLongDate}
                   extractP50={(date) => +this.getExecutionStat(date).queueDurationUsecP50 * SECONDS_PER_MICROSECOND}
                   extractP75={(date) => +this.getExecutionStat(date).queueDurationUsecP75 * SECONDS_PER_MICROSECOND}
-                  extractP90={(date) => +this.getExecutionStat(date)?.queueDurationUsecP90 * SECONDS_PER_MICROSECOND}
-                  extractP95={(date) => +this.getExecutionStat(date)?.queueDurationUsecP95 * SECONDS_PER_MICROSECOND}
+                  extractP90={(date) => +this.getExecutionStat(date).queueDurationUsecP90 * SECONDS_PER_MICROSECOND}
+                  extractP95={(date) => +this.getExecutionStat(date).queueDurationUsecP95 * SECONDS_PER_MICROSECOND}
                   extractP99={(date) => +this.getExecutionStat(date).queueDurationUsecP99 * SECONDS_PER_MICROSECOND}
                 />
               )}
