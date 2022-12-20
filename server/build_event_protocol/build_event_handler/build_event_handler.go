@@ -683,7 +683,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	invocation := e.beValues.Invocation()
 	invocation.Attempt = e.attempt
 	invocation.HasChunkedEventLogs = e.logWriter != nil
-	invocation.BazelExitCode = e.beValues.BuildExitCode()
 
 	if e.pw != nil {
 		if err := e.pw.Flush(ctx); err != nil {

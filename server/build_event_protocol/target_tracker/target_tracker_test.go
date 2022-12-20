@@ -76,6 +76,9 @@ type fakeAccumulator struct {
 
 func (a *fakeAccumulator) Invocation() *inpb.Invocation {
 	return &inpb.Invocation{
+		Role:         a.role,
+		Command:      a.command,
+		RepoUrl:      a.repoURL,
 		InvocationId: a.invocationID,
 	}
 }
@@ -84,24 +87,12 @@ func (a *fakeAccumulator) Role() string {
 	return a.role
 }
 
-func (a *fakeAccumulator) Command() string {
-	return a.command
-}
-
 func (a *fakeAccumulator) RepoURL() string {
 	return a.repoURL
 }
 
-func (a *fakeAccumulator) InvocationID() string {
-	return a.invocationID
-}
-
 func (a *fakeAccumulator) StartTime() time.Time {
 	return time.Now()
-}
-
-func (a *fakeAccumulator) BranchName() string {
-	return ""
 }
 
 func (a *fakeAccumulator) CommitSHA() string {

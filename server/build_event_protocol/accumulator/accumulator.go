@@ -18,10 +18,8 @@ import (
 
 const (
 	repoURLFieldName                      = "repoURL"
-	branchNameFieldName                   = "branchName"
 	commitSHAFieldName                    = "commitSHA"
 	roleFieldName                         = "role"
-	commandFieldName                      = "command"
 	workflowIDFieldName                   = "workflowID"
 	actionNameFieldName                   = "actionName"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
@@ -30,7 +28,6 @@ const (
 var (
 	buildMetadataFieldMapping = map[string]string{
 		"REPO_URL":                        repoURLFieldName,
-		"BRANCH_NAME":                     branchNameFieldName,
 		"COMMIT_SHA":                      commitSHAFieldName,
 		"ROLE":                            roleFieldName,
 		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
@@ -45,22 +42,22 @@ type Accumulator interface {
 	// not present.
 	Invocation() *inpb.Invocation
 
-	// TODO(bduffany): Remove these methods in favor of reading them directly
-	// from the Invocation() proto fields.
-	InvocationID() string
 	StartTime() time.Time
-	RepoURL() string
-	BranchName() string
-	CommitSHA() string
 	DisableCommitStatusReporting() bool
-	Role() string
-	Command() string
-	Pattern() string
 	WorkflowID() string
 	ActionName() string
+	Pattern() string
+
 	WorkspaceIsLoaded() bool
 	BuildMetadataIsLoaded() bool
 	BuildFinished() bool
+
+	// TODO(bduffany): Remove these methods in favor of reading them directly
+	// from the Invocation() proto fields.
+
+	RepoURL() string
+	CommitSHA() string
+	Role() string
 }
 
 // BEValues is an in-memory data structure created for each new stream of build
@@ -76,8 +73,8 @@ type BEValues struct {
 	valuesMap               map[string]string
 	sawWorkspaceStatusEvent bool
 	sawBuildMetadataEvent   bool
+	sawFinishedEvent        bool
 	buildStartTime          time.Time
-	exitCode                *string
 
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
@@ -112,7 +109,7 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 	case *build_event_stream.BuildEvent_WorkflowConfigured:
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
 	case *build_event_stream.BuildEvent_Finished:
-		v.handleFinishedEvent(p.Finished)
+		v.sawFinishedEvent = true
 	}
 }
 func (v *BEValues) Finalize(ctx context.Context) {
@@ -138,9 +135,6 @@ func (v *BEValues) Finalize(ctx context.Context) {
 		log.CtxInfof(ctx, "Accumulator: role mismatch: %q != %q", v.Role(), invocation.GetRole())
 	}
 }
-func (v *BEValues) InvocationID() string {
-	return v.Invocation().GetInvocationId()
-}
 func (v *BEValues) StartTime() time.Time {
 	return v.buildStartTime
 }
@@ -155,10 +149,6 @@ func (v *BEValues) RepoURL() string {
 	return normalizedURL.String()
 }
 
-func (v *BEValues) BranchName() string {
-	return v.getStringValue(branchNameFieldName)
-}
-
 func (v *BEValues) CommitSHA() string {
 	return v.getStringValue(commitSHAFieldName)
 }
@@ -169,10 +159,6 @@ func (v *BEValues) DisableCommitStatusReporting() bool {
 
 func (v *BEValues) Role() string {
 	return v.getStringValue(roleFieldName)
-}
-
-func (v *BEValues) Command() string {
-	return v.getStringValue(commandFieldName)
 }
 
 func (v *BEValues) Pattern() string {
@@ -196,14 +182,7 @@ func (v *BEValues) BuildMetadataIsLoaded() bool {
 }
 
 func (v *BEValues) BuildFinished() bool {
-	return v.exitCode != nil
-}
-
-func (v *BEValues) BuildExitCode() string {
-	if v.exitCode == nil {
-		return ""
-	}
-	return *v.exitCode
+	return v.sawFinishedEvent
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
@@ -232,7 +211,6 @@ func (v *BEValues) getBoolValue(fieldName string) bool {
 }
 
 func (v *BEValues) handleStartedEvent(event *build_event_stream.BuildEvent) {
-	v.setStringValue(commandFieldName, event.GetStarted().Command)
 	v.buildStartTime = timeutil.GetTimeWithFallback(event.GetStarted().GetStartTime(), event.GetStarted().GetStartTimeMillis())
 }
 
@@ -254,17 +232,6 @@ func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *c
 			switch environmentVariable {
 			case "CIRCLE_REPOSITORY_URL", "GITHUB_REPOSITORY", "BUILDKITE_REPO", "TRAVIS_REPO_SLUG", "GIT_URL", "CI_REPOSITORY_URL", "REPO_URL":
 				v.setStringValue(repoURLFieldName, value)
-			case "CIRCLE_BRANCH", "GITHUB_HEAD_REF", "BUILDKITE_BRANCH", "TRAVIS_BRANCH", "GIT_BRANCH", "CI_COMMIT_BRANCH":
-				v.setStringValue(branchNameFieldName, value)
-			case "GITHUB_REF":
-				// GITHUB_REF can contain tag information instead of branch information,
-				// so we have to check that this is a branch before attempting to strip
-				// the prefix. Additionally, if this is a pull request, we want to use
-				// the value from GITHUB_HEAD_REF instead, so if the branch name is
-				// already populated, we don't overwrite it.
-				if strings.HasPrefix(value, "refs/heads/") && v.getStringValue(branchNameFieldName) == "" {
-					v.setStringValue(branchNameFieldName, strings.TrimPrefix(value, "refs/heads/"))
-				}
 			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA", "VOLATILE_GIT_COMMIT":
 				v.setStringValue(commitSHAFieldName, value)
 			case "CI":
@@ -289,9 +256,6 @@ func (v *BEValues) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_eve
 		if item.Key == "REPO_URL" {
 			v.setStringValue(repoURLFieldName, item.Value)
 		}
-		if item.Key == "BRANCH_NAME" {
-			v.setStringValue(branchNameFieldName, item.Value)
-		}
 		if item.Key == "COMMIT_SHA" {
 			v.setStringValue(commitSHAFieldName, item.Value)
 		}
@@ -301,9 +265,4 @@ func (v *BEValues) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_eve
 func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConfigured) {
 	v.setStringValue(workflowIDFieldName, wfc.GetWorkflowId())
 	v.setStringValue(actionNameFieldName, wfc.GetActionName())
-}
-
-func (v *BEValues) handleFinishedEvent(finished *build_event_stream.BuildFinished) {
-	v.exitCode = new(string)
-	*v.exitCode = finished.ExitCode.GetName()
 }
