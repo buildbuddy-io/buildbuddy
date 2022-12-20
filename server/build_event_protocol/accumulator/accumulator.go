@@ -1,6 +1,7 @@
 package accumulator
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -112,6 +114,29 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
 	case *build_event_stream.BuildEvent_Finished:
 		v.handleFinishedEvent(p.Finished)
+	}
+}
+func (v *BEValues) Finalize(ctx context.Context) {
+	invocation := v.Invocation()
+	invocation.InvocationStatus = inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
+	if v.BuildFinished() {
+		invocation.InvocationStatus = inpb.Invocation_COMPLETE_INVOCATION_STATUS
+	}
+
+	// Do some logging so that we can understand whether the invocation fields
+	// observed by BuildStatusReporter / TargetTracker differ from the fields
+	// that we store in the DB. (This code is part of a refactor that aims
+	// to consolidate EventParser and Accumulator).
+	// TODO(bduffany): Decide how to reconcile any differences logged here, and
+	// remove this logging.
+	if v.RepoURL() != invocation.GetRepoUrl() {
+		log.CtxInfof(ctx, "Accumulator: repo_url mismatch: %q != %q", v.RepoURL(), invocation.GetRepoUrl())
+	}
+	if v.CommitSHA() != invocation.GetCommitSha() {
+		log.CtxInfof(ctx, "Accumulator: commit_sha mismatch: %q != %q", v.CommitSHA(), invocation.GetCommitSha())
+	}
+	if v.Role() != invocation.GetRole() {
+		log.CtxInfof(ctx, "Accumulator: role mismatch: %q != %q", v.Role(), invocation.GetRole())
 	}
 }
 func (v *BEValues) InvocationID() string {
