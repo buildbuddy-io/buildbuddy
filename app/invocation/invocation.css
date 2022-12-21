@@ -103,6 +103,7 @@
 
 .invocation-targets-card .root-cause-badge {
   background: #eee;
+  flex-shrink: 0;
   padding: 0 8px;
   border-radius: 16px;
   word-break: break-word;
