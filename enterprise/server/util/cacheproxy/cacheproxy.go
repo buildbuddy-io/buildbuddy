@@ -317,17 +317,17 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	copyBuf := c.bufferPool.Get(bufSize)
 	defer c.bufferPool.Put(copyBuf)
 
+	buf := copyBuf[:bufSize]
 	for {
-		n, err := io.ReadFull(reader, copyBuf)
-		c.log.Debugf("Read %d bytes", n)
+		n, err := io.ReadFull(reader, buf)
 		if err == io.EOF {
 			break
 		} else if err == io.ErrUnexpectedEOF {
-			if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf[:n]}); err != nil {
+			if err := stream.Send(&dcpb.ReadResponse{Data: buf[:n]}); err != nil {
 				return err
 			}
 		} else {
-			if err := stream.Send(&dcpb.ReadResponse{Data: copyBuf}); err != nil {
+			if err := stream.Send(&dcpb.ReadResponse{Data: buf}); err != nil {
 				return err
 			}
 			continue
