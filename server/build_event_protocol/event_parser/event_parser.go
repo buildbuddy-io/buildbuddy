@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -370,6 +371,9 @@ func (sep *StreamingEventParser) setReadPermission(value inpb.InvocationPermissi
 	}
 }
 func (sep *StreamingEventParser) setRepoUrl(value string, priority int) {
+	if norm, _ := git.NormalizeRepoURL(value); norm != nil {
+		value = norm.String()
+	}
 	if sep.priority.RepoUrl <= priority {
 		sep.priority.RepoUrl = priority
 		sep.invocation.RepoUrl = value
