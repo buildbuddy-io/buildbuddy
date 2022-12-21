@@ -22,7 +22,6 @@ const (
 	commitSHAFieldName                    = "commitSHA"
 	roleFieldName                         = "role"
 	commandFieldName                      = "command"
-	patternFieldName                      = "pattern"
 	workflowIDFieldName                   = "workflowID"
 	actionNameFieldName                   = "actionName"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
@@ -177,7 +176,7 @@ func (v *BEValues) Command() string {
 }
 
 func (v *BEValues) Pattern() string {
-	return v.getStringValue(patternFieldName)
+	return invocation_format.ShortFormatPatterns(v.Invocation().GetPattern())
 }
 
 func (v *BEValues) WorkflowID() string {
@@ -234,7 +233,6 @@ func (v *BEValues) getBoolValue(fieldName string) bool {
 
 func (v *BEValues) handleStartedEvent(event *build_event_stream.BuildEvent) {
 	v.setStringValue(commandFieldName, event.GetStarted().Command)
-	v.setStringValue(patternFieldName, patternFromEvent(event))
 	v.buildStartTime = timeutil.GetTimeWithFallback(event.GetStarted().GetStartTime(), event.GetStarted().GetStartTimeMillis())
 }
 
@@ -308,16 +306,4 @@ func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConf
 func (v *BEValues) handleFinishedEvent(finished *build_event_stream.BuildFinished) {
 	v.exitCode = new(string)
 	*v.exitCode = finished.ExitCode.GetName()
-}
-
-func patternFromEvent(event *build_event_stream.BuildEvent) string {
-	for _, child := range event.Children {
-		switch c := child.Id.(type) {
-		case *build_event_stream.BuildEventId_Pattern:
-			{
-				return invocation_format.ShortFormatPatterns(c.Pattern.Pattern)
-			}
-		}
-	}
-	return ""
 }

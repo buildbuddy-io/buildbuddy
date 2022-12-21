@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
-	"fmt"
+	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/mattn/go-isatty"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -109,7 +110,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to marshal metadata: %s", err)
 			}
-			fmt.Println(string(b))
+			writeToStdout(b)
 			return
 		}
 	}
@@ -120,7 +121,7 @@ func main() {
 		if err := cachetools.GetBlob(ctx, bsClient, ind, &out); err != nil {
 			log.Fatal(err.Error())
 		}
-		fmt.Println(out.String())
+		writeToStdout(out.Bytes())
 		return
 	}
 
@@ -171,5 +172,15 @@ func main() {
 
 func printMessage(msg proto.Message) {
 	out, _ := protojson.MarshalOptions{Multiline: true}.Marshal(msg)
-	fmt.Println(string(out))
+	writeToStdout(out)
+}
+
+func writeToStdout(b []byte) {
+	os.Stdout.Write(b)
+	// Print a trailing newline if there isn't one already, but only if stdout
+	// is a terminal, to avoid incorrect digest computations e.g. when piping to
+	// `sha256sum`
+	if (len(b) == 0 || b[len(b)-1] != '\n') && isatty.IsTerminal(os.Stdout.Fd()) {
+		os.Stdout.Write([]byte{'\n'})
+	}
 }
