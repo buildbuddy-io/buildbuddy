@@ -848,7 +848,7 @@ func TestSizeLimit(t *testing.T) {
 	require.LessOrEqual(t, dirSize, maxSizeBytes)
 }
 
-func TestCompression(t *testing.T) {
+func TestCompression_Basic(t *testing.T) {
 	// Make blob big enough to require multiple chunks to compress
 	blob := compressibleBlobOfSize(pebble_cache.CompressorBufSizeBytes + 1)
 	compressedBuf := compression.CompressZstd(nil, blob)
@@ -886,21 +886,22 @@ func TestCompression(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name             string
-		rnToWrite        *resource.ResourceName
-		dataToWrite      []byte
-		rnToRead         *resource.ResourceName
-		isReadCompressed bool
+		name        string
+		rnToWrite   *resource.ResourceName
+		dataToWrite []byte
+		rnToRead    *resource.ResourceName
 		// You cannot directly compare the compressed bytes because there may be differences with the compression headers
 		// due to the chunking compression algorithm used
 		expectedUncompressedReadData []byte
+		minBytesAutoZstdCompression  int64
+		offset                       int64
+		limit                        int64
 	}{
 		{
 			name:                         "Write compressed data, read compressed data",
 			rnToWrite:                    compressedRN,
 			dataToWrite:                  compressedBuf,
 			rnToRead:                     compressedRN,
-			isReadCompressed:             true,
 			expectedUncompressedReadData: blob,
 		},
 		{
@@ -915,7 +916,6 @@ func TestCompression(t *testing.T) {
 			rnToWrite:                    decompressedRN,
 			dataToWrite:                  blob,
 			rnToRead:                     compressedRN,
-			isReadCompressed:             true,
 			expectedUncompressedReadData: blob,
 		},
 		{
@@ -930,7 +930,6 @@ func TestCompression(t *testing.T) {
 			rnToWrite:                    compressedInlineRN,
 			dataToWrite:                  compressedInlineBuf,
 			rnToRead:                     compressedInlineRN,
-			isReadCompressed:             true,
 			expectedUncompressedReadData: inlineBlob,
 		},
 		{
@@ -945,7 +944,6 @@ func TestCompression(t *testing.T) {
 			rnToWrite:                    decompressedInlineRN,
 			dataToWrite:                  inlineBlob,
 			rnToRead:                     compressedInlineRN,
-			isReadCompressed:             true,
 			expectedUncompressedReadData: inlineBlob,
 		},
 		{
@@ -954,6 +952,16 @@ func TestCompression(t *testing.T) {
 			dataToWrite:                  inlineBlob,
 			rnToRead:                     decompressedInlineRN,
 			expectedUncompressedReadData: inlineBlob,
+		},
+		{
+			name:                         "Write and store compressed data, read compressed data with offset",
+			rnToWrite:                    compressedRN,
+			dataToWrite:                  blob,
+			rnToRead:                     compressedRN,
+			offset:                       300,
+			limit:                        250,
+			expectedUncompressedReadData: blob[300:550],
+			minBytesAutoZstdCompression:  1024,
 		},
 	}
 
@@ -965,9 +973,10 @@ func TestCompression(t *testing.T) {
 
 			maxSizeBytes := int64(1_000_000_000) // 1GB
 			opts := &pebble_cache.Options{
-				RootDirectory:         testfs.MakeTempDir(t),
-				MaxSizeBytes:          maxSizeBytes,
-				EnableZstdCompression: true,
+				RootDirectory:               testfs.MakeTempDir(t),
+				MaxSizeBytes:                maxSizeBytes,
+				EnableZstdCompression:       true,
+				MinBytesAutoZstdCompression: tc.minBytesAutoZstdCompression,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			if err != nil {
@@ -988,12 +997,12 @@ func TestCompression(t *testing.T) {
 			require.NoError(t, err, tc.name)
 
 			// Read data
-			reader, err := pc.Reader(ctx, tc.rnToRead, 0, 0)
+			reader, err := pc.Reader(ctx, tc.rnToRead, tc.offset, tc.limit)
 			require.NoError(t, err, tc.name)
 			defer reader.Close()
 			data, err := io.ReadAll(reader)
 			require.NoError(t, err, tc.name)
-			if tc.isReadCompressed {
+			if isReadCompressed := tc.rnToRead.GetCompressor() != repb.Compressor_IDENTITY; isReadCompressed {
 				data, err = compression.DecompressZstd(nil, data)
 				require.NoError(t, err, tc.name)
 			}
