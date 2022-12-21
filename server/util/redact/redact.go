@@ -68,6 +68,15 @@ var (
 	// line, preceded by a non-alphanum char (to ensure the match is exactly 20
 	// alphanum chars long), followed by an @ symbol.
 	apiKeyAtPattern = regexp.MustCompile("(^|[^[:alnum:]])[[:alnum:]]{20}@")
+
+	// Option names which may contain gRPC headers that should be redacted.
+	headerOptionNames = []string{
+		"remote_header",
+		"remote_cache_header",
+		"remote_exec_header",
+		"remote_downloader_header",
+		"bes_header",
+	}
 )
 
 func stripURLSecrets(input string) string {
@@ -156,9 +165,11 @@ func stripURLSecretsFromCmdLine(tokens []string) {
 
 func stripRemoteHeadersFromCmdLine(tokens []string) {
 	for i, token := range tokens {
-		// Prevent flag name from being included in redaction pattern.
-		if strings.HasPrefix(token, "--remote_header=") {
-			tokens[i] = "--remote_header=<REDACTED>"
+		for _, name := range headerOptionNames {
+			if strings.HasPrefix(token, "--"+name+"=") {
+				tokens[i] = "--" + name + "=<REDACTED>"
+				break
+			}
 		}
 	}
 }
@@ -276,9 +287,11 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 			}
 
 			// Redact remote header values
-			if option.OptionName == "remote_header" || option.OptionName == "remote_cache_header" || option.OptionName == "remote_exec_header" || option.OptionName == "bes_header" || option.OptionName == "remote_downloader_header" {
-				option.OptionValue = envVarRedactedPlaceholder
-				option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
+			for _, name := range headerOptionNames {
+				if option.OptionName == name {
+					option.OptionValue = envVarRedactedPlaceholder
+					option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + envVarRedactedPlaceholder
+				}
 			}
 
 			// Redact non-allowed env vars
