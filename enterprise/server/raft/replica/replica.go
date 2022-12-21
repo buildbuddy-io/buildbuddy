@@ -1091,7 +1091,7 @@ func (sm *Replica) processAccessTimeUpdates() {
 			return
 		}
 
-		err = sm.store.Sender().Run(ctx, nil, func(c rfspb.ApiClient, h *rfpb.Header) error {
+		err = sm.store.Sender().Run(ctx, nil, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 			_, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 				Header: h,
 				Batch:  batchProto,

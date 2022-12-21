@@ -52,7 +52,7 @@ var (
 	join                = flagutil.New("cache.raft.join", []string{}, "The list of nodes to use when joining clusters Ex. '1.2.3.4:1991,2.3.4.5:1991...'")
 	httpAddr            = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
 	gRPCAddr            = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
-	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
+	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", true, "If set, remove all raft + cache data on start")
 	partitions          = flagutil.New("cache.raft.partitions", []disk.Partition{}, "")
 	partitionMappings   = flagutil.New("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
 )
@@ -310,7 +310,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return rc.sender.Run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	return rc.sender.Run(ctx, key, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		_, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  readReq,
@@ -369,7 +369,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, offse
 	}
 
 	var readCloser io.ReadCloser
-	err = rc.sender.Run(ctx, fileMetadataKey, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err = rc.sender.Run(ctx, fileMetadataKey, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		req := &rfpb.ReadRequest{
 			Header:     h,
 			FileRecord: fileRecord,
