@@ -163,7 +163,7 @@ func TestFillInvocation(t *testing.T) {
 		Metadata: map[string]string{
 			"ALLOW_ENV": "SHELL",
 			"ROLE":      "METADATA_CI",
-			"REPO_URL":  "https://github.com/buildbuddy-io/metadata_repo_url",
+			"REPO_URL":  "git@github.com:/buildbuddy-io/metadata_repo_url",
 		},
 	}
 	events = append(events, &build_event_stream.BuildEvent{
@@ -188,5 +188,5 @@ func TestFillInvocation(t *testing.T) {
 	assert.Equal(t, int64(1000), invocation.DurationUsec)
 	assert.Equal(t, "WORKSPACE_STATUS_BUILD_USER", invocation.User)
 	assert.Equal(t, "METADATA_CI", invocation.Role)
-	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", invocation.RepoUrl)
+	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", invocation.RepoUrl, "repo URL should be normalized")
 }
