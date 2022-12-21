@@ -678,13 +678,9 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	ctx, cancel := background.ExtendContextForFinalization(e.ctx, 10*time.Second)
 	defer cancel()
 
-	invocationStatus := inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
-	if e.beValues.BuildFinished() {
-		invocationStatus = inpb.Invocation_COMPLETE_INVOCATION_STATUS
-	}
+	e.beValues.Finalize(ctx)
 
 	invocation := e.beValues.Invocation()
-	invocation.InvocationStatus = invocationStatus
 	invocation.Attempt = e.attempt
 	invocation.HasChunkedEventLogs = e.logWriter != nil
 	invocation.BazelExitCode = e.beValues.BuildExitCode()
@@ -721,13 +717,13 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	// Report a disconnect only if we successfully updated the invocation.
 	// This reduces the likelihood that the disconnected invocation's status
 	// will overwrite any statuses written by a more recent attempt.
-	if invocationStatus == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+	if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
 		log.CtxWarning(ctx, "Reporting disconnected status for invocation")
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
 	e.statsRecorder.Enqueue(ctx, invocation)
-	log.CtxInfof(ctx, "Updated invocation to primaryDB and Enqueued invocation, invocation_status: %s", invocationStatus)
+	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil
 }
 

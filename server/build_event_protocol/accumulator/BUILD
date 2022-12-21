@@ -12,6 +12,7 @@ go_library(
         "//server/build_event_protocol/event_parser",
         "//server/build_event_protocol/invocation_format",
         "//server/util/git",
+        "//server/util/log",
         "//server/util/timeutil",
     ],
 )
