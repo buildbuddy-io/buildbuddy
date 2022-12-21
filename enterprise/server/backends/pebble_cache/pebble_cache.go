@@ -2009,7 +2009,7 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *re
 
 	if requestedCompression == cachedCompression {
 		if requestedCompression != repb.Compressor_IDENTITY && (uncompressedOffset != 0 || uncompressedLimit != 0) {
-			return nil, status.FailedPreconditionError("non-zero offset or limit requested for pass through")
+			return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
 		}
 		return reader, nil
 	}
