@@ -215,14 +215,14 @@ func (m *MemoryCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 }
 
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
 	buf, err := m.Get(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
 	r := bytes.NewReader(buf)
-	r.Seek(offset, 0)
+	r.Seek(uncompressedOffset, 0)
 	length := int64(len(buf))
 	if limit != 0 && limit < length {
 		length = limit

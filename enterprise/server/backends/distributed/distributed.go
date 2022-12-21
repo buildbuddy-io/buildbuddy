@@ -988,8 +988,8 @@ func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	return nil
 }
 
-func (c *Cache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	return c.distributedReader(ctx, r, offset, limit)
+func (c *Cache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	return c.distributedReader(ctx, r, uncompressedOffset, limit)
 }
 
 func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {

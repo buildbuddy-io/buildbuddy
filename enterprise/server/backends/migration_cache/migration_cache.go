@@ -454,7 +454,7 @@ func (d *doubleReader) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
@@ -462,7 +462,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 	doubleRead := rand.Float64() <= mc.doubleReadPercentage
 	if doubleRead {
 		eg.Go(func() error {
-			destReader, dstErr = mc.dest.Reader(ctx, r, offset, limit)
+			destReader, dstErr = mc.dest.Reader(ctx, r, uncompressedOffset, limit)
 			if dstErr == nil {
 				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "readerMatch"}).Inc()
 			}
@@ -470,7 +470,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 		})
 	}
 
-	srcReader, srcErr := mc.src.Reader(ctx, r, offset, limit)
+	srcReader, srcErr := mc.src.Reader(ctx, r, uncompressedOffset, limit)
 	eg.Wait()
 
 	bothCacheNotFound := status.IsNotFoundError(srcErr) && status.IsNotFoundError(dstErr)

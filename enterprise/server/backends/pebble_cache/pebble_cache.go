@@ -1137,7 +1137,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 	return p.deleteRecord(ctx, fileRecord)
 }
 
-func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1165,7 +1165,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offs
 
 	partitionID := fileRecord.GetIsolation().GetPartitionId()
 	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
-	rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), uncompressedOffset, limit)
 	if err == nil {
 		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
 	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {

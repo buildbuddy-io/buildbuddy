@@ -493,7 +493,7 @@ func (s3c *S3Cache) FindMissing(ctx context.Context, resources []*resource.Resou
 	return missing, nil
 }
 
-func (s3c *S3Cache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (s3c *S3Cache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	k, err := s3c.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -503,10 +503,10 @@ func (s3c *S3Cache) Reader(ctx context.Context, r *resource.ResourceName, offset
 	// track it as part of the read
 
 	// This range follows the format specified here: https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
-	readRange := aws.String(fmt.Sprintf("bytes=%d-", offset))
+	readRange := aws.String(fmt.Sprintf("bytes=%d-", uncompressedOffset))
 	if limit != 0 {
 		// range bounds are inclusive
-		readRange = aws.String(fmt.Sprintf("bytes=%d-%d", offset, offset+limit-1))
+		readRange = aws.String(fmt.Sprintf("bytes=%d-%d", uncompressedOffset, uncompressedOffset+limit-1))
 	}
 
 	result, err := s3c.s3.GetObjectWithContext(ctx, &s3.GetObjectInput{
