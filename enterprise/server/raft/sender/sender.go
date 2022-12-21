@@ -105,6 +105,7 @@ func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Heade
 
 	if len(scanRsp.GetKvs()) == 0 {
 		log.Errorf("scan response had 0 kvs")
+		span.SetAttributes(attribute.String("metarange_descriptor", "no-range-descriptors-found"))
 		return nil, status.FailedPreconditionError("scan response had 0 kvs")
 	}
 	for _, kv := range scanRsp.GetKvs() {
