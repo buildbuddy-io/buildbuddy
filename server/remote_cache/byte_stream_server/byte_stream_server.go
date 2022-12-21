@@ -81,17 +81,6 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 	return nil
 }
 
-type streamWriter struct {
-	stream bspb.ByteStream_ReadServer
-}
-
-func (w *streamWriter) Write(buf []byte) (int, error) {
-	err := w.stream.Send(&bspb.ReadResponse{
-		Data: buf,
-	})
-	return len(buf), err
-}
-
 // `Read()` is used to retrieve the contents of a resource as a sequence
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
@@ -152,8 +141,26 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
-	n, err := io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
-	downloadTracker.CloseWithBytesTransferred(n, r.GetCompressor())
+
+	buf := copyBuf[:bufSize]
+	bytesTransferred := 0
+	for {
+		n, err := io.ReadFull(reader, buf)
+		bytesTransferred += n
+		if err == io.EOF {
+			break
+		} else if err == io.ErrUnexpectedEOF {
+			if err := stream.Send(&bspb.ReadResponse{Data: buf[:n]}); err != nil {
+				return err
+			}
+		} else {
+			if err := stream.Send(&bspb.ReadResponse{Data: buf}); err != nil {
+				return err
+			}
+			continue
+		}
+	}
+	downloadTracker.CloseWithBytesTransferred(int64(bytesTransferred), r.GetCompressor())
 	return err
 }
 

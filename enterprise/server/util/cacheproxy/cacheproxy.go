@@ -295,17 +295,6 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	return rsp, nil
 }
 
-type streamWriter struct {
-	stream dcpb.DistributedCache_ReadServer
-}
-
-func (w *streamWriter) Write(buf []byte) (int, error) {
-	err := w.stream.Send(&dcpb.ReadResponse{
-		Data: buf,
-	})
-	return len(buf), err
-}
-
 func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
@@ -326,8 +315,25 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 		bufSize = resourceSize
 	}
 	copyBuf := c.bufferPool.Get(bufSize)
-	_, err = io.CopyBuffer(&streamWriter{stream}, reader, copyBuf[:bufSize])
-	c.bufferPool.Put(copyBuf)
+	defer c.bufferPool.Put(copyBuf)
+
+	buf := copyBuf[:bufSize]
+	for {
+		n, err := io.ReadFull(reader, buf)
+		if err == io.EOF {
+			break
+		} else if err == io.ErrUnexpectedEOF {
+			if err := stream.Send(&dcpb.ReadResponse{Data: buf[:n]}); err != nil {
+				return err
+			}
+		} else {
+			if err := stream.Send(&dcpb.ReadResponse{Data: buf}); err != nil {
+				return err
+			}
+			continue
+		}
+	}
+
 	c.log.Debugf("Read(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 	return err
 }
