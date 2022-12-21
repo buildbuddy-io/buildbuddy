@@ -267,7 +267,7 @@ func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	if !eligibleForMc(rn.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", rn.GetDigest())
 	}
@@ -281,7 +281,7 @@ func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, offset, l
 	}
 
 	r := bytes.NewReader(buf)
-	r.Seek(offset, 0)
+	r.Seek(uncompressedOffset, 0)
 	length := rn.GetDigest().GetSizeBytes()
 	if limit != 0 && limit < length {
 		length = limit
