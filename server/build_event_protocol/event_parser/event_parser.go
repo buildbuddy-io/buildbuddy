@@ -24,10 +24,11 @@ const (
 	// repo URL set via WorkspaceStatus, even if the workspace status event came
 	// after the build metadata event in the stream.
 
-	envPriority                = 1
-	workspaceStatusPriority    = 2
-	buildMetadataPriority      = 3
-	workflowConfiguredPriority = 4
+	startedPriority            = 1
+	envPriority                = 2
+	workspaceStatusPriority    = 3
+	buildMetadataPriority      = 4
+	workflowConfiguredPriority = 5
 )
 
 func parseEnv(commandLine *command_line.CommandLine) map[string]string {
@@ -101,15 +102,16 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 		}
 	case *build_event_stream.BuildEvent_Started:
 		{
+			priority := startedPriority
 			startTime := timeutil.GetTimeWithFallback(p.Started.StartTime, p.Started.StartTimeMillis)
 			sep.startTime = &startTime
-			sep.invocation.Command = p.Started.Command
+			sep.setCommand(p.Started.Command, priority)
 			for _, child := range event.Children {
 				// Here we are then. Knee-deep.
 				switch c := child.Id.(type) {
 				case *build_event_stream.BuildEventId_Pattern:
 					{
-						sep.invocation.Pattern = c.Pattern.Pattern
+						sep.setPattern(c.Pattern.Pattern, priority)
 					}
 				}
 			}
