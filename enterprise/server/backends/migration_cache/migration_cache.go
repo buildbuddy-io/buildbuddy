@@ -422,8 +422,10 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 	d.bytesReadSrc += srcN
 
 	eg.Wait()
-	if dstErr != nil && dstErr != srcErr {
-		log.Warningf("Migration %v read err, src err: %s, dest err: %s, src read %d, dest read %d", d.r, srcErr, dstErr, d.bytesReadSrc, d.bytesReadDest)
+	// Don't log on EOF errors when reading chunks, because the readers from different caches
+	// could be reading at different rates. Only log on Close() if the total number of bytes read differs
+	if dstErr != nil && dstErr != srcErr && dstErr != io.EOF {
+		log.Warningf("Migration %v read err, src err: %v, dest err: %s", d.r, srcErr, dstErr)
 	}
 
 	return srcN, srcErr
@@ -432,6 +434,10 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
+		if d.bytesReadDest != d.bytesReadSrc {
+			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
+		}
+
 		eg.Go(func() error {
 			dstErr := d.dest.Close()
 			if dstErr != nil {
