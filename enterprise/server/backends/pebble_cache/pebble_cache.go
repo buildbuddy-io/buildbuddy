@@ -1409,6 +1409,7 @@ type partitionEvictor struct {
 	blobDir    string
 	dbGetter   pebbleutil.Leaser
 	accesses   chan<- *accessTimeUpdate
+	rng        *rand.Rand
 
 	samplePool  []*evictionPoolEntry
 	sizeBytes   int64
@@ -1430,6 +1431,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		samplePool:      make([]*evictionPoolEntry, 0, samplePoolSize),
 		dbGetter:        dbg,
 		accesses:        accesses,
+		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
 		atimeBufferSize: atimeBufferSize,
 		minEvictionAge:  minEvictionAge,
 		cacheName:       cacheName,
@@ -1635,24 +1637,29 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	return buf
 }
 
-var digestRunes = []rune("abcdef1234567890")
+var digestChars = []byte("abcdef1234567890")
 
 func (e *partitionEvictor) randomKey(n int) []byte {
-	randKey := e.part.ID
+	partID := e.part.ID
 	e.mu.Lock()
 	totalCount := e.casCount + e.acCount
 
-	randInt := rand.Int63n(totalCount)
+	var cacheType string
+	randInt := e.rng.Int63n(totalCount)
 	if randInt < e.casCount {
-		randKey += "/cas/"
+		cacheType = "/cas/"
 	} else {
-		randKey += "/ac/"
+		cacheType = "/ac/"
 	}
 	e.mu.Unlock()
+
+	buf := bytes.NewBuffer(make([]byte, 0, len(partID)+len(cacheType)+n))
+	buf.Write([]byte(partID))
+	buf.Write([]byte(cacheType))
 	for i := 0; i < n; i++ {
-		randKey += string(digestRunes[rand.Intn(len(digestRunes))])
+		buf.WriteByte(digestChars[rand.Intn(len(digestChars))])
 	}
-	return []byte(randKey)
+	return buf.Bytes()
 }
 
 func (e *partitionEvictor) refreshAtime(s *evictionPoolEntry) error {
