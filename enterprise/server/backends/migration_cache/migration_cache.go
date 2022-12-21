@@ -434,7 +434,8 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
-		if d.bytesReadDest != d.bytesReadSrc {
+		// Don't log on byte differences for AC records, because there could be minor differences in metadata like timestamps
+		if d.r.GetCacheType() == resource.CacheType_CAS && d.bytesReadDest != d.bytesReadSrc {
 			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
 		}
 
