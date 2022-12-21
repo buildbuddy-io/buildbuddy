@@ -425,7 +425,7 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 	// Don't log on EOF errors when reading chunks, because the readers from different caches
 	// could be reading at different rates. Only log on Close() if the total number of bytes read differs
 	if dstErr != nil && dstErr != srcErr && dstErr != io.EOF {
-		log.Warningf("Migration %v read err, src err: %s, dest err: %s", d.r, srcErr, dstErr)
+		log.Warningf("Migration %v read err, src err: %v, dest err: %s", d.r, srcErr, dstErr)
 	}
 
 	return srcN, srcErr
