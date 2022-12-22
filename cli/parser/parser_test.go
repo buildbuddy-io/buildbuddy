@@ -53,6 +53,8 @@ build:forward_ref --build_config_forward_ref_flag
 
 build:bar --build_config_bar_flag
 
+build:workspace_status_with_space --workspace_status_command="bash workspace_status.sh"
+
 test --config=bar
 
 import     %workspace%/import.bazelrc
@@ -220,6 +222,18 @@ try-import %workspace%/NONEXISTENT.bazelrc
 				"--build_flag_1",
 				"--config_bar_global_flag",
 				"--build_config_bar_flag",
+			},
+		},
+		{
+			[]string{"build", "--config=workspace_status_with_space"},
+			[]string{
+				"--startup_flag_1",
+				"--ignore_all_rc_files",
+				"build",
+				"--common_global_flag_1",
+				"--common_global_flag_2",
+				"--build_flag_1",
+				"--workspace_status_command=bash workspace_status.sh",
 			},
 		},
 	} {

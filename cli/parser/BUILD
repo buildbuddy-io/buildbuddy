@@ -13,6 +13,7 @@ go_library(
         "//cli/workspace",
         "//server/remote_cache/digest",
         "//server/util/disk",
+        "@com_github_google_shlex//:shlex",
     ],
 )
 
