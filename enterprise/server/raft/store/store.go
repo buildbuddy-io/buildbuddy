@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/go-units"
 	"github.com/google/uuid"
 	"github.com/hashicorp/serf/serf"
@@ -49,6 +50,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/proto"
+	"go.opentelemetry.io/otel/attribute"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1169,7 +1171,11 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 }
 
 func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (*rfpb.SyncProposeResponse, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	r, _, err := s.validatedRange(req.GetHeader())
+	span.SetAttributes(attribute.String("validated-err", fmt.Sprintf("%s", err)))
 	if err != nil {
 		return nil, err
 	}
@@ -1181,6 +1187,7 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 	// log during a range split, we check here if the replica is splitting
 	// before doing the syncPropose.
 	if r.IsSplitting() {
+		span.SetAttributes(attribute.String("splitting", "true"))
 		return nil, status.OutOfRangeErrorf("%s: cluster %d not found", constants.RangeSplittingMsg, clusterID)
 	}
 
@@ -1267,7 +1274,11 @@ func (s *Store) Metadata(ctx context.Context, req *rfpb.MetadataRequest) (*rfpb.
 }
 
 func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	r, err := s.LeasedRange(req.GetHeader())
+	span.SetAttributes(attribute.String("leased-err", fmt.Sprintf("%s", err)))
 	if err != nil {
 		return err
 	}
