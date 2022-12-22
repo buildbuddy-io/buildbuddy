@@ -7,6 +7,9 @@ message GetInvocationRequest {
   // The selector defining which invocations(s) to retrieve.
   InvocationSelector selector = 1;
 
+  // If true, includes additional build metadata.
+  bool include_metadata = 2;
+
   // The next_page_token value returned from a previous request, if any.
   string page_token = 3;
 }
@@ -71,6 +74,19 @@ message Invocation {
 
   // The git branch that this invocation was for.
   string branch_name = 20;
+
+  // The invocation's build metadata. Only included if include_metadata = true.
+  repeated InvocationMetadata build_metadata = 21;
+
+  // The invocation's workspace status.
+  // Only included if include_metadata = true.
+  repeated InvocationMetadata workspace_status = 22;
+}
+
+// Key value pair containing invocation metadata.
+message InvocationMetadata {
+  string key = 1;
+  string value = 2;
 }
 
 // The selector used to specify which invocations to return.

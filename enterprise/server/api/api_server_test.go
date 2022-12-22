@@ -40,6 +40,23 @@ func TestGetInvocation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, 1, len(resp.Invocation))
+	assert.Equal(t, 0, len(resp.Invocation[0].BuildMetadata))
+	assert.Equal(t, 0, len(resp.Invocation[0].WorkspaceStatus))
+}
+
+func TestGetInvocationWithMetadata(t *testing.T) {
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+	env, ctx := getEnvAndCtx(t, "user1")
+	streamBuild(t, env, testInvocationID)
+	s := NewAPIServer(env)
+	resp, err := s.GetInvocation(ctx, &apipb.GetInvocationRequest{Selector: &apipb.InvocationSelector{InvocationId: testInvocationID}, IncludeMetadata: true})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, 1, len(resp.Invocation))
+	assert.Equal(t, 3, len(resp.Invocation[0].BuildMetadata))
+	assert.Equal(t, 2, len(resp.Invocation[0].WorkspaceStatus))
 }
 
 func TestGetInvocationNotFound(t *testing.T) {
@@ -454,25 +471,31 @@ func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/target:foo", "java_binary rule", "tag-a"), iid, 2))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(progressEvent("hello world"), iid, 3))
+	err = channel.HandleEvent(streamRequest(buildMetadataEvent(), iid, 3))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/target:foo"), iid, 4))
+	err = channel.HandleEvent(streamRequest(workspaceStatusEvent(), iid, 4))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/other/target:foo", "go_binary rule", "tag-b"), iid, 5))
+	err = channel.HandleEvent(streamRequest(progressEvent("hello world"), iid, 5))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/other/target:foo"), iid, 6))
+	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/target:foo"), iid, 6))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/third/target:foo", "genrule rule", "tag-b"), iid, 7))
+	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/other/target:foo", "go_binary rule", "tag-b"), iid, 7))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/third/target:foo"), iid, 8))
+	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/other/target:foo"), iid, 8))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(finishedEvent(), iid, 9))
+	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/third/target:foo", "genrule rule", "tag-b"), iid, 9))
+	assert.NoError(t, err)
+
+	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/third/target:foo"), iid, 10))
+	assert.NoError(t, err)
+
+	err = channel.HandleEvent(streamRequest(finishedEvent(), iid, 11))
 	assert.NoError(t, err)
 
 	err = channel.FinalizeInvocation(iid)
@@ -564,6 +587,43 @@ func progressEvent(stdout string) *anypb.Any {
 		},
 	})
 	return progressAny
+}
+
+func buildMetadataEvent() *anypb.Any {
+	buildMetadataAny := &anypb.Any{}
+	buildMetadataAny.MarshalFrom(&build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_BuildMetadata{
+			BuildMetadata: &build_event_stream.BuildMetadata{
+				Metadata: map[string]string{
+					"ALLOW_ENV": "SHELL",
+					"ROLE":      "METADATA_CI",
+					"REPO_URL":  "git@github.com:/buildbuddy-io/metadata_repo_url",
+				},
+			},
+		},
+	})
+	return buildMetadataAny
+}
+
+func workspaceStatusEvent() *anypb.Any {
+	workspaceStatusAny := &anypb.Any{}
+	workspaceStatusAny.MarshalFrom(&build_event_stream.BuildEvent{
+		Payload: &build_event_stream.BuildEvent_WorkspaceStatus{
+			WorkspaceStatus: &build_event_stream.WorkspaceStatus{
+				Item: []*build_event_stream.WorkspaceStatus_Item{
+					{
+						Key:   "BUILD_USER",
+						Value: "WORKSPACE_STATUS_BUILD_USER",
+					},
+					{
+						Key:   "BUILD_HOST",
+						Value: "WORKSPACE_STATUS_BUILD_HOST",
+					},
+				},
+			},
+		},
+	})
+	return workspaceStatusAny
 }
 
 func finishedEvent() *anypb.Any {

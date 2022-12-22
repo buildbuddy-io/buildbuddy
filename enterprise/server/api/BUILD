@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/api",
     deps = [
         "//proto:api_key_go_proto",
+        "//proto:build_event_stream_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:resource_go_proto",
         "//proto/api/v1:api_v1_go_proto",
