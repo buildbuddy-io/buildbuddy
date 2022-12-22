@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/google/shlex"
 )
 
 const (
@@ -586,7 +587,10 @@ func stripCommentsAndWhitespace(line string) string {
 }
 
 func parseRcRule(line string) (*RcRule, error) {
-	tokens := strings.Fields(line)
+	tokens, err := shlex.Split(line)
+	if err != nil {
+		return nil, err
+	}
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("unexpected empty line")
 	}
