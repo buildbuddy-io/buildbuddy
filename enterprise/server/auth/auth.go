@@ -373,7 +373,7 @@ type apiKeyGroupCache struct {
 	// time to force a refresh of the underlying data.
 	lru interfaces.LRU
 	ttl time.Duration
-	mu  sync.RWMutex
+	mu  sync.Mutex
 }
 
 func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
@@ -389,9 +389,9 @@ func newAPIKeyGroupCache() (*apiKeyGroupCache, error) {
 }
 
 func (c *apiKeyGroupCache) Get(apiKey string) (akg interfaces.APIKeyGroup, ok bool) {
-	c.mu.RLock()
+	c.mu.Lock()
 	v, ok := c.lru.Get(apiKey)
-	c.mu.RUnlock()
+	c.mu.Unlock()
 	if !ok {
 		return nil, ok
 	}
