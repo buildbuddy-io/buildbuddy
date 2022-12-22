@@ -428,7 +428,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name, opts.IsolateByGroupIDs)
 			if err != nil {
 				return err
 			}
@@ -1385,14 +1385,15 @@ type evictionPoolEntry struct {
 }
 
 type partitionEvictor struct {
-	mu         *sync.Mutex
-	part       disk.Partition
-	fileStorer filestore.Store
-	cacheName  string
-	blobDir    string
-	dbGetter   pebbleutil.Leaser
-	accesses   chan<- *accessTimeUpdate
-	rng        *rand.Rand
+	mu                *sync.Mutex
+	part              disk.Partition
+	fileStorer        filestore.Store
+	cacheName         string
+	blobDir           string
+	dbGetter          pebbleutil.Leaser
+	accesses          chan<- *accessTimeUpdate
+	rng               *rand.Rand
+	isolateByGroupIDs bool
 
 	samplePool  []*evictionPoolEntry
 	sizeBytes   int64
@@ -1405,19 +1406,20 @@ type partitionEvictor struct {
 	minEvictionAge  time.Duration
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string, isolateByGroupIDs bool) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:              &sync.Mutex{},
-		part:            part,
-		fileStorer:      fileStorer,
-		blobDir:         blobDir,
-		samplePool:      make([]*evictionPoolEntry, 0, samplePoolSize),
-		dbGetter:        dbg,
-		accesses:        accesses,
-		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
-		atimeBufferSize: atimeBufferSize,
-		minEvictionAge:  minEvictionAge,
-		cacheName:       cacheName,
+		mu:                &sync.Mutex{},
+		part:              part,
+		fileStorer:        fileStorer,
+		blobDir:           blobDir,
+		samplePool:        make([]*evictionPoolEntry, 0, samplePoolSize),
+		dbGetter:          dbg,
+		accesses:          accesses,
+		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
+		atimeBufferSize:   atimeBufferSize,
+		minEvictionAge:    minEvictionAge,
+		cacheName:         cacheName,
+		isolateByGroupIDs: isolateByGroupIDs,
 	}
 	start := time.Now()
 	log.Infof("Pebble Cache: Initializing cache partition %q...", part.ID)
@@ -1571,8 +1573,8 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		}
 	}
 
-	start := append([]byte(e.part.ID+"/"), keys.MinByte...)
-	end := append([]byte(e.part.ID+"/"), keys.MaxByte...)
+	start := append([]byte(e.partitionKeyPrefix()+"/"), keys.MinByte...)
+	end := append([]byte(e.partitionKeyPrefix()+"/"), keys.MaxByte...)
 	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
 
 	partitionMD := &rfpb.PartitionMetadata{
@@ -1626,7 +1628,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 var digestChars = []byte("abcdef1234567890")
 
 func (e *partitionEvictor) randomKey(n int) []byte {
-	partID := e.part.ID
+	partID := e.partitionKeyPrefix()
 	e.mu.Lock()
 	totalCount := e.casCount + e.acCount
 
@@ -1758,6 +1760,13 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 	return nil
 }
 
+func (e *partitionEvictor) partitionKeyPrefix() string {
+	if e.isolateByGroupIDs {
+		return filestore.PartitionDirectoryPrefix + e.part.ID
+	}
+	return e.part.ID
+}
+
 func (e *partitionEvictor) resampleK(k int) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -1765,7 +1774,7 @@ func (e *partitionEvictor) resampleK(k int) error {
 	}
 	defer db.Close()
 
-	start, end := keyRange([]byte(e.part.ID + "/"))
+	start, end := keyRange([]byte(e.partitionKeyPrefix() + "/"))
 	iter := db.NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,

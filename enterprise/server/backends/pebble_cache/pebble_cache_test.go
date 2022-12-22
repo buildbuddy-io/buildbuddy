@@ -1459,6 +1459,116 @@ func TestLRU(t *testing.T) {
 	require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
 }
 
+func TestLRU_IsolateByGroupIDs(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	numDigests := 100
+	digestSize := 100
+	maxSizeBytes := int64(math.Ceil( // account for integer rounding
+		float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
+	rootDir := testfs.MakeTempDir(t)
+	atimeUpdateThreshold := time.Duration(0) // update atime on every access
+	atimeWriteBatchSize := 1                 // write atime updates synchronously
+	atimeBufferSize := 0                     // blocking channel of atime updates
+	minEvictionAge := time.Duration(0)       // no min eviction age
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory:        rootDir,
+		MaxSizeBytes:         maxSizeBytes,
+		AtimeUpdateThreshold: &atimeUpdateThreshold,
+		AtimeWriteBatchSize:  atimeWriteBatchSize,
+		AtimeBufferSize:      &atimeBufferSize,
+		MinEvictionAge:       &minEvictionAge,
+		IsolateByGroupIDs:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Start()
+	defer pc.Stop()
+
+	quartile := numDigests / 4
+
+	resourceKeys := make([]*resource.ResourceName, numDigests)
+	for i := range resourceKeys {
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		resourceKeys[i] = r
+		if err := pc.Set(ctx, r, buf); err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
+		}
+	}
+
+	// Use the digests in the following way:
+	// 1) first 3 quartiles
+	// 2) first 2 quartiles
+	// 3) first quartile
+	// This sets us up so we add an additional quartile of data
+	// and then expect data from the 3rd quartile (least recently used)
+	// to be the most evicted.
+	for i := 3; i > 0; i-- {
+		log.Printf("Using data from 0:%d", quartile*i)
+		for j := 0; j < quartile*i; j++ {
+			r := resourceKeys[j]
+			_, err = pc.Get(ctx, r)
+			require.NoError(t, err)
+		}
+	}
+
+	// Write more data.
+	for i := 0; i < quartile; i++ {
+		d, buf := testdigest.NewRandomDigestBuf(t, 100)
+		r := &resource.ResourceName{
+			Digest:    d,
+			CacheType: resource.CacheType_CAS,
+		}
+		resourceKeys = append(resourceKeys, r)
+		if err := pc.Set(ctx, r, buf); err != nil {
+			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err)
+		}
+	}
+
+	time.Sleep(pebble_cache.JanitorCheckPeriod)
+	pc.TestingWaitForGC()
+
+	evictionsByQuartile := make([][]*repb.Digest, 5)
+	for i, r := range resourceKeys {
+		ok, err := pc.Contains(ctx, r)
+		evicted := err != nil || !ok
+		q := i / quartile
+		if evicted {
+			evictionsByQuartile[q] = append(evictionsByQuartile[q], r.GetDigest())
+		}
+	}
+
+	for quartile, evictions := range evictionsByQuartile {
+		count := len(evictions)
+		sample := ""
+		for i, d := range evictions {
+			if i > 3 {
+				break
+			}
+			sample += d.GetHash()
+			sample += ", "
+		}
+		log.Printf("Evicted %d keys in quartile: %d (%s)", count, quartile, sample)
+	}
+
+	// None of the files "used" just before adding more should have been
+	// evicted.
+	require.Equal(t, 0, len(evictionsByQuartile[0]))
+
+	// None of the most recently added files should have been evicted.
+	require.Equal(t, 0, len(evictionsByQuartile[4]))
+
+	require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2]))
+	require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
+}
+
 func TestMigrationFromDiskV1(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
