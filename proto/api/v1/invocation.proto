@@ -78,7 +78,8 @@ message Invocation {
   // The invocation's build metadata. Only included if include_metadata = true.
   repeated InvocationMetadata build_metadata = 21;
 
-  // The invocation's workspace status. Only included if include_metadata = true.
+  // The invocation's workspace status.
+  // Only included if include_metadata = true.
   repeated InvocationMetadata workspace_status = 22;
 }
 
