@@ -165,7 +165,8 @@ func (sep *StreamingEventParser) ParseEvent(event *build_event_stream.BuildEvent
 				duration := endTime.Sub(*sep.startTime)
 				sep.invocation.DurationUsec = duration.Microseconds()
 			}
-			sep.invocation.Success = p.Finished.ExitCode.Code == 0
+			sep.invocation.Success = p.Finished.ExitCode.GetCode() == 0
+			sep.invocation.BazelExitCode = p.Finished.ExitCode.GetName()
 		}
 	case *build_event_stream.BuildEvent_BuildToolLogs:
 		{

@@ -241,23 +241,27 @@ func (r *BuildStatusReporter) invocationLabel() string {
 		return r.buildEventAccumulator.ActionName()
 	}
 
-	command := r.buildEventAccumulator.Command()
+	command := r.buildEventAccumulator.Invocation().GetCommand()
 	pattern := r.buildEventAccumulator.Pattern()
 	return fmt.Sprintf("bazel %s %s", command, pattern)
 }
 
+func (r *BuildStatusReporter) invocationID() string {
+	return r.buildEventAccumulator.Invocation().GetInvocationId()
+}
+
 func (r *BuildStatusReporter) invocationURL() string {
-	return build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID())).String()
+	return build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID())).String()
 }
 
 func (r *BuildStatusReporter) groupURL(label string) string {
-	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID()))
+	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID()))
 	u.RawQuery = fmt.Sprintf("targetFilter=%s", label)
 	return u.String()
 }
 
 func (r *BuildStatusReporter) targetURL(label string) string {
-	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.buildEventAccumulator.InvocationID()))
+	u := build_buddy_url.WithPath(fmt.Sprintf("/invocation/%s", r.invocationID()))
 	u.RawQuery = fmt.Sprintf("target=%s", label)
 	return u.String()
 }
