@@ -46,11 +46,11 @@ import (
 	"github.com/lni/dragonboat/v3"
 	"github.com/lni/dragonboat/v3/raftio"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/protobuf/proto"
-	"go.opentelemetry.io/otel/attribute"
 
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -1274,7 +1274,7 @@ func (s *Store) Metadata(ctx context.Context, req *rfpb.MetadataRequest) (*rfpb.
 }
 
 func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
-	ctx, span := tracing.StartSpan(ctx)
+	ctx, span := tracing.StartSpan(stream.Context())
 	defer span.End()
 
 	r, err := s.LeasedRange(req.GetHeader())
@@ -1283,7 +1283,7 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 		return err
 	}
 
-	readCloser, err := r.Reader(stream.Context(), req.GetHeader(), req.GetFileRecord(), req.GetOffset(), req.GetLimit())
+	readCloser, err := r.Reader(ctx, req.GetHeader(), req.GetFileRecord(), req.GetOffset(), req.GetLimit())
 	if err != nil {
 		return err
 	}
