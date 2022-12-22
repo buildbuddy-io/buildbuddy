@@ -387,6 +387,36 @@ var (
 		CacheNameLabel,
 	})
 
+	DiskCacheNumEvictions = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_num_evictions",
+		Help:      "Number of items evicted.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
+	DiskCachePartitionSizeBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_partition_size_bytes",
+		Help:      "Number of bytes in the partition.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
+	DiskCachePartitionCapacityBytes = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_partition_capacity_bytes",
+		Help:      "Number of bytes in the partition.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	DiskCacheDuplicateWrites = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",

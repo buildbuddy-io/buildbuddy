@@ -30,6 +30,7 @@ go_library(
         "//server/util/statusz",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_cockroachdb_pebble//vfs",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_elastic_gosigar//:gosigar",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
