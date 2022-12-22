@@ -417,6 +417,17 @@ var (
 		CacheNameLabel,
 	})
 
+	DiskCachePartitionNumItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_partition_num_items",
+		Help:      "Number of items in the partition.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+		CacheTypeLabel,
+	})
+
 	DiskCacheDuplicateWrites = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
