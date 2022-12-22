@@ -415,7 +415,7 @@ func (g *GCSCache) FindMissing(ctx context.Context, resources []*resource.Resour
 	return missing, nil
 }
 
-func (g *GCSCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (g *GCSCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -424,7 +424,7 @@ func (g *GCSCache) Reader(ctx context.Context, r *resource.ResourceName, offset,
 	if limit == 0 {
 		limit = -1
 	}
-	reader, err := g.bucketHandle.Object(k).NewRangeReader(ctx, offset, limit)
+	reader, err := g.bucketHandle.Object(k).NewRangeReader(ctx, uncompressedOffset, limit)
 	spn.End()
 	if err != nil {
 		if err == storage.ErrObjectNotExist {

@@ -181,17 +181,17 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
-func (c *ComposableCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	if outerReader, err := c.outer.Reader(ctx, r, offset, limit); err == nil {
+func (c *ComposableCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	if outerReader, err := c.outer.Reader(ctx, r, uncompressedOffset, limit); err == nil {
 		return outerReader, nil
 	}
 
-	innerReader, err := c.inner.Reader(ctx, r, offset, limit)
+	innerReader, err := c.inner.Reader(ctx, r, uncompressedOffset, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	if c.mode&ModeReadThrough == 0 || offset != 0 {
+	if c.mode&ModeReadThrough == 0 || uncompressedOffset != 0 {
 		return innerReader, nil
 	}
 
@@ -212,7 +212,7 @@ func (c *ComposableCache) Reader(ctx context.Context, r *resource.ResourceName, 
 	if err := outerWriter.Commit(); err != nil {
 		return nil, err
 	}
-	outerReader, err := c.outer.Reader(ctx, r, offset, limit)
+	outerReader, err := c.outer.Reader(ctx, r, uncompressedOffset, limit)
 	if err != nil {
 		return nil, err
 	}

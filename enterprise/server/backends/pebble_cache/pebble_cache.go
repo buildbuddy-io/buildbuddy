@@ -987,17 +987,12 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 		if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 			continue
 		}
-		partitionID := fileRecord.GetIsolation().GetPartitionId()
-		blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
-		rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
-		if err != nil {
-			p.handleMetadataMismatch(ctx, err, fileMetadataKey, fileMetadata)
-			continue
-		}
-		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
 
-		rc, err = p.readerForCompressionType(rc, r, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+		rc, err := p.readerForCompressionType(ctx, r, fileMetadataKey, fileMetadata, 0, 0)
 		if err != nil {
+			if status.IsNotFoundError(err) || os.IsNotExist(err) {
+				continue
+			}
 			return nil, err
 		}
 
@@ -1137,7 +1132,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 	return p.deleteRecord(ctx, fileRecord)
 }
 
-func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1163,20 +1158,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, offs
 		return nil, err
 	}
 
-	partitionID := fileRecord.GetIsolation().GetPartitionId()
-	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
-	rc, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
-	if err == nil {
-		sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
-	} else if status.IsNotFoundError(err) || os.IsNotExist(err) {
-		p.handleMetadataMismatch(ctx, err, fileMetadataKey, fileMetadata)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	rc, err = p.readerForCompressionType(rc, r, r.GetCompressor(), fileMetadata.FileRecord.GetCompressor())
+	rc, err := p.readerForCompressionType(ctx, r, fileMetadataKey, fileMetadata, uncompressedOffset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1997,8 +1979,38 @@ func (r *compressionReader) Close() error {
 	return err
 }
 
-func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, resource *resource.ResourceName, requestedCompression repb.Compressor_Value, cachedCompression repb.Compressor_Value) (io.ReadCloser, error) {
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *resource.ResourceName, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+	partitionID := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
+	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
+	requestedCompression := resource.GetCompressor()
+	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
+
+	// If the data is stored uncompressed, we can use the offset/limit directly
+	// otherwise we need to decompress first.
+	offset := int64(0)
+	limit := int64(0)
+	if cachedCompression == repb.Compressor_IDENTITY {
+		offset = uncompressedOffset
+		limit = uncompressedLimit
+	}
+	reader, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	if err != nil {
+		if status.IsNotFoundError(err) || os.IsNotExist(err) {
+			p.handleMetadataMismatch(ctx, err, fileMetadataKey, fileMetadata)
+		}
+		return nil, err
+	}
+	sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
+
 	if requestedCompression == cachedCompression {
+		if requestedCompression != repb.Compressor_IDENTITY && (uncompressedOffset != 0 || uncompressedLimit != 0) {
+			return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
+		}
 		return reader, nil
 	}
 
@@ -2025,7 +2037,21 @@ func (p *PebbleCache) readerForCompressionType(reader io.ReadCloser, resource *r
 			bufferPool:  p.bufferPool,
 		}, err
 	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
-		return compression.NewZstdDecompressingReader(reader)
+		dr, err := compression.NewZstdDecompressingReader(reader)
+		if err != nil {
+			return nil, err
+		}
+		// If offset is set, we need to discard all the bytes before that point.
+		if uncompressedOffset != 0 {
+			if _, err := io.CopyN(io.Discard, dr, uncompressedOffset); err != nil {
+				_ = dr.Close()
+				return nil, err
+			}
+		}
+		if uncompressedLimit != 0 {
+			dr = &readCloser{io.LimitReader(dr, uncompressedLimit), dr}
+		}
+		return dr, nil
 	} else {
 		return nil, fmt.Errorf("unsupported compressor %v requested for %v reader, cached compression is %v",
 			requestedCompression, resource, cachedCompression)

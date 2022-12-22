@@ -426,12 +426,12 @@ func (c *DiskCache) Delete(ctx context.Context, r *resource.ResourceName) error 
 	return p.delete(ctx, r)
 }
 
-func (c *DiskCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *DiskCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	p, err := c.getPartition(ctx, r.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
-	return p.reader(ctx, r, offset, limit)
+	return p.reader(ctx, r, uncompressedOffset, limit)
 }
 
 func (c *DiskCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {

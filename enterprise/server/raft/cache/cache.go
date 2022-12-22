@@ -358,7 +358,7 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceNam
 	}, nil
 }
 
-func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -373,7 +373,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, offse
 		req := &rfpb.ReadRequest{
 			Header:     h,
 			FileRecord: fileRecord,
-			Offset:     offset,
+			Offset:     uncompressedOffset,
 			Limit:      limit,
 		}
 		r, err := rc.apiClient.RemoteReader(ctx, c, req)
