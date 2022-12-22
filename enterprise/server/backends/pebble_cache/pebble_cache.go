@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/vfs"
+	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -1449,6 +1450,9 @@ func (e *partitionEvictor) updateSize(fileMetadataKey []byte, deltaSize int64) {
 		log.Warningf("Unidentified file (not CAS or AC): %q", fileMetadataKey)
 	}
 	e.sizeBytes += deltaSize
+	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
+	metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(e.sizeBytes))
+	metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(e.part.MaxSizeBytes))
 }
 
 func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
@@ -1607,7 +1611,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	percentFull := float64(e.sizeBytes) / float64(maxAllowedSize) * 100.0
 	totalCount := e.casCount + e.acCount
 	buf += fmt.Sprintf("Items: CAS: %d AC: %d (%d total)\n", e.casCount, e.acCount, totalCount)
-	buf += fmt.Sprintf("Usage: %d / %d (%2.2f%% full)\n", e.sizeBytes, maxAllowedSize, percentFull)
+	buf += fmt.Sprintf("Usage: %s / %s (%2.2f%% full)\n", units.BytesSize(float64(e.sizeBytes)), units.BytesSize(float64(maxAllowedSize)), percentFull)
 	buf += fmt.Sprintf("GC Last run: %s\n", e.lastRun.Format("Jan 02, 2006 15:04:05 MST"))
 	lastEvictedStr := "nil"
 	if e.lastEvicted != nil {
@@ -1837,6 +1841,8 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 				log.Errorf("Error evicting file: %s (ignoring)", err)
 				continue
 			}
+			lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
+			metrics.DiskCacheNumEvictions.With(lbls).Inc()
 			evicted += 1
 			lastEvicted = sample
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
