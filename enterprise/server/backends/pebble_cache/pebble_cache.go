@@ -1453,6 +1453,15 @@ func (e *partitionEvictor) updateSize(fileMetadataKey []byte, deltaSize int64) {
 	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
 	metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(e.sizeBytes))
 	metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(e.part.MaxSizeBytes))
+
+	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
+		metrics.PartitionID:    e.part.ID,
+		metrics.CacheNameLabel: e.cacheName,
+		metrics.CacheTypeLabel: "ac"}).Set(float64(e.acCount))
+	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
+		metrics.PartitionID:    e.part.ID,
+		metrics.CacheNameLabel: e.cacheName,
+		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 }
 
 func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
