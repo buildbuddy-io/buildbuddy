@@ -29,6 +29,7 @@ import (
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 )
 
@@ -127,6 +128,37 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 		}
 
 		invocations = append(invocations, apiInvocation)
+	}
+
+	if req.IncludeMetadata {
+		for _, i := range invocations {
+			inv, err := build_event_handler.LookupInvocation(s.env, ctx, i.Id.InvocationId)
+			if err != nil {
+				return nil, err
+			}
+			for _, event := range inv.GetEvent() {
+				switch p := event.BuildEvent.Payload.(type) {
+				case *bespb.BuildEvent_BuildMetadata:
+					{
+						for k, v := range p.BuildMetadata.Metadata {
+							i.BuildMetadata = append(i.BuildMetadata, &apipb.InvocationMetadata{
+								Key:   k,
+								Value: v,
+							})
+						}
+					}
+				case *bespb.BuildEvent_WorkspaceStatus:
+					{
+						for _, item := range p.WorkspaceStatus.Item {
+							i.WorkspaceStatus = append(i.WorkspaceStatus, &apipb.InvocationMetadata{
+								Key:   item.Key,
+								Value: item.Value,
+							})
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return &apipb.GetInvocationResponse{
