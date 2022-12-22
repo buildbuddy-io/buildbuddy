@@ -1639,7 +1639,7 @@ func (e *partitionEvictor) randomKey(n int) []byte {
 	buf.Write([]byte(partID))
 	buf.Write([]byte(cacheType))
 	for i := 0; i < n; i++ {
-		buf.WriteByte(digestChars[rand.Intn(len(digestChars))])
+		buf.WriteByte(digestChars[e.rng.Intn(len(digestChars))])
 	}
 	return buf.Bytes()
 }
