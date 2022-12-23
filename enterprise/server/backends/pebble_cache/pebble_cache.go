@@ -672,8 +672,9 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 		blobDir = p.blobDir(pathHasDupPartitionID, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
 		_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
-			p.handleMetadataMismatch(p.env.GetServerContext(), err, fileMetadataKey, fileMetadata)
-			mismatchCount += 1
+			if p.handleMetadataMismatch(p.env.GetServerContext(), err, fileMetadataKey, fileMetadata) {
+				mismatchCount += 1
+			}
 		}
 	}
 	log.Infof("Pebble Cache: scanForBrokenFiles fixed %d files", mismatchCount)
@@ -853,16 +854,23 @@ func readFileMetadata(reader pebble.Reader, fileMetadataKey []byte) (*rfpb.FileM
 	return fileMetadata, nil
 }
 
-func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, err error, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) {
-	if !status.IsNotFoundError(err) && !os.IsNotExist(err) {
-		return
+func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) bool {
+	if !status.IsNotFoundError(causeErr) && !os.IsNotExist(causeErr) {
+		return false
 	}
 	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil {
-		log.Warningf("Metadata record %q was found but file (%+v) not found on disk: %s", fileMetadataKey, fileMetadata, err)
-		if err := p.deleteMetadataOnly(ctx, fileMetadataKey); err != nil {
-			log.Warningf("Error deleting metadata: %s", err)
+		err := p.deleteMetadataOnly(ctx, fileMetadataKey)
+		if err != nil && status.IsNotFoundError(err) {
+			return false
 		}
+		log.Warningf("Metadata record %q was found but file (%+v) not found on disk: %s", fileMetadataKey, fileMetadata, causeErr)
+		if err != nil {
+			log.Warningf("Error deleting metadata: %s", err)
+			return false
+		}
+		return true
 	}
+	return false
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
