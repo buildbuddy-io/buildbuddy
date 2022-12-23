@@ -20,6 +20,7 @@ import (
 var (
 	bazelBinary = flag.String("bazel_binary", "", "Path to bazel binary")
 	bazelArgs   = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
+	proberName  = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
 
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
 	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
@@ -61,6 +62,14 @@ func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes 
 	err := os.WriteFile(filepath.Join(dir, "WORKSPACE"), []byte(""), 0644)
 	if err != nil {
 		return err
+	}
+
+	if *proberName != "" {
+		dir = dir + "/" + *proberName
+		err := os.Mkdir(dir, 0755)
+		if err != nil {
+			return err
+		}
 	}
 
 	buildFile, err := os.Create(filepath.Join(dir, "BUILD"))
@@ -114,7 +123,7 @@ func runProbe() error {
 		return status.UnknownErrorf("Could not populate workspace: %s", err)
 	}
 
-	args := []string{"//:all"}
+	args := []string{"//" + *proberName + ":all"}
 	if *bazelArgs != "" {
 		for _, extraArg := range strings.Split(*bazelArgs, " ") {
 			args = append(args, extraArg)
