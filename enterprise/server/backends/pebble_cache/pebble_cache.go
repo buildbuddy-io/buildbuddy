@@ -854,8 +854,8 @@ func readFileMetadata(reader pebble.Reader, fileMetadataKey []byte) (*rfpb.FileM
 	return fileMetadata, nil
 }
 
-func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, err error, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) bool {
-	if !status.IsNotFoundError(err) && !os.IsNotExist(err) {
+func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) bool {
+	if !status.IsNotFoundError(causeErr) && !os.IsNotExist(causeErr) {
 		return false
 	}
 	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil {
@@ -863,7 +863,7 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, err error, fil
 		if err != nil && status.IsNotFoundError(err) {
 			return false
 		}
-		log.Warningf("Metadata record %q was found but file (%+v) not found on disk: %s", fileMetadataKey, fileMetadata, err)
+		log.Warningf("Metadata record %q was found but file (%+v) not found on disk: %s", fileMetadataKey, fileMetadata, causeErr)
 		if err != nil {
 			log.Warningf("Error deleting metadata: %s", err)
 			return false
