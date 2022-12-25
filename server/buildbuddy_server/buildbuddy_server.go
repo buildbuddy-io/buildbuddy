@@ -2,7 +2,6 @@ package buildbuddy_server
 
 import (
 	"context"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"net/http"
@@ -30,7 +29,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/protobuf/proto"
 
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -50,7 +48,6 @@ import (
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
@@ -146,18 +143,6 @@ func (s *BuildBuddyServer) DeleteInvocation(ctx context.Context, req *inpb.Delet
 	}
 
 	return &inpb.DeleteInvocationResponse{}, nil
-}
-
-func (s *BuildBuddyServer) GetZipManifest(ctx context.Context, req *zipb.GetZipManifestRequest) (*zipb.GetZipManifestResponse, error) {
-	u, err := url.Parse(req.GetUri())
-	if err != nil {
-		return nil, err
-	}
-	man, err := bytestream.FetchBytestreamZipManifest(ctx, s.env, u)
-	if err != nil {
-		return nil, err
-	}
-	return &zipb.GetZipManifestResponse{Manifest: man}, nil
 }
 
 func (s *BuildBuddyServer) CancelExecutions(ctx context.Context, req *inpb.CancelExecutionsRequest) (*inpb.CancelExecutionsResponse, error) {
@@ -1051,42 +1036,19 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
-	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
-
-	var zipReference = params.Get("z")
-	if len(zipReference) > 0 {
-		b, err := base64.StdEncoding.DecodeString(zipReference)
-		if err != nil {
-			log.Warningf("Error downloading file: %s", err)
-			http.Error(w, "File not found", http.StatusBadRequest)
-			return
-		}
-		entry := &zipb.ManifestEntry{}
-		if err := proto.Unmarshal(b, entry); err != nil {
-			log.Warningf("Failed to unmarshal ManifestEntry: %s", err)
-			http.Error(w, "File not found", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", entry.GetName()))
-		// TODO(jdhollen): Parse output mime type from bazel-generated MANIFEST file.
-		w.Header().Set("Content-Type", "application/octet-stream")
-		err = bytestream.StreamSingleFileFromBytestreamZip(ctx, s.env, lookup.URL, entry, w)
-		if err != nil {
-			log.Warningf("Error downloading zip file contents: %s", err)
-			http.Error(w, "File not found", http.StatusNotFound)
-		}
-		return
-	}
-
 	// Stream the file back to our client
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", lookup.Filename))
 	w.Header().Set("Content-Type", "application/octet-stream")
 
-	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, w)
+	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
+	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
+
+	err = bytestream.StreamBytestreamFile(ctx, s.env, lookup.URL, func(data []byte) {
+		w.Write(data)
+	})
 
 	if err != nil {
-		log.Warningf("Error downloading file: %s", err)
+		log.Warningf("Error downloading file: %s", err.Error())
 		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}

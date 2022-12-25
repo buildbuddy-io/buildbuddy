@@ -1125,10 +1125,6 @@ code .comment {
   display: flex;
 }
 
-.artifact-line.sub-item {
-  padding-left: 16px;
-}
-
 .artifact-name {
   font-weight: 600;
   text-decoration: underline;
