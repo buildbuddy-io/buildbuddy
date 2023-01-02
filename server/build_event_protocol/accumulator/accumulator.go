@@ -235,9 +235,13 @@ func (v *BEValues) populateWorkspaceInfoFromStructuredCommandLine(commandLine *c
 			case "CIRCLE_SHA1", "GITHUB_SHA", "BUILDKITE_COMMIT", "TRAVIS_COMMIT", "GIT_COMMIT", "CI_COMMIT_SHA", "COMMIT_SHA", "VOLATILE_GIT_COMMIT":
 				v.setStringValue(commitSHAFieldName, value)
 			case "CI":
-				v.setStringValue(roleFieldName, "CI")
+				if value != "" {
+					v.setStringValue(roleFieldName, "CI")
+				}
 			case "CI_RUNNER":
-				v.setStringValue(roleFieldName, "CI_RUNNER")
+				if value != "" {
+					v.setStringValue(roleFieldName, "CI_RUNNER")
+				}
 			}
 		}
 	}
