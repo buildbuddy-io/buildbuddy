@@ -109,6 +109,10 @@
   color: #90a4ae;
 }
 
+.sidebar .sidebar-item.admin-only {
+  color: #ffc107;
+}
+
 .sidebar .sidebar-item:hover,
 .sidebar .sidebar-item.selected {
   color: #fff;
