@@ -44,6 +44,7 @@ var (
 	oauthProviders       = flagutil.New("auth.oauth_providers", []OauthProvider{}, "The list of oauth providers to use to authenticate.")
 	jwtKey               = flagutil.New("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flagutil.SecretTag)
 	apiKeyGroupCacheTTL  = flag.Duration("auth.api_key_group_cache_ttl", 5*time.Minute, "TTL for API Key to Group caching. Set to '0' to disable cache.")
+	claimsCacheTTL       = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
 	httpsOnlyCookies     = flag.Bool("auth.https_only_cookies", false, "If true, cookies will only be set over https connections.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
 	forceApproval        = flag.Bool("auth.force_approval", false, "If true, when a user doesn't have a session (first time logging in, or manually logged out) force the auth provider to show the consent screen allowing the user to select an account if they have multiple. This isn't supported by all auth providers.")
@@ -114,7 +115,10 @@ const (
 	defaultBuildBuddyJWTDuration = 6 * time.Hour
 
 	// Maximum number of entries in API Key -> Group cache.
-	apiKeyGroupCacheSize = 10000
+	apiKeyGroupCacheSize = 10_000
+
+	// Maximum number of entries in JWT -> Claims cache.
+	claimsCacheSize = 10_000
 
 	// WARNING: app/auth/auth_service.ts depends on these messages matching.
 	userNotFoundMsg   = "User not found"
@@ -190,7 +194,11 @@ func (c *Claims) GetUseGroupOwnedExecutors() bool {
 
 func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
 	expirationTime := time.Now().Add(defaultBuildBuddyJWTDuration)
-	claims.StandardClaims = jwt.StandardClaims{ExpiresAt: expirationTime.Unix()}
+	expiresAt := expirationTime.Unix()
+	// Round expiration times down to the nearest minute to improve stability
+	// of JWTs for caching purposes.
+	expiresAt -= (expiresAt % 60)
+	claims.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString([]byte(*jwtKey))
 	return tokenString, err
@@ -417,6 +425,7 @@ type OpenIDAuthenticator struct {
 	env                  environment.Env
 	myURL                *url.URL
 	apiKeyGroupCache     *apiKeyGroupCache
+	parseClaims          func(token string) (*Claims, error)
 	authenticators       []authenticator
 	enableAnonymousUsage bool
 	adminGroupID         string
@@ -505,6 +514,15 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		}
 	}
 
+	claimsFunc := parseClaims
+	if *claimsCacheTTL > 0 {
+		claimsCache, err := NewClaimsCache(ctx, *claimsCacheTTL)
+		if err != nil {
+			return nil, err
+		}
+		claimsFunc = claimsCache.Get
+	}
+
 	anonymousUsageEnabled := *enableAnonymousUsage || (len(oauthProviders) == 0 && !selfauth.Enabled())
 
 	return &OpenIDAuthenticator{
@@ -512,6 +530,7 @@ func newOpenIDAuthenticator(ctx context.Context, env environment.Env, oauthProvi
 		myURL:                build_buddy_url.WithPath(""),
 		authenticators:       authenticators,
 		apiKeyGroupCache:     akgCache,
+		parseClaims:          claimsFunc,
 		enableAnonymousUsage: anonymousUsageEnabled,
 		adminGroupID:         *adminGroupID,
 	}, nil
@@ -1001,8 +1020,7 @@ func (a *OpenIDAuthenticator) authenticatedUser(ctx context.Context) (*Claims, e
 
 	// If context already contains a JWT, just verify it and return the claims.
 	if tokenString, ok := ctx.Value(contextTokenStringKey).(string); ok && tokenString != "" {
-		claims := &Claims{}
-		_, err := jwt.ParseWithClaims(tokenString, claims, jwtKeyFunc)
+		claims, err := a.parseClaims(tokenString)
 		if err != nil {
 			return nil, err
 		}
@@ -1229,6 +1247,63 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 		redirURL = "/" // default to redirecting home.
 	}
 	http.Redirect(w, r, redirURL, http.StatusTemporaryRedirect)
+}
+
+func parseClaims(token string) (*Claims, error) {
+	claims := &Claims{}
+	_, err := jwt.ParseWithClaims(token, claims, jwtKeyFunc)
+	if err != nil {
+		return nil, err
+	}
+	return claims, nil
+}
+
+// ClaimsCache helps reduce CPU overhead due to JWT parsing by caching parsed
+// and verified JWT claims.
+//
+// The JWTs used with this cache should have Expiration times rounded down to
+// the nearest minute, so that their cache key doesn't change as often and can
+// therefore be cached for longer.
+type ClaimsCache struct {
+	ttl time.Duration
+
+	mu  sync.Mutex
+	lru interfaces.LRU
+}
+
+func NewClaimsCache(ctx context.Context, ttl time.Duration) (*ClaimsCache, error) {
+	config := &lru.Config{
+		MaxSize: claimsCacheSize,
+		SizeFn:  func(v interface{}) int64 { return 1 },
+	}
+	lru, err := lru.NewLRU(config)
+	if err != nil {
+		return nil, err
+	}
+	return &ClaimsCache{ttl: ttl, lru: lru}, nil
+}
+
+func (c *ClaimsCache) Get(token string) (*Claims, error) {
+	c.mu.Lock()
+	v, ok := c.lru.Get(token)
+	c.mu.Unlock()
+
+	if ok {
+		if claims := v.(*Claims); claims.ExpiresAt > time.Now().Unix() {
+			return claims, nil
+		}
+	}
+
+	claims, err := parseClaims(token)
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.Lock()
+	c.lru.Add(token, claims)
+	c.mu.Unlock()
+
+	return claims, nil
 }
 
 // Parses the JWT's UserInfo from the context without verifying the JWT.
