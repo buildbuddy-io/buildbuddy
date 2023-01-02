@@ -32,11 +32,19 @@ export default class GroupSearchComponent extends React.Component<{}, State> {
   }
 
   private onSearch() {
+    const query = this.state.query.trim();
+
+    // If the query looks like a group ID, navigate directly to it.
+    if (query.startsWith("GR")) {
+      const groupId = query;
+      auth_service.enterImpersonationMode(groupId);
+      return;
+    }
+
+    // Otherwise try to look up the group by its exact URL identifier.
     this.setState({ loading: true });
-    // Only support exact match on URL identifier for now.
-    const urlIdentifier = this.state.query.trim();
     rpc_service.service
-      .getGroup({ urlIdentifier })
+      .getGroup({ urlIdentifier: query })
       .then((response) => auth_service.enterImpersonationMode(response.id))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
@@ -45,7 +53,7 @@ export default class GroupSearchComponent extends React.Component<{}, State> {
   render() {
     return (
       <SimpleModalDialog
-        title="Find org"
+        title="Go to org"
         submitLabel="Search"
         isOpen={this.state.visible}
         onRequestClose={this.onClose.bind(this)}
@@ -54,7 +62,7 @@ export default class GroupSearchComponent extends React.Component<{}, State> {
         <TextInput
           value={this.state.query}
           onChange={this.onChangeQuery.bind(this)}
-          placeholder="URL identifier (example: 'acme-inc')"
+          placeholder="Group ID ('GR1234...') or URL identifier ('acme-inc')"
           style={{ width: "100%" }}
           autoFocus
         />

@@ -18,7 +18,7 @@ import {
   List,
   LogOut,
   PlusCircle,
-  Search,
+  ArrowRightCircle,
   Sliders,
   Terminal,
 } from "lucide-react";
@@ -220,8 +220,8 @@ export default class SidebarComponent extends React.Component<Props, State> {
                 )}
                 {Boolean(this.props.user?.canImpersonate()) && (
                   <div className="sidebar-item admin-only" onClick={this.handleSearchGroupsClicked.bind(this)}>
-                    <Search className="icon" />
-                    Find org
+                    <ArrowRightCircle className="icon" />
+                    Go to org
                   </div>
                 )}
               </div>
