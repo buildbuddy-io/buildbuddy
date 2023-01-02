@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom";
 import Long from "long";
 import moment from "moment";
-import rpcService from "../../../app/service/rpc_service";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { api, target } from "../../../proto/target_ts_proto";
@@ -89,9 +89,10 @@ export default class TapComponent extends React.Component<Props, State> {
     maxDuration: 1,
   };
 
-  isV2 = capabilities.config.testGridV2Enabled;
+  isV2 = Boolean(capabilities.config.testGridV2Enabled);
 
   subscription: Subscription;
+  targetsRPC?: CancelablePromise;
 
   componentWillMount() {
     document.title = `Tests | BuildBuddy`;
@@ -166,7 +167,8 @@ export default class TapComponent extends React.Component<Props, State> {
     }
 
     this.setState({ loading: true });
-    rpcService.service.getTarget(request).then((response: target.GetTargetResponse) => {
+    this.targetsRPC?.cancel();
+    this.targetsRPC = rpcService.service.getTarget(request).then((response: target.GetTargetResponse) => {
       console.log(response);
       this.updateState(response, initial);
     });
