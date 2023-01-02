@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,6 +73,8 @@ func NewWorkspace(t *testing.T) string {
 		"WORKSPACE":     "",
 		".bazelversion": testbazel.BinaryPath(t),
 	})
+	// Make it a git workspace to test git metadata.
+	testgit.Init(t, ws)
 	return ws
 }
 

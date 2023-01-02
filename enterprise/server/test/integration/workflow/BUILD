@@ -14,7 +14,6 @@ go_test(
     deps = [
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/test/integration/remote_execution/rbetest",
-        "//enterprise/server/testutil/testgit",
         "//enterprise/server/workflow/service",
         "//proto:buildbuddy_service_go_proto",
         "//proto:context_go_proto",
@@ -26,6 +25,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testbazel",
         "//server/testutil/testenv",
+        "//server/testutil/testgit",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],

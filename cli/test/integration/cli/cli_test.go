@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -75,6 +76,7 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 
 func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
+	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"BUILD":  `sh_binary(name = "nop", srcs = ["nop.sh"])`,
 		"nop.sh": "",
@@ -98,14 +100,16 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	bbs := app.BuildBuddyServiceClient(t)
 
 	ctx := context.Background()
+	var invocationResponse *inpb.GetInvocationResponse
 	retryUntilSuccess(t, func() error {
 		invReq := &inpb.GetInvocationRequest{
 			Lookup: &inpb.InvocationLookup{InvocationId: iid},
 		}
-		_, err := bbs.GetInvocation(ctx, invReq)
+		inv, err := bbs.GetInvocation(ctx, invReq)
 		if err != nil {
 			return err
 		}
+		invocationResponse = inv
 
 		scReq := &capb.GetCacheScoreCardRequest{
 			InvocationId: iid,
@@ -114,12 +118,24 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 		if err != nil {
 			return err
 		}
+
 		if len(sc.Results) == 0 {
 			return fmt.Errorf("scorecard results list is empty")
 		}
 
 		return nil
 	})
+
+	invocation := invocationResponse.GetInvocation()[0]
+	require.Equal(
+		t, "https://github.com/test-org/test-repo", invocation.GetRepoUrl(),
+		"CLI should set repo URL metadata, stripping URL credentials")
+	require.Equal(
+		t, testgit.CurrentBranch(t, ws), invocation.GetBranchName(),
+		"CLI should set branch name metadata")
+	require.Equal(
+		t, testgit.CurrentCommitSHA(t, ws), invocation.GetCommitSha(),
+		"CLI should set commit SHA metadata")
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {

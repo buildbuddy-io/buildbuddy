@@ -15,12 +15,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 

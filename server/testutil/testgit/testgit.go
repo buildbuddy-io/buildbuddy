@@ -88,11 +88,32 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 			}
 		}
 	}
-	testshell.Run(t, path, `git init`)
-	configure(t, path)
-	testshell.Run(t, path, `git add . && git commit -m "Initial commit"`)
+	Init(t, path)
 	headCommitSHA := strings.TrimSpace(testshell.Run(t, path, `git rev-parse HEAD`))
 	return path, headCommitSHA
+}
+
+// Init takes a directory which does not already contain a .git dir,
+// and initializes the directory with an initial commit of all the existing
+// files.
+func Init(t testing.TB, dir string) {
+	testshell.Run(t, dir, `git init`)
+	configure(t, dir)
+	testshell.Run(t, dir, `git add . && git commit -m "Initial commit"`)
+}
+
+func ConfigureRemoteOrigin(t testing.TB, dir, url string) {
+	testshell.Run(t, dir, `git remote add origin `+url)
+}
+
+func CurrentBranch(t testing.TB, dir string) string {
+	output := testshell.Run(t, dir, `git rev-parse --abbrev-ref HEAD`)
+	return strings.TrimSpace(output)
+}
+
+func CurrentCommitSHA(t testing.TB, dir string) string {
+	output := testshell.Run(t, dir, `git rev-parse HEAD`)
+	return strings.TrimSpace(output)
 }
 
 // MakeTempRepoClone makes a clone of the git repo at the given path, and cleans

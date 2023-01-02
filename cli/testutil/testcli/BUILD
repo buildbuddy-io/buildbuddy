@@ -11,6 +11,7 @@ go_library(
         "//cli/storage",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
+        "//server/testutil/testgit",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -51,7 +51,6 @@ go_test(
     deps = [
         ":service",
         "//enterprise/server/backends/userdb",
-        "//enterprise/server/testutil/testgit",
         "//proto:api_key_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:remote_execution_go_proto",
@@ -65,6 +64,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/testutil/testgit",
         "//server/testutil/testhttp",
         "//server/util/db",
         "//server/util/testing/flags",
