@@ -18,6 +18,7 @@ import {
   List,
   LogOut,
   PlusCircle,
+  ArrowRightCircle,
   Sliders,
   Terminal,
 } from "lucide-react";
@@ -49,6 +50,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   handleCreateOrgClicked(e: React.MouseEvent) {
     router.navigateToCreateOrg();
+  }
+
+  handleSearchGroupsClicked() {
+    window.dispatchEvent(new CustomEvent("groupSearchClick"));
   }
 
   async handleOrgClicked(groupId: string) {
@@ -211,6 +216,12 @@ export default class SidebarComponent extends React.Component<Props, State> {
                   <div className="sidebar-item create-organization" onClick={this.handleCreateOrgClicked.bind(this)}>
                     <PlusCircle className="icon" />
                     Create org
+                  </div>
+                )}
+                {Boolean(this.props.user?.canImpersonate()) && (
+                  <div className="sidebar-item admin-only" onClick={this.handleSearchGroupsClicked.bind(this)}>
+                    <ArrowRightCircle className="icon" />
+                    Go to org
                   </div>
                 )}
               </div>

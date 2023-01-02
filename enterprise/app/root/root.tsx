@@ -20,6 +20,7 @@ import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
+import GroupSearchComponent from "../group_search/group_search";
 import { AlertCircle, LogOut } from "lucide-react";
 import { OutlinedButton } from "../../../app/components/button/button";
 const CodeComponent = React.lazy(() => import("../code/code"));
@@ -153,7 +154,8 @@ export default class EnterpriseRootComponent extends React.Component {
           <div className="impersonation-toolbar">
             <AlertCircle className="icon black" />
             <span>
-              Authenticated as a member of <b>{this.state.user.selectedGroupName()}</b>. Proceed with caution.
+              Authenticated as a member of <b>{this.state.user.selectedGroupName()}</b> (
+              {this.state.user.selectedGroup?.id}). Proceed with caution.
             </span>
             <OutlinedButton onClick={this.handleExitImpersonationModeClicked.bind(this)}>
               <span>Exit</span>
@@ -309,6 +311,7 @@ export default class EnterpriseRootComponent extends React.Component {
               {this.state.loading && <div className="loading loading-dark"></div>}
             </div>
           </div>
+          <GroupSearchComponent />
           <AlertComponent />
         </div>
       </>

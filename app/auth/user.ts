@@ -19,4 +19,8 @@ export class User {
   canCall(rpc: BuildBuddyServiceRpcName) {
     return this.allowedRpcs.has(rpc);
   }
+
+  canImpersonate() {
+    return this.allowedRpcs.has("getInvocationOwner");
+  }
 }

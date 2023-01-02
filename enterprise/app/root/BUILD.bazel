@@ -24,6 +24,7 @@ ts_library(
         "//app/service",
         "//enterprise/app/code",
         "//enterprise/app/executors",
+        "//enterprise/app/group_search",
         "//enterprise/app/history",
         "//enterprise/app/login",
         "//enterprise/app/org",
