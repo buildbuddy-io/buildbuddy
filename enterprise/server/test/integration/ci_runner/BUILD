@@ -16,7 +16,6 @@ go_test(
     },
     shard_count = 12,
     deps = [
-        "//enterprise/server/testutil/testgit",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
         "//server/remote_cache/cachetools",
@@ -24,6 +23,7 @@ go_test(
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
+        "//server/testutil/testgit",
         "//server/testutil/testshell",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
