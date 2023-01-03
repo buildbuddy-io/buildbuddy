@@ -4,7 +4,9 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -196,5 +198,19 @@ func TestDiff(t *testing.T) {
 		got1, got2 := Diff(tc.s1, tc.s2)
 		require.ElementsMatch(t, tc.expectedMissingFromS1, got1)
 		require.ElementsMatch(t, tc.expectedMissingFromS2, got2)
+	}
+}
+
+func TestRandomGenerator(t *testing.T) {
+	const expectedCompression = 0.3
+	gen := RandomGenerator(0)
+
+	for _, size := range []int64{1_000, 10_000, 100_000} {
+		d, b, err := gen.RandomDigestBuf(size)
+		cb := compression.CompressZstd(nil, b)
+
+		require.NoError(t, err)
+		require.Equal(t, size, d.SizeBytes)
+		assert.InDelta(t, int(float64(size)*expectedCompression), len(cb), float64(size)*0.20, "should get approximately 0.3 compression ratio")
 	}
 }

@@ -38,12 +38,14 @@ var (
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 
-	blobSize       = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
-	recycleRate    = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
-	timeout        = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
-	keepGoing      = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
-	listen         = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
-	monitoringPort = flag.Int("monitoring_port", 0, "The port to listen for monitoring traffic on")
+	blobSize        = flag.Int64("blob_size", -1, "Num bytes (max) of blob to send/read. If -1, realistic blob sizes are used.")
+	readCompressed  = flag.Bool("read_compressed", false, "Whether to request compressed blobs when reading.")
+	writeCompressed = flag.Bool("write_compressed", false, "Whether to write compressed blobs.")
+	recycleRate     = flag.Float64("recycle_rate", .10, "If true, re-queue digests for read after reading")
+	timeout         = flag.Duration("timeout", 10*time.Second, "Use this timeout as the context timeout for rpc calls")
+	keepGoing       = flag.Bool("keep_going", false, "If true, warn on errors but continue running")
+	listen          = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
+	monitoringPort  = flag.Int("monitoring_port", 0, "The port to listen for monitoring traffic on")
 )
 
 const (
@@ -120,10 +122,14 @@ func incrementPromErrorMetric(err error) {
 
 func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
+	resourceName := digest.NewResourceName(d, *instanceName)
+	if *writeCompressed {
+		resourceName.SetCompressor(repb.Compressor_ZSTD)
+	}
 	retrier := retry.DefaultWithContext(ctx)
 	var err error
 	for retrier.Next() {
-		_, err = cachetools.UploadBlob(ctx, client, *instanceName, bytes.NewReader(buf))
+		_, err = cachetools.UploadFromReader(ctx, client, resourceName, bytes.NewReader(buf))
 		incrementPromErrorMetric(err)
 		if err == nil {
 			return d, nil
@@ -137,6 +143,9 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest) error {
 	resourceName := digest.NewResourceName(d, *instanceName)
+	if *readCompressed {
+		resourceName.SetCompressor(repb.Compressor_ZSTD)
+	}
 	retrier := retry.DefaultWithContext(ctx)
 	var err error
 	for retrier.Next() {
