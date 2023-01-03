@@ -387,6 +387,17 @@ var (
 		CacheNameLabel,
 	})
 
+	DiskCacheEvictionAgeUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "disk_cache_eviction_age_usec",
+		Buckets:   durationUsecBuckets(1*time.Hour, 30*24*time.Hour, 2),
+		Help:      "Age of items evicted from the cache, in **microseconds**.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	DiskCacheNumEvictions = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -435,14 +446,6 @@ var (
 		Help:      "Number of writes for digests that already exist.",
 	}, []string{
 		CacheNameLabel,
-	})
-
-	DiskCacheUsecSinceLastAccess = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_cache",
-		Name:      "disk_cache_usec_since_last_access",
-		Help:      "Time since last digest access, in **microseconds**.",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 30*day, 10),
 	})
 
 	DiskCacheAddedFileSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{

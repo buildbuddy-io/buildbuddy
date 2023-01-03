@@ -1869,6 +1869,8 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 			}
 			lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
 			metrics.DiskCacheNumEvictions.With(lbls).Inc()
+			age := time.Since(time.Unix(0, sample.timestamp))
+			metrics.DiskCacheEvictionAgeUsec.With(lbls).Observe(float64(age.Microseconds()))
 			evicted += 1
 			lastEvicted = sample
 			e.samplePool = append(e.samplePool[:i], e.samplePool[i+1:]...)
