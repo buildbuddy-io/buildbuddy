@@ -184,11 +184,13 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName
 
 	if dstErr != nil {
 		log.Warningf("Migration dest %v contains failed: %s", r.GetDigest(), dstErr)
-	} else if doubleRead && srcContains != dstContains {
+	} else if doubleRead && srcContains && !dstContains {
 		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
-		if mc.logNotFoundErrors || (dstContains && !srcContains) {
-			log.Warningf("Migration digest %v src contains %v, dest contains %v", r.GetDigest(), srcContains, dstContains)
+		if mc.logNotFoundErrors {
+			log.Warningf("Migration digest %v src contains, dest does not", r.GetDigest())
 		}
+	} else if doubleRead && srcContains && dstContains {
+		metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "contains"}).Inc()
 	}
 
 	return srcContains, srcErr
@@ -216,11 +218,17 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *resource.ResourceName
 		return nil, err
 	}
 
-	if dstErr != nil && (mc.logNotFoundErrors || !status.IsNotFoundError(dstErr)) {
-		log.Warningf("Migration dest %v metadata failed: %s", r.GetDigest(), dstErr)
-	}
-	if status.IsNotFoundError(dstErr) {
-		metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "metadata"}).Inc()
+	if doubleRead {
+		if dstErr != nil {
+			if status.IsNotFoundError(dstErr) {
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "metadata"}).Inc()
+			}
+			if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
+				log.Warningf("Migration dest %v metadata failed: %s", r.GetDigest(), dstErr)
+			}
+		} else {
+			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "metadata"}).Inc()
+		}
 	}
 
 	return srcMetadata, srcErr
@@ -266,13 +274,13 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 		log.Warningf("Migration dest FindMissing %v failed: %s", resources, dstErr)
 	}
 	if doubleRead {
-		missingOnlyInDest, missingOnlyInSrc := digest.Diff(srcMissing, dstMissing)
+		missingOnlyInDest, _ := digest.Diff(srcMissing, dstMissing)
 
-		if len(missingOnlyInSrc) == 0 && len(missingOnlyInDest) == 0 {
-			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissingMatch"}).Inc()
-		} else {
+		if len(missingOnlyInDest) == 0 {
+			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
+		} else if len(missingOnlyInDest) > 0 {
 			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "findMissing"}).Inc()
-			if mc.logNotFoundErrors || len(missingOnlyInSrc) != 0 {
+			if mc.logNotFoundErrors {
 				log.Warningf("Migration FindMissing diff for digests %v: src %v, dest %v", resources, srcMissing, dstMissing)
 			}
 
@@ -308,12 +316,16 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.Re
 		return nil, err
 	}
 
-	if dstErr != nil {
-		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-			log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
-		}
-		if status.IsNotFoundError(dstErr) {
-			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
+	if doubleRead {
+		if dstErr != nil {
+			if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
+				log.Warningf("Migration dest GetMulti of %v failed: %s", resources, dstErr)
+			}
+			if status.IsNotFoundError(dstErr) {
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
+			}
+		} else {
+			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "getMulti"}).Inc()
 		}
 	}
 
@@ -464,7 +476,7 @@ func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, 
 		eg.Go(func() error {
 			destReader, dstErr = mc.dest.Reader(ctx, r, uncompressedOffset, limit)
 			if dstErr == nil {
-				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "readerMatch"}).Inc()
+				metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "reader"}).Inc()
 			}
 			return nil
 		})
@@ -631,12 +643,16 @@ func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 		return nil, err
 	}
 
-	if dstErr != nil {
-		if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
-			log.Warningf("Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
-		}
-		if status.IsNotFoundError(dstErr) {
-			metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
+	if doubleRead {
+		if dstErr != nil {
+			if mc.logNotFoundErrors || !status.IsNotFoundError(dstErr) {
+				log.Warningf("Double read of %q failed. src err %s, dest err %s", r, srcErr, dstErr)
+			}
+			if status.IsNotFoundError(dstErr) {
+				metrics.MigrationNotFoundErrorCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
+			}
+		} else {
+			metrics.MigrationDoubleReadHitCount.With(prometheus.Labels{metrics.CacheRequestType: "get"}).Inc()
 		}
 	}
 
