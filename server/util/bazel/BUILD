@@ -45,11 +45,32 @@ extract_bazel_installation(
     visibility = ["//visibility:public"],
 )
 
+genrule(
+    name = "bazel-6.0.0_crossplatform",
+    srcs = select({
+        "@bazel_tools//src/conditions:darwin": ["@io_bazel_bazel-6.0.0-darwin-x86_64//file:downloaded"],
+        "//conditions:default": ["@io_bazel_bazel-6.0.0-linux-x86_64//file:downloaded"],
+    }),
+    outs = ["bazel-6.0.0"],
+    cmd_bash = "cp $(SRCS) $@",
+    executable = True,
+    visibility = ["//visibility:public"],
+)
+
+extract_bazel_installation(
+    name = "bazel-6.0.0_extract_installation",
+    bazel = ":bazel-6.0.0_crossplatform",
+    out_dir = "bazel-6.0.0_install",
+    visibility = ["//visibility:public"],
+)
+
 pkg_tar(
     name = "bazel_binaries_tar",
     srcs = [
         ":bazel-3.7_crossplatform",
         ":bazel-4.1_crossplatform",
+        ":bazel-5.3.2_crossplatform",
+        ":bazel-6.0.0_crossplatform",
     ],
     package_dir = "/bazel",
     visibility = ["//visibility:public"],
