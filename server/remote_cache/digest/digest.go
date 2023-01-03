@@ -436,13 +436,22 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 
 type randomDataMaker struct {
 	src rand.Source
+	val int64
 }
 
 func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 	todo := len(p)
 	offset := 0
 	for {
-		val := int64(r.src.Int63())
+		// Generate a new random int64 (8 bytes) if we haven't generated one
+		// yet, or with a percent chance given by `percentCompressibility`. This
+		// is a *very* rough way to generate blobs with the average compression
+		// ratios that we see in practice.
+		const percentCompressibility = 70
+		if r.val == 0 || r.src.Int63()%100 > percentCompressibility {
+			r.val = int64(r.src.Int63())
+		}
+		val := r.val
 		for i := 0; i < 8; i++ {
 			p[offset] = byte(val & 0xff)
 			todo--
@@ -463,7 +472,7 @@ type Generator struct {
 // RandomGenerator returns a digest sample generator for use in testing tools.
 func RandomGenerator(seed int64) *Generator {
 	return &Generator{
-		randMaker: &randomDataMaker{rand.NewSource(seed)},
+		randMaker: &randomDataMaker{src: rand.NewSource(seed)},
 		mu:        sync.Mutex{},
 	}
 }
