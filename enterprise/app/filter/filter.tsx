@@ -3,6 +3,7 @@ import React from "react";
 import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
+import Slider from "../../../app/components/slider/slider";
 import {
   Filter,
   X,
@@ -13,6 +14,7 @@ import {
   GitCommit,
   HardDrive,
   Wrench,
+  Timer,
   SortAsc,
   SortDesc,
 } from "lucide-react";
@@ -31,6 +33,8 @@ import router, {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
+  MINIMUM_DURATION_PARAM_NAME,
+  MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router";
@@ -47,6 +51,7 @@ import {
   DEFAULT_LAST_N_DAYS,
   SortBy,
   SortOrder,
+  DurationSlider,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
 
@@ -67,6 +72,8 @@ interface State {
   commit?: string;
   host?: string;
   command?: string;
+  minimumDuration?: string;
+  maximumDuration?: string;
 
   sortBy: string;
   sortOrder: string;
@@ -108,7 +115,9 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(BRANCH_PARAM_NAME) ||
           search.get(COMMIT_PARAM_NAME) ||
           search.get(HOST_PARAM_NAME) ||
-          search.get(COMMAND_PARAM_NAME)
+          search.get(COMMAND_PARAM_NAME) ||
+          search.get(MINIMUM_DURATION_PARAM_NAME) ||
+          search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
       user: search.get(USER_PARAM_NAME),
       repo: search.get(REPO_PARAM_NAME),
@@ -116,6 +125,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       commit: search.get(COMMIT_PARAM_NAME),
       host: search.get(HOST_PARAM_NAME),
       command: search.get(COMMAND_PARAM_NAME),
+      minimumDuration: search.get(MINIMUM_DURATION_PARAM_NAME),
+      maximumDuration: search.get(MAXIMUM_DURATION_PARAM_NAME),
       sortBy: search.get(SORT_BY_PARAM_NAME),
       sortOrder: search.get(SORT_ORDER_PARAM_NAME),
     };
@@ -163,6 +174,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMIT_PARAM_NAME]: "",
       [HOST_PARAM_NAME]: "",
       [COMMAND_PARAM_NAME]: "",
+      [MINIMUM_DURATION_PARAM_NAME]: "",
+      [MAXIMUM_DURATION_PARAM_NAME]: "",
     });
   }
 
@@ -245,6 +258,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMIT_PARAM_NAME]: this.state.commit,
       [HOST_PARAM_NAME]: this.state.host,
       [COMMAND_PARAM_NAME]: this.state.command,
+      [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration,
+      [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration,
     });
   }
 
@@ -284,9 +299,10 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const commitValue = this.props.search.get(COMMIT_PARAM_NAME) || "";
     const hostValue = this.props.search.get(HOST_PARAM_NAME) || "";
     const commandValue = this.props.search.get(COMMAND_PARAM_NAME) || "";
-
+    const minimumDurationValue = this.props.search.get(MINIMUM_DURATION_PARAM_NAME) || "";
+    const maximumDurationValue = this.props.search.get(MAXIMUM_DURATION_PARAM_NAME) || "";
     const isFiltering = Boolean(
-      roleValue || statusValue || userValue || repoValue || branchValue || commitValue || hostValue || commandValue
+      roleValue || statusValue || userValue || repoValue || branchValue || commitValue || hostValue || commandValue || minimumDurationValue || maximumDurationValue
     );
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
@@ -369,6 +385,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 <Wrench /> {commandValue}
               </span>
             )}
+            {(minimumDurationValue || maximumDurationValue) && (
+              <span className="advanced-badge">
+                <Timer /> {minimumDurationValue} - {maximumDurationValue}
+              </span>
+            )}
           </OutlinedButton>
           <Popup
             isOpen={this.state.isFilterMenuOpen}
@@ -448,6 +469,23 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                       value={this.state.command}
                       onChange={(e) => this.setState({ command: e.target.value })}
                     />
+                  </div>
+                  <div className="option-group-title">Duration</div>
+                  <div className="option-group-input">
+                    <Slider
+                    defaultValue={[
+                      DurationSlider.fromDisplayValue(this.state.minimumDuration || DurationSlider.minDisplayValue()).toString(),
+                      DurationSlider.fromDisplayValue(this.state.maximumDuration || DurationSlider.maxDisplayValue()).toString()]}
+                    renderThumb={(props, state) => <div {...props}> {DurationSlider.toDisplayValue(state.valueNow)}</div>}
+                    min={DurationSlider.minValue()}
+                    max={DurationSlider.maxValue()}
+                    pearling
+                    minDistance={1}
+                    onChange={(e) =>
+                      this.setState({
+                      minimumDuration: DurationSlider.toDisplayValue(e[0]),
+                      maximumDuration: DurationSlider.toDisplayValue(e[1])
+                    })}/>
                   </div>
                   <div className="option-group-input">
                     <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>

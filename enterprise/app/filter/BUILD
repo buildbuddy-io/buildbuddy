@@ -10,6 +10,7 @@ ts_library(
         "//app/components/checkbox",
         "//app/components/input",
         "//app/components/popup",
+        "//app/components/slider",
         "//app/components/radio",
         "//app/format",
         "//app/router",

@@ -1,0 +1,12 @@
+.horizontal-slider {
+    padding: 8px 16px;
+}
+
+.slider-track {
+    height: 2px;
+    background-color: gray;
+}
+
+.slider-thumb {
+    width: 32px;
+}

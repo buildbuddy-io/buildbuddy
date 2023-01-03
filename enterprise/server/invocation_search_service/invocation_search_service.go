@@ -171,6 +171,13 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
 	}
 
+	if req.GetQuery().GetMinimumDurationMillis() > 0 {
+		q.AddWhereClause(`duration_usec >= ?`, req.GetQuery().GetMinimumDurationMillis()*1000)
+	}
+	if req.GetQuery().GetMaximumDurationMillis() > 0 {
+		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDurationMillis()*1000)
+	}
+
 	// Always add permissions check.
 	addPermissionsCheckToQuery(u, q)
 

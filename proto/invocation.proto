@@ -230,6 +230,12 @@ message InvocationQuery {
 
   // The bazel command that was used. Ex: "build", "test", "run"
   string command = 11;
+
+  // The minimum invocation duration in milliseconds.
+  int64 minimum_duration_millis = 12;
+
+  // The maximum invocation duration in milliseconds.
+  int64 maximum_duration_millis = 13;
 }
 
 // OverallStatus is a status representing both the completion status and
