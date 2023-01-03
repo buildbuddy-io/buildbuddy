@@ -305,10 +305,9 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	}
 	var executionPrimaryDB tables.Execution
 
-	// Don't use the stream context since we still want to write executions into
-	// clickhouse when stream context is cancelled.
-	ctx, cancel := context.WithTimeout(context.Background(), recordExecutionsTimeout)
-	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
+	// we need more time to want write executions into clickhouse when stream
+	// context is cancelled.
+	ctx, cancel := background.ExtendContextForFinalization(ctx, recordExecutionsTimeout)
 	defer cancel()
 
 	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
