@@ -1142,6 +1142,10 @@ func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	if r.GetCompressor() != repb.Compressor_IDENTITY && (uncompressedOffset != 0 || limit != 0) {
+		return nil, status.InvalidArgumentError("offsets and limits apply to uncompressed data and cannot be passed to a compressed reader")
+	}
+
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
