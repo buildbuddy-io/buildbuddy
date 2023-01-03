@@ -85,7 +85,7 @@ func randRange(low, high int) int64 {
 }
 
 func randomBlobSize() int64 {
-	if *blobSize > 0 {
+	if *blobSize >= 0 {
 		return *blobSize
 	}
 	n := rand.Intn(histCountsTotal)
