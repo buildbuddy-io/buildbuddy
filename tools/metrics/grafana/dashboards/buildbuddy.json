@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -27,6 +30,10 @@
   "panels": [
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -40,6 +47,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
@@ -141,6 +152,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -222,11 +237,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "System status",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -280,6 +308,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(increase(cloudprober_success{region=\"${region}\"}[10m])) by (probe) / sum(increase(cloudprober_total{region=\"${region}\"}[10m])) by (probe)",
               "interval": "",
               "legendFormat": "{{probe}}",
@@ -364,6 +396,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(\n  0.99,\n  sum by (le, stage)\n    (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region=\"${region}\", job=\"executor\", stage!=\"worker\", group_id=~\"GR16310856858823099217|GR13567963851860390298|GR11301939955034629488\"}[1m]))\n)\n\n",
               "interval": "",
               "legendFormat": "",
@@ -404,11 +440,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Probers",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -467,6 +516,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (invocation_status) (rate(buildbuddy_invocation_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{invocation_status}}",
@@ -552,6 +605,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_invocation_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "",
@@ -601,6 +658,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -750,6 +811,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_invocation_build_event_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -791,11 +856,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Invocations",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -805,6 +883,10 @@
       "id": 1175,
       "panels": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -866,7 +948,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -889,6 +972,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -950,8 +1037,9 @@
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "single"
@@ -974,6 +1062,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1035,7 +1127,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -1058,6 +1151,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1119,8 +1216,9 @@
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "single"
@@ -1143,6 +1241,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1204,7 +1306,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -1227,6 +1330,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1288,8 +1395,9 @@
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "single"
@@ -1312,11 +1420,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Invocation finalizers",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1370,6 +1491,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_webhook_handler_workflows_started{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -1455,6 +1580,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (event) (rate(buildbuddy_webhook_handler_workflows_started{region=\"${region}\", event!=\"\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{event}}",
@@ -1462,6 +1591,10 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum (rate(buildbuddy_webhook_handler_workflows_started{region=\"${region}\", event=\"\"}[${window}]))",
               "interval": "",
               "legendFormat": "rerun_button",
@@ -1546,6 +1679,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count{region=\"${region}\",route=\"/webhooks/workflow/:id\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{code}}",
@@ -1587,11 +1724,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Workflows",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1653,6 +1803,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(grpc_server_started_total{region=\"${region}\",grpc_service=\"distributed_cache.DistributedCache\"}[${window}])) by (grpc_method)\n",
               "interval": "",
               "legendFormat": "{{grpc_method}}",
@@ -1745,6 +1899,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
@@ -1752,18 +1910,30 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
@@ -1854,6 +2024,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
@@ -1861,18 +2035,30 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
@@ -1964,6 +2150,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
@@ -1971,18 +2161,30 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
@@ -2074,6 +2276,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
@@ -2081,18 +2287,30 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
@@ -2132,11 +2350,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Distributed Cache",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -2151,6 +2382,10 @@
           "collapsed": true,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "description": "",
           "fill": 1,
           "fillGradient": 0,
@@ -2278,6 +2513,10 @@
           "collapsed": true,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "description": "",
           "fill": 1,
           "fillGradient": 0,
@@ -2401,6 +2640,10 @@
         },
         {
           "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2461,7 +2704,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -2485,6 +2729,10 @@
         },
         {
           "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2546,7 +2794,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -2582,6 +2831,10 @@
         },
         {
           "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2643,7 +2896,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -2667,6 +2921,10 @@
         },
         {
           "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2728,7 +2986,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -2752,6 +3011,10 @@
         },
         {
           "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2813,7 +3076,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -2837,6 +3101,10 @@
         },
         {
           "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2898,7 +3166,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -2922,6 +3191,10 @@
         },
         {
           "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2983,7 +3256,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -3030,11 +3304,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Raft",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3089,6 +3376,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_remote_cache_download_size_bytes_sum{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -3175,6 +3466,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_remote_cache_upload_size_bytes_sum{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -3280,6 +3575,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region=\"${region}\", cache_type=\"action_cache\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{cache_event_type}}",
@@ -3370,6 +3669,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region=\"${region}\", cache_type=\"cas\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{cache_event_type}}",
@@ -3456,6 +3759,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\"}/1e6) by (partition_id)",
               "instant": false,
               "interval": "",
@@ -3497,6 +3804,10 @@
           }
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -3553,8 +3864,9 @@
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "single"
@@ -3589,6 +3901,10 @@
             "mode": "opacity"
           },
           "dataFormat": "tsbuckets",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -3648,6 +3964,10 @@
             "mode": "opacity"
           },
           "dataFormat": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "gridPos": {
             "h": 8,
             "w": 12,
@@ -3696,6 +4016,10 @@
           "yBucketBound": "auto"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -3757,7 +4081,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -3792,11 +4117,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Remote cache",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -3810,6 +4148,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -3935,6 +4277,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(buildbuddy_remote_execution_waiting_execution_result{region=\"${region}\"}) by (group_id)",
               "interval": "",
               "legendFormat": "{{group_id}}",
@@ -4019,6 +4365,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "max(sum(buildbuddy_remote_execution_waiting_execution_result{region=\"${region}\"}) by (pod_name,group_id)) by (group_id)",
               "interval": "",
               "legendFormat": "{{group_id}}",
@@ -4059,6 +4409,10 @@
           }
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -4167,7 +4521,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -4190,6 +4545,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -4328,7 +4687,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -4351,11 +4711,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Remote execution",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -4371,6 +4744,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "description": "Chart is stacked, so values always add up to 100%.",
           "fill": 1,
           "fillGradient": 0,
@@ -4520,6 +4897,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
               "legendFormat": "Avg executor queue length",
@@ -4527,12 +4908,20 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Executor instances",
               "refId": "B"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"${pool}-autoscaler\"}",
               "interval": "",
               "legendFormat": "Autoscaler target",
@@ -4582,6 +4971,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
@@ -4665,6 +5058,10 @@
           }
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -4726,7 +5123,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -4749,6 +5147,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -4811,7 +5213,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -4882,6 +5285,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "avg(buildbuddy_remote_execution_assigned_milli_cpu{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_cpu_cores{region=\"${region}\", pod=~\"${pool}-.*\"} * 1000, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
               "legendFormat": "Avg CPU assigned",
@@ -4889,6 +5296,10 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "avg(buildbuddy_remote_execution_assigned_ram_bytes{region=\"${region}\", job=\"${pool}\"}\n  / on (pod_name) (\n  label_replace(kube_pod_container_resource_limits_memory_bytes{region=\"${region}\", pod=~\"${pool}-.*\"}, \"pod_name\", \"$1\", \"pod\", \"(.*)\")))",
               "interval": "",
               "legendFormat": "Avg RAM assigned",
@@ -4929,6 +5340,10 @@
           }
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -4991,7 +5406,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -5050,6 +5466,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -5111,7 +5531,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -5215,6 +5636,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_remote_execution_file_download_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -5302,6 +5727,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_remote_execution_file_upload_size_bytes_sum{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -5347,6 +5776,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -5476,6 +5909,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "{{pod_name}}",
@@ -5518,6 +5955,10 @@
           }
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -5580,8 +6021,9 @@
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "multi"
@@ -5651,6 +6093,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(container_cpu_usage_seconds_total{region=\"${region}\", pod=~\"${pool}-[a-f0-9].*\"}[5m]))",
               "interval": "",
               "legendFormat": "{{pod}}",
@@ -5692,6 +6138,10 @@
           }
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -5757,7 +6207,8 @@
                 "lastNotNull"
               ],
               "displayMode": "table",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -5816,6 +6267,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -5906,7 +6361,8 @@
                 "lastNotNull"
               ],
               "displayMode": "table",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -5930,11 +6386,24 @@
         }
       ],
       "repeat": "pool",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Executor pool (${pool})",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -5998,6 +6467,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Total",
@@ -6005,12 +6478,20 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "avg(buildbuddy_remote_execution_runner_pool_count{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Average",
               "refId": "B"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "Executor count (for comparison)",
@@ -6104,6 +6585,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -6197,6 +6682,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{reason}}",
@@ -6290,6 +6779,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region=\"${region}\", job=\"${pool}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{status}}",
@@ -6383,6 +6876,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "",
@@ -6476,6 +6973,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
               "legendFormat": "",
@@ -6518,11 +7019,24 @@
         }
       ],
       "repeat": "pool",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Runner recycling (${pool})",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -6602,6 +7116,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (sql_query_template) (rate(buildbuddy_sql_query_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{sql_query_template}}",
@@ -6708,6 +7226,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(\n  0.5,\n  sum by (sql_query_template, le) (rate(buildbuddy_sql_query_duration_usec_bucket{region=\"${region}\"}[${window}]))\n)",
               "interval": "",
               "legendFormat": "{{sql_query_template}}",
@@ -6799,6 +7321,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_sql_query_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -6892,6 +7418,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_sql_error_count{region=\"${region}\"}[${window}]))\n/ (sum(rate(buildbuddy_sql_query_count{region=\"${region}\"}[${window}])))",
               "interval": "",
               "legendFormat": "",
@@ -6985,6 +7515,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_sql_error_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -7026,11 +7560,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "SQL",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -7046,6 +7593,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "description": "",
           "editable": true,
           "error": false,
@@ -7193,6 +7744,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum (redis_db_keys{region=\"${region}\"}) by (db)",
               "interval": "",
               "legendFormat": "{{db}}",
@@ -7280,6 +7835,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(redis_connected_clients{region=\"${region}\"})",
               "format": "time_series",
               "interval": "",
@@ -7383,6 +7942,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(redis_commands_total{region=\"${region}\"}[${window}])) by (cmd)",
               "format": "time_series",
               "interval": "",
@@ -7484,6 +8047,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(irate(redis_commands_duration_seconds_total{region=\"${region}\"}[${window}])) by (cmd)\n  /\nsum(irate(redis_commands_total{region=\"${region}\"}[${window}])) by (cmd)\n",
               "format": "time_series",
               "interval": "",
@@ -7585,6 +8152,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(irate(redis_commands_duration_seconds_total{region=\"${region}\"}[${window}])) by (cmd) != 0",
               "format": "time_series",
               "interval": "",
@@ -7629,11 +8200,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Redis",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -7693,6 +8277,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_blobstore_read_size_bytes_sum{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -7786,6 +8374,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_blobstore_read_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "",
@@ -7878,6 +8470,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_blobstore_write_size_bytes_sum{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -7971,6 +8567,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_blobstore_write_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "",
@@ -8012,11 +8612,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Blobstore",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -8078,6 +8691,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum(rate(buildbuddy_http_request_handler_duration_usec_count{region=\"${region}\", code=~\"5..\"}[${window}]))\n  /\nsum(rate(buildbuddy_http_request_handler_duration_usec_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "Error ratio",
@@ -8173,6 +8790,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (route) (rate(buildbuddy_http_request_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{route}}",
@@ -8268,6 +8889,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (method) (rate(buildbuddy_http_request_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{method}}",
@@ -8366,6 +8991,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (code) (rate(buildbuddy_http_request_handler_duration_usec_count{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{code}}",
@@ -8458,6 +9087,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(\n  0.5,\n  sum by (le, code) (rate(buildbuddy_http_request_handler_duration_usec_bucket{region=\"${region}\", code=~\"2..\"}[${window}])))",
               "interval": "",
               "legendFormat": "",
@@ -8549,6 +9182,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(\n  0.5,\n  sum by (le) (rate(buildbuddy_http_response_size_bytes_bucket{region=\"${region}\"}[${window}]))\n)",
               "interval": "",
               "legendFormat": "",
@@ -8590,11 +9227,24 @@
           }
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "HTTP",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -8652,6 +9302,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}",
@@ -8659,6 +9313,10 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "refId": "B"
             }
           ],
@@ -8742,6 +9400,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "go_goroutines{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}",
@@ -8830,6 +9492,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "go_memstats_gc_cpu_fraction{region=\"${region}\", job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}",
@@ -8917,6 +9583,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}",
@@ -8959,11 +9629,24 @@
         }
       ],
       "repeat": "job",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "golang (${job})",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -8994,6 +9677,10 @@
           "bars": false,
           "dashLength": 10,
           "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -9126,6 +9813,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (grpc_service, grpc_method) (rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "interval": "",
               "legendFormat": "/{{grpc_service}}/{{grpc_method}}",
@@ -9167,6 +9858,10 @@
           }
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -9231,6 +9926,7 @@
               ],
               "displayMode": "table",
               "placement": "bottom",
+              "showLegend": true,
               "sortBy": "Last *",
               "sortDesc": true
             },
@@ -9255,6 +9951,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -9322,6 +10022,7 @@
               ],
               "displayMode": "table",
               "placement": "bottom",
+              "showLegend": true,
               "sortBy": "Last *",
               "sortDesc": true
             },
@@ -9358,11 +10059,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "gRPC (buildbuddy-app)",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -9372,6 +10086,10 @@
       "id": 1088,
       "panels": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -9433,8 +10151,9 @@
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "single"
@@ -9458,6 +10177,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -9519,8 +10242,9 @@
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "single"
@@ -9555,6 +10279,10 @@
           "type": "timeseries"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -9616,8 +10344,9 @@
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
             },
             "tooltip": {
               "mode": "single"
@@ -9653,11 +10382,24 @@
         }
       ],
       "repeat": "kubepool",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Nodes Overview (${kubepool})",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -9667,6 +10409,10 @@
       "id": 962,
       "panels": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -9762,7 +10508,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -9835,11 +10582,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Node disk/network IO",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -9849,6 +10609,10 @@
       "id": 1975,
       "panels": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -9989,6 +10753,7 @@
               "calcs": [],
               "displayMode": "list",
               "placement": "bottom",
+              "showLegend": true,
               "sortBy": "Last *",
               "sortDesc": true
             },
@@ -10063,11 +10828,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Node memory usage",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -10077,6 +10855,10 @@
       "id": 1988,
       "panels": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -10138,7 +10920,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -10163,11 +10946,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Node swap usage",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -10177,6 +10973,10 @@
       "id": 1983,
       "panels": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -10270,7 +11070,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "multi"
@@ -10307,11 +11108,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Node swap rate",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -10370,6 +11184,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "Median",
@@ -10377,12 +11195,20 @@
               "refId": "A"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.90, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "90th %",
               "refId": "B"
             },
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_build_event_handler_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
               "instant": false,
               "interval": "",
@@ -10469,6 +11295,10 @@
           "steppedLine": false,
           "targets": [
             {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
               "expr": "sum by (name) (rate(buildbuddy_unexpected_event{region=\"${region}\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
@@ -10510,6 +11340,10 @@
           }
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -10570,7 +11404,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -10593,11 +11428,24 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Internal",
       "type": "row"
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prom"
+      },
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -10607,6 +11455,10 @@
       "id": 1346,
       "panels": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
           "description": "The number of rows Buildbuddy app writes to clickhouse.",
           "fieldConfig": {
             "defaults": {
@@ -10674,7 +11526,8 @@
             "legend": {
               "calcs": [],
               "displayMode": "list",
-              "placement": "bottom"
+              "placement": "bottom",
+              "showLegend": true
             },
             "tooltip": {
               "mode": "single"
@@ -10697,12 +11550,21 @@
           "type": "timeseries"
         }
       ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "refId": "A"
+        }
+      ],
       "title": "Clickhouse",
       "type": "row"
     }
   ],
   "refresh": "1m",
-  "schemaVersion": 33,
+  "schemaVersion": 37,
   "style": "dark",
   "tags": [],
   "templating": {
@@ -10905,6 +11767,10 @@
           "text": "All",
           "value": "$__all"
         },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prom"
+        },
         "definition": "label_values(node_uname_info{region=\"$region\"}, nodename)",
         "hide": 0,
         "includeAll": true,
@@ -10926,6 +11792,10 @@
           "selected": false,
           "text": "All",
           "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prom"
         },
         "definition": "label_values(node_uname_info{region=\"$region\"}, nodename)",
         "hide": 0,

@@ -1,7 +1,7 @@
 version: "3.3"
 services:
   grafana:
-    image: grafana/grafana:8.3.2
+    image: grafana/grafana:9.3.1
     environment:
       - GF_SERVER_HTTP_PORT=4500
       - GF_AUTH_ANONYMOUS_ENABLED=true
