@@ -1,6 +1,7 @@
 package redact_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
@@ -296,4 +298,58 @@ func TestRedactMetadata_WorkspaceStatus_StripsRepoURLCredentials(t *testing.T) {
 
 	require.Equal(t, 1, len(workspaceStatus.Item))
 	assert.Equal(t, "https://github.com/buildbuddy-io/metadata_repo_url", workspaceStatus.Item[0].Value)
+}
+
+func TestRedactAPIKey(t *testing.T) {
+	apiKey := "abc123"
+	notAPIKey := "Hello world!"
+
+	// Declare a list of events to be redacted, where each event contains an
+	// API key and a string not containing an API key.
+	events := []*bespb.BuildEvent{
+		// API key appearing as struct field value
+		{Payload: &bespb.BuildEvent_Progress{Progress: &bespb.Progress{
+			Stdout: notAPIKey,
+			Stderr: apiKey,
+		}}},
+		// API key appearing as repeated field value
+		{Payload: &bespb.BuildEvent_UnstructuredCommandLine{UnstructuredCommandLine: &bespb.UnstructuredCommandLine{
+			Args: []string{notAPIKey, apiKey},
+		}}},
+		// API key appearing as map value
+		{Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: &bespb.BuildMetadata{
+			Metadata: map[string]string{
+				"FOO": apiKey,
+				"BAR": notAPIKey,
+			},
+		}}},
+		// API key appearing as map key
+		{Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: &bespb.BuildMetadata{
+			Metadata: map[string]string{
+				apiKey: notAPIKey,
+			},
+		}}},
+		// API key appearing as a string nested inside a list of structs
+		{Payload: &bespb.BuildEvent_Expanded{Expanded: &bespb.PatternExpanded{
+			TestSuiteExpansions: []*bespb.PatternExpanded_TestSuiteExpansion{
+				{
+					SuiteLabel: apiKey + "_" + notAPIKey,
+					TestLabels: []string{apiKey, notAPIKey},
+				},
+			},
+		}}},
+	}
+	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
+	ctx := context.WithValue(context.Background(), "x-buildbuddy-api-key", apiKey)
+
+	for _, e := range events {
+		err := redactor.RedactAPIKey(ctx, e)
+
+		require.NoError(t, err)
+		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(e)
+		json := string(b)
+		require.NotContains(t, json, apiKey)
+		require.Contains(t, json, "<REDACTED>")
+		require.Contains(t, json, notAPIKey)
+	}
 }

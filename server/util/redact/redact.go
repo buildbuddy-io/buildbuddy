@@ -2,6 +2,7 @@ package redact
 
 import (
 	"context"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -470,19 +471,84 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) {
 
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
 	apiKey, ok := ctx.Value("x-buildbuddy-api-key").(string)
-	if !ok {
+	if !ok || apiKey == "" {
 		return nil
 	}
+	// Traverse the event with reflection and redact any values that may contain
+	// an API key.
+	// Note: a find-and-replace on the prototext representation would be a much
+	// simpler option, but it also has much higher CPU/memory overhead.
+	reflectRedactAPIKey(reflect.ValueOf(event), apiKey)
+	return nil
+}
 
-	txt, err := prototext.Marshal(event)
-	if err != nil {
-		return err
+func reflectRedactAPIKey(value reflect.Value, apiKey string) *reflect.Value {
+	switch value.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		if !value.IsValid() {
+			return nil
+		}
+		redactedValue := reflectRedactAPIKey(value.Elem(), apiKey)
+		if redactedValue != nil {
+			value.Elem().Set(*redactedValue)
+		}
+		return nil
+	case reflect.Struct:
+		for i := 0; i < value.NumField(); i += 1 {
+			f := value.Field(i)
+			if !f.CanSet() {
+				// Skip private fields
+				continue
+			}
+			redactedValue := reflectRedactAPIKey(f, apiKey)
+			if redactedValue != nil {
+				f.Set(*redactedValue)
+			}
+		}
+		return nil
+	case reflect.Slice:
+		for i := 0; i < value.Len(); i += 1 {
+			f := value.Index(i)
+			redactedValue := reflectRedactAPIKey(f, apiKey)
+			if redactedValue != nil {
+				f.Set(*redactedValue)
+			}
+		}
+		return nil
+	case reflect.Map:
+		type replacement struct{ originalKey, redactedKey, redactedValue reflect.Value }
+		var replacements []replacement
+		for _, key := range value.MapKeys() {
+			redactedKey := reflectRedactAPIKey(key, apiKey)
+			redactedValue := reflectRedactAPIKey(value.MapIndex(key), apiKey)
+			if redactedValue != nil {
+				value.SetMapIndex(key, *redactedValue)
+			}
+			if redactedKey != nil {
+				replacements = append(replacements, replacement{key, *redactedKey, value.MapIndex(key)})
+			}
+		}
+		for _, r := range replacements {
+			// Delete old key
+			value.SetMapIndex(r.originalKey, reflect.Value{})
+			// Replace with redacted entry
+			value.SetMapIndex(r.redactedKey, r.redactedValue)
+		}
+		return nil
+	case reflect.String:
+		s := value.String()
+		if !strings.Contains(s, apiKey) {
+			return nil
+		}
+		redacted := strings.ReplaceAll(s, apiKey, "<REDACTED>")
+		redactedValue := reflect.ValueOf(redacted)
+		// Return the redacted string back to the caller so that it can update
+		// the containing element with the redacted string.
+		return &redactedValue
+	default:
+		// Not a string or a type that can contain a string; nothing to redact.
+		return nil
 	}
-	// TODO: Show the display label of the API key that was redacted, if we can
-	// get that info efficiently.
-	txt = []byte(strings.ReplaceAll(string(txt), apiKey, "<REDACTED>"))
-
-	return prototext.Unmarshal(txt, event)
 }
 
 func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, event *bespb.BuildEvent) error {
