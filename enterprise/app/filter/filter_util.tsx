@@ -201,6 +201,7 @@ export class DurationSlider {
     [35, '10h'],
     [36, '11h'],
     [37, '12h'],
+    [38, '∞'],
   ]))
 
   static minValue(): number {
@@ -212,7 +213,7 @@ export class DurationSlider {
   }
 
   static maxValue(): number {
-    return 37
+    return 38
   }
 
   static maxDisplayValue(): string {
