@@ -302,7 +302,16 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const minimumDurationValue = this.props.search.get(MINIMUM_DURATION_PARAM_NAME) || "";
     const maximumDurationValue = this.props.search.get(MAXIMUM_DURATION_PARAM_NAME) || "";
     const isFiltering = Boolean(
-      roleValue || statusValue || userValue || repoValue || branchValue || commitValue || hostValue || commandValue || minimumDurationValue || maximumDurationValue
+      roleValue ||
+        statusValue ||
+        userValue ||
+        repoValue ||
+        branchValue ||
+        commitValue ||
+        hostValue ||
+        commandValue ||
+        minimumDurationValue ||
+        maximumDurationValue
     );
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
@@ -473,19 +482,31 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                   <div className="option-group-title">Duration</div>
                   <div className="option-group-input">
                     <Slider
-                    defaultValue={[
-                      DurationSlider.fromDisplayValue(this.state.minimumDuration || DurationSlider.minDisplayValue()).toString(),
-                      DurationSlider.fromDisplayValue(this.state.maximumDuration || DurationSlider.maxDisplayValue()).toString()]}
-                    renderThumb={(props, state) => <div {...props}><div class="slider-thumb-circle"></div><div class="slider-thumb-value">{DurationSlider.toDisplayValue(state.valueNow)}</div></div>}
-                    min={DurationSlider.minValue()}
-                    max={DurationSlider.maxValue()}
-                    pearling
-                    minDistance={1}
-                    onChange={(e) =>
-                      this.setState({
-                      minimumDuration: DurationSlider.toDisplayValue(e[0]),
-                      maximumDuration: DurationSlider.toDisplayValue(e[1])
-                    })}/>
+                      defaultValue={[
+                        DurationSlider.fromDisplayValue(
+                          this.state.minimumDuration || DurationSlider.minDisplayValue()
+                        ).toString(),
+                        DurationSlider.fromDisplayValue(
+                          this.state.maximumDuration || DurationSlider.maxDisplayValue()
+                        ).toString(),
+                      ]}
+                      renderThumb={(props, state) => (
+                        <div {...props}>
+                          <div class="slider-thumb-circle"></div>
+                          <div class="slider-thumb-value">{DurationSlider.toDisplayValue(state.valueNow)}</div>
+                        </div>
+                      )}
+                      min={DurationSlider.minValue()}
+                      max={DurationSlider.maxValue()}
+                      pearling
+                      minDistance={1}
+                      onChange={(e) =>
+                        this.setState({
+                          minimumDuration: DurationSlider.toDisplayValue(e[0]),
+                          maximumDuration: DurationSlider.toDisplayValue(e[1]),
+                        })
+                      }
+                    />
                   </div>
                   <div className="option-group-input">
                     <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>

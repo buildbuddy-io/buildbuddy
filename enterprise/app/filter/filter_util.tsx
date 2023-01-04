@@ -149,95 +149,101 @@ class BiMap {
   forwardMap: Map<number, string>;
   reverseMap: Map<string, number>;
   constructor(map: Map<number, string>) {
-     this.forwardMap = new Map<number, string>();
-     this.reverseMap = new Map<string, number>();
-     map.forEach((value: string, key: number) => {
-      this.forwardMap[key] = value
-      this.reverseMap[value] = key
-  });
+    this.forwardMap = new Map<number, string>();
+    this.reverseMap = new Map<string, number>();
+    map.forEach((value: string, key: number) => {
+      this.forwardMap[key] = value;
+      this.reverseMap[value] = key;
+    });
   }
-  get(key: number): string { return this.forwardMap[key]; }
-  revGet(key: string): number { return this.reverseMap[key]; }
+  get(key: number): string {
+    return this.forwardMap[key];
+  }
+  revGet(key: string): number {
+    return this.reverseMap[key];
+  }
 }
 
 export class DurationSlider {
   // Map of linear slider values (1, 2, 3, ...) to sort-of logarithmic scale duration display values.
-  static values = new BiMap(new Map([
-    [0, '0s'],
-    [1, '1s'],
-    [2, '2s'],
-    [3, '3s'],
-    [4, '4s'],
-    [5, '5s'],
-    [6, '10s'],
-    [7, '15s'],
-    [8, '20s'],
-    [9, '25s'],
-    [10, '30s'],
-    [11, '40s'],
-    [12, '45s'],
-    [13, '50s'],
-    [14, '1m'],
-    [15, '2m'],
-    [16, '3m'],
-    [17, '4m'],
-    [18, '5m'],
-    [19, '10m'],
-    [20, '15m'],
-    [21, '20m'],
-    [22, '25m'],
-    [23, '30m'],
-    [24, '40m'],
-    [25, '50m'],
-    [26, '1h'],
-    [27, '2h'],
-    [28, '3h'],
-    [29, '4h'],
-    [30, '5h'],
-    [31, '6h'],
-    [32, '7h'],
-    [33, '8h'],
-    [34, '9h'],
-    [35, '10h'],
-    [36, '11h'],
-    [37, '12h'],
-    [38, '∞'],
-  ]))
+  static values = new BiMap(
+    new Map([
+      [0, "0s"],
+      [1, "1s"],
+      [2, "2s"],
+      [3, "3s"],
+      [4, "4s"],
+      [5, "5s"],
+      [6, "10s"],
+      [7, "15s"],
+      [8, "20s"],
+      [9, "25s"],
+      [10, "30s"],
+      [11, "40s"],
+      [12, "45s"],
+      [13, "50s"],
+      [14, "1m"],
+      [15, "2m"],
+      [16, "3m"],
+      [17, "4m"],
+      [18, "5m"],
+      [19, "10m"],
+      [20, "15m"],
+      [21, "20m"],
+      [22, "25m"],
+      [23, "30m"],
+      [24, "40m"],
+      [25, "50m"],
+      [26, "1h"],
+      [27, "2h"],
+      [28, "3h"],
+      [29, "4h"],
+      [30, "5h"],
+      [31, "6h"],
+      [32, "7h"],
+      [33, "8h"],
+      [34, "9h"],
+      [35, "10h"],
+      [36, "11h"],
+      [37, "12h"],
+      [38, "∞"],
+    ])
+  );
 
   static minValue(): number {
-    return 0
+    return 0;
   }
 
   static minDisplayValue(): string {
-    return this.toDisplayValue(this.minValue())
+    return this.toDisplayValue(this.minValue());
   }
 
   static maxValue(): number {
-    return 38
+    return 38;
   }
 
   static maxDisplayValue(): string {
-    return this.toDisplayValue(this.maxValue())
+    return this.toDisplayValue(this.maxValue());
   }
 
   static toDisplayValue(value: number): string {
-    return this.values.get(value)
+    return this.values.get(value);
   }
 
   static fromDisplayValue(value: string): number {
-    return this.values.revGet(value)
+    return this.values.revGet(value);
   }
 
   static toMillis(value: string): number {
-    if (value.charAt(value.length-1) == 's') {
-      return Number(value.replace('s', '')) * 1000
+    if (value.charAt(value.length - 1) == "s") {
+      return Number(value.replace("s", "")) * 1000;
     }
-    if (value.charAt(value.length-1) == 'm') {
-      return Number(value.replace('m', '')) * 60 * 1000
+    if (value.charAt(value.length - 1) == "m") {
+      return Number(value.replace("m", "")) * 60 * 1000;
     }
-    if (value.charAt(value.length-1) == 'h') {
-      return Number(value.replace('h', '')) * 60 * 60 * 1000
+    if (value.charAt(value.length - 1) == "h") {
+      return Number(value.replace("h", "")) * 60 * 60 * 1000;
     }
-    return -1
+    return -1;
   }
 }
