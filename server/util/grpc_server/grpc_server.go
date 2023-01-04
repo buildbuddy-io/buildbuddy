@@ -11,7 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -212,8 +212,8 @@ func propagateInvocationIDToSpanStreamServerInterceptor() grpc.StreamServerInter
 
 func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 	return []grpc.ServerOption{
-		filters.GetUnaryInterceptor(env),
-		filters.GetStreamInterceptor(env),
+		interceptors.GetUnaryInterceptor(env),
+		interceptors.GetStreamInterceptor(env),
 		grpc.ChainUnaryInterceptor(otelgrpc.UnaryServerInterceptor(), propagateInvocationIDToSpanUnaryServerInterceptor()),
 		grpc.ChainStreamInterceptor(otelgrpc.StreamServerInterceptor(), propagateInvocationIDToSpanStreamServerInterceptor()),
 		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),

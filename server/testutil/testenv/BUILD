@@ -12,7 +12,7 @@ go_library(
         "//server/backends/memory_cache",
         "//server/nullauth",
         "//server/real_environment",
-        "//server/rpc/filters",
+        "//server/rpc/interceptors",
         "//server/testutil/testfs",
         "//server/testutil/testmysql",
         "//server/util/db",

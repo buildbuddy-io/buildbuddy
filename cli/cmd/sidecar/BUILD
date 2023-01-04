@@ -17,7 +17,7 @@ go_library(
         "//server/build_event_protocol/build_event_server",
         "//server/nullauth",
         "//server/real_environment",
-        "//server/rpc/filters",
+        "//server/rpc/interceptors",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",

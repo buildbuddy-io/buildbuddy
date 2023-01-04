@@ -67,7 +67,7 @@ const (
 
 	// The key the JWT token string is stored under.
 	// NB: This value must match the value in
-	// bb/server/rpc/filters/filters.go which copies/reads this value
+	// bb/server/rpc/interceptors/interceptors.go which copies/reads this value
 	// to/from the outgoing/incoming request contexts.
 	contextTokenStringKey = "x-buildbuddy-jwt"
 

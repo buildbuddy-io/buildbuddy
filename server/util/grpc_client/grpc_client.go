@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/google"
 	"google.golang.org/grpc/keepalive"
@@ -67,8 +67,8 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 
 func CommonGRPCClientOptions() []grpc.DialOption {
 	return []grpc.DialOption{
-		filters.GetUnaryClientInterceptor(),
-		filters.GetStreamClientInterceptor(),
+		interceptors.GetUnaryClientInterceptor(),
+		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			// After a duration of this time if the client doesn't see any activity it
