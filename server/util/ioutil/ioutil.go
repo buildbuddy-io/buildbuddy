@@ -28,6 +28,24 @@ func (discardWriteCloser) Close() error {
 	return nil
 }
 
+type readCloseFuncs struct {
+	readFunc  func(p []byte) (n int, err error)
+	closeFunc func() error
+}
+
+func ReadCloseFuncs(rf ReadFunc, cf CloseFunc) io.ReadCloser {
+	return &readCloseFuncs{readFunc: rf, closeFunc: cf}
+}
+
+func (r *readCloseFuncs) Read(p []byte) (n int, err error) {
+	return r.readFunc(p)
+}
+
+func (r *readCloseFuncs) Close() error {
+	return r.closeFunc()
+}
+
+type ReadFunc func(p []byte) (n int, err error)
 type CloseFunc func() error
 type CommitFunc func(int64) error
 

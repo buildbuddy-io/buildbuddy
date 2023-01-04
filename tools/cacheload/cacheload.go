@@ -60,9 +60,17 @@ var (
 )
 
 var (
-	// Data computed by sampling stored cache blob sizes.
-	histBuckets     = []int{1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000}
-	histCounts      = []int{23, 33611, 33498, 20473, 10036, 3265, 504, 62}
+	// histCounts[i] stores the number of CAS reads where
+	//     2**(i-1) <= digestSize < 2**i
+	//
+	// For example, index 5 stores the number of reads with size
+	// greater or equal to 2**4 = 16 bytes, but less than 2**5 = 32 bytes.
+	histCounts = []int{
+		0, 58941, 45436, 2282, 26180, 53903, 114955, 598483, 5392196, 2808749,
+		1223495, 1764612, 1672861, 1385615, 1447073, 1329911, 1399060, 774440,
+		469510, 296366, 183512, 115053, 72980, 38975, 27774, 17558, 9613, 7687,
+		3661, 1102, 433, 105, 7, 15, 0, 1,
+	}
 	histCountsTotal int
 
 	CacheloadErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -81,9 +89,8 @@ func init() {
 	}
 }
 
-func randRange(low, high int) int64 {
-	i := int64(rand.Intn(high-low+1) + low)
-	return i
+func randRange(low, high int) int {
+	return low + rand.Intn(high-low)
 }
 
 func randomBlobSize() int64 {
@@ -91,16 +98,16 @@ func randomBlobSize() int64 {
 		return *blobSize
 	}
 	n := rand.Intn(histCountsTotal)
-	var sumTotal, low, high int
+	low := 0
 	for i, c := range histCounts {
-		sumTotal += c
-		high = histBuckets[i+1]
-		if n < sumTotal {
-			return randRange(low, high)
+		high := int(math.Pow(2, float64(i)))
+		if n < c {
+			return int64(randRange(low, high))
 		}
-		low = histBuckets[i+1]
+		n -= c
+		low = high
 	}
-	return randRange(histBuckets[len(histBuckets)-2], histBuckets[len(histBuckets)-1])
+	panic("unreachable")
 }
 
 func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
@@ -274,7 +281,7 @@ func main() {
 					}
 					readQPSCounter.Inc()
 				}
-				if rand.Intn(10) < int(*recycleRate*10) {
+				if rand.Float64() < *recycleRate {
 					writtenDigests <- d
 				}
 			}

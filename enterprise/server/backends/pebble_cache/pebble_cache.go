@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
@@ -33,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/cockroachdb/pebble"
@@ -75,6 +77,8 @@ var (
 	// TODO(Maggie): Remove enableZstdCompressionFlag after migration
 	enableZstdCompressionFlag   = flag.Bool("cache.pebble.enable_zstd_compression", false, "If set, zstd compressed blobs can be saved to the cache. Otherwise only decompressed bytes are stored.")
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", math.MaxInt64, "Blobs larger than this will be zstd compressed before written to disk.")
+
+	memcacheEnabled = flag.Bool("cache.pebble.enable_memcache", false, "If set, enable in-memory cache.")
 
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
@@ -200,6 +204,7 @@ type PebbleCache struct {
 	orphanedFilesDone chan struct{}
 
 	fileStorer filestore.Store
+	memcache   interfaces.LRU
 	bufferPool *bytebufferpool.Pool
 
 	enableZstdCompression       bool
@@ -384,6 +389,18 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		pebbleOptions.Cache = c
 	}
 
+	memcache, err := lru.NewLRU(&lru.Config{
+		MaxSize: 256 * 1024 * 1024,
+		SizeFn: func(value interface{}) int64 {
+			const compressionTypePrefixSize = 1
+			const sha256StringSize = 64 // TODO: compress these to [32]byte
+			return compressionTypePrefixSize + sha256StringSize + int64(cap(value.([]byte)))
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	db, err := pebble.Open(opts.RootDirectory, pebbleOptions)
 	if err != nil {
 		return nil, err
@@ -412,6 +429,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		accesses:                    make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:                    make([]*partitionEvictor, len(opts.Partitions)),
 		fileStorer:                  filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
+		memcache:                    memcache,
 		isolateByGroupIDs:           opts.IsolateByGroupIDs,
 		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
@@ -2018,7 +2036,27 @@ type readCloser struct {
 	io.Closer
 }
 
-func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *resource.ResourceName, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) isMemCacheable(rn *resource.ResourceName) bool {
+	if !*memcacheEnabled {
+		return false
+	}
+
+	// Files may be cached in memory if they're too big to be inlined into
+	// pebble but small enough that we can fit lots of them in memory and get a
+	// high cache hit rate, while avoiding disk accesses.
+	return rn.GetCacheType() == resource.CacheType_CAS &&
+		rn.GetDigest().GetSizeBytes() > p.maxInlineFileSizeBytes &&
+		rn.GetDigest().GetSizeBytes() < 256*1024
+}
+
+func memCacheKey(compressor repb.Compressor_Value, hash string) string {
+	if compressor == repb.Compressor_ZSTD {
+		return "Z" + hash
+	}
+	return hash
+}
+
+func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *resource.ResourceName, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (out io.ReadCloser, err error) {
 	partitionID := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
 	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
 	requestedCompression := resource.GetCompressor()
@@ -2032,7 +2070,19 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *re
 		offset = uncompressedOffset
 		limit = uncompressedLimit
 	}
-	reader, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
+
+	var buf io.ReadCloser
+	if p.isMemCacheable(resource) && offset == 0 && limit == 0 {
+		if v, ok := p.memcache.Get(memCacheKey(requestedCompression, resource.GetDigest().GetHash())); ok {
+			buf = cachetools.NewBytesReadSeekCloser(v.([]byte))
+		}
+	}
+
+	// Even if the file is buffered in memory, get a filestore reader so that we
+	// can handle metadata mismatches. We will just close the reader
+	// immediately.
+	// TODO: Is this actually needed?
+	f, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
 		if status.IsNotFoundError(err) || os.IsNotExist(err) {
 			p.handleMetadataMismatch(ctx, err, fileMetadataKey, fileMetadata)
@@ -2040,6 +2090,22 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *re
 		return nil, err
 	}
 	sendAtimeUpdate(p.accesses, fileMetadataKey, fileMetadata, p.atimeUpdateThreshold, p.atimeBufferSize)
+
+	var reader io.ReadCloser = f
+	if buf != nil {
+		reader = buf
+		cachedCompression = requestedCompression
+		f.Close()
+	} else if p.isMemCacheable(resource) && offset == 0 && limit == 0 {
+		defer func() {
+			if out == nil {
+				return
+			}
+			key := memCacheKey(requestedCompression, resource.GetDigest().GetHash())
+			b := p.bufferPool.Get(fileMetadata.GetStoredSizeBytes())[:0]
+			out = p.memcacheTeeReader(ctx, out, key, b)
+		}()
+	}
 
 	if requestedCompression == cachedCompression {
 		if requestedCompression != repb.Compressor_IDENTITY && (uncompressedOffset != 0 || uncompressedLimit != 0) {
@@ -2090,6 +2156,40 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *re
 		return nil, fmt.Errorf("unsupported compressor %v requested for %v reader, cached compression is %v",
 			requestedCompression, resource, cachedCompression)
 	}
+}
+
+func (p *PebbleCache) memcacheTeeReader(ctx context.Context, r io.ReadCloser, key string, b []byte) io.ReadCloser {
+	// Tee the bytes from the returned reader into the memory cache
+	// so that we don't need to do a disk access on the next request.
+	buf := bytes.NewBuffer(b)
+	original := r
+	read := func(b []byte) (n int, err error) {
+		n, err = original.Read(b)
+		if buf == nil {
+			return n, err
+		}
+		if n > 0 {
+			if _, err := buf.Write(b[:n]); err != nil {
+				log.CtxWarningf(ctx, "Failed to write to memcache: %s", err)
+				buf = nil
+			}
+		}
+		if err == io.EOF && buf != nil {
+			// Once all bytes are successfully read, commit to memcache.
+			// Trim buffer to conserve mem, but add the original buffer to the
+			// buffer pool to help with GC pressure.
+			val := buf.Bytes()
+			if len(val) != cap(val) {
+				p.bufferPool.Put(val)
+				trimmed := make([]byte, len(val), len(val))
+				copy(trimmed, val)
+				val = trimmed
+			}
+			p.memcache.Add(key, val)
+		}
+		return n, err
+	}
+	return ioutil.ReadCloseFuncs(read, original.Close)
 }
 
 func (p *PebbleCache) Start() error {
