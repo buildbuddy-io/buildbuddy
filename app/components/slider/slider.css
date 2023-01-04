@@ -1,5 +1,5 @@
 .horizontal-slider {
-    padding: 8px 16px;
+    padding: 8px 16px 24px 16px;
 }
 
 .slider-track {
@@ -9,4 +9,30 @@
 
 .slider-thumb {
     width: 32px;
+}
+
+.slider-thumb-circle {
+    margin-top: -5px;
+    width: 10px;
+    height: 10px;
+    border: 1px solid darkslategray;
+    border-radius: 10px;
+    background: darkslategray;
+}
+
+.slider-thumb-value {
+    font-size: 12px;
+    text-align: center;
+}
+
+.slider-thumb-1 .slider-thumb-circle {
+    margin-left: 20px;
+}
+
+.slider-thumb-0 .slider-thumb-value {
+    margin-left: -16px;
+}
+
+.slider-thumb-1 .slider-thumb-value {
+    margin-right: -16px;
 }

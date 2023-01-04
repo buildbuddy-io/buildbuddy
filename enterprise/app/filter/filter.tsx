@@ -476,7 +476,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                     defaultValue={[
                       DurationSlider.fromDisplayValue(this.state.minimumDuration || DurationSlider.minDisplayValue()).toString(),
                       DurationSlider.fromDisplayValue(this.state.maximumDuration || DurationSlider.maxDisplayValue()).toString()]}
-                    renderThumb={(props, state) => <div {...props}> {DurationSlider.toDisplayValue(state.valueNow)}</div>}
+                    renderThumb={(props, state) => <div {...props}><div class="slider-thumb-circle"></div><div class="slider-thumb-value">{DurationSlider.toDisplayValue(state.valueNow)}</div></div>}
                     min={DurationSlider.minValue()}
                     max={DurationSlider.maxValue()}
                     pearling
