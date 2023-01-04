@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
@@ -60,7 +61,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
-	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -346,21 +346,21 @@ func StartAndRunServices(env environment.Env) {
 
 	mux := env.GetMux()
 	// Register all of our HTTP handlers on the default mux.
-	mux.Handle("/", httpfilters.WrapExternalHandler(env, staticFileServer))
+	mux.Handle("/", interceptors.WrapExternalHandler(env, staticFileServer))
 	for _, appRoute := range appRoutes {
 		// this causes the muxer to handle redirects from e. g. /path -> /path/
-		mux.Handle(appRoute, httpfilters.WrapExternalHandler(env, staticFileServer))
+		mux.Handle(appRoute, interceptors.WrapExternalHandler(env, staticFileServer))
 	}
-	mux.Handle("/app/", httpfilters.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
-	mux.Handle("/rpc/BuildBuddyService/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
-	mux.Handle("/file/download", httpfilters.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
+	mux.Handle("/app/", interceptors.WrapExternalHandler(env, http.StripPrefix("/app", afs)))
+	mux.Handle("/rpc/BuildBuddyService/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/rpc/BuildBuddyService/", protoletHandler))
+	mux.Handle("/file/download", interceptors.WrapAuthenticatedExternalHandler(env, env.GetBuildBuddyServer()))
 	mux.Handle("/healthz", env.GetHealthChecker().LivenessHandler())
 	mux.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	if auth := env.GetAuthenticator(); auth != nil {
-		mux.Handle("/login/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Login)))
-		mux.Handle("/auth/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Auth)))
-		mux.Handle("/logout/", httpfilters.SetSecurityHeaders(http.HandlerFunc(auth.Logout)))
+		mux.Handle("/login/", interceptors.SetSecurityHeaders(http.HandlerFunc(auth.Login)))
+		mux.Handle("/auth/", interceptors.SetSecurityHeaders(http.HandlerFunc(auth.Auth)))
+		mux.Handle("/logout/", interceptors.SetSecurityHeaders(http.HandlerFunc(auth.Logout)))
 	}
 
 	if err := github.Register(env); err != nil {
@@ -373,13 +373,13 @@ func StartAndRunServices(env environment.Env) {
 		if err != nil {
 			log.Fatalf("Error initializing RPC over HTTP handlers for API: %s", err)
 		}
-		mux.Handle("/api/v1/", httpfilters.WrapAuthenticatedExternalProtoletHandler(env, "/api/v1/", apiProtoHandlers))
+		mux.Handle("/api/v1/", interceptors.WrapAuthenticatedExternalProtoletHandler(env, "/api/v1/", apiProtoHandlers))
 		// Protolet doesn't currently support streaming RPCs, so we'll register a regular old http handler.
-		mux.Handle("/api/v1/GetFile", httpfilters.WrapAuthenticatedExternalHandler(env, api))
+		mux.Handle("/api/v1/GetFile", interceptors.WrapAuthenticatedExternalHandler(env, api))
 	}
 
 	if wfs := env.GetWorkflowService(); wfs != nil {
-		mux.Handle("/webhooks/workflow/", httpfilters.WrapExternalHandler(env, wfs))
+		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
@@ -430,7 +430,7 @@ func StartAndRunServices(env environment.Env) {
 			sslServer.ListenAndServeTLS("", "")
 		}()
 		go func() {
-			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), httpfilters.RedirectIfNotForwardedHTTPS(env, sslHandler))
+			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), interceptors.RedirectIfNotForwardedHTTPS(env, sslHandler))
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.

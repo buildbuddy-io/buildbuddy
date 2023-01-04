@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "filters",
-    srcs = ["filters.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/http/filters",
+    name = "interceptors",
+    srcs = ["interceptors.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/http/interceptors",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:context_go_proto",
