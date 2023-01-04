@@ -205,12 +205,12 @@ func FileReader(ctx context.Context, fullPath string, offset, length int64) (io.
 	if err != nil {
 		return nil, err
 	}
+	if length > 0 {
+		return &readCloser{io.NewSectionReader(f, offset, length), f, ctx}, nil
+	}
 	info, err := f.Stat()
 	if err != nil {
 		return nil, err
-	}
-	if length > 0 {
-		return &readCloser{io.NewSectionReader(f, offset, length), f, ctx}, nil
 	}
 	return &readCloser{io.NewSectionReader(f, offset, info.Size()-offset), f, ctx}, nil
 }
