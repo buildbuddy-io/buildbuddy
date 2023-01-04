@@ -3,6 +3,7 @@ import React from "react";
 
 import { zip } from "../../proto/zip_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import capabilities from "../capabilities/capabilities";
 import rpcService from "../service/rpc_service";
 
 interface Props {
@@ -35,6 +36,9 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
   }
 
   maybeFetchOutputManifest() {
+    if (!capabilities.config.testOutputManifestsEnabled) {
+      return;
+    }
     let testOutputsUri = this.props.files.find(
       (file: build_event_stream.File) => true && file.name === TargetArtifactsCardComponent.ZIPPED_OUTPUTS_FILE
     )?.uri;

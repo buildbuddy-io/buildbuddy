@@ -52,6 +52,10 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 	cdStart := eocd.DirectoryOffset - offset
 	cdEnd := cdStart + eocd.DirectorySize
 
+	if cdStart < 0 {
+		return nil, status.UnimplementedError("directory size is very large.")
+	}
+
 	entries, err := ziputil.ReadDirectoryHeader(footer[cdStart:cdEnd], eocd)
 	if err != nil {
 		return nil, err

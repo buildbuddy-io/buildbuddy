@@ -68,4 +68,7 @@ message FrontendConfig {
 
   // Whether to enable the secrets UI.
   bool secrets_enabled = 22;
+
+  // Whether to render test outputs.zip contents in the targets UI.
+  bool test_output_manifests_enabled = 23;
 }
