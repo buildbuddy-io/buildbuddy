@@ -39,6 +39,7 @@ var (
 	expandedSuggestionsEnabled = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
 	enableWorkflows            = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
 	enableExecutorKeyCreation  = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
+	testOutputManifestsEnabled = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -151,6 +152,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		ExpandedSuggestionsEnabled:    *expandedSuggestionsEnabled,
 		QuotaManagementEnabled:        env.GetQuotaManager() != nil,
 		SecretsEnabled:                env.GetSecretService() != nil,
+		TestOutputManifestsEnabled:    *testOutputManifestsEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

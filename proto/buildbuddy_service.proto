@@ -16,6 +16,7 @@ import "proto/usage.proto";
 import "proto/github.proto";
 import "proto/quota.proto";
 import "proto/secrets.proto";
+import "proto/zip.proto";
 
 package buildbuddy.service;
 
@@ -39,6 +40,10 @@ service BuildBuddyService {
       returns (invocation.GetTrendResponse);
   rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
       returns (invocation.GetInvocationOwnerResponse);
+
+  // Zip manifest API
+  rpc GetZipManifest(zip.GetZipManifestRequest)
+      returns (zip.GetZipManifestResponse);
 
   // Bazel Config API
   rpc GetBazelConfig(bazel_config.GetBazelConfigRequest)
