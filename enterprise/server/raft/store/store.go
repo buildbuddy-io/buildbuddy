@@ -161,8 +161,8 @@ func (pu *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*R
 		return false, status.InternalErrorf("eviction request failed: %s", rsp.AnyError())
 	}
 
-	ageUsec := float64(time.Since(sample.Timestamp).Microseconds())
-	metrics.RaftEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: pu.id}).Observe(ageUsec)
+	ageMillis := float64(time.Since(sample.Timestamp).Milliseconds())
+	metrics.RaftEvictionAgeMsec.With(prometheus.Labels{metrics.PartitionID: pu.id}).Observe(ageMillis)
 
 	globalSizeBytes := pu.GlobalSizeBytes()
 

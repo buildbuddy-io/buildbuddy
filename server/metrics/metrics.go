@@ -387,12 +387,14 @@ var (
 		CacheNameLabel,
 	})
 
-	DiskCacheEvictionAgeUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	// This metric is in milliseconds because Grafana heatmaps don't display
+	// microsecond durations nicely when they can contain large durations.
+	DiskCacheEvictionAgeMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "disk_cache_eviction_age_usec",
-		Buckets:   durationUsecBuckets(1*time.Hour, 30*24*time.Hour, 2),
-		Help:      "Age of items evicted from the cache, in **microseconds**.",
+		Name:      "disk_cache_eviction_age_msec",
+		Buckets:   exponentialBucketRange(float64(1*time.Hour.Milliseconds()), float64(30*24*time.Hour.Milliseconds()), 2),
+		Help:      "Age of items evicted from the cache, in **milliseconds**.",
 	}, []string{
 		PartitionID,
 		CacheNameLabel,
@@ -1626,12 +1628,14 @@ var (
 		RaftRangeIDLabel,
 	})
 
-	RaftEvictionAgeUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	// This metric is in milliseconds because Grafana heatmaps don't display
+	// microsecond durations nicely when they can contain large durations.
+	RaftEvictionAgeMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
-		Name:      "eviction_age_usec",
-		Buckets:   durationUsecBuckets(1*time.Hour, 30*24*time.Hour, 2),
-		Help:      "Age of items evicted from the cache, in **microseconds**.",
+		Name:      "eviction_age_msec",
+		Buckets:   exponentialBucketRange(float64(1*time.Hour.Milliseconds()), float64(30*24*time.Hour.Milliseconds()), 2),
+		Help:      "Age of items evicted from the cache, in **milliseconds**.",
 	}, []string{
 		PartitionID,
 	})
