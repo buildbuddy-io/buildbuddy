@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/docker/go-units"
+	"github.com/elastic/gosigar"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
@@ -49,6 +50,9 @@ const (
 	// janitorCheckPeriod is how often the janitor thread will wake up to
 	// check the cache size.
 	janitorCheckPeriod = 100 * time.Millisecond
+
+	// refreshMetricsPeriod is how often we update polled metrics.
+	refreshMetricsPeriod = 5 * time.Second
 
 	// staleFilePeriod is the timeframe after which an empty or temp file will be considered stale and eligible
 	// for automatic deletion
@@ -274,8 +278,27 @@ func NewDiskCache(env environment.Env, opts *Options, defaultMaxSizeBytes int64)
 	c.partitions = partitions
 	c.defaultPartition = defaultPartition
 
+	c.startRefreshMetrics(opts.RootDirectory)
+
 	statusz.AddSection(cacheName, "On disk LRU cache", c)
 	return c, nil
+}
+
+func (c *DiskCache) startRefreshMetrics(rootDirectory string) {
+	go func() {
+		for {
+			select {
+			case <-time.After(refreshMetricsPeriod):
+				fsu := gosigar.FileSystemUsage{}
+				if err := fsu.Get(rootDirectory); err != nil {
+					log.Warningf("could not retrieve filesystem stats: %s", err)
+				} else {
+					metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Total))
+					metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Avail))
+				}
+			}
+		}
+	}()
 }
 
 func (c *DiskCache) IsV2Layout() bool {
@@ -498,6 +521,7 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		return nil, err
 	}
 	p.startJanitor()
+	p.startRefreshMetrics()
 	return p, nil
 }
 
@@ -582,8 +606,11 @@ func (p *partition) evictFn(value interface{}) {
 		i, err := os.Stat(v.FullPath())
 		if err == nil {
 			lastUse := time.Unix(0, getLastUseNanos(i))
-			ageUsec := float64(time.Now().Sub(lastUse).Microseconds())
-			metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}).Set(ageUsec)
+			age := time.Now().Sub(lastUse)
+			lbls := prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}
+			metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+			metrics.DiskCacheNumEvictions.With(lbls).Inc()
+			metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
 		}
 		if err := disk.DeleteFile(context.TODO(), v.FullPath()); err != nil {
 			log.Warningf("Could not delete evicted file: %s", err)
@@ -672,6 +699,29 @@ func (p *partition) startJanitor() {
 			}
 		}
 	}()
+}
+
+func (p *partition) startRefreshMetrics() {
+	go func() {
+		for {
+			select {
+			case <-time.After(refreshMetricsPeriod):
+				p.refreshMetrics()
+			}
+		}
+	}()
+}
+
+func (p *partition) refreshMetrics() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	lbls := prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}
+	metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(p.lru.Size()))
+	metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(p.maxSizeBytes))
+	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
+		metrics.PartitionID:    p.id,
+		metrics.CacheNameLabel: cacheName,
+		metrics.CacheTypeLabel: "all"}).Set(float64(p.lru.Len()))
 }
 
 func (p *partition) initializeCache() error {
