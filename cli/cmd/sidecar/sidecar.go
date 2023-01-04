@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -30,7 +31,6 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/sidecar"
-	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -115,11 +115,11 @@ func propagateAPIKeyFromIncomingToOutgoing(ctx context.Context) context.Context 
 }
 
 func propagateAPIKeyUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return rpcfilters.ContextReplacingUnaryServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
+	return interceptors.ContextReplacingUnaryServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
 }
 
 func propagateAPIKeyStreamInterceptor() grpc.StreamServerInterceptor {
-	return rpcfilters.ContextReplacingStreamServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
+	return interceptors.ContextReplacingStreamServerInterceptor(propagateAPIKeyFromIncomingToOutgoing)
 }
 
 func initializeEnv() *real_environment.RealEnv {
@@ -144,8 +144,8 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 	}
 	log.Debugf("gRPC listening on %q", *listenAddr)
 	grpcOptions := []grpc.ServerOption{
-		rpcfilters.GetUnaryInterceptor(env),
-		rpcfilters.GetStreamInterceptor(env),
+		interceptors.GetUnaryInterceptor(env),
+		interceptors.GetStreamInterceptor(env),
 		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor(), propagateAPIKeyUnaryInterceptor()),
 		grpc.ChainStreamInterceptor(inactivityStreamInterceptor(), propagateAPIKeyStreamInterceptor()),
 		grpc.MaxRecvMsgSize(grpc_server.MaxRecvMsgSizeBytes()),

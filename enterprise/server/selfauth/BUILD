@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
-        "//server/http/filters",
+        "//server/http/interceptors",
         "//server/util/log",
         "//server/util/status",
         "@com_github_lestrrat_go_jwx//jwa",

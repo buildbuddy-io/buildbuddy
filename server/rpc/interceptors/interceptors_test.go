@@ -1,4 +1,4 @@
-package filters_test
+package interceptors_test
 
 import (
 	"context"

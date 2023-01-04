@@ -14,14 +14,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lestrrat-go/jwx/jwa"
 	"github.com/lestrrat-go/jwx/jwk"
 	"github.com/lestrrat-go/jwx/jwt"
 	"golang.org/x/oauth2"
-
-	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 )
 
 var enableSelfAuth = flag.Bool("auth.enable_self_auth", false, "If true, enables a single user login via an oauth provider on the buildbuddy server. Recommend use only when server is behind a firewall; this option may allow anyone with access to the webpage admin rights to your buildbuddy installation. ** Enterprise only **")
@@ -104,10 +103,10 @@ func Register(env environment.Env) error {
 		return status.InternalErrorf("Error initializing self auth: %s", err)
 	}
 	mux := env.GetMux()
-	mux.Handle(oauth.AuthorizationEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize)))
-	mux.Handle(oauth.TokenEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken)))
-	mux.Handle(oauth.JwksEndpoint().Path, httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks)))
-	mux.Handle("/.well-known/openid-configuration", httpfilters.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration)))
+	mux.Handle(oauth.AuthorizationEndpoint().Path, interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.Authorize)))
+	mux.Handle(oauth.TokenEndpoint().Path, interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.AccessToken)))
+	mux.Handle(oauth.JwksEndpoint().Path, interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.Jwks)))
+	mux.Handle("/.well-known/openid-configuration", interceptors.SetSecurityHeaders(http.HandlerFunc(oauth.WellKnownOpenIDConfiguration)))
 	return nil
 }
 

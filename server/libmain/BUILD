@@ -30,7 +30,7 @@ go_library(
         "//server/buildbuddy_server",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
-        "//server/http/filters",
+        "//server/http/interceptors",
         "//server/http/protolet",
         "//server/interfaces",
         "//server/nullauth",

@@ -10,7 +10,7 @@ go_library(
         "//proto:telemetry_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/rpc/filters",
+        "//server/rpc/interceptors",
         "//server/tables",
         "//server/util/db",
         "//server/util/log",

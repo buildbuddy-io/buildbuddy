@@ -8,7 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -45,7 +45,7 @@ func (t *TelemetryServer) StartOrDieIfEnabled() {
 	log.Debug("Telemetry collection enabled")
 
 	grpcOptions := []grpc.ServerOption{
-		filters.GetUnaryInterceptor(t.env),
+		interceptors.GetUnaryInterceptor(t.env),
 		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
 	}
 

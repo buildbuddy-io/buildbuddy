@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
@@ -24,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	httpfilters "github.com/buildbuddy-io/buildbuddy/server/http/filters"
 	burl "github.com/buildbuddy-io/buildbuddy/server/util/url"
 )
 
@@ -84,7 +84,7 @@ func Register(env environment.Env) error {
 	githubClient := NewGithubClient(env, "")
 	env.GetMux().Handle(
 		"/auth/github/link/",
-		httpfilters.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)),
+		interceptors.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)),
 	)
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -21,8 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
-
-	rpcfilters "github.com/buildbuddy-io/buildbuddy/server/rpc/filters"
 )
 
 var (
@@ -94,8 +93,8 @@ func (te *TestEnv) LocalGRPCConn(ctx context.Context, opts ...grpc.DialOption) (
 // GRPCServer starts a gRPC server with standard BuildBuddy filters that uses the given listener.
 func (te *TestEnv) GRPCServer(lis net.Listener) (*grpc.Server, func()) {
 	grpcOptions := []grpc.ServerOption{
-		rpcfilters.GetUnaryInterceptor(te),
-		rpcfilters.GetStreamInterceptor(te),
+		interceptors.GetUnaryInterceptor(te),
+		interceptors.GetStreamInterceptor(te),
 	}
 	srv := grpc.NewServer(grpcOptions...)
 	runFunc := func() {
