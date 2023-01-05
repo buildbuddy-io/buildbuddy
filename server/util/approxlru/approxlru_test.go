@@ -87,7 +87,9 @@ func waitForEviction(t *testing.T, l *approxlru.LRU[*entry]) {
 func newCache(t *testing.T, maxSizeBytes int64) (*testCache, *approxlru.LRU[*entry]) {
 	c := &testCache{}
 	l, err := approxlru.New(&approxlru.Opts[*entry]{
-		MaxSizeBytes: maxSizeBytes,
+		SamplePoolSize:     100,
+		SamplesPerEviction: 10,
+		MaxSizeBytes:       maxSizeBytes,
 		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*entry]) (skip bool, err error) {
 			return c.evict(ctx, sample)
 		},
