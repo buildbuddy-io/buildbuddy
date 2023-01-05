@@ -426,7 +426,7 @@ export default class InvocationModel {
   }
 
   getEndTimeDate(): Date {
-    let durationMillis = +this.getDurationMicros() * 1000;
+    let durationMillis = this.getDurationMicros() * 1000;
     return new Date(this.getStartTimeDate().getTime() + durationMillis);
   }
 
@@ -450,7 +450,7 @@ export default class InvocationModel {
 
   getDurationSeconds() {
     let durationMicros = this.getDurationMicros();
-    return `${+durationMicros / 1000000} seconds`;
+    return `${durationMicros / 1000000} seconds`;
   }
 
   getHumanReadableDuration() {
