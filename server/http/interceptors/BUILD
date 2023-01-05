@@ -11,6 +11,7 @@ go_library(
         "//server/http/protolet",
         "//server/metrics",
         "//server/role_filter",
+        "//server/util/alert",
         "//server/util/log",
         "//server/util/request_context",
         "//server/util/uuid",
