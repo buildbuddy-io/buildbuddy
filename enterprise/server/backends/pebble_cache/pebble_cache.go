@@ -1862,14 +1862,14 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 				continue
 			}
 			closer.Close()
-			log.Infof("Evictor %q attempting to delete file: %q", e.part.ID, sample.fileMetadataKey)
+			age := time.Since(time.Unix(0, sample.timestamp))
+			log.Infof("Evictor %q attempting to evict key %q (last accessed %s)", e.part.ID, sample.fileMetadataKey, age)
 			if err := e.deleteFile(sample); err != nil {
-				log.Errorf("Error evicting file: %s (ignoring)", err)
+				log.Errorf("Error evicting file for key %q: %s (ignoring)", sample.fileMetadataKey, err)
 				continue
 			}
 			lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
 			metrics.DiskCacheNumEvictions.With(lbls).Inc()
-			age := time.Since(time.Unix(0, sample.timestamp))
 			metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
 			evicted += 1
 			lastEvicted = sample
