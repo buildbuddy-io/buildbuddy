@@ -357,10 +357,16 @@ type transferTimer struct {
 }
 
 func (t *transferTimer) Close() error {
-	return t.CloseWithBytesTransferred(t.d.GetSizeBytes(), repb.Compressor_IDENTITY)
+	return t.CloseWithBytesTransferred(t.d.GetSizeBytes(), t.d.GetSizeBytes(), repb.Compressor_IDENTITY)
 }
 
-func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, compressor repb.Compressor_Value) error {
+// CloseWithBytesTransferred emits and saves metrics related to data transfer
+//
+// bytesTransferredCache refers to data uploaded/downloaded to the cache
+// bytesTransferredClient refers to data uploaded/downloaded from the client
+// They can be different if, for example, the client supports compression and uploads compressed bytes (bytesTransferredClient)
+// but the cache does not support compression and requires that uncompressed bytes are written (bytesTransferredCache)
+func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value) error {
 	dur := time.Since(t.start)
 
 	h := t.h
@@ -372,7 +378,7 @@ func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, co
 	}).Inc()
 	sizeMetric(t.sizeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
-	}).Observe(float64(t.d.GetSizeBytes()))
+	}).Observe(float64(bytesTransferredCache))
 	durationMetric(t.timeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
 	}).Observe(float64(dur.Microseconds()))
@@ -395,7 +401,7 @@ func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, co
 	if t.sizeCounter == UploadSizeBytes {
 		compressedSizeCounter = UploadTransferredSizeBytes
 	}
-	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(compressedSizeCounter), transferredSizeBytes); err != nil {
+	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(compressedSizeCounter), bytesTransferredClient); err != nil {
 		return err
 	}
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), dur.Microseconds()); err != nil {
@@ -407,7 +413,7 @@ func (t *transferTimer) CloseWithBytesTransferred(transferredSizeBytes int64, co
 			StartTime:            t.start,
 			Duration:             dur,
 			Compressor:           compressor,
-			TransferredSizeBytes: transferredSizeBytes,
+			TransferredSizeBytes: bytesTransferredClient,
 		}
 		if err := h.recordDetailedStats(t.d, stats); err != nil {
 			return err
