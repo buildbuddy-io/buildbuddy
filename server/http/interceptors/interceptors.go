@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -174,6 +176,24 @@ func (w *instrumentedResponseWriter) WriteHeader(statusCode int) {
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
+func alertOnPanic() {
+	buf := make([]byte, 1<<20)
+	n := runtime.Stack(buf, true)
+	alert.UnexpectedEvent("recovered_panic", buf[:n])
+}
+
+func RecoverAndAlert(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if panicErr := recover(); panicErr != nil {
+				http.Error(w, "A panic occurred", http.StatusInternalServerError)
+				alertOnPanic()
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -264,6 +284,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
+		RecoverAndAlert,
 	})
 }
 
@@ -275,6 +296,7 @@ func WrapExternalHandler(env environment.Env, next http.Handler) http.Handler {
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
+		RecoverAndAlert,
 	})
 }
 
@@ -288,5 +310,6 @@ func WrapAuthenticatedExternalHandler(env environment.Env, next http.Handler) ht
 		func(h http.Handler) http.Handler { return SetSecurityHeaders(h) },
 		LogRequest,
 		RequestID,
+		RecoverAndAlert,
 	})
 }
