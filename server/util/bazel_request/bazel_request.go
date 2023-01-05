@@ -109,6 +109,16 @@ func ParseVersion(spec string) (*Version, error) {
 	return v, nil
 }
 
+// MustParseVersion returns a parsed version or panics if it can't be parsed.
+// This only intended for use in top-level `var()` sections.
+func MustParseVersion(spec string) *Version {
+	v, err := ParseVersion(spec)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
 // GetVersion returns the parsed Bazel version from the context. It returns nil
 // if no Bazel version could be parsed, and in particular if the client is not
 // bazel.
