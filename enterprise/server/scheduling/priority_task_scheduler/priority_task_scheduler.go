@@ -22,6 +22,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -336,6 +338,7 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 		q.cpuMillisUsed += size.GetEstimatedMilliCpu()
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
+		log.CtxInfof(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 	}
 }
 
@@ -346,7 +349,18 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 		q.cpuMillisUsed -= size.GetEstimatedMilliCpu()
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
+		log.CtxInfof(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
+}
+
+func (q *PriorityTaskScheduler) stats() string {
+	ramBytesRemaining := q.ramBytesCapacity - q.ramBytesUsed
+	cpuMillisRemaining := q.cpuMillisCapacity - q.cpuMillisUsed
+	return message.NewPrinter(language.English).Sprintf(
+		"Mem: %d of %d bytes allocated (%d remaining), CPU: %d of %d milliCPU allocated (%d remaining), Tasks: %d active, %d queued",
+		q.ramBytesUsed, q.ramBytesCapacity, ramBytesRemaining,
+		q.cpuMillisUsed, q.cpuMillisCapacity, cpuMillisRemaining,
+		len(q.activeTaskCancelFuncs), q.q.Len())
 }
 
 func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservationRequest) bool {
@@ -362,7 +376,6 @@ func (q *PriorityTaskScheduler) canFitAnotherTask(res *scpb.EnqueueTaskReservati
 	}
 
 	if willFit {
-		log.CtxInfof(q.rootContext, "ram remaining: %d, cpu remaining: %d, tasks running: %d, q depth: %d", knownRAMremaining, knownCPUremaining, len(q.activeTaskCancelFuncs), q.q.Len())
 		if res.GetTaskSize().GetEstimatedMemoryBytes() == 0 {
 			log.CtxWarningf(q.rootContext, "Scheduling another unknown size task. THIS SHOULD NOT HAPPEN! res: %+v", res)
 		} else {

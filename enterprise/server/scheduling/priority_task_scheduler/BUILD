@@ -25,6 +25,8 @@ go_library(
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_x_text//language",
+        "@org_golang_x_text//message",
     ],
 )
 
