@@ -426,12 +426,7 @@ export default class InvocationModel {
   }
 
   getEndTimeDate(): Date {
-    let durationMillis = 0;
-    if (!this.finished && this.started) {
-      durationMillis = Math.max(0, new Date().getTime() - this.getStartTimeDate().getTime());
-    } else {
-      durationMillis = Number(this.toolLogMap.get("elapsed time") || 0) * 1_000;
-    }
+    let durationMillis = this.getDurationMicros() * 1000;
     return new Date(this.getStartTimeDate().getTime() + durationMillis);
   }
 
@@ -443,21 +438,24 @@ export default class InvocationModel {
     return moment(this.getStartTimeDate()).fromNow(true);
   }
 
-  getHumanReadableDuration() {
-    let elapsedTime = +this.toolLogMap.get("elapsed time");
-    return format.durationSec(elapsedTime);
+  getDurationMicros() {
+    if (!this.finished && this.started) {
+      return Math.max(0, new Date().getTime() - this.getStartTimeDate().getTime()) * 1000;
+    }
+    if (this.toolLogMap.has("elapsed time")) {
+      return +this.toolLogMap.get("elapsed time") * 1000000;
+    }
+    return +this.invocations.find(() => true)?.durationUsec;
   }
 
   getDurationSeconds() {
-    if (!this.finished && this.started) {
-      return this.timeSinceStart();
-    }
-
-    return `${this.toolLogMap.get("elapsed time")} seconds`;
+    let durationMicros = this.getDurationMicros();
+    return `${durationMicros / 1000000} seconds`;
   }
 
-  getDurationMicros() {
-    return +this.toolLogMap.get("elapsed time") * 1000000;
+  getHumanReadableDuration() {
+    let durationMicros = this.getDurationMicros();
+    return format.durationUsec(durationMicros);
   }
 
   getTiming() {
