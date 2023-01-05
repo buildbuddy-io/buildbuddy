@@ -70,8 +70,8 @@ var (
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	isolateByGroupIDsFlag     = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys for AC records will include groupIDs")
-	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 10, "How many records to sample on each eviction")
-	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 100, "How many deletion candidates to maintain between evictions")
+	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
+	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 
 	// Compression related flags
 	// TODO(Maggie): Remove enableZstdCompressionFlag after migration
