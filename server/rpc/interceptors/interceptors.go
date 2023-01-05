@@ -3,6 +3,7 @@ package interceptors
 import (
 	"context"
 	"flag"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,9 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/role_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -257,6 +260,39 @@ func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerIntercep
 	}
 }
 
+func alertOnPanic() {
+	buf := make([]byte, 1<<20)
+	n := runtime.Stack(buf, true)
+	alert.UnexpectedEvent("recovered_panic", buf[:n])
+}
+
+func unaryRecoveryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (rsp interface{}, err error) {
+		defer func() {
+			if panicErr := recover(); panicErr != nil {
+				rsp = nil
+				err = status.InternalError("A panic occurred")
+				alertOnPanic()
+			}
+		}()
+		rsp, err = handler(ctx, req)
+		return
+	}
+}
+
+func streamRecoveryInterceptor() grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
+		defer func() {
+			if panicErr := recover(); panicErr != nil {
+				err = status.InternalError("A panic occurred")
+				alertOnPanic()
+			}
+		}()
+		err = handler(srv, stream)
+		return
+	}
+}
+
 // copyHeadersStreamInterceptor is a server interceptor that copies certain
 // headers present in the grpc metadata into the context.
 func copyHeadersStreamServerInterceptor() grpc.StreamServerInterceptor {
@@ -283,6 +319,7 @@ func setHeadersStreamClientInterceptor() grpc.StreamClientInterceptor {
 
 func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainUnaryInterceptor(
+		unaryRecoveryInterceptor(),
 		requestIDUnaryServerInterceptor(),
 		invocationIDLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
@@ -296,6 +333,7 @@ func GetUnaryInterceptor(env environment.Env) grpc.ServerOption {
 
 func GetStreamInterceptor(env environment.Env) grpc.ServerOption {
 	return grpc.ChainStreamInterceptor(
+		streamRecoveryInterceptor(),
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),
