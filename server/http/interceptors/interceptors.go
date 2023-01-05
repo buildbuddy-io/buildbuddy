@@ -177,9 +177,9 @@ func (w *instrumentedResponseWriter) WriteHeader(statusCode int) {
 }
 
 func alertOnPanic() {
-       buf := make([]byte, 1<<20)
-       n := runtime.Stack(buf, true)
-       alert.UnexpectedEvent("recovered_panic", buf[:n])
+	buf := make([]byte, 1<<20)
+	n := runtime.Stack(buf, true)
+	alert.UnexpectedEvent("recovered_panic", buf[:n])
 }
 
 func RecoverAndAlert(next http.Handler) http.Handler {
