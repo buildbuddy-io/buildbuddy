@@ -35,6 +35,7 @@ interface Props {
   separateAxis?: boolean;
 
   onBarClicked?: (date: string) => void;
+  onSecondaryBarClicked?: (date: string) => void;
 }
 
 const TrendsChartTooltip = ({
@@ -130,16 +131,24 @@ export default class TrendsChartComponent extends React.Component<Props> {
             )}
             {this.props.extractSecondaryValue && !this.props.secondaryLine && (
               <Bar
-                className={this.props.onBarClicked ? "trends-clickable-bar-secondary" : ""}
+                className={
+                  this.props.onBarClicked || this.props.onSecondaryBarClicked ? "trends-clickable-bar-secondary" : ""
+                }
                 yAxisId={this.props.separateAxis ? "secondary" : "primary"}
                 name={this.props.secondaryName}
                 dataKey={this.props.extractSecondaryValue}
                 fill="#03A9F4">
                 {this.props.data.map((date, index) => (
                   <Cell
-                    cursor={this.props.onBarClicked ? "pointer" : "default"}
+                    cursor={this.props.onBarClicked || this.props.onSecondaryBarClicked ? "pointer" : "default"}
                     key={`cell-${index}`}
-                    onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : null}
+                    onClick={
+                      this.props.onSecondaryBarClicked
+                        ? this.props.onSecondaryBarClicked.bind(this, date)
+                        : this.props.onBarClicked
+                        ? this.props.onBarClicked.bind(this, date)
+                        : null
+                    }
                   />
                 ))}
               </Bar>
