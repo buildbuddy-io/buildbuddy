@@ -3,24 +3,37 @@
 }
 
 .slider-track {
-  height: 2px;
+  height: 4px;
   background-color: gray;
 }
 
+.slider-track-0 {
+  background-color: #e0e0e0;
+  border-top-left-radius: 2px;
+  border-bottom-left-radius: 2px;
+}
+
+.slider-track-2 {
+  background-color: #e0e0e0;
+  border-top-right-radius: 2px;
+  border-bottom-right-radius: 2px;
+}
+
 .slider-thumb {
-  width: 32px;
 }
 
 .slider-thumb-circle {
-  margin-top: -5px;
-  width: 10px;
-  height: 10px;
+  margin-top: -6px;
+  width: 12px;
+  height: 12px;
   border: 1px solid darkslategray;
   border-radius: 10px;
   background: darkslategray;
 }
 
 .slider-thumb-value {
+  width: 48px;
+  height: 48px;
   font-size: 12px;
   text-align: center;
 }

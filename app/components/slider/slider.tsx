@@ -1,11 +1,16 @@
 import React from "react";
-import ReactSlider from "react-slider";
+import ReactSlider, { ReactSliderProps } from "react-slider";
 
-export type SliderProps = Omit<JSX.IntrinsicElements["input"], "type">;
+export type SliderProps = ReactSliderProps;
 
 export function Slider({ className, ...rest }: SliderProps) {
   return (
-    <ReactSlider className="horizontal-slider" thumbClassName="slider-thumb" trackClassName="slider-track" {...rest} />
+    <ReactSlider
+      className={`horizontal-slider ${className || ""}`}
+      thumbClassName="slider-thumb"
+      trackClassName="slider-track"
+      {...rest}
+    />
   );
 }
 
