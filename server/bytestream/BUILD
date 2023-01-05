@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "bytestream",
@@ -16,5 +16,22 @@ go_library(
         "//server/util/ziputil",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "bytestream_test",
+    size = "small",
+    srcs = ["bytestream_test.go"],
+    data = [
+        "no_files.zip",
+        "some_files.zip",
+        "too_many_files.zip",
+    ],
+    embed = [":bytestream"],
+    deps = [
+        "//proto:zip_go_proto",
+        "@com_github_stretchr_testify//assert",
+        "@io_bazel_rules_go//go/tools/bazel:go_default_library",
     ],
 )
