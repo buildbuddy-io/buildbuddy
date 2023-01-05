@@ -40,11 +40,12 @@ func FetchBytestreamZipManifest(ctx context.Context, env environment.Env, url *u
 		return nil, err
 	}
 
-	// Dump the full contents out into a buffer (should be 64K or less).
-	footer := buf.Bytes()
+	// We dump the full contents out into a buffer, but that should be 64K or less.
+	return parseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
+}
 
-	// Find and parse the End of Central Directory header or fail.
-	eocd, err := ziputil.ReadDirectoryEnd(footer, r.GetDigest().GetSizeBytes())
+func parseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
+	eocd, err := ziputil.ReadDirectoryEnd(footer, trueFileSize)
 	if err != nil {
 		return nil, err
 	}
