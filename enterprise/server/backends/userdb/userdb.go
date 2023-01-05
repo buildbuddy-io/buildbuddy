@@ -536,11 +536,11 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 }
 
 func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
-	c := d.getDefaultGroupConfig()
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var existing tables.Group
 		if err := tx.Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
+				c := d.getDefaultGroupConfig()
 				if c.apiKeyValue == "" {
 					c.apiKeyValue = newAPIKeyToken()
 				}
@@ -550,6 +550,9 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 				if err := tx.Create(&c.group).Error; err != nil {
 					return err
 				}
+				if api_config.APIEnabled() {
+					c.apiKeyValue = newAPIKeyToken()
+				}
 				if _, err := createAPIKey(tx, DefaultGroupID, c.apiKeyValue, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 					return err
 				}
@@ -558,7 +561,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 			return err
 		}
 
-		return tx.Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(c.group).Error
+		return tx.Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig().group).Error
 	})
 }
 
@@ -573,9 +576,6 @@ func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
 			GroupID: DefaultGroupID,
 			Name:    "Organization",
 		},
-	}
-	if api_config.APIEnabled() {
-		c.apiKeyValue = api_config.Key()
 	}
 	if *orgName != "" {
 		c.group.Name = *orgName
@@ -632,8 +632,8 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		groupIDs = append(groupIDs, sug.GroupID)
 	}
 
-	cfg := d.getDefaultGroupConfig()
 	if !*noDefaultUserGroup {
+		cfg := d.getDefaultGroupConfig()
 		if cfg.group.OwnedDomain != "" && cfg.group.OwnedDomain != emailDomain {
 			return status.FailedPreconditionErrorf("Failed to create user, email address: %s does not belong to domain: %s", u.Email, cfg.group.OwnedDomain)
 		}
