@@ -65,9 +65,12 @@ func parseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*z
 	return &zipb.Manifest{Entry: entries}, nil
 }
 
-func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry) (int, error) {
+// Just a little song and dance so that we can mock out streamingin tests.
+type Bytestreamer func(ctx context.Context, env environment.Env, url *url.URL, offset int64, limit int64, writer io.Writer) error
+
+func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
 	var buf bytes.Buffer
-	err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
+	err := streamer(ctx, env, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
 	if err != nil {
 		return -1, err
 	}
@@ -75,7 +78,11 @@ func validateLocalFileHeader(ctx context.Context, env environment.Env, url *url.
 }
 
 func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
-	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, env, url, entry)
+	return streamSingleFileFromBytestreamZipInternal(ctx, env, url, entry, out, StreamBytestreamFileChunk)
+}
+
+func streamSingleFileFromBytestreamZipInternal(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
+	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, env, url, entry, streamer)
 	if err != nil {
 		return err
 	}
@@ -84,7 +91,7 @@ func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env,
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	go func() {
-		err := StreamBytestreamFileChunk(ctx, env, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
+		err := streamer(ctx, env, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
 		// StreamBytestreamFileChunk shouldn't return EOF, but let's just be safe.
 		if err != nil && err != io.EOF {
 			writer.CloseWithError(err)
