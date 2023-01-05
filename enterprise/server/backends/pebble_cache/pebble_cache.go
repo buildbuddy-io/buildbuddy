@@ -70,6 +70,8 @@ var (
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	isolateByGroupIDsFlag     = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys for AC records will include groupIDs")
+	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
+	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 
 	// Compression related flags
 	// TODO(Maggie): Remove enableZstdCompressionFlag after migration
@@ -107,16 +109,6 @@ const (
 	partitionDirectoryPrefix     = "PT"
 	partitionMetadataFlushPeriod = 5 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
-
-	// sampleN is the number of random files to sample when adding a new
-	// deletion candidate to the sample pool. Increasing this number
-	// makes eviction slower but improves sampled-LRU accuracy.
-	sampleN = 10
-
-	// samplePoolSize is the number of deletion candidates to maintain in
-	// memory at a time. Increasing this number uses more memory but
-	// improves sampled-LRU accuracy.
-	samplePoolSize = 100
 
 	// atimeFlushPeriod is the time interval that we will wait before
 	// flushing any atime updates in an incomplete batch (that have not
@@ -1420,7 +1412,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		part:              part,
 		fileStorer:        fileStorer,
 		blobDir:           blobDir,
-		samplePool:        make([]*evictionPoolEntry, 0, samplePoolSize),
+		samplePool:        make([]*evictionPoolEntry, 0, *samplePoolSize),
 		dbGetter:          dbg,
 		accesses:          accesses,
 		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -1802,7 +1794,7 @@ func (e *partitionEvictor) resampleK(k int) error {
 	// read new entries to put in the pool.
 	additions := make([]*evictionPoolEntry, 0, k)
 	for i := 0; i < k; i++ {
-		entries, err := e.randomSample(iter, sampleN)
+		entries, err := e.randomSample(iter, *samplesPerEviction)
 		if err != nil {
 			return err
 		}
@@ -1832,8 +1824,8 @@ func (e *partitionEvictor) resampleK(k int) error {
 		})
 	}
 
-	if len(e.samplePool) > samplePoolSize {
-		e.samplePool = e.samplePool[:samplePoolSize]
+	if len(e.samplePool) > *samplePoolSize {
+		e.samplePool = e.samplePool[:*samplePoolSize]
 	}
 
 	return nil
@@ -1881,7 +1873,7 @@ func (e *partitionEvictor) evict(count int) (*evictionPoolEntry, error) {
 		// the pool.
 		if lastCount == evicted {
 			e.samplePool = e.samplePool[:0]
-			if err := e.resampleK(samplePoolSize); err != nil {
+			if err := e.resampleK(*samplePoolSize); err != nil {
 				return nil, err
 			}
 		}
