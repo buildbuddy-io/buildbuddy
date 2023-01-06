@@ -87,6 +87,8 @@ var (
 	enableSplittingReplicas            = flag.Bool("cache.raft.enable_splitting_replicas", true, "If set, allow splitting oversize replicas")
 	replicaSplitSizeBytes              = flag.Int64("cache.raft.replica_split_size_bytes", 2e7, "Split replicas after they reach this size")
 	partitionUsageDeltaGossipThreshold = flag.Int("cache.raft.partition_usage_delta_bytes_threshold", 100e6, "Gossip partition usage information if it has changed by more than this amount since the last gossip.")
+	samplesPerEviction                 = flag.Int("cache.raft.samples_per_eviction", 20, "How many records to sample on each eviction")
+	samplePoolSize                     = flag.Int("cache.raft.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 )
 
 type nodePartitionUsage struct {
@@ -272,7 +274,9 @@ func newUsageTracker(store *Store, gossipManager *gossip.GossipManager, partitio
 		ut.byPartition[p.ID] = u
 		maxSizeBytes := int64(evictionCutoffThreshold * float64(p.MaxSizeBytes))
 		l, err := approxlru.New(&approxlru.Opts[*ReplicaSample]{
-			MaxSizeBytes: maxSizeBytes,
+			SamplePoolSize:     *samplePoolSize,
+			SamplesPerEviction: *samplesPerEviction,
+			MaxSizeBytes:       maxSizeBytes,
 			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*ReplicaSample]) (skip bool, err error) {
 				return u.evict(ctx, sample)
 			},

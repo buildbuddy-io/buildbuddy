@@ -12,16 +12,6 @@ import (
 )
 
 const (
-	// sampleN is the number of random files to sample when adding a new
-	// deletion candidate to the sample pool. Increasing this number
-	// makes eviction slower but improves sampled-LRU accuracy.
-	sampleN = 10
-
-	// samplePoolSize is the number of deletion candidates to maintain in
-	// memory at a time. Increasing this number uses more memory but
-	// improves sampled-LRU accuracy.
-	samplePoolSize = 100
-
 	// evictCheckPeriod is how often the janitor thread will wake up to
 	// check the cache size.
 	evictCheckPeriod = 1 * time.Second
@@ -73,10 +63,12 @@ type OnRefresh[T Key] func(ctx context.Context, key T) (skip bool, timestamp tim
 //	https://github.com/redis/redis/blob/unstable/src/evict.c#L118 and
 //	http://antirez.com/news/109
 type LRU[T Key] struct {
-	maxSizeBytes int64
-	onEvict      OnEvict[T]
-	onSample     OnSample[T]
-	onRefresh    OnRefresh[T]
+	samplesPerEviction int
+	samplePoolSize     int
+	maxSizeBytes       int64
+	onEvict            OnEvict[T]
+	onSample           OnSample[T]
+	onRefresh          OnRefresh[T]
 
 	samplePool []*Sample[T]
 
@@ -91,12 +83,26 @@ type LRU[T Key] struct {
 
 type Opts[T Key] struct {
 	MaxSizeBytes int64
-	OnEvict      OnEvict[T]
-	OnSample     OnSample[T]
-	OnRefresh    OnRefresh[T]
+	// SamplesPerEviction is the number of random keys to sample when adding a
+	// new deletion candidate to the sample pool. Increasing this number
+	// makes eviction slower but improves sampled-LRU accuracy.
+	SamplesPerEviction int
+	// SamplePoolSize is the number of deletion candidates to maintain in
+	// memory at a time. Increasing this number uses more memory but
+	// improves sampled-LRU accuracy.
+	SamplePoolSize int
+	OnEvict        OnEvict[T]
+	OnSample       OnSample[T]
+	OnRefresh      OnRefresh[T]
 }
 
 func New[T Key](opts *Opts[T]) (*LRU[T], error) {
+	if opts.SamplePoolSize == 0 {
+		return nil, status.FailedPreconditionError("sample pool size is required")
+	}
+	if opts.SamplesPerEviction == 0 {
+		return nil, status.FailedPreconditionError("samples per eviction is required")
+	}
 	if opts.MaxSizeBytes == 0 {
 		return nil, status.FailedPreconditionError("max size is required")
 	}
@@ -110,10 +116,12 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 		return nil, status.FailedPreconditionError("refresh callback is required")
 	}
 	l := &LRU[T]{
-		maxSizeBytes: opts.MaxSizeBytes,
-		onEvict:      opts.OnEvict,
-		onSample:     opts.OnSample,
-		onRefresh:    opts.OnRefresh,
+		samplePoolSize:     opts.SamplePoolSize,
+		samplesPerEviction: opts.SamplesPerEviction,
+		maxSizeBytes:       opts.MaxSizeBytes,
+		onEvict:            opts.OnEvict,
+		onSample:           opts.OnSample,
+		onRefresh:          opts.OnRefresh,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	l.ctx = ctx
@@ -169,9 +177,9 @@ func (l *LRU[T]) resampleK(k int) error {
 	}
 
 	// read new entries to put in the pool.
-	additions := make([]*Sample[T], 0, k*sampleN)
+	additions := make([]*Sample[T], 0, k*l.samplesPerEviction)
 	for i := 0; i < k; i++ {
-		entries, err := l.onSample(l.ctx, sampleN)
+		entries, err := l.onSample(l.ctx, l.samplesPerEviction)
 		if err != nil {
 			return err
 		}
@@ -207,8 +215,8 @@ func (l *LRU[T]) resampleK(k int) error {
 		})
 	}
 
-	if len(l.samplePool) > samplePoolSize {
-		l.samplePool = l.samplePool[:samplePoolSize]
+	if len(l.samplePool) > l.samplePoolSize {
+		l.samplePool = l.samplePool[:l.samplePoolSize]
 	}
 
 	return nil
@@ -250,7 +258,7 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 		// If no candidates were evictable in the whole pool, resample
 		// the pool.
 		l.samplePool = l.samplePool[:0]
-		if err := l.resampleK(samplePoolSize); err != nil {
+		if err := l.resampleK(l.samplePoolSize); err != nil {
 			return nil, err
 		}
 	}
