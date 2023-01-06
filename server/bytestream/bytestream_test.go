@@ -11,6 +11,7 @@ import (
 
 	"github.com/bazelbuild/rules_go/go/tools/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"google.golang.org/protobuf/proto"
 
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 )
@@ -46,7 +47,7 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 	path, _ := bazel.Runfile("some_files.zip")
 	bytes, _ := os.ReadFile(path)
 	manifest, _ := parseZipManifestFooter(bytes, 0, int64(len(bytes)))
-	if expected != manifest {
+	if !proto.Equal(expected, manifest) {
 		t.Fatalf("Incorrect manifest. Expected: %v\n Actual: %v", expected, manifest)
 	}
 }
@@ -56,7 +57,7 @@ func TestManifest_NoFilesZip(t *testing.T) {
 	path, _ := bazel.Runfile("no_files.zip")
 	bytes, _ := os.ReadFile(path)
 	manifest, _ := parseZipManifestFooter(bytes, 0, int64(len(bytes)))
-	if expected != manifest {
+	if !proto.Equal(expected, manifest) {
 		t.Fatalf("Incorrect manifest. Expected: %v\n Actual: %v", expected, manifest)
 	}
 }

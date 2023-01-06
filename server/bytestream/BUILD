@@ -33,5 +33,6 @@ go_test(
         "//proto:zip_go_proto",
         "//server/environment",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@org_golang_google_protobuf//proto",
     ],
 )
