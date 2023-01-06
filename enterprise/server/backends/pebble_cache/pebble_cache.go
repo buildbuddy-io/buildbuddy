@@ -1009,7 +1009,19 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
-	wc, err := p.Writer(ctx, r)
+	wc, err := p.RealWriter(ctx, r, nil)
+	if err != nil {
+		return err
+	}
+	defer wc.Close()
+	if _, err := wc.Write(data); err != nil {
+		return err
+	}
+	return wc.Commit()
+}
+
+func (p *PebbleCache) SetWithAtime(ctx context.Context, r *resource.ResourceName, data []byte, atime time.Time) error {
+	wc, err := p.RealWriter(ctx, r, &atime)
 	if err != nil {
 		return err
 	}
@@ -1242,6 +1254,10 @@ func (z *zstdCompressor) Close() error {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return p.RealWriter(ctx, r, nil)
+}
+
+func (p *PebbleCache) RealWriter(ctx context.Context, r *resource.ResourceName, atime *time.Time) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1303,6 +1319,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	wc.CloseFn = db.Close
 	wc.CommitFn = func(bytesWritten int64) error {
 		now := time.Now().UnixMicro()
+		if atime != nil {
+			now = atime.UnixMicro()
+		}
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: wcm.Metadata(),
@@ -1688,6 +1707,9 @@ func (e *partitionEvictor) randomSample(iter *pebble.Iterator, k int) ([]*evicti
 		if !valid {
 			continue
 		}
+		//if bytes.Contains(randKey, []byte("/ac/")) {
+		//	log.Infof("Rand key %q found key %q", string(randKey), string(iter.Key()))
+		//}
 		fileMetadata := &rfpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return nil, err
