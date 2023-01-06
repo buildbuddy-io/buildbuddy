@@ -11,7 +11,6 @@ import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import FilterComponent from "../filter/filter";
-import { DurationSlider } from "../filter/filter_util";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
@@ -118,8 +117,8 @@ export default class HistoryComponent extends React.Component<Props, State> {
         commitSha: this.props.commit || filterParams.commit,
         command: filterParams.command,
         groupId: this.props.user?.selectedGroup?.id,
-        minimumDurationMillis: DurationSlider.toMillis(filterParams.minimumDuration || ""),
-        maximumDurationMillis: DurationSlider.toMillis(filterParams.maximumDuration || ""),
+        minimumDurationMillis: filterParams.minimumDuration,
+        maximumDurationMillis: filterParams.maximumDuration,
       }),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),

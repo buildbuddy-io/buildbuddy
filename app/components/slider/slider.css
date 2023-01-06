@@ -4,7 +4,7 @@
 
 .slider-track {
   height: 4px;
-  background-color: gray;
+  background-color: #263238;
 }
 
 .slider-track-0 {
@@ -32,7 +32,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: darkslategray;
+  background: #263238;
 }
 
 .slider-thumb-value {

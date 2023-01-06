@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import Radio from "../../../app/components/radio/radio";
-import { formatDateRange } from "../../../app/format/format";
+import { compactDurationSec, formatDateRange } from "../../../app/format/format";
 import router, {
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
@@ -51,7 +51,11 @@ import {
   DEFAULT_LAST_N_DAYS,
   SortBy,
   SortOrder,
-  DurationSlider,
+  DURATION_SLIDER_VALUES,
+  DURATION_SLIDER_MIN_INDEX,
+  DURATION_SLIDER_MIN_VALUE,
+  DURATION_SLIDER_MAX_INDEX,
+  DURATION_SLIDER_MAX_VALUE,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
 
@@ -72,8 +76,8 @@ interface State {
   commit?: string;
   host?: string;
   command?: string;
-  minimumDuration?: string;
-  maximumDuration?: string;
+  minimumDuration?: number;
+  maximumDuration?: number;
 
   sortBy: string;
   sortOrder: string;
@@ -125,8 +129,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       commit: search.get(COMMIT_PARAM_NAME),
       host: search.get(HOST_PARAM_NAME),
       command: search.get(COMMAND_PARAM_NAME),
-      minimumDuration: search.get(MINIMUM_DURATION_PARAM_NAME),
-      maximumDuration: search.get(MAXIMUM_DURATION_PARAM_NAME),
+      minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)),
+      maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)),
       sortBy: search.get(SORT_BY_PARAM_NAME),
       sortOrder: search.get(SORT_ORDER_PARAM_NAME),
     };
@@ -258,8 +262,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMIT_PARAM_NAME]: this.state.commit,
       [HOST_PARAM_NAME]: this.state.host,
       [COMMAND_PARAM_NAME]: this.state.command,
-      [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration,
-      [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration,
+      [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration?.toString(),
+      [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration?.toString(),
     });
   }
 
@@ -396,7 +400,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             )}
             {(minimumDurationValue || maximumDurationValue) && (
               <span className="advanced-badge">
-                <Timer /> {minimumDurationValue} - {maximumDurationValue}
+                <Timer /> {compactDurationSec(Number(minimumDurationValue))} -{" "}
+                {compactDurationSec(Number(maximumDurationValue))}
               </span>
             )}
           </OutlinedButton>
@@ -482,28 +487,26 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                   <div className="option-group-title">Duration</div>
                   <div className="option-group-input">
                     <Slider
-                      defaultValue={[
-                        DurationSlider.fromDisplayValue(
-                          this.state.minimumDuration || DurationSlider.minDisplayValue()
-                        ).toString(),
-                        DurationSlider.fromDisplayValue(
-                          this.state.maximumDuration || DurationSlider.maxDisplayValue()
-                        ).toString(),
+                      value={[
+                        DURATION_SLIDER_VALUES.indexOf(this.state.minimumDuration || DURATION_SLIDER_MIN_VALUE),
+                        DURATION_SLIDER_VALUES.indexOf(this.state.maximumDuration || DURATION_SLIDER_MAX_VALUE),
                       ]}
                       renderThumb={(props, state) => (
                         <div {...props}>
-                          <div class="slider-thumb-circle"></div>
-                          <div class="slider-thumb-value">{DurationSlider.toDisplayValue(state.valueNow)}</div>
+                          <div className="slider-thumb-circle"></div>
+                          <div className="slider-thumb-value">
+                            {compactDurationSec(DURATION_SLIDER_VALUES[state.valueNow])}
+                          </div>
                         </div>
                       )}
-                      min={DurationSlider.minValue()}
-                      max={DurationSlider.maxValue()}
+                      min={DURATION_SLIDER_MIN_INDEX}
+                      max={DURATION_SLIDER_MAX_INDEX}
                       pearling
                       minDistance={1}
                       onChange={(e) =>
                         this.setState({
-                          minimumDuration: DurationSlider.toDisplayValue(e[0]),
-                          maximumDuration: DurationSlider.toDisplayValue(e[1]),
+                          minimumDuration: DURATION_SLIDER_VALUES[e[0]],
+                          maximumDuration: DURATION_SLIDER_VALUES[e[1]],
                         })
                       }
                     />

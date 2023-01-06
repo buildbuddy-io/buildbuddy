@@ -145,105 +145,47 @@ export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): str
     .join(" ");
 }
 
-class BiMap {
-  forwardMap: Map<number, string>;
-  reverseMap: Map<string, number>;
-  constructor(map: Map<number, string>) {
-    this.forwardMap = new Map<number, string>();
-    this.reverseMap = new Map<string, number>();
-    map.forEach((value: string, key: number) => {
-      this.forwardMap[key] = value;
-      this.reverseMap[value] = key;
-    });
-  }
-  get(key: number): string {
-    return this.forwardMap[key];
-  }
-  revGet(key: string): number {
-    return this.reverseMap[key];
-  }
-}
-
-export class DurationSlider {
-  // Map of linear slider values (1, 2, 3, ...) to sort-of logarithmic scale duration display values.
-  static values = new BiMap(
-    new Map([
-      [0, "0s"],
-      [1, "1s"],
-      [2, "2s"],
-      [3, "3s"],
-      [4, "4s"],
-      [5, "5s"],
-      [6, "10s"],
-      [7, "15s"],
-      [8, "20s"],
-      [9, "25s"],
-      [10, "30s"],
-      [11, "40s"],
-      [12, "45s"],
-      [13, "50s"],
-      [14, "1m"],
-      [15, "2m"],
-      [16, "3m"],
-      [17, "4m"],
-      [18, "5m"],
-      [19, "10m"],
-      [20, "15m"],
-      [21, "20m"],
-      [22, "25m"],
-      [23, "30m"],
-      [24, "40m"],
-      [25, "50m"],
-      [26, "1h"],
-      [27, "2h"],
-      [28, "3h"],
-      [29, "4h"],
-      [30, "5h"],
-      [31, "6h"],
-      [32, "7h"],
-      [33, "8h"],
-      [34, "9h"],
-      [35, "10h"],
-      [36, "11h"],
-      [37, "12h"],
-      [38, "∞"],
-    ])
-  );
-
-  static minValue(): number {
-    return 0;
-  }
-
-  static minDisplayValue(): string {
-    return this.toDisplayValue(this.minValue());
-  }
-
-  static maxValue(): number {
-    return 38;
-  }
-
-  static maxDisplayValue(): string {
-    return this.toDisplayValue(this.maxValue());
-  }
-
-  static toDisplayValue(value: number): string {
-    return this.values.get(value);
-  }
-
-  static fromDisplayValue(value: string): number {
-    return this.values.revGet(value);
-  }
-
-  static toMillis(value: string): number {
-    if (value.charAt(value.length - 1) == "s") {
-      return Number(value.replace("s", "")) * 1000;
-    }
-    if (value.charAt(value.length - 1) == "m") {
-      return Number(value.replace("m", "")) * 60 * 1000;
-    }
-    if (value.charAt(value.length - 1) == "h") {
-      return Number(value.replace("h", "")) * 60 * 60 * 1000;
-    }
-    return -1;
-  }
-}
+export const DURATION_SLIDER_VALUES = [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  10,
+  15,
+  20,
+  25,
+  30,
+  40,
+  50,
+  60,
+  120,
+  180,
+  240,
+  300,
+  600,
+  900,
+  1200,
+  1500,
+  1800,
+  2400,
+  3000,
+  3600,
+  7200,
+  10800,
+  14400,
+  18000,
+  21600,
+  25200,
+  28800,
+  32400,
+  36000,
+  39600,
+  43200,
+  86400,
+];
+export const DURATION_SLIDER_MIN_INDEX = 0;
+export const DURATION_SLIDER_MIN_VALUE = DURATION_SLIDER_VALUES[DURATION_SLIDER_MIN_INDEX];
+export const DURATION_SLIDER_MAX_INDEX = DURATION_SLIDER_VALUES.length - 1;
+export const DURATION_SLIDER_MAX_VALUE = DURATION_SLIDER_VALUES[DURATION_SLIDER_MAX_INDEX];
