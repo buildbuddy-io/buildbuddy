@@ -24,11 +24,17 @@ const (
 
 // FakeProvider implements the git provider interface for tests.
 type FakeProvider struct {
+	// Captured values
+
 	RegisteredWebhookURL  string
 	UnregisteredWebhookID string
-	WebhookData           *interfaces.WebhookData
-	FileContents          map[string]string
-	TrustedUsers          []string
+
+	// Faked values
+
+	RegisterWebhookError error
+	WebhookData          *interfaces.WebhookData
+	FileContents         map[string]string
+	TrustedUsers         []string
 }
 
 func NewFakeProvider() *FakeProvider {
@@ -48,6 +54,9 @@ func (p *FakeProvider) ParseWebhookData(req *http.Request) (*interfaces.WebhookD
 	return p.WebhookData, nil
 }
 func (p *FakeProvider) RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error) {
+	if p.RegisterWebhookError != nil {
+		return "", p.RegisterWebhookError
+	}
 	p.RegisteredWebhookURL = webhookURL
 	return FakeWebhookID, nil
 }

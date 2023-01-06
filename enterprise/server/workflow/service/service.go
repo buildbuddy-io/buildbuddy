@@ -203,8 +203,8 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	rsp := &wfpb.CreateWorkflowResponse{}
 
 	providerWebhookID, err := provider.RegisterWebhook(ctx, accessToken, repoURL, webhookURL)
-	if err != nil && !status.IsUnimplementedError(err) {
-		return nil, err
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to register webhook with git provider: %s", err)
 	}
 	rsp.WebhookRegistered = (providerWebhookID != "")
 
