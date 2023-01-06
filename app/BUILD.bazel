@@ -61,6 +61,7 @@ genrule(
         "//app/components/modal:modal.css",
         "//app/components/popup:popup.css",
         "//app/components/select:select.css",
+        "//app/components/slider:slider.css",
         "//app/components/radio:radio.css",
         "//app/components/checkbox:checkbox.css",
         "//app/components/spinner:spinner.css",

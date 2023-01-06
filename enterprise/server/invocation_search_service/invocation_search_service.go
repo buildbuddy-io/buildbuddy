@@ -171,6 +171,18 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
 	}
 
+	// The underlying data is not precise enough to accurately support nanoseconds and there's no use case for it yet.
+	if req.GetQuery().GetMinimumDuration().GetNanos() != 0 || req.GetQuery().GetMaximumDuration().GetNanos() != 0 {
+		return nil, status.InvalidArgumentError("InvocationSearchService does not support nanoseconds in duration queries")
+	}
+
+	if req.GetQuery().GetMinimumDuration().GetSeconds() != 0 {
+		q.AddWhereClause(`duration_usec >= ?`, req.GetQuery().GetMinimumDuration().GetSeconds()*1000*1000)
+	}
+	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
+		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
+	}
+
 	// Always add permissions check.
 	addPermissionsCheckToQuery(u, q)
 

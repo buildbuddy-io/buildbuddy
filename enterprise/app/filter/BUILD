@@ -11,6 +11,7 @@ ts_library(
         "//app/components/input",
         "//app/components/popup",
         "//app/components/radio",
+        "//app/components/slider",
         "//app/format",
         "//app/router",
         "//app/util:proto",

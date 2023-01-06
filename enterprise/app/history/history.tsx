@@ -16,6 +16,7 @@ import HistoryInvocationCardComponent from "./history_invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
 import { ProtoFilterParams, getProtoFilterParams } from "../filter/filter_util";
 import Spinner from "../../../app/components/spinner/spinner";
+import Long from "long";
 import { BarChart2, CheckCircle, Clock, GitCommit, Github, Hash, Percent, XCircle } from "lucide-react";
 
 interface State {
@@ -117,6 +118,12 @@ export default class HistoryComponent extends React.Component<Props, State> {
         commitSha: this.props.commit || filterParams.commit,
         command: filterParams.command,
         groupId: this.props.user?.selectedGroup?.id,
+        minimumDuration: {
+          seconds: new Long(parseInt(filterParams.minimumDuration || "0")),
+        },
+        maximumDuration: {
+          seconds: new Long(parseInt(filterParams.maximumDuration || "0")),
+        },
       }),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),

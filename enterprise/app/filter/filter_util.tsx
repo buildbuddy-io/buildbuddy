@@ -14,6 +14,8 @@ import {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
+  MINIMUM_DURATION_PARAM_NAME,
+  MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router";
@@ -49,6 +51,8 @@ export interface ProtoFilterParams {
   commit: string;
   host: string;
   command: string;
+  minimumDuration?: string;
+  maximumDuration?: string;
 
   sortBy?: SortBy;
   sortOrder?: SortOrder;
@@ -70,6 +74,8 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     commit: search.get(COMMIT_PARAM_NAME),
     host: search.get(HOST_PARAM_NAME),
     command: search.get(COMMAND_PARAM_NAME),
+    minimumDuration: search.get(MINIMUM_DURATION_PARAM_NAME),
+    maximumDuration: search.get(MAXIMUM_DURATION_PARAM_NAME),
 
     sortBy: search.get(SORT_BY_PARAM_NAME) as SortBy,
     sortOrder: search.get(SORT_ORDER_PARAM_NAME) as SortOrder,
@@ -138,3 +144,49 @@ export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): str
     .sort((a, b) => statusFromString(a) - statusFromString(b))
     .join(" ");
 }
+
+/** Duration slider values, in seconds. **/
+export const DURATION_SLIDER_VALUES = [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  10,
+  15,
+  20,
+  25,
+  30,
+  40,
+  50,
+  60,
+  2 * 60,
+  3 * 60,
+  4 * 60,
+  5 * 60,
+  10 * 60,
+  15 * 60,
+  20 * 60,
+  25 * 60,
+  30 * 60,
+  40 * 60,
+  50 * 60,
+  60 * 60,
+  2 * 60 * 60,
+  3 * 60 * 60,
+  4 * 60 * 60,
+  5 * 60 * 60,
+  6 * 60 * 60,
+  7 * 60 * 60,
+  8 * 60 * 60,
+  9 * 60 * 60,
+  10 * 60 * 60,
+  11 * 60 * 60,
+  12 * 60 * 60,
+  24 * 60 * 60,
+];
+export const DURATION_SLIDER_MIN_INDEX = 0;
+export const DURATION_SLIDER_MIN_VALUE = DURATION_SLIDER_VALUES[DURATION_SLIDER_MIN_INDEX];
+export const DURATION_SLIDER_MAX_INDEX = DURATION_SLIDER_VALUES.length - 1;
+export const DURATION_SLIDER_MAX_VALUE = DURATION_SLIDER_VALUES[DURATION_SLIDER_MAX_INDEX];
