@@ -122,8 +122,8 @@ export default class HistoryComponent extends React.Component<Props, State> {
           seconds: new Long(Number(filterParams.minimumDuration)),
         },
         maximumDuration: {
-          seconds: new Long(Number(filterParams.maximumDuration),
-        },
+          seconds: new Long(Number(filterParams.maximumDuration)),
+        }
       }),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),
