@@ -119,10 +119,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
         command: filterParams.command,
         groupId: this.props.user?.selectedGroup?.id,
         minimumDuration: {
-          seconds: new Long(Number(filterParams.minimumDuration)),
+          seconds: new Long(parseInt(filterParams.minimumDuration || "0")),
         },
         maximumDuration: {
-          seconds: new Long(Number(filterParams.maximumDuration)),
+          seconds: new Long(parseInt(filterParams.maximumDuration || "0")),
         },
       }),
       sort: new invocation.InvocationSort({

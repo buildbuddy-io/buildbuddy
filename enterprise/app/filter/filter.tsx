@@ -8,13 +8,13 @@ import {
   Filter,
   X,
   Calendar,
+  Clock,
   User,
   Github,
   GitBranch,
   GitCommit,
   HardDrive,
   Wrench,
-  Timer,
   SortAsc,
   SortDesc,
 } from "lucide-react";
@@ -400,7 +400,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             )}
             {(minimumDurationValue || maximumDurationValue) && (
               <span className="advanced-badge">
-                <Timer /> {compactDurationSec(Number(minimumDurationValue))} -{" "}
+                <Clock /> {compactDurationSec(Number(minimumDurationValue))} -{" "}
                 {compactDurationSec(Number(maximumDurationValue))}
               </span>
             )}
