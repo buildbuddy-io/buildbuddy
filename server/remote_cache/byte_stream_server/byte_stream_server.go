@@ -161,7 +161,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		}
 	}
 	bytesFromCache := bytesTransferredToClient
-	compressedReader, isCompressedReader := reader.(compression.ZstdCompressor)
+	compressedReader, isCompressedReader := reader.(*compression.ZstdCompressor)
 	if isCompressedReader {
 		bytesFromCache = compressedReader.NumDecompressedBytes()
 	}
