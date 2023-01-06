@@ -294,6 +294,7 @@ proto_library(
         ":cache_proto",
         ":command_line_proto",
         ":context_proto",
+        "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )

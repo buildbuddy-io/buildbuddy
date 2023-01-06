@@ -117,8 +117,12 @@ export default class HistoryComponent extends React.Component<Props, State> {
         commitSha: this.props.commit || filterParams.commit,
         command: filterParams.command,
         groupId: this.props.user?.selectedGroup?.id,
-        minimumDurationMillis: filterParams.minimumDuration,
-        maximumDurationMillis: filterParams.maximumDuration,
+        minimumDuration: {
+          seconds: filterParams.minimumDuration || 0,
+        },
+        maximumDuration: {
+          seconds: filterParams.maximumDuration || 0,
+        },
       }),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),

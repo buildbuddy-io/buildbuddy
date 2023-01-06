@@ -7,6 +7,7 @@ import "proto/cache.proto";
 import "proto/command_line.proto";
 import "proto/context.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 
 package invocation;
 
@@ -231,11 +232,11 @@ message InvocationQuery {
   // The bazel command that was used. Ex: "build", "test", "run"
   string command = 11;
 
-  // The minimum invocation duration in milliseconds.
-  int64 minimum_duration_millis = 12;
+  // The minimum invocation duration.
+  google.protobuf.Duration minimum_duration = 12;
 
-  // The maximum invocation duration in milliseconds.
-  int64 maximum_duration_millis = 13;
+  // The maximum invocation duration.
+  google.protobuf.Duration maximum_duration = 13;
 }
 
 // OverallStatus is a status representing both the completion status and
