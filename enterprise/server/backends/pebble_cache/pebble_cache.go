@@ -1249,6 +1249,17 @@ func (z *zstdCompressor) Close() error {
 	return z.CustomCommitWriteCloser.Close()
 }
 
+type metricsWriter struct {
+	ct resource.CacheType
+	interfaces.CommittedWriteCloser
+}
+
+func (m metricsWriter) Write(p []byte) (int, error) {
+	n, err := m.CommittedWriteCloser.Write(p)
+	metrics.CacheUploadSizeBytes.With(prometheus.Labels{metrics.CacheTypeLabel: cacheTypeLabel(m.ct)}).Observe(float64(len(p)))
+	return n, err
+}
+
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -1334,10 +1345,12 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	}
 
 	if shouldCompress {
-		return NewZstdCompressor(p.name, wc, p.bufferPool, r.GetDigest().GetSizeBytes()), nil
+		return metricsWriter{
+			CommittedWriteCloser: NewZstdCompressor(p.name, wc, p.bufferPool, r.GetDigest().GetSizeBytes()), ct: r.GetCacheType(),
+		}, nil
 	}
 
-	return wc, nil
+	return metricsWriter{CommittedWriteCloser: wc, ct: r.GetCacheType()}, nil
 }
 
 func (p *PebbleCache) DoneScanning() bool {
@@ -2018,6 +2031,24 @@ type readCloser struct {
 	io.Closer
 }
 
+type metricsReader struct {
+	ct resource.CacheType
+	io.ReadCloser
+}
+
+func (m metricsReader) Read(p []byte) (int, error) {
+	n, err := m.ReadCloser.Read(p)
+	metrics.CacheDownloadSizeBytes.With(prometheus.Labels{metrics.CacheTypeLabel: cacheTypeLabel(m.ct)}).Observe(float64(len(p)))
+	return n, err
+}
+
+func cacheTypeLabel(ct resource.CacheType) string {
+	if ct == resource.CacheType_AC {
+		return "action_cache"
+	}
+	return "cas"
+}
+
 func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *resource.ResourceName, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	partitionID := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
 	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
@@ -2045,10 +2076,7 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *re
 		if requestedCompression != repb.Compressor_IDENTITY && (uncompressedOffset != 0 || uncompressedLimit != 0) {
 			return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
 		}
-		return reader, nil
-	}
-
-	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
+	} else if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
 		bufSize := int64(CompressorBufSizeBytes)
 		resourceSize := resource.GetDigest().GetSizeBytes()
 		if resourceSize > 0 && resourceSize < bufSize {
@@ -2064,12 +2092,12 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *re
 			p.bufferPool.Put(compressBuf)
 			return nil, err
 		}
-		return &compressionReader{
+		reader = &compressionReader{
 			ReadCloser:  cr,
 			readBuf:     readBuf,
 			compressBuf: compressBuf,
 			bufferPool:  p.bufferPool,
-		}, err
+		}
 	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
 		dr, err := compression.NewZstdDecompressingReader(reader)
 		if err != nil {
@@ -2085,11 +2113,13 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *re
 		if uncompressedLimit != 0 {
 			dr = &readCloser{io.LimitReader(dr, uncompressedLimit), dr}
 		}
-		return dr, nil
+		reader = dr
 	} else {
 		return nil, fmt.Errorf("unsupported compressor %v requested for %v reader, cached compression is %v",
 			requestedCompression, resource, cachedCompression)
 	}
+
+	return metricsReader{ReadCloser: reader, ct: resource.CacheType}, nil
 }
 
 func (p *PebbleCache) Start() error {
