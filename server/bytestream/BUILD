@@ -31,7 +31,8 @@ go_test(
     embed = [":bytestream"],
     deps = [
         "//proto:zip_go_proto",
-        "@com_github_stretchr_testify//assert",
+        "//server/environment",
         "@io_bazel_rules_go//go/tools/bazel:go_default_library",
+        "@org_golang_google_protobuf//proto",
     ],
 )

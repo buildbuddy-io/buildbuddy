@@ -118,18 +118,12 @@ func ValidateLocalFileHeader(header []byte, entry *zipb.ManifestEntry) (int, err
 	if compressionType == zipb.ManifestEntry_COMPRESSION_TYPE_UNKNOWN {
 		return -1, errAlgorithm
 	}
-	buf = buf[4:] // Skip modification time, modification date.
 
-	crc32 := buf.uint32()
-	compsize := int64(buf.uint32())
-	uncompsize := int64(buf.uint32())
-	if entry.GetCompressedSize() == 0xffffffff || entry.GetUncompressedSize() == 0xffffffff {
-		// These values indicate zip64 format.
-		return -1, errZip64
-	}
-	if entry.GetCrc32() != crc32 || entry.GetCompressedSize() != compsize || entry.GetUncompressedSize() != uncompsize {
-		return -1, errFormat
-	}
+	// Skip modification time, modification date, crc32, compressed size,
+	// and uncompressed size. Sometimes crc32 and compressed size aren't set (as
+	// flagged in the header bitmap), because the compressor didn't know the final
+	// compressed file size. The golang libraries for this just ignore the fields.
+	buf = buf[16:]
 
 	filenameLen := int(buf.uint16())
 	extraLen := int(buf.uint16())
