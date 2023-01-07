@@ -117,16 +117,6 @@ func (d *zstdDecompressor) Close() error {
 	return lastErr
 }
 
-type ZstdCompressor struct {
-	*io.PipeReader
-	// numDecompressedBytes tracks the number of decompressed bytes that were passed into the compressor
-	numDecompressedBytes int
-}
-
-func (c ZstdCompressor) NumDecompressedBytes() int {
-	return c.numDecompressedBytes
-}
-
 // NewZstdCompressingReader returns a reader that reads chunks from the given
 // reader into the read buffer, and makes the zstd-compressed chunks available
 // on the output reader. Each chunk read into the read buffer is immediately
@@ -148,9 +138,6 @@ func (c ZstdCompressor) NumDecompressedBytes() int {
 // at least a few hundred bytes.
 func NewZstdCompressingReader(reader io.Reader, readBuf []byte, compressBuf []byte) (io.ReadCloser, error) {
 	pr, pw := io.Pipe()
-	c := &ZstdCompressor{
-		PipeReader: pr,
-	}
 	go func() {
 		for {
 			n, err := reader.Read(readBuf)
@@ -160,7 +147,6 @@ func NewZstdCompressingReader(reader io.Reader, readBuf []byte, compressBuf []by
 					pw.CloseWithError(err)
 					return
 				}
-				c.numDecompressedBytes += n
 			}
 			if err != nil {
 				pw.CloseWithError(err)
@@ -168,7 +154,7 @@ func NewZstdCompressingReader(reader io.Reader, readBuf []byte, compressBuf []by
 			}
 		}
 	}()
-	return c, nil
+	return pr, nil
 }
 
 // NewZstdDecompressingReader reads zstd-compressed data from the input
