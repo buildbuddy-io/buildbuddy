@@ -167,31 +167,6 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     };
   }
 
-  advancedFilterStateFromUrl(search: URLSearchParams) {
-    return {
-      isAdvancedFilterOpen: Boolean(
-        search.get(USER_PARAM_NAME) ||
-          search.get(REPO_PARAM_NAME) ||
-          search.get(BRANCH_PARAM_NAME) ||
-          search.get(COMMIT_PARAM_NAME) ||
-          search.get(HOST_PARAM_NAME) ||
-          search.get(COMMAND_PARAM_NAME) ||
-          search.get(MINIMUM_DURATION_PARAM_NAME) ||
-          search.get(MAXIMUM_DURATION_PARAM_NAME)
-      ),
-      user: search.get(USER_PARAM_NAME),
-      repo: search.get(REPO_PARAM_NAME),
-      branch: search.get(BRANCH_PARAM_NAME),
-      commit: search.get(COMMIT_PARAM_NAME),
-      host: search.get(HOST_PARAM_NAME),
-      command: search.get(COMMAND_PARAM_NAME),
-      minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
-      maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
-      sortBy: search.get(SORT_BY_PARAM_NAME),
-      sortOrder: search.get(SORT_ORDER_PARAM_NAME),
-    };
-  }
-
   private onOpenDatePicker() {
     this.setState({ isDatePickerOpen: true });
   }
