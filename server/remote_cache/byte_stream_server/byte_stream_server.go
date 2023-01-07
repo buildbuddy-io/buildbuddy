@@ -125,16 +125,22 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 
 	// If the cache doesn't support the requested compression, it will cache decompressed bytes and the server
 	// is in charge of compressing it
+	var bytesFromCache int64
 	if r.GetCompressor() == repb.Compressor_ZSTD && !passthroughCompressionEnabled {
 		rbuf := s.bufferPool.Get(bufSize)
 		defer s.bufferPool.Put(rbuf)
 		cbuf := s.bufferPool.Get(bufSize)
 		defer s.bufferPool.Put(cbuf)
-		reader, err = compression.NewZstdCompressingReader(reader, rbuf[:bufSize], cbuf[:bufSize])
+
+		counter := &ioutil.Counter{}
+		reader, err = compression.NewZstdCompressingReader(io.TeeReader(reader, counter), rbuf[:bufSize], cbuf[:bufSize])
 		if err != nil {
 			return status.InternalErrorf("Failed to compress blob: %s", err)
 		}
 		defer reader.Close()
+
+		// Count the number of bytes from the original reader containing decompressed bytes
+		bytesFromCache = counter.Count()
 	}
 
 	downloadTracker := ht.TrackDownload(r.GetDigest())
@@ -160,13 +166,13 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 			continue
 		}
 	}
-	bytesFromCache := bytesTransferredToClient
-	compressedReader, isCompressedReader := reader.(*compression.ZstdCompressor)
-	if isCompressedReader {
-		bytesFromCache = compressedReader.NumDecompressedBytes()
+	// If the reader was not passed through the compressor above and bytesFromCache is not set, the data will be sent
+	// as is from the cache to the client, and the number of bytes will be equal
+	if bytesFromCache == 0 {
+		bytesFromCache = int64(bytesTransferredToClient)
 	}
 
-	downloadTracker.CloseWithBytesTransferred(int64(bytesFromCache), int64(bytesTransferredToClient), r.GetCompressor())
+	downloadTracker.CloseWithBytesTransferred(bytesFromCache, int64(bytesTransferredToClient), r.GetCompressor())
 	return err
 }
 
