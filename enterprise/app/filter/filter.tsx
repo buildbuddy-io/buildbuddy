@@ -64,18 +64,18 @@ export interface FilterProps {
 }
 
 interface State {
-  isDatePickerOpen?: boolean;
-  isFilterMenuOpen?: boolean;
-  isSortMenuOpen?: boolean;
+  isDatePickerOpen: boolean;
+  isFilterMenuOpen: boolean;
+  isSortMenuOpen: boolean;
 
-  isAdvancedFilterOpen?: boolean;
+  isAdvancedFilterOpen: boolean;
 
-  user?: string;
-  repo?: string;
-  branch?: string;
-  commit?: string;
-  host?: string;
-  command?: string;
+  user: string;
+  repo: string;
+  branch: string;
+  commit: string;
+  host: string;
+  command: string;
   minimumDuration?: number;
   maximumDuration?: number;
 
@@ -103,12 +103,68 @@ type CustomDateRange = Range & {
 const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
 
 export default class FilterComponent extends React.Component<FilterProps, State> {
-  state: State = this.advancedFilterStateFromUrl(this.props.search);
+  state: State = this.newFilterState(this.props.search);
 
   componentDidUpdate(prevProps: FilterProps) {
     if (this.props.search != prevProps.search) {
-      this.setState(this.advancedFilterStateFromUrl(this.props.search));
+      this.setState(this.updateFilterState(this.state, this.props.search));
     }
+  }
+
+  newFilterState(search: URLSearchParams) {
+    return {
+      isDatePickerOpen: false,
+      isFilterMenuOpen: false,
+      isSortMenuOpen: false,
+      isAdvancedFilterOpen: Boolean(
+        search.get(USER_PARAM_NAME) ||
+          search.get(REPO_PARAM_NAME) ||
+          search.get(BRANCH_PARAM_NAME) ||
+          search.get(COMMIT_PARAM_NAME) ||
+          search.get(HOST_PARAM_NAME) ||
+          search.get(COMMAND_PARAM_NAME) ||
+          search.get(MINIMUM_DURATION_PARAM_NAME) ||
+          search.get(MAXIMUM_DURATION_PARAM_NAME)
+      ),
+      user: search.get(USER_PARAM_NAME) || "",
+      repo: search.get(REPO_PARAM_NAME) || "",
+      branch: search.get(BRANCH_PARAM_NAME) || "",
+      commit: search.get(COMMIT_PARAM_NAME) || "",
+      host: search.get(HOST_PARAM_NAME) || "",
+      command: search.get(COMMAND_PARAM_NAME) || "",
+      minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
+      maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
+      sortBy: search.get(SORT_BY_PARAM_NAME) || "",
+      sortOrder: search.get(SORT_ORDER_PARAM_NAME) || "",
+    };
+  }
+
+  updateFilterState(prevState: State, search: URLSearchParams) {
+    return {
+      isDatePickerOpen: prevState.isDatePickerOpen,
+      isFilterMenuOpen: prevState.isFilterMenuOpen,
+      isSortMenuOpen: prevState.isSortMenuOpen,
+      isAdvancedFilterOpen: Boolean(
+        search.get(USER_PARAM_NAME) ||
+          search.get(REPO_PARAM_NAME) ||
+          search.get(BRANCH_PARAM_NAME) ||
+          search.get(COMMIT_PARAM_NAME) ||
+          search.get(HOST_PARAM_NAME) ||
+          search.get(COMMAND_PARAM_NAME) ||
+          search.get(MINIMUM_DURATION_PARAM_NAME) ||
+          search.get(MAXIMUM_DURATION_PARAM_NAME)
+      ),
+      user: search.get(USER_PARAM_NAME) || "",
+      repo: search.get(REPO_PARAM_NAME) || "",
+      branch: search.get(BRANCH_PARAM_NAME) || "",
+      commit: search.get(COMMIT_PARAM_NAME) || "",
+      host: search.get(HOST_PARAM_NAME) || "",
+      command: search.get(COMMAND_PARAM_NAME) || "",
+      minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
+      maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
+      sortBy: search.get(SORT_BY_PARAM_NAME) || "",
+      sortOrder: search.get(SORT_ORDER_PARAM_NAME) || "",
+    };
   }
 
   advancedFilterStateFromUrl(search: URLSearchParams) {
@@ -129,8 +185,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       commit: search.get(COMMIT_PARAM_NAME),
       host: search.get(HOST_PARAM_NAME),
       command: search.get(COMMAND_PARAM_NAME),
-      minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)),
-      maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)),
+      minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
+      maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: search.get(SORT_BY_PARAM_NAME),
       sortOrder: search.get(SORT_ORDER_PARAM_NAME),
     };
@@ -256,14 +312,14 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   private handleFilterApplyClicked() {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
-      [USER_PARAM_NAME]: this.state.user,
-      [REPO_PARAM_NAME]: this.state.repo,
-      [BRANCH_PARAM_NAME]: this.state.branch,
-      [COMMIT_PARAM_NAME]: this.state.commit,
-      [HOST_PARAM_NAME]: this.state.host,
-      [COMMAND_PARAM_NAME]: this.state.command,
-      [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration?.toString(),
-      [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration?.toString(),
+      [USER_PARAM_NAME]: this.state.user || "",
+      [REPO_PARAM_NAME]: this.state.repo || "",
+      [BRANCH_PARAM_NAME]: this.state.branch || "",
+      [COMMIT_PARAM_NAME]: this.state.commit || "",
+      [HOST_PARAM_NAME]: this.state.host || "",
+      [COMMAND_PARAM_NAME]: this.state.command || "",
+      [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration?.toString() || "",
+      [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration?.toString() || "",
     });
   }
 
