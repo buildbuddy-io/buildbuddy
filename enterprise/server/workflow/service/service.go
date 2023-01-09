@@ -163,12 +163,11 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	}
 	permissions := perms.GroupAuthPermissions(groupID)
 
-	// Do a quick check to see if this is a valid repo that we can actually access.
-	repoURL := repoReq.GetRepoUrl()
-	u, err := gitutil.ParseRepoURL(repoURL)
+	u, err := gitutil.NormalizeRepoURL(repoReq.GetRepoUrl())
 	if err != nil {
 		return nil, err
 	}
+	repoURL := u.String()
 
 	provider, err := ws.providerForRepo(u)
 	if err != nil {
@@ -182,11 +181,12 @@ func (ws *workflowService) CreateWorkflow(ctx context.Context, req *wfpb.CreateW
 	if accessToken == "" && isGitHubURL(repoURL) {
 		token, err := ws.gitHubTokenForAuthorizedGroup(ctx, req.GetRequestContext())
 		if err != nil {
-			return nil, err
+			return nil, status.InvalidArgumentError("An access token is required since the current organization does not have a GitHub account linked.")
 		}
 		accessToken = token
 	}
 
+	// Do a quick check to see if this is a valid repo that we can actually access.
 	if err := ws.testRepo(ctx, repoURL, username, accessToken); err != nil {
 		return nil, status.UnavailableErrorf("Repo %q is unavailable: %s", repoURL, err.Error())
 	}

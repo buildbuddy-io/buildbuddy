@@ -181,14 +181,14 @@ func TestCreate_SuccessfullyRegisterWebhook(t *testing.T) {
 	ctx = metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER1")
 	rsp, err := bbClient.CreateWorkflow(ctx, req)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
 	assert.Regexp(t, "^.*/webhooks/workflow/.*", rsp.GetWebhookUrl(), "workflow webhook URL should exist and match /webhooks/workflow/.*")
 	assert.True(t, rsp.GetWebhookRegistered())
 
 	var row tables.Workflow
 	err = te.GetDBHandle().DB(ctx).First(&row).Error
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
 	assert.Equal(t, "GROUP1", row.UserID, "inserted table workflow user should match auth")
 	assert.Equal(t, "GROUP1", row.GroupID, "inserted table workflow group should match auth")
@@ -218,20 +218,51 @@ func TestCreate_NoWebhookPermissions(t *testing.T) {
 	ctx = metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER1")
 	rsp, err := bbClient.CreateWorkflow(ctx, req)
 
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Regexp(t, "^WF.*", rsp.GetId(), "workflow ID should exist and match WF.*")
 	assert.Regexp(t, "^.*/webhooks/workflow/.*", rsp.GetWebhookUrl(), "workflow webhook URL should exist and match /webhooks/workflow/.*")
 	assert.False(t, rsp.GetWebhookRegistered(), "webhook should have failed to register")
 
 	var row tables.Workflow
 	err = te.GetDBHandle().DB(ctx).First(&row).Error
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, rsp.GetId(), row.WorkflowID, "inserted table workflow ID should match create response")
+	assert.Equal(t, repoURL, row.RepoURL)
 	assert.Equal(t, "GROUP1", row.UserID, "inserted table workflow user should match auth")
 	assert.Equal(t, "GROUP1", row.GroupID, "inserted table workflow group should match auth")
 	assert.NotEmpty(t, row.WebhookID, "webhook ID in DB should be nonempty")
 	assert.Contains(t, rsp.GetWebhookUrl(), row.WebhookID, "webhook ID in DB should match the URL")
 	assert.Equal(t, "", row.GitProviderWebhookID, "git provider should not have returned a webhook ID")
+}
+
+func TestCreate_NonNormalizedRepoURL(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	// We are using a github.com URL to test normalization, so disable the repo
+	// downloader just for this test so that it doesn't depend on GitHub.
+	te.SetRepoDownloader(nil)
+	setupFakeGitProvider(t, te)
+	repoURL := "git@github.com:/foo/bar"
+	clientConn := runBBServer(ctx, te, t)
+	bbClient := bbspb.NewBuildBuddyServiceClient(clientConn)
+
+	req := &wfpb.CreateWorkflowRequest{
+		RequestContext: testauth.RequestContext("USER1", "GROUP1"),
+		GitRepo: &wfpb.CreateWorkflowRequest_GitRepo{
+			// Access token is required for GitHub URLs
+			AccessToken: "test-access-token",
+			RepoUrl:     repoURL,
+		},
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER1")
+	_, err := bbClient.CreateWorkflow(ctx, req)
+
+	require.NoError(t, err)
+
+	var row tables.Workflow
+	err = te.GetDBHandle().DB(ctx).First(&row).Error
+	assert.NoError(t, err)
+	assert.Equal(t, "https://github.com/foo/bar", row.RepoURL, "repo URL stored in DB should be normalized")
 }
 
 func TestDelete(t *testing.T) {
@@ -258,7 +289,7 @@ func TestDelete(t *testing.T) {
 	ctx = metadata.AppendToOutgoingContext(ctx, testauth.APIKeyHeader, "USER1")
 	_, err = bbClient.DeleteWorkflow(ctx, req)
 
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, testgit.FakeWebhookID, provider.UnregisteredWebhookID, "should unregister webhook upon deletion")
 
 	err = te.GetDBHandle().DB(ctx).First(&row).Error
