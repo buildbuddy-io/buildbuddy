@@ -412,6 +412,7 @@ type doubleReader struct {
 	dest io.ReadCloser
 
 	r             *resource.ResourceName
+	doubleReadBuf []byte
 	bytesReadSrc  int
 	bytesReadDest int
 }
@@ -422,9 +423,12 @@ func (d *doubleReader) Read(p []byte) (n int, err error) {
 
 	if d.dest != nil {
 		eg.Go(func() error {
-			pCopy := make([]byte, len(p))
+			if d.doubleReadBuf == nil || len(d.doubleReadBuf) != len(p) {
+				d.doubleReadBuf = make([]byte, len(p))
+			}
+
 			var dstN int
-			dstN, dstErr = d.dest.Read(pCopy)
+			dstN, dstErr = d.dest.Read(d.doubleReadBuf)
 			d.bytesReadDest += dstN
 			return nil
 		})
