@@ -53,7 +53,6 @@ import (
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
-	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -1014,7 +1013,7 @@ const apiFacetsExpiration = 1 * time.Hour
 
 func (e *EventChannel) flushAPIFacets(iid string) error {
 	auth := e.env.GetAuthenticator()
-	if e.collector == nil || !api_config.CacheEnabled() || auth == nil {
+	if e.collector == nil || e.env.GetAPIService() == nil || !e.env.GetAPIService().CacheEnabled() || auth == nil {
 		return nil
 	}
 
@@ -1038,7 +1037,7 @@ func (e *EventChannel) flushAPIFacets(iid string) error {
 
 func (e *EventChannel) collectAPIFacets(iid string, event *build_event_stream.BuildEvent) error {
 	auth := e.env.GetAuthenticator()
-	if e.collector == nil || !api_config.CacheEnabled() || auth == nil {
+	if e.collector == nil || e.env.GetAPIService() == nil || !e.env.GetAPIService().CacheEnabled() || auth == nil {
 		return nil
 	}
 

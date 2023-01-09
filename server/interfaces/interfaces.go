@@ -376,6 +376,7 @@ type UsageTracker interface {
 type ApiService interface {
 	apipb.ApiServiceServer
 	http.Handler
+	CacheEnabled() bool
 }
 
 type WorkflowService interface {

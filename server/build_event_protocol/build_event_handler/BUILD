@@ -18,7 +18,6 @@ go_library(
         "//proto:user_id_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/api/common",
-        "//server/api/config",
         "//server/build_event_protocol/accumulator",
         "//server/build_event_protocol/build_status_reporter",
         "//server/build_event_protocol/invocation_format",

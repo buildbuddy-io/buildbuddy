@@ -8,8 +8,8 @@ go_library(
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
-        "//server/api/config",
         "//server/environment",
+        "//server/util/flagutil",
         "//server/util/git",
         "@org_golang_google_protobuf//encoding/prototext",
     ],

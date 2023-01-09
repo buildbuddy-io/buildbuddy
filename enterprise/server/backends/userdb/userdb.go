@@ -24,7 +24,6 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
-	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 )
 
 const (
@@ -39,7 +38,7 @@ var (
 	createGroupPerUser   = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
 	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
 
-	orgName   = flag.String("org.name", "", "The name of your organization, which is displayed on your organization's build history.")
+	orgName   = flag.String("org.name", "Organization", "The name of your organization, which is displayed on your organization's build history.")
 	orgDomain = flag.String("org.domain", "", "Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account.")
 
 	// Don't change this ever. It's the default group that users
@@ -536,21 +535,18 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 }
 
 func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
-	c := d.getDefaultGroupConfig()
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		var existing tables.Group
 		if err := tx.Where("group_id = ?", DefaultGroupID).First(&existing).Error; err != nil {
 			if db.IsRecordNotFound(err) {
-				if c.apiKeyValue == "" {
-					c.apiKeyValue = newAPIKeyToken()
+				g := d.getDefaultGroupConfig()
+				if g.WriteToken == "" {
+					g.WriteToken = randomToken(10)
 				}
-				if c.group.WriteToken == "" {
-					c.group.WriteToken = randomToken(10)
-				}
-				if err := tx.Create(&c.group).Error; err != nil {
+				if err := tx.Create(g).Error; err != nil {
 					return err
 				}
-				if _, err := createAPIKey(tx, DefaultGroupID, c.apiKeyValue, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+				if _, err := createAPIKey(tx, DefaultGroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 					return err
 				}
 				return nil
@@ -558,32 +554,16 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 			return err
 		}
 
-		return tx.Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(c.group).Error
+		return tx.Model(&tables.Group{}).Where("group_id = ?", DefaultGroupID).Updates(d.getDefaultGroupConfig()).Error
 	})
 }
 
-type defaultGroupConfig struct {
-	group       tables.Group
-	apiKeyValue string
-}
-
-func (d *UserDB) getDefaultGroupConfig() *defaultGroupConfig {
-	c := &defaultGroupConfig{
-		group: tables.Group{
-			GroupID: DefaultGroupID,
-			Name:    "Organization",
-		},
+func (d *UserDB) getDefaultGroupConfig() *tables.Group {
+	return &tables.Group{
+		GroupID:     DefaultGroupID,
+		Name:        *orgName,
+		OwnedDomain: *orgDomain,
 	}
-	if api_config.APIEnabled() {
-		c.apiKeyValue = api_config.Key()
-	}
-	if *orgName != "" {
-		c.group.Name = *orgName
-	}
-	if *orgDomain != "" {
-		c.group.OwnedDomain = *orgDomain
-	}
-	return c
 }
 
 func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) error {
@@ -632,10 +612,10 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		groupIDs = append(groupIDs, sug.GroupID)
 	}
 
-	cfg := d.getDefaultGroupConfig()
 	if !*noDefaultUserGroup {
-		if cfg.group.OwnedDomain != "" && cfg.group.OwnedDomain != emailDomain {
-			return status.FailedPreconditionErrorf("Failed to create user, email address: %s does not belong to domain: %s", u.Email, cfg.group.OwnedDomain)
+		g := d.getDefaultGroupConfig()
+		if g.OwnedDomain != "" && g.OwnedDomain != emailDomain {
+			return status.FailedPreconditionErrorf("Failed to create user, email address: %s does not belong to domain: %s", u.Email, g.OwnedDomain)
 		}
 		groupIDs = append(groupIDs, DefaultGroupID)
 	}

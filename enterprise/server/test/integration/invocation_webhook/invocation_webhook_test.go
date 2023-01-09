@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhealthcheck"
@@ -35,7 +37,6 @@ func TestInvocationUploadWebhook(t *testing.T) {
 		"--integrations.invocation_upload.enabled=true",
 		"--cache.detailed_stats_enabled=true",
 		"--app.no_default_user_group=false",
-		"--api.api_key=TEST",
 	)
 
 	// Start our fake webhook server.
@@ -52,6 +53,9 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	db := dbh.DB(ctx)
 	err = db.Exec("UPDATE `Groups` SET invocation_webhook_url = ?", ws.URL.String()).Error
 	require.NoError(t, err)
+	apiKey := tables.APIKey{}
+	dbResult := db.Where("group_id = ?", userdb.DefaultGroupID).First(&apiKey)
+	require.NoError(t, dbResult.Error)
 
 	// Now run an invocation (with BES and remote cache) as the default group,
 	// expecting a cache miss.
@@ -59,7 +63,7 @@ func TestInvocationUploadWebhook(t *testing.T) {
 		"WORKSPACE": "",
 		"BUILD":     `genrule(name = "gen", outs = ["out"], cmd_bash = "touch $@")`,
 	})
-	buildFlags := []string{":gen", "--remote_header=x-buildbuddy-api-key=TEST"}
+	buildFlags := []string{":gen", "--remote_header=x-buildbuddy-api-key=" + apiKey.Value}
 	buildFlags = append(buildFlags, app.BESBazelFlags()...)
 	buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
 

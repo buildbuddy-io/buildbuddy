@@ -7,12 +7,24 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+)
+
+var (
+	apiKey = flagutil.New(
+		"api.api_key",
+		"",
+		"The default API key to use for on-prem enterprise deploys with a single organization/group.",
+		flagutil.SecretTag,
+		flagutil.DeprecatedTag(
+			"Manual API key specification is no longer supported; to retrieve specific API keys programmatically, please use the API key table. This field will still specify an API key to redact in case a manual API key was specified when buildbuddy was first set up.",
+		),
+	)
 )
 
 const (
@@ -571,7 +583,7 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 
 	// Replace the literal API key set up via the BuildBuddy config, which does not
 	// need to conform to the way we generate API keys.
-	if configuredKey := getAPIKeyFromBuildBuddyConfig(r.env); configuredKey != "" {
+	if configuredKey := *apiKey; configuredKey != "" {
 		txt = []byte(strings.ReplaceAll(string(txt), configuredKey, "<REDACTED>"))
 	}
 
@@ -580,13 +592,4 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 	}
 
 	return prototext.Unmarshal(txt, event)
-}
-
-// Returns the API key hard-coded in the BuildBuddy config file / config flags,
-// or "" if there is no key configured.
-func getAPIKeyFromBuildBuddyConfig(env environment.Env) string {
-	if api := env.GetAPIService(); api != nil {
-		return api_config.Key()
-	}
-	return ""
 }

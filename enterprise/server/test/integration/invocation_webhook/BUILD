@@ -4,9 +4,11 @@ go_test(
     name = "invocation_webhook_test",
     srcs = ["invocation_webhook_test.go"],
     deps = [
+        "//enterprise/server/backends/userdb",
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//proto:invocation_go_proto",
         "//server/real_environment",
+        "//server/tables",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
         "//server/testutil/testhealthcheck",
