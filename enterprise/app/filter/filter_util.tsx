@@ -1,5 +1,6 @@
 import * as proto from "../../../app/util/proto";
-import { google } from "../../../proto/timestamp_ts_proto";
+import { google as google_duration } from "../../../proto/duration_ts_proto";
+import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import moment from "moment";
 import {
@@ -28,7 +29,6 @@ export const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 export const DEFAULT_LAST_N_DAYS = 30;
 
 export type SortBy =
-  | ""
   | "start-time"
   | "end-time"
   | "duration"
@@ -37,25 +37,25 @@ export type SortBy =
   | "cache-down"
   | "cache-up"
   | "cache-xfer";
-export type SortOrder = "" | "asc" | "desc";
+export type SortOrder = "asc" | "desc";
 
 export interface ProtoFilterParams {
   role?: string[];
   status?: invocation.OverallStatus[];
-  updatedAfter?: google.protobuf.Timestamp;
-  updatedBefore?: google.protobuf.Timestamp;
+  updatedAfter?: google_timestamp.protobuf.Timestamp;
+  updatedBefore?: google_timestamp.protobuf.Timestamp;
 
-  user: string;
-  repo: string;
-  branch: string;
-  commit: string;
-  host: string;
-  command: string;
-  minimumDuration: string;
-  maximumDuration: string;
+  user?: string;
+  repo?: string;
+  branch?: string;
+  commit?: string;
+  host?: string;
+  command?: string;
+  minimumDuration?: google_duration.protobuf.IDuration;
+  maximumDuration?: google_duration.protobuf.IDuration;
 
-  sortBy: SortBy;
-  sortOrder: SortOrder;
+  sortBy?: SortBy;
+  sortOrder?: SortOrder;
 }
 
 export const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
@@ -68,14 +68,14 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     updatedAfter: proto.dateToTimestamp(getStartDate(search)),
     updatedBefore: endDate ? proto.dateToTimestamp(endDate) : undefined,
 
-    user: search.get(USER_PARAM_NAME) || "",
-    repo: search.get(REPO_PARAM_NAME) || "",
-    branch: search.get(BRANCH_PARAM_NAME) || "",
-    commit: search.get(COMMIT_PARAM_NAME) || "",
-    host: search.get(HOST_PARAM_NAME) || "",
-    command: search.get(COMMAND_PARAM_NAME) || "",
-    minimumDuration: search.get(MINIMUM_DURATION_PARAM_NAME) || "",
-    maximumDuration: search.get(MAXIMUM_DURATION_PARAM_NAME) || "",
+    user: search.get(USER_PARAM_NAME) || undefined,
+    repo: search.get(REPO_PARAM_NAME) || undefined,
+    branch: search.get(BRANCH_PARAM_NAME) || undefined,
+    commit: search.get(COMMIT_PARAM_NAME) || undefined,
+    host: search.get(HOST_PARAM_NAME) || undefined,
+    command: search.get(COMMAND_PARAM_NAME) || undefined,
+    minimumDuration: parseDuration(search.get(MINIMUM_DURATION_PARAM_NAME)),
+    maximumDuration: parseDuration(search.get(MAXIMUM_DURATION_PARAM_NAME)),
 
     sortBy: search.get(SORT_BY_PARAM_NAME) as SortBy,
     sortOrder: search.get(SORT_ORDER_PARAM_NAME) as SortOrder,
@@ -143,6 +143,13 @@ export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): str
     .map(statusToString)
     .sort((a, b) => statusFromString(a) - statusFromString(b))
     .join(" ");
+}
+
+function parseDuration(value: string | null): google_duration.protobuf.IDuration | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return proto.secondsToDuration(Number(value));
 }
 
 /** Duration slider values, in seconds. **/

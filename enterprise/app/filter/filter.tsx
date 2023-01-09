@@ -45,7 +45,6 @@ import {
   parseStatusParam,
   toStatusParam,
   statusToString,
-  getEndDate,
   getStartDate,
   DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
@@ -70,17 +69,17 @@ interface State {
 
   isAdvancedFilterOpen: boolean;
 
-  user: string;
-  repo: string;
-  branch: string;
-  commit: string;
-  host: string;
-  command: string;
+  user?: string;
+  repo?: string;
+  branch?: string;
+  commit?: string;
+  host?: string;
+  command?: string;
   minimumDuration?: number;
   maximumDuration?: number;
 
-  sortBy: string;
-  sortOrder: string;
+  sortBy?: SortBy;
+  sortOrder?: SortOrder;
 }
 
 type PresetRange = {
@@ -107,7 +106,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
   componentDidUpdate(prevProps: FilterProps) {
     if (this.props.search != prevProps.search) {
-      this.setState(this.updateFilterState(this.state, this.props.search));
+      this.setState(this.updateFilterState(this.props.search));
     }
   }
 
@@ -126,24 +125,21 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
-      user: search.get(USER_PARAM_NAME) || "",
-      repo: search.get(REPO_PARAM_NAME) || "",
-      branch: search.get(BRANCH_PARAM_NAME) || "",
-      commit: search.get(COMMIT_PARAM_NAME) || "",
-      host: search.get(HOST_PARAM_NAME) || "",
-      command: search.get(COMMAND_PARAM_NAME) || "",
+      user: search.get(USER_PARAM_NAME) || undefined,
+      repo: search.get(REPO_PARAM_NAME) || undefined,
+      branch: search.get(BRANCH_PARAM_NAME) || undefined,
+      commit: search.get(COMMIT_PARAM_NAME) || undefined,
+      host: search.get(HOST_PARAM_NAME) || undefined,
+      command: search.get(COMMAND_PARAM_NAME) || undefined,
       minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
-      sortBy: search.get(SORT_BY_PARAM_NAME) || "",
-      sortOrder: search.get(SORT_ORDER_PARAM_NAME) || "",
+      sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
+      sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
     };
   }
 
-  updateFilterState(prevState: State, search: URLSearchParams) {
+  updateFilterState(search: URLSearchParams) {
     return {
-      isDatePickerOpen: prevState.isDatePickerOpen,
-      isFilterMenuOpen: prevState.isFilterMenuOpen,
-      isSortMenuOpen: prevState.isSortMenuOpen,
       isAdvancedFilterOpen: Boolean(
         search.get(USER_PARAM_NAME) ||
           search.get(REPO_PARAM_NAME) ||
@@ -154,16 +150,16 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
-      user: search.get(USER_PARAM_NAME) || "",
-      repo: search.get(REPO_PARAM_NAME) || "",
-      branch: search.get(BRANCH_PARAM_NAME) || "",
-      commit: search.get(COMMIT_PARAM_NAME) || "",
-      host: search.get(HOST_PARAM_NAME) || "",
-      command: search.get(COMMAND_PARAM_NAME) || "",
+      user: search.get(USER_PARAM_NAME) || undefined,
+      repo: search.get(REPO_PARAM_NAME) || undefined,
+      branch: search.get(BRANCH_PARAM_NAME) || undefined,
+      commit: search.get(COMMIT_PARAM_NAME) || undefined,
+      host: search.get(HOST_PARAM_NAME) || undefined,
+      command: search.get(COMMAND_PARAM_NAME) || undefined,
       minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
-      sortBy: search.get(SORT_BY_PARAM_NAME) || "",
-      sortOrder: search.get(SORT_ORDER_PARAM_NAME) || "",
+      sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
+      sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
     };
   }
 
@@ -552,11 +548,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         </div>
         <div className="popup-wrapper">
           <OutlinedButton
-            className={`sort-button icon-text-button ${sortByValue !== "" ? "" : "square"}`}
+            className={`sort-button icon-text-button ${sortByValue !== undefined ? "" : "square"}`}
             onClick={this.onOpenSortMenu.bind(this)}>
             {sortOrderValue === "asc" && <SortAsc className="icon" />}
             {sortOrderValue === "desc" && <SortDesc className="icon" />}
-            {sortByValue !== "" && (
+            {sortByValue !== undefined && (
               <span>
                 {sortByValue === "start-time" && "Start time"}
                 {sortByValue === "end-time" && "End time"}
