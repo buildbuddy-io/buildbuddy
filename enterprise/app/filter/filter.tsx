@@ -369,8 +369,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       };
     });
 
-    const sortByValue: SortBy = (this.props.search.get(SORT_BY_PARAM_NAME) as SortBy) || "";
-    const sortOrderValue: SortOrder = (this.props.search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || "desc";
+    const sortByValue: SortBy | undefined = (this.props.search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined;
+    const sortOrderValue: SortOrder = (this.props.search.get(SORT_ORDER_PARAM_NAME) || "desc") as SortOrder;
 
     return (
       <div className={`global-filter ${isFiltering ? "is-filtering" : ""}`}>
