@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2022-12-19T09:00:00.000Z</updated>
+    <updated>2023-01-10T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Welcoming Son Luong Ngoc]]></title>
+        <id>welcoming-son-luong-ngoc</id>
+        <link href="https://www.buildbuddy.io/blog/welcoming-son-luong-ngoc"/>
+        <updated>2023-01-10T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. A big part of that mission involves building a team folks with deep industry experience helping companies build and scale their systems.]]></summary>
+        <content type="html"><![CDATA[<p>At BuildBuddy, our mission is to bring the world&#x27;s best developer tools to every company. A big part of that mission involves building a team folks with deep industry experience helping companies build and scale their systems.</p><p>That&#x27;s why we&#x27;re so excited to share that <a href="https://www.linkedin.com/in/luongngocson/"><strong>Son Luong Ngoc</strong></a> has joined BuildBuddy as a Solutions Engineer. His work with Bazel at scale will directly benefit BuildBuddy users and customers.</p><p>Son Luong is a contributor to <a href="https://github.com/bazelbuild/bazel/pulls?q=is%3Apr+author%3Asluongng">bazel</a>, <a href="http://public-inbox.org/git/?q=sluongng">git</a>, <a href="https://github.com/bazelbuild/rules_go/pulls?q=author%3Asluongng">rules_go</a>, <a href="https://github.com/bazelbuild/rules_docker/commits?author=sluongng">rules_docker</a>, <a href="https://github.com/bazelbuild/bazel-gazelle/pulls?q=author%3Asluongng">bazel-gazelle</a>, and more. He&#x27;s also a regular contributor to the <a href="https://slack.bazel.build/">Bazel Slack</a> and maintains an <a href="https://sluongng.hashnode.dev/">incredible blog</a> that explains the inner workings of Bazel.</p><p>Son Luong joins us from Qarik, where he helped large enterprises with Bazel and scalable build infrastructure. Prior to Qarik, Son Luong was an SRE at Booking.com, where he helped scale their Bazel monorepo.</p><p><img src="../static/img/blog/welcome_son.png"/></p><p>We look forward to working alongside Son Luong to build the future of developer tools.</p><p>Welcome to BuildBuddy, Son Luong!</p>]]></content>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/luongngocson/</uri>
+        </author>
+    </entry>
     <entry>
         <title type="html"><![CDATA[What's New in Bazel 6.0]]></title>
         <id>whats-new-in-bazel-6-0</id>
