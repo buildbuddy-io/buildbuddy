@@ -30,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/go-redis/redis/v8"
@@ -44,6 +43,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -215,6 +215,14 @@ const (
 )
 
 func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType invocationLinkType) error {
+	// Add the invocation links to Redis. MySQL insertion sometimes can take a
+	// longer time to finish and the insertion can be finished after the
+	// execution is complete.
+	redisErr := s.insertInvocationLinkInRedis(ctx, executionID, invocationID, linkType)
+	if redisErr != nil {
+		log.CtxWarningf(ctx, "failed to add invocation link(exeuction_id: %q invocation_id: %q, link_type: %d) in redis", executionID, invocationID, linkType)
+	}
+
 	link := &tables.InvocationExecution{
 		InvocationID: invocationID,
 		ExecutionID:  executionID,
@@ -230,6 +238,18 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 		return nil
 	}
 	return err
+}
+
+func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, executionID, invocationID string, linkType invocationLinkType) error {
+	if s.env.GetExecutionCollector() == nil {
+		return nil
+	}
+	link := &sipb.StoredInvocationLink{
+		InvocationId: invocationID,
+		ExecutionId:  executionID,
+		Type:         int32(linkType),
+	}
+	return s.env.GetExecutionCollector().AddInvocationLink(ctx, link)
 }
 
 func trimStatus(statusMessage string) string {
@@ -313,62 +333,45 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
 		return status.InternalErrorf("failed to look up execution %q: %s", executionID, err)
 	}
-	links, err := s.getInvocationLinks(ctx, executionID)
+	// Always clean up invocationLinks in Collector because we are not retrying
+	defer func() {
+		err := s.env.GetExecutionCollector().DeleteInvocationLinks(ctx, executionID)
+		if err != nil {
+			log.CtxErrorf(ctx, "failed to clean up invocation links in collector: %s", err)
+		}
+	}()
+	links, err := s.env.GetExecutionCollector().GetInvocationLinks(ctx, executionID)
+
 	if err != nil {
 		return status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
 
 	for _, link := range links {
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
-		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.InvocationID)
+		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
-			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.InvocationID, err)
+			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
 			continue
 		}
 		if inv == nil {
 			// The invocation hasn't finished yet. Add the execution to ExecutionCollector, and flush it once
 			// the invocation is complete
-			if err := s.env.GetExecutionCollector().Append(ctx, link.InvocationID, executionProto); err != nil {
-				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.InvocationID, err)
+			if err := s.env.GetExecutionCollector().AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
+				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
-				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.InvocationID)
+				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
 		} else {
 			err = s.env.GetOLAPDBHandle().FlushExecutionStats(ctx, inv, []*repb.StoredExecution{executionProto})
 			if err != nil {
-				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.InvocationID, err)
+				log.CtxErrorf(ctx, "failed to flush execution %q for invocation %q to clickhouse: %s", executionID, link.GetInvocationId(), err)
 			} else {
-				log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.InvocationID)
+				log.CtxInfof(ctx, "successfully write 1 execution for invocation %q", link.GetInvocationId())
 			}
 		}
 
 	}
 	return nil
-}
-
-func (s *ExecutionServer) getInvocationLinks(ctx context.Context, executionID string) ([]*tables.InvocationExecution, error) {
-	dbh := s.env.GetDBHandle()
-	q := query_builder.NewQuery(`
-		SELECT invocation_id, type FROM InvocationExecutions
-	`)
-	queryStr, args := q.AddWhereClause(`execution_id = ?`, executionID).Build()
-	query := dbh.DB(ctx).Raw(queryStr, args...)
-	res := []*tables.InvocationExecution{}
-	rows, err := query.Rows()
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		link := &tables.InvocationExecution{}
-		if err := dbh.DB(ctx).ScanRows(rows, link); err != nil {
-			return nil, err
-		}
-		res = append(res, link)
-	}
-
-	return res, nil
-
 }
 
 // getUnvalidatedActionResult fetches an action result from the cache but does

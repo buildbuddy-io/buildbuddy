@@ -302,7 +302,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 
 	// Always clean up executions in Collector because we are not retrying
 	defer func() {
-		err := r.env.GetExecutionCollector().Delete(ctx, inv.InvocationID)
+		err := r.env.GetExecutionCollector().DeleteExecutions(ctx, inv.InvocationID)
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to clean up executions in collector: %s", err)
 		}
@@ -324,7 +324,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 
 	for {
 		endIndex = startIndex + batchSize - 1
-		executions, err := r.env.GetExecutionCollector().ListRange(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
+		executions, err := r.env.GetExecutionCollector().GetExecutions(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
 		if err != nil {
 			return status.InternalErrorf("failed to read executions for invocation_id = %q, startIndex = %d, endIndex = %d from Redis: %s", inv.InvocationID, startIndex, endIndex, err)
 		}

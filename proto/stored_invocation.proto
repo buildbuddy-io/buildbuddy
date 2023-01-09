@@ -17,3 +17,10 @@ message StoredInvocation {
   int64 invocation_status = 10;
   bool success = 11;
 }
+
+// Proto representation of the InvocationExecution. Only used in backends.
+message StoredInvocationLink {
+	string invocation_id = 1;
+	string execution_id = 2;
+	int32 type = 3;
+}
