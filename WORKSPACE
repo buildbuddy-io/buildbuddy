@@ -252,6 +252,16 @@ container_pull(
 )
 
 dockerfile_image(
+    name = "rbe-ubuntu20-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu20-04:Dockerfile",
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu20-04-webtest_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
+)
+
+dockerfile_image(
     name = "ci_runner_image",
     dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
     visibility = ["//visibility:public"],
@@ -267,18 +277,21 @@ dockerfile_image(
 
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "656985ebceaa0116adcae081b19becf41f246893759ac41f86267cb2220f966e",
-    strip_prefix = "buildbuddy-toolchain-2a9769e75878519bf48c12334214501d4859154b",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/2a9769e75878519bf48c12334214501d4859154b.tar.gz"],
+    sha256 = "e899f235b36cb901b678bd6f55c1229df23fcbc7921ac7a3585d29bff2bf9cfd",
+    strip_prefix = "buildbuddy-toolchain-fd351ca8f152d66fc97f9d98009e0ae000854e8f",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/fd351ca8f152d66fc97f9d98009e0ae000854e8f.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 
 buildbuddy_deps()
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy")
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
 
-buildbuddy(name = "buildbuddy_toolchain")
+buildbuddy(
+    name = "buildbuddy_toolchain",
+    container_image = UBUNTU20_04_IMAGE,
+)
 
 http_archive(
     name = "cloudprober",

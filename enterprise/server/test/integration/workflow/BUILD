@@ -7,9 +7,11 @@ go_test(
     # ci_runner gets invoked directly by this test since the RBE test framework
     # currently does not support dockerized execution of commands. So for now we
     # run the whole test using the CI runner image.
-    exec_properties = {
-        "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0",
-    },
+    # TODO(bduffany): Add an ubuntu 20.04-based CI runner image and use that
+    # here.
+    # exec_properties = {
+    #     "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0",
+    # },
     shard_count = 2,
     deps = [
         "//enterprise/server/invocation_search_service",
