@@ -813,7 +813,7 @@ func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetReq
 func (s *BuildBuddyServer) GetEventLogChunk(ctx context.Context, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
 	resp, err := eventlog.GetEventLogChunk(ctx, s.env, req)
 	if err != nil {
-		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, req.String())
+		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, req)
 	}
 	return resp, err
 }
