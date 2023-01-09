@@ -25,7 +25,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
-	api_config "github.com/buildbuddy-io/buildbuddy/server/api/config"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -34,6 +33,8 @@ import (
 )
 
 var (
+	enableAPI            = flag.Bool("api.enable_api", true, "Whether or not to enable the BuildBuddy API.")
+	enableCache          = flag.Bool("api.enable_cache", false, "Whether or not to enable the API cache.")
 	enableCacheDeleteAPI = flag.Bool("enable_cache_delete_api", false, "If true, enable access to cache delete API.")
 )
 
@@ -42,7 +43,7 @@ type APIServer struct {
 }
 
 func Register(env environment.Env) error {
-	if api_config.APIEnabled() {
+	if *enableAPI {
 		env.SetAPIService(NewAPIServer(env))
 	}
 	return nil
@@ -166,8 +167,12 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 	}, nil
 }
 
+func (s *APIServer) CacheEnabled() bool {
+	return *enableCache
+}
+
 func (s *APIServer) redisCachedTarget(ctx context.Context, userInfo interfaces.UserInfo, iid, targetLabel string) (*apipb.Target, error) {
-	if !api_config.CacheEnabled() || s.env.GetMetricsCollector() == nil {
+	if !s.CacheEnabled() || s.env.GetMetricsCollector() == nil {
 		return nil, nil
 	}
 
@@ -242,7 +247,7 @@ func (s *APIServer) GetTarget(ctx context.Context, req *apipb.GetTargetRequest) 
 }
 
 func (s *APIServer) redisCachedActions(ctx context.Context, userInfo interfaces.UserInfo, iid, targetLabel string) ([]*apipb.Action, error) {
-	if !api_config.CacheEnabled() || s.env.GetMetricsCollector() == nil {
+	if !s.CacheEnabled() || s.env.GetMetricsCollector() == nil {
 		return nil, nil
 	}
 

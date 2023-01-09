@@ -11,7 +11,6 @@ go_library(
         "//proto:api_key_go_proto",
         "//proto:group_go_proto",
         "//proto:telemetry_go_proto",
-        "//server/api/config",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",

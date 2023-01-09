@@ -13,7 +13,6 @@ go_library(
         "//proto:resource_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/api/common",
-        "//server/api/config",
         "//server/build_event_protocol/build_event_handler",
         "//server/bytestream",
         "//server/environment",
