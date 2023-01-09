@@ -126,8 +126,11 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	l.ctx = ctx
 	l.cancelCtx = cancel
-	go l.evictor()
 	return l, nil
+}
+
+func (l *LRU[T]) Start() {
+	go l.evictor()
 }
 
 func (l *LRU[T]) Stop() {
@@ -230,7 +233,12 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 
 	for {
 		for i, sample := range l.samplePool {
-			log.Infof("Evictor attempting to evict %q", sample.Key)
+			l.mu.Lock()
+			oldLocalSizeBytes := l.localSizeBytes
+			oldGlobalSizeBytes := l.globalSizeBytes
+			l.mu.Unlock()
+
+			log.Infof("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
 			skip, err := l.onEvict(l.ctx, sample)
 			if err != nil {
 				log.Warningf("Could not evict %q: %s", sample.Key, err)
@@ -238,12 +246,19 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 			}
 
 			l.mu.Lock()
-			l.localSizeBytes -= sample.SizeBytes
-			// Assume eviction on remote servers is happening at the same
-			// rate as local eviction. It's fine to be wrong as we expect the
-			// actual sizes to be periodically to be reset to the true numbers
-			// using UpdateSizeBytes from data received from other servers.
-			l.globalSizeBytes -= int64(float64(sample.SizeBytes) * float64(l.globalSizeBytes) / float64(l.localSizeBytes))
+			// Only update the size if it hasn't changed already. Users
+			// are allowed to update the size as a side-effect of the eviction
+			// callback which should reflect the new size.
+			if l.localSizeBytes == oldLocalSizeBytes {
+				l.localSizeBytes -= sample.SizeBytes
+			}
+			if l.globalSizeBytes == oldGlobalSizeBytes {
+				// Assume eviction on remote servers is happening at the same
+				// rate as local eviction. It's fine to be wrong as we expect the
+				// actual sizes to be periodically to be reset to the true numbers
+				// using UpdateSizeBytes from data received from other servers.
+				l.globalSizeBytes -= int64(float64(sample.SizeBytes) * float64(l.globalSizeBytes) / float64(l.localSizeBytes))
+			}
 			l.mu.Unlock()
 
 			l.samplePool = append(l.samplePool[:i], l.samplePool[i+1:]...)

@@ -19,6 +19,7 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/util/alert",
+        "//server/util/approxlru",
         "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/disk",
