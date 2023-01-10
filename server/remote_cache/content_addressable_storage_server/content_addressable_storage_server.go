@@ -171,7 +171,10 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		uploadTracker := ht.TrackUpload(uploadDigest)
 		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
 		// so doing 100-1000 or so in this loop is fine.
-		defer uploadTracker.CloseWithBytesTransferred(int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor())
+		bytesWrittenToCache := 0
+		defer func() {
+			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor())
+		}()
 
 		if uploadDigest.GetHash() == digest.EmptySha256 {
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
@@ -230,6 +233,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			dataToCache = uploadRequest.GetData()
 		}
 		kvs[rn.ToProto()] = dataToCache
+		bytesWrittenToCache = len(dataToCache)
 	}
 
 	if err := s.cache.SetMulti(ctx, kvs); err != nil {
@@ -242,6 +246,12 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		})
 	}
 	return rsp, nil
+}
+
+type downloadTrackerData struct {
+	bytesReadFromCache      int
+	bytesDownloadedToClient int
+	compressor              repb.Compressor_Value
 }
 
 // Download many blobs at once.
@@ -270,21 +280,25 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	if err != nil {
 		return nil, err
 	}
-	type closeTrackerFunc func(res *repb.BatchReadBlobsResponse_Response)
-	cacheRequest := make([]*resource.ResourceName, 0, len(req.Digests))
+
+	type closeTrackerFunc func(data downloadTrackerData)
 	closeTrackerFuncs := make([]closeTrackerFunc, 0, len(req.Digests))
-	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
+	closeTrackerData := make([]downloadTrackerData, 0, len(req.Digests))
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+
+	cacheRequest := make([]*resource.ResourceName, 0, len(req.Digests))
+	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
+
 	for _, readDigest := range req.GetDigests() {
 		_, err := digest.Validate(readDigest)
 		if err != nil {
 			return nil, err
 		}
 		downloadTracker := ht.TrackDownload(readDigest)
-		closeTrackerFuncs = append(closeTrackerFuncs, func(res *repb.BatchReadBlobsResponse_Response) {
-			downloadTracker.CloseWithBytesTransferred(int64(len(res.Data)), res.Compressor)
+		closeTrackerFuncs = append(closeTrackerFuncs, func(data downloadTrackerData) {
+			downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor)
 		})
 
 		if readDigest.GetHash() != digest.EmptySha256 {
@@ -296,6 +310,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 	}
 	cacheRsp, err := s.cache.GetMulti(ctx, cacheRequest)
+
 	for _, d := range req.GetDigests() {
 		if d.GetHash() == digest.EmptySha256 {
 			rsp.Responses = append(rsp.Responses, &repb.BatchReadBlobsResponse_Response{
@@ -313,6 +328,8 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		if clientAcceptsZstd {
 			blobRsp.Compressor = repb.Compressor_ZSTD
 		}
+		bytesFromCache := len(data)
+		bytesToClient := len(data)
 
 		if !ok || os.IsNotExist(err) {
 			blobRsp.Status = &statuspb.Status{Code: int32(codes.NotFound)}
@@ -329,15 +346,21 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			if clientAcceptsZstd && !s.cache.SupportsCompressor(repb.Compressor_ZSTD) {
 				blobRsp.Data = compression.CompressZstd(nil, blobRsp.Data)
 				blobRsp.Compressor = repb.Compressor_ZSTD
+				bytesToClient = len(blobRsp.Data)
 			}
 		}
 
 		rsp.Responses = append(rsp.Responses, blobRsp)
+		closeTrackerData = append(closeTrackerData, downloadTrackerData{
+			bytesReadFromCache:      bytesFromCache,
+			bytesDownloadedToClient: bytesToClient,
+			compressor:              blobRsp.GetCompressor(),
+		})
 	}
 
 	if len(closeTrackerFuncs) == len(rsp.Responses) {
 		for i, closeFn := range closeTrackerFuncs {
-			closeFn(rsp.Responses[i])
+			closeFn(closeTrackerData[i])
 		}
 	} else {
 		alert.UnexpectedEvent("cas_batch_response_length_mismatch", "Unexpected batch read response length (%d expected, got %d)", len(closeTrackerFuncs), len(rsp.Responses))
