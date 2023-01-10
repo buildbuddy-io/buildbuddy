@@ -28,6 +28,7 @@ interface State {
   loading: boolean;
   dateToStatMap: Map<string, invocation.ITrendStat>;
   dateToExecutionStatMap: Map<string, invocation.IExecutionStat>;
+  enableInvocationPercentileCharts: boolean;
   dates: string[];
   filterOnlyCI: boolean;
 }
@@ -40,6 +41,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     loading: true,
     dateToStatMap: new Map<string, invocation.ITrendStat>(),
     dateToExecutionStatMap: new Map<string, invocation.IExecutionStat>(),
+    enableInvocationPercentileCharts: false,
     dates: [],
     filterOnlyCI: false,
   };
@@ -158,6 +160,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
           : this.getLastNDates(request.lookbackWindowDays),
         dateToStatMap,
         dateToExecutionStatMap,
+        enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
         loading: false,
       });
     });
@@ -259,24 +262,41 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 separateAxis={true}
                 onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : null}
               />
-              <TrendsChartComponent
-                title="Build duration"
-                data={this.state.dates}
-                extractValue={(date) => {
-                  let stat = this.getStat(date);
-                  return +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0) / 1000000;
-                }}
-                extractSecondaryValue={(date) => +(this.getStat(date).maxDurationUsec ?? 0) / 1000000}
-                extractLabel={this.formatShortDate}
-                formatTickValue={format.durationSec}
-                formatHoverLabel={this.formatLongDate}
-                formatHoverValue={(value) => `${format.durationSec(value || 0)} average`}
-                formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
-                name="average build duration"
-                secondaryName="slowest build duration"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : null}
-                onSecondaryBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : null}
-              />
+              {this.state.enableInvocationPercentileCharts && (
+                <PercentilesChartComponent
+                  title="Build duration"
+                  data={this.state.dates}
+                  extractLabel={this.formatShortDate}
+                  formatHoverLabel={this.formatLongDate}
+                  extractP50={(date) => +(this.getStat(date).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP75={(date) => +(this.getStat(date).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP90={(date) => +(this.getStat(date).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP95={(date) => +(this.getStat(date).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP99={(date) => +(this.getStat(date).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
+                />
+              )}
+              {!this.state.enableInvocationPercentileCharts && (
+                <TrendsChartComponent
+                  title="Build duration"
+                  data={this.state.dates}
+                  extractValue={(date) => {
+                    let stat = this.getStat(date);
+                    return +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0) / 1000000;
+                  }}
+                  extractSecondaryValue={(date) => +(this.getStat(date).maxDurationUsec ?? 0) / 1000000}
+                  extractLabel={this.formatShortDate}
+                  formatTickValue={format.durationSec}
+                  formatHoverLabel={this.formatLongDate}
+                  formatHoverValue={(value) => `${format.durationSec(value || 0)} average`}
+                  formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
+                  name="average build duration"
+                  secondaryName="slowest build duration"
+                  onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : null}
+                  onSecondaryBarClicked={
+                    capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : null
+                  }
+                />
+              )}
 
               <CacheChartComponent
                 title="Action Cache"
