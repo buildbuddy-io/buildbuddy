@@ -71,6 +71,12 @@ ts_config(
     src = ":tsconfig.json",
 )
 
+ts_config(
+    name = "tsconfig_strict",
+    src = ":tsconfig_strict.json",
+    deps = [":tsconfig"],
+)
+
 filegroup(
     name = "config_files",
     srcs = select({

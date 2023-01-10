@@ -10,10 +10,13 @@ def _swc(**kwargs):
         **kwargs
     )
 
-def ts_library(name, srcs, **kwargs):
+def ts_library(name, srcs, strict = False, **kwargs):
+    tsconfig = "//:tsconfig"
+    if strict:
+        tsconfig = "//:tsconfig_strict"
     ts_project(
         name = name,
-        tsconfig = "//:tsconfig",
+        tsconfig = tsconfig,
         composite = True,
         transpiler = _swc,
         srcs = srcs,
