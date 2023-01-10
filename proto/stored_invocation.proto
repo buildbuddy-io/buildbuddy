@@ -20,7 +20,7 @@ message StoredInvocation {
 
 // Proto representation of the InvocationExecution. Only used in backends.
 message StoredInvocationLink {
-	string invocation_id = 1;
-	string execution_id = 2;
-	int32 type = 3;
+  string invocation_id = 1;
+  string execution_id = 2;
+  int32 type = 3;
 }
