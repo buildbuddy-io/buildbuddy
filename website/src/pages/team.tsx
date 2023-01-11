@@ -80,6 +80,12 @@ const teamMembers = [
     blurb: "Previously Staff Software Engineer at Google — 10 years. Studied Computer Science at MIT.",
     image: "jim.jpg",
   },
+  {
+    name: "Son Luong Ngoc",
+    email: "son@buildbuddy.io",
+    blurb: "Previously Senior DevOps Engineer & SRE at Qarik, Booking.com, Lazada & Alibaba.",
+    image: "son.jpg",
+  },
 ];
 
 function Team() {
