@@ -820,7 +820,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
-		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), nil /*=env*/, ar.action.BazelWorkspaceDir, ar.reporter)
+		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
