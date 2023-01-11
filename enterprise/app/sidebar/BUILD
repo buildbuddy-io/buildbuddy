@@ -7,6 +7,7 @@ exports_files(["sidebar.css"])
 ts_library(
     name = "sidebar",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/auth",
         "//app/capabilities",
