@@ -1,17 +1,7 @@
 import React from "react";
 
 import * as format from "../../../app/format/format";
-import {
-  ResponsiveContainer,
-  ComposedChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Line,
-  Legend,
-  Tooltip,
-  CurveProps,
-} from "recharts";
+import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Line, Legend, Tooltip } from "recharts";
 
 export interface PercentilesChartProps {
   title: string;
@@ -30,7 +20,6 @@ export default class PercentilesChartComponent extends React.Component<Percentil
   private lastDataFromHover: string;
 
   handleActiveDotClick() {
-    console.log(this.lastDataFromHover);
     if (!this.props.onRowClicked || !this.lastDataFromHover) {
       return;
     }
@@ -43,9 +32,8 @@ export default class PercentilesChartComponent extends React.Component<Percentil
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
-            className={this.props.onRowClicked ? "trend-line-chart-interactive" : ""}
-            cursor="pointer"
             data={this.props.data}
+            cursor={this.props.onRowClicked ? "pointer" : ""}
             onClick={this.handleActiveDotClick.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
