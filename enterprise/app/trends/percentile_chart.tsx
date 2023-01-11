@@ -1,7 +1,17 @@
 import React from "react";
 
 import * as format from "../../../app/format/format";
-import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Line, Legend, Tooltip } from "recharts";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Line,
+  Legend,
+  Tooltip,
+  CurveProps,
+} from "recharts";
 
 export interface PercentilesChartProps {
   title: string;
@@ -13,15 +23,30 @@ export interface PercentilesChartProps {
   extractP90: (datum: string) => number;
   extractP95: (datum: string) => number;
   extractP99: (datum: string) => number;
+  onRowClicked?: (datum: string) => void;
 }
 
 export default class PercentilesChartComponent extends React.Component<PercentilesChartProps> {
+  private lastDataFromHover: string;
+
+  handleActiveDotClick() {
+    console.log(this.lastDataFromHover);
+    if (!this.props.onRowClicked || !this.lastDataFromHover) {
+      return;
+    }
+    this.props.onRowClicked(this.lastDataFromHover);
+  }
+
   render() {
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={this.props.data}>
+          <ComposedChart
+            className={this.props.onRowClicked ? "trend-line-chart-interactive" : ""}
+            cursor="pointer"
+            data={this.props.data}
+            onClick={this.handleActiveDotClick.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
@@ -35,6 +60,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
                   extractP90={this.props.extractP90}
                   extractP95={this.props.extractP95}
                   extractP99={this.props.extractP99}
+                  triggerCallback={(data) => (this.lastDataFromHover = data)}
                 />
               }
             />
@@ -89,6 +115,7 @@ interface PercentilesChartTooltipProps {
   extractP90: (datum: string) => number;
   extractP95: (datum: string) => number;
   extractP99: (datum: string) => number;
+  triggerCallback: (datum: string) => void;
 }
 
 function PercentilesChartTooltip({
@@ -100,9 +127,11 @@ function PercentilesChartTooltip({
   extractP90,
   extractP95,
   extractP99,
+  triggerCallback,
 }: PercentilesChartTooltipProps) {
   if (!active) return null;
   let data = payload[0].payload;
+  triggerCallback(data);
   return (
     <div className="trend-chart-hover">
       <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
@@ -115,6 +144,4 @@ function PercentilesChartTooltip({
       </div>
     </div>
   );
-
-  return null;
 }
