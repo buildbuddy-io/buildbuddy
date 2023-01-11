@@ -33,7 +33,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
             data={this.props.data}
-            cursor={this.props.onRowClicked ? "pointer" : ""}
+            style={this.props.onRowClicked ? { cursor: "pointer" } : {}}
             onClick={this.handleRowClick.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
