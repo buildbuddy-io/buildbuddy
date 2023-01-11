@@ -345,6 +345,7 @@ func (s *APIServer) GetLog(ctx context.Context, req *apipb.GetLogRequest) (*apip
 
 	resp, err := eventlog.GetEventLogChunk(ctx, s.env, chunkReq)
 	if err != nil {
+		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, chunkReq)
 		return nil, err
 	}
 

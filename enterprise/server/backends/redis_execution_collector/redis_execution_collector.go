@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	redisExecutionKeyPrefix  = "exec"
-	redisInvocationKeyPrefix = "invocation"
+	redisExecutionKeyPrefix      = "exec"
+	redisInvocationKeyPrefix     = "invocation"
+	redisInvocationLinkKeyPrefix = "invocationLink"
 
 	invocationExpiration = 24 * time.Hour
 )
@@ -47,6 +48,10 @@ func getInvocationKey(iid string) string {
 	return strings.Join([]string{redisInvocationKeyPrefix, iid}, "/")
 }
 
+func getInvocationLinkKey(executionID string) string {
+	return strings.Join([]string{redisInvocationLinkKeyPrefix, executionID}, "/")
+}
+
 func (c *collector) AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error {
 	b, err := proto.Marshal(inv)
 	if err != nil {
@@ -71,7 +76,31 @@ func (c *collector) GetInvocation(ctx context.Context, iid string) (*sipb.Stored
 	return res, nil
 }
 
-func (c *collector) Append(ctx context.Context, iid string, execution *repb.StoredExecution) error {
+func (c *collector) AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error {
+	b, err := proto.Marshal(link)
+	if err != nil {
+		return err
+	}
+	return c.rdb.SAdd(ctx, getInvocationLinkKey(link.GetExecutionId()), string(b)).Err()
+}
+
+func (c *collector) GetInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
+	serializedResults, err := c.rdb.SMembers(ctx, getInvocationLinkKey(executionID)).Result()
+	if err != nil {
+		return nil, err
+	}
+	res := make([]*sipb.StoredInvocationLink, 0)
+	for _, serializedResult := range serializedResults {
+		link := &sipb.StoredInvocationLink{}
+		if err := proto.Unmarshal([]byte(serializedResult), link); err != nil {
+			return nil, err
+		}
+		res = append(res, link)
+	}
+	return res, nil
+}
+
+func (c *collector) AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error {
 	b, err := proto.Marshal(execution)
 	if err != nil {
 		return err
@@ -79,7 +108,7 @@ func (c *collector) Append(ctx context.Context, iid string, execution *repb.Stor
 	return c.rdb.RPush(ctx, getExecutionKey(iid), string(b)).Err()
 }
 
-func (c *collector) ListRange(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error) {
+func (c *collector) GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error) {
 	serializedResults, err := c.rdb.LRange(ctx, getExecutionKey(iid), start, stop).Result()
 	if err != nil {
 		return nil, err
@@ -95,6 +124,10 @@ func (c *collector) ListRange(ctx context.Context, iid string, start, stop int64
 	return res, nil
 }
 
-func (c *collector) Delete(ctx context.Context, iid string) error {
-	return c.rdb.Del(ctx, iid).Err()
+func (c *collector) DeleteExecutions(ctx context.Context, iid string) error {
+	return c.rdb.Del(ctx, getExecutionKey(iid)).Err()
+}
+
+func (c *collector) DeleteInvocationLinks(ctx context.Context, executionID string) error {
+	return c.rdb.Del(ctx, getInvocationLinkKey(executionID)).Err()
 }

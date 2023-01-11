@@ -301,7 +301,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 
 	// Always clean up executions in Collector because we are not retrying
 	defer func() {
-		err := r.env.GetExecutionCollector().Delete(ctx, inv.InvocationID)
+		err := r.env.GetExecutionCollector().DeleteExecutions(ctx, inv.InvocationID)
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to clean up executions in collector: %s", err)
 		}
@@ -323,7 +323,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 
 	for {
 		endIndex = startIndex + batchSize - 1
-		executions, err := r.env.GetExecutionCollector().ListRange(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
+		executions, err := r.env.GetExecutionCollector().GetExecutions(ctx, inv.InvocationID, int64(startIndex), int64(endIndex))
 		if err != nil {
 			return status.InternalErrorf("failed to read executions for invocation_id = %q, startIndex = %d, endIndex = %d from Redis: %s", inv.InvocationID, startIndex, endIndex, err)
 		}
@@ -960,8 +960,9 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	switch p := event.BuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		if e.logWriter != nil {
-			e.logWriter.Write(e.ctx, []byte(p.Progress.Stderr))
-			e.logWriter.Write(e.ctx, []byte(p.Progress.Stdout))
+			if _, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.Stderr), []byte(p.Progress.Stdout)...)); err != nil {
+				log.Errorf("Error writing build logs for event: %s\nEvent: %s", err, event)
+			}
 			// Don't store the log in the protostream if we're
 			// writing it separately to blobstore
 			p.Progress.Stderr = ""

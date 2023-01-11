@@ -23,15 +23,16 @@ type BuildBuddyConfig struct {
 }
 
 type Action struct {
-	Name              string           `yaml:"name"`
-	Triggers          *Triggers        `yaml:"triggers"`
-	OS                string           `yaml:"os"`
-	Arch              string           `yaml:"arch"`
-	ResourceRequests  ResourceRequests `yaml:"resource_requests"`
-	User              string           `yaml:"user"`
-	GitCleanExclude   []string         `yaml:"git_clean_exclude"`
-	BazelWorkspaceDir string           `yaml:"bazel_workspace_dir"`
-	BazelCommands     []string         `yaml:"bazel_commands"`
+	Name              string            `yaml:"name"`
+	Triggers          *Triggers         `yaml:"triggers"`
+	OS                string            `yaml:"os"`
+	Arch              string            `yaml:"arch"`
+	ResourceRequests  ResourceRequests  `yaml:"resource_requests"`
+	User              string            `yaml:"user"`
+	GitCleanExclude   []string          `yaml:"git_clean_exclude"`
+	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
+	Env               map[string]string `yaml:"env"`
+	BazelCommands     []string          `yaml:"bazel_commands"`
 }
 
 type Triggers struct {

@@ -8,6 +8,7 @@ ts_library(
         "*.tsx",
         "*.ts",
     ]),
+    strict = True,
     deps = [
         "//app/alert",
         "//app/router",

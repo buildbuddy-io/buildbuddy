@@ -2,6 +2,7 @@ package chunkstore
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -13,6 +14,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
+)
+
+var (
+	bucketPerChunk = flag.Bool("storage.bucket_per_chunk", false, "Stores each chunk in a separate bucket. This will help if your storage backend is rate-limiting your buckets. WARNING: Changing this setting changes how chunks are being addressed, so logs from builds before this setting was changed will not be viewable unless it is changed back again.")
 )
 
 const (
@@ -106,7 +111,11 @@ func ChunkIdAsUint16Index(id string) (uint16, error) {
 }
 
 func ChunkName(blobName string, index uint16) string {
-	return blobName + "_" + ChunkIndexAsStringId(index)
+	name := blobName + "_" + ChunkIndexAsStringId(index)
+	if *bucketPerChunk {
+		name += "/chunk_data"
+	}
+	return name
 }
 
 func (c *Chunkstore) GetLastChunkId(ctx context.Context, blobName string, startingId string) (string, error) {
@@ -222,7 +231,7 @@ func (r *chunkstoreReader) getNextChunk() error {
 	if exists, err := r.nextChunkExists(); err != nil {
 		return err
 	} else if !exists {
-		return status.NotFoundErrorf("Opening %v: Couldn't find blob.", ChunkName(r.blobName, r.nextChunkIndex()))
+		return status.NotFoundErrorf("Opening %v: Couldn't find chunk.", ChunkName(r.blobName, r.nextChunkIndex()))
 	}
 	r.chunkIndex = r.nextChunkIndex()
 	// Decrementing the chunk offset by the length of the chunk instead

@@ -10,6 +10,7 @@ ts_library(
         "*.ts",
         "*.tsx",
     ]),
+    strict = True,
     deps = [
         "//app/components/checkbox",
         "//app/components/link",

@@ -811,7 +811,11 @@ func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetReq
 }
 
 func (s *BuildBuddyServer) GetEventLogChunk(ctx context.Context, req *elpb.GetEventLogChunkRequest) (*elpb.GetEventLogChunkResponse, error) {
-	return eventlog.GetEventLogChunk(ctx, s.env, req)
+	resp, err := eventlog.GetEventLogChunk(ctx, s.env, req)
+	if err != nil {
+		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, req)
+	}
+	return resp, err
 }
 
 func (s *BuildBuddyServer) CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error) {
