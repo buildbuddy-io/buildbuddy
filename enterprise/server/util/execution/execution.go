@@ -6,15 +6,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
 
-func TableExecToProto(in *tables.Execution, invLink *tables.InvocationExecution) *repb.StoredExecution {
+func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) *repb.StoredExecution {
 	return &repb.StoredExecution{
 		GroupId:                            in.GroupID,
 		UpdatedAtUsec:                      in.UpdatedAtUsec,
 		ExecutionId:                        in.ExecutionID,
-		InvocationUuid:                     strings.Replace(invLink.InvocationID, "-", "", -1),
-		InvocationLinkType:                 int32(invLink.Type),
+		InvocationUuid:                     strings.Replace(invLink.GetInvocationId(), "-", "", -1),
+		InvocationLinkType:                 int32(invLink.GetType()),
 		CreatedAtUsec:                      in.CreatedAtUsec,
 		UserId:                             in.UserID,
 		Worker:                             in.Worker,

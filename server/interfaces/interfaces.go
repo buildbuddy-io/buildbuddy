@@ -941,13 +941,16 @@ type SecretService interface {
 
 // ExecutionCollector keeps track of a list of Executions for each invocation ID.
 type ExecutionCollector interface {
-	Append(ctx context.Context, iid string, execution *repb.StoredExecution) error
-	// ListRange fetches a range of executions for the given invocation ID. The
-	// range start and stop indexes are both inclusive. If the stop index is out
+	AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error
+	// GetExecutions fetches a range of executions for the given invocation ID.
+	// The range start and stop indexes are both inclusive. If the stop index is out
 	// of range, then the returned slice will contain as many executions are
 	// available starting from the start index.
-	ListRange(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
-	Delete(ctx context.Context, iid string) error
+	GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
+	DeleteExecutions(ctx context.Context, iid string) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
+	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error
+	GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error)
+	DeleteInvocationLinks(ctx context.Context, execution_id string) error
 }
