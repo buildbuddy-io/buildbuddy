@@ -76,14 +76,10 @@ type Store interface {
 }
 
 type fileStorer struct {
-	isolateByGroupIDs           bool
 	prioritizeHashInMetadataKey bool
 }
 
 type Opts struct {
-	// IsolateByGroupIDs includes the caller group ID in the metadata and file
-	// keys for AC records.
-	IsolateByGroupIDs bool
 	// PrioritizeHashInMetadataKey controls the placement of the digest within the metadata
 	// key. When enabled, the digest is placed before the cache type & isolation
 	// parts.
@@ -93,7 +89,6 @@ type Opts struct {
 // New creates a new filestorer interface.
 func New(opts Opts) Store {
 	return &fileStorer{
-		isolateByGroupIDs:           opts.IsolateByGroupIDs,
 		prioritizeHashInMetadataKey: opts.PrioritizeHashInMetadataKey,
 	}
 }
@@ -120,15 +115,11 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fs.isolateByGroupIDs {
-		partDir := PartitionDirectoryPrefix + partID
-		if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
-			return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
-		} else {
-			return []byte(filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
-		}
+	partDir := PartitionDirectoryPrefix + partID
+	if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
+		return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	} else {
-		return []byte(filepath.Join(partID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+		return []byte(filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	}
 }
 
@@ -163,15 +154,10 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 		filePath = filepath.Join(isolation, remoteInstanceHash, hash)
 	}
 
-	var partDir string
-	if fs.isolateByGroupIDs {
-		if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
-			filePath = filepath.Join(groupID, filePath)
-		}
-		partDir = PartitionDirectoryPrefix + partID
-	} else {
-		partDir = partID
+	if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
+		filePath = filepath.Join(groupID, filePath)
 	}
+	partDir := PartitionDirectoryPrefix + partID
 	filePath = filepath.Join(partDir, filePath)
 
 	return []byte(filePath), nil

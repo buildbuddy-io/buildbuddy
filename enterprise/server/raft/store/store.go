@@ -597,7 +597,6 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 
 		metaRangeData: "",
 		fileStorer: filestore.New(filestore.Opts{
-			IsolateByGroupIDs:           true,
 			PrioritizeHashInMetadataKey: true,
 		}),
 		splitMu:    sync.Mutex{},
