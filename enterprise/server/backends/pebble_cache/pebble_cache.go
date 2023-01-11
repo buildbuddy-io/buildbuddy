@@ -812,11 +812,10 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceNa
 	}, nil
 }
 
-
 // blobDir returns a directory path under the root directory where blobs can be stored.
 func (p *PebbleCache) blobDir(partID string) string {
-        filePath := filepath.Join(p.rootDirectory, "blobs")
-        return filePath
+	filePath := filepath.Join(p.rootDirectory, "blobs")
+	return filePath
 }
 
 func (p *PebbleCache) blobDirWithPartition(partID string) string {
@@ -1387,14 +1386,14 @@ type evictionPoolEntry struct {
 }
 
 type partitionEvictor struct {
-	mu                *sync.Mutex
-	part              disk.Partition
-	fileStorer        filestore.Store
-	cacheName         string
-	blobDir           string
-	dbGetter          pebbleutil.Leaser
-	accesses          chan<- *accessTimeUpdate
-	rng               *rand.Rand
+	mu         *sync.Mutex
+	part       disk.Partition
+	fileStorer filestore.Store
+	cacheName  string
+	blobDir    string
+	dbGetter   pebbleutil.Leaser
+	accesses   chan<- *accessTimeUpdate
+	rng        *rand.Rand
 
 	samplePool  []*evictionPoolEntry
 	sizeBytes   int64
@@ -1409,17 +1408,17 @@ type partitionEvictor struct {
 
 func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:                &sync.Mutex{},
-		part:              part,
-		fileStorer:        fileStorer,
-		blobDir:           blobDir,
-		samplePool:        make([]*evictionPoolEntry, 0, *samplePoolSize),
-		dbGetter:          dbg,
-		accesses:          accesses,
-		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
-		atimeBufferSize:   atimeBufferSize,
-		minEvictionAge:    minEvictionAge,
-		cacheName:         cacheName,
+		mu:              &sync.Mutex{},
+		part:            part,
+		fileStorer:      fileStorer,
+		blobDir:         blobDir,
+		samplePool:      make([]*evictionPoolEntry, 0, *samplePoolSize),
+		dbGetter:        dbg,
+		accesses:        accesses,
+		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
+		atimeBufferSize: atimeBufferSize,
+		minEvictionAge:  minEvictionAge,
+		cacheName:       cacheName,
 	}
 	start := time.Now()
 	log.Infof("Pebble Cache: Initializing cache partition %q...", part.ID)
