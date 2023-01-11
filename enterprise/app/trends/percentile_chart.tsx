@@ -19,7 +19,7 @@ export interface PercentilesChartProps {
 export default class PercentilesChartComponent extends React.Component<PercentilesChartProps> {
   private lastDataFromHover: string;
 
-  handleActiveDotClick() {
+  handleRowClick() {
     if (!this.props.onRowClicked || !this.lastDataFromHover) {
       return;
     }
@@ -34,7 +34,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
           <ComposedChart
             data={this.props.data}
             cursor={this.props.onRowClicked ? "pointer" : ""}
-            onClick={this.handleActiveDotClick.bind(this)}>
+            onClick={this.handleRowClick.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
             <XAxis dataKey={this.props.extractLabel} />
