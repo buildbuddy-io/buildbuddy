@@ -15,6 +15,7 @@ ts_library(
 ts_library(
     name = "animation_loop",
     srcs = ["animation_loop.ts"],
+    strict = True,
     deps = [
         ":time_delta",
         "@npm//tslib",
@@ -24,6 +25,7 @@ ts_library(
 ts_library(
     name = "async",
     srcs = ["async.ts"],
+    strict = True,
     deps = [
         "@npm//tslib",
     ],
@@ -119,6 +121,7 @@ ts_library(
 ts_library(
     name = "proto",
     srcs = ["proto.ts"],
+    strict = True,
     deps = [
         "//proto:duration_ts_proto",
         "//proto:timestamp_ts_proto",
