@@ -22,5 +22,14 @@ message StoredInvocation {
 message StoredInvocationLink {
   string invocation_id = 1;
   string execution_id = 2;
-  int32 type = 3;
+
+  enum Type {
+	  UNKNOWN_TYPE = 0;
+
+	  NEW = 1;
+
+      // The execution is being re-used.
+	  MERGED = 2;
+  }
+  Type type = 3;
 }

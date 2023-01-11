@@ -207,14 +207,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 	})
 }
 
-type invocationLinkType int8
-
-const (
-	linkTypeNewExecution    invocationLinkType = 1
-	linkTypeMergedExecution invocationLinkType = 2
-)
-
-func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType invocationLinkType) error {
+func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
 	// Add the invocation links to Redis. MySQL insertion sometimes can take a
 	// longer time to finish and the insertion can be finished after the
 	// execution is complete.
@@ -234,20 +227,20 @@ func (s *ExecutionServer) insertInvocationLink(ctx context.Context, executionID,
 	// This probably means there were duplicate actions in a single invocation
 	// that were merged. Not an error.
 	if err != nil && s.env.GetDBHandle().IsDuplicateKeyError(err) {
-		log.CtxWarningf(ctx, "Duplicate execution link while inserting execution %q invocation ID %q link type %d", executionID, invocationID, linkType)
+		log.CtxWarningf(ctx, "Duplicate execution link while inserting execution %q invocation ID %q link type %s", executionID, invocationID, linkType)
 		return nil
 	}
 	return err
 }
 
-func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, executionID, invocationID string, linkType invocationLinkType) error {
+func (s *ExecutionServer) insertInvocationLinkInRedis(ctx context.Context, executionID, invocationID string, linkType sipb.StoredInvocationLink_Type) error {
 	if s.env.GetExecutionCollector() == nil {
 		return nil
 	}
 	link := &sipb.StoredInvocationLink{
 		InvocationId: invocationID,
 		ExecutionId:  executionID,
-		Type:         int32(linkType),
+		Type:         linkType,
 	}
 	return s.env.GetExecutionCollector().AddInvocationLink(ctx, link)
 }
@@ -449,7 +442,7 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if err := s.insertExecution(ctx, executionID, invocationID, generateCommandSnippet(command), repb.ExecutionStage_UNKNOWN); err != nil {
 		return "", err
 	}
-	if err := s.insertInvocationLink(ctx, executionID, invocationID, linkTypeNewExecution); err != nil {
+	if err := s.insertInvocationLink(ctx, executionID, invocationID, sipb.StoredInvocationLink_NEW); err != nil {
 		return "", err
 	}
 
@@ -652,7 +645,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 				log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, adInstanceDigest.DownloadString(), invocationID)
 				executionID = ee
 				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
-				if err := s.insertInvocationLink(ctx, ee, invocationID, linkTypeMergedExecution); err != nil {
+				if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
 					return err
 				}
 			}

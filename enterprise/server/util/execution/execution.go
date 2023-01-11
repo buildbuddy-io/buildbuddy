@@ -15,7 +15,7 @@ func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) 
 		UpdatedAtUsec:                      in.UpdatedAtUsec,
 		ExecutionId:                        in.ExecutionID,
 		InvocationUuid:                     strings.Replace(invLink.GetInvocationId(), "-", "", -1),
-		InvocationLinkType:                 invLink.GetType(),
+		InvocationLinkType:                 int32(invLink.GetType()),
 		CreatedAtUsec:                      in.CreatedAtUsec,
 		UserId:                             in.UserID,
 		Worker:                             in.Worker,

@@ -48,8 +48,8 @@ func getInvocationKey(iid string) string {
 	return strings.Join([]string{redisInvocationKeyPrefix, iid}, "/")
 }
 
-func getInvocationLinkKey(execution_id string) string {
-	return strings.Join([]string{redisInvocationLinkKeyPrefix, execution_id}, "/")
+func getInvocationLinkKey(executionID string) string {
+	return strings.Join([]string{redisInvocationLinkKeyPrefix, executionID}, "/")
 }
 
 func (c *collector) AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error {
@@ -84,8 +84,8 @@ func (c *collector) AddInvocationLink(ctx context.Context, link *sipb.StoredInvo
 	return c.rdb.SAdd(ctx, getInvocationLinkKey(link.GetExecutionId()), string(b)).Err()
 }
 
-func (c *collector) GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error) {
-	serializedResults, err := c.rdb.SMembers(ctx, getInvocationLinkKey(execution_id)).Result()
+func (c *collector) GetInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
+	serializedResults, err := c.rdb.SMembers(ctx, getInvocationLinkKey(executionID)).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -128,6 +128,6 @@ func (c *collector) DeleteExecutions(ctx context.Context, iid string) error {
 	return c.rdb.Del(ctx, getExecutionKey(iid)).Err()
 }
 
-func (c *collector) DeleteInvocationLinks(ctx context.Context, execution_id string) error {
-	return c.rdb.Del(ctx, getInvocationLinkKey(execution_id)).Err()
+func (c *collector) DeleteInvocationLinks(ctx context.Context, executionID string) error {
+	return c.rdb.Del(ctx, getInvocationLinkKey(executionID)).Err()
 }
