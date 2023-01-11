@@ -21,6 +21,7 @@ go_test(
     deps = [
         "//server/testutil/mockstore",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
     ],
 )
