@@ -23,7 +23,7 @@ import (
 )
 
 var (
-	readFromOLAPDBEnabled  = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, complete invocations will be flushed to OLAP DB")
+	readFromOLAPDBEnabled  = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, read from OLAP DB")
 	executionTrendsEnabled = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
 )
 
