@@ -1638,18 +1638,7 @@ var digestChars = []byte("abcdef1234567890")
 
 func (e *partitionEvictor) randomKey(n int) []byte {
 	partID := e.partitionKeyPrefix()
-	e.mu.Lock()
-	totalCount := e.casCount + e.acCount
-
-	var cacheType string
-	randInt := e.rng.Int63n(totalCount)
-	if randInt < e.casCount {
-		cacheType = "/cas/"
-	} else {
-		cacheType = "/ac/"
-	}
-	e.mu.Unlock()
-
+	cacheType := "/cas/"
 	buf := bytes.NewBuffer(make([]byte, 0, len(partID)+len(cacheType)+n))
 	buf.Write([]byte(partID))
 	buf.Write([]byte(cacheType))
