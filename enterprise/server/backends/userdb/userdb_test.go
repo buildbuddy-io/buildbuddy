@@ -230,6 +230,59 @@ func TestAddUserToGroup_EmptyGroup_UserGetsAdminRole(t *testing.T) {
 	require.Equal(t, grpb.Group_ADMIN_ROLE, gu.Role, "users should have admin role when added to a new group")
 }
 
+func TestAddUserToGroup_UserPreviouslyRequestedAccess_UpdatesMembershipStatus(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create a user
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID:    "US1",
+		SubID:     "SubID1",
+		FirstName: "FirstName1",
+		LastName:  "LastName1",
+		Email:     "user1@org1.io",
+	})
+	require.NoError(t, err)
+	// Create an empty group
+	slug := "foo"
+	groupID, err := udb.InsertOrUpdateGroup(ctx, &tables.Group{
+		URLIdentifier: &slug,
+	})
+	require.NoError(t, err)
+	// Add US1 to it
+	err = udb.AddUserToGroup(ctx, "US1", groupID)
+	require.NoError(t, err)
+
+	// Make sure they are the group admin
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	groupUsers, err := udb.GetGroupUsers(ctx1, groupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	require.NoError(t, err)
+	require.Len(t, groupUsers, 1)
+	gu := groupUsers[0]
+	require.Equal(t, grpb.Group_ADMIN_ROLE, gu.Role, "users should have admin role when added to a new group")
+
+	// Now create user US2
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID:    "US2",
+		SubID:     "SubID2",
+		FirstName: "FirstName2",
+		LastName:  "LastName2",
+		Email:     "user1@org1.io",
+	})
+	require.NoError(t, err)
+
+	// Have US2 *request* to join the group
+	err = udb.RequestToJoinGroup(ctx, "US2", groupID)
+	require.NoError(t, err)
+
+	// Now *add* US2 to the group; should update their membership request.
+	err = udb.AddUserToGroup(ctx, "US2", groupID)
+	require.NoError(t, err)
+}
+
 func TestUpdateGroupUsers_Role(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
