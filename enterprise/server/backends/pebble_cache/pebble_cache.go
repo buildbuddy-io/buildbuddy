@@ -67,8 +67,6 @@ var (
 	samplePoolSize           = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 
 	// Compression related flags
-	// TODO(Maggie): Remove enableZstdCompressionFlag after migration
-	enableZstdCompressionFlag   = flag.Bool("cache.pebble.enable_zstd_compression", false, "If set, zstd compressed blobs can be saved to the cache. Otherwise only decompressed bytes are stored.")
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", math.MaxInt64, "Blobs larger than this will be zstd compressed before written to disk.")
 )
 
@@ -128,7 +126,6 @@ type Options struct {
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
 
-	EnableZstdCompression       bool
 	MinBytesAutoZstdCompression int64
 
 	MaxSizeBytes           int64
@@ -188,7 +185,6 @@ type PebbleCache struct {
 	fileStorer filestore.Store
 	bufferPool *bytebufferpool.Pool
 
-	enableZstdCompression       bool
 	minBytesAutoZstdCompression int64
 }
 
@@ -206,7 +202,6 @@ func Register(env environment.Env) error {
 		RootDirectory:               *rootDirectoryFlag,
 		Partitions:                  *partitionsFlag,
 		PartitionMappings:           *partitionMappingsFlag,
-		EnableZstdCompression:       *enableZstdCompressionFlag,
 		BlockCacheSizeBytes:         *blockCacheSizeBytesFlag,
 		MaxSizeBytes:                cache_config.MaxSizeBytes(),
 		MaxInlineFileSizeBytes:      *maxInlineFileSizeBytesFlag,
@@ -365,7 +360,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		fileStorer:                  filestore.New(filestore.Opts{}),
 		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
-		enableZstdCompression:       opts.EnableZstdCompression,
 	}
 
 	peMu := sync.Mutex{}
@@ -1135,9 +1129,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 
 	// If data is not already compressed, return a writer that will compress it before writing
 	// Only compress data over a given size for more optimal compression ratios
-	shouldCompress := p.enableZstdCompression &&
-		r.GetCompressor() == repb.Compressor_IDENTITY &&
-		r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
+	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
 	if shouldCompress {
 		r = &resource.ResourceName{
 			Digest:       r.GetDigest(),
@@ -1850,10 +1842,8 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 
 func (p *PebbleCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	switch compressor {
-	case repb.Compressor_IDENTITY:
+	case repb.Compressor_IDENTITY, repb.Compressor_ZSTD:
 		return true
-	case repb.Compressor_ZSTD:
-		return p.enableZstdCompression
 	default:
 		return false
 	}
