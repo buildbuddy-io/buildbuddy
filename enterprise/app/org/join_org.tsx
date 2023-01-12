@@ -12,13 +12,15 @@ export interface JoinOrgComponentProps {
 
 interface State {
   status: "INITIAL_LOAD" | "NOT_FOUND" | "READY" | "ALREADY_EXISTS" | "JOINING_GROUP" | "REQUEST_SUBMITTED";
-  error?: BuildBuddyError;
+
+  error: string;
   org?: grp.GetGroupResponse;
 }
 
 export default class JoinOrgComponent extends React.Component<JoinOrgComponentProps, State> {
   state: State = {
     status: "INITIAL_LOAD",
+    error: "",
   };
 
   componentDidMount() {
@@ -45,61 +47,67 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
     router.navigateHome();
   }
 
-  private async onYesClicked() {
+  private async onYesClicked(org: grp.GetGroupResponse) {
     this.setState({ status: "JOINING_GROUP" });
     try {
-      console.debug("Joining group", this.state.org.id);
-      await rpcService.service.joinGroup(Object.assign(new grp.JoinGroupRequest(), { id: this.state.org.id }));
+      console.debug("Joining group", org.id);
+      await rpcService.service.joinGroup(Object.assign(new grp.JoinGroupRequest(), { id: org.id }));
     } catch (e) {
       const error = BuildBuddyError.parse(e);
       if (error.code === "AlreadyExists") {
-        this.setState({ status: "ALREADY_EXISTS", error });
+        this.setState({ status: "ALREADY_EXISTS", error: error.description });
         return;
       } else {
         throw e;
       }
     }
 
-    if (!this.isInOrgDomain()) {
+    if (!this.isInOrgDomain(org)) {
       this.setState({ status: "REQUEST_SUBMITTED" });
       return;
     }
 
-    await authService.setSelectedGroupId(this.state.org.id);
+    await authService.setSelectedGroupId(org.id);
     router.navigateHome();
   }
 
-  private async onViewBuildsClicked() {
-    await authService.setSelectedGroupId(this.state.org.id);
+  private async onViewBuildsClicked(org: grp.GetGroupResponse) {
+    await authService.setSelectedGroupId(org.id);
     router.navigateHome();
   }
 
-  private isInOrgDomain() {
-    return this.state.org.ownedDomain === getUserEmailDomain(this.props.user);
+  private isInOrgDomain(org: grp.GetGroupResponse) {
+    return org.ownedDomain === getUserEmailDomain(this.props.user);
   }
 
   render() {
-    const { status, org } = this.state;
+    const status = this.state.status;
+    const org = this.state.org;
 
-    switch (status) {
-      case "INITIAL_LOAD":
+    if (!org) {
+      if (status === "INITIAL_LOAD") {
         return (
           <div className="organization-join-page">
             <div className="loading" />
           </div>
         );
-      case "NOT_FOUND":
-        return <div className="organization-join-page">The requested organization was not found.</div>;
+      }
+
+      console.assert(status === "NOT_FOUND");
+      return <div className="organization-join-page">The requested organization was not found.</div>;
+    }
+
+    switch (status) {
       case "ALREADY_EXISTS":
         return (
           <div className="organization-join-page">
             <img className="illustration" src="/image/join-org-illustration.png"></img>
             <div className="submit-result already-joined">
-              <div>{this.state.error.description}</div>
+              <div>{this.state.error}</div>
               {/* TODO: Return a better status code to differentiate already requested vs. already in */}
-              {this.state.error.description.includes("already in") && (
+              {this.state.error.includes("already in") && (
                 <div>
-                  <FilledButton className="button" onClick={this.onViewBuildsClicked.bind(this)}>
+                  <FilledButton className="button" onClick={() => this.onViewBuildsClicked(org)}>
                     View builds
                   </FilledButton>
                 </div>
@@ -113,30 +121,31 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
             <img className="illustration" src="/image/join-org-illustration.png"></img>
             <div className="submit-result request-submitted">
               <div>
-                Your request to join <span className="org-name">{this.state.org.name}</span> has been submitted.
+                Your request to join <span className="org-name">{org.name}</span> has been submitted.
                 <br />A member of this organization can approve your request.
               </div>
             </div>
           </div>
         );
       default:
+        console.assert(status === "READY" || status === "JOINING_GROUP");
         return (
           <div className="organization-join-page">
             <img className="illustration" src="/image/join-org-illustration.png"></img>
             <div className="title">
-              Join <span className="org-name">{org.name}</span> on BuildBuddy{this.isInOrgDomain() ? "?" : ""}
+              Join <span className="org-name">{org.name}</span> on BuildBuddy{this.isInOrgDomain(org) ? "?" : ""}
             </div>
             <div className="yes-no-buttons">
               <FilledButton
                 disabled={status !== "READY"}
                 className="yes-no-button yes-button"
-                onClick={this.onYesClicked.bind(this)}>
-                {this.isInOrgDomain() ? "OK" : "Request access"}
+                onClick={() => this.onYesClicked(org)}>
+                {this.isInOrgDomain(org) ? "OK" : "Request access"}
               </FilledButton>
               <OutlinedButton
                 disabled={status !== "READY"}
                 className="yes-no-button no-button"
-                onClick={this.onNoClicked.bind(this)}>
+                onClick={() => this.onNoClicked()}>
                 No thanks
               </OutlinedButton>
             </div>
