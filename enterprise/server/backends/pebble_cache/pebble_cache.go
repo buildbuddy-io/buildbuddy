@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -36,7 +35,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/vfs"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,27 +54,25 @@ var (
 	partitionsFlag             = flagutil.New("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappingsFlag      = flagutil.New("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
-	// TODO(tylerw): remove most of these flags post-migration.
-	migrateFromDiskDir        = flag.String("cache.pebble.migrate_from_disk_dir", "", "If set, attempt to migrate this disk dir to a new pebble cache")
-	forceAllowMigration       = flag.Bool("cache.pebble.force_allow_migration", false, "If set, allow migrating into an existing pebble cache")
-	clearCacheBeforeMigration = flag.Bool("cache.pebble.clear_cache_before_migration", false, "If set, clear any existing cache content before migrating")
-	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
-	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
-	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
-	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
-	atimeWriteBatchSizeFlag   = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
-	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
-	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
-	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
-	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
-	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
+	scanForOrphanedFiles     = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
+	orphanDeleteDryRun       = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
+	dirDeletionDelay         = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
+	atimeUpdateThresholdFlag = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
+	atimeWriteBatchSizeFlag  = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
+	atimeBufferSizeFlag      = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	minEvictionAgeFlag       = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
+	forceCompaction          = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
+	forceCalculateMetadata   = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
+	samplesPerEviction       = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
+	samplePoolSize           = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 
 	// Compression related flags
 	// TODO(Maggie): Remove enableZstdCompressionFlag after migration
 	enableZstdCompressionFlag   = flag.Bool("cache.pebble.enable_zstd_compression", false, "If set, zstd compressed blobs can be saved to the cache. Otherwise only decompressed bytes are stored.")
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", math.MaxInt64, "Blobs larger than this will be zstd compressed before written to disk.")
+)
 
+var (
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
 	// Their defaults must be vars so we can take their addresses)
@@ -202,27 +198,8 @@ func Register(env environment.Env) error {
 	if *rootDirectoryFlag == "" {
 		return nil
 	}
-	if *clearCacheBeforeMigration {
-		if err := os.RemoveAll(*rootDirectoryFlag); err != nil {
-			return err
-		}
-	}
 	if err := disk.EnsureDirectoryExists(*rootDirectoryFlag); err != nil {
 		return err
-	}
-	migrateDir := ""
-	if *migrateFromDiskDir != "" {
-		// Ensure a pebble DB doesn't already exist if we are migrating.
-		// But allow anyway if forceAllowMigration was set.
-		desc, err := pebble.Peek(*rootDirectoryFlag, vfs.Default)
-		if err != nil {
-			return err
-		}
-		if desc.Exists && !*forceAllowMigration {
-			log.Warningf("Pebble DB at %q already exists, cannot migrate from disk dir: %q", *rootDirectoryFlag, *migrateFromDiskDir)
-		} else {
-			migrateDir = *migrateFromDiskDir
-		}
 	}
 	opts := &Options{
 		Name:                        *nameFlag,
@@ -250,11 +227,6 @@ func Register(env environment.Env) error {
 		log.Infof("Pebble Cache: manual compaction finished in %s", time.Since(start))
 		if err != nil {
 			log.Errorf("Error during compaction: %s", err)
-		}
-	}
-	if migrateDir != "" {
-		if err := c.MigrateFromDiskDir(migrateDir); err != nil {
-			return err
 		}
 	}
 	c.Start()
@@ -661,72 +633,6 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 		}
 	}
 	log.Infof("Pebble Cache: scanForBrokenFiles fixed %d files", mismatchCount)
-	return nil
-}
-
-func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
-	db, err := p.leaser.DB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	ch := disk_cache.ScanDiskDirectory(diskDir)
-
-	start := time.Now()
-	inserted := 0
-	err = p.batchProcessCh(ch, func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error {
-		protoBytes, err := proto.Marshal(fileMetadata)
-		if err != nil {
-			return err
-		}
-		fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileMetadata.GetFileRecord())
-		if err != nil {
-			return err
-		}
-		inserted += 1
-		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
-	})
-	if err != nil {
-		return err
-	}
-	if err := db.Flush(); err != nil {
-		return err
-	}
-	log.Printf("Pebble Cache: Migrated %d files from disk dir %q in %s", inserted, diskDir, time.Since(start))
-	return nil
-}
-
-type batchEditFn func(batch *pebble.Batch, fileMetadata *rfpb.FileMetadata) error
-
-func (p *PebbleCache) batchProcessCh(ch <-chan *rfpb.FileMetadata, editFn batchEditFn) error {
-	db, err := p.leaser.DB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	batch := db.NewBatch()
-	delta := 0
-	for fileMetadata := range ch {
-		delta += 1
-		if err := editFn(batch, fileMetadata); err != nil {
-			log.Warningf("Error editing batch: %s", err)
-			continue
-		}
-		if batch.Count() > 100000 {
-			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
-				log.Warningf("Error comitting batch: %s", err)
-				continue
-			}
-			batch = db.NewBatch()
-		}
-	}
-	if batch.Count() > 0 {
-		if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
-			log.Warningf("Error comitting batch: %s", err)
-		}
-	}
 	return nil
 }
 
