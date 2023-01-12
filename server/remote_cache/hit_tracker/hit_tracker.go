@@ -357,7 +357,7 @@ type transferTimer struct {
 }
 
 func (t *transferTimer) Close() error {
-	return t.CloseWithBytesTransferred(t.d.GetSizeBytes(), t.d.GetSizeBytes(), repb.Compressor_IDENTITY)
+	return t.CloseWithBytesTransferred(t.d.GetSizeBytes(), t.d.GetSizeBytes(), repb.Compressor_IDENTITY, "HT::Close")
 }
 
 // CloseWithBytesTransferred emits and saves metrics related to data transfer
@@ -366,7 +366,8 @@ func (t *transferTimer) Close() error {
 // bytesTransferredClient refers to data uploaded/downloaded from the client
 // They can be different if, for example, the client supports compression and uploads compressed bytes (bytesTransferredClient)
 // but the cache does not support compression and requires that uncompressed bytes are written (bytesTransferredCache)
-func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value) error {
+func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, src string) error {
+	log.Debugf("CloseWithBytesTransferred digest %v compressor %v src %s: bytesCache %d, bytesClient %d", t.d, compressor, src, bytesTransferredCache, bytesTransferredClient)
 	dur := time.Since(t.start)
 
 	h := t.h
