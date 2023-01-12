@@ -396,6 +396,18 @@ func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID stri
 			return err
 		}
 		if existing != nil {
+			if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
+				return tx.Exec(`
+					UPDATE UserGroups
+					SET membership_status = ?
+					WHERE user_user_id = ?
+					AND group_group_id = ?
+					`,
+					grpb.GroupMembershipStatus_MEMBER,
+					userID,
+					groupID,
+				).Error
+			}
 			return status.AlreadyExistsError("You're already in this organization.")
 		}
 		row := &struct{ Count int64 }{}
