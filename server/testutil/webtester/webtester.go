@@ -24,6 +24,13 @@ type WebTester struct {
 // New returns a WebTester scoped to the given test. It registers a cleanup
 // function to record a screenshot if the test fails.
 func New(t *testing.T) *WebTester {
+	//address, _ := os.LookupEnv("WEB_TEST_WEBDRIVER_SERVER")
+	//sep := strings.Split(address, ":")
+	//part := sep[2]
+	//port := strings.Split(part, "/")
+	//portNum, _ := strconv.Atoi(port[0])
+	//selenium.NewChromeDriverService("/Users/maggielou/bb/buildbuddy/chromedriver", portNum)
+
 	driver, err := webtest.NewWebDriverSession(selenium.Capabilities{
 		chrome.CapabilitiesKey: chrome.Capabilities{
 			Args: []string{
@@ -87,6 +94,12 @@ func (wt *WebTester) FindAll(cssSelector string) []*Element {
 	return out
 }
 
+func (wt *WebTester) FindByID(tag string) *Element {
+	el, err := wt.driver.FindElement(selenium.ByID, tag)
+	require.NoError(wt.t, err)
+	return &Element{wt.t, el}
+}
+
 // Screenshot takes a screenshot and saves it in the test outputs directory. The
 // given tag is used to disambiguate between other screenhots taken in the test.
 func (wt *WebTester) Screenshot(tag string) {
@@ -108,6 +121,7 @@ func (wt *WebTester) screenshot(tag string) error {
 	if err != nil {
 		return err
 	}
+	screenshotFile, _ = os.Create("/tmp/photo.png")
 	if _, err := screenshotFile.Write(sc); err != nil {
 		return err
 	}
@@ -149,6 +163,12 @@ func (el *Element) GetAttribute(name string) string {
 	return val
 }
 
+// SendKeys types into the element.
+func (el *Element) SendKeys(keys string) {
+	err := el.webElement.SendKeys(keys)
+	require.NoError(el.t, err)
+}
+
 // ===
 // Utility functions that don't directly correspond with WebElement APIs
 // ===
@@ -168,12 +188,22 @@ func HasClass(el *Element, class string) bool {
 // BuildBuddy-specific functionality
 // ===
 
-// Login uses the Web app to log into BuildBuddy as the default self-auth user.
-// It expects that no user is currently logged in, and that self-auth is
-// enabled.
-func Login(wt *WebTester, appBaseURL string) {
+// Login uses the Web app to log into BuildBuddy. It expects that no user is currently logged in.
+// If gmailUsername and gmailPassword are not set, it assumes that self-auth is enabled and logs in as the default
+// self-auth user
+func Login(wt *WebTester, appBaseURL, gmailUsername, gmailPassword string) {
 	wt.Get(appBaseURL)
 	wt.Find(".login-button").Click()
+
+	//// TODO: Exit early if username not set
+	wt.FindByID("Email").
+		SendKeys(gmailUsername)
+	wt.FindByID("next").Click()
+	wt.FindByID("password").
+		SendKeys(gmailPassword)
+	wt.FindByID("submit").Click()
+
+	wt.screenshot("post-login")
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,
