@@ -1,6 +1,6 @@
 export class TimeDelta {
   private lastTimestamp: number | null = null;
-  private value: number | null = 0;
+  private value: number = 0;
 
   get() {
     return this.value;
