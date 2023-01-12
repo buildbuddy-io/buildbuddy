@@ -298,10 +298,6 @@ func validateOpts(opts *Options) error {
 		}
 	}
 
-	if opts.MinBytesAutoZstdCompression < opts.MaxInlineFileSizeBytes {
-		return status.FailedPreconditionError("pebble cache should not compress inlined data because it is already compressed")
-	}
-
 	return nil
 }
 
@@ -318,9 +314,6 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.MaxInlineFileSizeBytes == 0 {
 		opts.MaxInlineFileSizeBytes = DefaultMaxInlineFileSizeBytes
-	}
-	if opts.MinBytesAutoZstdCompression == 0 {
-		opts.MinBytesAutoZstdCompression = DefaultMaxInlineFileSizeBytes
 	}
 	if opts.AtimeUpdateThreshold == nil {
 		opts.AtimeUpdateThreshold = &DefaultAtimeUpdateThreshold
