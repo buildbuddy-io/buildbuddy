@@ -567,12 +567,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 			default:
 			}
 
-			dupPartitionPattern := fmt.Sprintf("%s/%s", part.ID, part.ID)
-			pathHasDupPartitionID := strings.Contains(path, dupPartitionPattern)
 			blobDir := p.blobDir(part.ID)
-			if pathHasDupPartitionID {
-				blobDir = p.blobDirWithPartition(part.ID)
-			}
 
 			relPath, err := filepath.Rel(blobDir, path)
 			if err != nil {
@@ -656,11 +651,8 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
 			continue
 		}
-		pathHasDupPartitionID := !bytes.HasPrefix(fileMetadataKey, []byte("PT"))
 		blobDir = p.blobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
-		if pathHasDupPartitionID {
-			blobDir = p.blobDirWithPartition(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
-		}
+
 		_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			if p.handleMetadataMismatch(p.env.GetServerContext(), err, fileMetadataKey, fileMetadata) {
@@ -815,13 +807,6 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceNa
 // blobDir returns a directory path under the root directory where blobs can be stored.
 func (p *PebbleCache) blobDir(partID string) string {
 	filePath := filepath.Join(p.rootDirectory, "blobs")
-	return filePath
-}
-
-func (p *PebbleCache) blobDirWithPartition(partID string) string {
-	filePath := p.blobDir(partID)
-	partDir := partitionDirectoryPrefix + partID
-	filePath = filepath.Join(filePath, partDir)
 	return filePath
 }
 
