@@ -37,7 +37,6 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
@@ -902,82 +901,6 @@ func parseFilePath(rootDir, fullPath string, useV2Layout bool) (cacheType resour
 		remoteInstanceName = strings.Join(parts, "/")
 	}
 	return
-}
-
-func ScanDiskDirectory(scanDir string) <-chan *rfpb.FileMetadata {
-	scanned := make(chan *rfpb.FileMetadata, 10)
-	walkFn := func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil // keep going
-		}
-		rootDir := scanDir
-		relPath, err := filepath.Rel(rootDir, path)
-		if err != nil {
-			return status.InternalErrorf("Could not compute %q relative to %q", path, rootDir)
-		}
-		useV2Layout := strings.HasPrefix(relPath, V2Dir)
-		if useV2Layout {
-			rootDir = rootDir + "/" + V2Dir
-			relPath = strings.TrimPrefix(relPath, V2Dir+"/")
-		}
-
-		partID := DefaultPartitionID
-		if strings.HasPrefix(relPath, PartitionDirectoryPrefix) {
-			relPathDirs := strings.SplitN(relPath, string(filepath.Separator), 2)
-			partID = strings.TrimPrefix(relPathDirs[0], PartitionDirectoryPrefix)
-			rootDir = rootDir + "/" + relPathDirs[0]
-		}
-		info, err := d.Info()
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		if info.Size() == 0 {
-			log.Debugf("Skipping 0 length file: %q", path)
-			return nil
-		}
-		cacheType, _, remoteInstanceName, digestBytes, err := parseFilePath(rootDir, path, useV2Layout)
-		if err != nil {
-			log.Debugf("Skipping unparsable file: %s", err)
-			return nil
-		}
-
-		isolation := &rfpb.Isolation{}
-		isolation.CacheType = cacheType
-		isolation.RemoteInstanceName = remoteInstanceName
-		isolation.PartitionId = partID
-		fm := &rfpb.FileMetadata{
-			FileRecord: &rfpb.FileRecord{
-				Isolation: isolation,
-				Digest: &repb.Digest{
-					Hash:      hex.EncodeToString(digestBytes),
-					SizeBytes: info.Size(),
-				},
-			},
-			StorageMetadata: &rfpb.StorageMetadata{
-				FileMetadata: &rfpb.StorageMetadata_FileMetadata{
-					Filename: path,
-				},
-			},
-			StoredSizeBytes: info.Size(),
-			LastAccessUsec:  getLastUseNanos(info),
-			LastModifyUsec:  getLastModifyTimeNanos(info),
-		}
-		scanned <- fm
-		return nil
-	}
-	go func() {
-		if err := filepath.WalkDir(scanDir, walkFn); err != nil {
-			alert.UnexpectedEvent("disk_cache_error_walking_directory", "err: %s", err)
-		}
-		close(scanned)
-	}()
-	return scanned
 }
 
 type fileKey struct {

@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/cache/config",
@@ -38,7 +37,6 @@ go_test(
     srcs = ["disk_cache_test.go"],
     deps = [
         ":disk_cache",
-        "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -52,7 +50,6 @@ go_test(
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
     ],
 )
