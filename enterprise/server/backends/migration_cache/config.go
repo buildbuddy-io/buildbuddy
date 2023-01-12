@@ -44,7 +44,6 @@ type PebbleCacheConfig struct {
 	AtimeWriteBatchSize    int                     `yaml:"atime_write_batch_size"`
 	AtimeBufferSize        *int                    `yaml:"atime_buffer_size"`
 	MinEvictionAge         *time.Duration          `yaml:"min_eviction_age"`
-	IsolateByGroupIDs      bool                    `yaml:"isolate_by_group_ids"`
 
 	EnableZstdCompression       bool  `yaml:"enable_zstd_compression"`
 	MinBytesAutoZstdCompression int64 `yaml:"min_bytes_auto_zstd_compression"`

@@ -49,7 +49,6 @@ go_test(
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
-        "//server/backends/disk_cache",
         "//server/environment",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",

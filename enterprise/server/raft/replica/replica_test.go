@@ -107,7 +107,6 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 
 func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) interfaces.CommittedWriteCloser {
 	fs := filestore.New(filestore.Opts{
-		IsolateByGroupIDs:           true,
 		PrioritizeHashInMetadataKey: true,
 	})
 	fileMetadataKey, err := fs.FileMetadataKey(fileRecord)

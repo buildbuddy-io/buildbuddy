@@ -278,7 +278,6 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 	}
 
 	fs := filestore.New(filestore.Opts{
-		IsolateByGroupIDs:           true,
 		PrioritizeHashInMetadataKey: true,
 	})
 	fileMetadataKey := metadataKey(t, fr)
@@ -318,7 +317,6 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 
 func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
 	fs := filestore.New(filestore.Opts{
-		IsolateByGroupIDs:           true,
 		PrioritizeHashInMetadataKey: true,
 	})
 	fk, err := fs.FileMetadataKey(fr)

@@ -1822,7 +1822,6 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore, partitions []di
 		lastUsageCheckIndex: 0,
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
 		fileStorer: filestore.New(filestore.Opts{
-			IsolateByGroupIDs:           true,
 			PrioritizeHashInMetadataKey: true,
 		}),
 		quitChan:       make(chan struct{}),

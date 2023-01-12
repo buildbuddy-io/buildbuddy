@@ -166,7 +166,6 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
 		fileStorer: filestore.New(filestore.Opts{
-			IsolateByGroupIDs:           true,
 			PrioritizeHashInMetadataKey: true,
 		}),
 	}

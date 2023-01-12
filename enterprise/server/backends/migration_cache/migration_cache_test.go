@@ -702,9 +702,8 @@ func TestCopyDataInBackground_AuthenticatedUser(t *testing.T) {
 	srcCache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: rootDirSrc}, maxSizeBytes)
 	require.NoError(t, err)
 	pebbleOptions := &pebble_cache.Options{
-		RootDirectory:     rootDirDest,
-		MaxSizeBytes:      maxSizeBytes,
-		IsolateByGroupIDs: true,
+		RootDirectory: rootDirDest,
+		MaxSizeBytes:  maxSizeBytes,
 	}
 	destCache, err := pebble_cache.NewPebbleCache(te, pebbleOptions)
 	require.NoError(t, err)

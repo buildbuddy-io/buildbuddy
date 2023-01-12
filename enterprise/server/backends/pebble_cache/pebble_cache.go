@@ -69,7 +69,6 @@ var (
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
-	isolateByGroupIDsFlag     = flag.Bool("cache.pebble.isolate_by_group_ids", false, "If set, filepaths and filekeys for AC records will include groupIDs")
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 
@@ -132,7 +131,6 @@ type Options struct {
 	RootDirectory     string
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
-	IsolateByGroupIDs bool
 
 	EnableZstdCompression       bool
 	MinBytesAutoZstdCompression int64
@@ -196,9 +194,6 @@ type PebbleCache struct {
 
 	enableZstdCompression       bool
 	minBytesAutoZstdCompression int64
-
-	// TODO(Maggie): Clean this up after the isolateByGroupIDs migration
-	isolateByGroupIDs bool
 }
 
 // Register creates a new PebbleCache from the configured flags and sets it in
@@ -234,7 +229,6 @@ func Register(env environment.Env) error {
 		RootDirectory:               *rootDirectoryFlag,
 		Partitions:                  *partitionsFlag,
 		PartitionMappings:           *partitionMappingsFlag,
-		IsolateByGroupIDs:           *isolateByGroupIDsFlag,
 		EnableZstdCompression:       *enableZstdCompressionFlag,
 		BlockCacheSizeBytes:         *blockCacheSizeBytesFlag,
 		MaxSizeBytes:                cache_config.MaxSizeBytes(),
@@ -403,8 +397,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		edits:                       make(chan *sizeUpdate, 1000),
 		accesses:                    make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:                    make([]*partitionEvictor, len(opts.Partitions)),
-		fileStorer:                  filestore.New(filestore.Opts{IsolateByGroupIDs: opts.IsolateByGroupIDs}),
-		isolateByGroupIDs:           opts.IsolateByGroupIDs,
+		fileStorer:                  filestore.New(filestore.Opts{}),
 		bufferPool:                  bytebufferpool.New(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
 		enableZstdCompression:       opts.EnableZstdCompression,
@@ -416,11 +409,11 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		i := i
 		part := part
 		eg.Go(func() error {
-			blobDir := pc.blobDir(!opts.IsolateByGroupIDs, part.ID)
+			blobDir := pc.blobDir(part.ID)
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name, opts.IsolateByGroupIDs)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
 			if err != nil {
 				return err
 			}
@@ -574,9 +567,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 			default:
 			}
 
-			dupPartitionPattern := fmt.Sprintf("%s/%s", part.ID, part.ID)
-			pathHasDupPartitionID := strings.Contains(path, dupPartitionPattern)
-			blobDir := p.blobDir(pathHasDupPartitionID, part.ID)
+			blobDir := p.blobDir(part.ID)
 
 			relPath, err := filepath.Rel(blobDir, path)
 			if err != nil {
@@ -611,7 +602,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 			}
 			return nil
 		}
-		blobDir := p.blobDir(!p.isolateByGroupIDs, part.ID)
+		blobDir := p.blobDir(part.ID)
 		if err := filepath.WalkDir(blobDir, walkFn); err != nil {
 			alert.UnexpectedEvent("pebble_cache_error_deleting_orphans", "err: %s", err)
 		}
@@ -660,8 +651,8 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
 			continue
 		}
-		pathHasDupPartitionID := !bytes.HasPrefix(fileMetadataKey, []byte("PT"))
-		blobDir = p.blobDir(pathHasDupPartitionID, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+		blobDir = p.blobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+
 		_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 		if err != nil {
 			if p.handleMetadataMismatch(p.env.GetServerContext(), err, fileMetadataKey, fileMetadata) {
@@ -694,7 +685,6 @@ func (p *PebbleCache) MigrateFromDiskDir(diskDir string) error {
 			return err
 		}
 		inserted += 1
-
 		return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
 	})
 	if err != nil {
@@ -815,12 +805,8 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceNa
 }
 
 // blobDir returns a directory path under the root directory where blobs can be stored.
-func (p *PebbleCache) blobDir(shouldIncludePartition bool, partID string) string {
+func (p *PebbleCache) blobDir(partID string) string {
 	filePath := filepath.Join(p.rootDirectory, "blobs")
-	if shouldIncludePartition {
-		partDir := partitionDirectoryPrefix + partID
-		filePath = filepath.Join(filePath, partDir)
-	}
 	return filePath
 }
 
@@ -1109,7 +1095,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRec
 	}
 
 	partitionID := fileRecord.GetIsolation().GetPartitionId()
-	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
+	blobDir := p.blobDir(partitionID)
 	fp := p.fileStorer.FilePath(blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
@@ -1285,7 +1271,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		wcm = p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
 	} else {
 		partitionID := fileRecord.GetIsolation().GetPartitionId()
-		blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
+		blobDir := p.blobDir(partitionID)
 		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)
 		if err != nil {
 			return nil, err
@@ -1385,15 +1371,14 @@ type evictionPoolEntry struct {
 }
 
 type partitionEvictor struct {
-	mu                *sync.Mutex
-	part              disk.Partition
-	fileStorer        filestore.Store
-	cacheName         string
-	blobDir           string
-	dbGetter          pebbleutil.Leaser
-	accesses          chan<- *accessTimeUpdate
-	rng               *rand.Rand
-	isolateByGroupIDs bool
+	mu         *sync.Mutex
+	part       disk.Partition
+	fileStorer filestore.Store
+	cacheName  string
+	blobDir    string
+	dbGetter   pebbleutil.Leaser
+	accesses   chan<- *accessTimeUpdate
+	rng        *rand.Rand
 
 	samplePool  []*evictionPoolEntry
 	sizeBytes   int64
@@ -1406,20 +1391,19 @@ type partitionEvictor struct {
 	minEvictionAge  time.Duration
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string, isolateByGroupIDs bool) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
-		mu:                &sync.Mutex{},
-		part:              part,
-		fileStorer:        fileStorer,
-		blobDir:           blobDir,
-		samplePool:        make([]*evictionPoolEntry, 0, *samplePoolSize),
-		dbGetter:          dbg,
-		accesses:          accesses,
-		rng:               rand.New(rand.NewSource(time.Now().UnixNano())),
-		atimeBufferSize:   atimeBufferSize,
-		minEvictionAge:    minEvictionAge,
-		cacheName:         cacheName,
-		isolateByGroupIDs: isolateByGroupIDs,
+		mu:              &sync.Mutex{},
+		part:            part,
+		fileStorer:      fileStorer,
+		blobDir:         blobDir,
+		samplePool:      make([]*evictionPoolEntry, 0, *samplePoolSize),
+		dbGetter:        dbg,
+		accesses:        accesses,
+		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
+		atimeBufferSize: atimeBufferSize,
+		minEvictionAge:  minEvictionAge,
+		cacheName:       cacheName,
 	}
 	start := time.Now()
 	log.Infof("Pebble Cache: Initializing cache partition %q...", part.ID)
@@ -1759,10 +1743,7 @@ func (e *partitionEvictor) deleteFile(sample *evictionPoolEntry) error {
 }
 
 func (e *partitionEvictor) partitionKeyPrefix() string {
-	if e.isolateByGroupIDs {
-		return filestore.PartitionDirectoryPrefix + e.part.ID
-	}
-	return e.part.ID
+	return filestore.PartitionDirectoryPrefix + e.part.ID
 }
 
 func (e *partitionEvictor) resampleK(k int) error {
@@ -2001,7 +1982,7 @@ type readCloser struct {
 
 func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *resource.ResourceName, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	partitionID := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
-	blobDir := p.blobDir(!p.isolateByGroupIDs, partitionID)
+	blobDir := p.blobDir(partitionID)
 	requestedCompression := resource.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
 

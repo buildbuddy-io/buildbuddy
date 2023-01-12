@@ -140,7 +140,6 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 		RootDirectory:               cfg.RootDirectory,
 		Partitions:                  cfg.Partitions,
 		PartitionMappings:           cfg.PartitionMappings,
-		IsolateByGroupIDs:           cfg.IsolateByGroupIDs,
 		MaxSizeBytes:                cfg.MaxSizeBytes,
 		BlockCacheSizeBytes:         cfg.BlockCacheSizeBytes,
 		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
