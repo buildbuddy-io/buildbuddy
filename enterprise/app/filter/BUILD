@@ -5,6 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 ts_library(
     name = "filter",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/components/button",
         "//app/components/checkbox",

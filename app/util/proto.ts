@@ -25,6 +25,11 @@ export function durationToMillis(duration: google_duration.protobuf.IDuration): 
 /** Converts a number of milliseconds to a proto duration. */
 export function millisToDuration(ms: number): google_duration.protobuf.IDuration {
   const seconds = ms / 1e3;
+  return secondsToDuration(seconds);
+}
+
+/** Converts a number of seconds to a proto duration. */
+export function secondsToDuration(seconds: number): google_duration.protobuf.IDuration {
   return { seconds: Math.floor(seconds) as any, nanos: (seconds - Math.floor(seconds)) * 1e9 };
 }
 
