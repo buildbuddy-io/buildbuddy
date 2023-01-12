@@ -171,7 +171,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		bytesFromCache = counter.Count()
 	}
 
-	downloadTracker.CloseWithBytesTransferred(bytesFromCache, int64(bytesTransferredToClient), r.GetCompressor())
+	downloadTracker.CloseWithBytesTransferred(bytesFromCache, int64(bytesTransferredToClient), r.GetCompressor(), "BSS::Read")
 	return err
 }
 
@@ -394,7 +394,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.resourceName.GetDigest())
 			defer func() {
-				uploadTracker.CloseWithBytesTransferred(streamState.offset, int64(bytesUploadedFromClient), streamState.resourceName.GetCompressor())
+				uploadTracker.CloseWithBytesTransferred(streamState.offset, int64(bytesUploadedFromClient), streamState.resourceName.GetCompressor(), "BSS:Write")
 			}()
 		} else { // Subsequent messages
 			if err := checkSubsequentPreconditions(req, streamState); err != nil {
@@ -472,7 +472,7 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.
 			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(r.GetDigest())
 			remainingSize, err = s.recvAll(stream)
-			uploadTracker.CloseWithBytesTransferred(0, int64(len(firstRequest.Data))+remainingSize, r.GetCompressor())
+			uploadTracker.CloseWithBytesTransferred(0, int64(len(firstRequest.Data))+remainingSize, r.GetCompressor(), "BSS:handleAlreadyExists")
 			if err != nil {
 				return err
 			}

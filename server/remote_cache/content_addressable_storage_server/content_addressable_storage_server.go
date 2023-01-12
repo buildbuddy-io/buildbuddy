@@ -173,7 +173,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		// so doing 100-1000 or so in this loop is fine.
 		bytesWrittenToCache := 0
 		defer func() {
-			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor())
+			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor(), "CAS::BatchUpdateBlobs")
 		}()
 
 		if uploadDigest.GetHash() == digest.EmptySha256 {
@@ -298,7 +298,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 		downloadTracker := ht.TrackDownload(readDigest)
 		closeTrackerFuncs = append(closeTrackerFuncs, func(data downloadTrackerData) {
-			downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor)
+			downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor, "CAS::BatchReadBlobs")
 		})
 
 		if readDigest.GetHash() != digest.EmptySha256 {
