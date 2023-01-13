@@ -12,7 +12,6 @@ export interface JoinOrgComponentProps {
 
 interface State {
   status: "INITIAL_LOAD" | "NOT_FOUND" | "READY" | "ALREADY_EXISTS" | "JOINING_GROUP" | "REQUEST_SUBMITTED";
-
   error: string;
   org?: grp.GetGroupResponse;
 }
@@ -84,21 +83,17 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
     const status = this.state.status;
     const org = this.state.org;
 
-    if (!org) {
-      if (status === "INITIAL_LOAD") {
+    switch (status) {
+      case "INITIAL_LOAD":
         return (
           <div className="organization-join-page">
             <div className="loading" />
           </div>
         );
-      }
-
-      console.assert(status === "NOT_FOUND");
-      return <div className="organization-join-page">The requested organization was not found.</div>;
-    }
-
-    switch (status) {
+      case "NOT_FOUND":
+        return <div className="organization-join-page">The requested organization was not found.</div>;
       case "ALREADY_EXISTS":
+        if (!org) throw new Error("Invalid state: org is undefined.");
         return (
           <div className="organization-join-page">
             <img className="illustration" src="/image/join-org-illustration.png"></img>
@@ -116,6 +111,7 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
           </div>
         );
       case "REQUEST_SUBMITTED":
+        if (!org) throw new Error("Invalid state: org is undefined.");
         return (
           <div className="organization-join-page">
             <img className="illustration" src="/image/join-org-illustration.png"></img>
@@ -127,8 +123,9 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
             </div>
           </div>
         );
-      default:
-        console.assert(status === "READY" || status === "JOINING_GROUP");
+      case "READY":
+      case "JOINING_GROUP":
+        if (!org) throw new Error("Invalid state: org is undefined.");
         return (
           <div className="organization-join-page">
             <img className="illustration" src="/image/join-org-illustration.png"></img>
@@ -151,6 +148,8 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
             </div>
           </div>
         );
+      default:
+        throw new Error("Invalid status " + this.state.status);
     }
   }
 }
