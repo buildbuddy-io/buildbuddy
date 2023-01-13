@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/cockroachdb/pebble"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
@@ -1190,6 +1191,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		if alreadyExists {
 			metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
 			metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(r.GetDigest().GetSizeBytes()))
+			tracing.AddStringAttributeToCurrentSpan(ctx, "pebble.duplicate_write", "true")
 		}
 
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
