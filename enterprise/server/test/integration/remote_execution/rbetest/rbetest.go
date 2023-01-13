@@ -101,14 +101,15 @@ func init() {
 
 // Env is an integration test environment for Remote Build Execution.
 type Env struct {
-	t                     *testing.T
-	testEnv               *testenv.TestEnv
-	rbeClient             *rbeclient.Client
-	redisTarget           string
-	rootDataDir           string
-	buildBuddyServers     []*BuildBuddyServer
-	executors             map[string]*Executor
-	testCommandController *testCommandController
+	t                             *testing.T
+	testEnv                       *testenv.TestEnv
+	rbeClient                     *rbeclient.Client
+	redisTarget                   string
+	rootDataDir                   string
+	buildBuddyServers             []*BuildBuddyServer
+	shutdownBuildBuddyServersOnce sync.Once
+	executors                     map[string]*Executor
+	testCommandController         *testCommandController
 	// Used to generate executor names when not specified.
 	executorNameCounter uint64
 	envOpts             *enterprise_testenv.Options
@@ -153,6 +154,10 @@ func (r *Env) GetOLAPDBHandle() *testolapdb.Handle {
 }
 
 func (r *Env) ShutdownBuildBuddyServers() {
+	r.shutdownBuildBuddyServersOnce.Do(r.shutdownBuildBuddyServers)
+}
+
+func (r *Env) shutdownBuildBuddyServers() {
 	log.Info("Waiting for buildbuddy servers to shutdown")
 	var wg sync.WaitGroup
 	for _, app := range r.buildBuddyServers {
@@ -163,7 +168,7 @@ func (r *Env) ShutdownBuildBuddyServers() {
 			defer wg.Done()
 			log.Infof("Waiting for buildbuddy server with port %d to shut down.", app.port)
 			app.env.GetHealthChecker().WaitForGracefulShutdown()
-			log.Infof("Waiting for buildbuddy server with port %d to shut down.", app.port)
+			log.Infof("Shut down for buildbuddy server with port %d completed.", app.port)
 		}()
 	}
 	wg.Wait()
@@ -286,6 +291,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 		log.Warningf("Waiting for executor shutdown to finish...")
 		wg.Wait()
 	})
+	t.Cleanup(rbe.ShutdownBuildBuddyServers)
 
 	return rbe
 }
