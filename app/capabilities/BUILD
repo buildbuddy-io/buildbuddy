@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "capabilities",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//proto:config_ts_proto",
     ],

@@ -6,32 +6,34 @@ declare const window: Window & {
 };
 
 export class Capabilities {
-  name: string;
-  paths: Set<string>;
-  enterprise: boolean;
+  name = "";
+  paths = new Set<string>();
+  enterprise = false;
 
-  config: config.IFrontendConfig;
+  config: config.IFrontendConfig = {};
 
-  version: string;
-  github: boolean;
-  auth: string;
-  anonymous: boolean;
-  test: boolean;
-  createOrg: boolean;
-  invocationSharing: boolean;
-  compareInvocations: boolean;
-  deleteInvocation: boolean;
-  manageApiKeys: boolean;
-  workflows: boolean;
-  executors: boolean;
-  action: boolean;
-  userOwnedExecutors: boolean;
-  executorKeyCreation: boolean;
-  code: boolean;
-  sso: boolean;
-  globalFilter: boolean;
-  usage: boolean;
-  userManagement: boolean;
+  version = "";
+  github = false;
+  auth = "";
+  anonymous = false;
+  test = false;
+  createOrg = false;
+  workflows = false;
+  executors = false;
+  action = false;
+  userOwnedExecutors = false;
+  executorKeyCreation = false;
+  code = false;
+  sso = false;
+  globalFilter = false;
+  usage = false;
+  userManagement = false;
+
+  // TODO: remove these
+  invocationSharing = true;
+  compareInvocations = true;
+  deleteInvocation = true;
+  manageApiKeys = true;
 
   register(name: string, enterprise: boolean, paths: Array<string>) {
     this.name = name;
@@ -40,29 +42,24 @@ export class Capabilities {
 
     this.createOrg = this.enterprise;
 
-    this.invocationSharing = true;
-    this.compareInvocations = true;
-    this.deleteInvocation = true;
-    this.manageApiKeys = true;
-
     this.config = window.buildbuddyConfig;
 
     // Note: Please don't add any new config fields below;
     // get them from the config directly.
     this.version = this.config.version || "";
     this.auth = this.config.configuredIssuers?.[0] || "";
-    this.github = this.config.githubEnabled;
-    this.anonymous = this.config.anonymousUsageEnabled;
-    this.test = this.config.testDashboardEnabled;
-    this.sso = this.config.ssoEnabled;
-    this.workflows = this.config.workflowsEnabled;
-    this.executors = this.config.remoteExecutionEnabled;
-    this.userOwnedExecutors = this.config.userOwnedExecutorsEnabled;
-    this.executorKeyCreation = this.config.executorKeyCreationEnabled;
-    this.code = this.config.codeEditorEnabled;
-    this.globalFilter = this.config.globalFilterEnabled;
-    this.usage = this.config.usageEnabled;
-    this.userManagement = this.config.userManagementEnabled;
+    this.github = this.config.githubEnabled || false;
+    this.anonymous = this.config.anonymousUsageEnabled || false;
+    this.test = this.config.testDashboardEnabled || false;
+    this.sso = this.config.ssoEnabled || false;
+    this.workflows = this.config.workflowsEnabled || false;
+    this.executors = this.config.remoteExecutionEnabled || false;
+    this.userOwnedExecutors = this.config.userOwnedExecutorsEnabled || false;
+    this.executorKeyCreation = this.config.executorKeyCreationEnabled || false;
+    this.code = this.config.codeEditorEnabled || false;
+    this.globalFilter = this.config.globalFilterEnabled || false;
+    this.usage = this.config.usageEnabled || false;
+    this.userManagement = this.config.userManagementEnabled || false;
 
     if (window.gtag) {
       window.gtag("set", {

@@ -12,7 +12,7 @@ interface Props {
 }
 
 interface State {
-  bazelConfigResponse: bazel_config.IGetBazelConfigResponse;
+  bazelConfigResponse?: bazel_config.IGetBazelConfigResponse;
   user: User;
   selectedCredentialIndex: number;
 
@@ -25,7 +25,6 @@ interface State {
 
 export default class SetupCodeComponent extends React.Component<Props, State> {
   state: State = {
-    bazelConfigResponse: null,
     selectedCredentialIndex: 0,
     user: authService.user,
 
@@ -58,7 +57,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     }
   }
 
-  setConfigResponse(response: bazel_config.IGetBazelConfigResponse) {
+  setConfigResponse(response?: bazel_config.IGetBazelConfigResponse) {
     this.setState({ bazelConfigResponse: response, selectedCredentialIndex: 0 });
   }
 
@@ -86,20 +85,20 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   }
 
   getResultsUrl() {
-    return this.state.bazelConfigResponse?.configOption.find(
-      (option: bazel_config.IConfigOption) => option.flagName == "bes_results_url"
+    return this.state.bazelConfigResponse?.configOption?.find(
+      (option: bazel_config.IConfigOption) => option.flagName === "bes_results_url"
     )?.body;
   }
 
   getEventStream() {
-    return this.state.bazelConfigResponse?.configOption.find(
-      (option: bazel_config.IConfigOption) => option.flagName == "bes_backend"
+    return this.state.bazelConfigResponse?.configOption?.find(
+      (option: bazel_config.IConfigOption) => option.flagName === "bes_backend"
     )?.body;
   }
 
   getCache() {
-    return this.state.bazelConfigResponse?.configOption.find(
-      (option: bazel_config.IConfigOption) => option.flagName == "remote_cache"
+    return this.state.bazelConfigResponse?.configOption?.find(
+      (option: bazel_config.IConfigOption) => option.flagName === "remote_cache"
     )?.body;
   }
 
@@ -127,7 +126,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
 
   getRemoteExecution() {
     return this.state.bazelConfigResponse?.configOption?.find(
-      (option: bazel_config.IConfigOption) => option.flagName == "remote_executor"
+      (option: bazel_config.IConfigOption) => option.flagName === "remote_executor"
     )?.body;
   }
 
@@ -143,7 +142,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
 
     if (this.state.auth == "key") {
       const selectedCredential = this.getSelectedCredential();
-      if (!selectedCredential) return null;
+      if (!selectedCredential?.apiKey?.value) return null;
 
       return (
         <div>
@@ -161,8 +160,8 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
 
   isCacheEnabled() {
     return Boolean(
-      this.state.bazelConfigResponse?.configOption.find(
-        (option: bazel_config.IConfigOption) => option.flagName == "remote_cache"
+      this.state.bazelConfigResponse?.configOption?.find(
+        (option: bazel_config.IConfigOption) => option.flagName === "remote_cache"
       )
     );
   }
@@ -171,8 +170,8 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     return (
       (this.isAuthenticated() || !capabilities.auth) &&
       Boolean(
-        this.state.bazelConfigResponse?.configOption.find(
-          (option: bazel_config.IConfigOption) => option.flagName == "remote_executor"
+        this.state.bazelConfigResponse?.configOption?.find(
+          (option: bazel_config.IConfigOption) => option.flagName === "remote_executor"
         )
       )
     );
@@ -184,7 +183,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   }
 
   isAuthenticated() {
-    return this.isAuthEnabled() && this.state.auth != "none";
+    return this.isAuthEnabled() && this.state.auth !== "none";
   }
 
   handleCopyClicked(event: any) {
@@ -309,10 +308,10 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
                   name="selectedCredential"
                   value={this.state.selectedCredentialIndex}
                   onChange={this.onChangeCredential.bind(this)}>
-                  {this.state.bazelConfigResponse.credential.map((credential, index) => (
+                  {this.state.bazelConfigResponse.credential!.map((credential, index) => (
                     <Option key={index} value={index}>
-                      {credential.apiKey.label || "Untitled key"}
-                      {credential.apiKey.userOwned && " (personal key)"}
+                      {credential.apiKey?.label || "Untitled key"}
+                      {credential.apiKey?.userOwned && " (personal key)"}
                     </Option>
                   ))}
                 </Select>

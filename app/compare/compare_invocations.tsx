@@ -23,19 +23,16 @@ type Status = "INIT" | "LOADING" | "LOADED" | "ERROR";
 type Diff = DiffChunkData[];
 
 interface State {
-  status?: Status;
-  error?: string | null;
-  invocationA?: invocation.IInvocation | null;
-  invocationB?: invocation.IInvocation | null;
-  diff?: Diff | null;
+  status: Status;
+  error?: string;
+  invocationA?: invocation.IInvocation;
+  invocationB?: invocation.IInvocation;
+  diff?: Diff;
   showChangesOnly: boolean;
 }
 
 const INITIAL_STATE: State = {
   status: "INIT",
-  error: null,
-  invocationA: null,
-  invocationB: null,
   showChangesOnly: true,
 };
 
@@ -66,7 +63,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     ) {
       this.setState(INITIAL_STATE);
       this.fetchInvocations();
-    } else if (prevProps.search !== this.props.search) {
+    } else if (prevProps.search !== this.props.search && this.state.invocationA && this.state.invocationB) {
       this.computeDiff(this.state.invocationA, this.state.invocationB);
     }
   }
@@ -79,7 +76,8 @@ export default class CompareInvocationsComponent extends React.Component<Compare
     const { invocationAId, invocationBId } = this.props;
 
     let error: any;
-    let invocationA: invocation.IInvocation, invocationB: invocation.IInvocation;
+    let invocationA: invocation.IInvocation | undefined = undefined;
+    let invocationB: invocation.IInvocation | undefined = undefined;
     try {
       [invocationA, invocationB] = await Promise.all([
         this.fetchInvocation(invocationAId),
@@ -97,7 +95,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       this.setState({ status: "ERROR", error: BuildBuddyError.parse(error).description });
       return;
     }
-    this.computeDiff(invocationA, invocationB);
+    this.computeDiff(invocationA!, invocationB!);
   }
 
   private computeDiff(invocationA: invocation.IInvocation, invocationB: invocation.IInvocation) {
@@ -118,7 +116,7 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       invocationA,
       invocationB,
       diff,
-      error: null,
+      error: undefined,
     });
   }
 

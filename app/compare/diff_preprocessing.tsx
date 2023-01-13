@@ -1,4 +1,6 @@
+import Long from "long";
 import { invocation as invocation_proto } from "../../proto/invocation_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 
@@ -20,83 +22,86 @@ export function prepareForDiff(
   if (hideInvocationIds) {
     delete invocation.invocationId;
   }
-  if (sortEvents) {
+  if (sortEvents && invocation.event) {
     sortByProperty(invocation.event, (event: any) => JSON.stringify(event?.buildEvent?.id));
   }
   // Inlined console buffer is deprecated but some older invocations may still
   // have this field. Either way, it is not very useful to show build logs
   // in the diff, so just delete this field unconditionally.
-  delete invocation.consoleBuffer;
+  invocation.consoleBuffer = "";
   if (hideTimingData) {
-    delete invocation.durationUsec;
-    delete invocation.createdAtUsec;
-    delete invocation.updatedAtUsec;
+    invocation.durationUsec = Long.ZERO;
+    invocation.createdAtUsec = Long.ZERO;
+    invocation.updatedAtUsec = Long.ZERO;
   }
 
   // Some CommandLine objects are empty for some reason; remove these.
-  invocation.structuredCommandLine = invocation.structuredCommandLine.filter(
-    (commandLine: any) => commandLine.commandLineLabel
-  );
-  // Sort structured command lines so canonical always comes before original.
-  sortByProperty(invocation.structuredCommandLine, (commandLine) => commandLine.commandLineLabel);
+  if (invocation.structuredCommandLine) {
+    invocation.structuredCommandLine = invocation.structuredCommandLine.filter(
+      (commandLine: any) => commandLine.commandLineLabel
+    );
+    // Sort structured command lines so canonical always comes before original.
+    sortByProperty(invocation.structuredCommandLine, (commandLine) => commandLine.commandLineLabel);
+  }
 
   if (hideTimingData) {
-    for (const commandLine of invocation.structuredCommandLine) {
+    for (const commandLine of invocation.structuredCommandLine || []) {
       removeTimingData(commandLine);
     }
   }
 
   const events: invocation_proto.InvocationEvent[] = [];
-  for (const event of invocation.event) {
+  for (const event of invocation.event || []) {
     if (sortEvents) {
-      delete event.sequenceNumber;
+      event.sequenceNumber = Long.ZERO;
     }
 
     const buildEvent = event?.buildEvent;
+    if (!buildEvent) continue;
     const id = buildEvent?.id;
     if (!id) continue;
 
-    if (id?.configuration) {
+    if (buildEvent.configuration?.makeVariable) {
       // The "makeVariable" map sometimes shows the same data but rendered in a different order;
       // sorting the maps solves this problem.
       sortEntriesByKey(buildEvent.configuration.makeVariable);
     }
 
-    if (hideProgress) {
-      if (id?.progress) {
-        continue;
-      }
+    if (hideProgress && buildEvent.progress) {
+      continue;
     }
 
     if (hideTimingData) {
       delete event.eventTime;
 
-      if (id?.workspaceStatus) {
-        const timestampItem = buildEvent.workspaceStatus.item.find((item: any) => item.key === "BUILD_TIMESTAMP");
+      if (buildEvent.workspaceStatus) {
+        const timestampItem = buildEvent.workspaceStatus.item?.find((item: any) => item.key === "BUILD_TIMESTAMP");
         if (timestampItem) {
-          delete timestampItem.value;
+          timestampItem.value = "";
         }
-      } else if (id?.buildToolLogs) {
-        buildEvent.buildToolLogs.log = event.buildEvent.buildToolLogs.log.filter(
-          (log) => !["elapsed time", "critical path", "process stats"].includes(log.name)
+      } else if (buildEvent.buildToolLogs) {
+        buildEvent.buildToolLogs.log = buildEvent.buildToolLogs.log?.filter(
+          (log) => !["elapsed time", "critical path", "process stats"].includes(log.name || "")
         );
-      } else if (id?.structuredCommandLine) {
+      } else if (buildEvent.structuredCommandLine) {
         removeTimingData(buildEvent.structuredCommandLine);
-      } else if (id?.buildMetrics) {
+      } else if (buildEvent.buildMetrics) {
         delete buildEvent.buildMetrics.timingMetrics;
-        removeTimingDataInActionSummary(buildEvent.buildMetrics.actionSummary);
-      } else if (id?.started) {
-        delete buildEvent.started.startTimeMillis;
-        delete buildEvent.started.startTime;
-      } else if (id?.buildFinished) {
-        delete buildEvent.finished.finishTimeMillis;
-        delete buildEvent.finished.finishTime;
+        if (buildEvent.buildMetrics.actionSummary) {
+          removeTimingDataInActionSummary(buildEvent.buildMetrics.actionSummary);
+        }
+      } else if (buildEvent.started) {
+        buildEvent.started.startTimeMillis = Long.ZERO;
+        buildEvent.started.startTime = new google_timestamp.protobuf.Timestamp();
+      } else if (buildEvent.finished) {
+        buildEvent.finished.finishTimeMillis = Long.ZERO;
+        buildEvent.finished.finishTime = new google_timestamp.protobuf.Timestamp();
       }
     }
 
     if (hideUuids) {
-      if (id?.started) {
-        delete buildEvent.started.uuid;
+      if (id?.started && buildEvent.started) {
+        buildEvent.started.uuid = "";
       }
     }
 
@@ -107,7 +112,7 @@ export function prepareForDiff(
 }
 
 function removeTimingData(commandLine: command_line.ICommandLine) {
-  for (const section of commandLine.sections) {
+  for (const section of commandLine?.sections || []) {
     if (!section?.optionList?.option) continue;
     section.optionList.option = section.optionList.option.filter((option) => option.optionName !== "startup_time");
   }
@@ -115,8 +120,8 @@ function removeTimingData(commandLine: command_line.ICommandLine) {
 
 function removeTimingDataInActionSummary(actionSummary: build_event_stream.BuildMetrics.IActionSummary) {
   for (const actionData of actionSummary?.actionData || []) {
-    delete actionData.firstStartedMs;
-    delete actionData.lastEndedMs;
+    actionData.firstStartedMs = Long.ZERO;
+    actionData.lastEndedMs = Long.ZERO;
   }
 }
 

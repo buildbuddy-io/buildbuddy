@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "docs",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/auth",
         "//app/capabilities",
