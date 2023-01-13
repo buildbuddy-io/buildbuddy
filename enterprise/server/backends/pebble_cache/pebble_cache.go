@@ -1149,14 +1149,6 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	}
 	log.Debugf("Attempting pebble writer %s", string(fileMetadataKey))
 
-	iter := db.NewIter(nil /*default iterOptions*/)
-	defer iter.Close()
-	alreadyExists := pebbleutil.IterHasKey(iter, fileMetadataKey)
-	if alreadyExists {
-		metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
-		metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(r.GetDigest().GetSizeBytes()))
-	}
-
 	var wcm interfaces.MetadataWriteCloser
 	if r.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
@@ -1190,6 +1182,14 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		protoBytes, err := proto.Marshal(md)
 		if err != nil {
 			return err
+		}
+
+		iter := db.NewIter(nil /*default iterOptions*/)
+		defer iter.Close()
+		alreadyExists := pebbleutil.IterHasKey(iter, fileMetadataKey)
+		if alreadyExists {
+			metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
+			metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(r.GetDigest().GetSizeBytes()))
 		}
 
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
