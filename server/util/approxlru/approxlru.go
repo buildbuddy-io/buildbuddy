@@ -246,9 +246,13 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 			}
 
 			l.mu.Lock()
-			// Only update the size if it hasn't changed already. Users
-			// are allowed to update the size as a side-effect of the eviction
-			// callback which should reflect the new size.
+
+			// The user (e.g. pebble cache) is the source of truth of the size
+			// data, but the LRU also needs to do its own accounting in between
+			// the times that the user provides a size update to the LRU.
+			// We skip our own accounting here if we detect that the size has
+			// changed since it means the user provided their own size update
+			// which takes priority.
 			if l.localSizeBytes == oldLocalSizeBytes {
 				l.localSizeBytes -= sample.SizeBytes
 			}
