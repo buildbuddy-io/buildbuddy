@@ -22,6 +22,7 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 	te.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(
 		"US1", "GR1",
 		"US2", "GR2",
+		"US3", "GR3",
 	)))
 	udb, err := userdb.NewUserDB(te, te.GetDBHandle())
 	require.NoError(t, err)
@@ -107,6 +108,102 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 	groupUser := groupUsers[0]
 
 	require.Equal(t, grpb.Group_ADMIN_ROLE, groupUser.Role, "users should be admins of their self-owned group")
+}
+
+func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.add_user_to_domain_group", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	slug := "org1-url-identifier"
+	orgGroupID, err := udb.InsertOrUpdateGroup(ctx, &tables.Group{
+		URLIdentifier: &slug,
+		OwnedDomain:   "org1.io",
+	})
+	require.NoError(t, err)
+
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID:    "US1",
+		SubID:     "SubID1",
+		FirstName: "FirstName1",
+		LastName:  "LastName1",
+		Email:     "user1@org1.io",
+	})
+	require.NoError(t, err)
+
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+
+	u, err := udb.GetUser(ctx1)
+	require.NoError(t, err)
+
+	require.Len(t, u.Groups, 1, "cloud users should be added to their domain group")
+
+	selectedGroup := u.Groups[0].Group
+	require.Equal(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should be the org's group")
+
+	groupUsers, err := udb.GetGroupUsers(ctx1, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	require.NoError(t, err)
+
+	require.Len(t, groupUsers, 1, "org group should have 1 member")
+	groupUser := groupUsers[0]
+
+	require.Equal(t, grpb.Group_ADMIN_ROLE, groupUser.Role, "first user should be admins of the org group")
+
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID:    "US2",
+		SubID:     "SubID2",
+		FirstName: "FirstName2",
+		LastName:  "LastName2",
+		Email:     "user2@org2.io",
+	})
+	require.NoError(t, err)
+
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+
+	u2, err := udb.GetUser(ctx2)
+	require.NoError(t, err)
+
+	require.Len(t, u2.Groups, 1, "cloud users who's domain doesn't match should be added to a personal group")
+
+	selectedGroup = u2.Groups[0].Group
+	require.NotEqual(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should not be the org's group")
+
+	groupUsers, err = udb.GetGroupUsers(ctx1, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	require.NoError(t, err)
+
+	require.Len(t, groupUsers, 1, "org group should still have 1 member")
+	groupUser = groupUsers[0]
+
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID:    "US3",
+		SubID:     "SubID3",
+		FirstName: "FirstName3",
+		LastName:  "LastName3",
+		Email:     "user3@org1.io",
+	})
+	require.NoError(t, err)
+
+	ctx3 := authUserCtx(ctx, env, t, "US3")
+
+	u3, err := udb.GetUser(ctx3)
+	require.NoError(t, err)
+
+	require.Len(t, u.Groups, 1, "cloud users should be added to their domain group")
+
+	selectedGroup = u3.Groups[0].Group
+	require.Equal(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should be the org's group")
+
+	groupUsers, err = udb.GetGroupUsers(ctx3, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	require.NoError(t, err)
+
+	require.Len(t, groupUsers, 2, "org group should have 2 members")
+	groupUser = groupUsers[1]
+
+	require.Equal(t, grpb.Group_DEVELOPER_ROLE, groupUser.Role, "second user should have the role developer")
+
 }
 
 func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t *testing.T) {

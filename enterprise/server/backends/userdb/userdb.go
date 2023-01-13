@@ -610,7 +610,8 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		}
 	}
 
-	if *createGroupPerUser {
+	// If the user isn't associated with an org, create a personal group.
+	if len(groupIDs) == 0 && *createGroupPerUser {
 		sug, err := singleUserGroup(u)
 		if err != nil {
 			return err
