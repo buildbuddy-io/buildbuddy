@@ -290,6 +290,7 @@ func newUsageTracker(store *Store, gossipManager *gossip.GossipManager, partitio
 		if err != nil {
 			return nil, err
 		}
+		l.Start()
 		u.lru = l
 	}
 

@@ -101,6 +101,7 @@ func newCache(t *testing.T, maxSizeBytes int64) (*testCache, *approxlru.LRU[*ent
 		},
 	})
 	require.NoError(t, err)
+	l.Start()
 	return c, l
 }
 
