@@ -1195,7 +1195,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		if err == nil {
 			partitionID := fileRecord.GetIsolation().GetPartitionId()
-			p.sendSizeUpdate(partitionID, fileMetadataKey, bytesWritten)
+			if !alreadyExists {
+				p.sendSizeUpdate(partitionID, fileMetadataKey, bytesWritten)
+			}
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
 		}
 
