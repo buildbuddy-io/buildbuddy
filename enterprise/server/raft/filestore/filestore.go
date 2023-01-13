@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -55,10 +56,158 @@ func fileRecordSegments(r *rfpb.FileRecord) (partID string, groupID string, isol
 	return
 }
 
+type PebbleKeyVersion int
+
+const (
+	// UndefinedKeyVersion is the version of all keys in the database
+	// that have not yet been versioned.
+	UndefinedKeyVersion PebbleKeyVersion = iota
+
+	// Version1 is the first key version that includes a version in the
+	// key path, to disambiguate reading old keys.
+	Version1
+
+	// Version2 is the same as Version1, plus a change that moves the
+	// remote instance name hash to the end of the key rather than the
+	// beginning. This allows for even sampling across the keyspace,
+	// regardless of remote instance name.
+	Version2
+
+	// TestingMaxKeyVersion should not be used directly -- it is always
+	// 1 more than the highest defined version, which allows for tests
+	// to iterate across all versions from UndefinedKeyVersion to
+	// TestingMaxKeyVersion and check cross compatibility.
+	TestingMaxKeyVersion
+)
+
+type PebbleKey struct {
+	partID             string
+	groupID            string
+	isolation          string
+	remoteInstanceHash string
+	hash               string
+
+	prioritizeHashInMetadataKey bool
+}
+
+func (pmk *PebbleKey) String() string {
+	fmk, err := pmk.Bytes(UndefinedKeyVersion)
+	if err != nil {
+		return err.Error()
+	}
+	return string(fmk)
+}
+
+func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
+	switch version {
+	case UndefinedKeyVersion:
+		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(pmk.groupID, filePath)
+		}
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath)
+
+		return []byte(filePath), nil
+	case Version1:
+		filePath := filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(pmk.groupID, filePath)
+		}
+		partDir := "/v1/" + PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath)
+		return []byte(filePath), nil
+	case Version2:
+		filePath := filepath.Join(pmk.hash, pmk.isolation, pmk.remoteInstanceHash)
+		if pmk.isolation == "ac" {
+			filePath = filepath.Join(pmk.groupID, filePath)
+		}
+		partDir := "/v2/" + PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath)
+		return []byte(filePath), nil
+	default:
+		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
+	}
+}
+
+func parseError(parts [][]byte) error {
+	return status.InvalidArgumentErrorf("Unable to parse %v to pebble key", string(bytes.Join(parts, []byte("/"))))
+}
+
+func (pmk *PebbleKey) parseUndefinedVersion(parts [][]byte) error {
+	switch len(parts) {
+	case 3:
+		pmk.partID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2])
+	case 5:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion1(parts [][]byte) error {
+	switch len(parts) {
+	case 4:
+		pmk.partID, pmk.isolation, pmk.hash = string(parts[1]), string(parts[2]), string(parts[3])
+	case 6:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	return nil
+}
+
+func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
+	switch len(parts) {
+	case 4:
+		pmk.partID, pmk.hash, pmk.isolation = string(parts[1]), string(parts[2]), string(parts[3])
+	case 6:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+	default:
+		return parseError(parts)
+	}
+	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	return nil
+}
+
+func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
+	version := UndefinedKeyVersion
+	slash := []byte{filepath.Separator}
+	parts := bytes.Split(bytes.TrimPrefix(in, slash), slash)
+
+	if len(parts) == 0 {
+		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
+	}
+
+	// Attempt to read the key version, if one is present. This allows for much
+	// simpler parsing because we can restrict the set of valid parse inputs
+	// instead of having to possibly parse any/all versions at once.
+	if len(parts[0]) > 1 && bytes.ContainsRune(parts[0][:1], 'v') {
+		if s, err := strconv.ParseUint(string(parts[0][1:]), 10, 32); err == nil {
+			version = PebbleKeyVersion(s)
+		}
+	}
+
+	switch version {
+	case UndefinedKeyVersion:
+		return UndefinedKeyVersion, pmk.parseUndefinedVersion(parts)
+	case Version1:
+		return Version1, pmk.parseVersion1(parts)
+	case Version2:
+		return Version2, pmk.parseVersion2(parts)
+	default:
+		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
+	}
+}
+
 type Store interface {
 	FileKey(r *rfpb.FileRecord) ([]byte, error)
 	FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string
 	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
+	PebbleKey(r *rfpb.FileRecord) (*PebbleKey, error)
 
 	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
 	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
@@ -142,25 +291,26 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	//    for example:
 	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/ac/44321
 	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/cas
+	pmk, err := fs.PebbleKey(r)
+	if err != nil {
+		return nil, err
+	}
+	return pmk.Bytes(UndefinedKeyVersion)
+}
+
+func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (*PebbleKey, error) {
 	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err
 	}
-
-	var filePath string
-	if fs.prioritizeHashInMetadataKey {
-		filePath = filepath.Join(hash, isolation, remoteInstanceHash)
-	} else {
-		filePath = filepath.Join(isolation, remoteInstanceHash, hash)
-	}
-
-	if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
-		filePath = filepath.Join(groupID, filePath)
-	}
-	partDir := PartitionDirectoryPrefix + partID
-	filePath = filepath.Join(partDir, filePath)
-
-	return []byte(filePath), nil
+	return &PebbleKey{
+		partID:                      partID,
+		groupID:                     groupID,
+		isolation:                   isolation,
+		remoteInstanceHash:          remoteInstanceHash,
+		hash:                        hash,
+		prioritizeHashInMetadataKey: fs.prioritizeHashInMetadataKey,
+	}, nil
 }
 
 func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
