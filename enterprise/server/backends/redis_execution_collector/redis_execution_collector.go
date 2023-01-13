@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/protobuf/proto"
 
@@ -85,13 +84,11 @@ func (c *collector) AddInvocationLink(ctx context.Context, link *sipb.StoredInvo
 		return err
 	}
 	key := getInvocationLinkKey(link.GetExecutionId())
-	if err = c.rdb.SAdd(ctx, key, string(b)).Err(); err != nil {
-		return err
-	}
-	if err = c.rdb.Expire(ctx, key, invocationExpiration).Err(); err != nil {
-		log.CtxErrorf(ctx, "failed to expire redis invocation link with key %q", key)
-	}
-	return nil
+	pipe := c.rdb.TxPipeline()
+	pipe.SAdd(ctx, key, string(b))
+	pipe.Expire(ctx, key, invocationLinkExpiration)
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 func (c *collector) GetInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
@@ -116,13 +113,11 @@ func (c *collector) AppendExecution(ctx context.Context, iid string, execution *
 		return err
 	}
 	key := getExecutionKey(iid)
-	if err := c.rdb.RPush(ctx, key, string(b)).Err(); err != nil {
-		return err
-	}
-	if err = c.rdb.Expire(ctx, key, executionExpiration).Err(); err != nil {
-		log.CtxErrorf(ctx, "failed to expire Executions in redis with key %q", key)
-	}
-	return nil
+	pipe := c.rdb.TxPipeline()
+	pipe.RPush(ctx, key, string(b))
+	pipe.Expire(ctx, key, executionExpiration)
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 func (c *collector) GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error) {
