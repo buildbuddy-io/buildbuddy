@@ -121,7 +121,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	slug := "org1-url-identifier"
 	orgGroupID, err := udb.InsertOrUpdateGroup(ctx, &tables.Group{
 		URLIdentifier: &slug,
-		OwnedDomain: "org1.io",
+		OwnedDomain:   "org1.io",
 	})
 	require.NoError(t, err)
 
