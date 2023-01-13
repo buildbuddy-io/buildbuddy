@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/ioutil"
 	"sync"
 	"testing"
 	"time"
@@ -1327,10 +1328,9 @@ func TestReadWrite(t *testing.T) {
 		srcReader, err := srcCache.Reader(ctx, r, 0, 0)
 		require.NoError(t, err)
 
-		actualBuf = make([]byte, len(buf))
-		n, err = srcReader.Read(actualBuf)
+		actualBuf, err = ioutil.ReadAll(srcReader)
 		require.NoError(t, err)
-		require.Equal(t, int(testSize), n)
+		require.Equal(t, int(testSize), len(actualBuf))
 		require.True(t, bytes.Equal(buf, actualBuf))
 
 		err = srcReader.Close()
@@ -1339,10 +1339,9 @@ func TestReadWrite(t *testing.T) {
 		destReader, err := destCache.Reader(ctx, r, 0, 0)
 		require.NoError(t, err)
 
-		actualBuf = make([]byte, len(buf))
-		n, err = destReader.Read(actualBuf)
+		actualBuf, err = ioutil.ReadAll(destReader)
 		require.NoError(t, err)
-		require.Equal(t, int(testSize), n)
+		require.Equal(t, int(testSize), len(actualBuf))
 		require.True(t, bytes.Equal(buf, actualBuf))
 
 		err = destReader.Close()
