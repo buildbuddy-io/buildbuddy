@@ -18,7 +18,7 @@ export type LinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement>;
  */
 export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAnchorElement>) => {
   const { className, href, onClick, ...rest } = props;
-  const isExternal = href.startsWith("http://") || href.startsWith("https://");
+  const isExternal = Boolean(href && (href.startsWith("http://") || href.startsWith("https://")));
   const onClickWrapped = isExternal
     ? onClick
     : (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
@@ -28,7 +28,7 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
         }
 
         e.preventDefault();
-        router.navigateTo(href);
+        if (href) router.navigateTo(href);
       };
   const externalProps: React.HTMLProps<HTMLAnchorElement> = isExternal ? { target: "_blank" } : {};
   return (
