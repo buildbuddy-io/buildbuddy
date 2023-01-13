@@ -49,8 +49,8 @@ import (
 
 const (
 	// TTL for keys used to track pending executions for action merging.
-	pendingExecutionTTL     = 8 * time.Hour
-	recordExecutionsTimeout = 15 * time.Second
+	pendingExecutionTTL    = 8 * time.Hour
+	updateExecutionTimeout = 15 * time.Second
 )
 
 var (
@@ -256,6 +256,8 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	if s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
+	ctx, cancel := background.ExtendContextForFinalization(ctx, updateExecutionTimeout)
+	defer cancel()
 	execution := &tables.Execution{
 		ExecutionID: executionID,
 		Stage:       int64(stage),
@@ -317,11 +319,6 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		return nil
 	}
 	var executionPrimaryDB tables.Execution
-
-	// we need more time to want write executions into clickhouse when stream
-	// context is cancelled.
-	ctx, cancel := background.ExtendContextForFinalization(ctx, recordExecutionsTimeout)
-	defer cancel()
 
 	if err := s.env.GetDBHandle().DB(ctx).Where("execution_id = ?", executionID).First(&executionPrimaryDB).Error; err != nil {
 		return status.InternalErrorf("failed to look up execution %q: %s", executionID, err)
