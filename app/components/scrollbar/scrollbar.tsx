@@ -36,9 +36,9 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
   private thumbRef = React.createRef<HTMLDivElement>();
 
   componentDidMount() {
-    this.track = this.trackRef.current;
-    this.thumb = this.thumbRef.current;
-    const scrollingElement = this.track.parentElement;
+    this.track = this.trackRef.current!;
+    this.thumb = this.thumbRef.current!;
+    const scrollingElement = this.track.parentElement!;
     if (!scrollingElement.id) {
       scrollingElement.id = uuid();
     }
@@ -47,10 +47,10 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
     this.subscription
       .add(fromEvent(scrollingElement, "mouseenter").subscribe(this.onMouseEnterScrollingElement.bind(this)))
       .add(fromEvent(scrollingElement, "mouseleave").subscribe(this.onMouseLeaveScrollingElement.bind(this)))
-      .add(fromEvent(scrollingElement, "wheel").subscribe(this.onWheelScrollingElement.bind(this)))
-      .add(fromEvent(window, "mousemove").subscribe(this.onWindowMouseMove.bind(this)))
-      .add(fromEvent(window, "mouseup").subscribe(this.onWindowMouseUp.bind(this)))
-      .add(fromEvent(window, "keydown").subscribe(this.onWindowKeyDown.bind(this)));
+      .add(fromEvent<WheelEvent>(scrollingElement, "wheel").subscribe(this.onWheelScrollingElement.bind(this)))
+      .add(fromEvent<MouseEvent>(window, "mousemove").subscribe(this.onWindowMouseMove.bind(this)))
+      .add(fromEvent<MouseEvent>(window, "mouseup").subscribe(this.onWindowMouseUp.bind(this)))
+      .add(fromEvent<KeyboardEvent>(window, "keydown").subscribe(this.onWindowKeyDown.bind(this)));
   }
 
   public update({ scrollLeft, scrollLeftMax }: { scrollLeft: number; scrollLeftMax: number }) {
@@ -73,7 +73,7 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
     );
   }
 
-  private onThumbMouseDown(e: MouseEvent) {
+  private onThumbMouseDown(e: React.MouseEvent) {
     if (e.buttons & 1) {
       this.isScrolling = true;
       const thumb = this.thumb!.getBoundingClientRect();
@@ -103,7 +103,7 @@ export class HorizontalScrollbar extends React.Component<HorizontalScrollbarProp
     this.updateMouse(e);
     this.isScrolling = false;
   }
-  private updateMouse(e: MouseEvent) {
+  private updateMouse(e: MouseEvent | React.MouseEvent) {
     this.mouseX = Math.min(this.maxMouseX, Math.max(this.minMouseX, e.clientX));
   }
 

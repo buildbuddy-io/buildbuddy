@@ -8,6 +8,7 @@ ts_library(
         "*.ts",
         "*.tsx",
     ]),
+    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//@types/uuid",

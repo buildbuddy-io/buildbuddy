@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "link",
     srcs = ["link.tsx"],
+    strict = True,
     deps = [
         "//app/router",
         "@npm//@types/react",

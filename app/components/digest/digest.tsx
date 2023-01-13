@@ -26,7 +26,7 @@ export const DigestComponent = React.forwardRef((props: DigestProps, ref: React.
         className={`digest-component-hash ${props.hashWidth !== undefined ? "fixed-width" : ""}`}
         title={props.digest.hash}
         style={{
-          backgroundColor: format.colorHash(props.digest.hash),
+          backgroundColor: format.colorHash(props.digest.hash || ""),
           ...(props.hashWidth !== undefined && { width: props.hashWidth }),
         }}>
         {props.digest.hash}
