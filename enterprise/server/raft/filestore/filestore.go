@@ -61,17 +61,23 @@ type PebbleKeyVersion int
 const (
 	// UndefinedKeyVersion is the version of all keys in the database
 	// that have not yet been versioned.
-	UndefinedKeyVersion PebbleKeyVersion = 0
+	UndefinedKeyVersion PebbleKeyVersion = iota
 
 	// Version1 is the first key version that includes a version in the
 	// key path, to disambiguate reading old keys.
-	Version1 = 1
+	Version1
 
 	// Version2 is the same as Version1, plus a change that moves the
 	// remote instance name hash to the end of the key rather than the
 	// beginning. This allows for even sampling across the keyspace,
 	// regardless of remote instance name.
-	Version2 = 2
+	Version2
+
+	// TestingMaxKeyVersion should not be used directly -- it is always
+	// 1 more than the highest defined version, which allows for tests
+	// to iterate across all versions from UndefinedKeyVersion to
+	// TestingMaxKeyVersion and check cross compatibility.
+	TestingMaxKeyVersion
 )
 
 type PebbleKey struct {
@@ -116,12 +122,16 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(pmk.groupID, filePath)
 		}
-		partDir := "/v3/" + PartitionDirectoryPrefix + pmk.partID
+		partDir := "/v2/" + PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath)
 		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
 	}
+}
+
+func parseError(parts [][]byte) error {
+	return status.InvalidArgumentErrorf("Unable to parse %v to pebble key", string(bytes.Join(parts, []byte("/"))))
 }
 
 func (pmk *PebbleKey) parseUndefinedVersion(parts [][]byte) error {
@@ -131,7 +141,7 @@ func (pmk *PebbleKey) parseUndefinedVersion(parts [][]byte) error {
 	case 5:
 		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
-		return status.InvalidArgumentErrorf("Unable to parse %v to pebble key", parts)
+		return parseError(parts)
 	}
 	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
 	return nil
@@ -144,7 +154,7 @@ func (pmk *PebbleKey) parseVersion1(parts [][]byte) error {
 	case 6:
 		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
 	default:
-		return status.InvalidArgumentErrorf("Unable to parse %v to pebble key", parts)
+		return parseError(parts)
 	}
 	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
 	return nil
@@ -157,7 +167,7 @@ func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
 	case 6:
 		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
 	default:
-		return status.InvalidArgumentErrorf("Unable to parse %v to pebble key", parts)
+		return parseError(parts)
 	}
 	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
 	return nil
@@ -165,7 +175,8 @@ func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
 
 func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	version := UndefinedKeyVersion
-	parts := bytes.Split(in, []byte{filepath.Separator})
+	slash := []byte{filepath.Separator}
+	parts := bytes.Split(bytes.TrimPrefix(in, slash), slash)
 
 	if len(parts) == 0 {
 		return -1, status.InvalidArgumentErrorf("Unable to parse %q to pebble key", in)
@@ -174,7 +185,7 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	// Attempt to read the key version, if one is present. This allows for much
 	// simpler parsing because we can restrict the set of valid parse inputs
 	// instead of having to possibly parse any/all versions at once.
-	if len(parts[0]) > 1 && parts[0][0] == byte('v') {
+	if len(parts[0]) > 1 && bytes.ContainsRune(parts[0][:1], 'v') {
 		if s, err := strconv.ParseUint(string(parts[0][1:]), 10, 32); err == nil {
 			version = PebbleKeyVersion(s)
 		}
