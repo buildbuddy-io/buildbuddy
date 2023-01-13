@@ -31,6 +31,9 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 			},
 			Digest: d,
 		}
+		if i%2 == 0 {
+			fr.Isolation.CacheType = resource.CacheType_CAS
+		}
 		sourceKey, err := fs.PebbleKey(fr)
 		require.NoError(t, err)
 
@@ -43,7 +46,7 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, i, parsedVersion)
-			assert.Equal(t, sourceKey, parsedKey)
+			assert.Equal(t, sourceKey.String(), parsedKey.String())
 
 			_, err = parsedKey.Bytes(j)
 			require.NoError(t, err)
