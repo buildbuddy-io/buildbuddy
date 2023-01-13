@@ -18,7 +18,9 @@ const (
 	redisInvocationKeyPrefix     = "invocation"
 	redisInvocationLinkKeyPrefix = "invocationLink"
 
-	invocationExpiration = 24 * time.Hour
+	invocationExpiration     = 24 * time.Hour
+	invocationLinkExpiration = 24 * time.Hour
+	executionExpiration      = 24 * time.Hour
 )
 
 type collector struct {
@@ -81,7 +83,12 @@ func (c *collector) AddInvocationLink(ctx context.Context, link *sipb.StoredInvo
 	if err != nil {
 		return err
 	}
-	return c.rdb.SAdd(ctx, getInvocationLinkKey(link.GetExecutionId()), string(b)).Err()
+	key := getInvocationLinkKey(link.GetExecutionId())
+	pipe := c.rdb.TxPipeline()
+	pipe.SAdd(ctx, key, string(b))
+	pipe.Expire(ctx, key, invocationLinkExpiration)
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 func (c *collector) GetInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error) {
@@ -105,7 +112,12 @@ func (c *collector) AppendExecution(ctx context.Context, iid string, execution *
 	if err != nil {
 		return err
 	}
-	return c.rdb.RPush(ctx, getExecutionKey(iid), string(b)).Err()
+	key := getExecutionKey(iid)
+	pipe := c.rdb.TxPipeline()
+	pipe.RPush(ctx, key, string(b))
+	pipe.Expire(ctx, key, executionExpiration)
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 func (c *collector) GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error) {
