@@ -172,8 +172,9 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
 		// so doing 100-1000 or so in this loop is fine.
 		bytesWrittenToCache := 0
+		bytesFromClient := len(uploadRequest.GetData())
 		defer func() {
-			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor(), "CAS::BatchUpdateBlobs")
+			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(bytesFromClient), uploadRequest.GetCompressor(), "CAS::BatchUpdateBlobs")
 		}()
 
 		if uploadDigest.GetHash() == digest.EmptySha256 {
@@ -205,6 +206,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 				continue
 			}
 		}
+		log.Warningf("Digest %v, upload compressor %v, request data size %d, decompressed size %d", uploadDigest, uploadRequest.GetCompressor(), len(uploadRequest.GetData()), len(decompressedData))
 		checksum.Write(decompressedData)
 		computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
 		if computedDigest != uploadDigest.GetHash() {
@@ -227,6 +229,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		rn := digest.NewCASResourceName(uploadDigest, req.GetInstanceName())
 		// If cache doesn't support compression type, store decompressed data
 		dataToCache := decompressedData
+		log.Warningf("CAS_Server::cache.SupportsCompressor is %v", s.cache.SupportsCompressor(uploadRequest.GetCompressor()))
 		if s.cache.SupportsCompressor(uploadRequest.GetCompressor()) {
 			rn.SetCompressor(uploadRequest.GetCompressor())
 			// If cache supports saving compressed data, pass through compressed data from the request

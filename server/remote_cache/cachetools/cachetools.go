@@ -363,6 +363,8 @@ func SupportsCompression(ctx context.Context, capabilitiesClient repb.Capabiliti
 			break
 		}
 	}
+	log.Debugf("supportsBytestreamCompression is %v, supportsBatchUpdateCompression is %v", supportsBytestreamCompression, supportsBatchUpdateCompression)
+
 	return supportsBytestreamCompression && supportsBatchUpdateCompression, nil
 }
 
@@ -401,6 +403,7 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 
 func (ul *BatchCASUploader) supportsCompression() bool {
 	ul.once.Do(func() {
+		log.Debugf("enableUploadCompresssion flag is %v", *enableUploadCompresssion)
 		if !*enableUploadCompresssion {
 			return
 		}
@@ -419,6 +422,7 @@ func (ul *BatchCASUploader) supportsCompression() bool {
 			log.Debugf("Upload compression was enabled but remote server did not support compression")
 		}
 	})
+	log.Debugf("ul.compress is %v", ul.compress)
 	return ul.compress
 }
 
