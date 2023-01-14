@@ -28,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -598,9 +597,8 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		replicas: sync.Map{},
 
 		metaRangeData: "",
-		fileStorer: filestore.New(filestore.Opts{
-			PrioritizeHashInMetadataKey: true,
-		}),
+		fileStorer:    filestore.New(filestore.Opts{}),
+
 		splitMu:    sync.Mutex{},
 		splitQueue: make(chan *rfpb.RangeDescriptor, splitQueueSize),
 		eg:         &errgroup.Group{},
@@ -969,7 +967,11 @@ func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n 
 
 	var rs []*approxlru.Sample[*ReplicaSample]
 	for _, samp := range samples {
-		key, err := s.fileStorer.FileMetadataKey(samp.GetFileRecord())
+		key, err := s.fileStorer.PebbleKey(samp.GetFileRecord())
+		if err != nil {
+			return nil, err
+		}
+		keyBytes, err := key.Bytes(filestore.Version2)
 		if err != nil {
 			return nil, err
 		}
@@ -979,7 +981,7 @@ func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n 
 				RangeId:    rd.GetRangeId(),
 				Generation: rd.GetGeneration(),
 			},
-			key:        string(key),
+			key:        string(keyBytes),
 			fileRecord: samp.GetFileRecord(),
 		}
 		rs = append(rs, &approxlru.Sample[*ReplicaSample]{
@@ -1290,75 +1292,6 @@ func (s *Store) Read(req *rfpb.ReadRequest, stream rfspb.Api_ReadServer) error {
 	copyBuf := make([]byte, bufSize)
 	_, err = io.CopyBuffer(&streamWriter{stream}, readCloser, copyBuf)
 	return err
-}
-
-func (s *Store) Write(stream rfspb.Api_WriteServer) error {
-	var bytesWritten int64
-	var writeCloser interfaces.MetadataWriteCloser
-	var clusterID uint64
-	for {
-		req, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if writeCloser == nil {
-			r, err := s.LeasedRange(req.GetHeader())
-			if err != nil {
-				s.log.Errorf("Error while calling LeasedRange: %s", err)
-				return err
-			}
-			clusterID = r.ClusterID
-			writeCloser, err = r.Writer(stream.Context(), req.GetHeader(), req.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			defer writeCloser.Close()
-			// Send the client an empty write response as an indicator that we
-			// have accepted the write.
-			if err := stream.Send(&rfpb.WriteResponse{}); err != nil {
-				return err
-			}
-		}
-		n, err := writeCloser.Write(req.Data)
-		if err != nil {
-			return err
-		}
-		bytesWritten += int64(n)
-		if req.FinishWrite {
-			now := time.Now()
-			md := &rfpb.FileMetadata{
-				FileRecord:      req.GetFileRecord(),
-				StorageMetadata: writeCloser.Metadata(),
-				StoredSizeBytes: bytesWritten,
-				LastModifyUsec:  now.UnixMicro(),
-				LastAccessUsec:  now.UnixMicro(),
-			}
-			fileMetadataKey, err := s.fileStorer.FileMetadataKey(req.GetFileRecord())
-			if err != nil {
-				return err
-			}
-			protoBytes, err := proto.Marshal(md)
-			if err != nil {
-				return err
-			}
-			writeReq := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-				Kv: &rfpb.KV{
-					Key:   fileMetadataKey,
-					Value: protoBytes,
-				},
-			})
-			if err := client.SyncProposeLocalBatchNoRsp(stream.Context(), s.nodeHost, clusterID, writeReq); err != nil {
-				return err
-			}
-			return stream.Send(&rfpb.WriteResponse{
-				CommittedSize: bytesWritten,
-			})
-		}
-	}
-	return nil
 }
 
 func (s *Store) OnEvent(updateType serf.EventType, event serf.Event) {

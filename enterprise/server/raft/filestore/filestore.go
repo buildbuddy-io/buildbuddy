@@ -86,8 +86,6 @@ type PebbleKey struct {
 	isolation          string
 	remoteInstanceHash string
 	hash               string
-
-	prioritizeHashInMetadataKey bool
 }
 
 func (pmk *PebbleKey) String() string {
@@ -224,22 +222,13 @@ type Store interface {
 	LinkOrCopyFile(ctx context.Context, md *rfpb.StorageMetadata, srcFileDir, targetFileDir string) error
 }
 
-type fileStorer struct {
-	prioritizeHashInMetadataKey bool
-}
+type fileStorer struct{}
 
-type Opts struct {
-	// PrioritizeHashInMetadataKey controls the placement of the digest within the metadata
-	// key. When enabled, the digest is placed before the cache type & isolation
-	// parts.
-	PrioritizeHashInMetadataKey bool
-}
+type Opts struct{}
 
 // New creates a new filestorer interface.
 func New(opts Opts) Store {
-	return &fileStorer{
-		prioritizeHashInMetadataKey: opts.PrioritizeHashInMetadataKey,
-	}
+	return &fileStorer{}
 }
 
 func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
@@ -280,17 +269,12 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	//
-	// Metadata keys look like this when PrioritizeHashInMetadataKey is off:
+	// Metadata keys look like this:
 	//    {partID}/{groupID}/{ac|cas}/{hash}
 	//    for example:
 	//      PART123456/GR123/ac/44321/abcd12345asdasdasd123123123asdasdasd
 	//      PART123456/GR123/cas/abcd12345asdasdasd123123123asdasdasd
 	//
-	// Metadata keys look like this when PrioritizeHashInMetadataKey is on:
-	//    {partID}/{groupID}/{hash}/{ac|cas}
-	//    for example:
-	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/ac/44321
-	//      PART123456/GR123/abcd12345asdasdasd123123123asdasdasd/cas
 	pmk, err := fs.PebbleKey(r)
 	if err != nil {
 		return nil, err
@@ -304,12 +288,11 @@ func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (*PebbleKey, error) {
 		return nil, err
 	}
 	return &PebbleKey{
-		partID:                      partID,
-		groupID:                     groupID,
-		isolation:                   isolation,
-		remoteInstanceHash:          remoteInstanceHash,
-		hash:                        hash,
-		prioritizeHashInMetadataKey: fs.prioritizeHashInMetadataKey,
+		partID:             partID,
+		groupID:            groupID,
+		isolation:          isolation,
+		remoteInstanceHash: remoteInstanceHash,
+		hash:               hash,
 	}, nil
 }
 

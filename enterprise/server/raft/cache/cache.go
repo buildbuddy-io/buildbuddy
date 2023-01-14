@@ -165,9 +165,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		rangeCache:   rangecache.New(),
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
-		fileStorer: filestore.New(filestore.Opts{
-			PrioritizeHashInMetadataKey: true,
-		}),
+		fileStorer:   filestore.New(filestore.Opts{}),
 	}
 
 	if len(conf.Join) < 3 {
@@ -318,6 +316,14 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	})
 }
 
+func (rc *RaftCache) fileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
+	key, err := rc.fileStorer.PebbleKey(r)
+	if err != nil {
+		return nil, err
+	}
+	return key.Bytes(filestore.Version2)
+}
+
 func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
 	auth := rc.env.GetAuthenticator()
 	if auth == nil {
@@ -362,7 +368,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, uncom
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +411,7 @@ func (rc *RaftCache) Writer(ctx context.Context, r *resource.ResourceName) (inte
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +480,7 @@ func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames 
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
