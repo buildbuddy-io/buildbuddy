@@ -142,10 +142,6 @@ func isLocalKey(key []byte) bool {
 		bytes.HasPrefix(key, constants.MetaRangePrefix)
 }
 
-func isFileRecordKey(key []byte) bool {
-	return bytes.HasPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
-}
-
 func sizeOf(key []byte, val []byte) (int64, error) {
 	if isLocalKey(key) {
 		return int64(len(val)), nil
@@ -249,6 +245,14 @@ func (sm *Replica) setRange(key, val []byte) error {
 	return nil
 }
 
+func (sm *Replica) isFileRecordKey(keyBytes []byte) bool {
+	key := &filestore.PebbleKey{}
+	if _, err := key.FromBytes(keyBytes); err == nil {
+		return true
+	}
+	return false
+}
+
 func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RLock()
 
@@ -256,7 +260,7 @@ func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
 			sm.rangeMu.RUnlock()
 
-			if isFileRecordKey(key) {
+			if sm.isFileRecordKey(key) {
 				if err := sm.updateAndFlushPartitionMetadatas(wb, key, val, nil /*=fileMetadata*/, fileRecordAdd); err != nil {
 					return err
 				}
