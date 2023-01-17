@@ -9,7 +9,7 @@ sidebar_label: OLAP Database
 `olap_database:` The OLAP (online analytical processing) database section configures the OLAP database that BuildBuddy uses to enable the Trends page. **Optional**
 
 Note: in order to use OLAP database for the Trends page, `app.enable_read_from_olap_db` and
-`app.enable_write_to_olapdb` needs to be set to `true`
+`app.enable_write_to_olap_db` needs to be set to `true`
 
 ## Options
 
