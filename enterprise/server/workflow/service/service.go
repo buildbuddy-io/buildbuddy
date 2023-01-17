@@ -55,7 +55,7 @@ import (
 var (
 	enableFirecracker             = flag.Bool("remote_execution.workflows_enable_firecracker", false, "Whether to enable firecracker for Linux workflow actions.")
 	workflowsPoolName             = flag.String("remote_execution.workflows_pool_name", "", "The executor pool to use for workflow actions. Defaults to the default executor pool if not specified.")
-	workflowsDefaultImage         = flag.String("remote_execution.workflows_default_image", "", "The default docker image to use for running workflows.")
+	workflowsDefaultImage         = flag.String("remote_execution.workflows_default_image", platform.DockerPrefix+platform.Ubuntu18_04WorkflowsImage, "The default container-image property to use for workflows. Must include docker:// prefix if applicable.")
 	workflowsCIRunnerDebug        = flag.Bool("remote_execution.workflows_ci_runner_debug", false, "Whether to run the CI runner in debug mode.")
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
@@ -650,7 +650,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	// Use the CI runner image if the OS supports containerized actions.
 	if os == "" || os == platform.LinuxOperatingSystemName {
 		computeUnits = *workflowsLinuxComputeUnits
-		containerImage = ws.workflowsImage()
+		containerImage = ws.containerImage(workflowAction)
 		if *enableFirecracker {
 			isolationType = string(platform.FirecrackerContainerType)
 			// When using Firecracker, write all outputs to the scratch disk, which
@@ -744,11 +744,26 @@ func (ws *workflowService) WorkflowsPoolName() string {
 	return platform.DefaultPoolValue
 }
 
-func (ws *workflowService) workflowsImage() string {
-	if remote_execution_config.RemoteExecutionEnabled() && *workflowsDefaultImage != "" {
-		return *workflowsDefaultImage
+func (ws *workflowService) containerImage(action *config.Action) string {
+	if action.ContainerImage != "" {
+		return ws.resolveImageAliases(action.ContainerImage)
 	}
-	return platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage
+	return *workflowsDefaultImage
+}
+
+func (ws *workflowService) resolveImageAliases(value string) string {
+	// Let people write "container_image: ubuntu-<VERSION>" as a shorthand for
+	// "latest ubuntu <VERSION> image".
+	if value == "ubuntu-18.04" {
+		return platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage
+	}
+	if value == "ubuntu-20.04" {
+		return platform.DockerPrefix + platform.Ubuntu20_04WorkflowsImage
+	}
+
+	// Otherwise, interpret container_image the same way we treat it for RBE
+	// actions.
+	return value
 }
 
 func (ws *workflowService) ciRunnerDebugMode() bool {

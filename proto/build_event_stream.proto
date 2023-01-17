@@ -1191,6 +1191,17 @@ message WorkflowConfigured {
   // The branch into which the pushed branch is being merged (for PRs),
   // or the pushed_branch (for push events).
   string target_branch = 10;
+
+  // The OS on which the workflow is running.
+  // Adheres to the same naming convention as GOOS in golang.
+  string os = 11;
+
+  // The CPU architecture on which the workflow is running.
+  // Adheres to the same naming convention as GOARCH in golang.
+  string arch = 12;
+
+  // Container image spec for the workflow, if applicable.
+  string container_image = 13;
 }
 
 // Event describing a workflow command that completed.
