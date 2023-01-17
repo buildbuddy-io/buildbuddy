@@ -1185,22 +1185,24 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 			return err
 		}
 
+		sizeDelta := bytesWritten
 		iter := db.NewIter(nil /*default iterOptions*/)
 		defer iter.Close()
-		alreadyExists := pebbleutil.IterHasKey(iter, fileMetadataKey)
-		if alreadyExists {
+		existingMD, err := lookupFileMetadata(ctx, iter, fileMetadataKey)
+		if err == nil {
 			metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
 			metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(r.GetDigest().GetSizeBytes()))
 			tracing.AddStringAttributeToCurrentSpan(ctx, "pebble.duplicate_write", "true")
+			sizeDelta = bytesWritten - existingMD.GetStoredSizeBytes()
 		}
 
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		if err == nil {
 			partitionID := fileRecord.GetIsolation().GetPartitionId()
-			if !alreadyExists {
+			if sizeDelta != 0 {
 				p.sendSizeUpdate(partitionID, fileMetadataKey, bytesWritten)
 			}
-			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
+			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(sizeDelta))
 		}
 
 		return err
