@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -73,6 +72,7 @@ var (
 	dockerInheritUserIDs    = flag.Bool("executor.docker_inherit_user_ids", false, "If set, run docker containers using the same uid and gid as the user running the executor process.")
 	podmanRuntime           = flag.String("podman_runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
 	warmupTimeoutSecs       = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
+	warmupWorkflowImages    = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
 	maxRunnerCount          = flag.Int("executor.runner_pool.max_runner_count", 0, "Maximum number of recycled RBE runners that can be pooled at once. Defaults to a value derived from estimated CPU usage, max RAM, allocated CPU, and allocated memory.")
 	// How big a runner's workspace is allowed to get before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
@@ -150,6 +150,18 @@ func k8sPodID() (string, error) {
 
 func ContextBasedShutdownEnabled() bool {
 	return *contextBasedShutdown
+}
+
+// WarmupConfig specifies an image to be warmed up, for a specific isolation
+// type.
+type WarmupConfig struct {
+	// Image is the image to be warmed up, NOT including the "docker://"
+	// prefix.
+	Image string
+
+	// Isolation is the workload isolation type. An empty string corresponds
+	// to the default isolation type.
+	Isolation string
 }
 
 // state indicates the current state of a commandRunner.
@@ -780,12 +792,13 @@ func (p *pool) dockerOptions() *docker.DockerOptions {
 	}
 }
 
-func (p *pool) warmupImage(ctx context.Context, containerType platform.ContainerType, image string) error {
+func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	start := time.Now()
+	log.Infof("Warming up %s image %q", cfg.Isolation, cfg.Image)
 	plat := &repb.Platform{
 		Properties: []*repb.Platform_Property{
-			{Name: "container-image", Value: image},
-			{Name: "workload-isolation-type", Value: string(containerType)},
+			{Name: "container-image", Value: platform.DockerPrefix + cfg.Image},
+			{Name: "workload-isolation-type", Value: cfg.Isolation},
 		},
 	}
 	task := &repb.ExecutionTask{
@@ -795,6 +808,7 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 		},
 	}
 	platProps := platform.ParseProperties(task)
+	platform.ApplyOverrides(p.env, platform.GetExecutorProperties(), platProps, task.GetCommand())
 	st := &repb.ScheduledTask{
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
@@ -805,7 +819,7 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 	}
 	c, err := p.newContainer(ctx, platProps, st)
 	if err != nil {
-		log.Errorf("Error warming up %q: %s", containerType, err)
+		log.Errorf("Error warming up %q image %q: %s", cfg.Isolation, cfg.Image, err)
 		return err
 	}
 
@@ -820,12 +834,15 @@ func (p *pool) warmupImage(ctx context.Context, containerType platform.Container
 	if err != nil {
 		return err
 	}
-	log.Infof("Warmup: %s pulled image %q in %s", containerType, image, time.Since(start))
+	log.Infof("Warmup: %s pulled image %q in %s", cfg.Isolation, cfg.Image, time.Since(start))
 	return nil
 }
 
 func (p *pool) Warmup(ctx context.Context) {
-	executorProps := platform.GetExecutorProperties()
+	start := time.Now()
+	defer func() {
+		log.Infof("Warmup: pulled all images in %s", time.Since(start))
+	}()
 	// Give the pull up to 2 minute to succeed.
 	// In practice warmup take about 30 seconds for docker and 75 seconds for firecracker.
 	timeout := 2 * time.Minute
@@ -836,21 +853,44 @@ func (p *pool) Warmup(ctx context.Context) {
 	defer cancel()
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, containerType := range executorProps.SupportedIsolationTypes {
-		containerType := containerType
-		image := platform.DefaultImage()
+	for _, cfg := range p.warmupConfigs() {
+		cfg := cfg
 		eg.Go(func() error {
-			return p.warmupImage(ctx, containerType, image)
+			return p.warmupImage(ctx, &cfg)
 		})
-		if containerType == platform.FirecrackerContainerType {
-			eg.Go(func() error {
-				return p.warmupImage(ctx, containerType, strings.TrimPrefix(hostedrunner.RunnerContainerImage, platform.DockerPrefix))
-			})
-		}
 	}
 	if err := eg.Wait(); err != nil {
 		log.Warningf("Error warming up containers: %s", err)
 	}
+}
+
+func (p *pool) warmupConfigs() []WarmupConfig {
+	var out []WarmupConfig
+	for _, isolation := range platform.GetExecutorProperties().SupportedIsolationTypes {
+		// Warm up the default execution image for all isolation types, as well
+		// as the new Ubuntu 20.04 image.
+		out = append(out, WarmupConfig{
+			Image:     platform.DefaultImage(),
+			Isolation: string(isolation),
+		})
+		out = append(out, WarmupConfig{
+			Image:     platform.Ubuntu20_04Image,
+			Isolation: string(isolation),
+		})
+
+		// If firecracker is supported, additionally warm up the workflow images.
+		if *warmupWorkflowImages && isolation == platform.FirecrackerContainerType {
+			out = append(out, WarmupConfig{
+				Image:     platform.Ubuntu18_04WorkflowsImage,
+				Isolation: string(isolation),
+			})
+			out = append(out, WarmupConfig{
+				Image:     platform.Ubuntu20_04WorkflowsImage,
+				Isolation: string(isolation),
+			})
+		}
+	}
+	return out
 }
 
 // Get returns a runner bound to the the given task. The caller must call

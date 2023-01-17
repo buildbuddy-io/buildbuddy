@@ -26,12 +26,18 @@ var (
 	enablePodman         = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman container.")
 	enableSandbox        = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
 	enableFirecracker    = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
-	defaultImage         = flag.String("executor.default_image", "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0", "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
+	defaultImage         = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS            = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
 	extraEnvVars         = flagutil.New("executor.extra_env_vars", []string{}, "Additional environment variables to pass to remotely executed actions. i.e. MY_ENV_VAR=foo")
 )
 
 const (
+	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
+	Ubuntu20_04Image = "gcr.io/flame-public/rbe-ubuntu20-04@sha256:036ae8c90876fa22da9ace6f8218e614f4cd500a154fc162973fff691e72d28e"
+
+	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0"
+	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:e74147369e5ff5c6c9d56f15ab10a894d54d4f45f14455ad418f70ddb59850e3"
+
 	// overrideHeaderPrefix is a prefix used to override platform props via
 	// remote headers. The property name immediately follows the prefix in the
 	// header key, and the header value is used as the property value.
