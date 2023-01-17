@@ -413,6 +413,11 @@ message TrendStat {
 
   // The sum of all invocation durations for this entity.
   int64 total_build_time_usec = 2;
+  double build_time_usec_p50 = 21;
+  double build_time_usec_p75 = 22;
+  double build_time_usec_p90 = 23;
+  double build_time_usec_p95 = 24;
+  double build_time_usec_p99 = 25;
 
   // The total number of invocations completed by this entity.
   int64 total_num_builds = 3;
@@ -524,4 +529,6 @@ message GetTrendResponse {
 
   // The list of execution stats found.
   repeated ExecutionStat execution_stat = 3;
+
+  bool has_invocation_stat_percentiles = 4;
 }

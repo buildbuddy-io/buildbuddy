@@ -23,8 +23,9 @@ import (
 )
 
 var (
-	readFromOLAPDBEnabled  = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, read from OLAP DB")
-	executionTrendsEnabled = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
+	readFromOLAPDBEnabled        = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, read from OLAP DB")
+	executionTrendsEnabled       = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
+	invocationPercentilesEnabled = flag.Bool("app.enable_invocation_stat_percentiles", false, "If enabled, provide percentile breakdowns for invocation stats in GetTrendResponse")
 )
 
 type InvocationStatService struct {
@@ -73,6 +74,12 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,`
 	}
 
+	// Insert quantiles stuff..
+	if i.isInvocationPercentilesEnabled() {
+		q = q + `quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(
+				IF(duration_usec > 0, duration_usec, 0)) AS build_time_quantiles,`
+	}
+
 	q = q + `
 	    COUNT(1) AS total_num_builds,
 	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
@@ -94,6 +101,34 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
         SUM(total_upload_usec) as total_upload_usec
         FROM Invocations`
 	return q
+}
+
+func flattenTrendsQuery(innerQuery string) string {
+	return `SELECT name,
+	total_build_time_usec,
+	completed_invocation_count,
+	user_count,
+	commit_count,
+	host_count,
+	repo_count,
+	branch_count,
+	max_duration_usec,
+	action_cache_hits,
+	action_cache_misses,
+	action_cache_uploads,
+	cas_cache_hits,
+	cas_cache_misses,
+	cas_cache_uploads,
+	total_download_size_bytes,
+	total_upload_size_bytes,
+	total_download_usec,
+	total_upload_usec,
+	arrayElement(build_time_quantiles, 1) as build_time_usec_p50,
+	arrayElement(build_time_quantiles, 2) as build_time_usec_p75,
+	arrayElement(build_time_quantiles, 3) as build_time_usec_p90,
+	arrayElement(build_time_quantiles, 4) as build_time_usec_p95,
+	arrayElement(build_time_quantiles, 5) as build_time_usec_p99
+	FROM (` + innerQuery + ")"
 }
 
 func addWhereClauses(q *query_builder.Query, req *inpb.GetTrendRequest) error {
@@ -171,6 +206,10 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *inp
 	}
 
 	qStr, qArgs := q.Build()
+	if i.isInvocationPercentilesEnabled() {
+		qStr = flattenTrendsQuery(qStr)
+	}
+
 	var rows *sql.Rows
 	var err error
 	if i.isOLAPDBEnabled() {
@@ -303,6 +342,9 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
+	}
+	if i.isInvocationPercentilesEnabled() {
+		rsp.HasInvocationStatPercentiles = true
 	}
 	return rsp, nil
 }
@@ -462,4 +504,8 @@ func toStatusClauses(statuses []inpb.OverallStatus) *query_builder.OrClauses {
 
 func (i *InvocationStatService) isOLAPDBEnabled() bool {
 	return i.olapdbh != nil && *readFromOLAPDBEnabled
+}
+
+func (i *InvocationStatService) isInvocationPercentilesEnabled() bool {
+	return i.isOLAPDBEnabled() && *invocationPercentilesEnabled
 }
