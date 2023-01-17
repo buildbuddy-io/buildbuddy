@@ -1200,9 +1200,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		if err == nil {
 			partitionID := fileRecord.GetIsolation().GetPartitionId()
 			if sizeDelta != 0 {
-				p.sendSizeUpdate(partitionID, fileMetadataKey, bytesWritten)
+				p.sendSizeUpdate(partitionID, fileMetadataKey, sizeDelta)
 			}
-			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(sizeDelta))
+			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
 		}
 
 		return err
