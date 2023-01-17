@@ -1190,9 +1190,11 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		defer iter.Close()
 		existingMD, err := lookupFileMetadata(ctx, iter, fileMetadataKey)
 		if err == nil {
-			metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
-			metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(r.GetDigest().GetSizeBytes()))
-			tracing.AddStringAttributeToCurrentSpan(ctx, "pebble.duplicate_write", "true")
+			if r.GetCacheType() != resource.CacheType_AC {
+				metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
+				metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(r.GetDigest().GetSizeBytes()))
+				tracing.AddStringAttributeToCurrentSpan(ctx, "pebble.duplicate_write", "true")
+			}
 			sizeDelta = bytesWritten - existingMD.GetStoredSizeBytes()
 		}
 
