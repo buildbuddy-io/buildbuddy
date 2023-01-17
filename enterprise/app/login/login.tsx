@@ -10,7 +10,7 @@ import alertService from "../../../app/alert/alert_service";
 interface State {
   orgName?: string;
   showSSO: boolean;
-  ssoSlug: string;
+  ssoSlug?: string;
   defaultToSSO: boolean;
 }
 
@@ -72,7 +72,7 @@ export default class LoginComponent extends React.Component<Props, State> {
 
     if (!this.state.showSSO && !this.state.ssoSlug) {
       this.setState({ showSSO: true }, () => {
-        this.ssoSlugButton.current.focus();
+        this.ssoSlugButton.current?.focus();
       });
       return;
     }

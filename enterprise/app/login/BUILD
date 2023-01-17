@@ -5,6 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 ts_library(
     name = "login",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/alert",
         "//app/auth",
