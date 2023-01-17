@@ -16,7 +16,7 @@ import UserPreferences from "../preferences/preferences";
 declare var window: any;
 
 interface State {
-  user: User;
+  user?: User;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -27,7 +27,7 @@ capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPat
 
 export default class RootComponent extends React.Component {
   state: State = {
-    user: null,
+    user: undefined,
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
@@ -80,7 +80,7 @@ export default class RootComponent extends React.Component {
                 hash={this.state.hash}
                 search={this.state.search}
                 preferences={this.state.preferences}
-                user={null}
+                user={undefined}
               />
             )}
             {compareInvocationIds && (
@@ -88,7 +88,7 @@ export default class RootComponent extends React.Component {
                 invocationAId={compareInvocationIds.a}
                 invocationBId={compareInvocationIds.b}
                 search={this.state.search}
-                user={null}
+                user={undefined}
               />
             )}
             {showSetup && <SetupComponent />}

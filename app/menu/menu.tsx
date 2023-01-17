@@ -8,7 +8,7 @@ import { Menu } from "lucide-react";
 interface Props {
   children?: any;
   preferences: UserPreferences;
-  user: User;
+  user?: User;
   showHamburger: boolean;
 }
 interface State {
