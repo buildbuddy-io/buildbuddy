@@ -12,3 +12,14 @@ container_push(
     tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
 )
+
+container_push(
+    name = "push_rbe-ubuntu20-04-workflows",
+    format = "Docker",
+    image = "@rbe-ubuntu20-04-workflows_image//image:dockerfile_image.tar",
+    registry = "gcr.io",
+    repository = "flame-public/rbe-ubuntu20-04-workflows",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
+    tags = ["manual"],  # Don't include this target in wildcard patterns
+)
