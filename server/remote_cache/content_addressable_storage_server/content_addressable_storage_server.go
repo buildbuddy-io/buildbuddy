@@ -172,8 +172,9 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		// defers are preetty cheap: https://tpaschalis.github.io/defer-internals/
 		// so doing 100-1000 or so in this loop is fine.
 		bytesWrittenToCache := 0
+		bytesFromClient := len(uploadRequest.GetData())
 		defer func() {
-			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(len(uploadRequest.GetData())), uploadRequest.GetCompressor())
+			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(bytesFromClient), uploadRequest.GetCompressor())
 		}()
 
 		if uploadDigest.GetHash() == digest.EmptySha256 {
