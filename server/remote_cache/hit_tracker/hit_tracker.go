@@ -345,6 +345,7 @@ func emitSizeMetrics(ct counterType, cacheTypeLabel, serverLabel string, digestS
 			metrics.CacheTypeLabel: cacheTypeLabel,
 			metrics.ServerName:     serverLabel,
 		}).Observe(digestSizeBytes)
+		return
 	}
 
 	metrics.CacheDownloadSizeBytes.With(prometheus.Labels{
