@@ -268,6 +268,12 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "rbe-ubuntu20-04-workflows_image",
+    dockerfile = "//enterprise/dockerfiles/rbe-ubuntu20-04-workflows:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
     name = "run_script_image",
     dockerfile = "//dockerfiles/run_script:Dockerfile",
     visibility = ["//visibility:public"],
