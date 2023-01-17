@@ -34,8 +34,30 @@ container_push(
     format = "Docker",
     image = "//enterprise/server/cmd/executor:default_base_image",
     registry = "gcr.io",
-    repository = "flame-public/executor-docker-default",  # Note flame-build, not flame-public.
+    repository = "flame-public/executor-docker-default",
     # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
     tag_file = "//deployment:image_tag_file",
     tags = ["manual"],  # Don't include this target in wildcard patterns
+)
+
+container_push(
+    name = "rbe-ubuntu20-04",
+    format = "Docker",
+    image = "@rbe-ubuntu20-04_image//image:dockerfile_image.tar",
+    registry = "gcr.io",
+    repository = "flame-public/rbe-ubuntu20-04",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
+    tags = ["manual"],
+)
+
+container_push(
+    name = "rbe-ubuntu20-04-webtest",
+    format = "Docker",
+    image = "@rbe-ubuntu20-04-webtest_image//image:dockerfile_image.tar",
+    registry = "gcr.io",
+    repository = "flame-public/rbe-ubuntu20-04-webtest",
+    # Set the image tag with the bazel run flag "--//deployment:image_tag=TAG"
+    tag_file = "//deployment:image_tag_file",
+    tags = ["manual"],
 )
