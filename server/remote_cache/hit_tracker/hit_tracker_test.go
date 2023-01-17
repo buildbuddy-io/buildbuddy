@@ -46,7 +46,7 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 	dl := ht.TrackDownload(d)
-	dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD)
+	dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
 
 	sc := hit_tracker.ScoreCard(ctx, env, iid)
 	require.Len(t, sc.Results, 1, "expected exactly one cache result")
@@ -101,7 +101,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD)
+		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
 
 		require.Len(t, ut.Increments, 1)
 		assert.Equal(t, []*tables.UsageCounts{{
@@ -130,7 +130,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD)
+		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
 
 		assert.Equal(t, []*tables.UsageCounts{{
 			CASCacheHits:           1,
@@ -156,7 +156,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		ht := hit_tracker.NewHitTracker(ctx, env, actionCache)
 
 		dl := ht.TrackDownload(d)
-		dl.CloseWithBytesTransferred(d.SizeBytes, d.SizeBytes, repb.Compressor_IDENTITY)
+		dl.CloseWithBytesTransferred(d.SizeBytes, d.SizeBytes, repb.Compressor_IDENTITY, "test")
 
 		assert.Equal(t, []*tables.UsageCounts{{
 			ActionCacheHits:        1,

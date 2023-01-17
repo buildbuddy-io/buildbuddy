@@ -159,7 +159,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		ht.TrackMiss(d)
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
-	defer downloadTracker.Close()
+	defer downloadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server")
 
 	rsp := &repb.ActionResult{}
 	if err := proto.Unmarshal(blob, rsp); err != nil {
@@ -231,6 +231,6 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err := s.cache.Set(ctx, acResource.ToProto(), blob); err != nil {
 		return nil, err
 	}
-	uploadTracker.Close()
+	uploadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server")
 	return req.ActionResult, nil
 }

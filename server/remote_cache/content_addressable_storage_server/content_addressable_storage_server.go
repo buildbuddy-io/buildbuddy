@@ -174,7 +174,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		bytesWrittenToCache := 0
 		bytesFromClient := len(uploadRequest.GetData())
 		defer func() {
-			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(bytesFromClient), uploadRequest.GetCompressor())
+			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(bytesFromClient), uploadRequest.GetCompressor(), "cas_server")
 		}()
 
 		if uploadDigest.GetHash() == digest.EmptySha256 {
@@ -299,7 +299,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 		downloadTracker := ht.TrackDownload(readDigest)
 		closeTrackerFuncs = append(closeTrackerFuncs, func(data downloadTrackerData) {
-			downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor)
+			downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor, "cas_server")
 		})
 
 		if readDigest.GetHash() != digest.EmptySha256 {
