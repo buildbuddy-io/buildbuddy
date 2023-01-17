@@ -30,7 +30,7 @@ import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 
 interface State {
-  user: User;
+  user?: User;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -65,7 +65,7 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentWillMount() {
     if (!capabilities.auth) {
-      this.setState({ ...this.state, user: null, loading: false });
+      this.setState({ ...this.state, user: undefined, loading: false });
     }
     authService.userStream.subscribe({
       next: (user: User) => this.setState({ ...this.state, user, loading: false }),
@@ -145,7 +145,7 @@ export default class EnterpriseRootComponent extends React.Component {
       (fallback && !capabilities.auth);
     let login = fallback && !setup && !this.state.loading && !this.state.user;
     let home = fallback && !setup && !this.state.loading && this.state.user;
-    let sidebar = Boolean(this.state.user) && Boolean(this.state.user.groups?.length) && !code;
+    let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code;
     let menu = !sidebar && !code && !this.state.loading;
 
     return (
