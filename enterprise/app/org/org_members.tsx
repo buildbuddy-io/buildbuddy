@@ -82,7 +82,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
       clone.add(userID);
     }
     this.setState({
-      isSelectingAll: (this.state.isSelectingAll && clone.size > 0) || clone.size === this.state.response.user.length,
+      isSelectingAll: (this.state.isSelectingAll && clone.size > 0) || clone.size === this.state.response?.user.length,
       selectedUserIds: clone,
     });
   }
@@ -96,7 +96,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     } else {
       this.setState({
         isSelectingAll: true,
-        selectedUserIds: new Set(this.state.response.user.map((member) => member.user.userId.id)),
+        selectedUserIds: new Set((this.state.response?.user || []).map((member) => member.user?.userId?.id || "")),
       });
     }
   }
@@ -140,7 +140,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         // After changing your own role within an org, refresh the page to
         // trigger a user refresh and possibly a reroute, in case this settings
         // page is no longer accessible.
-        if (this.state.selectedUserIds.has(this.props.user.displayUser.userId.id)) {
+        if (this.state.selectedUserIds.has(this.props.user.displayUser?.userId?.id || "")) {
           window.location.reload();
           return;
         }
@@ -183,7 +183,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
       .then(() => {
         // After removing yourself from an org, refresh the page to trigger
         // group reselection or login page as appropriate.
-        if (this.state.selectedUserIds.has(this.props.user.displayUser.userId.id)) {
+        if (this.state.selectedUserIds.has(this.props.user.displayUser?.userId?.id || "")) {
           window.location.reload();
           return;
         }
@@ -199,11 +199,13 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
   }
 
   private isLoggedInUser(member: grp.GetGroupUsersResponse.IGroupUser) {
-    return member.user.userId.id === this.props.user.displayUser.userId.id;
+    return member?.user?.userId?.id === this.props.user.displayUser?.userId?.id;
   }
 
   private getSelectedMembers(): grp.GetGroupUsersResponse.IGroupUser[] {
-    return this.state.response.user.filter((member) => this.state.selectedUserIds.has(member.user.userId.id));
+    return (this.state.response?.user || []).filter((member) =>
+      this.state.selectedUserIds.has(member.user?.userId?.id || "")
+    );
   }
 
   private renderAffectedUsersList({ verb }: { verb: string }) {
@@ -216,7 +218,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
         <div className="affected-users-list">
           {selectedMembers.map((member) => (
             <div className={`affected-users-list-item ${this.isLoggedInUser(member) ? "flagged-self-user" : ""}`}>
-              {member.user.email}
+              {member.user?.email}
             </div>
           ))}
         </div>
@@ -262,18 +264,18 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
           {this.state.response.user.map((member) => (
             <div
               className={`org-members-list-item ${
-                this.state.selectedUserIds.has(member.user.userId.id) ? "selected" : ""
+                this.state.selectedUserIds.has(member?.user?.userId?.id || "") ? "selected" : ""
               }`}
-              onClick={this.onClickRow.bind(this, member.user.userId.id)}>
+              onClick={() => this.onClickRow(member?.user?.userId?.id || "")}>
               <div>
                 <Checkbox
-                  title={`Select ${member.user.email}`}
+                  title={`Select ${member?.user?.email}`}
                   className="org-member-checkbox"
-                  checked={this.state.selectedUserIds.has(member.user.userId.id)}
+                  checked={this.state.selectedUserIds.has(member?.user?.userId?.id || "")}
                 />
               </div>
-              <div className="org-member-email">{member.user.email}</div>
-              <div className="org-member-role">{ROLE_LABELS[member.role]}</div>
+              <div className="org-member-email">{member?.user?.email}</div>
+              <div className="org-member-role">{ROLE_LABELS[member?.role || 0]}</div>
             </div>
           ))}
         </div>

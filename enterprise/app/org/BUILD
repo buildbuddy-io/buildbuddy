@@ -7,6 +7,7 @@ exports_files(glob(["*.css"]))
 ts_library(
     name = "org",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/alert",
         "//app/auth",

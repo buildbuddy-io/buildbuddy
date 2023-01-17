@@ -41,7 +41,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   async onSubmit(e: any) {
     e.preventDefault();
 
-    this.setState({ submitting: true, error: null });
+    this.setState({ submitting: true, error: undefined });
     try {
       await this.submitRequest();
       this.setState({

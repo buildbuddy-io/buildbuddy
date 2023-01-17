@@ -45,7 +45,7 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
   }
 
   private async applyMembershipAction(
-    userId: user_id.UserId,
+    userId: user_id.IUserId,
     membershipAction: grp.UpdateGroupUsersRequest.Update.MembershipAction
   ) {
     const initialGroupId = this.props.user.selectedGroup.id;
@@ -75,22 +75,22 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
         <div className="container narrow">
           <h2 className="org-join-requests-header">New user requests</h2>
           <div className="org-join-requests-grid">
-            {this.state.users.map(({ user: { userId, name, email } }) => (
-              <React.Fragment key={userId.id}>
+            {this.state.users?.map((groupUser) => (
+              <React.Fragment key={groupUser.user?.userId?.id}>
                 <div>
-                  <div className="email">{email}</div>
+                  <div className="email">{groupUser.user?.email}</div>
                   <div className="name">
-                    {name.first} {name.last}
+                    {groupUser.user?.name?.first} {groupUser.user?.name?.last}
                   </div>
                 </div>
                 <div className="approve-reject-buttons">
                   <FilledButton
-                    onClick={this.applyMembershipAction.bind(this, userId, ADD)}
+                    onClick={() => this.applyMembershipAction(groupUser.user?.userId || {}, ADD)}
                     disabled={this.state.isLoading}>
                     Approve
                   </FilledButton>
                   <OutlinedButton
-                    onClick={this.applyMembershipAction.bind(this, userId, REMOVE)}
+                    onClick={() => this.applyMembershipAction(groupUser.user?.userId || {}, REMOVE)}
                     disabled={this.state.isLoading}>
                     Reject
                   </OutlinedButton>
