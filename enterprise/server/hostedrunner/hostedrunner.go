@@ -33,7 +33,7 @@ import (
 
 const (
 	runnerPath           = "enterprise/server/cmd/ci_runner/buildbuddy_ci_runner"
-	RunnerContainerImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner@sha256:fbff6d1e88e9e1085c7e46bd0c5de4f478e97b630246631e5f9d7c720c968e2e"
+	RunnerContainerImage = "docker://" + platform.Ubuntu18_04WorkflowsImage
 )
 
 type runnerService struct {

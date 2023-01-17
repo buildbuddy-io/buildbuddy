@@ -52,10 +52,6 @@ import (
 	guuid "github.com/google/uuid"
 )
 
-const (
-	workflowsImage = "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0"
-)
-
 var (
 	enableFirecracker             = flag.Bool("remote_execution.workflows_enable_firecracker", false, "Whether to enable firecracker for Linux workflow actions.")
 	workflowsPoolName             = flag.String("remote_execution.workflows_pool_name", "", "The executor pool to use for workflow actions. Defaults to the default executor pool if not specified.")
@@ -752,7 +748,7 @@ func (ws *workflowService) workflowsImage() string {
 	if remote_execution_config.RemoteExecutionEnabled() && *workflowsDefaultImage != "" {
 		return *workflowsDefaultImage
 	}
-	return workflowsImage
+	return platform.DockerPrefix + platform.Ubuntu18_04WorkflowsImage
 }
 
 func (ws *workflowService) ciRunnerDebugMode() bool {
