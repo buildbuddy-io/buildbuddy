@@ -139,6 +139,9 @@ const (
 	// Describes the type of cache request
 	CacheRequestType = "type"
 
+	// Describes the name of the server that handles a client request, such as "byte_stream_server" or "cas_server"
+	ServerName = "server_name"
+
 	// Describes the type of compression
 	CompressionType = "compression"
 
@@ -311,6 +314,7 @@ var (
 		Help:      "Number of bytes downloaded from the remote cache in each download. Use the **`_sum`** suffix to get the total downloaded bytes and the **`_count`** suffix to get the number of downloaded files.",
 	}, []string{
 		CacheTypeLabel,
+		ServerName,
 	})
 
 	/// #### Examples
@@ -348,6 +352,7 @@ var (
 		Help:      "Number of bytes uploaded to the remote cache in each upload. Use the **`_sum`** suffix to get the total uploaded bytes and the **`_count`** suffix to get the number of uploaded files.",
 	}, []string{
 		CacheTypeLabel,
+		ServerName,
 	})
 
 	/// #### Examples
@@ -1536,6 +1541,50 @@ var (
 	}, []string{
 		CacheNameLabel,
 		CompressionType,
+	})
+
+	ServerUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "server",
+		Name:      "upload_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of bytes uploaded to the server in each upload. Use the **`_sum`** suffix to get the total uploaded bytes and the **`_count`** suffix to get the number of uploaded files.",
+	}, []string{
+		CacheTypeLabel,
+		ServerName,
+	})
+
+	ServerDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "server",
+		Name:      "download_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of bytes downloaded from the server in each download. Use the **`_sum`** suffix to get the total downloaded bytes and the **`_count`** suffix to get the number of downloaded files.",
+	}, []string{
+		CacheTypeLabel,
+		ServerName,
+	})
+
+	DigestUploadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "server",
+		Name:      "digest_upload_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Digest size uploaded to the server in each upload. This does not always match the actual size uploaded to the server, if the client sends compressed bytes. Use the **`_sum`** suffix to get the total uploaded bytes and the **`_count`** suffix to get the number of uploaded files.",
+	}, []string{
+		CacheTypeLabel,
+		ServerName,
+	})
+
+	DigestDownloadSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "server",
+		Name:      "digest_download_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Digest size downloaded from the server in each download. This does not always match the actual size downloaded to the server, if the client requests compressed bytes. Use the **`_sum`** suffix to get the total downloaded bytes and the **`_count`** suffix to get the number of downloaded files.",
+	}, []string{
+		CacheTypeLabel,
+		ServerName,
 	})
 
 	/// #### Examples

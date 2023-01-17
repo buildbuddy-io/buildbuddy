@@ -331,11 +331,34 @@ func cacheEventTypeLabel(c counterType) string {
 	return uploadLabel
 }
 
-func sizeMetric(ct counterType) *prometheus.HistogramVec {
+func emitSizeMetrics(ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64) {
 	if ct == UploadSizeBytes {
-		return metrics.CacheUploadSizeBytes
+		metrics.CacheUploadSizeBytes.With(prometheus.Labels{
+			metrics.CacheTypeLabel: cacheTypeLabel,
+			metrics.ServerName:     serverLabel,
+		}).Observe(bytesTransferredCache)
+		metrics.ServerUploadSizeBytes.With(prometheus.Labels{
+			metrics.CacheTypeLabel: cacheTypeLabel,
+			metrics.ServerName:     serverLabel,
+		}).Observe(bytesTransferredClient)
+		metrics.DigestUploadSizeBytes.With(prometheus.Labels{
+			metrics.CacheTypeLabel: cacheTypeLabel,
+			metrics.ServerName:     serverLabel,
+		}).Observe(digestSizeBytes)
 	}
-	return metrics.CacheDownloadSizeBytes
+
+	metrics.CacheDownloadSizeBytes.With(prometheus.Labels{
+		metrics.CacheTypeLabel: cacheTypeLabel,
+		metrics.ServerName:     serverLabel,
+	}).Observe(bytesTransferredCache)
+	metrics.ServerDownloadSizeBytes.With(prometheus.Labels{
+		metrics.CacheTypeLabel: cacheTypeLabel,
+		metrics.ServerName:     serverLabel,
+	}).Observe(bytesTransferredClient)
+	metrics.DigestDownloadSizeBytes.With(prometheus.Labels{
+		metrics.CacheTypeLabel: cacheTypeLabel,
+		metrics.ServerName:     serverLabel,
+	}).Observe(digestSizeBytes)
 }
 
 func durationMetric(ct counterType) *prometheus.HistogramVec {
@@ -356,17 +379,13 @@ type transferTimer struct {
 	// TODO(bduffany): response code
 }
 
-func (t *transferTimer) Close() error {
-	return t.CloseWithBytesTransferred(t.d.GetSizeBytes(), t.d.GetSizeBytes(), repb.Compressor_IDENTITY)
-}
-
 // CloseWithBytesTransferred emits and saves metrics related to data transfer
 //
 // bytesTransferredCache refers to data uploaded/downloaded to the cache
 // bytesTransferredClient refers to data uploaded/downloaded from the client
 // They can be different if, for example, the client supports compression and uploads compressed bytes (bytesTransferredClient)
 // but the cache does not support compression and requires that uncompressed bytes are written (bytesTransferredCache)
-func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value) error {
+func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
 	dur := time.Since(t.start)
 
 	h := t.h
@@ -376,9 +395,7 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		metrics.CacheTypeLabel:      ct,
 		metrics.CacheEventTypeLabel: et,
 	}).Inc()
-	sizeMetric(t.sizeCounter).With(prometheus.Labels{
-		metrics.CacheTypeLabel: ct,
-	}).Observe(float64(bytesTransferredCache))
+	emitSizeMetrics(t.sizeCounter, ct, serverLabel, float64(t.d.GetSizeBytes()), float64(bytesTransferredCache), float64(bytesTransferredClient))
 	durationMetric(t.timeCounter).With(prometheus.Labels{
 		metrics.CacheTypeLabel: ct,
 	}).Observe(float64(dur.Microseconds()))
