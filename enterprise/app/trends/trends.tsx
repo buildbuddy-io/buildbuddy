@@ -273,6 +273,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   extractP90={(date) => +(this.getStat(date).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP95={(date) => +(this.getStat(date).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP99={(date) => +(this.getStat(date).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
+                  onColumnClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : null}
                 />
               )}
               {!this.state.enableInvocationPercentileCharts && (

@@ -23,17 +23,17 @@ export interface PercentilesChartProps {
   extractP90: (datum: string) => number;
   extractP95: (datum: string) => number;
   extractP99: (datum: string) => number;
-  onRowClicked?: (datum: string) => void;
+  onColumnClicked?: (datum: string) => void;
 }
 
 export default class PercentilesChartComponent extends React.Component<PercentilesChartProps> {
   private lastDataFromHover: string;
 
   handleRowClick() {
-    if (!this.props.onRowClicked || !this.lastDataFromHover) {
+    if (!this.props.onColumnClicked || !this.lastDataFromHover) {
       return;
     }
-    this.props.onRowClicked(this.lastDataFromHover);
+    this.props.onColumnClicked(this.lastDataFromHover);
   }
 
   render() {
@@ -43,7 +43,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
             data={this.props.data}
-            style={this.props.onRowClicked ? { cursor: "pointer" } : {}}
+            style={this.props.onColumnClicked ? { cursor: "pointer" } : {}}
             onClick={this.handleRowClick.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
             <Legend />
