@@ -110,7 +110,7 @@ export class AuthService {
       });
   }
 
-  private getUser(request: user.IGetUserRequest) {
+  private getUser(request: user.GetUserRequest) {
     if (rpcService.requestContext.impersonatingGroupId) {
       return rpcService.service.getImpersonatedUser(request);
     }

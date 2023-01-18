@@ -3,6 +3,7 @@ import alert_service from "../../../app/alert/alert_service";
 import FilledButton from "../../../app/components/button/button";
 import TextInput, { TextInputProps } from "../../../app/components/input/input";
 import { quota } from "../../../proto/quota_ts_proto";
+import { google as google_duration } from "../../../proto/duration_ts_proto";
 
 export interface BucketFormValues {
   namespace?: string;
@@ -57,18 +58,18 @@ export default class BucketForm extends React.Component<BucketFormProps, State> 
     }
     const values: BucketFormValues = {
       namespace: this.state.values["namespace"] || this.props.initialValues?.namespace,
-      bucket: {
+      bucket: quota.Bucket.create({
         name: this.state.values["bucket.name"] || this.props.initialValues?.bucket?.name,
-        maxRate: {
+        maxRate: quota.Rate.create({
           numRequests: (Number(this.state.values["bucket.maxRate.numRequests"]) ||
             this.props.initialValues?.bucket?.maxRate?.numRequests) as any,
-          period: {
+          period: google_duration.protobuf.Duration.create({
             seconds: (Number(this.state.values["bucket.maxRate.period.seconds"]) ||
               this.props.initialValues?.bucket?.maxRate?.period?.seconds) as any,
-          },
-        },
+          }),
+        }),
         maxBurst: (Number(this.state.values["bucket.maxBurst"]) || this.props.initialValues?.bucket?.maxBurst) as any,
-      },
+      }),
     };
     this.setState({ loading: true });
     this.props.onSubmit(values).finally(() => this.setState({ loading: false }));

@@ -6,6 +6,7 @@ import rpcService from "../../../app/service/rpc_service";
 import Input from "../../../app/components/input/input";
 import Button from "../../../app/components/button/button";
 import alertService from "../../../app/alert/alert_service";
+import { grp } from "../../../proto/group_ts_proto";
 
 interface State {
   orgName?: string;
@@ -46,7 +47,9 @@ export default class LoginComponent extends React.Component<Props, State> {
 
   async fetchOrgName() {
     try {
-      const { name, ssoEnabled } = await rpcService.service.getGroup({ urlIdentifier: this.getUrlSlug() });
+      const { name, ssoEnabled } = await rpcService.service.getGroup(
+        grp.GetGroupRequest.create({ urlIdentifier: this.getUrlSlug() })
+      );
       this.setState({ orgName: name, defaultToSSO: ssoEnabled });
     } catch (e) {
       // TODO: handle 404 errors better

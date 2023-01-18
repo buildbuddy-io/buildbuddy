@@ -14,7 +14,7 @@ interface Props {
 
 interface State {
   loading: boolean;
-  manifest: zip.IManifest;
+  manifest: zip.Manifest;
 }
 
 export default class TargetArtifactsCardComponent extends React.Component<Props, State> {
@@ -64,7 +64,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
       });
   }
 
-  encodeManifestEntry(entry: zip.IManifestEntry): string {
+  encodeManifestEntry(entry: zip.ManifestEntry): string {
     return btoa(
       zip.ManifestEntry.encode(entry)
         .finish()
@@ -72,7 +72,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     );
   }
 
-  makeArtifactUri(baseUri: string, entry: zip.IManifestEntry): string {
+  makeArtifactUri(baseUri: string, entry: zip.ManifestEntry): string {
     return rpcService.getBytestreamUrl(baseUri, this.props.invocationId, {
       filename: entry.name,
       zip: this.encodeManifestEntry(entry),
@@ -91,7 +91,7 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     return false;
   }
 
-  handleZipArtifactClicked(outputUri: string, outputFilename: string, entry: zip.IManifestEntry, event: MouseEvent) {
+  handleZipArtifactClicked(outputUri: string, outputFilename: string, entry: zip.ManifestEntry, event: MouseEvent) {
     event.preventDefault();
     if (!outputUri) return false;
 

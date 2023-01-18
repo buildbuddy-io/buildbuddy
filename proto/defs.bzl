@@ -48,6 +48,7 @@ def ts_proto_library(name, proto, **kwargs):
         # Arguments documented at
         # https://github.com/protobufjs/protobuf.js/tree/6.8.8#pbjs-for-javascript
         args = [
+            "--force-message",
             "--target=static-module",
             "--wrap=es6",
             "--root=%s" % name,

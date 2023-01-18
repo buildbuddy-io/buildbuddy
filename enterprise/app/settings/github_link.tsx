@@ -1,5 +1,6 @@
 import { CheckCircle } from "lucide-react";
 import React from "react";
+import { github } from "../../../proto/github_ts_proto";
 import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/user";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
@@ -49,7 +50,7 @@ export default class GitHubLink extends React.Component<Props, State> {
   private onConfirmDelete() {
     this.setState({ isDeleting: true });
     rpcService.service
-      .unlinkGitHubAccount({})
+      .unlinkGitHubAccount(github.UnlinkGitHubAccountRequest.create({}))
       .then((response) => {
         if (response.warning?.length) {
           alertService.warning("Warnings encountered while deleting GitHub account:\n" + response.warning.join("\n"));

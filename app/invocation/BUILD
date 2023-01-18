@@ -45,6 +45,7 @@ ts_library(
         "//proto:command_line_ts_proto",
         "//proto:eventlog_ts_proto",
         "//proto:execution_stats_ts_proto",
+        "//proto:field_mask_ts_proto",
         "//proto:group_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:invocation_ts_proto",

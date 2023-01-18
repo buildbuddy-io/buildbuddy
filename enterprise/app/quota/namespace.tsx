@@ -56,7 +56,7 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
   private fetch() {
     this.setState({ loading: true });
     rpc_service.service
-      .getNamespace({ namespace: this.getNamespaceName() })
+      .getNamespace(quota.GetNamespaceRequest.create({ namespace: this.getNamespaceName() }))
       .then((response) => {
         this.setState({ response });
       })
@@ -79,11 +79,13 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
     const member = this.state.memberToAdd || "";
     this.setState({ assignLoading: true });
     rpc_service.service
-      .applyBucket({
-        namespace,
-        bucketName,
-        key: quotaKeyFromString(member),
-      })
+      .applyBucket(
+        quota.ApplyBucketRequest.create({
+          namespace,
+          bucketName,
+          key: quotaKeyFromString(member),
+        })
+      )
       .then(() => {
         this.setState({ bucketToAssign: undefined, memberToAdd: undefined });
         alert_service.success(`Bucket "${bucketName}" applied to "${member}" successfully.`);
@@ -105,11 +107,13 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
     const oldBucket = this.state.quotaKeyToEdit?.bucketName;
     const member = this.state.quotaKeyToEdit?.key;
     rpc_service.service
-      .applyBucket({
-        namespace: this.getNamespaceName(),
-        bucketName: newBucket,
-        key: quotaKeyFromString(member || ""),
-      })
+      .applyBucket(
+        quota.ApplyBucketRequest.create({
+          namespace: this.getNamespaceName(),
+          bucketName: newBucket,
+          key: quotaKeyFromString(member || ""),
+        })
+      )
       .then(() => {
         this.setState({ quotaKeyToEdit: undefined, quotaKeyNewBucket: undefined });
         alert_service.success(`Successfully re-assigned "${member}" from "${oldBucket}" to "${newBucket}"`);
@@ -153,7 +157,9 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
     this.setState({ deleteLoading: true });
     const bucketName = this.state.bucketToDelete;
     rpc_service.service
-      .modifyNamespace({ namespace: this.getNamespaceName(), removeBucket: bucketName })
+      .modifyNamespace(
+        quota.ModifyNamespaceRequest.create({ namespace: this.getNamespaceName(), removeBucket: bucketName })
+      )
       .then(() => {
         this.setState({ bucketToDelete: undefined });
         alert_service.success(`Deleted bucket "${bucketName}" from namespace "${this.getNamespaceName()}"`);
@@ -264,8 +270,8 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
   }
 }
 
-function quotaKeyFromString(val: string): quota.IQuotaKey {
-  return val.includes(".") || val.includes(":") ? { ipAddress: val } : { groupId: val };
+function quotaKeyFromString(val: string): quota.QuotaKey {
+  return quota.QuotaKey.create(val.includes(".") || val.includes(":") ? { ipAddress: val } : { groupId: val });
 }
 
 function compareBuckets(a: quota.IAssignedBucket, b: quota.IAssignedBucket): number {

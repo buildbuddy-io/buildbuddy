@@ -78,7 +78,9 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     if (!this.props.user) return;
 
     try {
-      const response = await rpcService.service.getApiKeys({ groupId: this.props.user.selectedGroup.id });
+      const response = await rpcService.service.getApiKeys(
+        api_key.GetApiKeysRequest.create({ groupId: this.props.user.selectedGroup.id })
+      );
       this.setState({ getApiKeysResponse: response });
     } catch (e) {
       this.setState({ initialLoadError: BuildBuddyError.parse(e).description });
@@ -170,9 +172,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     try {
       this.setState({ updateForm: { ...this.state.updateForm, isSubmitting: true } });
       await rpcService.service.updateApiKey(
-        new api_key.CreateApiKeyRequest({
+        api_key.UpdateApiKeyRequest.create({
           ...this.state.updateForm.request,
-          groupId: this.props.user.selectedGroup.id,
         })
       );
     } catch (e) {

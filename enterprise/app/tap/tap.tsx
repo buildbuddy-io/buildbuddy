@@ -27,7 +27,7 @@ interface Props {
 
 interface State extends CommitGrouping {
   repos: string[];
-  targetHistory: target.ITargetHistory[];
+  targetHistory: target.TargetHistory[];
   nextPageToken: string;
   loading: boolean;
   targetLimit: number;
@@ -125,9 +125,11 @@ export default class TapComponent extends React.Component<Props, State> {
     if (selectedRepo) this.setState({ repos: [selectedRepo] });
 
     const fetchPromise = rpcService.service
-      .getInvocationStat({
-        aggregationType: invocation.AggType.REPO_URL_AGGREGATION_TYPE,
-      })
+      .getInvocationStat(
+        invocation.GetInvocationStatRequest.create({
+          aggregationType: invocation.AggType.REPO_URL_AGGREGATION_TYPE,
+        })
+      )
       .then((response) => {
         const repos = response.invocationStat.filter((stat) => stat.name).map((stat) => stat.name);
         if (selectedRepo && !repos.includes(selectedRepo)) {
@@ -163,7 +165,7 @@ export default class TapComponent extends React.Component<Props, State> {
     request.serverSidePagination = this.isV2;
     request.pageToken = initial ? "" : this.state.nextPageToken;
     if (this.isV2) {
-      request.query = { repoUrl: this.selectedRepo() };
+      request.query = target.TargetQuery.create({ repoUrl: this.selectedRepo() });
     }
 
     this.setState({ loading: true });
@@ -726,8 +728,8 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
  * This operation may mutate h1, so callers shouldn't rely on the value of h1 after this is
  * called.
  */
-function mergeHistories(h1: target.ITargetHistory[], h2: target.ITargetHistory[]): target.ITargetHistory[] {
-  const targetIdToHistory = new Map<string, target.ITargetHistory>();
+function mergeHistories(h1: target.TargetHistory[], h2: target.TargetHistory[]): target.TargetHistory[] {
+  const targetIdToHistory = new Map<string, target.TargetHistory>();
   for (const history of h1) {
     targetIdToHistory.set(history.target.id, history);
   }

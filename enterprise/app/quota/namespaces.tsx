@@ -26,7 +26,7 @@ export default class NamespacesComponent extends React.Component<{}, State> {
   private fetch() {
     this.setState({ loading: true });
     rpc_service.service
-      .getNamespace({})
+      .getNamespace(quota.GetNamespaceRequest.create({}))
       .then((response) => this.setState({ response }))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
@@ -42,7 +42,7 @@ export default class NamespacesComponent extends React.Component<{}, State> {
     const namespace = this.state.namespaceToDelete;
     this.setState({ deleteLoading: true });
     rpc_service.service
-      .removeNamespace({ namespace })
+      .removeNamespace(quota.RemoveNamespaceRequest.create({ namespace }))
       .then(() => {
         this.setState({ namespaceToDelete: "" });
         alert_service.success(`Namespace "${namespace}" deleted successfully.`);

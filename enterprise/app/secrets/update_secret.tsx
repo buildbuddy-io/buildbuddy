@@ -43,7 +43,7 @@ export default class UpdateSecretComponent extends React.Component<UpdateSecretP
 
   private encryptAndUpdate(name: string, value: string) {
     rpc_service.service
-      .getPublicKey({})
+      .getPublicKey(secrets.GetPublicKeyRequest.create({}))
       .then((response) => {
         const secret = this.encrypt(response.publicKey, name, value.trim());
         this.updateSecret(secret);
@@ -66,7 +66,7 @@ export default class UpdateSecretComponent extends React.Component<UpdateSecretP
 
   private updateSecret(secret: secrets.ISecret) {
     rpc_service.service
-      .updateSecret({ secret })
+      .updateSecret(secrets.UpdateSecretRequest.create({ secret: secrets.Secret.create(secret) }))
       .then(() => {
         alert_service.success("Successfully encrypted and saved secret.");
         router.navigateTo("/settings/org/secrets");

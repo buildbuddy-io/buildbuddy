@@ -24,10 +24,14 @@ interface BucketProps {
 export default class BucketComponent extends React.Component<BucketProps> {
   private onSubmit(values: BucketFormValues): Promise<any> {
     return rpc_service.service
-      .modifyNamespace({
-        namespace: this.props.search.get("namespace") || values.namespace,
-        ...(this.props.search.get("bucket") ? { updateBucket: values.bucket } : { addBucket: values.bucket }),
-      })
+      .modifyNamespace(
+        quota.ModifyNamespaceRequest.create({
+          namespace: this.props.search.get("namespace") || values.namespace,
+          ...(this.props.search.get("bucket")
+            ? { updateBucket: quota.Bucket.create(values.bucket) }
+            : { addBucket: quota.Bucket.create(values.bucket) }),
+        })
+      )
       .then(() => {
         alert_service.success("Bucket saved successfully!");
         router.navigateTo(this.props.search.get("return") || "/settings/server/quota");
