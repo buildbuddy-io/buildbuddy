@@ -179,6 +179,23 @@ build or fetch these dependencies.
 
 :::
 
+## Linux image configuration
+
+By default, workflows run on an Ubuntu 18.04-based image. You can use
+a newer, Ubuntu 20.04-based image using the `container_image` action
+setting:
+
+```yaml
+actions:
+  - name: "Test all targets"
+    container_image: "ubuntu-20.04" # <-- add this line
+    bazel_commands:
+      - "bazel test //..."
+```
+
+The supported values for `container_image` are `"ubuntu-18.04"` (default)
+or `"ubuntu-20.04"`.
+
 ## Mac configuration
 
 By default, workflows will execute on BuildBuddy's Linux executors,
@@ -270,6 +287,9 @@ A named group of Bazel commands that run when triggered.
   Defaults to `"amd64"`. `"arm64"` is also supported when running under
   `os: "darwin"`, but requires using self-hosted Apple silicon (ARM-based)
   Mac executors running on a dedicated `workflows` pool.
+- **`container_image`** (`string`): The Linux container image to use
+  (has no effect for Mac workflows). Supported values are `"ubuntu-18.04"`
+  and `"ubuntu-20.04"`. Defaults to `"ubuntu-18.04"`.
 - **`resource_requests`** ([`ResourceRequests`](#resourcerequests)):
   the requested resources for this action.
 - **`user`** (`string`): User to run the workflow as. For Linux workflows,
