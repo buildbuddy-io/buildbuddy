@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -694,6 +695,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		CommitSha:          *commitSHA,
 		TargetRepoUrl:      *targetRepoURL,
 		TargetBranch:       *targetBranch,
+		Os:                 runtime.GOOS,
+		Arch:               runtime.GOARCH,
+		ContainerImage:     ar.action.ContainerImage,
 	}
 	wfcEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowConfigured{WorkflowConfigured: &bespb.BuildEventId_WorkflowConfiguredId{}}},

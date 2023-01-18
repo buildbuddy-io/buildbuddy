@@ -27,6 +27,7 @@ type Action struct {
 	Triggers          *Triggers         `yaml:"triggers"`
 	OS                string            `yaml:"os"`
 	Arch              string            `yaml:"arch"`
+	ContainerImage    string            `yaml:"container_image"`
 	ResourceRequests  ResourceRequests  `yaml:"resource_requests"`
 	User              string            `yaml:"user"`
 	GitCleanExclude   []string          `yaml:"git_clean_exclude"`
