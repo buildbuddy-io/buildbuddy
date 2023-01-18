@@ -97,7 +97,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     window.removeEventListener("keydown", this.windowKeyDownListener);
   }
 
-  componentDidUpdate(_prevProps: TerminalProps, prevState: State, snapshot: Snapshot | null) {
+  componentDidUpdate(_prevProps: TerminalProps, prevState: State, snapshot?: Snapshot) {
     this.initialScrollToEnd();
     // If the active match changed, scroll to it.
     if (this.state.activeMatchIndex !== prevState.activeMatchIndex) {

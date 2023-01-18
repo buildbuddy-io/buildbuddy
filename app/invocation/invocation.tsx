@@ -44,7 +44,7 @@ interface State {
 }
 
 interface Props {
-  user?: User;
+  user?: User | null;
   invocationId: string;
   hash: string;
   search: URLSearchParams;

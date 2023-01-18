@@ -30,7 +30,8 @@ import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 
 interface State {
-  user: User;
+  // TODO: change user to optional instead of "| null".
+  user: User | null;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -56,7 +57,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
 export default class EnterpriseRootComponent extends React.Component {
   state: State = {
     loading: true,
-    user: undefined,
+    user: null,
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
@@ -145,7 +146,7 @@ export default class EnterpriseRootComponent extends React.Component {
       (fallback && !capabilities.auth);
     let login = fallback && !setup && !this.state.loading && !this.state.user;
     let home = fallback && !setup && !this.state.loading && this.state.user;
-    let sidebar = Boolean(this.state.user) && Boolean(this.state.user.groups?.length) && !code;
+    let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code;
     let menu = !sidebar && !code && !this.state.loading;
 
     return (

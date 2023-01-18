@@ -16,7 +16,8 @@ import UserPreferences from "../preferences/preferences";
 declare var window: any;
 
 interface State {
-  user: User;
+  // TODO: change user to optional instead of "| null".
+  user: User | null;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -70,7 +71,7 @@ export default class RootComponent extends React.Component {
     let showSetup = !invocationId && !compareInvocationIds;
     return (
       <div className={this.state.preferences.denseModeEnabled ? "dense root" : "root"}>
-        <MenuComponent user={this.state.user} showHamburger={true} preferences={this.state.preferences} />
+        <MenuComponent user={this.state.user || undefined} showHamburger={true} preferences={this.state.preferences} />
         <div className="root-main">
           <div className="content">
             {invocationId && (
@@ -88,7 +89,7 @@ export default class RootComponent extends React.Component {
                 invocationAId={compareInvocationIds.a}
                 invocationBId={compareInvocationIds.b}
                 search={this.state.search}
-                user={null}
+                user={undefined}
               />
             )}
             {showSetup && <SetupComponent />}
