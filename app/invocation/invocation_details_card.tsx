@@ -147,10 +147,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
                   <div className="invocation-section-title">Pattern</div>
                   <div title={this.props.model.getAllPatterns()}>{this.props.model.getPattern()}</div>
                 </div>
-                <div className="invocation-section">
-                  <div className="invocation-section-title">CPU</div>
-                  <div>{this.props.model.getCPU()}</div>
-                </div>
+              </>
+            )}
+            <div className="invocation-section">
+              <div className="invocation-section-title">CPU</div>
+              <div>{this.props.model.getCPU()}</div>
+            </div>
+            {isBazelInvocation && (
+              <>
                 <div className="invocation-section">
                   <div className="invocation-section-title">Mode</div>
                   <div>{this.props.model.getMode()}</div>
