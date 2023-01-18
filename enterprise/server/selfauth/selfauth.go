@@ -95,9 +95,6 @@ type tokenJSON struct {
 }
 
 func Register(env environment.Env) error {
-	if !Enabled() {
-		return nil
-	}
 	oauth, err := NewSelfAuth()
 	if err != nil {
 		return status.InternalErrorf("Error initializing self auth: %s", err)
