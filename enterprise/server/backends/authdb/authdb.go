@@ -80,7 +80,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key %q", apiKey)
+			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 		}
 		return nil, err
 	}
@@ -158,4 +158,11 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		return nil
 	})
 	return user, err
+}
+
+func redactInvalidAPIKey(key string) string {
+	if len(key) < 8 {
+		return "***"
+	}
+	return key[:1] + "***" + key[len(key)-1:]
 }
