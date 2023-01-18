@@ -852,7 +852,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		wd.EventName, wd.TargetRepoURL, wd.PushedRepoURL, wd.PullRequestAuthor, wd.PullRequestApprover)
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
-		return err
+		return status.WrapErrorf(err, "failed to lookup workflow for webhook ID %q", webhookID)
 	}
 	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, wd)
 	if err != nil {
@@ -986,7 +986,7 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	webhookID := workflowMatch[1]
 	if err := ws.startWorkflow(webhookID, r); err != nil {
-		log.Errorf("Failed to start workflow: %s", err)
+		log.Errorf("Failed to start workflow (webhook ID: %q): %s", webhookID, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
