@@ -538,6 +538,18 @@ export default class InvocationModel {
   }
 
   getCPU() {
+    if (this.workflowConfigured) {
+      // Rename GOOS/GOARCH convention to be consistent with bazel's TARGET_CPU convention.
+      if (this.workflowConfigured.os === "linux" && this.workflowConfigured.arch === "amd64") {
+        return "k8";
+      }
+      if (this.workflowConfigured.os === "darwin" && this.workflowConfigured.arch === "amd64") {
+        return "darwin";
+      }
+      if (this.workflowConfigured.os === "darwin" && this.workflowConfigured.arch === "arm64") {
+        return "darwin_arm64";
+      }
+    }
     return this.configuration?.makeVariable.TARGET_CPU || "Unknown CPU";
   }
 
