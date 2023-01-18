@@ -30,7 +30,8 @@ import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 
 interface State {
-  user?: User;
+  // TODO: change user to optional instead of "| null".
+  user: User | null;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -56,7 +57,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
 export default class EnterpriseRootComponent extends React.Component {
   state: State = {
     loading: true,
-    user: undefined,
+    user: null,
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
@@ -65,7 +66,7 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentWillMount() {
     if (!capabilities.auth) {
-      this.setState({ ...this.state, user: undefined, loading: false });
+      this.setState({ ...this.state, user: null, loading: false });
     }
     authService.userStream.subscribe({
       next: (user: User) => this.setState({ ...this.state, user, loading: false }),

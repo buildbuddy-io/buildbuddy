@@ -16,7 +16,8 @@ import UserPreferences from "../preferences/preferences";
 declare var window: any;
 
 interface State {
-  user?: User;
+  // TODO: change user to optional instead of "| null".
+  user: User | null;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -27,7 +28,7 @@ capabilities.register("BuildBuddy Community Edition", false, [Path.invocationPat
 
 export default class RootComponent extends React.Component {
   state: State = {
-    user: undefined,
+    user: null,
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
@@ -70,7 +71,7 @@ export default class RootComponent extends React.Component {
     let showSetup = !invocationId && !compareInvocationIds;
     return (
       <div className={this.state.preferences.denseModeEnabled ? "dense root" : "root"}>
-        <MenuComponent user={this.state.user} showHamburger={true} preferences={this.state.preferences} />
+        <MenuComponent user={this.state.user || undefined} showHamburger={true} preferences={this.state.preferences} />
         <div className="root-main">
           <div className="content">
             {invocationId && (
@@ -80,7 +81,7 @@ export default class RootComponent extends React.Component {
                 hash={this.state.hash}
                 search={this.state.search}
                 preferences={this.state.preferences}
-                user={undefined}
+                user={null}
               />
             )}
             {compareInvocationIds && (
