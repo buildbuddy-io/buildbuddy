@@ -7,6 +7,7 @@ exports_files(["settings.css"])
 ts_library(
     name = "settings",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/alert",
         "//app/auth",

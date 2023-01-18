@@ -79,7 +79,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
             <div className="settings-tabs">
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Organization settings</div>
-                <div className="settings-tab-group-subtitle">{this.props.user?.selectedGroupName()}</div>
+                <div className="settings-tab-group-subtitle">{this.props.user.selectedGroupName()}</div>
               </div>
               <div className="settings-tab-group">
                 {router.canAccessOrgDetailsPage(this.props.user) && (
@@ -108,7 +108,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
-                <div className="settings-tab-group-subtitle">{this.props.user?.displayUser?.name?.full}</div>
+                <div className="settings-tab-group-subtitle">{this.props.user.displayUser.name?.full}</div>
               </div>
               <div className="settings-tab-group">
                 <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId}>
@@ -158,14 +158,14 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                         // since the "name" field plays this role.
                       }
                       {!capabilities.createOrg && (
-                        <div className="settings-section-subtitle">{this.props.user?.selectedGroupName()}</div>
+                        <div className="settings-section-subtitle">{this.props.user.selectedGroupName()}</div>
                       )}
                       {capabilities.createOrg && <EditOrgComponent user={this.props.user} />}
                     </>
                   )}
                   {activeTabId === TabId.OrgMembers && capabilities.userManagement && (
                     <>
-                      <div className="settings-option-title">Members of {this.props.user?.selectedGroupName()}</div>
+                      <div className="settings-option-title">Members of {this.props.user.selectedGroupName()}</div>
                       <OrgMembersComponent user={this.props.user} />
                     </>
                   )}
@@ -206,7 +206,12 @@ class SettingsTab extends React.Component<SettingsTabProps> {
     if (this.props.activeTabId === this.props.id && window.location.pathname === this.props.id) {
       return;
     }
-    router.navigateTo((e.target as HTMLAnchorElement).getAttribute("href"));
+    const linkTarget = (e.target as HTMLAnchorElement).getAttribute("href");
+    // If this isn't really a link, probably better to go nowhere.
+    if (linkTarget === null) {
+      return;
+    }
+    router.navigateTo(linkTarget);
   }
 
   render() {
