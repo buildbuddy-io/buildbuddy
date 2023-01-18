@@ -1,5 +1,6 @@
 actions:
   - name: Test
+    container_image: ubuntu-20.04
     triggers:
       push:
         branches:
@@ -23,6 +24,7 @@ actions:
       - build //enterprise/server/cmd/executor //enterprise/server //server //cli/cmd/bb --config=mac-workflows
       - test //cli/... --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker
   - name: Benchmark
+    container_image: ubuntu-20.04
     triggers:
       push:
         branches:
@@ -30,6 +32,7 @@ actions:
     bazel_commands:
       - test //... --config=workflows --test_tag_filters=+performance
   - name: Browser tests
+    container_image: ubuntu-20.04
     triggers:
       push:
         branches:
@@ -42,6 +45,7 @@ actions:
       - test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
   - name: Docker tests
+    container_image: ubuntu-20.04
     triggers:
       push:
         branches:

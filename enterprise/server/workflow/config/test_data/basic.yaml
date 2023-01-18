@@ -1,5 +1,9 @@
 actions:
   - name: "Build and test"
+    # Unrecognized YAML keys should not cause problems
+    # (e.g. using a config option in dev before it is available in prod,
+    # or specifying a deprecated option which no longer has any effect)
+    unknown_key: "foo"
     triggers:
       push:
         branches: [main]
