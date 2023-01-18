@@ -208,7 +208,7 @@ class SettingsTab extends React.Component<SettingsTabProps> {
     }
     const linkTarget = (e.target as HTMLAnchorElement).getAttribute("href");
     // If this isn't really a link, probably better to go nowhere.
-    if (linkTarget == null) {
+    if (linkTarget === null) {
       return;
     }
     router.navigateTo(linkTarget);
