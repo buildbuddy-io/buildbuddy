@@ -33,8 +33,8 @@ export default class GitHubLink extends React.Component<Props, State> {
 
   private gitHubLinkUrl(): string {
     const params = new URLSearchParams({
-      group_id: this.props.user?.selectedGroup?.id,
-      user_id: this.props.user?.displayUser.userId.id,
+      group_id: this.props.user.selectedGroup.id,
+      user_id: this.props.user.displayUser.userId?.id || "",
       redirect_url: window.location.href,
     });
     return `/auth/github/link/?${params}`;
@@ -52,7 +52,7 @@ export default class GitHubLink extends React.Component<Props, State> {
     rpcService.service
       .unlinkGitHubAccount(github.UnlinkGitHubAccountRequest.create({}))
       .then((response) => {
-        if (response.warning?.length) {
+        if (response.warning.length) {
           alertService.warning("Warnings encountered while deleting GitHub account:\n" + response.warning.join("\n"));
         } else {
           alertService.success("Successfully unlinked GitHub account");
