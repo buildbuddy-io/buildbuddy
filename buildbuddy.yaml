@@ -60,3 +60,5 @@ plugins:
   - path: cli/plugins/notify
   - path: cli/example_plugins/go-highlight
   - path: cli/example_plugins/ping-remote
+
+# 
