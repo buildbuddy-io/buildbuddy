@@ -25,6 +25,7 @@ ts_library(
         "//enterprise/app/org",
         "//enterprise/app/quota",
         "//enterprise/app/secrets",
+        "//proto:github_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",

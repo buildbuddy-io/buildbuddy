@@ -11,7 +11,7 @@ import alert_service from "../../../app/alert/alert_service";
 
 interface State {
   loading?: boolean;
-  response?: secrets.IListSecretsResponse;
+  response?: secrets.ListSecretsResponse;
 
   secretToDelete?: string;
   deleteLoading?: boolean;
@@ -27,7 +27,7 @@ export default class SecretsListComponent extends React.Component<{}, State> {
   private fetch() {
     this.setState({ loading: true });
     rpc_service.service
-      .listSecrets({})
+      .listSecrets(secrets.ListSecretsRequest.create({}))
       .then((response) => this.setState({ response }))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));
@@ -42,7 +42,9 @@ export default class SecretsListComponent extends React.Component<{}, State> {
   private onConfirmDelete() {
     this.setState({ deleteLoading: true });
     rpc_service.service
-      .deleteSecret({ secret: { name: this.state.secretToDelete } })
+      .deleteSecret(
+        secrets.DeleteSecretRequest.create({ secret: secrets.Secret.create({ name: this.state.secretToDelete }) })
+      )
       .then(() => {
         alert_service.success("Secret deleted successfully.");
         this.setState({ secretToDelete: undefined });

@@ -12,6 +12,7 @@ ts_library(
         "//app/components/input",
         "//app/errors",
         "//app/service",
+        "//proto:group_ts_proto",
         "@npm//@types/react",
         "@npm//react",
     ],

@@ -46,7 +46,7 @@ export function prepareForDiff(
     }
   }
 
-  const events: invocation_proto.IInvocationEvent[] = [];
+  const events: invocation_proto.InvocationEvent[] = [];
   for (const event of invocation.event) {
     if (sortEvents) {
       delete event.sequenceNumber;
@@ -100,7 +100,7 @@ export function prepareForDiff(
       }
     }
 
-    events.push(event);
+    events.push(invocation_proto.InvocationEvent.create(event));
   }
   invocation.event = events;
   return invocation;

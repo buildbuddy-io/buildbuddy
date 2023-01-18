@@ -1,4 +1,5 @@
 import React from "react";
+import { grp } from "../../../proto/group_ts_proto";
 import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import auth_service from "../../../app/auth/auth_service";
 import rpc_service from "../../../app/service/rpc_service";
@@ -44,7 +45,7 @@ export default class GroupSearchComponent extends React.Component<{}, State> {
     // Otherwise try to look up the group by its exact URL identifier.
     this.setState({ loading: true });
     rpc_service.service
-      .getGroup({ urlIdentifier: query })
+      .getGroup(grp.GetGroupRequest.create({ urlIdentifier: query }))
       .then((response) => auth_service.enterImpersonationMode(response.id))
       .catch((e) => error_service.handleError(e))
       .finally(() => this.setState({ loading: false }));

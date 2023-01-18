@@ -52,11 +52,11 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
 
     this.setState({ isLoading: true });
     await rpcService.service.updateGroupUsers(
-      new grp.UpdateGroupUsersRequest({
+      grp.UpdateGroupUsersRequest.create({
         groupId: this.props.user.selectedGroup.id,
         update: [
-          new grp.UpdateGroupUsersRequest.Update({
-            userId,
+          grp.UpdateGroupUsersRequest.Update.create({
+            userId: user_id.UserId.create(userId),
             membershipAction,
           }),
         ],

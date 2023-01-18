@@ -232,7 +232,9 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     }));
 
     try {
-      const response = await rpcService.service.getApiKeys({ groupId: this.props.user.selectedGroup.id });
+      const response = await rpcService.service.getApiKeys(
+        api_key.GetApiKeysRequest.create({ groupId: this.props.user.selectedGroup.id })
+      );
       const executorKeys = response.apiKey.filter((key) =>
         key.capability.some((cap) => cap == api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)
       );
@@ -252,7 +254,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     }));
 
     try {
-      const response = await rpcService.service.getExecutionNodes({});
+      const response = await rpcService.service.getExecutionNodes(scheduler.GetExecutionNodesRequest.create({}));
       this.setState({
         nodes: response.executor,
         userOwnedExecutorsSupported: response.userOwnedExecutorsSupported,

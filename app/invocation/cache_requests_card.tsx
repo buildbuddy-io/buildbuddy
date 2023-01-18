@@ -16,6 +16,7 @@ import Select, { Option } from "../components/select/select";
 import { FilterInput } from "../components/filter_input/filter_input";
 import * as format from "../format/format";
 import * as proto from "../util/proto";
+import { google as google_field_mask } from "../../proto/field_mask_ts_proto";
 import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 import { BuildBuddyError } from "../util/errors";
 
@@ -133,20 +134,22 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     const isInitialFetch = !this.state.didInitialFetch;
 
     rpc_service.service
-      .getCacheScoreCard({
-        invocationId: this.props.model.getId(),
-        orderBy: this.getOrderBy(),
-        descending: this.getDescending(),
-        groupBy: this.getGroupBy(),
-        filter: {
-          mask: { paths: filterFields },
-          cacheType: filter.cache,
-          requestType: filter.request,
-          responseType: filter.response,
-          search: this.getSearch(),
-        },
-        pageToken,
-      })
+      .getCacheScoreCard(
+        cache.GetCacheScoreCardRequest.create({
+          invocationId: this.props.model.getId(),
+          orderBy: this.getOrderBy(),
+          descending: this.getDescending(),
+          groupBy: this.getGroupBy(),
+          filter: cache.GetCacheScoreCardRequest.Filter.create({
+            mask: google_field_mask.protobuf.FieldMask.create({ paths: filterFields }),
+            cacheType: filter.cache,
+            requestType: filter.request,
+            responseType: filter.response,
+            search: this.getSearch(),
+          }),
+          pageToken,
+        })
+      )
       .then((response) => {
         this.setState({
           results: [...(pageToken && this.state.results), ...response.results],
@@ -381,13 +384,15 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     this.state.digestToCacheMetadata.set(digest.hash, null);
 
     rpc_service.service
-      .getCacheMetadata({
-        resourceName: {
-          digest: digest,
-          cacheType: scorecardResult.cacheType,
-          instanceName: remoteInstanceName,
-        },
-      })
+      .getCacheMetadata(
+        cache.GetCacheMetadataRequest.create({
+          resourceName: resource.ResourceName.create({
+            digest: digest,
+            cacheType: scorecardResult.cacheType,
+            instanceName: remoteInstanceName,
+          }),
+        })
+      )
       .then((response) => {
         this.state.digestToCacheMetadata.set(digest.hash, response);
         this.forceUpdate();

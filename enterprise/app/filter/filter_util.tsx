@@ -51,8 +51,8 @@ export interface ProtoFilterParams {
   commit?: string;
   host?: string;
   command?: string;
-  minimumDuration?: google_duration.protobuf.IDuration;
-  maximumDuration?: google_duration.protobuf.IDuration;
+  minimumDuration?: google_duration.protobuf.Duration;
+  maximumDuration?: google_duration.protobuf.Duration;
 
   sortBy?: SortBy;
   sortOrder?: SortOrder;
@@ -145,11 +145,11 @@ export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): str
     .join(" ");
 }
 
-function parseDuration(value: string | null): google_duration.protobuf.IDuration | undefined {
+function parseDuration(value: string | null): google_duration.protobuf.Duration | undefined {
   if (!value) {
     return undefined;
   }
-  return proto.secondsToDuration(Number(value));
+  return google_duration.protobuf.Duration.create(proto.secondsToDuration(Number(value)));
 }
 
 /** Duration slider values, in seconds. **/
