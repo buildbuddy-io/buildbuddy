@@ -132,6 +132,12 @@ type renderedSection struct {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// When "?version" is set, just serve the server version in plain text.
+	if r.URL.Query().Has("version") {
+		w.Write([]byte(version.AppVersion()))
+		return
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
