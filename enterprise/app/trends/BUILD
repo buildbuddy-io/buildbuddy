@@ -7,6 +7,7 @@ exports_files(["trends.css"])
 ts_library(
     name = "trends",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/auth",
         "//app/capabilities",

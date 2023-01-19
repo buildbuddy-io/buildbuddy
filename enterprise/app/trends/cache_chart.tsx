@@ -6,14 +6,21 @@ import { invocation } from "../../../proto/invocation_ts_proto";
 interface Props {
   title: string;
   data: any[];
+  secondaryBarName: string;
   extractLabel: (datum: any) => string;
   formatHoverLabel: (datum: any) => string;
   extractHits: (datum: any) => number;
-  extractMisses?: (datum: any) => number;
-  extractWrites?: (datum: any) => number;
+  extractSecondary: (datum: any) => number;
 }
 
-const CacheChartTooltip = ({ active, payload, labelFormatter, extractHits, extractMisses, extractWrites }: any) => {
+const CacheChartTooltip = ({
+  active,
+  payload,
+  labelFormatter,
+  extractHits,
+  secondaryBarName,
+  extractSecondary,
+}: any) => {
   if (active) {
     let data = payload[0].payload;
     return (
@@ -21,14 +28,11 @@ const CacheChartTooltip = ({ active, payload, labelFormatter, extractHits, extra
         <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
         <div className="trend-chart-hover-value">
           <div>{extractHits(data) || 0} hits</div>
-          {extractMisses && <div>{extractMisses(data) || 0} misses</div>}
-          {extractWrites && <div>{extractWrites(data) || 0} writes</div>}
           <div>
-            {(
-              (100 * extractHits(data)) /
-                (extractHits(data) + (extractMisses ? extractMisses(data) : extractWrites(data))) || 0
-            ).toFixed(2)}
-            % hit percentage
+            {extractSecondary(data) || 0} {secondaryBarName}
+          </div>
+          <div>
+            {((100 * extractHits(data)) / (extractHits(data) + extractSecondary(data)) || 0).toFixed(2)}% hit percentage
           </div>
         </div>
       </div>
@@ -60,26 +64,25 @@ export default class CacheChartComponent extends React.Component<Props> {
                 <CacheChartTooltip
                   labelFormatter={this.props.formatHoverLabel}
                   extractHits={this.props.extractHits}
-                  extractMisses={this.props.extractMisses}
-                  extractWrites={this.props.extractWrites}
+                  secondaryBarName={this.props.secondaryBarName}
+                  extractSecondary={this.props.extractSecondary}
                 />
               }
             />
             <Bar yAxisId="hits" name="hits" dataKey={(datum) => this.props.extractHits(datum)} fill="#8BC34A" />
-            {this.props.extractMisses && (
-              <Bar yAxisId="hits" name="misses" dataKey={(datum) => this.props.extractMisses(datum)} fill="#f44336" />
-            )}
-            {this.props.extractWrites && (
-              <Bar yAxisId="hits" name="writes" dataKey={(datum) => this.props.extractWrites(datum)} fill="#f44336" />
-            )}
+            <Bar
+              yAxisId="hits"
+              name={this.props.secondaryBarName}
+              dataKey={(datum) => this.props.extractSecondary(datum)}
+              fill="#f44336"
+            />
             <Line
               yAxisId="percent"
               name="hit percentage"
               dot={false}
               dataKey={(datum) =>
                 (100 * this.props.extractHits(datum)) /
-                (this.props.extractHits(datum) +
-                  (this.props.extractMisses ? this.props.extractMisses(datum) : this.props.extractWrites(datum)))
+                (this.props.extractHits(datum) + this.props.extractSecondary(datum))
               }
               stroke="#03A9F4"
             />

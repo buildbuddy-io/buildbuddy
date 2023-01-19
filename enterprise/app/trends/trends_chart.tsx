@@ -115,7 +115,7 @@ export default class TrendsChartComponent extends React.Component<Props> {
                 <Cell
                   cursor={this.props.onBarClicked ? "pointer" : "default"}
                   key={`cell-${index}`}
-                  onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : null}
+                  onClick={this.props.onBarClicked ? this.props.onBarClicked.bind(this, date) : undefined}
                 />
               ))}
             </Bar>
@@ -147,7 +147,7 @@ export default class TrendsChartComponent extends React.Component<Props> {
                         ? this.props.onSecondaryBarClicked.bind(this, date)
                         : this.props.onBarClicked
                         ? this.props.onBarClicked.bind(this, date)
-                        : null
+                        : undefined
                     }
                   />
                 ))}
