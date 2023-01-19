@@ -105,6 +105,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		ht.TrackEmptyHit()
 		return nil
 	}
+	downloadTracker := ht.TrackDownload(r.GetDigest())
 
 	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
 	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
@@ -140,8 +141,6 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		}
 		defer reader.Close()
 	}
-
-	downloadTracker := ht.TrackDownload(r.GetDigest())
 
 	copyBuf := s.bufferPool.Get(bufSize)
 	defer s.bufferPool.Put(copyBuf)
