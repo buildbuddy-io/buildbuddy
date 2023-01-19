@@ -101,17 +101,18 @@ the tests pass on BuildBuddy.
 
 ## Building in the workflow runner environment
 
-BuildBuddy workflows execute using Docker on a recent Ubuntu base image
-(Ubuntu 18.04 at the time of this writing), with some commonly used tools
-and libraries pre-installed.
+BuildBuddy workflows execute using a Firecracker MicroVM on an Ubuntu
+18.04-based image, with some commonly used tools and libraries
+pre-installed.
 
-If you would like to test whether your build will succeed with
+If you would like to test whether your build will succeed on
 BuildBuddy workflows without having to set up and trigger the workflow,
-you can instead run the image with Docker, clone your Git repo, and invoke
-`bazel` to run your tests.
+you can get a good approximation of the workflow VM environment by running
+the image locally with Docker, cloning your Git repo, and invoking
+`bazel` to run your tests:
 
 ```bash
-# Start a new shell inside the workflows environment (requires docker)
+# Start a new shell inside the workflows Ubuntu 18.04 environment (requires docker)
 docker run --rm -it "gcr.io/flame-public/buildbuddy-ci-runner:latest"
 
 # Clone your repo and test it
@@ -121,3 +122,7 @@ bazel test //...
 ```
 
 The Dockerfile we use to build the image (at `HEAD`) is [here](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/dockerfiles/ci_runner_image/Dockerfile).
+
+If you plan to use the Ubuntu 20.04 image (requires [advanced configuration](workflows-config#linux-image-configuration)), use
+`"gcr.io/flame-public/rbe-ubuntu20-04-workflows:latest"` in the command
+above.

@@ -267,7 +267,7 @@ fi
 exec python3 ./handle_bazel_output.py "$@"
 ```
 
-::: note
+:::note
 
 If `handle_bazel_output.sh` fails to find one of its required system
 dependencies, it can fall back to running `cat` so that the plugin
