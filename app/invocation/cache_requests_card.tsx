@@ -302,7 +302,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           {/* Filtering controls */}
           <div className="separator" />
           <label>Show</label>
-          <Select value={this.getFilterIndex()} onChange={this.onChangeFilter.bind(this)}>
+          <Select id="filter-cache-requests" value={this.getFilterIndex()} onChange={this.onChangeFilter.bind(this)}>
             {filters.map((filter, i) => (
               <Option key={filter.label} value={i}>
                 {filter.label}

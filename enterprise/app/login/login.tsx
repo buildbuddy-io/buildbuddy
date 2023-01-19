@@ -158,7 +158,7 @@ export default class LoginComponent extends React.Component<Props, State> {
                   />
                 </>
               )}
-              <Button className={this.state.ssoSlug ? "active" : ""}>Log in with SSO</Button>
+              <Button className={`sso-button ${this.state.ssoSlug ? "active" : ""}`}>Log in with SSO</Button>
             </form>
           )}
         </div>

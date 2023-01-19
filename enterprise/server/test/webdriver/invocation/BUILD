@@ -7,9 +7,12 @@ go_web_test_suite(
     shard_count = 1,
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
+        "//server/testutil/app",
         "//server/testutil/testbazel",
         "//server/testutil/webtester",
+        "//server/util/log",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
