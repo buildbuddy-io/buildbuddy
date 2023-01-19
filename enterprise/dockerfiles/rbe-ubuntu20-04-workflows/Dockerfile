@@ -8,6 +8,9 @@ RUN curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/rele
 # at least for CI runs on the BB repo itself.
 RUN USE_BAZEL_VERSION=6.0.0 bazelisk version
 
-# Provision a non-root user named "buildbuddy".
+# Provision a non-root user named "buildbuddy" and set up passwordless sudo.
 # Non-root users are needed for some bazel toolchains, such as hermetic python.
-RUN useradd --create-home buildbuddy
+RUN apt-get update && apt-get install -y sudo && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home buildbuddy --groups sudo && \
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
