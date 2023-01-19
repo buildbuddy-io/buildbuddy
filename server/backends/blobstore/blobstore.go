@@ -578,11 +578,11 @@ func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	_, err := a.s3.HeadObjectWithContext(ctx, params); 
+	_, err := a.s3.HeadObjectWithContext(ctx, params)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFound" {
 			return false, nil
-		}	
+		}
 		return false, err
 	}
 
