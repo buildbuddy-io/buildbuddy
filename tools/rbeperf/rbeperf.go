@@ -821,7 +821,7 @@ func main() {
 		}
 	}
 
-	clientConn, err := grpc_client.DialTargetWithOptions(*server, true, grpc.WithBlock(), grpc.WithTimeout(5*time.Second))
+	clientConn, err := grpc_client.DialTarget(*server, grpc.WithBlock(), grpc.WithTimeout(5*time.Second))
 	if err != nil {
 		log.Fatalf("Could not connect to server %q: %s", *server, err)
 	}

@@ -181,7 +181,7 @@ func main() {
 		monitoring.StartMonitoringHandler(fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	}
 
-	conn, err := grpc_client.DialTargetWithOptions(*cacheTarget, false, grpc.WithBlock(), grpc.WithTimeout(*timeout))
+	conn, err := grpc_client.DialTarget(*cacheTarget, grpc.WithBlock(), grpc.WithTimeout(*timeout))
 	if err != nil {
 		log.Fatalf("Unable to connect to target '%s': %s", *cacheTarget, err)
 	}

@@ -57,7 +57,7 @@ func newMemoryCache(t *testing.T, maxSizeBytes int64) interfaces.Cache {
 }
 
 func waitForReady(t *testing.T, addr string) {
-	conn, err := grpc_client.DialTargetWithOptions("grpc://"+addr, false, grpc.WithBlock(), grpc.WithTimeout(maxWaitForReadyDuration))
+	conn, err := grpc_client.DialTarget("grpc://"+addr, grpc.WithBlock(), grpc.WithTimeout(maxWaitForReadyDuration))
 	if err != nil {
 		t.Fatal(err)
 	}
