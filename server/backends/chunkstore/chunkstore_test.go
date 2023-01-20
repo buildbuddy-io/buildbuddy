@@ -8,7 +8,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockstore"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -20,22 +19,6 @@ func TestChunkName(t *testing.T) {
 	}
 
 	e = "longertest_1a59"
-	n = ChunkName("longertest", 6745)
-	if n != e {
-		t.Fatalf("Chunk name was not equal to expectation: %v should be %v", n, e)
-	}
-
-}
-
-func TestChunkNameWithBucketPerChunk(t *testing.T) {
-	flags.Set(t, "storage.bucket_per_chunk", true)
-	e := "test_0000/chunk_data"
-	n := ChunkName("test", 0)
-	if n != e {
-		t.Fatalf("Chunk name was not equal to expectation: %v should be %v", n, e)
-	}
-
-	e = "longertest_1a59/chunk_data"
 	n = ChunkName("longertest", 6745)
 	if n != e {
 		t.Fatalf("Chunk name was not equal to expectation: %v should be %v", n, e)
