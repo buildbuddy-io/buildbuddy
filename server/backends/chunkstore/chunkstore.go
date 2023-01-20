@@ -251,6 +251,10 @@ func (r *chunkstoreReader) shiftToFront(p []byte, bytesRead *int) {
 }
 
 func (r *chunkstoreReader) Read(p []byte) (int, error) {
+	return r.read(p)
+}
+
+func (r *chunkstoreReader) read(p []byte) (int, error) {
 	bytesRead := r.copyToReadBuffer(p)
 	if r.reverse {
 		defer r.shiftToFront(p, &bytesRead)

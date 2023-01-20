@@ -31,9 +31,10 @@ import InvocationActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
 import UserPreferences from "../preferences/preferences";
-import { eventlog } from "../../proto/eventlog_ts_proto";
+import Long from "long";
 import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "./cache_requests_card";
+import rpc_service from "../service/rpc_service";
 
 interface State {
   loading: boolean;
@@ -41,6 +42,7 @@ interface State {
   error: BuildBuddyError | null;
 
   model: InvocationModel;
+  attempt: Long;
 }
 
 interface Props {
@@ -62,6 +64,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     error: null,
 
     model: new InvocationModel(),
+    attempt: new Long(0),
   };
 
   private timeoutRef: number;
@@ -109,6 +112,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           inProgress: showInProgressScreen,
           model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
           loading: false,
+          attempt: response.invocation[0].attempt,
         });
         document.title = `${this.state.model.getUser(
           true
@@ -209,16 +213,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
-      return rpcService.service
-        .getEventLogChunk(
-          new eventlog.GetEventLogChunkRequest({
-            invocationId: this.props.invocationId,
-            minLines: maxInt32, // int32 max value: max number of lines we can request.
-          })
-        )
-        .then((response: eventlog.GetEventLogChunkResponse) => {
-          return new TextDecoder().decode(response.buffer || new Uint8Array());
-        });
+      rpc_service.downloadBytestreamFile("//buildlog", "bytestream://", this.props.invocationId, {
+        attempt: this.state.attempt.toString(),
+      });
     };
 
     const suggestions = getSuggestions({

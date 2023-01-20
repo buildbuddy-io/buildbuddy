@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -990,6 +992,10 @@ type bsLookup struct {
 }
 
 func getBestFilename(filename, blobname string) string {
+	if strings.HasPrefix(filename, "//") && !strings.HasPrefix(filename, "///") {
+		// This is not a normal file path, let the implementation handle it
+		return filename
+	}
 	// First try to use the filename parameter
 	parts := strings.Split(filename, "/")
 	name := parts[len(parts)-1]
@@ -1057,6 +1063,38 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
 	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
+
+	if lookup.Filename[0:2] == "//" {
+		// non-file targets
+		lookup.Filename = lookup.Filename[2:]
+		switch lookup.Filename {
+		case "buildlog":
+			c := chunkstore.New(
+				s.env.GetBlobstore(),
+				&chunkstore.ChunkstoreOptions{},
+			)
+			attempt := uint64(0)
+			if n, err := strconv.ParseUint(params.Get("attempt"), 10, 64); err == nil {
+				attempt = n
+			}
+			// Stream the file back to our client
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=buildlog_for_invocation_%s", params.Get("invocation_id")))
+			w.Header().Set("Content-Type", "application/octet-stream")
+			io.Copy(
+				w,
+				c.Reader(
+					r.Context(),
+					eventlog.GetEventLogPathFromInvocationIdAndAttempt(
+						params.Get("invocation_id"),
+						attempt,
+					),
+				),
+			)
+		default:
+			http.Error(w, "File not found", http.StatusNotFound)
+		}
+		return
+	}
 
 	var zipReference = params.Get("z")
 	if len(zipReference) > 0 {
