@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -68,7 +67,7 @@ var (
 	samplePoolSize           = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 
 	// Compression related flags
-	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", math.MaxInt64, "Blobs larger than this will be zstd compressed before written to disk.")
+	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
 )
 
 var (
