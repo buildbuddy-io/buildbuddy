@@ -203,7 +203,7 @@ func Validate(d *repb.Digest) (string, error) {
 	}
 	if d.SizeBytes == int64(0) {
 		if d.Hash == EmptySha256 {
-			return "", status.OK()
+			return d.Hash, nil
 		}
 		return "", status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
 	}
