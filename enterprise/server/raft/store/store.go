@@ -405,13 +405,15 @@ func (ut *usageTracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 
 // LocalUpdate processes a usage update from a local replica.
 func (ut *usageTracker) LocalUpdate(rangeID uint64, usage *rfpb.ReplicaUsage) {
+	haveLease := ut.store.haveLease(rangeID)
+
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
 
 	ut.byRange[rangeID] = usage
 
 	// Partition usage is only tracked for leased ranges.
-	if !ut.store.haveLease(rangeID) {
+	if !haveLease {
 		ut.removeRangePartitions(rangeID)
 		return
 	}
