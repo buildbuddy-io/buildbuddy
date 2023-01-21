@@ -2044,6 +2044,33 @@ message UsageStats {
   // used for real-time metrics and shouldn't be used as a "summary" metric for
   // the task (peak_memory_bytes is a more useful summary metric).
   int64 memory_bytes = 3;
+
+  // File system usage counts.
+  //
+  // Field names follow the df naming convention:
+  // https://github.com/coreutils/coreutils/blob/d5868df0d0a6bd09387ece41b62b873fd7c201f9/src/df.c#L1580-L1582
+  message FileSystemUsage {
+    // Filesystem mount source device name.
+    // Example: "/dev/sda1"
+    string source = 1;
+
+    // Filesystem mount target path.
+    // Example: "/"
+    string target = 2;
+
+    // Filesystem type.
+    // Example: "ext4"
+    string fstype = 3;
+
+    // Filesystem used bytes.
+    int64 used_bytes = 4;
+
+    // Filesystem total size in bytes.
+    int64 total_bytes = 5;
+  }
+
+  // Peak file system usage, for each mounted file system.
+  repeated FileSystemUsage peak_file_system_usage = 4;
 }
 
 // Proto representation of the Execution stored in OLAP DB. Only used in
