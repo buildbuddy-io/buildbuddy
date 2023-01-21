@@ -156,6 +156,8 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 			if err := stream.Send(&bspb.ReadResponse{Data: buf[:n]}); err != nil {
 				return err
 			}
+		} else if err != nil {
+			return err
 		} else {
 			if err := stream.Send(&bspb.ReadResponse{Data: buf}); err != nil {
 				return err
