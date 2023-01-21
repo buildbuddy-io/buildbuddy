@@ -129,13 +129,14 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	// terminated, but if the context was cancelled then the Sync() call may not
 	// have completed yet. Explicitly sync here so that we have a better chance
 	// of collecting output files in this case.
-	if ctx.Err() != nil {
+	if err := ctx.Err(); err != nil {
+		ctxErr := status.FromContextError(ctx)
 		ctx, cancel := background.ExtendContextForFinalization(ctx, syncTimeout)
 		defer cancel()
 		_, err := client.Sync(ctx, &vmxpb.SyncRequest{})
 		if err != nil {
 			result.Error = status.WrapErrorf(
-				status.FromContextError(ctx),
+				ctxErr,
 				"failed to sync filesystem following interrupted command; some output files may be missing from the workspace: %s. command interrupted due to", err)
 		}
 	}
