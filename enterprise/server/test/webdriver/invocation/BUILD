@@ -10,9 +10,7 @@ go_web_test_suite(
         "//server/testutil/app",
         "//server/testutil/testbazel",
         "//server/testutil/webtester",
-        "//server/util/log",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
-        "@org_golang_x_sync//errgroup",
     ],
 )
