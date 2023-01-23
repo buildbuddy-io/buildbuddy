@@ -98,6 +98,7 @@ func TestExecStreamed_Stats(t *testing.T) {
 	assert.LessOrEqual(t, res.UsageStats.GetCpuNanos(), int64(1.6e9), "should use around 1e9 CPU nanos")
 	assert.GreaterOrEqual(t, res.UsageStats.GetMemoryBytes(), int64(1e9), "should use at least 1GB memory")
 	assert.LessOrEqual(t, res.UsageStats.GetMemoryBytes(), int64(1.6e9), "shouldn't use much more than 1GB memory")
+	assert.NotEmpty(t, res.UsageStats.GetPeakFileSystemUsage(), "file system usage should not be empty")
 }
 
 func TestExecStreamed_Timeout(t *testing.T) {
