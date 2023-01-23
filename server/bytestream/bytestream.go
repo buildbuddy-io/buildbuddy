@@ -150,6 +150,14 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 	return err
 }
 
+func grpcTargetForFileURL(u *url.URL, grpcs bool) string {
+	target := url.URL{Scheme: "grpc", User: u.User, Host: u.Host}
+	if grpcs {
+		target.Scheme = "grpcs"
+	}
+	return target.String()
+}
+
 func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, limit int64, writer io.Writer) error {
 	if url.Port() == "" && grpcs {
 		url.Host = url.Hostname() + ":443"
@@ -157,7 +165,7 @@ func streamFromUrl(ctx context.Context, url *url.URL, grpcs bool, offset int64, 
 		url.Host = url.Hostname() + ":80"
 	}
 
-	conn, err := grpc_client.DialTargetWithOptions(url.String(), grpcs)
+	conn, err := grpc_client.DialTarget(grpcTargetForFileURL(url, grpcs))
 	if err != nil {
 		return err
 	}
