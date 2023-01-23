@@ -1340,6 +1340,23 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	return pe, nil
 }
 
+func (e *partitionEvictor) updateMetrics() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
+	metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(e.sizeBytes))
+	metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(e.part.MaxSizeBytes))
+
+	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
+		metrics.PartitionID:    e.part.ID,
+		metrics.CacheNameLabel: e.cacheName,
+		metrics.CacheTypeLabel: "ac"}).Set(float64(e.acCount))
+	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
+		metrics.PartitionID:    e.part.ID,
+		metrics.CacheNameLabel: e.cacheName,
+		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
+}
+
 func (e *partitionEvictor) updateSize(fileMetadataKey []byte, deltaSize int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -1358,18 +1375,6 @@ func (e *partitionEvictor) updateSize(fileMetadataKey []byte, deltaSize int64) {
 	}
 	e.sizeBytes += deltaSize
 	e.lru.UpdateSizeBytes(e.sizeBytes)
-	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
-	metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(e.sizeBytes))
-	metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(e.part.MaxSizeBytes))
-
-	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
-		metrics.PartitionID:    e.part.ID,
-		metrics.CacheNameLabel: e.cacheName,
-		metrics.CacheTypeLabel: "ac"}).Set(float64(e.acCount))
-	metrics.DiskCachePartitionNumItems.With(prometheus.Labels{
-		metrics.PartitionID:    e.part.ID,
-		metrics.CacheNameLabel: e.cacheName,
-		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 }
 
 func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
@@ -1716,6 +1721,10 @@ func (p *PebbleCache) periodicFlushPartitionMetadata(quitChan chan struct{}) {
 }
 
 func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
+	evictors := make([]*partitionEvictor, len(p.evictors))
+	p.statusMu.Lock()
+	copy(evictors, p.evictors)
+	p.statusMu.Unlock()
 	for {
 		select {
 		case <-quitChan:
@@ -1727,6 +1736,10 @@ func (p *PebbleCache) refreshMetrics(quitChan chan struct{}) {
 			} else {
 				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Set(float64(fsu.Total))
 				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Set(float64(fsu.Avail))
+			}
+
+			for _, e := range evictors {
+				e.updateMetrics()
 			}
 		}
 	}
