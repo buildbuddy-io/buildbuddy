@@ -39,6 +39,11 @@ html[data-theme="dark"] .sign-up:hover {
   backdrop-filter: saturate(180%) blur(10px);
 }
 
+.navbar-sidebar--show {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 .navbar__inner {
   max-width: 1296px;
   box-sizing: border-box;
