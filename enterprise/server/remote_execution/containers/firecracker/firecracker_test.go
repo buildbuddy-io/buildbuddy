@@ -45,6 +45,7 @@ const (
 	// Alternate image to use if getting rate-limited by docker hub
 	// busyboxImage = "gcr.io/google-containers/busybox:latest"
 
+	ubuntuImage              = "marketplace.gcr.io/google/ubuntu2004"
 	imageWithDockerInstalled = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 
 	// Minimum memory needed for a firecracker VM. This may need to be increased
@@ -56,6 +57,8 @@ const (
 )
 
 var (
+	testJailerRoot = flag.String("test_jailer_root", "", "If set, use this as the jailer root. Helps avoid excessive image pulling when re-running tests.")
+
 	skipDockerTests = flag.Bool("skip_docker_tests", false, "Whether to skip docker-in-firecracker tests")
 )
 
@@ -111,6 +114,10 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 }
 
 func tempJailerRoot(t *testing.T) string {
+	if *testJailerRoot != "" {
+		return *testJailerRoot
+	}
+
 	// NOTE: JailerRoot needs to be < 38 chars long, so can't just use
 	// testfs.MakeTempDir(t).
 	return testfs.MakeTempSymlink(t, "/tmp", "buildbuddy-*-jailer", testfs.MakeTempDir(t))
@@ -385,13 +392,15 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	} else {
 		assert.Equal(t, "overlay", scratchFSU.GetFstype())
 		assert.Equal(t, "overlayfs:/scratch/bbvmroot", scratchFSU.GetSource())
-		// For some reason, the empty scratch disk reports 26MB of used space.
+		const approxInitialScratchDiskSizeBytes = 60e6
 		assert.InDelta(
-			t, scratchTestFileSizeBytes, scratchFSU.GetUsedBytes(),
-			30_000_000,
+			t, approxInitialScratchDiskSizeBytes+scratchTestFileSizeBytes,
+			scratchFSU.GetUsedBytes(),
+			20_000_000,
 			"used scratch disk size")
 		assert.InDelta(
-			t, 1_000_000*opts.ScratchDiskSizeMB+ext4.MinDiskImageSizeBytes, scratchFSU.GetTotalBytes(),
+			t, 1_000_000*opts.ScratchDiskSizeMB+ext4.MinDiskImageSizeBytes+approxInitialScratchDiskSizeBytes,
+			scratchFSU.GetTotalBytes(),
 			20_000_000,
 			"total scratch disk size")
 	}
@@ -444,7 +453,6 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		AllowSnapshotStart:     true,
 		ScratchDiskSizeMB:      100,
 		JailerRoot:             tempJailerRoot(t),
-		DebugMode:              true,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(env, auth, opts)
@@ -509,10 +517,6 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-	path := filepath.Join(workDir, "world.txt")
-	if err := os.WriteFile(path, []byte("world"), 0660); err != nil {
-		t.Fatal(err)
-	}
 	// Make sure the container can at least send packets via the default route.
 	defaultRouteIP, err := networking.FindDefaultRouteIP(ctx)
 	require.NoError(t, err, "failed to find default route IP")
@@ -541,6 +545,95 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+defaultRouteIP)
+}
+
+func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t)
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	// Write a helper script that prints process info for a pid.
+	// The ":1" disables whitespace padding in the printed column values.
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"procinfo": `#!/usr/bin/env sh
+			exec ps -p "$1" -o pid:1,ppid:1,state:1,comm:1 --no-headers
+		`,
+	})
+	testfs.MakeExecutable(t, workDir, "procinfo")
+
+	// Run a shell subprocess that spawns a "sleep 1" child process in the
+	// background, then exits immediately.
+	// The sleep process should be orphaned once the parent shell exits,
+	// then reparented to pid 1 (init).
+	// Once the sleep process exits, it should be reaped by the init process.
+
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-e", "-c", `
+			sh -c '
+				sleep 0.1 &
+				printf "%s" "$!" > sleep.pid
+
+				echo "Before reparent:"
+				./procinfo "$(cat sleep.pid)"
+			' &
+			printf "%s" "$!" > sh.pid
+			wait
+
+			echo "After reparent:"
+			./procinfo "$(cat sleep.pid)"
+
+			sleep 0.2
+			echo "After exit:"
+			# Note: procinfo is expected to fail here.
+			./procinfo "$(cat sleep.pid)" || true
+		`},
+	}
+
+	opts := firecracker.ContainerOpts{
+		// Use an ubuntu image since busybox doesn't support the `ps` options
+		// we need in the procinfo helper script.
+		ContainerImage:         ubuntuImage,
+		ActionWorkingDirectory: workDir,
+		NumCPUs:                1,
+		MemSizeMB:              2500,
+		ScratchDiskSizeMB:      100,
+		JailerRoot:             tempJailerRoot(t),
+	}
+	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	c, err := firecracker.NewContainer(env, auth, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run will handle the full lifecycle: no need to call Remove() here.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, container.PullCredentials{})
+	if res.Error != nil {
+		t.Fatal(res.Error)
+	}
+	assert.Empty(t, string(res.Stderr))
+	require.Equal(t, 0, res.ExitCode)
+
+	initPID := 1
+	shPID := testfs.ReadFileAsString(t, opts.ActionWorkingDirectory, "sh.pid")
+	sleepPID := testfs.ReadFileAsString(t, opts.ActionWorkingDirectory, "sleep.pid")
+
+	// Note, state codes are documented here:
+	// https://man7.org/linux/man-pages/man1/ps.1.html#PROCESS_STATE_CODES
+
+	expectedOutput := "Before reparent:\n" +
+		// Just after starting, the sleep process should be in state "S"
+		// (sleeping) and still parented to the sh process that spawned it.
+		fmt.Sprintf("%s %s S sleep\n", sleepPID, shPID) +
+		"After reparent:\n" +
+		// After the sh process exits it should have been reparented to pid 1
+		// (init) and still in sleeping state.
+		fmt.Sprintf("%s %d S sleep\n", sleepPID, initPID) +
+		"After exit:\n" +
+		// ps output should be empty after the sleep proces exits.
+		// If it shows state "Z" ("zombie"), it wasn't properly reaped.
+		""
+
+	assert.Equal(t, expectedOutput, string(res.Stdout))
 }
 
 func TestFirecrackerNonRoot(t *testing.T) {

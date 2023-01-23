@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"sort"
-	"sync"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -34,14 +33,10 @@ const (
 	workspaceMountPath = "/workspace"
 )
 
-type execServer struct {
-	reapMutex *sync.RWMutex
-}
+type execServer struct{}
 
-func NewServer(reapMutex *sync.RWMutex) (*execServer, error) {
-	return &execServer{
-		reapMutex: reapMutex,
-	}, nil
+func NewServer() (*execServer, error) {
+	return &execServer{}, nil
 }
 
 func clearARPCache() error {
@@ -138,9 +133,6 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
 
-	x.reapMutex.RLock()
-	defer x.reapMutex.RUnlock()
-
 	log.Debugf("Running command in VM: %q", cmd.String())
 	_, err := commandutil.RunWithProcessTreeCleanup(ctx, cmd, nil /*=statsListener*/)
 	exitCode, err := commandutil.ExitCode(ctx, cmd, err)
@@ -200,7 +192,7 @@ func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
 					msgs <- &message{Err: status.InvalidArgumentError("received multiple exec start requests")}
 					return
 				}
-				cmd, err = newCommand(msg.Start, x.reapMutex)
+				cmd, err = newCommand(msg.Start)
 				if err != nil {
 					msgs <- &message{Err: err}
 					return
@@ -244,8 +236,7 @@ func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
 }
 
 type command struct {
-	cmd       *exec.Cmd
-	reapMutex *sync.RWMutex
+	cmd *exec.Cmd
 
 	stdin        io.WriteCloser
 	stdoutWriter *io.PipeWriter
@@ -254,7 +245,7 @@ type command struct {
 	stderrReader *io.PipeReader
 }
 
-func newCommand(start *vmxpb.ExecRequest, reapMutex *sync.RWMutex) (*command, error) {
+func newCommand(start *vmxpb.ExecRequest) (*command, error) {
 	if len(start.GetArguments()) == 0 {
 		return nil, status.InvalidArgumentError("arguments not specified")
 	}
@@ -295,7 +286,6 @@ func newCommand(start *vmxpb.ExecRequest, reapMutex *sync.RWMutex) (*command, er
 	}
 	return &command{
 		cmd:          cmd,
-		reapMutex:    reapMutex,
 		stdin:        stdin,
 		stdoutReader: stdoutReader,
 		stdoutWriter: stdoutWriter,
@@ -307,9 +297,6 @@ func newCommand(start *vmxpb.ExecRequest, reapMutex *sync.RWMutex) (*command, er
 func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStreamedResponse, error) {
 	// TODO(tylerw): use syncfs or something better here.
 	defer unix.Sync()
-
-	c.reapMutex.RLock()
-	defer c.reapMutex.RUnlock()
 
 	log.Debugf("Running command in VM: %q", c.cmd.String())
 	stdoutErrCh := make(chan error, 1)

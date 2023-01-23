@@ -7,7 +7,6 @@ import (
 	"net"
 	"path"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -162,7 +161,7 @@ func startExecService(t *testing.T) vmxpb.ExecClient {
 		lis.Close()
 	})
 	server := grpc.NewServer()
-	execServer, err := vmexec.NewServer(&sync.RWMutex{})
+	execServer, err := vmexec.NewServer()
 	require.NoError(t, err)
 	vmxpb.RegisterExecServer(server, execServer)
 	go server.Serve(lis)
