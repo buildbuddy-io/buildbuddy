@@ -39,8 +39,8 @@ jobs:
       - name: Commit
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-internal
-          git config --local user.email ${{ github.event.head_commit.author.email }}
-          git config --local user.name ${{ github.event.head_commit.author.name }}
+          git config --local user.email '${{ github.event.head_commit.author.email }}'
+          git config --local user.name '${{ github.event.head_commit.author.name }}'
           git add WORKSPACE
           git add deps.bzl
           cat <<EOF > message.txt
