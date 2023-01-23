@@ -71,8 +71,9 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
           <div className="title">Timing Breakdown</div>
           <div className="details">
             <div className="cache-sections">
-              {renderBreakdown(phaseData, "Phase breakdown", "Breakdown of build phases")}
-              {renderBreakdown(executionData, "Execution breakdown", "Breakdown totals across all threads")}
+              {phaseData.length > 0 && renderBreakdown(phaseData, "Phase breakdown", "Breakdown of build phases")}
+              {executionData.length > 0 &&
+                renderBreakdown(executionData, "Execution breakdown", "Breakdown totals across all threads")}
             </div>
           </div>
         </div>
