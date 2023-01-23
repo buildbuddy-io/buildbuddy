@@ -87,6 +87,25 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	return akg, nil
 }
 
+func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
+	akg := &apiKeyGroup{}
+	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
+		existingRow := tx.Raw(`
+			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
+			FROM `+"`Groups`"+` AS g, APIKeys AS ak
+			WHERE g.group_id = ak.group_id AND ak.api_key_id = ?`,
+			apiKeyID)
+		return existingRow.Take(akg).Error
+	})
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
+		}
+		return nil, err
+	}
+	return akg, nil
+}
+
 func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
