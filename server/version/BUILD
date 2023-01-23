@@ -11,6 +11,8 @@ go_library(
         "versionTag": "{STABLE_VERSION_TAG}",
     },
     deps = [
+        "//server/metrics",
         "//server/util/log",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )

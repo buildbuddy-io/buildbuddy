@@ -162,6 +162,9 @@ const (
 
 	/// Raft RangeCache event type: `hit`, `miss`, or `update`.
 	RaftRangeCacheEventTypeLabel = "rangecache_event_type"
+
+	/// Binary version. Example: `v2.0.0`.
+	VersionLabel = "version"
 )
 
 const (
@@ -1475,6 +1478,14 @@ var (
 	})
 
 	/// ### Misc metrics
+
+	Version = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Name:      "version",
+		Help:      "Binary version of the running instance. Always reports a value of 1 similar to the `up` metric, but has a label containing the version.",
+	}, []string{
+		VersionLabel,
+	})
 
 	UnexpectedEvent = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,

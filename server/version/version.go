@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -14,6 +16,12 @@ const (
 // This is set by x_defs in the BUILD file.
 var commitSha string
 var versionTag string
+
+func init() {
+	metrics.Version.With(prometheus.Labels{
+		metrics.VersionLabel: AppVersion(),
+	}).Set(1)
+}
 
 func Print() {
 	appVersion := fmt.Sprintf("BuildBuddy %s", AppVersion())
