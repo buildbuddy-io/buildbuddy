@@ -19,7 +19,7 @@ func MaxRLimit() error {
 		// This is OPEN_MAX in sys/syslimits.h.
 		limit.Max = 10240
 	}
-	if limit.Cur != limit.Max {
+	if limit.Cur < limit.Max {
 		log.Infof("Increasing open files limit %d => %d", limit.Cur, limit.Max)
 		limit.Cur = limit.Max
 		if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &limit); err != nil {
