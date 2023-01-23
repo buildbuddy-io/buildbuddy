@@ -591,7 +591,10 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 		close(p.brokenFilesDone)
 	}()
 
+	totalCount := 0
 	mismatchCount := 0
+	uncompressedCount := 0
+	uncompressedBytes := int64(0)
 	for iter.First(); iter.Valid(); iter.Next() {
 		// Check if we're shutting down; exit if so.
 		select {
@@ -603,6 +606,8 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
 			continue
 		}
+
+		totalCount++
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
 		fileMetadataKey := iter.Key()
@@ -618,8 +623,13 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 				mismatchCount += 1
 			}
 		}
+
+		if fileMetadata.GetFileRecord().GetCompressor() == repb.Compressor_IDENTITY {
+			uncompressedCount++
+			uncompressedBytes += fileMetadata.GetStoredSizeBytes()
+		}
 	}
-	log.Infof("Pebble Cache: scanForBrokenFiles fixed %d files", mismatchCount)
+	log.Infof("Pebble Cache: scanForBrokenFiles scanned %d records, fixed %d files (%d uncompressed entries remaining using %d bytes)", totalCount, mismatchCount, uncompressedCount, uncompressedBytes)
 	return nil
 }
 
