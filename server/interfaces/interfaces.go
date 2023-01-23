@@ -173,7 +173,8 @@ type SSLService interface {
 	IsCertGenerationEnabled() bool
 	ConfigureTLS(mux http.Handler) (*tls.Config, http.Handler)
 	GetGRPCSTLSCreds() (credentials.TransportCredentials, error)
-	GenerateCerts(apiKey string) (string, string, error)
+	GenerateCerts(apiKeyID string) (string, string, error)
+	ValidateCert(certString string) (string, error)
 }
 
 type BuildEventChannel interface {
@@ -297,6 +298,7 @@ type AuthDB interface {
 	ReadSession(ctx context.Context, sessionID string) (*tables.Session, error)
 	ClearSession(ctx context.Context, sessionID string) error
 	GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (APIKeyGroup, error)
+	GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (APIKeyGroup, error)
 	GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (APIKeyGroup, error)
 	LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error)
 }

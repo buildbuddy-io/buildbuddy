@@ -90,6 +90,7 @@ const (
 
 	contextAPIKeyKey = "api.key"
 	APIKeyHeader     = "x-buildbuddy-api-key"
+	SSLCertHeader    = "x-ssl-cert"
 
 	// The name of params read on /login to understand which
 	// issuer to use and where to redirect the client after
@@ -684,6 +685,27 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 	return apkg, err
 }
 
+func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
+	if apiKeyID == "" {
+		return nil, status.UnauthenticatedError("missing API key ID")
+	}
+	if a.apiKeyGroupCache != nil {
+		d, ok := a.apiKeyGroupCache.Get(apiKeyID)
+		if ok {
+			return d, nil
+		}
+	}
+	authDB := a.env.GetAuthDB()
+	if authDB == nil {
+		return nil, status.FailedPreconditionError("AuthDB not configured")
+	}
+	apkg, err := authDB.GetAPIKeyGroupFromAPIKeyID(ctx, apiKeyID)
+	if err == nil && a.apiKeyGroupCache != nil {
+		a.apiKeyGroupCache.Add(apiKeyID, apkg)
+	}
+	return apkg, err
+}
+
 func userClaims(u *tables.User, effectiveGroup string) *Claims {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
@@ -783,6 +805,14 @@ func (a *OpenIDAuthenticator) claimsFromAPIKey(ctx context.Context, apiKey strin
 	return groupClaims(akg), nil
 }
 
+func (a *OpenIDAuthenticator) claimsFromAPIKeyID(ctx context.Context, apiKeyID string) (*Claims, error) {
+	akg, err := a.lookupAPIKeyGroupFromAPIKeyID(ctx, apiKeyID)
+	if err != nil {
+		return nil, err
+	}
+	return groupClaims(akg), nil
+}
+
 func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pass string) (*Claims, error) {
 	authDB := a.env.GetAuthDB()
 	if authDB == nil {
@@ -854,12 +884,23 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 
 	if ok && p != nil && p.AuthInfo != nil {
 		certs := p.AuthInfo.(credentials.TLSInfo).State.PeerCertificates
-		if len(certs) > 0 && certs[0].Subject.SerialNumber != "" {
+		if len(certs) > 0 && certs[0].Subject.CommonName == "BuildBuddy API Key" && certs[0].Subject.SerialNumber != "" {
 			return a.claimsFromAPIKey(ctx, certs[0].Subject.SerialNumber)
+		}
+		if len(certs) > 0 && certs[0].Subject.CommonName == "BuildBuddy ID" && certs[0].Subject.SerialNumber != "" {
+			return a.claimsFromAPIKeyID(ctx, certs[0].Subject.SerialNumber)
 		}
 	}
 
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if certHeaders := md.Get(SSLCertHeader); len(certHeaders) > 0 {
+			apiKeyID, err := a.env.GetSSLService().ValidateCert(certHeaders[0])
+			if err != nil {
+				return nil, err
+			}
+			return a.claimsFromAPIKeyID(ctx, apiKeyID)
+		}
+
 		keys := md.Get(APIKeyHeader)
 		if l := len(keys); l > 0 {
 			// get the last key

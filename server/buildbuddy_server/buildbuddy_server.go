@@ -752,7 +752,7 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 
 	if req.GetIncludeCertificate() && s.sslService.IsCertGenerationEnabled() && !*disableCertConfig {
 		for _, c := range credentials {
-			cert, key, err := s.sslService.GenerateCerts(c.ApiKey.Value)
+			cert, key, err := s.sslService.GenerateCerts(c.ApiKey.Id)
 			if err != nil {
 				return nil, status.InternalError(fmt.Sprintf("Error generating cert: %+v", err))
 			}
