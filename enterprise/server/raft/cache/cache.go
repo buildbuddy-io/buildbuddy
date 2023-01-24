@@ -165,9 +165,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		rangeCache:   rangecache.New(),
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
-		fileStorer: filestore.New(filestore.Opts{
-			PrioritizeHashInMetadataKey: true,
-		}),
+		fileStorer:   filestore.New(filestore.Opts{}),
 	}
 
 	if len(conf.Join) < 3 {
@@ -357,12 +355,20 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceNam
 	}, nil
 }
 
+func (rc *RaftCache) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
+	pebbleKey, err := rc.fileStorer.PebbleKey(fr)
+	if err != nil {
+		return nil, err
+	}
+	return pebbleKey.Bytes(filestore.Version2)
+}
+
 func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +411,7 @@ func (rc *RaftCache) Writer(ctx context.Context, r *resource.ResourceName) (inte
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +480,7 @@ func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames 
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := rc.fileStorer.FileMetadataKey(fileRecord)
+		fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
