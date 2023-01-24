@@ -31,7 +31,6 @@ import InvocationActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
 import UserPreferences from "../preferences/preferences";
-import Long from "long";
 import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "./cache_requests_card";
 import rpc_service from "../service/rpc_service";
@@ -42,7 +41,6 @@ interface State {
   error: BuildBuddyError | null;
 
   model: InvocationModel;
-  attempt: Long;
 }
 
 interface Props {
@@ -55,7 +53,6 @@ interface Props {
 
 const largePageSize = 100;
 const smallPageSize = 10;
-const maxInt32 = 2147483647;
 
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
@@ -64,7 +61,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     error: null,
 
     model: new InvocationModel(),
-    attempt: new Long(0),
   };
 
   private timeoutRef: number;
@@ -112,7 +108,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
           inProgress: showInProgressScreen,
           model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
           loading: false,
-          attempt: response.invocation[0].attempt,
         });
         document.title = `${this.state.model.getUser(
           true
@@ -214,7 +209,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
       rpc_service.downloadBytestreamFile("//buildlog", "bytestream://", this.props.invocationId, {
-        attempt: this.state.attempt.toString(),
+        attempt: Number(this.state.model.invocations[0]?.attempt ?? 0).toString()
       });
     };
 
