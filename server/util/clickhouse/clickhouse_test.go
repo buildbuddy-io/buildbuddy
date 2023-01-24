@@ -1,4 +1,4 @@
-package clickhouse_test
+package clickhouse
 
 import (
 	"encoding/hex"
@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,22 +23,30 @@ func isInList(fieldName string, fields []string) bool {
 
 func TestSchemaInSync(t *testing.T) {
 	tests := []struct {
-		clickhouseTable clickhouse.Table
+		clickhouseTable Table
 		primaryDBTable  interface{}
 	}{
 		{
-			clickhouseTable: &clickhouse.Invocation{},
+			clickhouseTable: &Invocation{},
 			primaryDBTable:  tables.Invocation{},
 		},
 		{
-			clickhouseTable: &clickhouse.Execution{},
+			clickhouseTable: &Execution{},
 			primaryDBTable:  tables.Execution{},
+		},
+		{
+			clickhouseTable: &TestTargetStatus{},
+			// don't testing schema in sync
+			primaryDBTable: nil,
 		},
 	}
 
-	assert.Equal(t, len(clickhouse.GetAllTables()), len(tests), "All clickhouse tables should be present in the tests")
+	assert.Equal(t, len(getAllTables()), len(tests), "All clickhouse tables should be present in the tests")
 
 	for _, tc := range tests {
+		if tc.primaryDBTable == nil {
+			continue
+		}
 
 		chType := reflect.Indirect(reflect.ValueOf(tc.clickhouseTable)).Type()
 
@@ -94,13 +101,13 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 	src := &tables.Invocation{}
 	err := faker.FakeData(src)
 	require.NoError(t, err)
-	dest := clickhouse.ToInvocationFromPrimaryDB(src)
+	dest := ToInvocationFromPrimaryDB(src)
 
 	primaryInvType := reflect.TypeOf(*src)
 	primaryInvFields := reflect.VisibleFields(primaryInvType)
 	srcValue := reflect.ValueOf(*src)
 	destValue := reflect.ValueOf(*dest)
-	excludedFields := (&clickhouse.Invocation{}).ExcludedFields()
+	excludedFields := (&Invocation{}).ExcludedFields()
 
 	expectedUUID := hex.EncodeToString(src.InvocationUUID)
 	assert.Equal(t, dest.InvocationUUID, expectedUUID, "src and dest have different values for field 'InvocationUUID'. src = %v, dest = %v", src.InvocationUUID, expectedUUID)
@@ -119,5 +126,45 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 			assert.Failf(t, "dest has invalid field %q", primaryField.Name)
 		}
 	}
+}
+
+func TestExtractProjectionNames(t *testing.T) {
+	createStmt := `
+CREATE TABLE bb_test_target.TestTargetStatuses
+(
+` +
+		"`group_id` String," +
+		"`repo_url` String," +
+		`
+    PROJECTION projection_commits
+    (
+        SELECT
+            group_id,
+            role,
+            repo_url,
+            commit_sha,
+            max(created_at_usec) AS latest_created_at_usec
+        GROUP BY
+            group_id,
+            role,
+            repo_url,
+            commit_sha
+    )
+	PROJECTION projection_targets
+	( 
+	    SELECT 
+		    group_id,
+			role,
+			repo_url,
+			label
+	)
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (group_id, repo_url)
+SETTINGS index_granularity = 8192
+`
+	projectionNames := extractProjectionNamesFromCreateStmt(createStmt)
+	assert.Contains(t, projectionNames, "projection_commits")
+	assert.Contains(t, projectionNames, "projection_targets")
 
 }

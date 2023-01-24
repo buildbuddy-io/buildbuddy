@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"bufio"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -63,10 +64,11 @@ type Table interface {
 	AdditionalFields() []string
 }
 
-func GetAllTables() []Table {
+func getAllTables() []Table {
 	return []Table{
 		&Invocation{},
 		&Execution{},
+		&TestTargetStatus{},
 	}
 }
 
@@ -82,12 +84,6 @@ func getEngine() string {
 		return fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s')", *zooPath, *replicaName)
 	}
 	return "ReplacingMergeTree()"
-}
-
-func getAllTables() []Table {
-	return []Table{
-		&Invocation{},
-	}
 }
 
 func tableClusterOption() string {
@@ -259,6 +255,112 @@ func (e *Execution) AdditionalFields() []string {
 	}
 }
 
+// TestTargetStatus represents the status of a target, the target info and invocation details
+type TestTargetStatus struct {
+	GroupID       string
+	Role          string
+	RepoURL       string
+	Label         string
+	CommitSHA     string
+	CreatedAtUsec int64
+
+	RuleType       string
+	UserID         string
+	InvocationUUID string
+	TargetType     int32
+	TestSize       int32
+	Status         int32
+	StartTimeUsec  int64
+	DurationUsec   int64
+	BranchName     string
+}
+
+func (t *TestTargetStatus) ExcludedFields() []string {
+	return []string{}
+}
+
+func (t *TestTargetStatus) AdditionalFields() []string {
+	return []string{}
+}
+
+func (t *TestTargetStatus) TableName() string {
+	return "TestTargetStatuses"
+}
+
+func (t *TestTargetStatus) TableOptions() string {
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, role, repo_url, label, commit_sha, created_at_usec)", getEngine())
+}
+
+func hasProjection(db *gorm.DB, table Table, projectionName string) (bool, error) {
+	currentDatabase := db.Migrator().CurrentDatabase()
+
+	showCreateTableSQL := fmt.Sprintf("SHOW CREATE TABLE %s.%s", currentDatabase, table.TableName())
+	var createStmt string
+	if err := db.Raw(showCreateTableSQL).Row().Scan(&createStmt); err != nil {
+		return false, err
+	}
+
+	projections := extractProjectionNamesFromCreateStmt(createStmt)
+
+	_, ok := projections[projectionName]
+
+	return ok, nil
+}
+
+func addProjectionIfNotExist(db *gorm.DB, table Table, projectionName string, query string) error {
+	hasProjection, err := hasProjection(db, table, projectionName)
+	if err != nil {
+		return status.InternalErrorf("failed to check whether projection %q exists: %s", projectionName, err)
+	}
+	if hasProjection {
+		return nil
+	}
+	projectionStmt := fmt.Sprintf("ALTER TABLE %s ADD PROJECTION %s (%s)", table.TableName(), projectionName, query)
+	return db.Exec(projectionStmt).Error
+}
+
+const (
+	beforeCreateBody int = iota
+	inCreateBody
+	inProjection
+	afterCreateBody
+)
+
+// adapted from https://github.com/go-gorm/clickhouse/blob/master/migrator.go
+func extractProjectionNamesFromCreateStmt(createStmt string) map[string]struct{} {
+	names := make(map[string]struct{})
+	scanner := bufio.NewScanner(strings.NewReader(createStmt))
+	state := beforeCreateBody
+	for scanner.Scan() && state < afterCreateBody {
+		line := scanner.Text()
+		line = strings.TrimSpace(line)
+		switch state {
+		case beforeCreateBody:
+			if strings.HasPrefix(line, "(") {
+				state = inCreateBody
+			}
+		case inProjection:
+			if strings.HasPrefix(line, ")") {
+				state = inCreateBody
+			}
+		case inCreateBody:
+			if strings.HasPrefix(line, ")") {
+				state = afterCreateBody
+				continue
+			}
+			if strings.HasPrefix(line, "PROJECTION ") {
+				line = strings.TrimPrefix(line, "PROJECTION ")
+				elems := strings.Split(line, " ")
+				if len(elems) > 0 {
+					names[elems[0]] = struct{}{}
+				}
+				state = inProjection
+			}
+		}
+	}
+	return names
+}
+
 // DateFromUsecTimestamp returns an SQL expression compatible with clickhouse
 // that converts the value of the given field from a Unix timestamp (in
 // microseconds since the Unix Epoch) to a date offset by the given UTC offset.
@@ -412,12 +514,17 @@ func runMigrations(gdb *gorm.DB) error {
 	if clusterOpts := getTableClusterOption(); clusterOpts != "" {
 		gdb = gdb.Set("gorm:table_cluster_options", clusterOpts)
 	}
-	for _, t := range GetAllTables() {
+	for _, t := range getAllTables() {
 		gdb = gdb.Set("gorm:table_options", t.TableOptions())
 		if err := gdb.AutoMigrate(t); err != nil {
 			return err
 		}
 	}
+	// Add Projection
+	projectionQuery := `select group_id, role, repo_url, commit_sha,
+	   max(created_at_usec) as latest_created_at_usec
+	   group by group_id, role, repo_url, commit_sha`
+	addProjectionIfNotExist(gdb, &TestTargetStatus{}, "projection_commits", projectionQuery)
 	return nil
 }
 

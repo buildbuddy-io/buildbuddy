@@ -25,8 +25,8 @@ go_library(
 go_test(
     name = "clickhouse_test",
     srcs = ["clickhouse_test.go"],
+    embed = [":clickhouse"],
     deps = [
-        ":clickhouse",
         "//server/tables",
         "@com_github_go_faker_faker_v4//:faker",
         "@com_github_stretchr_testify//assert",
