@@ -56,6 +56,9 @@ type ResourceRequests struct {
 	// CPU is a numeric quantity of CPU cores, or a string with a numeric
 	// quantity followed by an "m"-suffix for milli-CPU.
 	CPU interface{} `yaml:"cpu"`
+	// Disk is a numeric quantity of disk size in bytes, or human-readable
+	// IEC byte notation like "1GB" = 1024^3 bytes.
+	Disk interface{} `yaml:"disk"`
 }
 
 // GetEstimatedMemory converts the memory resource request to a value compatible
@@ -77,6 +80,16 @@ func (r *ResourceRequests) GetEstimatedCPU() string {
 		return str
 	}
 	if str, ok := r.CPU.(string); ok {
+		return str
+	}
+	return ""
+}
+
+func (r *ResourceRequests) GetEstimatedDisk() string {
+	if str, ok := yamlNumberToString(r.Disk); ok {
+		return str
+	}
+	if str, ok := r.Disk.(string); ok {
 		return str
 	}
 	return ""
