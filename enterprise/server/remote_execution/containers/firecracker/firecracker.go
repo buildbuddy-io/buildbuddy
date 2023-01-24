@@ -108,7 +108,7 @@ const (
 	scratchDriveID = "scratchfs"
 	// minScratchDiskSizeBytes is the minimum size needed for the scratch disk.
 	// This is needed because the init binary needs some space to copy files around.
-	minScratchDiskSizeBytes = 32e6
+	minScratchDiskSizeBytes = 64e6
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"

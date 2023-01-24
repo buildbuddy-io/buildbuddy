@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -46,6 +45,8 @@ var (
 	setDefaultRoute         = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
 	initDockerd             = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
 	gRPCMaxRecvMsgSizeBytes = flag.Int("grpc_max_recv_msg_size_bytes", 50000000, "Configures the max GRPC receive message size [bytes]")
+
+	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
 )
 
 // die logs the provided error if it is not nil and then terminates the program.
@@ -80,8 +81,8 @@ func chroot(path string) error {
 	return os.NewSyscallError("CHROOT", syscall.Chroot(path))
 }
 
-func reapChildren(ctx context.Context, reapMutex *sync.RWMutex) {
-	c := make(chan os.Signal, 1)
+func reapChildren(ctx context.Context) {
+	c := make(chan os.Signal, 128)
 	signal.Notify(c, unix.SIGCHLD)
 
 	for {
@@ -89,10 +90,8 @@ func reapChildren(ctx context.Context, reapMutex *sync.RWMutex) {
 		case <-ctx.Done():
 			return
 		case <-c:
-			reapMutex.Lock()
 			var status syscall.WaitStatus
 			syscall.Wait4(-1, &status, unix.WNOHANG, nil)
-			reapMutex.Unlock()
 		}
 	}
 }
@@ -142,7 +141,7 @@ func copyFile(src, dest string, mode os.FileMode) error {
 	return nil
 }
 
-func startAndWaitForDockerd(ctx context.Context) error {
+func startDockerd(ctx context.Context) error {
 	// Make sure we can locate both docker and dockerd.
 	if _, err := exec.LookPath("docker"); err != nil {
 		return err
@@ -156,10 +155,10 @@ func startAndWaitForDockerd(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "dockerd")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Start(); err != nil {
-		return err
-	}
+	return cmd.Start()
+}
 
+func waitForDockerd(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, dockerdInitTimeout)
 	defer cancel()
 	r := retry.New(ctx, &retry.Options{
@@ -190,6 +189,13 @@ func main() {
 	}
 
 	flag.Parse()
+	// If we are the vmexec process forked from the parent goinit process, run
+	// the vmexec server instead of the init logic.
+	if *isVMExec {
+		die(runVMExecServer(rootContext))
+		return
+	}
+
 	log.Infof("Starting BuildBuddy init (args: %s)", os.Args)
 
 	die(mkdirp("/dev", 0755))
@@ -229,7 +235,12 @@ func main() {
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
 
+	// TODO(bduffany): Spawn vmvfs via the init binary like we do for vmexec, to
+	// save scratch disk space. I tried it, but for some reason the fuse library
+	// panics saying that "/dev/null" doesn't exist:
+	// https://github.com/hanwen/go-fuse/blob/915cf5413cdef5370ae3f953f8eb4cd9ac176d5c/splice/splice.go#L57
 	die(copyFile("/vmvfs", "/mnt/vmvfs", 0555))
+	die(copyFile("/init", "/mnt/init", 0555))
 
 	log.Debugf("switching root!")
 	die(chdir("/mnt"))
@@ -318,9 +329,12 @@ func main() {
 		die(configureDefaultRoute("eth0", "192.168.241.1"))
 	}
 
-	reapMutex := sync.RWMutex{}
-	go reapChildren(rootContext, &reapMutex)
 	die(os.Setenv("PATH", *path))
+
+	// Done configuring the FS and env.
+	// Now initialize child processes.
+
+	go reapChildren(rootContext)
 
 	eg, ctx := errgroup.WithContext(rootContext)
 	if *debugMode {
@@ -340,32 +354,20 @@ func main() {
 		})
 	}
 
-	dockerdInitErrCh := make(chan error)
-	go func() {
-		defer close(dockerdInitErrCh)
-		if *initDockerd {
-			dockerdInitErrCh <- startAndWaitForDockerd(ctx)
-		}
-	}()
-
+	if *initDockerd {
+		die(startDockerd(ctx))
+	}
 	eg.Go(func() error {
-		listener, err := vsock.NewGuestListener(ctx, uint32(*vmExecPort))
-		if err != nil {
-			return err
-		}
-		log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
-		server := grpc.NewServer(grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes))
-		vmService, err := vmexec.NewServer(&reapMutex)
-		if err != nil {
-			return err
-		}
-		vmxpb.RegisterExecServer(server, vmService)
-
-		// If applicable, wait for dockerd to start before accepting commands, so
-		// that commands depending on dockerd do not need to explicitly wait for it.
-		die(<-dockerdInitErrCh)
-
-		return server.Serve(listener)
+		// Run the vmexec server as a child process so that when we call wait()
+		// to reap direct zombie children, we aren't stealing the WaitStatus
+		// from the vmexec server (since only the parent process can wait() for
+		// a pid). We could alternatively use a mutex to avoid reaping while
+		// vmexec is running a command, but that causes problems for Bazel,
+		// which explicitly waits for stale server processes to be reaped.
+		cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmexec")...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
 	})
 	eg.Go(func() error {
 		cmd := exec.CommandContext(ctx, "/vmvfs")
@@ -381,4 +383,28 @@ func main() {
 
 	// Halt the system explicitly to prevent a kernel panic.
 	syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+}
+
+func runVMExecServer(ctx context.Context) error {
+	listener, err := vsock.NewGuestListener(ctx, uint32(*vmExecPort))
+	if err != nil {
+		return err
+	}
+	log.Infof("Starting vm exec listener on vsock port: %d", *vmExecPort)
+	server := grpc.NewServer(grpc.MaxRecvMsgSize(*gRPCMaxRecvMsgSizeBytes))
+	vmService, err := vmexec.NewServer()
+	if err != nil {
+		return err
+	}
+	vmxpb.RegisterExecServer(server, vmService)
+
+	// If applicable, wait for dockerd to start before accepting commands, so
+	// that commands depending on dockerd do not need to explicitly wait for it.
+	if *initDockerd {
+		if err := waitForDockerd(ctx); err != nil {
+			return err
+		}
+	}
+
+	return server.Serve(listener)
 }
