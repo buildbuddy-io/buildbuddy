@@ -296,7 +296,6 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     this.updateLineLengthLimit();
   }
   private onDownloadClick() {
-    event.preventDefault();
     this.props.fullLogsFetcher();
   }
 
