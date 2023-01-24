@@ -224,7 +224,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		EstimatedComputeUnits:      int64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedMemoryBytes:       iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:          milliCPUProp(m, EstimatedCPUPropertyName, 0),
-		EstimatedFreeDiskBytes:     int64Prop(m, EstimatedFreeDiskPropertyName, 0),
+		EstimatedFreeDiskBytes:     iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
 		ContainerImage:             stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername:  stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword:  stringProp(m, containerRegistryPasswordPropertyName, ""),

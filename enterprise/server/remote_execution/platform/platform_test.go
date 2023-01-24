@@ -176,6 +176,11 @@ func TestParse_EstimatedFreeDisk(t *testing.T) {
 		{"EstimatedFreeDiskBytes", "1", 1},
 		{"EstimatedFreeDiskBytes", " 1 ", 1},
 		{"estimatedfreediskbytes", "1", 1},
+		{"EstimatedFreeDiskBytes", "1000B", 1000},
+		{"EstimatedFreeDiskBytes", "1e3", 1000},
+		{"EstimatedFreeDiskBytes", "1M", 1024 * 1024},
+		{"EstimatedFreeDiskBytes", "1GB", 1024 * 1024 * 1024},
+		{"EstimatedFreeDiskBytes", "2.0GB", 2 * 1024 * 1024 * 1024},
 	} {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.name, Value: testCase.rawValue},

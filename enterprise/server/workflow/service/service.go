@@ -673,6 +673,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if isTrusted && ws.env.GetSecretService() != nil {
 		includeSecretsPropertyValue = "true"
 	}
+	estimatedDisk := workflowAction.ResourceRequests.GetEstimatedDisk()
+	if estimatedDisk == "" {
+		estimatedDisk = fmt.Sprintf("%d", 20_000_000_000) // 20 GB
+	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
 		Arguments: append([]string{
@@ -715,7 +719,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: "workflow-id", Value: wf.WorkflowID},
 				{Name: platform.IncludeSecretsPropertyName, Value: includeSecretsPropertyValue},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: fmt.Sprintf("%d", computeUnits)},
-				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
+				{Name: platform.EstimatedFreeDiskPropertyName, Value: estimatedDisk},
 				{Name: platform.EstimatedMemoryPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedMemory()},
 				{Name: platform.EstimatedCPUPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedCPU()},
 			},
