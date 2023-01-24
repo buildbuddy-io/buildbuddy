@@ -1,5 +1,6 @@
 import React from "react";
 import authService from "../../../app/auth/auth_service";
+import Banner from "../../../app/components/banner/banner";
 import FilledButton from "../../../app/components/button/button";
 import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
@@ -44,7 +45,7 @@ export default class CreateOrgComponent extends OrgForm<grp.CreateGroupRequest> 
         <div className="container">
           <div className="organization-page-title">Create organization</div>
           {this.props.user && !Boolean(this.props.user.groups?.length) && (
-            <p className="callout">You are logged in, but not part of any organization. Create one to continue.</p>
+            <Banner type="info">You are logged in, but not part of any organization. Create one to continue.</Banner>
           )}
           <form autoComplete="off" className="organization-form" onSubmit={this.onSubmit.bind(this)}>
             {this.renderFields()}

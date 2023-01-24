@@ -1,4 +1,5 @@
 import React from "react";
+import Banner from "../../../app/components/banner/banner";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { User } from "../../../app/auth/auth_service";
@@ -10,7 +11,6 @@ import { bazel_config } from "../../../proto/bazel_config_ts_proto";
 import { FilledButton } from "../../../app/components/button/button";
 import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
-import { AlertCircle } from "lucide-react";
 
 enum FetchType {
   Executors,
@@ -323,22 +323,19 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         {activeTab === "status" && (
           <>
             {this.state.nodes.some((node) => !node.isDefault) && (
-              <div className="callout warning-callout">
-                <AlertCircle className="icon orange" />
-                <div className="callout-content">
-                  <div>
-                    Self-hosted executors are not the default for this organization. To change this, enable "Default to
-                    self-hosted executors" in your organization settings.
-                  </div>
-                  <div>
-                    <FilledButton className="organization-settings-button">
-                      <a href="/settings/" onClick={linkHandler("/settings")}>
-                        Open settings
-                      </a>
-                    </FilledButton>
-                  </div>
+              <Banner type="warning">
+                <div>
+                  Self-hosted executors are not the default for this organization. To change this, enable "Default to
+                  self-hosted executors" in your organization settings.
                 </div>
-              </div>
+                <div>
+                  <FilledButton className="organization-settings-button">
+                    <a href="/settings/" onClick={linkHandler("/settings")}>
+                      Open settings
+                    </a>
+                  </FilledButton>
+                </div>
+              </Banner>
             )}
             <ExecutorsList executors={this.state.nodes} />
             {!this.state.nodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
