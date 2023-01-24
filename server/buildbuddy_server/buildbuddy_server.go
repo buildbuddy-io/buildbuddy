@@ -1064,10 +1064,9 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
 	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
 
-	if lookup.Filename[0:2] == "//" {
+	if strings.HasPrefix(lookup.Filename, "//") && !strings.HasPrefix(lookup.Filename, "///") {
 		// non-file targets
-		lookup.Filename = lookup.Filename[2:]
-		switch lookup.Filename {
+		switch strings.TrimPrefix(lookup.Filename, "//") {
 		case "buildlog":
 			c := chunkstore.New(
 				s.env.GetBlobstore(),
@@ -1078,9 +1077,9 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				attempt = n
 			}
 			// Stream the file back to our client
-			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=buildlog_for_invocation_%s", params.Get("invocation_id")))
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s.log", params.Get("invocation_id")))
 			w.Header().Set("Content-Type", "application/octet-stream")
-			io.Copy(
+			_, err := io.Copy(
 				w,
 				c.Reader(
 					r.Context(),
@@ -1090,6 +1089,10 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					),
 				),
 			)
+			if err != nil {
+				log.Warningf("Error serving invocation-%s.log.", params.Get("invocation_id"))
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+			}
 		default:
 			http.Error(w, "File not found", http.StatusNotFound)
 		}
