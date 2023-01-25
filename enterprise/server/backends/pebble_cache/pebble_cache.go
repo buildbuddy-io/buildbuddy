@@ -643,6 +643,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 	totalCount := 0
 	missingFiles := 0
 	oldACEntries := 0
+	oldACEntriesBytes := int64(0)
 	uncompressedCount := 0
 	uncompressedBytes := int64(0)
 	for iter.First(); iter.Valid(); iter.Next() {
@@ -658,7 +659,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		}
 
 		if time.Since(lastUpdate) > 1*time.Minute {
-			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys", pr.Sprint(totalCount))
+			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys, fixed %d missing files, deleted %s old AC entries consuming %s", pr.Sprint(totalCount), missingFiles, pr.Sprint(oldACEntries), units.BytesSize(float64(oldACEntriesBytes)))
 			lastUpdate = time.Now()
 		}
 
@@ -695,6 +696,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 					} else {
 						removedEntry = true
 						oldACEntries++
+						oldACEntriesBytes += fileMetadata.GetStoredSizeBytes()
 					}
 				} else {
 					log.Warningf("Did not find evictor for %q for key %q", fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), string(fileMetadataKey))
@@ -712,7 +714,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		log.Infof("Pebble Cache: backgroundRepairIteration deleted %d keys with missing files", missingFiles)
 	}
 	if opts.deleteACEntriesOlderThan != 0 {
-		log.Infof("Pebble Cache: backgroundRepairIteration deleted %s AC keys older than %s", pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan)
+		log.Infof("Pebble Cache: backgroundRepairIteration deleted %s AC keys older than %s using %s", pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan, units.BytesSize(float64(oldACEntriesBytes)))
 	}
 	return nil
 }
