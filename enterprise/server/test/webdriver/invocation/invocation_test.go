@@ -2,90 +2,18 @@ package invocation_test
 
 import (
 	"context"
-	"flag"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/webdriver_target"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	targetStr   = flag.String("webdriver_target", "local", "Target that should be tested by the webdriver.")
-	devSSOSlug  = flag.String("webdriver_dev_slug", "", "Dev SSO slug to login.")
-	prodSSOSlug = flag.String("webdriver_prod_slug", "", "Prod SSO slug to login.")
-)
-
-type webdriverTarget interface {
-	init(t *testing.T)
-
-	appURL() string
-	ssoSlug() string
-}
-
-type localTarget struct {
-	app *app.App
-}
-
-func (d *localTarget) init(t *testing.T) {
-	// Run a local server with self-auth enabled
-	d.app = buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.DefaultConfig, "--cache.detailed_stats_enabled=true")
-}
-
-func (d *localTarget) appURL() string {
-	return d.app.HTTPURL()
-}
-
-// Because self-auth is enabled, the driver does not need to log in via SSO
-func (d *localTarget) ssoSlug() string {
-	return ""
-}
-
-type devTarget struct{}
-
-func (d *devTarget) init(t *testing.T) {}
-
-func (d *devTarget) appURL() string {
-	return "https://app.buildbuddy.dev"
-}
-
-func (d *devTarget) ssoSlug() string {
-	return *devSSOSlug
-}
-
-type prodTarget struct{}
-
-func (d *prodTarget) init(t *testing.T) {}
-
-func (d *prodTarget) appURL() string {
-	return "https://app.buildbuddy.io"
-}
-
-func (d *prodTarget) ssoSlug() string {
-	return *prodSSOSlug
-}
-
 func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
-	var target webdriverTarget
-	switch *targetStr {
-	case "local":
-		target = &localTarget{}
-		break
-	case "dev":
-		target = &devTarget{}
-		break
-	case "prod":
-		target = &prodTarget{}
-		break
-	default:
-		require.FailNowf(t, "invalid target", "%s is an invalid target for the webdriver invocation tests.", targetStr)
-	}
-
+	target := webdriver_target.Setup(t)
 	wt := webtester.New(t)
-	target.init(t)
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
 		"WORKSPACE": "",
@@ -99,15 +27,15 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 		"--remote_upload_local_results=1",
 	})
 
-	if target.ssoSlug() != "" {
-		webtester.LoginSSO(wt, target.appURL(), target.ssoSlug())
+	if target.SSOSlug() != "" {
+		webtester.LoginSSO(wt, target.AppURL(), target.SSOSlug())
 	} else {
 		// If the target does not have a SSO slug, assume that it can login via self-auth
-		webtester.LoginSelfAuth(wt, target.appURL())
+		webtester.LoginSelfAuth(wt, target.AppURL())
 	}
 
 	// Get the build flags needed for BuildBuddy, including API key, bes results url, bes backend, and remote cache
-	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.appURL(), webtester.WithEnableCache)
+	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.AppURL(), webtester.WithEnableCache)
 	t.Log(buildbuddyBuildFlags)
 	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
 
@@ -116,9 +44,9 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	require.NotEmpty(t, result.InvocationID)
 
 	// Make sure we can view the invocation while logged in
-	wt.Get(target.appURL() + "/invocation/" + result.InvocationID)
+	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
 
-	details := wt.Find(".details").Text()
+	details := wt.FindByDebugID("invocation-details").Text()
 	assert.Contains(t, details, "Succeeded")
 	assert.NotContains(t, details, "Failed")
 	assert.Contains(t, details, "//:a")
@@ -126,9 +54,9 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	assert.Contains(t, details, "Remote execution off")
 
 	// Make sure we can view the cache section
-	wt.Find(".cache-sections")
-	wt.Find("#filter-cache-requests").SendKeys("All")
-	cacheRequestsCard := wt.Find(".results-table").Text()
+	wt.FindByDebugID("cache-sections")
+	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
+	cacheRequestsCard := wt.FindByDebugID("cache-results-table").Text()
 	assert.Contains(t, cacheRequestsCard, "Miss")
 	assert.Contains(t, cacheRequestsCard, "Write")
 	assert.NotContains(t, cacheRequestsCard, "Hit")
@@ -138,9 +66,9 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	result = testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
 	require.NotEmpty(t, result.InvocationID)
 
-	wt.Get(target.appURL() + "/invocation/" + result.InvocationID)
+	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
 
-	details = wt.Find(".details").Text()
+	details = wt.FindByDebugID("invocation-details").Text()
 	assert.Contains(t, details, "Succeeded")
 	assert.NotContains(t, details, "Failed")
 	assert.Contains(t, details, "//:a")
@@ -148,9 +76,9 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	assert.Contains(t, details, "Remote execution off")
 
 	// Cache section should contain a cache hit
-	wt.Find(".cache-sections")
-	wt.Find("#filter-cache-requests").SendKeys("All")
-	cacheRequestsCard = wt.Find(".results-table").Text()
+	wt.FindByDebugID("cache-sections")
+	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
+	cacheRequestsCard = wt.FindByDebugID("cache-results-table").Text()
 	assert.Contains(t, cacheRequestsCard, "Hit")
 
 	// Make sure it shows up in repo history
@@ -177,9 +105,9 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 
 	webtester.Logout(wt)
 
-	wt.Get(target.appURL() + "/invocation/" + result.InvocationID)
+	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
 
-	wt.Find(".login-button")
+	wt.FindByDebugID("login-button")
 
 	// TODO(bduffany): Log in as a different self-auth user that is not in the
 	// default BB org, and make sure we get PermissionDenied instead of the

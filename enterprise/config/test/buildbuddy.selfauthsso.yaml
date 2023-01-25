@@ -1,0 +1,25 @@
+app:
+  build_buddy_url: "http://localhost:8080"
+  no_default_user_group: true
+  create_group_per_user: true
+  add_user_to_domain_group: true
+  enable_target_tracking: true
+database:
+  data_source: "sqlite3:///tmp/buildbuddy-enterprise.db"
+storage:
+  ttl_seconds: 86400 # One day in seconds.
+  disk:
+    root_directory: /tmp/buildbuddy_enterprise
+cache:
+  max_size_bytes: 1000000000 # 1 GB
+  #in_memory: true
+  disk:
+    root_directory: /tmp/buildbuddy-enterprise-cache
+auth:
+  enable_anonymous_usage: true
+  enable_self_auth: true
+api:
+  enable_api: true
+github:
+  client_id: "asdasdasdasdasd"
+  client_secret: "1231231asdasdasdasd123"

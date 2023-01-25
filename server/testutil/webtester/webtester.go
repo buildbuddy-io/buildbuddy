@@ -87,10 +87,13 @@ func (wt *WebTester) FindAll(cssSelector string) []*Element {
 	return out
 }
 
-// FindName returns the element matching the given CSS name. Exactly one
+// FindByDebugID returns the element matching the given debug-id selector. Exactly one
 // element must be matched, otherwise the test fails.
-func (wt *WebTester) FindName(name string) *Element {
-	el, err := wt.driver.FindElement(selenium.ByName, name)
+//
+// It's recommended to use the debug-id attribute for webdriver tests. Using CSS names, IDs, or classes
+// can be brittle when element style is changed. debug-ids are only used for webdriver tests and should be stable
+func (wt *WebTester) FindByDebugID(debugID string) *Element {
+	el, err := wt.driver.FindElement(selenium.ByCSSSelector, `[debug-id="`+debugID+`"]`)
 	require.NoError(wt.t, err)
 	return &Element{wt.t, el}
 }
@@ -186,16 +189,16 @@ func HasClass(el *Element, class string) bool {
 // It expects that no user is currently logged in, and that self-auth is enabled on the server.
 func LoginSelfAuth(wt *WebTester, appBaseURL string) {
 	wt.Get(appBaseURL)
-	wt.Find(".login-button").Click()
+	wt.FindByDebugID("login-button").Click()
 }
 
 // LoginSSO uses the Web app to log into BuildBuddy via SSO.
 // It expects that the user's slug is associated with a self-auth oauth provider
 func LoginSSO(wt *WebTester, appBaseURL, ssoSlug string) {
 	wt.Get(appBaseURL)
-	wt.Find(".sso-button").Click()
-	wt.FindName("ssoSlug").SendKeys(ssoSlug)
-	wt.Find(".sso-button").Click()
+	wt.FindByDebugID("sso-button").Click()
+	wt.FindByDebugID("sso-slug").SendKeys(ssoSlug)
+	wt.FindByDebugID("sso-button").Click()
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,
