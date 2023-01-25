@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
@@ -297,8 +296,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 
 func TestFirecrackerFileMapping(t *testing.T) {
 	numFiles := 100
-	fileSizeBytes := int64(1_000_000)
-	scratchTestFileSizeBytes := int64(50_000_000)
+	fileSizeBytes := int64(1000)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
 
@@ -322,16 +320,8 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		}
 	}
 
-	workspaceDirSize, err := disk.DirSize(rootDir)
-	require.NoError(t, err)
-
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `
-			find -name '*.txt' -exec cp {} {}.out \;
-			</dev/zero head -c ` + fmt.Sprint(scratchTestFileSizeBytes) + ` > ~/scratch_file.txt
-			# Sleep a bit to ensure we get a good disk usage sample.
-			sleep 1
-		`},
+		Arguments: []string{"sh", "-c", `find -name '*.txt' -exec cp {} {}.out \;`},
 	}
 	expectedResult := &interfaces.CommandResult{
 		ExitCode: 0,
@@ -358,53 +348,9 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		t.Fatalf("error: %s", res.Error)
 	}
 
-	// Check that the result has the expected disk usage stats.
+	// Check that the result has usage stats, but don't perform equality checks
+	// on them.
 	assert.True(t, res.UsageStats != nil)
-	var workspaceFSU, scratchFSU *repb.UsageStats_FileSystemUsage
-	for _, fsu := range res.UsageStats.PeakFileSystemUsage {
-		if fsu.Target == "/workspace" {
-			workspaceFSU = fsu
-		} else if fsu.Target == "/" {
-			scratchFSU = fsu
-		}
-	}
-
-	const workspaceDiskSlackSpaceBytes = 2_000_000_000
-	if workspaceFSU == nil {
-		assert.Fail(t, "/workspace disk usage was not reported")
-	} else {
-		assert.Equal(t, "ext4", workspaceFSU.GetFstype())
-		assert.Equal(t, "/dev/vdc", workspaceFSU.GetSource())
-		assert.InDelta(
-			t, workspaceFSU.GetUsedBytes(),
-			// Expected size is twice the input size, since we duplicate the inputs.
-			2*workspaceDirSize,
-			10_000_000,
-			"used workspace disk size")
-		expectedTotalSize := ext4.MinDiskImageSizeBytes + workspaceDirSize + workspaceDiskSlackSpaceBytes
-		assert.InDelta(
-			t, expectedTotalSize, workspaceFSU.GetTotalBytes(),
-			60_000_000,
-			"total workspace disk size")
-	}
-	if scratchFSU == nil {
-		assert.Fail(t, "scratch (/) disk usage was not reported")
-	} else {
-		assert.Equal(t, "overlay", scratchFSU.GetFstype())
-		assert.Equal(t, "overlayfs:/scratch/bbvmroot", scratchFSU.GetSource())
-		const approxInitialScratchDiskSizeBytes = 60e6
-		assert.InDelta(
-			t, approxInitialScratchDiskSizeBytes+scratchTestFileSizeBytes,
-			scratchFSU.GetUsedBytes(),
-			20_000_000,
-			"used scratch disk size")
-		assert.InDelta(
-			t, 1_000_000*opts.ScratchDiskSizeMB+ext4.MinDiskImageSizeBytes+approxInitialScratchDiskSizeBytes,
-			scratchFSU.GetTotalBytes(),
-			20_000_000,
-			"total scratch disk size")
-	}
-
 	res.UsageStats = nil
 
 	assert.Equal(t, expectedResult, res)

@@ -7,13 +7,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"sort"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/elastic/gosigar"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
@@ -309,16 +307,9 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 		_, err := io.Copy(&stderrWriter{msgs}, c.stderrReader)
 		stderrErrCh <- err
 	}()
-	// TODO(bduffany): report memory/CPU stats from the whole VM, not just
+	// TODO(bduffany): monitor stats from the whole VM, not just
 	// the process being executed.
-	var peakFSU []*repb.UsageStats_FileSystemUsage
 	statsListener := func(stats *repb.UsageStats) {
-		// Update the stats with disk usage.
-		if fsu := getFileSystemUsage(); fsu != nil {
-			peakFSU = updatePeakFileSystemUsage(peakFSU, fsu)
-		}
-		stats.PeakFileSystemUsage = peakFSU
-
 		msgs <- &message{Response: &vmxpb.ExecStreamedResponse{UsageStats: stats}}
 	}
 	_, err := commandutil.RunWithProcessTreeCleanup(ctx, c.cmd, statsListener)
@@ -350,73 +341,4 @@ type stderrWriter struct{ msgs chan *message }
 func (w *stderrWriter) Write(b []byte) (int, error) {
 	w.msgs <- &message{Response: &vmxpb.ExecStreamedResponse{Stderr: b}}
 	return len(b), nil
-}
-
-func getFileSystemUsage() []*repb.UsageStats_FileSystemUsage {
-	fsl := &gosigar.FileSystemList{}
-	if err := fsl.Get(); err != nil {
-		log.Errorf("Failed to get filesystem usage: %s", err)
-		return nil
-	}
-	out := make([]*repb.UsageStats_FileSystemUsage, 0, len(fsl.List))
-	for _, fs := range fsl.List {
-		// Only consider the root FS and the workspace FS.
-		// Otherwise the list is really messy, containing things like
-		// tmpfs, udev, cgroup, etc. which aren't very interesting.
-		if !(fs.DirName == "/" || fs.DirName == "/workspace") {
-			continue
-		}
-
-		fsu := &gosigar.FileSystemUsage{}
-		if err := fsu.Get(fs.DirName); err != nil {
-			log.Errorf("Failed to get filesystem usage for %s: %s", fs.DevName, err)
-			continue
-		}
-		out = append(out, &repb.UsageStats_FileSystemUsage{
-			Source:     fs.DevName,
-			Target:     fs.DirName,
-			Fstype:     fs.SysTypeName,
-			UsedBytes:  int64(fsu.Used),
-			TotalBytes: int64(fsu.Total),
-		})
-	}
-	return out
-}
-
-func updatePeakFileSystemUsage(peak, current []*repb.UsageStats_FileSystemUsage) []*repb.UsageStats_FileSystemUsage {
-	// Keep track of which indexes in the `current` list that we have merged
-	// into the `peak` list.
-	observed := map[int]bool{}
-
-	for _, p := range peak {
-		var cur *repb.UsageStats_FileSystemUsage
-		for i, c := range current {
-			if p.Target == c.Target {
-				cur = c
-				observed[i] = true
-				break
-			}
-		}
-		if cur == nil {
-			// The FS disappeared somehow.
-			// Keep it in the `peak` list with its last observed value.
-			continue
-		}
-		if cur.UsedBytes > p.UsedBytes {
-			p.UsedBytes = cur.UsedBytes
-		}
-	}
-	for i, c := range current {
-		// If we see an FS that we haven't previously observed in the `peak`
-		// list then append it to the end.
-		if !observed[i] {
-			peak = append(peak, c)
-		}
-	}
-	// Sort to ensure deterministic ordering.
-	sort.Slice(peak, func(i, j int) bool {
-		return peak[i].Target < peak[j].Target
-	})
-
-	return peak
 }
