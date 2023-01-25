@@ -49,20 +49,8 @@
   margin-top: 16px;
 }
 
-.executors-page .callout {
+.executors-page .banner {
   margin-top: 32px;
   margin-bottom: 32px;
-  padding: 16px;
   max-width: 600px;
-  border-radius: 8px;
-  display: flex;
-  gap: 16px;
-}
-
-.executors-page .callout .icon {
-  flex-shrink: 0;
-}
-
-.executors-page .warning-callout {
-  background: #ffecb3;
 }

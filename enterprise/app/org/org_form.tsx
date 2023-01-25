@@ -1,9 +1,9 @@
 import React from "react";
 import capabilities from "../../../app/capabilities/capabilities";
+import Banner from "../../../app/components/banner/banner";
 import { User } from "../../../app/auth/auth_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { BuildBuddyError } from "../../../app/util/errors";
-import { AlertCircle } from "lucide-react";
 import Select, { Option } from "../../../app/components/select/select";
 
 export type FormProps = {
@@ -131,13 +131,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             />
           </div>
           {initialRequest.urlIdentifier && initialRequest.urlIdentifier !== request.urlIdentifier && (
-            <div className="warning">
-              <AlertCircle className="icon red" />
-              <div>
-                This change will deactivate the old URL. <br />
-                Be sure to update any links in docs, bookmarks, etc.
-              </div>
-            </div>
+            <Banner type="warning">
+              This change will deactivate the old URL. <br />
+              Be sure to update any links in docs, bookmarks, etc.
+            </Banner>
           )}
         </div>
         {this.showSuggestionPreference() && (

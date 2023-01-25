@@ -12,6 +12,7 @@ ts_library(
         "//app/alert",
         "//app/auth",
         "//app/capabilities",
+        "//app/components/banner",
         "//app/components/button",
         "//app/components/checkbox",
         "//app/components/dialog",
@@ -25,7 +26,6 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:user_id_ts_proto",
         "@npm//@types/react",
-        "@npm//lucide-react",
         "@npm//react",
     ],
 )

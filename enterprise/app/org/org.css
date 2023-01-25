@@ -10,10 +10,8 @@
   margin-bottom: 32px;
 }
 
-.organization-page .callout {
-  background-color: #ffe082;
-  padding: 16px 32px;
-  border-radius: 8px;
+.organization-page .banner {
+  margin: 16px 0;
 }
 
 .organization-form {
@@ -154,22 +152,6 @@
 .organization-invite-link-container .invite-link {
   color: #263238;
   font-weight: 600;
-}
-
-.organization-form .warning {
-  display: inline-flex;
-  align-self: flex-start;
-  margin-top: 8px;
-  background: #ffcdd2;
-  padding: 16px;
-  border-radius: 8px;
-}
-
-.organization-form .warning svg {
-  width: 24px;
-  height: 24px;
-  margin-right: 16px;
-  padding-top: 2px;
 }
 
 .organization-join-page {

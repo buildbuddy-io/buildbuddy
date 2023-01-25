@@ -2,19 +2,19 @@ load("//rules/typescript:index.bzl", "ts_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(glob(["*.css"]))
+
 ts_library(
-    name = "alert",
+    name = "banner",
     srcs = glob([
-        "*.tsx",
         "*.ts",
+        "*.tsx",
     ]),
     strict = True,
     deps = [
-        "//app/components/banner",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
-        "@npm//rxjs",
+        "@npm//tslib",
     ],
 )
-
-exports_files(srcs = glob(["*.css"]))
