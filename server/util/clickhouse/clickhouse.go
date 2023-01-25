@@ -257,6 +257,7 @@ func (e *Execution) AdditionalFields() []string {
 
 // TestTargetStatus represents the status of a target, the target info and invocation details
 type TestTargetStatus struct {
+	// Sort Keys; and the order of the following fields match TableOptions().
 	GroupID       string
 	Role          string
 	RepoURL       string
@@ -291,6 +292,9 @@ func (t *TestTargetStatus) TableOptions() string {
 	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, role, repo_url, label, commit_sha, created_at_usec)", getEngine())
 }
 
+// hasProjection checks whether a projection exist in the clickhouse
+// schema.
+// gorm-clickhouse doesn't support migration projection.
 func hasProjection(db *gorm.DB, table Table, projectionName string) (bool, error) {
 	currentDatabase := db.Migrator().CurrentDatabase()
 
@@ -307,6 +311,9 @@ func hasProjection(db *gorm.DB, table Table, projectionName string) (bool, error
 	return ok, nil
 }
 
+// addProjectionIfNotExists checks whether a projection exist in the clickhouse
+// schema; if not, add the projection.
+// gorm-clickhouse doesn't support migration projection.
 func addProjectionIfNotExist(db *gorm.DB, table Table, projectionName string, query string) error {
 	hasProjection, err := hasProjection(db, table, projectionName)
 	if err != nil {
@@ -520,7 +527,7 @@ func runMigrations(gdb *gorm.DB) error {
 			return err
 		}
 	}
-	// Add Projection
+	// Add Projection/
 	projectionQuery := `select group_id, role, repo_url, commit_sha,
 	   max(created_at_usec) as latest_created_at_usec
 	   group by group_id, role, repo_url, commit_sha`
