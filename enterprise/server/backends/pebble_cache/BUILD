@@ -35,6 +35,8 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_text//language",
+        "@org_golang_x_text//message",
     ],
 )
 
