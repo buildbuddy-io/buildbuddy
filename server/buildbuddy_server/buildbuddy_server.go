@@ -992,10 +992,6 @@ type bsLookup struct {
 }
 
 func getBestFilename(filename, blobname string) string {
-	if strings.HasPrefix(filename, "//") && !strings.HasPrefix(filename, "///") {
-		// This is not a normal file path, let the implementation handle it
-		return filename
-	}
 	// First try to use the filename parameter
 	parts := strings.Split(filename, "/")
 	name := parts[len(parts)-1]
