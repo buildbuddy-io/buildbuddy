@@ -12,7 +12,6 @@ go_library(
         "//proto:vmexec_go_proto",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_elastic_gosigar//:gosigar",
         "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_google_grpc//status",
         "@org_golang_x_sys//unix",
