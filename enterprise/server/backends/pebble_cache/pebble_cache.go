@@ -39,6 +39,8 @@ import (
 	"github.com/elastic/gosigar"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -54,17 +56,19 @@ var (
 	partitionsFlag             = flagutil.New("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappingsFlag      = flagutil.New("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
-	scanForOrphanedFiles     = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
-	orphanDeleteDryRun       = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
-	dirDeletionDelay         = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
-	atimeUpdateThresholdFlag = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
-	atimeWriteBatchSizeFlag  = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
-	atimeBufferSizeFlag      = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	minEvictionAgeFlag       = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
-	forceCompaction          = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
-	forceCalculateMetadata   = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
-	samplesPerEviction       = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
-	samplePoolSize           = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
+	backgroundRepairFrequency = flag.Duration("cache.pebble.background_repair_frequency", 1*24*time.Hour, "How frequently to run period background repair tasks.")
+	deleteACEntriesOlderThan  = flag.Duration("cache.pebble.delete_ac_entries_older_than", 0, "If set, the background repair will delete AC entries older than this time.")
+	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
+	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
+	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
+	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
+	atimeWriteBatchSizeFlag   = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
+	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
+	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
+	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
+	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
+	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 
 	// Compression related flags
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
@@ -571,10 +575,50 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 	return nil
 }
 
-func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
+func (p *PebbleCache) backgroundRepair(quitChan chan struct{}) error {
+	fixMissingFiles := true
+	fixOLDACEntries := *deleteACEntriesOlderThan != 0
+
+	for {
+		opts := &repairOpts{
+			deleteEntriesWithMissingFiles: fixMissingFiles,
+			deleteACEntriesOlderThan:      *deleteACEntriesOlderThan,
+		}
+		err := p.backgroundRepairIteration(quitChan, opts)
+		if err != nil {
+			log.Warningf("Pebble Cache: backgroundRepairIteration failed: %s", err)
+		} else {
+			if fixMissingFiles {
+				close(p.brokenFilesDone)
+				fixMissingFiles = false
+			}
+		}
+
+		// Nothing else to do?
+		if !fixMissingFiles && !fixOLDACEntries {
+			return nil
+		}
+
+		select {
+		case <-quitChan:
+			return nil
+		case <-time.After(*backgroundRepairFrequency):
+			break
+		}
+	}
+}
+
+type repairOpts struct {
+	deleteEntriesWithMissingFiles bool
+	deleteACEntriesOlderThan      time.Duration
+}
+
+func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *repairOpts) error {
+	log.Infof("Pebble Cache: backgroundRepairIteration starting")
+
 	db, err := p.leaser.DB()
 	if err != nil {
-		return nil
+		return err
 	}
 	defer db.Close()
 
@@ -584,15 +628,14 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 	})
 	defer iter.Close()
 
+	pr := message.NewPrinter(language.English)
 	fileMetadata := &rfpb.FileMetadata{}
 	blobDir := ""
 
-	defer func() {
-		close(p.brokenFilesDone)
-	}()
-
+	lastUpdate := time.Now()
 	totalCount := 0
-	mismatchCount := 0
+	missingFiles := 0
+	oldACEntries := 0
 	uncompressedCount := 0
 	uncompressedBytes := int64(0)
 	for iter.First(); iter.Valid(); iter.Next() {
@@ -607,6 +650,11 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 			continue
 		}
 
+		if time.Since(lastUpdate) > 15*time.Minute {
+			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys", pr.Sprint(totalCount))
+			lastUpdate = time.Now()
+		}
+
 		totalCount++
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
@@ -615,21 +663,43 @@ func (p *PebbleCache) scanForBrokenFiles(quitChan chan struct{}) error {
 			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
 			continue
 		}
-		blobDir = p.blobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
 
-		_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
-		if err != nil {
-			if p.handleMetadataMismatch(p.env.GetServerContext(), err, fileMetadataKey, fileMetadata) {
-				mismatchCount += 1
+		removedEntry := false
+		if opts.deleteEntriesWithMissingFiles {
+			blobDir = p.blobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+			_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
+			if err != nil {
+				if p.handleMetadataMismatch(p.env.GetServerContext(), err, fileMetadataKey, fileMetadata) {
+					missingFiles += 1
+					removedEntry = true
+				}
 			}
 		}
 
-		if fileMetadata.GetFileRecord().GetCompressor() == repb.Compressor_IDENTITY {
+		if opts.deleteACEntriesOlderThan != 0 {
+			age := time.Since(time.UnixMicro(fileMetadata.GetLastAccessUsec()))
+			if age > opts.deleteACEntriesOlderThan {
+				if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
+					log.Warningf("Could not delete old AC key %q: %s", string(fileMetadataKey), err)
+				} else {
+					removedEntry = true
+					oldACEntries++
+				}
+			}
+		}
+
+		if !removedEntry && fileMetadata.GetFileRecord().GetCompressor() == repb.Compressor_IDENTITY {
 			uncompressedCount++
 			uncompressedBytes += fileMetadata.GetStoredSizeBytes()
 		}
 	}
-	log.Infof("Pebble Cache: scanForBrokenFiles scanned %d records, fixed %d files (%d uncompressed entries remaining using %d bytes)", totalCount, mismatchCount, uncompressedCount, uncompressedBytes)
+	log.Infof("Pebble Cache: backgroundRepairIteration scanned %s records (%s uncompressed entries remaining using %s bytes [%s])", pr.Sprint(totalCount), pr.Sprint(uncompressedCount), pr.Sprint(uncompressedBytes), units.BytesSize(float64(uncompressedBytes)))
+	if opts.deleteEntriesWithMissingFiles {
+		log.Infof("Pebble Cache: backgroundRepairIteration deleted %d keys with missing files", missingFiles)
+	}
+	if opts.deleteACEntriesOlderThan != 0 {
+		log.Infof("Pebble Cache: backgroundRepairIteration deleted %s AC keys older than %s", pr.Sprint(oldACEntries), opts.deleteACEntriesOlderThan)
+	}
 	return nil
 }
 
@@ -1878,7 +1948,7 @@ func (p *PebbleCache) Start() error {
 		return p.processAccessTimeUpdates(p.quitChan)
 	})
 	p.eg.Go(func() error {
-		return p.scanForBrokenFiles(p.quitChan)
+		return p.backgroundRepair(p.quitChan)
 	})
 	if *scanForOrphanedFiles {
 		p.eg.Go(func() error {
