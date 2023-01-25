@@ -616,6 +616,13 @@ type repairOpts struct {
 func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *repairOpts) error {
 	log.Infof("Pebble Cache: backgroundRepairIteration starting")
 
+	evictors := make(map[string]*partitionEvictor, 0)
+	p.statusMu.Lock()
+	for _, pe := range p.evictors {
+		evictors[pe.part.ID] = pe
+	}
+	p.statusMu.Unlock()
+
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -677,13 +684,20 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		}
 
 		if !removedEntry && opts.deleteACEntriesOlderThan != 0 && bytes.Contains(fileMetadataKey, acDir) {
-			age := time.Since(time.UnixMicro(fileMetadata.GetLastAccessUsec()))
+			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+			age := time.Since(atime)
 			if age > opts.deleteACEntriesOlderThan {
-				if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
-					log.Warningf("Could not delete old AC key %q: %s", string(fileMetadataKey), err)
+				e, ok := evictors[fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()]
+				if ok {
+					err := e.deleteFile(fileMetadataKey, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
+					if err != nil {
+						log.Warningf("Could not delete old AC key %q: %s", string(fileMetadataKey), err)
+					} else {
+						removedEntry = true
+						oldACEntries++
+					}
 				} else {
-					removedEntry = true
-					oldACEntries++
+					log.Warningf("Did not find evictor for %q for key %q", fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), string(fileMetadataKey))
 				}
 			}
 		}
@@ -1632,13 +1646,14 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 	}
 	closer.Close()
 	age := time.Since(sample.Timestamp)
-	if err := e.deleteFile(sample); err != nil {
+	if err := e.deleteFile(sample.Key.fileMetadataKey, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
 		log.Errorf("Error evicting file for key %q: %s (ignoring)", sample.Key, err)
 		return false, nil
 	}
 	lbls := prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}
 	metrics.DiskCacheNumEvictions.With(lbls).Inc()
 	metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
+	metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
 	return false, nil
 }
 
@@ -1736,21 +1751,20 @@ func deleteDirIfEmptyAndOld(dir string) error {
 	return os.Remove(dir)
 }
 
-func (e *partitionEvictor) deleteFile(sample *approxlru.Sample[*evictionKey]) error {
+func (e *partitionEvictor) deleteFile(fileMetadataKey []byte, storedSizeBytes int64, storageMetadata *rfpb.StorageMetadata) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	if err := db.Delete(sample.Key.fileMetadataKey, &pebble.WriteOptions{Sync: true}); err != nil {
+	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: true}); err != nil {
 		return err
 	}
 
-	md := sample.Key.storageMetadata
 	switch {
-	case md.GetFileMetadata() != nil:
-		fp := e.fileStorer.FilePath(e.blobDir, md.GetFileMetadata())
+	case storageMetadata.GetFileMetadata() != nil:
+		fp := e.fileStorer.FilePath(e.blobDir, storageMetadata.GetFileMetadata())
 		if err := disk.DeleteFile(context.TODO(), fp); err != nil {
 			return err
 		}
@@ -1758,15 +1772,13 @@ func (e *partitionEvictor) deleteFile(sample *approxlru.Sample[*evictionKey]) er
 		if err := deleteDirIfEmptyAndOld(parentDir); err != nil {
 			log.Debugf("Error deleting dir: %s: %s", parentDir, err)
 		}
-	case md.GetInlineMetadata() != nil:
+	case storageMetadata.GetInlineMetadata() != nil:
 		break
 	default:
-		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", md)
+		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	ageUsec := float64(time.Since(sample.Timestamp).Microseconds())
-	metrics.DiskCacheLastEvictionAgeUsec.With(prometheus.Labels{metrics.PartitionID: e.part.ID, metrics.CacheNameLabel: e.cacheName}).Set(ageUsec)
-	e.updateSize(sample.Key.fileMetadataKey, -1*sample.SizeBytes)
+	e.updateSize(fileMetadataKey, -1*storedSizeBytes)
 	return nil
 }
 
