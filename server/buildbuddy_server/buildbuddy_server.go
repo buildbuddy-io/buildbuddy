@@ -304,9 +304,6 @@ func (s *BuildBuddyServer) GetGroup(ctx context.Context, req *grpb.GetGroupReque
 }
 
 func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroupUsersRequest) (*grpb.GetGroupUsersResponse, error) {
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetGroupId()); err != nil {
-		return nil, err
-	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
@@ -321,9 +318,6 @@ func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroup
 }
 
 func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.UpdateGroupUsersRequest) (*grpb.UpdateGroupUsersResponse, error) {
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetGroupId()); err != nil {
-		return nil, err
-	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
@@ -544,34 +538,10 @@ func (s *BuildBuddyServer) authorizeInvocationWrite(ctx context.Context, invocat
 	return perms.AuthorizeWrite(&authenticatedUser, acl)
 }
 
-func (s *BuildBuddyServer) authorizeAPIKeyWrite(ctx context.Context, apiKeyID string) error {
-	if apiKeyID == "" {
-		return status.InvalidArgumentError("API key ID is required")
-	}
-	user, err := perms.AuthenticatedUser(ctx, s.env)
-	if err != nil {
-		return err
-	}
-	userDB := s.env.GetUserDB()
-	if userDB == nil {
-		return status.UnimplementedError("Not Implemented")
-	}
-	// Check that the user belongs to the group that owns the requested API key.
-	key, err := userDB.GetAPIKey(ctx, apiKeyID)
-	if err != nil {
-		return err
-	}
-	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
-	return perms.AuthorizeWrite(&user, acl)
-}
-
 func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
-	}
-	if err := s.authorizeAPIKeyWrite(ctx, req.GetId()); err != nil {
-		return nil, err
 	}
 	tk := &tables.APIKey{
 		APIKeyID:            req.GetId(),
@@ -589,9 +559,6 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
-	}
-	if err := s.authorizeAPIKeyWrite(ctx, req.GetId()); err != nil {
-		return nil, err
 	}
 	if err := userDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
 		return nil, err

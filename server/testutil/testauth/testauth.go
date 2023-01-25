@@ -100,21 +100,23 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 	return testUsers
 }
 
+type userProvider func(string) interfaces.UserInfo
+
 type TestAuthenticator struct {
 	*nullauth.NullAuthenticator
-	testUsers map[string]interfaces.UserInfo
+	UserProvider userProvider
 }
 
 func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
 	return &TestAuthenticator{
 		NullAuthenticator: &nullauth.NullAuthenticator{},
-		testUsers:         testUsers,
+		UserProvider:      func(id string) interfaces.UserInfo { return testUsers[id] },
 	}
 }
 
 func (a *TestAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
 	headerVal := r.Header.Get(APIKeyHeader)
-	if user, ok := a.testUsers[headerVal]; ok {
+	if user := a.UserProvider(headerVal); user != nil {
 		return context.WithValue(r.Context(), testAuthenticationHeader, user)
 	}
 	return r.Context()
@@ -125,7 +127,7 @@ func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 		for _, h := range []string{APIKeyHeader, jwtHeader} {
 			headerVals := grpcMD[h]
 			for _, headerVal := range headerVals {
-				if user, ok := a.testUsers[headerVal]; ok {
+				if user := a.UserProvider(headerVal); user != nil {
 					return context.WithValue(ctx, testAuthenticationHeader, user)
 				}
 			}
@@ -139,7 +141,7 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interf
 		for _, h := range []string{APIKeyHeader, jwtHeader} {
 			headerVals := grpcMD[h]
 			for _, headerVal := range headerVals {
-				if user, ok := a.testUsers[headerVal]; ok {
+				if user := a.UserProvider(headerVal); ok {
 					return user, nil
 				}
 			}
@@ -155,7 +157,7 @@ func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 		return u, nil
 	}
 	if jwt, ok := ctx.Value(jwtHeader).(string); ok {
-		if u := a.testUsers[TestUserIDForJWT(jwt)]; u != nil {
+		if u := a.UserProvider(TestUserIDForJWT(jwt)); u != nil {
 			return u, nil
 		}
 	}
@@ -197,7 +199,7 @@ func (a *TestAuthenticator) ParseAPIKeyFromString(input string) (string, error) 
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
 	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
-	u := a.testUsers[apiKey]
+	u := a.UserProvider(apiKey)
 	ctx = context.WithValue(ctx, testAuthenticationHeader, u)
 	if u != nil {
 		jwt, err := TestJWTForUserID(u.GetUserID())
@@ -223,8 +225,8 @@ func (a *TestAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt s
 }
 
 func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID string) (context.Context, error) {
-	userInfo, ok := a.testUsers[userID]
-	if !ok {
+	userInfo := a.UserProvider(userID)
+	if userInfo == nil {
 		return nil, status.FailedPreconditionErrorf("User %q unknown to test authenticator.", userID)
 	}
 	ctx = context.WithValue(ctx, testAuthenticationHeader, userInfo)

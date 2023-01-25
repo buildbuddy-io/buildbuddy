@@ -32,8 +32,12 @@ go_test(
     srcs = ["userdb_test.go"],
     deps = [
         ":userdb",
+        "//enterprise/server/auth",
+        "//enterprise/server/backends/authdb",
         "//proto:group_go_proto",
         "//proto:user_id_go_proto",
+        "//server/environment",
+        "//server/interfaces",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
