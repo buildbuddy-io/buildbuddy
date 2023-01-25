@@ -142,10 +142,6 @@ func isLocalKey(key []byte) bool {
 		bytes.HasPrefix(key, constants.MetaRangePrefix)
 }
 
-func isFileRecordKey(key []byte) bool {
-	return bytes.HasPrefix(key, []byte(filestore.PartitionDirectoryPrefix))
-}
-
 func sizeOf(key []byte, val []byte) (int64, error) {
 	if isLocalKey(key) {
 		return int64(len(val)), nil
@@ -160,6 +156,22 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 		size += md.GetStoredSizeBytes()
 	}
 	return size, nil
+}
+
+func isFileRecordKey(keyBytes []byte) bool {
+	key := &filestore.PebbleKey{}
+	if _, err := key.FromBytes(keyBytes); err == nil {
+		return true
+	}
+	return false
+}
+
+func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
+	pebbleKey, err := sm.fileStorer.PebbleKey(fr)
+	if err != nil {
+		return nil, err
+	}
+	return pebbleKey.Bytes(filestore.Version2)
 }
 
 func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
@@ -250,8 +262,7 @@ func (sm *Replica) setRange(key, val []byte) error {
 
 func (sm *Replica) rangeCheckedSet(wb *pebble.Batch, key, val []byte) error {
 	sm.rangeMu.RLock()
-
-	if !keys.IsLocalKey(key) {
+	if !isLocalKey(key) {
 		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
 			sm.rangeMu.RUnlock()
 
@@ -470,7 +481,7 @@ func (sm *Replica) fileDelete(wb *pebble.Batch, req *rfpb.FileDeleteRequest) (*r
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
-	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
+	fileMetadataKey, err := sm.fileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +540,7 @@ func (sm *Replica) fileUpdateMetadata(wb *pebble.Batch, req *rfpb.FileUpdateMeta
 	iter := wb.NewIter(nil /*default iter options*/)
 	defer iter.Close()
 
-	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(req.GetFileRecord())
+	fileMetadataKey, err := sm.fileMetadataKey(req.GetFileRecord())
 	if err != nil {
 		return nil, err
 	}
@@ -1052,7 +1063,7 @@ func (sm *Replica) validateRange(header *rfpb.Header) error {
 }
 
 func (sm *Replica) metadataForRecord(db pebble.Reader, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
-	fileMetadataKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+	fileMetadataKey, err := sm.fileMetadataKey(fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -1270,7 +1281,7 @@ func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRec
 
 	missing := make([]*rfpb.FileRecord, 0)
 	for _, fileRecord := range fileRecords {
-		fileMetadaKey, err := sm.fileStorer.FileMetadataKey(fileRecord)
+		fileMetadaKey, err := sm.fileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
@@ -1821,13 +1832,11 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore, partitions []di
 		partitions:          partitions,
 		lastUsageCheckIndex: 0,
 		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", clusterID, nodeID)),
-		fileStorer: filestore.New(filestore.Opts{
-			PrioritizeHashInMetadataKey: true,
-		}),
-		quitChan:       make(chan struct{}),
-		accesses:       make(chan *accessTimeUpdate, *atimeBufferSize),
-		readQPS:        qps.NewCounter(),
-		raftProposeQPS: qps.NewCounter(),
+		fileStorer:          filestore.New(filestore.Opts{}),
+		quitChan:            make(chan struct{}),
+		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
+		readQPS:             qps.NewCounter(),
+		raftProposeQPS:      qps.NewCounter(),
 	}
 	go r.processAccessTimeUpdates()
 	return r
