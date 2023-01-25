@@ -650,7 +650,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			continue
 		}
 
-		if time.Since(lastUpdate) > 15*time.Minute {
+		if time.Since(lastUpdate) > 1*time.Minute {
 			log.Infof("Pebble Cache: backgroundRepairIteration in progress, scanned %s keys", pr.Sprint(totalCount))
 			lastUpdate = time.Now()
 		}
@@ -676,7 +676,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			}
 		}
 
-		if opts.deleteACEntriesOlderThan != 0 {
+		if !removedEntry && opts.deleteACEntriesOlderThan != 0 && bytes.Contains(fileMetadataKey, acDir) {
 			age := time.Since(time.UnixMicro(fileMetadata.GetLastAccessUsec()))
 			if age > opts.deleteACEntriesOlderThan {
 				if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
