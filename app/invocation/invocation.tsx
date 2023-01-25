@@ -208,9 +208,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     });
     const isBazelInvocation = this.state.model.isBazelInvocation();
     const fetchBuildLogs = () => {
-      rpc_service.downloadBytestreamFile("//buildlog", "bytestream://", this.props.invocationId, {
-        attempt: Number(this.state.model.invocations[0]?.attempt ?? 0).toString()
-      });
+      rpc_service.downloadLog(this.props.invocationId, Number(this.state.model.invocations[0]?.attempt ?? 0));
     };
 
     const suggestions = getSuggestions({

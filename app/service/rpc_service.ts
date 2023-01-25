@@ -44,6 +44,10 @@ class RpcService {
     return false;
   }
 
+  getDownloadUrl(params: Record<string, string>): string {
+    return `/file/download?${new URLSearchParams(params)}`;
+  }
+
   getBytestreamUrl(
     bytestreamURL: string,
     invocationId: string,
@@ -63,7 +67,16 @@ class RpcService {
         params[k] = additionalParams[k];
       }
     }
-    return `/file/download?${new URLSearchParams(params)}`;
+    return this.getDownloadUrl(params);
+  }
+
+  downloadLog(invocationId: string, attempt: number) {
+    const params: Record<string, string> = {
+      invocation_id: invocationId,
+      attempt: attempt.toString(),
+      artifact: "buildlog",
+    };
+    window.open(this.getDownloadUrl(params));
   }
 
   downloadBytestreamFile(
