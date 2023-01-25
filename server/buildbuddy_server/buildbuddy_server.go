@@ -1064,6 +1064,22 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWriter, params url.Values) {
 	switch params.Get("artifact") {
 	case "buildlog":
+		iid := params.Get("invocation_id")
+		if iid == "" {
+			log.Warningf("Build log requested with empty invocation id.")
+			http.Error(w, "File not found", http.StatusNotFound)
+		}
+		if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
+			if status.IsPermissionDeniedError(err) {
+				http.Error(w, "Access denied", http.StatusForbidden)
+			} else if status.IsNotFoundError(err) {
+				http.Error(w, "File not found", http.StatusNotFound)
+			} else {
+				log.Warningf("Error looking up invocation %s for build log fetch: %s", iid, err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+			}
+			return
+		}
 		c := chunkstore.New(
 			s.env.GetBlobstore(),
 			&chunkstore.ChunkstoreOptions{},
@@ -1073,20 +1089,20 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			attempt = n
 		}
 		// Stream the file back to our client
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s.log", params.Get("invocation_id")))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s.log", iid))
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, err := io.Copy(
 			w,
 			c.Reader(
 				ctx,
 				eventlog.GetEventLogPathFromInvocationIdAndAttempt(
-					params.Get("invocation_id"),
+					iid,
 					attempt,
 				),
 			),
 		)
 		if err != nil {
-			log.Warningf("Error serving invocation-%s.log.", params.Get("invocation_id"))
+			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 	default:
