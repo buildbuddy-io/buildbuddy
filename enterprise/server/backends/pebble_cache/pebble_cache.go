@@ -41,6 +41,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/proto"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -57,6 +58,7 @@ var (
 	partitionMappingsFlag      = flagutil.New("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
 	backgroundRepairFrequency = flag.Duration("cache.pebble.background_repair_frequency", 1*24*time.Hour, "How frequently to run period background repair tasks.")
+	backgroundRepairQPSLimit  = flag.Int("cache.pebble.background_repair_qps_limit", 100, "QPS limit for background repair modifications.")
 	deleteACEntriesOlderThan  = flag.Duration("cache.pebble.delete_ac_entries_older_than", 0, "If set, the background repair will delete AC entries older than this time.")
 	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
@@ -639,6 +641,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 	fileMetadata := &rfpb.FileMetadata{}
 	blobDir := ""
 
+	modLim := rate.NewLimiter(rate.Limit(*backgroundRepairQPSLimit), 1)
 	lastUpdate := time.Now()
 	totalCount := 0
 	missingFiles := 0
@@ -677,6 +680,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			blobDir = p.blobDir(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
 			_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 			if err != nil {
+				_ = modLim.Wait(p.env.GetServerContext())
 				if p.handleMetadataMismatch(p.env.GetServerContext(), err, fileMetadataKey, fileMetadata) {
 					missingFiles += 1
 					removedEntry = true
@@ -690,6 +694,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			if age > opts.deleteACEntriesOlderThan {
 				e, ok := evictors[fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()]
 				if ok {
+					_ = modLim.Wait(p.env.GetServerContext())
 					err := e.deleteFile(fileMetadataKey, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
 					if err != nil {
 						log.Warningf("Could not delete old AC key %q: %s", string(fileMetadataKey), err)
