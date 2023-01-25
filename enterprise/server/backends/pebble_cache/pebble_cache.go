@@ -1758,7 +1758,7 @@ func (e *partitionEvictor) deleteFile(fileMetadataKey []byte, storedSizeBytes in
 	}
 	defer db.Close()
 
-	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: true}); err != nil {
+	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
 
