@@ -24,35 +24,39 @@ func (c *refCount) Val() int64 {
 }
 
 type refCountedMutex struct {
-	sync.RWMutex
-	refCount
+	mu sync.RWMutex
+	count refCount
 }
 
 func (rcm *refCountedMutex) Lock() {
-	rcm.RWMutex.Lock()
-	rcm.Inc()
+	rcm.mu.Lock()
+	rcm.count.Inc()
 }
 
 func (rcm *refCountedMutex) Unlock() {
-	rcm.Dec()
-	rcm.RWMutex.Unlock()
+	rcm.count.Dec()
+	rcm.mu.Unlock()
 }
 
 func (rcm *refCountedMutex) RLock() {
-	rcm.RWMutex.RLock()
-	rcm.Inc()
+	rcm.mu.RLock()
+	rcm.count.Inc()
 }
 
 func (rcm *refCountedMutex) RUnlock() {
-	rcm.Dec()
-	rcm.RWMutex.RUnlock()
+	rcm.count.Dec()
+	rcm.mu.RUnlock()
+}
+
+func (rcm *refCountedMutex) Val() int64 {
+	return rcm.count.Val()
 }
 
 func newRefCountedMutex() *refCountedMutex {
 	var i int64
 	return &refCountedMutex{
-		sync.RWMutex{},
-		refCount{&i},
+		mu: sync.RWMutex{},
+		count: refCount{&i},
 	}
 }
 
