@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -1005,10 +1007,77 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	return apiKeys[0], nil
 }
 
-// Handle requests for build logs and artifacts by looking them up in from our
-// cache servers using the bytestream API.
+// ServeHTTP handles requests for build logs and artifacts either by looking
+// them up from our cache servers using the bytestream API or pulling them
+// from blobstore.
 func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
+
+	if params.Get("artifact") != "" {
+		s.serveArtifact(r.Context(), w, params)
+		return
+	}
+	if params.Get("bytestream_url") != "" {
+		// bytestream request
+		s.serveBytestream(r.Context(), w, params)
+		return
+	}
+	http.Error(w, `One of "artifact" or "bytestream_url" query param is required`, http.StatusBadRequest)
+}
+
+// serveArtifact handles requests that specify particular build artifacts
+func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWriter, params url.Values) {
+	switch params.Get("artifact") {
+	case "buildlog":
+		iid := params.Get("invocation_id")
+		if iid == "" {
+			log.Warningf("Build log requested with empty invocation id.")
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+		if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
+			if status.IsPermissionDeniedError(err) {
+				http.Error(w, "Access denied", http.StatusForbidden)
+			} else if status.IsNotFoundError(err) {
+				http.Error(w, "File not found", http.StatusNotFound)
+			} else {
+				log.Warningf("Error looking up invocation %s for build log fetch: %s", iid, err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+			}
+			return
+		}
+		c := chunkstore.New(
+			s.env.GetBlobstore(),
+			&chunkstore.ChunkstoreOptions{},
+		)
+		attempt := uint64(0)
+		if n, err := strconv.ParseUint(params.Get("attempt"), 10, 64); err == nil {
+			attempt = n
+		}
+		// Stream the file back to our client
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=invocation-%s.log", iid))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, err := io.Copy(
+			w,
+			c.Reader(
+				ctx,
+				eventlog.GetEventLogPathFromInvocationIdAndAttempt(
+					iid,
+					attempt,
+				),
+			),
+		)
+		if err != nil {
+			log.Warningf("Error serving invocation-%s.log: %s", iid, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	default:
+		http.Error(w, "File not found", http.StatusNotFound)
+	}
+}
+
+// serveBytestream handles requests that specify bytestream URLs.
+func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseWriter, params url.Values) {
 	lookup, err := parseByteStreamURL(params.Get("bytestream_url"), params.Get("filename"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1016,14 +1085,14 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if lookup.URL.User == nil {
-		apiKey, _ := s.getAnyAPIKeyForInvocation(r.Context(), params.Get("invocation_id"))
+		apiKey, _ := s.getAnyAPIKeyForInvocation(ctx, params.Get("invocation_id"))
 		if apiKey != nil {
 			lookup.URL.User = url.User(apiKey.Value)
 		}
 	}
 
 	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
-	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
+	ctx = context.WithValue(ctx, "x-buildbuddy-jwt", nil)
 
 	var zipReference = params.Get("z")
 	if len(zipReference) > 0 {
