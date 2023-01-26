@@ -146,10 +146,14 @@ func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx *db.DB, urlIden
 }
 
 func (d *UserDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error) {
+	return d.getAPIKey(d.h.DB(ctx), apiKeyID)
+}
+
+func (d *UserDB) getAPIKey(tx *db.DB, apiKeyID string) (*tables.APIKey, error) {
 	if apiKeyID == "" {
-		return nil, status.InvalidArgumentError("API key cannot be empty.")
+		return nil, status.InvalidArgumentError("API key ID cannot be empty.")
 	}
-	query := d.h.DB(ctx).Raw(`SELECT * FROM APIKeys WHERE api_key_id = ?`, apiKeyID)
+	query := tx.Raw(`SELECT * FROM APIKeys WHERE api_key_id = ?`, apiKeyID)
 	key := &tables.APIKey{}
 	if err := query.Take(key).Error; err != nil {
 		if db.IsRecordNotFound(err) {
@@ -229,32 +233,50 @@ func (d *UserDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 	if key == nil {
 		return status.InvalidArgumentError("API key cannot be nil.")
 	}
-	if key.APIKeyID == "" {
-		return status.InvalidArgumentError("API key ID cannot be empty.")
-	}
-
-	err := d.h.DB(ctx).Exec(
-		`UPDATE APIKeys SET label = ?, capabilities = ?, visible_to_developers = ? WHERE api_key_id = ?`,
-		key.Label,
-		key.Capabilities,
-		key.VisibleToDevelopers,
-		key.APIKeyID,
-	).Error
-	if err != nil {
-		return err
-	}
-	return nil
+	return d.h.DB(ctx).Transaction(func(tx *db.DB) error {
+		if err := d.authorizeAPIKeyWrite(ctx, tx, key.APIKeyID); err != nil {
+			return err
+		}
+		return tx.Exec(`
+			UPDATE APIKeys
+			SET
+				label = ?,
+				capabilities = ?,
+				visible_to_developers = ?
+			WHERE
+				api_key_id = ?`,
+			key.Label,
+			key.Capabilities,
+			key.VisibleToDevelopers,
+			key.APIKeyID,
+		).Error
+	})
 }
 
 func (d *UserDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
-	if apiKeyID == "" {
-		return status.InvalidArgumentError("API key ID cannot be empty.")
-	}
+	return d.h.DB(ctx).Transaction(func(tx *db.DB) error {
+		if err := d.authorizeAPIKeyWrite(ctx, tx, apiKeyID); err != nil {
+			return err
+		}
+		return tx.Exec(`DELETE FROM APIKeys WHERE api_key_id = ?`, apiKeyID).Error
+	})
+}
 
-	if err := d.h.DB(ctx).Exec(`DELETE FROM APIKeys WHERE api_key_id = ?`, apiKeyID).Error; err != nil {
+func (d *UserDB) authorizeAPIKeyWrite(ctx context.Context, tx *db.DB, apiKeyID string) error {
+	if apiKeyID == "" {
+		return status.InvalidArgumentError("API key ID is required")
+	}
+	user, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
 		return err
 	}
-	return nil
+	// Check that the user belongs to the group that owns the requested API key.
+	key, err := d.getAPIKey(tx, apiKeyID)
+	if err != nil {
+		return err
+	}
+	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
+	return perms.AuthorizeWrite(&user, acl)
 }
 
 // TODO(tylerw): Remove this double read of the auth group by consolidating
@@ -457,6 +479,10 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID 
 }
 
 func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
+	if err := perms.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+		return nil, err
+	}
+
 	users := make([]*grpb.GetGroupUsersResponse_GroupUser, 0)
 
 	q := query_builder.NewQuery(`
@@ -503,6 +529,9 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 }
 
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
+	if err := perms.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+		return err
+	}
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		for _, update := range updates {
 			switch update.GetMembershipAction() {
