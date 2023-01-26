@@ -24,7 +24,7 @@ func (c *refCount) Val() int64 {
 }
 
 type refCountedMutex struct {
-	mu sync.RWMutex
+	mu    sync.RWMutex
 	count refCount
 }
 
@@ -55,7 +55,7 @@ func (rcm *refCountedMutex) Val() int64 {
 func newRefCountedMutex() *refCountedMutex {
 	var i int64
 	return &refCountedMutex{
-		mu: sync.RWMutex{},
+		mu:    sync.RWMutex{},
 		count: refCount{&i},
 	}
 }
