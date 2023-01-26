@@ -894,11 +894,16 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if certHeaders := md.Get(SSLCertHeader); len(certHeaders) > 0 {
-			apiKeyID, err := a.env.GetSSLService().ValidateCert(certHeaders[0])
+			commonName, serialNumber, err := a.env.GetSSLService().ValidateCert(certHeaders[0])
 			if err != nil {
 				return nil, err
 			}
-			return a.claimsFromAPIKeyID(ctx, apiKeyID)
+			if commonName == "BuildBuddy ID" {
+				return a.claimsFromAPIKeyID(ctx, serialNumber)
+			}
+			if commonName == "BuildBuddy API Key" {
+				return a.claimsFromAPIKey(ctx, serialNumber)
+			}
 		}
 
 		keys := md.Get(APIKeyHeader)

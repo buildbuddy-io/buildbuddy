@@ -174,7 +174,7 @@ type SSLService interface {
 	ConfigureTLS(mux http.Handler) (*tls.Config, http.Handler)
 	GetGRPCSTLSCreds() (credentials.TransportCredentials, error)
 	GenerateCerts(apiKeyID string) (string, string, error)
-	ValidateCert(certString string) (string, error)
+	ValidateCert(certString string) (string, string, error)
 }
 
 type BuildEventChannel interface {
