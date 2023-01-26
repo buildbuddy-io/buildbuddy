@@ -1046,16 +1046,13 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 
-	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
-	ctx := context.WithValue(r.Context(), "x-buildbuddy-jwt", nil)
-
 	if params.Get("artifact") != "" {
-		s.serveArtifact(ctx, w, params)
+		s.serveArtifact(r.Context(), w, params)
 		return
 	}
 	if params.Get("bytestream_url") != "" {
 		// bytestream request
-		s.serveBytestream(ctx, w, params)
+		s.serveBytestream(r.Context(), w, params)
 		return
 	}
 	http.Error(w, `One of "artifact" or "bytestream_url" query param is required`, http.StatusBadRequest)
@@ -1125,6 +1122,9 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 			lookup.URL.User = url.User(apiKey.Value)
 		}
 	}
+
+	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
+	ctx = context.WithValue(ctx, "x-buildbuddy-jwt", nil)
 
 	var zipReference = params.Get("z")
 	if len(zipReference) > 0 {
