@@ -28,6 +28,26 @@ type refCountedMutex struct {
 	*refCount
 }
 
+func (rcm *refCountedMutex) Lock() {
+	rcm.RWMutex.Lock()
+	rcm.Inc()
+}
+
+func (rcm *refCountedMutex) Unlock() {
+	rcm.Dec()
+	rcm.RWMutex.Unlock()
+}
+
+func (rcm *refCountedMutex) RLock() {
+	rcm.RWMutex.RLock()
+	rcm.Inc()
+}
+
+func (rcm *refCountedMutex) RUnlock() {
+	rcm.Dec()
+	rcm.RWMutex.RUnlock()
+}
+
 func newRefCountedMutex() *refCountedMutex {
 	var i int64
 	return &refCountedMutex{
@@ -64,28 +84,24 @@ type Locker interface {
 
 type perKeyMutex struct {
 	mutexes sync.Map
-	bigLock *sync.RWMutex
-	once    *sync.Once
+	bigLock sync.RWMutex
 }
 
 func New() *perKeyMutex {
-	pkm := perKeyMutex{
-		mutexes: sync.Map{},
-		bigLock: &sync.RWMutex{},
-		once:    &sync.Once{},
-	}
-	return &pkm
+	pkm := &perKeyMutex{}
+	go pkm.gc()
+	return pkm
 }
 
 func (p *perKeyMutex) gc() {
 	for {
 		p.mutexes.Range(func(key, value any) bool {
+			p.bigLock.Lock()
 			rcm := value.(*refCountedMutex)
 			if rcm.Val() == 0 {
-				p.bigLock.Lock()
 				p.mutexes.Delete(key)
-				p.bigLock.Unlock()
 			}
+			p.bigLock.Unlock()
 			return true
 		})
 		time.Sleep(100 * time.Millisecond)
@@ -96,38 +112,20 @@ func (p *perKeyMutex) Lock(key string) func() {
 	p.bigLock.Lock()
 	defer p.bigLock.Unlock()
 
-	p.once.Do(func() {
-		go p.gc()
-	})
-
 	value, _ := p.mutexes.LoadOrStore(key, newRefCountedMutex())
 	rcm := value.(*refCountedMutex)
 
 	rcm.Lock()
-	rcm.Inc()
-
-	return func() {
-		rcm.Dec()
-		rcm.Unlock()
-	}
+	return rcm.Unlock
 }
 
 func (p *perKeyMutex) RLock(key string) func() {
 	p.bigLock.Lock()
 	defer p.bigLock.Unlock()
 
-	p.once.Do(func() {
-		go p.gc()
-	})
-
 	value, _ := p.mutexes.LoadOrStore(key, newRefCountedMutex())
 	rcm := value.(*refCountedMutex)
 
 	rcm.RLock()
-	rcm.Inc()
-
-	return func() {
-		rcm.Dec()
-		rcm.RUnlock()
-	}
+	return rcm.RUnlock
 }
