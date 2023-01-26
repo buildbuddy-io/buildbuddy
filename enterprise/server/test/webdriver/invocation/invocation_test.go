@@ -27,12 +27,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 		"--remote_upload_local_results=1",
 	})
 
-	if target.SSOSlug() != "" {
-		webtester.LoginSSO(wt, target.AppURL(), target.SSOSlug())
-	} else {
-		// If the target does not have a SSO slug, assume that it can login via self-auth
-		webtester.LoginSelfAuth(wt, target.AppURL())
-	}
+	webtester.LoginSSO(wt, target.AppURL(), target.SSOSlug())
 
 	// Get the build flags needed for BuildBuddy, including API key, bes results url, bes backend, and remote cache
 	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.AppURL(), webtester.WithEnableCache)

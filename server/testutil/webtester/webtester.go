@@ -185,13 +185,6 @@ func HasClass(el *Element, class string) bool {
 // BuildBuddy-specific functionality
 // ===
 
-// LoginSelfAuth uses the Web app to log into BuildBuddy as the default self-auth user.
-// It expects that no user is currently logged in, and that self-auth is enabled on the server.
-func LoginSelfAuth(wt *WebTester, appBaseURL string) {
-	wt.Get(appBaseURL)
-	wt.FindByDebugID("login-button").Click()
-}
-
 // LoginSSO uses the Web app to log into BuildBuddy via SSO.
 // It expects that the user's slug is associated with a self-auth oauth provider
 func LoginSSO(wt *WebTester, appBaseURL, ssoSlug string) {
