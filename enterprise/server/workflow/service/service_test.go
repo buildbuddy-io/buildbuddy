@@ -120,8 +120,9 @@ func pingWebhook(t *testing.T, url string) {
 }
 
 type execution struct {
-	Action  *repb.Action
-	Command *repb.Command
+	Metadata metadata.MD
+	Action   *repb.Action
+	Command  *repb.Command
 }
 
 // getExecution fetches digest contents of an ExecuteRequest.
@@ -151,11 +152,20 @@ func envVars(cmd *repb.Command) map[string]string {
 
 type fakeExecutionClient struct {
 	repb.ExecutionClient
-	ExecuteRequests []*repb.ExecuteRequest
+	ExecuteRequests []*executeRequest
+}
+
+type executeRequest struct {
+	Metadata metadata.MD
+	Payload  *repb.ExecuteRequest
 }
 
 func (c *fakeExecutionClient) Execute(ctx context.Context, req *repb.ExecuteRequest, opts ...grpc.CallOption) (repb.Execution_ExecuteClient, error) {
-	c.ExecuteRequests = append(c.ExecuteRequests, req)
+	md, _ := metadata.FromOutgoingContext(ctx)
+	c.ExecuteRequests = append(c.ExecuteRequests, &executeRequest{
+		Metadata: md,
+		Payload:  req,
+	})
 	return &fakeExecuteStream{}, nil
 }
 
@@ -394,10 +404,16 @@ func TestWebhook_UntrustedPullRequest_StartsUntrustedWorkflow(t *testing.T) {
 	pingWebhook(t, webhookURL)
 
 	require.Len(t, execClient.ExecuteRequests, 1, "expected one workflow execution to be started")
-	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0])
+	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0].Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
-	assert.NotContains(t, env, "BUILDBUDDY_API_KEY", "untrusted workflow should not have BUILDBUDDY_API_KEY env var")
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.NotContains(t,
+		execClient.ExecuteRequests[0].Metadata,
+		"x-buildbuddy-platform.env-overrides",
+		"untrusted workflow should not have remote_header env vars")
 }
 
 func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
@@ -436,10 +452,16 @@ func TestWebhook_TrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
 	pingWebhook(t, webhookURL)
 
 	require.Len(t, execClient.ExecuteRequests, 1, "expected one workflow execution to be started")
-	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0])
+	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0].Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
-	assert.Contains(t, env, "BUILDBUDDY_API_KEY", "trusted workflow should have BUILDBUDDY_API_KEY env var")
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.Regexp(t,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		execClient.ExecuteRequests[0].Metadata["x-buildbuddy-platform.env-overrides"],
+		"API key should be set via env-overrides")
 }
 
 func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
@@ -479,10 +501,16 @@ func TestWebhook_TrustedApprovalOnUntrustedPullRequest_StartsTrustedWorkflow(t *
 	pingWebhook(t, webhookURL)
 
 	require.Len(t, execClient.ExecuteRequests, 1, "expected one workflow execution to be started")
-	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0])
+	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0].Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
-	assert.Contains(t, env, "BUILDBUDDY_API_KEY", "trusted workflow should have BUILDBUDDY_API_KEY env var")
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.Regexp(t,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		execClient.ExecuteRequests[0].Metadata["x-buildbuddy-platform.env-overrides"],
+		"API key should be set via env-overrides")
 }
 
 func TestWebhook_TrustedApprovalOnAlreadyTrustedPullRequest_NOP(t *testing.T) {
@@ -598,8 +626,14 @@ func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {
 	pingWebhook(t, webhookURL)
 
 	require.Len(t, execClient.ExecuteRequests, 1, "expected one workflow execution to be started")
-	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0])
+	exec := getExecution(t, ctx, te, execClient.ExecuteRequests[0].Payload)
 	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
 	env := envVars(exec.Command)
-	assert.Contains(t, env, "BUILDBUDDY_API_KEY", "trusted workflow should have BUILDBUDDY_API_KEY env var")
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.Regexp(t,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=,REPO_TOKEN=`,
+		execClient.ExecuteRequests[0].Metadata["x-buildbuddy-platform.env-overrides"],
+		"API key should be set via env-overrides")
 }
