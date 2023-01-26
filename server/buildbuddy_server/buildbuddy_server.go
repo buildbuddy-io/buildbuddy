@@ -1066,6 +1066,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		if iid == "" {
 			log.Warningf("Build log requested with empty invocation id.")
 			http.Error(w, "File not found", http.StatusNotFound)
+			return
 		}
 		if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
 			if status.IsPermissionDeniedError(err) {
