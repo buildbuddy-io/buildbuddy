@@ -136,15 +136,7 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 	udb := env.GetUserDB()
 	ctx := context.Background()
 
-	err := udb.InsertUser(ctx, &tables.User{
-		UserID:    "US1",
-		SubID:     "SubID1",
-		FirstName: "FirstName1",
-		LastName:  "LastName1",
-		Email:     "user1@org1.io",
-	})
-	require.NoError(t, err)
-
+	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 
 	u, err := udb.GetUser(ctx1)
@@ -173,15 +165,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	ctx := context.Background()
 
 	// Create the user US1; this should also create GR1.
-	err := udb.InsertUser(ctx, &tables.User{
-		UserID:    "US1",
-		SubID:     "SubID1",
-		FirstName: "FirstName1",
-		LastName:  "LastName1",
-		Email:     "user1@org1.io",
-	})
-	require.NoError(t, err)
-
+	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 
 	// Attach a slug to GR1 (orgs don't get slugs when they are created as
@@ -210,15 +194,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 	require.Equal(t, grpb.Group_ADMIN_ROLE, groupUser.Role, "first user should be admins of the org group")
 
-	err = udb.InsertUser(ctx, &tables.User{
-		UserID:    "US2",
-		SubID:     "SubID2",
-		FirstName: "FirstName2",
-		LastName:  "LastName2",
-		Email:     "user2@org2.io",
-	})
-	require.NoError(t, err)
-
+	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 
 	u2, err := udb.GetUser(ctx2)
@@ -235,15 +211,8 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	require.Len(t, groupUsers, 1, "org1.io should still have 1 member, since US2 is in org2.io")
 	groupUser = groupUsers[0]
 
-	err = udb.InsertUser(ctx, &tables.User{
-		UserID:    "US3",
-		SubID:     "SubID3",
-		FirstName: "FirstName3",
-		LastName:  "LastName3",
-		Email:     "user3@org1.io",
-	})
-	require.NoError(t, err)
-
+	// Note: US3 has @org1.io email (US1's owned domain)
+	createUser(t, ctx, env, "US3", "org1.io")
 	ctx3 := authUserCtx(ctx, env, t, "US3")
 
 	u3, err := udb.GetUser(ctx3)
@@ -274,25 +243,11 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 	udb := env.GetUserDB()
 	ctx := context.Background()
 
-	err := udb.InsertUser(ctx, &tables.User{
-		UserID:    "US1",
-		SubID:     "SubID1",
-		FirstName: "FirstName1",
-		LastName:  "LastName1",
-		Email:     "user1@org1.io",
-	})
-	require.NoError(t, err)
-	err = udb.InsertUser(ctx, &tables.User{
-		UserID:    "US2",
-		SubID:     "SubID2",
-		FirstName: "FirstName2",
-		LastName:  "LastName2",
-		Email:     "user2@org1.io",
-	})
-	require.NoError(t, err)
+	// Create 2 users in the same org
+	createUser(t, ctx, env, "US1", "org1.io")
+	createUser(t, ctx, env, "US2", "org2.io")
 
 	ctx1 := authUserCtx(ctx, env, t, "US1")
-
 	u, err := udb.GetUser(ctx1)
 	require.NoError(t, err)
 
@@ -316,23 +271,9 @@ func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	udb := env.GetUserDB()
 	ctx := context.Background()
 
-	// Create some users
-	err := udb.InsertUser(ctx, &tables.User{
-		UserID:    "US1",
-		SubID:     "SubID1",
-		FirstName: "FirstName1",
-		LastName:  "LastName1",
-		Email:     "user1@org1.io",
-	})
-	require.NoError(t, err)
-	err = udb.InsertUser(ctx, &tables.User{
-		UserID:    "US2",
-		SubID:     "SubID2",
-		FirstName: "FirstName2",
-		LastName:  "LastName2",
-		Email:     "user2@org2.io",
-	})
-	require.NoError(t, err)
+	// Create some users (in different orgs)
+	createUser(t, ctx, env, "US1", "org1.io")
+	createUser(t, ctx, env, "US2", "org2.io")
 
 	// Get US1's self owned group
 	ctx1 := authUserCtx(ctx, env, t, "US1")
@@ -361,14 +302,7 @@ func TestAddUserToGroup_EmptyGroup_UserGetsAdminRole(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a user
-	err := udb.InsertUser(ctx, &tables.User{
-		UserID:    "US1",
-		SubID:     "SubID1",
-		FirstName: "FirstName1",
-		LastName:  "LastName1",
-		Email:     "user1@org1.io",
-	})
-	require.NoError(t, err)
+	createUser(t, ctx, env, "US1", "org1.io")
 	// Create an empty group
 	slug := "foo"
 	groupID, err := udb.InsertOrUpdateGroup(ctx, &tables.Group{
@@ -396,14 +330,7 @@ func TestAddUserToGroup_UserPreviouslyRequestedAccess_UpdatesMembershipStatus(t 
 	ctx := context.Background()
 
 	// Create a user
-	err := udb.InsertUser(ctx, &tables.User{
-		UserID:    "US1",
-		SubID:     "SubID1",
-		FirstName: "FirstName1",
-		LastName:  "LastName1",
-		Email:     "user1@org1.io",
-	})
-	require.NoError(t, err)
+	createUser(t, ctx, env, "US1", "org1.io")
 	// Create an empty group
 	slug := "foo"
 	groupID, err := udb.InsertOrUpdateGroup(ctx, &tables.Group{
@@ -422,15 +349,10 @@ func TestAddUserToGroup_UserPreviouslyRequestedAccess_UpdatesMembershipStatus(t 
 	gu := groupUsers[0]
 	require.Equal(t, grpb.Group_ADMIN_ROLE, gu.Role, "users should have admin role when added to a new group")
 
-	// Now create user US2
-	err = udb.InsertUser(ctx, &tables.User{
-		UserID:    "US2",
-		SubID:     "SubID2",
-		FirstName: "FirstName2",
-		LastName:  "LastName2",
-		Email:     "user1@org1.io",
-	})
-	require.NoError(t, err)
+	// Now create user US2, also with @org1.io email.
+	// Note, the group does not own the org1.io domain, so US2 shouldn't be
+	// auto-added to the group.
+	createUser(t, ctx, env, "US2", "org1.io")
 
 	// Have US2 *request* to join the group
 	err = udb.RequestToJoinGroup(ctx, "US2", groupID)
@@ -523,18 +445,23 @@ func TestDeleteAPIKey(t *testing.T) {
 	gr1 := getSelfOwnedGroup(t, ctx1, env)
 
 	k1 := getSingleAPIKey(t, ctx1, env, gr1.Group.GroupID)
-	k1.Label = "US1-Updated-Label"
-	err := udb.UpdateAPIKey(ctx1, k1)
-
-	require.NoError(t, err, "US1 should be able to update their own API key")
 
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 
-	err = udb.DeleteAPIKey(ctx2, k1.APIKeyID)
+	err := udb.DeleteAPIKey(ctx2, k1.APIKeyID)
 
 	require.True(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDeniedError if US2 tries to delete US1's API key; got: %T",
 		err)
+
+	err = udb.DeleteAPIKey(ctx1, k1.APIKeyID)
+
+	require.NoError(t, err, "US1 should be able to delete their API key")
+
+	keys, err := env.GetUserDB().GetAPIKeys(ctx1, gr1.Group.GroupID, true /*=checkVisibility*/)
+
+	require.NoError(t, err)
+	require.Empty(t, keys, "US1 group's keys should be empty after deleting")
 }

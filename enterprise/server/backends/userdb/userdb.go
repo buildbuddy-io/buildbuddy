@@ -258,7 +258,7 @@ func (d *UserDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 		if err := d.authorizeAPIKeyWrite(ctx, tx, apiKeyID); err != nil {
 			return err
 		}
-		return d.h.DB(ctx).Exec(`DELETE FROM APIKeys WHERE api_key_id = ?`, apiKeyID).Error
+		return tx.Exec(`DELETE FROM APIKeys WHERE api_key_id = ?`, apiKeyID).Error
 	})
 }
 
