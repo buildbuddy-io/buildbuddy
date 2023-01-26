@@ -371,12 +371,8 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 
-	groupID, err := userDB.InsertOrUpdateGroup(ctx, group)
+	groupID, err := userDB.CreateGroup(ctx, group)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := userDB.AddUserToGroup(ctx, user.UserID, groupID); err != nil {
 		return nil, err
 	}
 	return &grpb.CreateGroupResponse{
@@ -389,9 +385,6 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	userDB := s.env.GetUserDB()
 	if auth == nil || userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
-	}
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, req.GetId()); err != nil {
-		return nil, err
 	}
 	var group *tables.Group
 	var err error
