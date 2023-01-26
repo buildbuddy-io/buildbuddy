@@ -45,6 +45,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -104,7 +105,7 @@ var (
 	cacheBackend       = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
 	rbeBackend         = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
 	besResultsURL      = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
-	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches.")
+	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches (for hosted bazel) or the remote instance name running the workflow action.")
 	triggerEvent       = flag.String("trigger_event", "", "Event type that triggered the action runner.")
 	pushedRepoURL      = flag.String("pushed_repo_url", "", "URL of the pushed repo.")
 	pushedBranch       = flag.String("pushed_branch", "", "Branch name of the commit to be checked out.")
@@ -287,6 +288,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 			{Id: &bespb.BuildEventId_Progress{Progress: &bespb.BuildEventId_ProgressId{OpaqueCount: 0}}},
 			{Id: &bespb.BuildEventId_WorkspaceStatus{WorkspaceStatus: &bespb.BuildEventId_WorkspaceStatusId{}}},
 			{Id: &bespb.BuildEventId_BuildFinished{BuildFinished: &bespb.BuildEventId_BuildFinishedId{}}},
+			{Id: &bespb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original"}}},
 		},
 		Payload: &bespb.BuildEvent_Started{Started: &bespb.BuildStarted{
 			Uuid:               r.invocationID,
@@ -311,6 +313,13 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		if err := r.bep.Publish(patternEvent); err != nil {
 			return err
 		}
+	}
+	structuredCommandLineEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_StructuredCommandLine{StructuredCommandLine: &bespb.BuildEventId_StructuredCommandLineId{CommandLineLabel: "original"}}},
+		Payload: &bespb.BuildEvent_StructuredCommandLine{StructuredCommandLine: getStructuredCommandLine()},
+	}
+	if err := r.bep.Publish(structuredCommandLineEvent); err != nil {
+		return err
 	}
 
 	// Flush whenever the log buffer fills past a certain threshold.
@@ -1662,4 +1671,40 @@ func toShellToken(s string) string {
 		s = "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 	}
 	return s
+}
+
+func getStructuredCommandLine() *clpb.CommandLine {
+	options := make([]*clpb.Option, 0, len(os.Args[1:]))
+	for _, arg := range os.Args[1:] {
+		// TODO: Handle other arg formats ("-name=value", "--name value",
+		// "--bool_switch", etc). Ignore these for now since we don't set
+		// them in practice.
+		if !strings.HasPrefix(arg, "--") || !strings.Contains(arg, "=") {
+			continue
+		}
+		arg = strings.TrimPrefix(arg, "--")
+		parts := strings.SplitN(arg, "=", 2)
+		options = append(options, &clpb.Option{
+			CombinedForm: arg,
+			OptionName:   parts[0],
+			OptionValue:  parts[1],
+		})
+	}
+	return &clpb.CommandLine{
+		CommandLineLabel: "original",
+		Sections: []*clpb.CommandLineSection{
+			{
+				SectionLabel: "executable",
+				SectionType: &clpb.CommandLineSection_ChunkList{ChunkList: &clpb.ChunkList{
+					Chunk: []string{os.Args[0]},
+				}},
+			},
+			{
+				SectionLabel: "command options",
+				SectionType: &clpb.CommandLineSection_OptionList{OptionList: &clpb.OptionList{
+					Option: options,
+				}},
+			},
+		},
+	}
 }
