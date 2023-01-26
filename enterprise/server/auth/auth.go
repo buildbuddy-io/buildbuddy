@@ -903,7 +903,7 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 			}
 			if commonName == "BuildBuddy API Key" {
 				return a.claimsFromAPIKey(ctx, serialNumber)
-			} 
+			}
 		}
 
 		keys := md.Get(APIKeyHeader)
