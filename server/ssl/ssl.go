@@ -319,23 +319,23 @@ func (s *SSLService) GenerateCerts(apiKeyID string) (string, string, error) {
 	return generateCert(subject, &CACert{cert: s.AuthorityCert, key: s.AuthorityKey})
 }
 
-func (s *SSLService) ValidateCert(certString string) (string, error) {
+func (s *SSLService) ValidateCert(certString string) (string, string, error) {
 	if s.AuthorityCert == nil || s.AuthorityKey == nil {
-		return "", status.FailedPreconditionError("Cert authority must be setup in order to validate certificiates")
+		return "", "", status.FailedPreconditionError("Cert authority must be setup in order to validate certificiates")
 	}
 
 	unescapedCert, err := url.PathUnescape(certString)
 	if err != nil {
-		return "", status.FailedPreconditionErrorf("Failed to unescape client cert: %s", err)
+		return "", "", status.FailedPreconditionErrorf("Failed to unescape client cert: %s", err)
 	}
 
 	block, _ := pem.Decode([]byte(unescapedCert))
 	if block == nil {
-		return "", status.FailedPreconditionError("Failed to decode client certificate")
+		return "", "", status.FailedPreconditionError("Failed to decode client certificate")
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return "", status.FailedPreconditionErrorf("Failed to parse client certificate: %s", err)
+		return "", "", status.FailedPreconditionErrorf("Failed to parse client certificate: %s", err)
 	}
 
 	opts := x509.VerifyOptions{
@@ -343,10 +343,10 @@ func (s *SSLService) ValidateCert(certString string) (string, error) {
 	}
 
 	if _, err := cert.Verify(opts); err != nil {
-		return "", status.FailedPreconditionErrorf("Failed to verify client certificate: %s", err)
+		return "", "", status.FailedPreconditionErrorf("Failed to verify client certificate: %s", err)
 	}
 
-	return cert.Subject.SerialNumber, nil
+	return cert.Subject.CommonName, cert.Subject.SerialNumber, nil
 }
 
 func loadX509KeyPair(certFile, keyFile string) (*x509.Certificate, *rsa.PrivateKey, error) {
