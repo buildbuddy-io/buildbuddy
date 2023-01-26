@@ -77,7 +77,7 @@ const (
 	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
 	disablePredictedTaskSizePropertyName = "debug-disable-predicted-task-size"
 	extraArgsPropertyName                = "extra-args"
-	envOverridesPropertyName             = "env-overrides"
+	EnvOverridesPropertyName             = "env-overrides"
 	podmanImageStreamingPropertyName     = "podman-enable-image-streaming"
 	IncludeSecretsPropertyName           = "include-secrets"
 
@@ -249,7 +249,7 @@ func ParseProperties(task *repb.ExecutionTask) *Properties {
 		DisableMeasuredTaskSize:    boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		DisablePredictedTaskSize:   boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                  stringListProp(m, extraArgsPropertyName),
-		EnvOverrides:               stringListProp(m, envOverridesPropertyName),
+		EnvOverrides:               stringListProp(m, EnvOverridesPropertyName),
 	}
 }
 
@@ -276,6 +276,13 @@ func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
 	}
 
 	return props
+}
+
+// WithRemoteHeaderOverride sets a remote header for an Execute request that
+// overrides the given platform property to the given value. This can be used to
+// set platform properties for an execution independently of the cached Action.
+func WithRemoteHeaderOverride(ctx context.Context, propertyName, propertyValue string) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, overrideHeaderPrefix+propertyName, propertyValue)
 }
 
 // GetExecutorProperties returns a struct of properties that the configured
