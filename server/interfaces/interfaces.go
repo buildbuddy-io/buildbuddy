@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
@@ -270,6 +271,7 @@ type OLAPDBHandle interface {
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error
 	FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error
+	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 }
 
 type InvocationDB interface {
