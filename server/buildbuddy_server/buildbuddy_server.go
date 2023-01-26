@@ -1058,6 +1058,7 @@ func (s *BuildBuddyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveBytestream(ctx, w, params)
 		return
 	}
+	http.Error(w, `One of "artifact" or "bytestream_url" query param is required`, http.StatusBadRequest)
 }
 
 // serveArtifact handles requests that specify particular build artifacts
