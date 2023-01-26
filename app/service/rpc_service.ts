@@ -48,12 +48,7 @@ class RpcService {
     return `/file/download?${new URLSearchParams(params)}`;
   }
 
-  getBytestreamUrl(
-    bytestreamURL: string,
-    invocationId: string,
-    { filename = "", zip = "" } = {},
-    additionalParams?: Record<string, string>
-  ): string {
+  getBytestreamUrl(bytestreamURL: string, invocationId: string, { filename = "", zip = "" } = {}): string {
     const encodedRequestContext = uint8ArrayToBase64(context.RequestContext.encode(this.requestContext).finish());
     const params: Record<string, string> = {
       bytestream_url: bytestreamURL,
@@ -62,11 +57,6 @@ class RpcService {
     };
     if (filename) params.filename = filename;
     if (zip) params.z = zip;
-    if (typeof additionalParams !== undefined) {
-      for (const k in additionalParams) {
-        params[k] = additionalParams[k];
-      }
-    }
     return this.getDownloadUrl(params);
   }
 
@@ -79,23 +69,12 @@ class RpcService {
     window.open(this.getDownloadUrl(params));
   }
 
-  downloadBytestreamFile(
-    filename: string,
-    bytestreamURL: string,
-    invocationId: string,
-    additionalParams?: Record<string, string>
-  ) {
-    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename }, additionalParams));
+  downloadBytestreamFile(filename: string, bytestreamURL: string, invocationId: string) {
+    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename }));
   }
 
-  downloadBytestreamZipFile(
-    filename: string,
-    bytestreamURL: string,
-    zip: string,
-    invocationId: string,
-    additionalParams?: Record<string, string>
-  ) {
-    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename, zip }, additionalParams));
+  downloadBytestreamZipFile(filename: string, bytestreamURL: string, zip: string, invocationId: string) {
+    window.open(this.getBytestreamUrl(bytestreamURL, invocationId, { filename, zip }));
   }
 
   fetchBytestreamFile(
