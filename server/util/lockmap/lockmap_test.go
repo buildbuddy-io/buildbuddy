@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
-	//"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
