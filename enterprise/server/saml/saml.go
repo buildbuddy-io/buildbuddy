@@ -167,7 +167,7 @@ func (a *SAMLAuthenticator) Logout(w http.ResponseWriter, r *http.Request) {
 
 func (a *SAMLAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
 	if s, _ := a.subjectIDAndSessionFromContext(ctx); s != "" {
-		claims, err := auth.ClaimsFromSubID(a.env, ctx, a, s)
+		claims, err := auth.ClaimsFromSubID(ctx, a.env, s)
 		return claims, err
 	}
 	return a.fallback.AuthenticatedUser(ctx)
