@@ -207,7 +207,7 @@ type Store interface {
 	FileKey(r *rfpb.FileRecord) ([]byte, error)
 	FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string
 	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
-	PebbleKey(r *rfpb.FileRecord) (*PebbleKey, error)
+	PebbleKey(r *rfpb.FileRecord) (PebbleKey, error)
 
 	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
 	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
@@ -298,12 +298,12 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	return pmk.Bytes(UndefinedKeyVersion)
 }
 
-func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (*PebbleKey, error) {
+func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
 	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
-		return nil, err
+		return PebbleKey{}, err
 	}
-	return &PebbleKey{
+	return PebbleKey{
 		partID:                      partID,
 		groupID:                     groupID,
 		isolation:                   isolation,
