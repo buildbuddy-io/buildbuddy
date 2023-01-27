@@ -65,7 +65,6 @@ var (
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
 	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
-	atimeWriteBatchSizeFlag   = flag.Int("cache.pebble.atime_write_batch_size", DefaultAtimeWriteBatchSize, "Buffer this many writes before writing atime data")
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
@@ -110,11 +109,6 @@ const (
 	partitionMetadataFlushPeriod = 5 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
 
-	// atimeFlushPeriod is the time interval that we will wait before
-	// flushing any atime updates in an incomplete batch (that have not
-	// already been flushed due to throughput)
-	atimeFlushPeriod = 10 * time.Second
-
 	// CompressorBufSizeBytes is the buffer size we use for each chunk when compressing data
 	// It should be relatively large to get a good compression ratio bc each chunk is compressed independently
 	CompressorBufSizeBytes = 4e6 // 4 MB
@@ -122,7 +116,6 @@ const (
 	// Default values for Options
 	DefaultBlockCacheSizeBytes    = int64(1000 * megabyte)
 	DefaultMaxInlineFileSizeBytes = int64(1024)
-	DefaultAtimeWriteBatchSize    = 1000
 )
 
 // Options is a struct containing the pebble cache configuration options.
@@ -140,7 +133,6 @@ type Options struct {
 	MaxInlineFileSizeBytes int64
 
 	AtimeUpdateThreshold *time.Duration
-	AtimeWriteBatchSize  int
 	AtimeBufferSize      *int
 	MinEvictionAge       *time.Duration
 }
@@ -168,7 +160,6 @@ type PebbleCache struct {
 	maxInlineFileSizeBytes int64
 
 	atimeUpdateThreshold time.Duration
-	atimeWriteBatchSize  int
 	atimeBufferSize      int
 	minEvictionAge       time.Duration
 
@@ -215,7 +206,6 @@ func Register(env environment.Env) error {
 		MaxInlineFileSizeBytes:      *maxInlineFileSizeBytesFlag,
 		MinBytesAutoZstdCompression: *minBytesAutoZstdCompression,
 		AtimeUpdateThreshold:        atimeUpdateThresholdFlag,
-		AtimeWriteBatchSize:         *atimeWriteBatchSizeFlag,
 		AtimeBufferSize:             atimeBufferSizeFlag,
 		MinEvictionAge:              minEvictionAgeFlag,
 	}
@@ -287,9 +277,6 @@ func SetOptionDefaults(opts *Options) {
 	if opts.AtimeUpdateThreshold == nil {
 		opts.AtimeUpdateThreshold = &DefaultAtimeUpdateThreshold
 	}
-	if opts.AtimeWriteBatchSize == 0 {
-		opts.AtimeWriteBatchSize = DefaultAtimeWriteBatchSize
-	}
 	if opts.AtimeBufferSize == nil {
 		opts.AtimeBufferSize = &DefaultAtimeBufferSize
 	}
@@ -351,7 +338,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		blockCacheSizeBytes:         opts.BlockCacheSizeBytes,
 		maxInlineFileSizeBytes:      opts.MaxInlineFileSizeBytes,
 		atimeUpdateThreshold:        *opts.AtimeUpdateThreshold,
-		atimeWriteBatchSize:         opts.AtimeWriteBatchSize,
 		atimeBufferSize:             *opts.AtimeBufferSize,
 		minEvictionAge:              *opts.MinEvictionAge,
 		env:                         env,
@@ -415,41 +401,34 @@ func olderThanThreshold(t time.Time, threshold time.Duration) bool {
 	return age >= threshold
 }
 
-func (p *PebbleCache) batchEditAtime(batch *pebble.Batch, fileMetadataKey []byte, fileMetadata *rfpb.FileMetadata) error {
-	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
-		return nil
-	}
-	fileMetadata.LastAccessUsec = time.Now().UnixMicro()
-	protoBytes, err := proto.Marshal(fileMetadata)
-	if err != nil {
-		return err
-	}
+func (p *PebbleCache) updateAtime(fileMetadataKey []byte) error {
+	unlockFn := p.locker.Lock(string(fileMetadataKey))
+	defer unlockFn()
 
-	return batch.Set(fileMetadataKey, protoBytes, nil /*ignored write options*/)
-}
-
-func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	batch := db.NewBatch()
-	var lastWrite time.Time
-
-	flush := func() error {
-		if batch.Count() > 0 {
-			if err := batch.Commit(&pebble.WriteOptions{Sync: true}); err != nil {
-				return err
-			}
-			batch = db.NewBatch()
-			lastWrite = time.Now()
-		}
-		return nil
+	md, err := readFileMetadata(db, fileMetadataKey)
+	if err != nil {
+		return err
 	}
 
+	atime := time.UnixMicro(md.GetLastAccessUsec())
+	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
+		return nil
+	}
+	md.LastAccessUsec = time.Now().UnixMicro()
+	protoBytes, err := proto.Marshal(md)
+	if err != nil {
+		return err
+	}
+	return db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
+}
+
+func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 	exitMu := sync.Mutex{}
 	exiting := false
 	go func() {
@@ -462,34 +441,15 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 	for {
 		select {
 		case accessTimeUpdate := <-p.accesses:
-			// TODO(vadim): using a merge would prevent the race
-			// conditions that are possible here.
-			// We don't lock all batched digests because they could
-			// be locked for up to a second.
-			unlockFn := p.locker.RLock(string(accessTimeUpdate.fileMetadataKey))
-			md, err := readFileMetadata(db, accessTimeUpdate.fileMetadataKey)
-			unlockFn()
-			if err != nil {
-				log.Warningf("Error unmarshaling data for %q: %s", accessTimeUpdate.fileMetadataKey, err)
-				continue
-			}
-			if err := p.batchEditAtime(batch, accessTimeUpdate.fileMetadataKey, md); err != nil {
+			if err := p.updateAtime(accessTimeUpdate.fileMetadataKey); err != nil {
 				log.Warningf("Error updating atime: %s", err)
 			}
-			if int(batch.Count()) >= p.atimeWriteBatchSize {
-				flush()
-			}
-		case <-time.After(time.Second):
-			if time.Since(lastWrite) > atimeFlushPeriod {
-				flush()
-			}
-
+		default:
 			exitMu.Lock()
 			done := exiting
 			exitMu.Unlock()
 
 			if done {
-				flush()
 				return nil
 			}
 		}
