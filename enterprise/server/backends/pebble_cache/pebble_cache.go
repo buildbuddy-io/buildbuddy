@@ -981,8 +981,9 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 		if err != nil {
 			return nil, err
 		}
-		fileMetadata := &rfpb.FileMetadata{}
-		if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
+
+		fileMetadata, err := p.lookupFileMetadata(ctx, iter, fileMetadataKey)
+		if err != nil {
 			continue
 		}
 
