@@ -118,8 +118,6 @@ func (d *localTarget) SSOSlug() string {
 	return "buildbuddy-ui-probers"
 }
 
-func (d *remoteTarget) init(t *testing.T) {}
-
 func (d *remoteTarget) AppURL() string {
 	return *remoteAppEndpoint
 }
