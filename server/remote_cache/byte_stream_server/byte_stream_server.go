@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -28,6 +29,10 @@ import (
 const (
 	// Keep under the limit of ~4MB (save 256KB).
 	readBufSizeBytes = (1024 * 1024 * 4) - (1024 * 256)
+)
+
+var (
+	bazel5_1_0 = bazel_request.MustParseVersion("5.1.0")
 )
 
 type ByteStreamServer struct {
@@ -457,30 +462,37 @@ func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.
 	if err != nil {
 		return err
 	}
-	// Bazel 5.0.0 effectively requires that the committed_size match the total
-	// length of the *uploaded* payload. For compressed payloads, the uploaded
-	// payload length is not yet known, because it depends on the compression
-	// parameters used by the client. So we need to read the whole stream from the
-	// client in the compressed case.
-	//
-	// See https://github.com/bazelbuild/bazel/issues/14654 for context.
-	committedSize := r.GetDigest().GetSizeBytes()
-	if r.GetCompressor() != repb.Compressor_IDENTITY {
-		remainingSize := int64(0)
+	clientUploadedBytes := int64(len(firstRequest.Data))
+
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
+	uploadTracker := ht.TrackUpload(r.GetDigest())
+	defer func() {
+		uploadTracker.CloseWithBytesTransferred(0, clientUploadedBytes, r.GetCompressor(), "byte_stream_server")
+	}()
+
+	// Uncompressed uploads can always short-circuit, returning
+	// the digest size as the committed size.
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
+		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: r.GetDigest().GetSizeBytes()})
+	}
+
+	// Bazel pre-5.1.0 doesn't support short-circuiting compressed uploads.
+	// Instead, it expects the committed size to match the size of the
+	// compressed stream. Since there is no unique compressed representation,
+	// the only way to get the compressed stream size is to read the full
+	// stream.
+	if v := bazel_request.GetVersion(ctx); v != nil && !v.IsAtLeast(bazel5_1_0) {
 		if !firstRequest.FinishWrite {
-			// In the case where we read the full stream in order to determine its
-			// size, count it as an upload.
-			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-			uploadTracker := ht.TrackUpload(r.GetDigest())
-			remainingSize, err = s.recvAll(stream)
-			uploadTracker.CloseWithBytesTransferred(0, int64(len(firstRequest.Data))+remainingSize, r.GetCompressor(), "byte_stream_server")
+			n, err := s.recvAll(stream)
+			clientUploadedBytes += n
 			if err != nil {
 				return err
 			}
 		}
-		committedSize = int64(len(firstRequest.Data)) + remainingSize
+		return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: clientUploadedBytes})
 	}
-	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: committedSize})
+
+	return stream.SendAndClose(&bspb.WriteResponse{CommittedSize: -1})
 }
 
 // recvAll receives the remaining write requests from the client, and returns
