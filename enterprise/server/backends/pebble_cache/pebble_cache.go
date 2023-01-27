@@ -874,6 +874,9 @@ func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	if err != nil {
 		return false, err
 	}
+	unlockFn := p.locker.RLock(string(fileMetadataKey))
+	defer unlockFn()
+
 	found := pebbleutil.IterHasKey(iter, fileMetadataKey)
 	log.Debugf("Pebble contains %s is %v", string(fileMetadataKey), found)
 	return found, nil
@@ -934,9 +937,12 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.Res
 		if err != nil {
 			return nil, err
 		}
+
+		unlockFn := p.locker.RLock(string(fileMetadataKey))
 		if !pebbleutil.IterHasKey(iter, fileMetadataKey) {
 			missing = append(missing, r.GetDigest())
 		}
+		unlockFn()
 	}
 	return missing, nil
 }
