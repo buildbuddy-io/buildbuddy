@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -174,6 +175,7 @@ type PebbleCache struct {
 	env    environment.Env
 	db     *pebble.DB
 	leaser pebbleutil.Leaser
+	locker lockmap.Locker
 
 	edits    chan *sizeUpdate
 	accesses chan *accessTimeUpdate
@@ -355,6 +357,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		env:                         env,
 		db:                          db,
 		leaser:                      pebbleutil.NewDBLeaser(db),
+		locker:                      lockmap.New(),
 		brokenFilesDone:             make(chan struct{}),
 		orphanedFilesDone:           make(chan struct{}),
 		eg:                          &errgroup.Group{},
@@ -378,7 +381,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
 			if err != nil {
 				return err
 			}
@@ -459,7 +462,13 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 	for {
 		select {
 		case accessTimeUpdate := <-p.accesses:
+			// TODO(vadim): using a merge would prevent the race
+			// conditions that are possible here.
+			// We don't lock all batched digests because they could
+			// be locked for up to a second.
+			unlockFn := p.locker.RLock(string(accessTimeUpdate.fileMetadataKey))
 			md, err := readFileMetadata(db, accessTimeUpdate.fileMetadataKey)
+			unlockFn()
 			if err != nil {
 				log.Warningf("Error unmarshaling data for %q: %s", accessTimeUpdate.fileMetadataKey, err)
 				continue
@@ -547,7 +556,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 			// Remove the second to last element which is the 4-char hash prefix.
 			parts = append(parts[:prefixIndex], parts[prefixIndex+1:]...)
 			fileMetadataKey := []byte(strings.Join(parts, sep))
-			if _, err := lookupFileMetadata(p.env.GetServerContext(), iter, fileMetadataKey); status.IsNotFoundError(err) {
+			if _, err := p.lookupFileMetadata(p.env.GetServerContext(), iter, fileMetadataKey); status.IsNotFoundError(err) {
 				if *orphanDeleteDryRun {
 					fi, err := d.Info()
 					if err != nil {
@@ -804,8 +813,10 @@ func (p *PebbleCache) blobDir(partID string) string {
 	return filePath
 }
 
-func lookupFileMetadata(ctx context.Context, iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
+func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter *pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
+	unlockFn := p.locker.RLock(string(fileMetadataKey))
+	defer unlockFn()
 	if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 		return nil, err
 	}
@@ -863,6 +874,9 @@ func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	if err != nil {
 		return false, err
 	}
+	unlockFn := p.locker.RLock(string(fileMetadataKey))
+	defer unlockFn()
+
 	found := pebbleutil.IterHasKey(iter, fileMetadataKey)
 	log.Debugf("Pebble contains %s is %v", string(fileMetadataKey), found)
 	return found, nil
@@ -886,7 +900,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	if err != nil {
 		return nil, err
 	}
-	md, err := lookupFileMetadata(ctx, iter, fileMetadataKey)
+	md, err := p.lookupFileMetadata(ctx, iter, fileMetadataKey)
 	if err != nil {
 		return nil, err
 	}
@@ -923,9 +937,12 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.Res
 		if err != nil {
 			return nil, err
 		}
+
+		unlockFn := p.locker.RLock(string(fileMetadataKey))
 		if !pebbleutil.IterHasKey(iter, fileMetadataKey) {
 			missing = append(missing, r.GetDigest())
 		}
+		unlockFn()
 	}
 	return missing, nil
 }
@@ -964,8 +981,9 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 		if err != nil {
 			return nil, err
 		}
-		fileMetadata := &rfpb.FileMetadata{}
-		if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
+
+		fileMetadata, err := p.lookupFileMetadata(ctx, iter, fileMetadataKey)
+		if err != nil {
 			continue
 		}
 
@@ -1056,7 +1074,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, fileMetadataKey []
 	defer iter.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	fileMetadata, err := lookupFileMetadata(ctx, iter, fileMetadataKey)
+	fileMetadata, err := p.lookupFileMetadata(ctx, iter, fileMetadataKey)
 	if err != nil {
 		return err
 	}
@@ -1083,7 +1101,7 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRec
 	if err != nil {
 		return err
 	}
-	fileMetadata, err := lookupFileMetadata(ctx, iter, fileMetadataKey)
+	fileMetadata, err := p.lookupFileMetadata(ctx, iter, fileMetadataKey)
 	if err != nil {
 		return err
 	}
@@ -1134,7 +1152,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, unco
 	log.Debugf("Attempting pebble reader %s", string(fileMetadataKey))
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	fileMetadata, err := lookupFileMetadata(ctx, iter, fileMetadataKey)
+	fileMetadata, err := p.lookupFileMetadata(ctx, iter, fileMetadataKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1288,7 +1306,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		sizeDelta := bytesWritten
 		iter := db.NewIter(nil /*default iterOptions*/)
 		defer iter.Close()
-		existingMD, err := lookupFileMetadata(ctx, iter, fileMetadataKey)
+		existingMD, err := p.lookupFileMetadata(ctx, iter, fileMetadataKey)
 		if err == nil {
 			if r.GetCacheType() != resource.CacheType_AC {
 				metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
@@ -1298,7 +1316,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 			sizeDelta = bytesWritten - existingMD.GetStoredSizeBytes()
 		}
 
+		unlockFn := p.locker.Lock(string(fileMetadataKey))
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
+		unlockFn()
 		if err == nil {
 			partitionID := fileRecord.GetIsolation().GetPartitionId()
 			if sizeDelta != 0 {
@@ -1383,6 +1403,7 @@ type partitionEvictor struct {
 	cacheName  string
 	blobDir    string
 	dbGetter   pebbleutil.Leaser
+	locker     lockmap.Locker
 	accesses   chan<- *accessTimeUpdate
 	rng        *rand.Rand
 
@@ -1395,13 +1416,14 @@ type partitionEvictor struct {
 	minEvictionAge  time.Duration
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, locker lockmap.Locker, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:              &sync.Mutex{},
 		part:            part,
 		fileStorer:      fileStorer,
 		blobDir:         blobDir,
 		dbGetter:        dbg,
+		locker:          locker,
 		accesses:        accesses,
 		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
 		atimeBufferSize: atimeBufferSize,
@@ -1549,6 +1571,8 @@ func (e *partitionEvictor) writePartitionMetadata(db pebbleutil.IPebbleDB, md *r
 	if err != nil {
 		return err
 	}
+	unlockFn := e.locker.Lock(string(e.partitionMetadataKey()))
+	defer unlockFn()
 	return db.Set(e.partitionMetadataKey(), bs, &pebble.WriteOptions{Sync: true})
 }
 
@@ -1644,6 +1668,10 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 		return false, err
 	}
 	defer db.Close()
+
+	unlockFn := e.locker.Lock(string(sample.Key.fileMetadataKey))
+	defer unlockFn()
+
 	_, closer, err := db.Get(sample.Key.fileMetadataKey)
 	if err == pebble.ErrNotFound {
 		return true, nil
@@ -1670,6 +1698,9 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 		return false, time.Time{}, err
 	}
 	defer db.Close()
+
+	unlockFn := e.locker.RLock(string(key.fileMetadataKey))
+	defer unlockFn()
 
 	md, err := readFileMetadata(db, key.fileMetadataKey)
 	if err != nil {
