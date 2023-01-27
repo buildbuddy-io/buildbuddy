@@ -26,7 +26,7 @@ const (
 )
 
 func Run(t *testing.T, args ...string) *app.App {
-	return RunWithConfig(t, defaultAppConfig(t), DefaultConfig, args...)
+	return RunWithConfig(t, DefaultAppConfig(t), DefaultConfig, args...)
 }
 
 func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...string) *app.App {
@@ -46,7 +46,7 @@ func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...
 	)
 }
 
-func defaultAppConfig(t *testing.T) *app.App {
+func DefaultAppConfig(t *testing.T) *app.App {
 	return &app.App{
 		HttpPort:       testport.FindFree(t),
 		GRPCPort:       testport.FindFree(t),

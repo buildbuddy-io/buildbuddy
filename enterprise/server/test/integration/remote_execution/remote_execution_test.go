@@ -1528,7 +1528,7 @@ func TestRedisRestart(t *testing.T) {
 	for _, shard := range redisShards {
 		args = append(args, "--remote_execution.sharded_redis.shards="+shard.Target)
 	}
-	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.NoAuthConfig, args...)
+	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig, args...)
 
 	_ = testexecutor.Run(t,
 		"enterprise/server/cmd/executor/executor_/executor",
