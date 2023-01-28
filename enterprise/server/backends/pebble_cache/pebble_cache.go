@@ -408,7 +408,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 		return err
 	}
 
-	unlockFn := p.locker.Lock(string(fileMetadataKey))
+	unlockFn := p.locker.Lock(key.LockID())
 	defer unlockFn()
 
 	db, err := p.leaser.DB()
@@ -804,13 +804,29 @@ func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter *pebble.Itera
 	}
 
 	fileMetadata := &rfpb.FileMetadata{}
-	unlockFn := p.locker.RLock(string(fileMetadataKey))
+	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 	if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 		return nil, err
 	}
 
 	return fileMetadata, nil
+}
+
+// iterHasKey returns a bool indicating if the provided iterator has the
+// exact key specified.
+func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey) bool {
+	// TODO(tylerw): Make version aware.
+	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
+	if err != nil {
+		log.Errorf("Error converting key to bytes: %s", err)
+		return false
+	}
+
+	if iter.SeekGE(fileMetadataKey) && bytes.Compare(iter.Key(), fileMetadataKey) == 0 {
+		return true
+	}
+	return false
 }
 
 func readFileMetadata(reader pebble.Reader, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
@@ -865,15 +881,15 @@ func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	if err != nil {
 		return false, err
 	}
-	fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
+	key, err := p.fileStorer.PebbleKey(fileRecord)
 	if err != nil {
 		return false, err
 	}
-	unlockFn := p.locker.RLock(string(fileMetadataKey))
+	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	found := pebbleutil.IterHasKey(iter, fileMetadataKey)
-	log.Debugf("Pebble contains %s is %v", string(fileMetadataKey), found)
+	found := p.iterHasKey(iter, key)
+	log.Debugf("Pebble contains %s is %v", key.String(), found)
 	return found, nil
 }
 
@@ -928,13 +944,13 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.Res
 		if err != nil {
 			return nil, err
 		}
-		fileMetadataKey, err := p.fileStorer.FileMetadataKey(fileRecord)
+		key, err := p.fileStorer.PebbleKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
 
-		unlockFn := p.locker.RLock(string(fileMetadataKey))
-		if !pebbleutil.IterHasKey(iter, fileMetadataKey) {
+		unlockFn := p.locker.RLock(key.LockID())
+		if !p.iterHasKey(iter, key) {
 			missing = append(missing, r.GetDigest())
 		}
 		unlockFn()
@@ -1321,7 +1337,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 			sizeDelta = bytesWritten - existingMD.GetStoredSizeBytes()
 		}
 
-		unlockFn := p.locker.Lock(string(fileMetadataKey))
+		unlockFn := p.locker.Lock(key.LockID())
 		err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
 		unlockFn()
 		if err == nil {
@@ -1684,7 +1700,7 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 	if err != nil {
 		return false, err
 	}
-	unlockFn := e.locker.Lock(string(fileMetadataKey))
+	unlockFn := e.locker.Lock(sample.Key.key.LockID())
 	defer unlockFn()
 
 	_, closer, err := db.Get(fileMetadataKey)
@@ -1714,13 +1730,7 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 	}
 	defer db.Close()
 
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return false, time.Time{}, err
-	}
-
-	unlockFn := e.locker.RLock(string(fileMetadataKey))
+	unlockFn := e.locker.RLock(key.key.LockID())
 	defer unlockFn()
 
 	md, err := readFileMetadata(db, key.key)
