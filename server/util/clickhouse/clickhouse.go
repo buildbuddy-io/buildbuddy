@@ -259,10 +259,9 @@ func (e *Execution) AdditionalFields() []string {
 type TestTargetStatus struct {
 	// Sort Keys; and the order of the following fields match TableOptions().
 	GroupID       string
-	Role          string
 	RepoURL       string
-	Label         string
 	CommitSHA     string
+	Label         string
 	CreatedAtUsec int64
 
 	RuleType       string
@@ -274,6 +273,8 @@ type TestTargetStatus struct {
 	StartTimeUsec  int64
 	DurationUsec   int64
 	BranchName     string
+	Role           string
+	Command        string
 }
 
 func (t *TestTargetStatus) ExcludedFields() []string {
@@ -289,7 +290,7 @@ func (t *TestTargetStatus) TableName() string {
 }
 
 func (t *TestTargetStatus) TableOptions() string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, role, repo_url, label, commit_sha, created_at_usec)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha,label, created_at_usec)", getEngine())
 }
 
 // hasProjection checks whether a projection exist in the clickhouse
@@ -528,9 +529,9 @@ func runMigrations(gdb *gorm.DB) error {
 		}
 	}
 	// Add Projection/
-	projectionQuery := `select group_id, role, repo_url, commit_sha,
+	projectionQuery := `select group_id, repo_url, commit_sha,
 	   max(created_at_usec) as latest_created_at_usec
-	   group by group_id, role, repo_url, commit_sha`
+	   group by group_id, repo_url, commit_sha`
 	addProjectionIfNotExist(gdb, &TestTargetStatus{}, "projection_commits", projectionQuery)
 	return nil
 }
