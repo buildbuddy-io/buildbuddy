@@ -287,6 +287,10 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 		if !isTest(target) {
 			continue
 		}
+		startTimeUsec := int64(0)
+		if !target.firstStartTime.IsZero() {
+			startTimeUsec = target.firstStartTime.UnixMicro()
+		}
 		entries = append(entries, &schema.TestTargetStatus{
 			GroupID:   permissions.GroupID,
 			RepoURL:   t.buildEventAccumulator.RepoURL(),
@@ -303,7 +307,7 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
 			Status:         int32(target.overallStatus),
-			StartTimeUsec:  target.firstStartTime.UnixMicro(),
+			StartTimeUsec:  startTimeUsec,
 			DurationUsec:   target.totalDuration.Microseconds(),
 			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
 			Role:           t.buildEventAccumulator.Role(),
