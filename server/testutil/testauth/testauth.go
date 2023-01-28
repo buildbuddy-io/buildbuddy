@@ -32,8 +32,6 @@ import (
 //
 
 const (
-	testAuthenticationHeader = "test-auth-header"
-
 	APIKeyHeader = "x-buildbuddy-api-key"
 	jwtHeader    = "x-buildbuddy-jwt"
 )
@@ -100,66 +98,94 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 	return testUsers
 }
 
-type userProvider func(string) interfaces.UserInfo
+type userProvider func(userID string) interfaces.UserInfo
+type apiKeyUserProvider func(apiKey string) interfaces.UserInfo
 
 type TestAuthenticator struct {
 	*nullauth.NullAuthenticator
-	UserProvider userProvider
+	UserProvider   userProvider
+	APIKeyProvider apiKeyUserProvider
 }
 
 func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
 	return &TestAuthenticator{
 		NullAuthenticator: &nullauth.NullAuthenticator{},
-		UserProvider:      func(id string) interfaces.UserInfo { return testUsers[id] },
+		UserProvider:      func(userID string) interfaces.UserInfo { return testUsers[userID] },
+		APIKeyProvider:    func(apiKey string) interfaces.UserInfo { return testUsers[apiKey] },
 	}
 }
 
 func (a *TestAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
-	headerVal := r.Header.Get(APIKeyHeader)
-	if user := a.UserProvider(headerVal); user != nil {
-		return context.WithValue(r.Context(), testAuthenticationHeader, user)
+	apiKey := r.Header.Get(APIKeyHeader)
+	if apiKey == "" {
+		return r.Context()
 	}
-	return r.Context()
+	return a.AuthContextFromAPIKey(r.Context(), apiKey)
 }
 
 func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, h := range []string{APIKeyHeader, jwtHeader} {
-			headerVals := grpcMD[h]
-			for _, headerVal := range headerVals {
-				if user := a.UserProvider(headerVal); user != nil {
-					return context.WithValue(ctx, testAuthenticationHeader, user)
-				}
-			}
+	grpcMD, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ctx
+	}
+	for _, apiKey := range grpcMD[APIKeyHeader] {
+		if apiKey == "" {
+			return ctx
 		}
+		jwt, err := a.TestJWTForAPIKey(apiKey)
+		if err != nil {
+			log.Errorf("Failed to mint JWT from API key: %s", err)
+			continue
+		}
+		return context.WithValue(ctx, jwtHeader, jwt)
+	}
+	for _, jwt := range grpcMD[jwtHeader] {
+		_, err := a.authenticateJWT(jwt)
+		if err != nil {
+			log.Errorf("Failed to authenticate incoming JWT: %s", err)
+			continue
+		}
+		return context.WithValue(ctx, jwtHeader, jwt)
 	}
 	return ctx
 }
 
+func (a *TestAuthenticator) authenticateJWT(token string) (interfaces.UserInfo, error) {
+	if token == "" {
+		return nil, status.PermissionDeniedError("JWT is empty")
+	}
+	claims := &TestUser{}
+	_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtTestKey, nil
+	})
+	if err != nil {
+		return nil, status.PermissionDeniedErrorf("failed to authenticate JWT: %s", err)
+	}
+	return claims, nil
+}
+
 func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, h := range []string{APIKeyHeader, jwtHeader} {
-			headerVals := grpcMD[h]
-			for _, headerVal := range headerVals {
-				if user := a.UserProvider(headerVal); ok {
-					return user, nil
-				}
+		for _, apiKey := range grpcMD[APIKeyHeader] {
+			if apiKey == "" {
+				continue
 			}
+			u := a.APIKeyProvider(apiKey)
+			if u == nil {
+				return nil, status.PermissionDeniedErrorf("invalid API key: %q", apiKey)
+			}
+			return u, nil
+		}
+		for _, jwt := range grpcMD[jwtHeader] {
+			return a.authenticateJWT(jwt)
 		}
 	}
-	return nil, status.PermissionDeniedError("invalid user")
+	return nil, status.UnauthenticatedError("gRPC request is missing credentials.")
 }
 
 func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
-	uVal := ctx.Value(testAuthenticationHeader)
-	u, ok := uVal.(interfaces.UserInfo)
-	if ok {
-		return u, nil
-	}
 	if jwt, ok := ctx.Value(jwtHeader).(string); ok {
-		if u := a.UserProvider(TestUserIDForJWT(jwt)); u != nil {
-			return u, nil
-		}
+		return a.authenticateJWT(jwt)
 	}
 	return nil, status.UnauthenticatedError("User not found")
 }
@@ -198,18 +224,13 @@ func (a *TestAuthenticator) ParseAPIKeyFromString(input string) (string, error) 
 }
 
 func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
-	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
-	u := a.UserProvider(apiKey)
-	ctx = context.WithValue(ctx, testAuthenticationHeader, u)
-	if u != nil {
-		jwt, err := TestJWTForUserID(u.GetUserID())
-		if err != nil {
-			log.Errorf("failed to create test JWT: %s", err)
-		} else {
-			ctx = context.WithValue(ctx, jwtHeader, jwt)
-		}
+	jwt, err := a.TestJWTForAPIKey(apiKey)
+	if err != nil {
+		log.Errorf("Failed to mint JWT for API key: %s", err)
+		return ctx
 	}
-	return ctx
+	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
+	return context.WithValue(ctx, jwtHeader, jwt)
 }
 
 func (a *TestAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
@@ -229,13 +250,7 @@ func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID st
 	if userInfo == nil {
 		return nil, status.FailedPreconditionErrorf("User %q unknown to test authenticator.", userID)
 	}
-	ctx = context.WithValue(ctx, testAuthenticationHeader, userInfo)
-	jwt, err := TestJWTForUserID(userInfo.GetUserID())
-	if err != nil {
-		return nil, err
-	}
-	ctx = context.WithValue(ctx, jwtHeader, jwt)
-	return ctx, nil
+	return WithAuthenticatedUserInfo(ctx, userInfo), nil
 }
 
 func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
@@ -249,17 +264,29 @@ func RequestContext(userID string, groupID string) *ctxpb.RequestContext {
 
 // WithAuthenticatedUserInfo sets the authenticated user to the given user.
 func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo) context.Context {
-	return context.WithValue(ctx, testAuthenticationHeader, userInfo)
+	jwt, err := jwt.NewWithClaims(jwt.SigningMethodHS256, userInfo).SignedString(jwtTestKey)
+	if err != nil {
+		log.Errorf("Failed to mint JWT from UserInfo: %s", err)
+		return ctx
+	}
+	return context.WithValue(ctx, jwtHeader, jwt)
 }
 
-func TestJWTForUserID(userID string) (string, error) {
-	return jwt.NewWithClaims(jwt.SigningMethodHS256, &TestUser{UserID: userID}).SignedString(jwtTestKey)
+func (a *TestAuthenticator) TestJWTForUserID(userID string) (string, error) {
+	u := a.UserProvider(userID)
+	if u == nil {
+		return "", status.PermissionDeniedErrorf("user %s is unknown to TestAuthenticator", userID)
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, u).SignedString(jwtTestKey)
 }
 
-func TestUserIDForJWT(token string) string {
-	claims := &TestUser{}
-	jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
-		return jwtTestKey, nil
-	})
-	return claims.UserID
+func (a *TestAuthenticator) TestJWTForAPIKey(apiKey string) (string, error) {
+	if apiKey == "" {
+		return "", status.InvalidArgumentError("API key is empty")
+	}
+	u := a.APIKeyProvider(apiKey)
+	if u == nil {
+		return "", status.PermissionDeniedErrorf("API key %s is unknown to TestAuthenticator", apiKey)
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, u).SignedString(jwtTestKey)
 }

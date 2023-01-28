@@ -289,7 +289,7 @@ func TestSimpleCommandWithExecutorAuthorizationEnabled(t *testing.T) {
 	})
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
 		Name:   "executor",
-		APIKey: rbetest.ExecutorAPIKey,
+		APIKey: rbe.APIKey1,
 	})
 
 	cmd := rbe.ExecuteCustomCommand("sh", "-c", "echo hello && echo bye >&2")
@@ -313,7 +313,7 @@ func TestSimpleCommand_RunnerReuse_CanReadPreviouslyWrittenFileButNotOutputDirs(
 	}
 
 	// Note: authentication is required for workspace reuse, currently.
-	opts := &rbetest.ExecuteOpts{UserID: rbe.UserID1}
+	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{
@@ -358,7 +358,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -375,7 +375,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromFileCache(t *testing.T) {
 		// present as "b.input" in the previous action).
 		"f1.input": "B",
 	})
-	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
+	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, APIKey: rbe.APIKey1}
 
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -408,7 +408,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
+	opts := &rbetest.ExecuteOpts{InputRootDir: tmpDir, APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -423,7 +423,7 @@ func TestSimpleCommand_RunnerReuse_ReLinksFilesFromDuplicateInputs(t *testing.T)
 		"f1.input": "B",
 		"f2.input": "B",
 	})
-	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, UserID: rbe.UserID1}
+	opts = &rbetest.ExecuteOpts{InputRootDir: tmpDir, APIKey: rbe.APIKey1}
 
 	cmd = rbe.Execute(&repb.Command{
 		Arguments: []string{"cat", "f1.input", "f2.input"},
@@ -451,7 +451,7 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 			{Name: "Arch", Value: runtime.GOARCH},
 		},
 	}
-	opts := &rbetest.ExecuteOpts{UserID: rbe.UserID1}
+	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
 		Arguments: []string{"touch", "foo.txt"},
@@ -492,7 +492,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 		},
 	}
 	opts := &rbetest.ExecuteOpts{
-		UserID: rbe.UserID1,
+		APIKey: rbe.APIKey1,
 		RemoteHeaders: map[string]string{
 			"x-buildbuddy-platform.pool": "foo",
 		},
@@ -1070,7 +1070,7 @@ func TestOutputPaths(t *testing.T) {
 	}
 }
 
-func TestOuputPathsDirectoriesAndFiles(t *testing.T) {
+func TestOutputPathsDirectoriesAndFiles(t *testing.T) {
 	tmpDir := testfs.MakeTempDir(t)
 	dirLayout := []string{"", "a", "b", "c"}
 	files := []string{"a.txt", "b.txt"}
@@ -1640,11 +1640,11 @@ func TestActionMerging(t *testing.T) {
 
 	require.Equal(t, op1, op2, "the execution IDs for both commands should be the same")
 
-	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, UserID: rbe.UserID1, InvocationID: "invocation3"})
+	cmd3 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation3"})
 	op3 := cmd3.WaitAccepted()
 	require.NotEqual(t, op2, op3, "actions under different organizations should not be merged")
 
-	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, UserID: rbe.UserID1, InvocationID: "invocation4"})
+	cmd4 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, APIKey: rbe.APIKey1, InvocationID: "invocation4"})
 	op4 := cmd4.WaitAccepted()
 	require.Equal(t, op3, op4, "expected actions to be merged")
 }
