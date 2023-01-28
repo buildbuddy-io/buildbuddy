@@ -98,6 +98,13 @@ func (pmk *PebbleKey) String() string {
 	return string(fmk)
 }
 
+func (pmk *PebbleKey) LockID() string {
+	if pmk.isolation == "ac" {
+		return filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
+	}
+	return filepath.Join(pmk.isolation, pmk.hash)
+}
+
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 	switch version {
 	case UndefinedKeyVersion:
