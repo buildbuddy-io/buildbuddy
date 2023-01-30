@@ -190,6 +190,24 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             <span>Default to self-hosted executors</span>
           </label>
         )}
+        {capabilities.config.userOwnedKeysEnabled && (
+          <label className="form-row input-label">
+            <input
+              autoComplete="off"
+              onFocus={this.onFocus.bind(this)}
+              onChange={this.onChange.bind(this)}
+              type="checkbox"
+              name="userOwnedKeysEnabled"
+              checked={request.userOwnedKeysEnabled}
+            />
+            <span>Enable user-owned API keys</span>
+          </label>
+        )}
+        {initialRequest.userOwnedKeysEnabled && !request.userOwnedKeysEnabled && (
+          <Banner className="form-row" type="warning">
+            This change will deactivate (but not delete) existing keys.
+          </Banner>
+        )}
       </>
     );
   }
