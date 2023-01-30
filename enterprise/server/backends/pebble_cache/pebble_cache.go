@@ -362,6 +362,12 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
 	}
 
+	versionMetadata, err := pc.databaseVersionMetadata()
+	if err != nil {
+		return nil, nil
+	}
+	pc.lastDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetVersion())
+
 	peMu := sync.Mutex{}
 	eg := errgroup.Group{}
 	for i, part := range opts.Partitions {
@@ -444,29 +450,10 @@ func (p *PebbleCache) databaseVersionMetadata() (*rfpb.VersionMetadata, error) {
 // currentDatabaseVersion returns the currently stored filestore.PebbleKeyVersion.
 // It is safe to call this function in a loop -- the underlying metadata will
 // only be fetched a max of once per second.
-func (p *PebbleCache) currentDatabaseVersion() (filestore.PebbleKeyVersion, error) {
+func (p *PebbleCache) currentDatabaseVersion() filestore.PebbleKeyVersion {
 	unlockFn := p.locker.RLock(string(p.databaseVersionKey()))
-
-	if time.Since(p.lastDBVersionUpdate) > time.Second {
-		unlockFn()
-		return p.lastDBVersion, nil
-	}
-	unlockFn()
-
-	// Lock (instead of RLock) because we're going to update the variable.
-	unlockFn = p.locker.Lock(string(p.databaseVersionKey()))
 	defer unlockFn()
-
-	if time.Since(p.lastDBVersionUpdate) < time.Second {
-		return p.lastDBVersion, nil
-	}
-	versionMetadata, err := p.databaseVersionMetadata()
-	if err != nil {
-		return -1, nil
-	}
-	p.lastDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetVersion())
-	p.lastDBVersionUpdate = time.Now()
-	return p.lastDBVersion, nil
+	return p.lastDBVersion
 }
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
@@ -503,7 +490,6 @@ func (p *PebbleCache) updateDatabaseVersion(newVersion filestore.PebbleKeyVersio
 	}
 
 	p.lastDBVersion = newVersion
-	p.lastDBVersionUpdate = time.Now()
 
 	log.Printf("Pebble Cache: db version changed from %+v to %+v", oldVersionMetadata, newVersionMetadata)
 	return nil
@@ -848,9 +834,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 		totalCASCount += casCount
 		totalACCount += acCount
 	}
-	if currentVersion, err := p.currentDatabaseVersion(); err == nil {
-		buf += fmt.Sprintf("Stored data version: %d, new writes version: %d\n", currentVersion, p.activeDatabaseVersion())
-	}
+	buf += fmt.Sprintf("Stored data version: %d, new writes version: %d\n", p.currentDatabaseVersion(), p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)
