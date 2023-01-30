@@ -364,7 +364,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 
 	versionMetadata, err := pc.databaseVersionMetadata()
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	pc.lastDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetVersion())
 
