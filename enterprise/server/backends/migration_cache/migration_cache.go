@@ -145,7 +145,6 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
 		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
 		AtimeUpdateThreshold:        cfg.AtimeUpdateThreshold,
-		AtimeWriteBatchSize:         cfg.AtimeWriteBatchSize,
 		AtimeBufferSize:             cfg.AtimeBufferSize,
 		MinEvictionAge:              cfg.MinEvictionAge,
 	}

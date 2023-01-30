@@ -60,7 +60,6 @@ func TestSetOptionDefaults(t *testing.T) {
 	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
 	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
 	require.Equal(t, &pebble_cache.DefaultAtimeUpdateThreshold, opts.AtimeUpdateThreshold)
-	require.Equal(t, pebble_cache.DefaultAtimeWriteBatchSize, opts.AtimeWriteBatchSize)
 	require.Equal(t, &pebble_cache.DefaultAtimeBufferSize, opts.AtimeBufferSize)
 	require.Equal(t, &pebble_cache.DefaultMinEvictionAge, opts.MinEvictionAge)
 
@@ -72,7 +71,6 @@ func TestSetOptionDefaults(t *testing.T) {
 		MaxSizeBytes:           1,
 		BlockCacheSizeBytes:    2,
 		MaxInlineFileSizeBytes: 3,
-		AtimeWriteBatchSize:    4,
 		AtimeUpdateThreshold:   &atimeUpdateThreshold,
 		AtimeBufferSize:        &atimeBufferSize,
 		MinEvictionAge:         &minEvictionAge,
@@ -82,7 +80,6 @@ func TestSetOptionDefaults(t *testing.T) {
 	require.Equal(t, int64(2), opts.BlockCacheSizeBytes)
 	require.Equal(t, int64(3), opts.MaxInlineFileSizeBytes)
 	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
-	require.Equal(t, 4, opts.AtimeWriteBatchSize)
 	require.Equal(t, &atimeBufferSize, opts.AtimeBufferSize)
 	require.Equal(t, &minEvictionAge, opts.MinEvictionAge)
 
@@ -96,7 +93,6 @@ func TestSetOptionDefaults(t *testing.T) {
 	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
 	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
 	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
-	require.Equal(t, pebble_cache.DefaultAtimeWriteBatchSize, opts.AtimeWriteBatchSize)
 	require.Equal(t, &pebble_cache.DefaultAtimeBufferSize, opts.AtimeBufferSize)
 	require.Equal(t, &pebble_cache.DefaultMinEvictionAge, opts.MinEvictionAge)
 
@@ -1079,14 +1075,12 @@ func TestNoEarlyEviction(t *testing.T) {
 
 	rootDir := testfs.MakeTempDir(t)
 	atimeUpdateThreshold := time.Duration(0) // update atime on every access
-	atimeWriteBatchSize := 1                 // write atime updates synchronously
 	atimeBufferSize := 0                     // blocking channel of atime updates
 	minEvictionAge := time.Duration(0)       // no min eviction age
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
 		RootDirectory:        rootDir,
 		MaxSizeBytes:         maxSizeBytes,
 		AtimeUpdateThreshold: &atimeUpdateThreshold,
-		AtimeWriteBatchSize:  atimeWriteBatchSize,
 		AtimeBufferSize:      &atimeBufferSize,
 		MinEvictionAge:       &minEvictionAge,
 	})
@@ -1131,14 +1125,12 @@ func TestLRU(t *testing.T) {
 		float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 	rootDir := testfs.MakeTempDir(t)
 	atimeUpdateThreshold := time.Duration(0) // update atime on every access
-	atimeWriteBatchSize := 1                 // write atime updates synchronously
 	atimeBufferSize := 0                     // blocking channel of atime updates
 	minEvictionAge := time.Duration(0)       // no min eviction age
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
 		RootDirectory:        rootDir,
 		MaxSizeBytes:         maxSizeBytes,
 		AtimeUpdateThreshold: &atimeUpdateThreshold,
-		AtimeWriteBatchSize:  atimeWriteBatchSize,
 		AtimeBufferSize:      &atimeBufferSize,
 		MinEvictionAge:       &minEvictionAge,
 	})
@@ -1240,14 +1232,12 @@ func TestLRU_IsolateByGroupIDs(t *testing.T) {
 		float64(numDigests) * float64(digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 	rootDir := testfs.MakeTempDir(t)
 	atimeUpdateThreshold := time.Duration(0) // update atime on every access
-	atimeWriteBatchSize := 1                 // write atime updates synchronously
 	atimeBufferSize := 0                     // blocking channel of atime updates
 	minEvictionAge := time.Duration(0)       // no min eviction age
 	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
 		RootDirectory:        rootDir,
 		MaxSizeBytes:         maxSizeBytes,
 		AtimeUpdateThreshold: &atimeUpdateThreshold,
-		AtimeWriteBatchSize:  atimeWriteBatchSize,
 		AtimeBufferSize:      &atimeBufferSize,
 		MinEvictionAge:       &minEvictionAge,
 	})

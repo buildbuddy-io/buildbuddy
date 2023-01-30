@@ -25,6 +25,7 @@ go_library(
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
         "//proto:zip_go_proto",
+        "//server/backends/chunkstore",
         "//server/build_event_protocol/build_event_handler",
         "//server/bytestream",
         "//server/endpoint_urls/build_buddy_url",

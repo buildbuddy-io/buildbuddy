@@ -25,6 +25,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flagutil",
         "//server/util/ioutil",
+        "//server/util/lockmap",
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
