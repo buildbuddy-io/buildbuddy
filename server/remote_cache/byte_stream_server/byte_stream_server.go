@@ -105,7 +105,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return err
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
 	if r.GetDigest().GetHash() == digest.EmptySha256 {
 		ht.TrackEmptyHit()
 		return nil
@@ -380,14 +380,16 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 
+			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {
-				return s.handleAlreadyExists(ctx, stream, req)
+				return s.handleAlreadyExists(ctx, ht, stream, req)
 			}
 
 			streamState, err = s.initStreamState(ctx, req)
 			if status.IsAlreadyExistsError(err) {
-				return s.handleAlreadyExists(ctx, stream, req)
+				return s.handleAlreadyExists(ctx, ht, stream, req)
 			}
 			if err != nil {
 				return err
@@ -397,7 +399,6 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 					log.Error(err.Error())
 				}
 			}()
-			ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 			uploadTracker := ht.TrackUpload(streamState.resourceName.GetDigest())
 			defer func() {
 				uploadTracker.CloseWithBytesTransferred(streamState.offset, int64(bytesUploadedFromClient), streamState.resourceName.GetCompressor(), "byte_stream_server")
@@ -457,14 +458,13 @@ func (s *ByteStreamServer) QueryWriteStatus(ctx context.Context, req *bspb.Query
 	}, nil
 }
 
-func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
+func (s *ByteStreamServer) handleAlreadyExists(ctx context.Context, ht *hit_tracker.HitTracker, stream bspb.ByteStream_WriteServer, firstRequest *bspb.WriteRequest) error {
 	r, err := digest.ParseUploadResourceName(firstRequest.ResourceName)
 	if err != nil {
 		return err
 	}
 	clientUploadedBytes := int64(len(firstRequest.Data))
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
 	uploadTracker := ht.TrackUpload(r.GetDigest())
 	defer func() {
 		uploadTracker.CloseWithBytesTransferred(0, clientUploadedBytes, r.GetCompressor(), "byte_stream_server")
