@@ -1,0 +1,27 @@
+.banner {
+  border-radius: 8px;
+  padding: 16px;
+
+  display: flex;
+  align-items: start;
+}
+
+.banner.banner-info {
+  background: #e3f2fd;
+}
+
+.banner.banner-success {
+  background: #c8e6c9;
+}
+
+.banner.banner-warning {
+  background: #fffde7;
+}
+
+.banner.banner-error {
+  background: #ffcdd2;
+}
+
+.banner > :not(:last-child) {
+  margin-right: 8px;
+}

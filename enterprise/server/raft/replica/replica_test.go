@@ -106,10 +106,10 @@ func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica,
 }
 
 func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) interfaces.CommittedWriteCloser {
-	fs := filestore.New(filestore.Opts{
-		PrioritizeHashInMetadataKey: true,
-	})
-	fileMetadataKey, err := fs.FileMetadataKey(fileRecord)
+	fs := filestore.New(filestore.Opts{})
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version2)
 	require.NoError(t, err)
 
 	writeCloserMetadata := fs.InlineWriter(context.TODO(), fileRecord.GetDigest().GetSizeBytes())
@@ -148,8 +148,8 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 
 func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) {
 	writeLocalRangeDescriptor(t, em, r, &rfpb.RangeDescriptor{
-		Left:       []byte("A"),
-		Right:      []byte("z"),
+		Left:       keys.Key{constants.UnsplittableMaxByte},
+		Right:      keys.MaxByte,
 		RangeId:    1,
 		Generation: 1,
 	})
@@ -303,45 +303,56 @@ func TestReplicaCAS(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl)
 
-	key := constants.LocalRangeKey
+	// Do a write.
+	rt := newWriteTester(t, em, repl)
+	header := &rfpb.Header{RangeId: 1, Generation: 1}
+	fr := rt.writeRandom(header, defaultPartition, 100)
 
-	// Do a DirectWrite.
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   key,
-			Value: []byte("key-value"),
-		},
-	}))
-	writeRsp, err := repl.Update([]dbsm.Entry{entry})
+	fs := filestore.New(filestore.Opts{})
+	key, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
-	require.Equal(t, 1, len(writeRsp))
+
+	fileMetadataKey, err := key.Bytes(filestore.Version2)
+	require.NoError(t, err)
+
+	// Do a DirectRead and verify the value was written.
+	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+		Key: fileMetadataKey,
+	}).ToBuf()
+	readRsp, err := repl.Lookup(buf)
+	require.NoError(t, err)
+	readBatch := rbuilder.NewBatchResponse(readRsp)
+	directRead, err := readBatch.DirectReadResponse(0)
+	require.NoError(t, err)
+
+	mdBuf := directRead.GetKv().GetValue()
 
 	// Do a CAS and verify:
 	//   1) the value is not set
 	//   2) the current value is returned.
-	entry = em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   key,
-			Value: []byte("new-key-value"),
+			Key:   fileMetadataKey,
+			Value: []byte{},
 		},
 		ExpectedValue: []byte("bogus-expected-value"),
 	}))
-	writeRsp, err = repl.Update([]dbsm.Entry{entry})
+	writeRsp, err := repl.Update([]dbsm.Entry{entry})
 	require.NoError(t, err)
 
-	readBatch := rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
+	readBatch = rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
 	casRsp, err := readBatch.CASResponse(0)
 	require.True(t, status.IsFailedPreconditionError(err))
-	require.Equal(t, []byte("key-value"), casRsp.GetKv().GetValue())
+	require.Equal(t, mdBuf, casRsp.GetKv().GetValue())
 
 	// Do a CAS with the correct expected value and ensure
 	// the value was written.
 	entry = em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
-			Key:   key,
-			Value: []byte("new-key-value"),
+			Key:   fileMetadataKey,
+			Value: []byte{},
 		},
-		ExpectedValue: []byte("key-value"),
+		ExpectedValue: mdBuf,
 	}))
 	writeRsp, err = repl.Update([]dbsm.Entry{entry})
 	require.NoError(t, err)
@@ -349,7 +360,7 @@ func TestReplicaCAS(t *testing.T) {
 	readBatch = rbuilder.NewBatchResponse(writeRsp[0].Result.Data)
 	casRsp, err = readBatch.CASResponse(0)
 	require.NoError(t, err)
-	require.Equal(t, []byte("new-key-value"), casRsp.GetKv().GetValue())
+	require.Nil(t, casRsp.GetKv().GetValue())
 
 	err = repl.Close()
 	require.NoError(t, err)
@@ -367,8 +378,8 @@ func TestReplicaScan(t *testing.T) {
 	require.Equal(t, uint64(0), lastAppliedIndex)
 	em := newEntryMaker(t)
 	writeLocalRangeDescriptor(t, em, repl, &rfpb.RangeDescriptor{
-		Left:       keys.MinByte,
-		Right:      []byte("z"),
+		Left:       keys.Key{constants.UnsplittableMaxByte},
+		Right:      keys.MaxByte,
 		RangeId:    1,
 		Generation: 1,
 	})
@@ -377,19 +388,19 @@ func TestReplicaScan(t *testing.T) {
 	batch := rbuilder.NewBatchBuilder()
 	batch = batch.Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey([]byte("b")),
+			Key:   []byte("b"),
 			Value: []byte("range-1"),
 		},
 	})
 	batch = batch.Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey([]byte("c")),
+			Key:   []byte("c"),
 			Value: []byte("range-2"),
 		},
 	})
 	batch = batch.Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey([]byte("d")),
+			Key:   []byte("d"),
 			Value: []byte("range-3"),
 		},
 	})
@@ -401,8 +412,8 @@ func TestReplicaScan(t *testing.T) {
 	// Ensure that scan reads just the ranges we want.
 	// Scan b-c.
 	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     keys.RangeMetaKey([]byte("b")),
-		Right:    keys.RangeMetaKey([]byte("c")),
+		Left:     []byte("b"),
+		Right:    []byte("c"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	readRsp, err := repl.Lookup(buf)
@@ -415,8 +426,8 @@ func TestReplicaScan(t *testing.T) {
 
 	// Scan c-d.
 	buf, err = rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     keys.RangeMetaKey([]byte("c")),
-		Right:    keys.RangeMetaKey([]byte("d")),
+		Left:     []byte("c"),
+		Right:    []byte("d"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	readRsp, err = repl.Lookup(buf)
@@ -429,8 +440,8 @@ func TestReplicaScan(t *testing.T) {
 
 	// Scan d-*.
 	buf, err = rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     keys.RangeMetaKey([]byte("d")),
-		Right:    keys.RangeMetaKey([]byte("z")),
+		Left:     []byte("d"),
+		Right:    []byte("z"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	readRsp, err = repl.Lookup(buf)
@@ -443,8 +454,8 @@ func TestReplicaScan(t *testing.T) {
 
 	// Scan the full range.
 	buf, err = rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
-		Left:     keys.RangeMetaKey([]byte("a")),
-		Right:    keys.RangeMetaKey([]byte("z")),
+		Left:     []byte("a"),
+		Right:    []byte("z"),
 		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
 	}).ToBuf()
 	readRsp, err = repl.Lookup(buf)

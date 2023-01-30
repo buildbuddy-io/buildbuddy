@@ -9,7 +9,6 @@ import DigestComponent, { parseDigest } from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import TerminalComponent from "../terminal/terminal";
 import UserPreferences from "../preferences/preferences";
-import router from "../router/router";
 
 interface Props {
   model: InvocationModel;
@@ -489,6 +488,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                     {format.bytes(this.state.actionResult.executionMetadata.usageStats.peakMemoryBytes)}
                                   </div>
                                   <div>MilliCPU: {computeMilliCpu(this.state.actionResult)}</div>
+                                  {this.state.actionResult.executionMetadata.usageStats.peakFileSystemUsage?.map(
+                                    (fs) => (
+                                      <div>
+                                        Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of{" "}
+                                        {format.bytes(fs.totalBytes)}
+                                      </div>
+                                    )
+                                  )}
                                 </div>
                               </>
                             )}

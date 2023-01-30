@@ -57,6 +57,9 @@ message Group {
 
   // Controls who can see invocation suggestions.
   SuggestionPreference suggestion_preference = 10;
+
+  // Controls whether user-owned API keys are enabled.
+  bool user_owned_keys_enabled = 11;
 }
 
 message JoinGroupRequest {
@@ -190,6 +193,9 @@ message CreateGroupRequest {
   // Whether builds for this group will use custom executors provided by the
   // group.
   bool use_group_owned_executors = 6;
+
+  // Whether to enable user-owned API keys.
+  bool user_owned_keys_enabled = 7;
 }
 
 message CreateGroupResponse {
@@ -233,6 +239,9 @@ message UpdateGroupRequest {
 
   // Controls who can see invocation suggestions.
   SuggestionPreference suggestion_preference = 8;
+
+  // Whether to enable user-owned keys.
+  bool user_owned_keys_enabled = 9;
 }
 
 message UpdateGroupResponse {

@@ -27,7 +27,7 @@ export interface TerminalProps {
   title?: JSX.Element;
 
   lightTheme?: boolean;
-  fullLogsFetcher?: () => Promise<string>;
+  fullLogsFetcher?: () => void;
 }
 
 interface State {
@@ -296,25 +296,15 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     this.updateLineLengthLimit();
   }
   private onDownloadClick() {
-    const serveLog = (log: string) => {
-      const element = document.createElement("a");
-      const plaintext = toPlainText(log);
-      element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(plaintext));
-      element.setAttribute("download", "build_logs.txt");
-      element.click();
-    };
     if (this.props.fullLogsFetcher) {
-      this.setState({ isLoadingFullLog: true });
-      this.props
-        .fullLogsFetcher()
-        .then(serveLog)
-        .catch((e) => errorService.handleError(e))
-        .finally(() => {
-          this.setState({ isLoadingFullLog: false });
-        });
+      this.props.fullLogsFetcher();
       return;
     }
-    serveLog(this.props.value);
+    const element = document.createElement("a");
+    const plaintext = toPlainText(this.props.value);
+    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(plaintext));
+    element.setAttribute("download", "build_logs.txt");
+    element.click();
   }
 
   render() {

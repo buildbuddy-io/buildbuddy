@@ -636,13 +636,6 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 	envVars := []*repb.Command_EnvironmentVariable{}
-	if isTrusted {
-		envVars = append(envVars, []*repb.Command_EnvironmentVariable{
-			{Name: "BUILDBUDDY_API_KEY", Value: ak.Value},
-			{Name: "REPO_USER", Value: wf.Username},
-			{Name: "REPO_TOKEN", Value: wf.AccessToken},
-		}...)
-	}
 	containerImage := ""
 	isolationType := ""
 	os := strings.ToLower(workflowAction.OS)
@@ -672,6 +665,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	includeSecretsPropertyValue := "false"
 	if isTrusted && ws.env.GetSecretService() != nil {
 		includeSecretsPropertyValue = "true"
+	}
+	estimatedDisk := workflowAction.ResourceRequests.GetEstimatedDisk()
+	if estimatedDisk == "" {
+		estimatedDisk = fmt.Sprintf("%d", 20_000_000_000) // 20 GB
 	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
@@ -715,7 +712,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: "workflow-id", Value: wf.WorkflowID},
 				{Name: platform.IncludeSecretsPropertyName, Value: includeSecretsPropertyValue},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: fmt.Sprintf("%d", computeUnits)},
-				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
+				{Name: platform.EstimatedFreeDiskPropertyName, Value: estimatedDisk},
 				{Name: platform.EstimatedMemoryPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedMemory()},
 				{Name: platform.EstimatedCPUPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedCPU()},
 			},
@@ -944,6 +941,14 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
+	if isTrusted {
+		headerEnv := []*repb.Command_EnvironmentVariable{
+			{Name: "BUILDBUDDY_API_KEY", Value: key.Value},
+			{Name: "REPO_USER", Value: wf.Username},
+			{Name: "REPO_TOKEN", Value: wf.AccessToken},
+		}
+		execCtx = withEnvOverrides(execCtx, headerEnv)
+	}
 	execCtx, cancelRPC := context.WithCancel(execCtx)
 	// Note that we use this to cancel the operation update stream from the Execute RPC, not the execution itself.
 	defer cancelRPC()
@@ -1006,4 +1011,13 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte("OK"))
+}
+
+func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {
+	assignments := make([]string, 0, len(env))
+	for _, e := range env {
+		assignments = append(assignments, e.Name+"="+e.Value)
+	}
+	return platform.WithRemoteHeaderOverride(
+		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
 }

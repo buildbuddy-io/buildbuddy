@@ -277,9 +277,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 		Digest: d,
 	}
 
-	fs := filestore.New(filestore.Opts{
-		PrioritizeHashInMetadataKey: true,
-	})
+	fs := filestore.New(filestore.Opts{})
 	fileMetadataKey := metadataKey(t, fr)
 
 	_, err := ts.APIClient.Get(ctx, ts.GRPCAddress)
@@ -316,12 +314,12 @@ func writeRecord(ctx context.Context, t *testing.T, ts *TestingStore, groupID st
 }
 
 func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
-	fs := filestore.New(filestore.Opts{
-		PrioritizeHashInMetadataKey: true,
-	})
-	fk, err := fs.FileMetadataKey(fr)
+	fs := filestore.New(filestore.Opts{})
+	pebbleKey, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
-	return fk
+	keyBytes, err := pebbleKey.Bytes(filestore.Version2)
+	require.NoError(t, err)
+	return keyBytes
 }
 
 func readRecord(ctx context.Context, t *testing.T, ts *TestingStore, fr *rfpb.FileRecord) {

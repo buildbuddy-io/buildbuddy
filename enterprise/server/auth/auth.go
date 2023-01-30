@@ -825,7 +825,7 @@ func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pa
 	return groupClaims(akg), nil
 }
 
-func ClaimsFromSubID(env environment.Env, ctx context.Context, a interfaces.Authenticator, subID string) (*Claims, error) {
+func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {
 	authDB := env.GetAuthDB()
 	if authDB == nil {
 		return nil, status.FailedPreconditionError("AuthDB not configured")
@@ -894,11 +894,16 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if certHeaders := md.Get(SSLCertHeader); len(certHeaders) > 0 {
-			apiKeyID, err := a.env.GetSSLService().ValidateCert(certHeaders[0])
+			commonName, serialNumber, err := a.env.GetSSLService().ValidateCert(certHeaders[0])
 			if err != nil {
 				return nil, err
 			}
-			return a.claimsFromAPIKeyID(ctx, apiKeyID)
+			if commonName == "BuildBuddy ID" {
+				return a.claimsFromAPIKeyID(ctx, serialNumber)
+			}
+			if commonName == "BuildBuddy API Key" {
+				return a.claimsFromAPIKey(ctx, serialNumber)
+			}
 		}
 
 		keys := md.Get(APIKeyHeader)
@@ -1005,7 +1010,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	// If it succeeds, we're done! Otherwise we fall through to refreshing
 	// the token below.
 	if ut, err := auth.verifyTokenAndExtractUser(ctx, jwt, true /*=checkExpiry*/); err == nil {
-		claims, err := ClaimsFromSubID(a.env, ctx, a, ut.GetSubID())
+		claims, err := ClaimsFromSubID(ctx, a.env, ut.GetSubID())
 		return claims, ut, err
 	}
 
@@ -1048,7 +1053,7 @@ func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Re
 	}
 
 	setLoginCookie(a.env, w, jwt, issuer, sessionID, newToken.Expiry.Unix())
-	claims, err := ClaimsFromSubID(a.env, ctx, a, ut.GetSubID())
+	claims, err := ClaimsFromSubID(ctx, a.env, ut.GetSubID())
 	return claims, ut, err
 }
 

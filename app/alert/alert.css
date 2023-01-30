@@ -6,23 +6,6 @@
   margin-top: 32px;
 
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 3px 5px rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
-  padding: 16px;
-
-  display: flex;
-  align-items: start;
-}
-
-.alert-banner.alert-type-error {
-  background: #ffcdd2;
-}
-
-.alert-banner.alert-type-success {
-  background: #c8e6c9;
-}
-
-.alert-banner.alert-type-warning {
-  background: #fffde7;
 }
 
 .alert-banner.hidden {

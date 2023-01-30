@@ -185,6 +185,11 @@ export class AuthService {
     }
     const selectedGroup = this.user.groups.find((group) => group.id === groupId);
     if (!selectedGroup) {
+      // If the group ID isn't found in the selected groups list, we probably
+      // just created the group. Set the new group ID in the request context so
+      // that the server recognizes it as the selected group when we call
+      // GetUser.
+      rpcService.requestContext.groupId = groupId;
       await this.refreshUser();
     } else {
       this.emitUser(Object.assign(new User(), this.user, { selectedGroup }));

@@ -233,17 +233,8 @@ func GetCopy(b pebble.Reader, key []byte) ([]byte, error) {
 	return val, nil
 }
 
-// IterHasKey returns a bool indicating if the provided iterator has the
-// exact key specified.
-func IterHasKey(iter *pebble.Iterator, key []byte) bool {
-	if iter.SeekGE(key) && bytes.Compare(iter.Key(), key) == 0 {
-		return true
-	}
-	return false
-}
-
 func LookupProto(iter *pebble.Iterator, key []byte, pb proto.Message) error {
-	if !IterHasKey(iter, key) {
+	if !iter.SeekGE(key) || bytes.Compare(iter.Key(), key) != 0 {
 		return status.NotFoundErrorf("key %q not found", key)
 	}
 	if err := proto.Unmarshal(iter.Value(), pb); err != nil {

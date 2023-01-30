@@ -1,4 +1,4 @@
-package clickhouse
+package schema
 
 import (
 	"encoding/hex"

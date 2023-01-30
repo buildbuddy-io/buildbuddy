@@ -600,12 +600,10 @@ func New(rootDir string, nodeHost *dragonboat.NodeHost, gossipManager *gossip.Go
 		replicas: sync.Map{},
 
 		metaRangeData: "",
-		fileStorer: filestore.New(filestore.Opts{
-			PrioritizeHashInMetadataKey: true,
-		}),
-		splitMu:    sync.Mutex{},
-		splitQueue: make(chan *rfpb.RangeDescriptor, splitQueueSize),
-		eg:         &errgroup.Group{},
+		fileStorer:    filestore.New(filestore.Opts{}),
+		splitMu:       sync.Mutex{},
+		splitQueue:    make(chan *rfpb.RangeDescriptor, splitQueueSize),
+		eg:            &errgroup.Group{},
 	}
 	s.leaderUpdatedCB = listener.LeaderCB(s.onLeaderUpdated)
 	usages, err := newUsageTracker(s, gossipManager, partitions)
@@ -971,7 +969,11 @@ func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n 
 
 	var rs []*approxlru.Sample[*ReplicaSample]
 	for _, samp := range samples {
-		key, err := s.fileStorer.FileMetadataKey(samp.GetFileRecord())
+		pebbleKey, err := s.fileStorer.PebbleKey(samp.GetFileRecord())
+		if err != nil {
+			return nil, err
+		}
+		fileMetadataKey, err := pebbleKey.Bytes(filestore.Version2)
 		if err != nil {
 			return nil, err
 		}
@@ -981,7 +983,7 @@ func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n 
 				RangeId:    rd.GetRangeId(),
 				Generation: rd.GetGeneration(),
 			},
-			key:        string(key),
+			key:        string(fileMetadataKey),
 			fileRecord: samp.GetFileRecord(),
 		}
 		rs = append(rs, &approxlru.Sample[*ReplicaSample]{
@@ -1338,7 +1340,11 @@ func (s *Store) Write(stream rfspb.Api_WriteServer) error {
 				LastModifyUsec:  now.UnixMicro(),
 				LastAccessUsec:  now.UnixMicro(),
 			}
-			fileMetadataKey, err := s.fileStorer.FileMetadataKey(req.GetFileRecord())
+			pebbleKey, err := s.fileStorer.PebbleKey(req.GetFileRecord())
+			if err != nil {
+				return err
+			}
+			fileMetadataKey, err := pebbleKey.Bytes(filestore.Version2)
 			if err != nil {
 				return err
 			}
@@ -2228,10 +2234,7 @@ func (s *Store) updateMetarange(ctx context.Context, oldLeft, left, right *rfpb.
 		return err
 	}
 	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
-	if _, err := batchRsp.CASResponse(0); err != nil {
-		return err // shouldn't happen.
-	}
-	return nil
+	return batchRsp.AnyError()
 }
 
 func (s *Store) updateRangeDescriptor(ctx context.Context, clusterID uint64, old, new *rfpb.RangeDescriptor) error {
