@@ -155,7 +155,7 @@ _go_image_repos()
 
 http_archive(
     name = "rules_foreign_cc",
-    sha256 = "e14a159c452a68a97a7c59fa458033cc91edb8224516295b047a95555140af5f",
+    sha256 = "2c65080689198deca8757930f5cfb7999ba4f4bb62ce5f568b3288e199bf8dcc",
     strip_prefix = "rules_foreign_cc-0.4.0",
     url = "https://github.com/bazelbuild/rules_foreign_cc/archive/0.4.0.tar.gz",
 )
