@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//server/tables",
         "//server/util/log",
-        "//server/util/status",
         "@io_gorm_gorm//:gorm",
     ],
 )
