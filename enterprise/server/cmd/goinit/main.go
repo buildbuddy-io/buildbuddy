@@ -323,6 +323,13 @@ func main() {
 	}
 	die(os.WriteFile("/etc/hosts", []byte(strings.Join(hosts, "\n")), 0755))
 	die(os.WriteFile("/etc/resolv.conf", []byte("nameserver 8.8.8.8"), 0755))
+	if _, err := os.Stat("/etc/mtab"); err != nil {
+		if os.IsNotExist(err) {
+			die(syscall.Symlink("/proc/mounts", "/etc/mtab"))
+		} else {
+			die(err)
+		}
+	}
 
 	if *setDefaultRoute {
 		die(configureDefaultRoute("eth0", "192.168.241.1"))
