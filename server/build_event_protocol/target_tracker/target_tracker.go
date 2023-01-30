@@ -287,19 +287,16 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 		if !isTest(target) {
 			continue
 		}
-		startTimeUsec := int64(0)
+		testStartTimeUsec := int64(0)
 		if !target.firstStartTime.IsZero() {
-			startTimeUsec = target.firstStartTime.UnixMicro()
+			testStartTimeUsec = target.firstStartTime.UnixMicro()
 		}
 		entries = append(entries, &schema.TestTargetStatus{
-			GroupID:   permissions.GroupID,
-			RepoURL:   t.buildEventAccumulator.RepoURL(),
-			CommitSHA: t.buildEventAccumulator.CommitSHA(),
-			Label:     target.label,
-			// invocation start time. "created_at_usec" is written when we write
-			// invocation to primary DB. Here we use the build start time to
-			// to avoid reading from mysql.
-			CreatedAtUsec: t.buildEventAccumulator.StartTime().UnixMicro(),
+			GroupID:                 permissions.GroupID,
+			RepoURL:                 t.buildEventAccumulator.RepoURL(),
+			CommitSHA:               t.buildEventAccumulator.CommitSHA(),
+			Label:                   target.label,
+			InvocationStartTimeUsec: t.buildEventAccumulator.StartTime().UnixMicro(),
 
 			RuleType:       target.ruleType,
 			UserID:         permissions.UserID,
@@ -307,7 +304,7 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
 			Status:         int32(target.overallStatus),
-			StartTimeUsec:  startTimeUsec,
+			StartTimeUsec:  testStartTimeUsec,
 			DurationUsec:   target.totalDuration.Microseconds(),
 			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
 			Role:           t.buildEventAccumulator.Role(),
