@@ -227,26 +227,32 @@ func (e *Execution) AdditionalFields() []string {
 	}
 }
 
-// TestTargetStatus represents the status of a target, the target info and invocation details
+// TestTargetStatus represents the status of a target, the target info and
+// invocation details
 type TestTargetStatus struct {
 	// Sort Keys; and the order of the following fields match TableOptions().
-	GroupID       string
-	RepoURL       string
-	CommitSHA     string
-	Label         string
-	CreatedAtUsec int64
-
-	RuleType       string
-	UserID         string
+	GroupID        string
+	RepoURL        string
+	CommitSHA      string
+	Label          string
 	InvocationUUID string
-	TargetType     int32
-	TestSize       int32
-	Status         int32
-	StartTimeUsec  int64
-	DurationUsec   int64
-	BranchName     string
-	Role           string
-	Command        string
+
+	RuleType      string
+	UserID        string
+	TargetType    int32
+	TestSize      int32
+	Status        int32
+	StartTimeUsec int64
+	DurationUsec  int64
+
+	// The following fields are from Invocation.
+	BranchName string
+	Role       string
+	Command    string
+	// The start time of the invocation. Note: for backfilled records, this field
+	// uses Invocation.CreatedAtUsec because StartTimeUsec is not saved for the
+	// invocation.
+	InvocationStartTimeUsec int64
 }
 
 func (t *TestTargetStatus) ExcludedFields() []string {
@@ -262,7 +268,7 @@ func (t *TestTargetStatus) TableName() string {
 }
 
 func (t *TestTargetStatus) TableOptions() string {
-	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, created_at_usec)", getEngine())
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine())
 }
 
 // hasProjection checks whether a projection exist in the clickhouse
@@ -354,7 +360,7 @@ func RunMigrations(gdb *gorm.DB) error {
 	}
 	// Add Projection/
 	projectionQuery := `select group_id, repo_url, commit_sha,
-	   max(created_at_usec) as latest_created_at_usec
+	   max(invocation_start_time_usec) as latest_created_at_usec
 	   group by group_id, repo_url, commit_sha`
 	addProjectionIfNotExist(gdb, &TestTargetStatus{}, "projection_commits", projectionQuery)
 	return nil
