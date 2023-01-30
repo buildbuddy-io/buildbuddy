@@ -469,6 +469,10 @@ func (p *PebbleCache) currentDatabaseVersion() (filestore.PebbleKeyVersion, erro
 	return p.lastDBVersion, nil
 }
 
+func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
+	return filestore.PebbleKeyVersion(*activeKeyVersion)
+}
+
 // updateDatabaseVersion updates the database version to newVersion.
 func (p *PebbleCache) updateDatabaseVersion(newVersion filestore.PebbleKeyVersion) error {
 	versionKey := p.databaseVersionKey()
@@ -843,6 +847,9 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 		totalSizeBytes += sizeBytes
 		totalCASCount += casCount
 		totalACCount += acCount
+	}
+	if currentVersion, err := p.currentDatabaseVersion(); err == nil {
+		buf += fmt.Sprintf("Stored data version: %d, new writes version: %d\n", currentVersion, p.activeDatabaseVersion())
 	}
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
