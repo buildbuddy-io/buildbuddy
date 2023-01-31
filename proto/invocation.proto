@@ -609,7 +609,7 @@ message GetStatDrilldownResponse {
   context.ResponseContext response_context = 1;
   // Each chart shows a drilldown based on a different aggregation type.
   repeated DrilldownChart chart = 2;
-  // Total fields can be used to render percentages, if that's desirable.
+  // Total fields that can be used to render percentages, if that's desirable.
   int64 total_in_base = 3;
   int64 total_in_selection = 4;
 }
