@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -89,8 +90,8 @@ const (
 	contextTokenExpiryKey = "auth.tokenExpiry"
 
 	contextAPIKeyKey = "api.key"
-	APIKeyHeader     = "x-buildbuddy-api-key"
 	SSLCertHeader    = "x-ssl-cert"
+	APIKeyHeader     = authutil.APIKeyHeader
 
 	// The name of params read on /login to understand which
 	// issuer to use and where to redirect the client after
@@ -125,10 +126,6 @@ const (
 	userNotFoundMsg   = "User not found"
 	loggedOutMsg      = "User logged out"
 	ExpiredSessionMsg = "User session expired"
-)
-
-var (
-	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
 )
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
@@ -757,23 +754,6 @@ func authContextFromClaims(ctx context.Context, claims *Claims, err error) conte
 	// Specifically, we do this when we see the API key in the "BuildStarted" event.
 	ctx = context.WithValue(ctx, contextUserErrorKey, nil)
 	return ctx
-}
-
-func (a *OpenIDAuthenticator) ParseAPIKeyFromString(input string) (string, error) {
-	matches := apiKeyRegex.FindAllStringSubmatch(input, -1)
-	l := len(matches)
-	if l == 0 {
-		// The api key header is not present
-		return "", nil
-	}
-	lastMatch := matches[l-1]
-	if len(lastMatch) != 2 {
-		return "", status.UnauthenticatedError("failed to parse API key: invalid input")
-	}
-	if apiKey := lastMatch[1]; apiKey != "" {
-		return apiKey, nil
-	}
-	return "", status.UnauthenticatedError("failed to parse API key: missing API Key")
 }
 
 func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {

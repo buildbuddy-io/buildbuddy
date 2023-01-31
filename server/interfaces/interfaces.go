@@ -151,9 +151,6 @@ type Authenticator interface {
 	// See AuthenticatedHTTPContext/AuthenticatedGRPCContext for a description of how the context is created.
 	AuthenticatedUser(ctx context.Context) (UserInfo, error)
 
-	// Parses and returns a BuildBuddy API key from the given string.
-	ParseAPIKeyFromString(string) (string, error)
-
 	// Returns a context containing the given API key.
 	AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context
 
