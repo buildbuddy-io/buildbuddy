@@ -542,7 +542,7 @@ message GetTrendResponse {
   bool has_invocation_stat_percentiles = 4;
 }
 
-enum Metric {
+enum MetricType {
   UNKNOWN_METRIC = 0;
   DURATION_USEC_METRIC = 1;
   CAS_CACHE_MISSES_METRIC = 2;
@@ -550,7 +550,7 @@ enum Metric {
 }
 
 message StatFilter {
-  Metric metric = 1;
+  MetricType metric = 1;
   int64 min = 2;
   int64 max = 3;
 }
@@ -566,7 +566,7 @@ message GetStatHeatmapRequest {
 }
 
 message HeatmapColumn {
-  string timestamp = 1;
+  int64 timestamp_usec = 1;
   repeated int64 value = 2;
 }
 
@@ -574,7 +574,7 @@ message GetStatHeatmapResponse {
   context.ResponseContext response_context = 1;
   // This array is one entry longer than the number of timestamp buckets, with
   // the actual buckets being defined by 2 sequential entries in the list.
-  repeated string timestamp_bracket = 2;
+  repeated int64 timestamp_bracket = 2;
   // This array is one entry longer than the number of buckets, with the actual
   // buckets being defined by 2 sequential entries in the list.
   repeated int64 bucket_bracket = 3;
