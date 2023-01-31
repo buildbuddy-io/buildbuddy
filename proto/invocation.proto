@@ -238,7 +238,7 @@ message InvocationQuery {
   // The maximum invocation duration.
   google.protobuf.Duration maximum_duration = 13;
 
-  // Generic filters.
+  // Stat filters (duration_usec, cas_cache_misses, etc.)
   repeated StatFilter filter = 14;
 }
 
