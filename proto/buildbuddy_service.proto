@@ -41,6 +41,12 @@ service BuildBuddyService {
   rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
       returns (invocation.GetInvocationOwnerResponse);
 
+  // Fancy build stat breakdowns.
+  rpc GetStatHeatmap(invocation.GetStatHeatmapRequest)
+      returns (invocation.GetStatHeatmapResponse);
+  rpc GetStatDrilldown(invocation.GetStatDrilldownRequest)
+      returns (invocation.GetStatDrilldownResponse);
+
   // Zip manifest API
   rpc GetZipManifest(zip.GetZipManifestRequest)
       returns (zip.GetZipManifestResponse);

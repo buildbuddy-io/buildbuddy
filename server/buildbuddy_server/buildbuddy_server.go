@@ -752,6 +752,14 @@ func (s *BuildBuddyServer) GetTrend(ctx context.Context, req *inpb.GetTrendReque
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) GetStatHeatmap(ctx context.Context, req *inpb.GetStatHeatmapRequest) (*inpb.GetStatHeatmapResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetStatDrilldown(ctx context.Context, req *inpb.GetStatDrilldownRequest) (*inpb.GetStatDrilldownResponse, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetInvocationOwner(ctx context.Context, req *inpb.GetInvocationOwnerRequest) (*inpb.GetInvocationOwnerResponse, error) {
 	gid, err := s.env.GetInvocationDB().LookupGroupIDFromInvocation(ctx, req.GetInvocationId())
 	if err != nil {
