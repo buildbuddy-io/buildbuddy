@@ -822,7 +822,7 @@ func (s *Store) maybeAcquireRangeLease(rd *rfpb.RangeDescriptor) {
 	}
 
 	rangeID := rd.GetRangeId()
-	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.sender, s.liveness, rd))
+	rlIface, _ := s.leases.LoadOrStore(rangeID, rangelease.New(s.nodeHost, clusterID, s.liveness, rd))
 	rl, ok := rlIface.(*rangelease.Lease)
 	if !ok {
 		alert.UnexpectedEvent("unexpected_leases_map_type_error")
