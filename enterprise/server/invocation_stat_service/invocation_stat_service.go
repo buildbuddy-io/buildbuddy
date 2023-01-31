@@ -105,6 +105,7 @@ func (i *InvocationStatService) getTrendBasicQuery(timezoneOffsetMinutes int32) 
 
 func flattenTrendsQuery(innerQuery string) string {
 	return `SELECT name,
+	total_num_builds,
 	total_build_time_usec,
 	completed_invocation_count,
 	user_count,
