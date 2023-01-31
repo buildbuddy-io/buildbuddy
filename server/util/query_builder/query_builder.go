@@ -15,6 +15,8 @@ const (
 	orQueryJoiner    = "OR"
 	joinSQLKeyword   = "JOIN"
 	onSQLKeyword     = "ON"
+	fromSQLKeyword   = "FROM"
+	inSQLKeyword     = "IN"
 )
 
 func pad(clause string) string {
@@ -52,6 +54,7 @@ type Query struct {
 	arguments    []interface{}
 	whereClauses []string
 	joinClauses  []joinClause
+	fromClause   *Query
 	ascending    bool
 }
 
@@ -72,12 +75,31 @@ func (q *Query) AddWhereClause(clause string, args ...interface{}) *Query {
 	return q
 }
 
+// Add a where in clause.
+// For example: "WHERE foo in (SELECT foo FROM bar)
+func (q *Query) AddWhereInClause(variable string, subQuery *Query) *Query {
+	subQueryStr, args := subQuery.Build()
+	clause := variable + " IN (" + subQueryStr + ") "
+	q.whereClauses = append(q.whereClauses, clause)
+	for _, arg := range args {
+		q.arguments = append(q.arguments, arg)
+	}
+	return q
+}
+
 func (q *Query) AddJoinClause(subQuery *Query, alias string, onClause string) *Query {
 	q.joinClauses = append(q.joinClauses, joinClause{
 		tableSubquery: subQuery,
 		alias:         alias,
 		onClause:      onClause,
 	})
+	return q
+}
+
+// Set a FROM clause.
+// For example, "select foo from (select foo, bar FROM TABLE)"
+func (q *Query) SetFromClause(subQuery *Query) *Query {
+	q.fromClause = subQuery
 	return q
 }
 
@@ -104,6 +126,12 @@ func (q *Query) SetOffset(offset int64) *Query {
 func (q *Query) Build() (string, []interface{}) {
 	// Reference: SELECT foo FROM TABLE [JOIN TABLE2 ON a = b] WHERE bar = baz ORDER BY ack ASC LIMIT 10
 	fullQuery := q.baseQuery
+	if q.fromClause != nil {
+		fromClauseStr, args := q.fromClause.Build()
+		q.arguments = append(args, q.arguments...)
+		fromClauseStr = " FROM (" + fromClauseStr + ")"
+		fullQuery += fromClauseStr
+	}
 	var argsInJoinClauses []interface{}
 	for _, j := range q.joinClauses {
 		joinClause, args := j.Build()
