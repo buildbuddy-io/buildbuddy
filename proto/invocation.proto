@@ -237,6 +237,9 @@ message InvocationQuery {
 
   // The maximum invocation duration.
   google.protobuf.Duration maximum_duration = 13;
+
+  // Generic filters.
+  repeated StatFilter filter = 14;
 }
 
 // OverallStatus is a status representing both the completion status and
@@ -385,6 +388,9 @@ message InvocationStatQuery {
 
   // The bazel command that was used. Ex: "build", "test", "run"
   string command = 11;
+
+  // Stat filters (duration_usec, cas_cache_misses, etc.)
+  repeated StatFilter filter = 12;
 }
 
 message GetInvocationStatRequest {
@@ -507,6 +513,9 @@ message TrendQuery {
 
   // The bazel command that was used. Ex: "build", "test", "run"
   string command = 11;
+
+  // Stat filters (duration_usec, cas_cache_misses, etc.)
+  repeated StatFilter filter = 12;
 }
 
 message GetTrendRequest {
@@ -531,4 +540,76 @@ message GetTrendResponse {
   repeated ExecutionStat execution_stat = 3;
 
   bool has_invocation_stat_percentiles = 4;
+}
+
+enum Metric {
+  UNKNOWN_METRIC = 0;
+  DURATION_USEC_METRIC = 1;
+  CAS_CACHE_MISSES_METRIC = 2;
+  EXECUTION_QUEUE_TIME_USEC_METRIC = 3;
+}
+
+message StatFilter {
+  Metric metric = 1;
+  int64 min = 2;
+  int64 max = 3;
+}
+
+// Fetches a heatmap for the requested metric--a heatmap is basically a set of
+// columns, where each column represents a histogram for that metric in a window
+// of time.
+message GetStatHeatmapRequest {
+  context.RequestContext request_context = 1;
+  TrendQuery query = 2;
+  Metric metric = 3;
+  int64 num_metric_buckets = 4;
+}
+
+message HeatmapColumn {
+  string timestamp = 1;
+  repeated int64 value = 2;
+}
+
+message GetStatHeatmapResponse {
+  context.ResponseContext response_context = 1;
+  // This array is one entry longer than the number of timestamp buckets, with
+  // the actual buckets being defined by 2 sequential entries in the list.
+  repeated string timestamp_bracket = 2;
+  // This array is one entry longer than the number of buckets, with the actual
+  // buckets being defined by 2 sequential entries in the list.
+  repeated int64 bucket_bracket = 3;
+  // Each entry in the heatmap response is a histogram for a given time bucket.
+  repeated HeatmapColumn column = 4;
+}
+
+// A drilldown request fetches a set of charts.  Each chart shows a comparison
+// between two data sets, as defined by the 'filter' field.  The 'selection'
+// value contains all data that matches the filters, and the 'base' set contains
+// all data that *doesn't* match the filter.  The set of charts to be returned
+// is determined automatically based on the requested filters.
+message GetStatDrilldownRequest {
+  context.RequestContext request_context = 1;
+  TrendQuery query = 2;
+  repeated StatFilter filter = 3;
+  Metric drilldown_metric = 4;
+}
+
+message DrilldownEntry {
+  string label = 1;
+  int64 base_value = 2;
+  int64 selection_value = 3;
+}
+
+message DrilldownChart {
+  AggType drilldown_dimension = 1;
+  repeated DrilldownEntry entry = 2;
+}
+
+message GetStatDrilldownResponse {
+  context.ResponseContext response_context = 1;
+  // Each chart shows a drilldown based on a different aggregation type.
+  repeated DrilldownChart chart = 2;
+  // Total fields can be used to render percentages, if that's desirable.
+  int64 total_in_base = 3;
+  int64 total_in_selection = 4;
 }
