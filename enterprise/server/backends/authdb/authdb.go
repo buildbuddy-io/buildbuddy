@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -71,11 +72,10 @@ func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		existingRow := tx.Raw(`
-			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
-			FROM `+"`Groups`"+` AS g, APIKeys AS ak
-			WHERE g.group_id = ak.group_id AND ak.value = ?`,
-			apiKey)
+		qb := newAPIKeyGroupQuery()
+		qb.AddWhereClause(`ak.value = ?`, apiKey)
+		q, args := qb.Build()
+		existingRow := tx.Raw(q, args...)
 		return existingRow.Take(akg).Error
 	})
 	if err != nil {
@@ -90,11 +90,10 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		existingRow := tx.Raw(`
-			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
-			FROM `+"`Groups`"+` AS g, APIKeys AS ak
-			WHERE g.group_id = ak.group_id AND ak.api_key_id = ?`,
-			apiKeyID)
+		qb := newAPIKeyGroupQuery()
+		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
+		q, args := qb.Build()
+		existingRow := tx.Raw(q, args...)
 		return existingRow.Take(akg).Error
 	})
 	if err != nil {
@@ -109,11 +108,11 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		existingRow := tx.Raw(`
-			SELECT ak.capabilities, g.group_id, g.use_group_owned_executors
-			FROM `+"`Groups`"+` AS g, APIKeys AS ak
-			WHERE g.group_id = ? AND g.write_token = ? AND g.group_id = ak.group_id`,
-			login, pass)
+		qb := newAPIKeyGroupQuery()
+		qb.AddWhereClause(`g.group_id = ?`, login)
+		qb.AddWhereClause(`g.write_token = ?`, pass)
+		q, args := qb.Build()
+		existingRow := tx.Raw(q, args...)
 		return existingRow.Scan(akg).Error
 	})
 	if err != nil {
@@ -177,6 +176,19 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		return nil
 	})
 	return user, err
+}
+
+func newAPIKeyGroupQuery() *query_builder.Query {
+	qb := query_builder.NewQuery(`
+		SELECT
+			ak.capabilities,
+			g.group_id,
+			g.use_group_owned_executors
+		FROM ` + "`Groups`" + ` AS g,
+		APIKeys AS ak
+	`)
+	qb.AddWhereClause(`ak.group_id = g.group_id`)
+	return qb
 }
 
 func redactInvalidAPIKey(key string) string {
