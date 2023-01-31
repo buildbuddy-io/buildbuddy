@@ -22,6 +22,10 @@ var (
 	clusterName            = flag.String("olap_database.cluster_name", "{cluster}", "The cluster name of the database")
 )
 
+const (
+	projectionCommits = "projection_commits"
+)
+
 // Making a new table? Please make sure you:
 // 1) Add your table in getAllTables()
 // 2) Add the table in clickhouse_test.go TestSchemaInSync
@@ -362,7 +366,10 @@ func RunMigrations(gdb *gorm.DB) error {
 	projectionQuery := `select group_id, repo_url, commit_sha,
 	   max(invocation_start_time_usec) as latest_created_at_usec
 	   group by group_id, repo_url, commit_sha`
-	addProjectionIfNotExist(gdb, &TestTargetStatus{}, "projection_commits", projectionQuery)
+	err := addProjectionIfNotExist(gdb, &TestTargetStatus{}, projectionCommits, projectionQuery)
+	if err != nil {
+		return status.InternalErrorf("failed to add projection %q: %s", projectionCommits, err)
+	}
 	return nil
 }
 
