@@ -724,7 +724,7 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 	}
 }
 
-func groupClaims(akg interfaces.APIKeyGroup) *Claims {
+func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 	return &Claims{
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},
@@ -802,7 +802,7 @@ func (a *OpenIDAuthenticator) claimsFromAPIKey(ctx context.Context, apiKey strin
 	if err != nil {
 		return nil, err
 	}
-	return groupClaims(akg), nil
+	return APIKeyGroupClaims(akg), nil
 }
 
 func (a *OpenIDAuthenticator) claimsFromAPIKeyID(ctx context.Context, apiKeyID string) (*Claims, error) {
@@ -810,7 +810,7 @@ func (a *OpenIDAuthenticator) claimsFromAPIKeyID(ctx context.Context, apiKeyID s
 	if err != nil {
 		return nil, err
 	}
-	return groupClaims(akg), nil
+	return APIKeyGroupClaims(akg), nil
 }
 
 func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pass string) (*Claims, error) {
@@ -822,7 +822,7 @@ func (a *OpenIDAuthenticator) claimsFromBasicAuth(ctx context.Context, login, pa
 	if err != nil {
 		return nil, err
 	}
-	return groupClaims(akg), nil
+	return APIKeyGroupClaims(akg), nil
 }
 
 func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*Claims, error) {

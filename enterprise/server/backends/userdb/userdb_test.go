@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -22,36 +21,9 @@ import (
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
-	te := testenv.GetTestEnv(t)
-	te.SetAuthDB(authdb.NewAuthDB(te.GetDBHandle()))
-	udb, err := userdb.NewUserDB(te, te.GetDBHandle())
-	require.NoError(t, err)
-	ta := newTestAuthenticatorWithDB(t, te)
-	te.SetAuthenticator(ta)
-	te.SetUserDB(udb)
-	return te
-}
-
-// Returns a TestAuthenticator that authenticates similarly to the real
-// app, performing queries against the UserDB and AuthDB configured in the env,
-// rather than using a static user mapping.
-func newTestAuthenticatorWithDB(t *testing.T, env environment.Env) *testauth.TestAuthenticator {
-	a := testauth.NewTestAuthenticator(nil /*=testUsers*/)
-	a.UserProvider = func(userID string) interfaces.UserInfo {
-		// Fake the minimal auth context needed to look up the real user and
-		// group memberships.
-		ctx := testauth.WithAuthenticatedUserInfo(
-			context.Background(),
-			&testauth.TestUser{UserID: userID},
-		)
-		u, err := env.GetUserDB().GetUser(ctx)
-		require.NoError(t, err)
-		// Now return the claims for the real user.
-		tu, err := auth.ClaimsFromSubID(ctx, env, u.SubID)
-		require.NoError(t, err)
-		return tu
-	}
-	return a
+	env := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, env)
+	return env
 }
 
 func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID string) context.Context {
@@ -236,10 +208,14 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 }
 
 func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t *testing.T) {
+	env := newTestEnv(t)
 	flags.Set(t, "app.add_user_to_domain_group", false)
 	flags.Set(t, "app.create_group_per_user", false)
 	flags.Set(t, "app.no_default_user_group", false)
-	env := newTestEnv(t)
+	// Re-init to create the default group.
+	_, err := userdb.NewUserDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
 	udb := env.GetUserDB()
 	ctx := context.Background()
 

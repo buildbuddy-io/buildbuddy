@@ -19,6 +19,10 @@ type Options struct {
 	RedisTarget string
 }
 
+func New(t *testing.T) *testenv.TestEnv {
+	return GetCustomTestEnv(t, &Options{})
+}
+
 func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 	if opts.RedisTarget != "" {
@@ -37,6 +41,12 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 		cache := redis_cache.NewCache(redisClient)
 		env.SetCache(cache)
 	}
+
+	// Use Cloud userdb settings by default.
+	flags.Set(t, "app.add_user_to_domain_group", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
 	userDB, err := userdb.NewUserDB(env, env.GetDBHandle())
 	if err != nil {
 		assert.FailNow(t, "could not create user DB", err.Error())
