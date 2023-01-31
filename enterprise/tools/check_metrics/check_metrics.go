@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/common/model"
 	"golang.org/x/sync/errgroup"
@@ -20,9 +22,6 @@ import (
 const (
 	// This exit code is returned if the metrics look unhealthy and the rollout should proceed
 	metricsHealthyExitCode = 0
-
-	// This error code is returned if the metrics look unhealthy and the canary should be rolled back
-	metricsUnhealthyExitCode = 100
 )
 
 var (
@@ -48,54 +47,54 @@ func main() {
 		Address: config.PrometheusAddress,
 	})
 	if err != nil {
-		fmt.Printf("Error creating prometheus client: %v\nDid you run the prometheus port-forward command?", err)
-		os.Exit(1)
+		log.Fatalf("Error creating prometheus client: %v\nDid you run the prometheus port-forward command?", err)
 	}
 	promAPI := v1.NewAPI(prometheusClient)
 
-	eg := &errgroup.Group{}
-	monitoringTimer := time.After(time.Duration(config.MonitoringTimeframeSeconds) * time.Second)
-	scriptDurationComplete := false
-	eg.Go(func() error {
-		for {
-			select {
-			case <-monitoringTimer:
-				scriptDurationComplete = true
-				return nil
-			}
-		}
-	})
-
+	eg, gctx := errgroup.WithContext(context.Background())
 	for _, metric := range config.PrometheusMetrics {
 		metric := metric
 		eg.Go(func() error {
-			monitoringTicker := time.NewTicker(time.Duration(config.MonitoringTickerSeconds) * time.Second)
+			monitoringTimer := time.After(time.Duration(config.MonitoringTimeframeSeconds) * time.Second)
+			monitoringTicker := time.NewTicker(time.Duration(metric.PollingIntervalSeconds) * time.Second)
 			defer monitoringTicker.Stop()
 
 			for {
 				select {
+				case <-gctx.Done():
+					return nil
 				case <-monitoringTicker.C:
-					// Poll the metrics to make sure canary looks healthy
-					sustainedUnhealthy, err := canarySustainedUnhealthy(
-						promAPI, config.UnhealthyMonitoringTimeframeSeconds, metric.Name, metric.CanaryQuery, metric.BaselineQuery, metric.CanaryHealthThreshold)
-					if err != nil {
-						log.Fatalf("Error querying canary health: %s\nDid you run the prometheus port-forward command?", err)
+					r := retry.New(context.Background(), &retry.Options{
+						InitialBackoff: time.Duration(metric.PollingIntervalSeconds) * time.Second,
+						MaxRetries:     metric.MaxUnhealthyCount,
+					})
+					healthy := false
+					for r.Next() {
+						healthy, err = canaryHealthy(promAPI, metric.Name, metric.CanaryQuery, metric.BaselineQuery, metric.CanaryHealthThreshold)
+						if err != nil {
+							log.Warningf("Error querying metric %s: %s", metric.Name, err)
+						} else if healthy {
+							break
+						}
 					}
-					if sustainedUnhealthy {
-						log.Warningf("Metrics unhealthy for %s. Exiting script.", metric.Name)
-						os.Exit(metricsUnhealthyExitCode)
+
+					// If metric was consecutively unhealthy for max number of retries, we should rollback
+					if !healthy {
+						return errors.New(fmt.Sprintf("%s metrics unhealthy.", metric.Name))
 					}
 					break
-				default:
-					if scriptDurationComplete {
-						return nil
-					}
+				case <-monitoringTimer:
+					return nil
 				}
 			}
 		})
 	}
 
-	eg.Wait()
+	err = eg.Wait()
+	if err != nil {
+		log.Fatalf("Exiting metrics script: %s", err)
+	}
+
 	// If all metrics look healthy for the duration of the monitoring timeframe, continue with rollout
 	os.Exit(metricsHealthyExitCode)
 }
@@ -124,35 +123,4 @@ func canaryHealthy(v1api v1.API, metricName string, canaryQuery string, baseline
 		return false, nil
 	}
 	return true, nil
-}
-
-// Returns whether the canary is unhealthy for a sustained amount of time
-func canarySustainedUnhealthy(promAPI v1.API, unhealthyMonitoringTimeframeSec int, metricName string, canaryQuery string, baselineQuery string, canaryHealthThreshold float64) (bool, error) {
-	healthy, err := canaryHealthy(promAPI, metricName, canaryQuery, baselineQuery, canaryHealthThreshold)
-	if err != nil {
-		return false, err
-	} else if healthy {
-		return false, nil
-	}
-
-	// For the timeout period, poll to check whether the canary's app liveness prober is still unhealthy
-	timeout := time.After(time.Duration(unhealthyMonitoringTimeframeSec) * time.Second)
-	pollLivenessTicker := time.NewTicker(30 * time.Second)
-	defer pollLivenessTicker.Stop()
-
-	for {
-		select {
-		case <-pollLivenessTicker.C:
-			healthy, err = canaryHealthy(promAPI, metricName, canaryQuery, baselineQuery, canaryHealthThreshold)
-			if err != nil {
-				return false, err
-			} else if healthy {
-				return false, nil
-			}
-			break
-		case <-timeout:
-			// Canary has been unhealthy for the entirety of the unhealthy monitoring timeframe
-			return true, nil
-		}
-	}
 }
