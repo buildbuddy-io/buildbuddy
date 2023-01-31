@@ -10,9 +10,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -58,23 +61,18 @@ func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, 
 	require.NoError(t, err)
 }
 
-func getSingleAPIKey(t *testing.T, ctx context.Context, env environment.Env, groupID string) *tables.APIKey {
+func getOrgAPIKey(t *testing.T, ctx context.Context, env environment.Env, groupID string) *tables.APIKey {
 	keys, err := env.GetUserDB().GetAPIKeys(ctx, groupID)
 	require.NoError(t, err)
-	require.Len(t, keys, 1, "expected exactly one API key")
+	require.Len(t, keys, 1, "expected exactly one org-level API key")
 	return keys[0]
 }
 
-func getSelfOwnedGroup(t *testing.T, ctx context.Context, env environment.Env) *tables.GroupRole {
+func getGroup(t *testing.T, ctx context.Context, env environment.Env) *tables.GroupRole {
 	tu, err := env.GetUserDB().GetUser(ctx)
 	require.NoError(t, err, "failed to get self-owned group")
-	for _, g := range tu.Groups {
-		if g.Group.UserID == tu.UserID {
-			return g
-		}
-	}
-	require.FailNowf(t, "failed to locate self-owned group", "user: %s", tu.UserID)
-	return nil
+	require.Len(t, tu.Groups, 1, "getGroup: user must be part of exactly one group")
+	return tu.Groups[0]
 }
 
 func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.Env, userID string) {
@@ -103,6 +101,28 @@ func apiKeyValues(keys []*tables.APIKey) []string {
 		out = append(out, k.Value)
 	}
 	return out
+}
+
+func setUserOwnedKeysEnabled(t *testing.T, ctx context.Context, env environment.Env, groupID string, enabled bool) {
+	// The InsertOrUpdate API requires an URL identifier, so look it up and
+	// preserve it if it exists, otherwise initialize.
+	// TODO: We should probably remove this requirement; it is inconvenient
+	// both for testing and when users want to tweak group settings in the UI.
+	g, err := env.GetUserDB().GetGroupByID(ctx, groupID)
+	require.NoError(t, err)
+
+	url := strings.ToLower(groupID + "-slug")
+	if g.URLIdentifier != nil && *g.URLIdentifier != "" {
+		url = *g.URLIdentifier
+	}
+
+	updates := &tables.Group{
+		GroupID:              groupID,
+		UserOwnedKeysEnabled: enabled,
+		URLIdentifier:        &url,
+	}
+	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, updates)
+	require.NoError(t, err)
 }
 
 func TestInsertUser(t *testing.T) {
@@ -762,7 +782,7 @@ func TestUpdateAPIKey(t *testing.T) {
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	gr1 := getSelfOwnedGroup(t, ctx1, env)
 
-	k1 := getSingleAPIKey(t, ctx1, env, gr1.Group.GroupID)
+	k1 := getOrgAPIKey(t, ctx1, env, gr1.Group.GroupID)
 	k1.Label = "US1-Updated-Label"
 	err := udb.UpdateAPIKey(ctx1, k1)
 
@@ -791,10 +811,13 @@ func TestDeleteAPIKey(t *testing.T) {
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	gr1 := getSelfOwnedGroup(t, ctx1, env)
 
-	k1 := getSingleAPIKey(t, ctx1, env, gr1.Group.GroupID)
+	k1 := getOrgAPIKey(t, ctx1, env, gr1.Group.GroupID)
 
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
+
+	createUser(t, ctx, env, "US3", "org1.io")
+	ctx3 := authUserCtx(ctx, env, t, "US3")
 
 	err := udb.DeleteAPIKey(ctx2, k1.APIKeyID)
 
@@ -805,10 +828,326 @@ func TestDeleteAPIKey(t *testing.T) {
 
 	err = udb.DeleteAPIKey(ctx1, k1.APIKeyID)
 
-	require.NoError(t, err, "US1 should be able to delete their API key")
+	require.NoError(t, err, "US1 should be able to delete their org API key")
 
 	keys, err := env.GetUserDB().GetAPIKeys(ctx1, gr1.Group.GroupID)
 
 	require.NoError(t, err)
 	require.Empty(t, keys, "US1 group's keys should be empty after deleting")
+
+	// Have US3 join org1 (as a developer)
+	err = udb.AddUserToGroup(ctx1, "US3", gr1.Group.GroupID)
+	require.NoError(t, err)
+	// Re-authenticate with the new group role
+	ctx3 = authUserCtx(ctx, env, t, "US3")
+
+	setUserOwnedKeysEnabled(t, ctx1, env, gr1.Group.GroupID, true)
+
+	uk3, err := udb.CreateUserAPIKey(
+		ctx3, gr1.Group.GroupID, "US3's Key",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+	require.NoError(t, err, "create a US3-owned key in org1")
+
+	err = udb.DeleteAPIKey(ctx1, uk3.APIKeyID)
+	require.True(
+		t, status.IsPermissionDeniedError(err),
+		"US1 should not be able to delete US3's key. Expected permission denied, got: %s", err)
+}
+
+func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
+	for _, test := range []struct {
+		// Name of the test.
+		Name string
+		// User ID that will own the key created in the test.
+		Owner string
+		// User ID that will try to access the key created by the owner.
+		Accessor string
+	}{
+		{Name: "KeyOwner", Owner: "US1", Accessor: "US1"},
+		{Name: "SameOrgDeveloper", Owner: "US1", Accessor: "US2"},
+		{Name: "SameOrgAdmin", Owner: "US2", Accessor: "US1"},
+		{Name: "DifferentOrg", Owner: "US1", Accessor: "US3"},
+		{Name: "AnonymousUser", Owner: "US1", Accessor: ""},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			ctx := context.Background()
+			env := newTestEnv(t)
+			udb := env.GetUserDB()
+
+			// Create the following setup:
+			//
+			//     org1.io:
+			//       - US1: Admin
+			//       - US2: Developer
+			//     org2.io:
+			//       - US3: Admin
+
+			createUser(t, ctx, env, "US1", "org1.io")
+			// Have US1's group take ownership of org1.io
+			us1Ctx := authUserCtx(ctx, env, t, "US1")
+			takeOwnershipOfDomain(t, us1Ctx, env, "US1")
+			// US2 should only be added to org1.io
+			createUser(t, ctx, env, "US2", "org1.io")
+			createUser(t, ctx, env, "US3", "org2.io")
+
+			ownerCtx := authUserCtx(ctx, env, t, test.Owner)
+
+			// Enable user-owned keys for both orgs
+			gr1AdminCtx := authUserCtx(ctx, env, t, "US1")
+			gr1 := getGroup(t, gr1AdminCtx, env).Group
+			setUserOwnedKeysEnabled(t, gr1AdminCtx, env, gr1.GroupID, true)
+			gr2AdminCtx := authUserCtx(ctx, env, t, "US3")
+			gr2 := getGroup(t, gr2AdminCtx, env).Group
+			setUserOwnedKeysEnabled(t, gr2AdminCtx, env, gr2.GroupID, true)
+
+			// Create a key owned by test.Owner
+			ownerGroup := getGroup(t, ownerCtx, env).Group
+			ownerKey, err := udb.CreateUserAPIKey(
+				ownerCtx, ownerGroup.GroupID, test.Owner+"'s key",
+				[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+			)
+			require.NoError(t, err)
+
+			// Try to list keys for the owner, as the accessor.
+
+			accessorCtx := ctx
+			if test.Accessor != "" {
+				accessorCtx = authUserCtx(accessorCtx, env, t, test.Accessor)
+			}
+			keys, err := udb.GetUserAPIKeys(accessorCtx, ownerGroup.GroupID)
+			// Only the owner should be able to view or update the API key,
+			// regardless of role.
+			isAuthorized := test.Owner == test.Accessor
+			if isAuthorized {
+				require.NoError(t, err)
+				hasKey := false
+				for _, k := range keys {
+					if k.Value == ownerKey.Value {
+						hasKey = true
+						break
+					}
+				}
+				require.Truef(
+					t, hasKey,
+					"GetAPIKeys() should return key for %q when auth'd as %q",
+					test.Owner, test.Accessor)
+			} else {
+				for _, k := range keys {
+					if k.Value == ownerKey.Value {
+						require.FailNowf(
+							t, "", "GetAPIKeys() should not return key for %q when auth'd as %q",
+							test.Owner, test.Accessor)
+					}
+				}
+			}
+
+			// Now try to update the owner's key, as the accessor.
+
+			updates := *ownerKey // copy
+			updates.Label = "Updated label"
+			err = udb.UpdateAPIKey(accessorCtx, &updates)
+			if isAuthorized {
+				require.NoError(t, err)
+			} else {
+				require.Truef(
+					t, status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err),
+					"expected auth error attempting to update key for %q as %q, got: %v",
+					test.Owner, test.Accessor, err,
+				)
+			}
+
+			// Try to delete the owner's key as the accessor.
+
+			err = udb.DeleteAPIKey(accessorCtx, ownerKey.APIKeyID)
+			if isAuthorized {
+				require.NoError(t, err)
+			} else {
+				require.Truef(
+					t, status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err),
+					"expected auth error attempting to delete key for %q as %q, got: %v",
+					test.Owner, test.Accessor, err,
+				)
+			}
+		})
+	}
+}
+
+func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	gr1 := getGroup(t, ctx1, env).Group
+
+	// Try to create a user-owned key; should fail by default.
+	_, err := udb.CreateUserAPIKey(
+		ctx1, gr1.GroupID, "US1's key",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+	require.Truef(
+		t, status.IsPermissionDeniedError(err),
+		"expected PermissionDenied since user-owned keys are not enabled; got: %v",
+		err)
+
+	// Now enable user-owned keys and try again; should succeed.
+	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	key1, err := udb.CreateUserAPIKey(
+		ctx1, gr1.GroupID, "US1's key",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+	require.NoError(
+		t, err,
+		"should be able to create a user-owned key after enabling the setting")
+
+	key1Ctx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
+
+	user, err := udb.GetUser(key1Ctx)
+	require.NoError(t, err, "should be able to authenticate as US1 via the user-owned key")
+	require.Equal(t, "US1", user.UserID)
+
+	// Now disable user-owned keys.
+	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, false)
+
+	// Attempt to re-authenticate and try again; should fail since the key
+	// should effectively be deactivated.
+
+	// Need to temporarily instruct the test authenticator to not fail the test
+	// when it sees invalid API keys.
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	auth.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
+		_, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
+		require.Error(t, err)
+		return nil
+	}
+	key1Ctx = env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
+
+	_, err = udb.GetUser(key1Ctx)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated trying to authenticate with inactive user-owned key; got: %v",
+		err)
+
+	// Now that user-owned keys are disabled, attempting to list user-owned keys
+	// should also fail.
+
+	keys, err := udb.GetUserAPIKeys(ctx1, gr1.GroupID)
+
+	require.Truef(
+		t, status.IsPermissionDeniedError(err),
+		"expected PermissionDenied trying to list user-level keys when not enabled by org; got: %v",
+		err)
+	require.Empty(t, keys)
+}
+
+func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+	createUser(t, ctx, env, "US2", "org1.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	gr1 := getGroup(t, ctx1, env).Group
+	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+
+	us2Key, err := udb.CreateUserAPIKey(
+		ctx2, gr1.GroupID, "US2's key",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+	require.NoError(t, err, "US2 should be able to create a user-owned key")
+
+	us2KeyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, us2Key.Value)
+
+	_, err = udb.GetAuthGroup(us2KeyCtx)
+	require.NoError(t, err, "US2 should be able to get their authenticated group via the user-owned key")
+
+	// Now boot US2 from the group.
+	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE,
+		UserId:           &uidpb.UserId{Id: "US2"},
+	}})
+	require.NoError(t, err)
+
+	// Re-authenticate and try again; should fail.
+
+	// Need to temporarily instruct the test authenticator to not fail the test
+	// when it sees invalid API keys.
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	auth.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
+		_, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
+		require.Error(t, err)
+		return nil
+	}
+	us2KeyCtx = env.GetAuthenticator().AuthContextFromAPIKey(ctx, us2Key.Value)
+
+	_, err = udb.GetAuthGroup(us2KeyCtx)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated trying to authenticate with inactive user-owned key; got: %v",
+		err)
+}
+
+func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
+	for _, test := range []struct {
+		Name         string
+		Role         role.Role
+		Capabilities []akpb.ApiKey_Capability
+		OK           bool
+	}{
+		{Name: "Admin_CASWrite_OK", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: true},
+		{Name: "Developer_CASWrite_OK", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: true},
+		{Name: "Admin_ACWrite_OK", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: true},
+		{Name: "Developer_ACWrite_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
+		{Name: "Admin_Executor_OK", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: true},
+		{Name: "Developer_Executor_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			ctx := context.Background()
+			env := newTestEnv(t)
+			udb := env.GetUserDB()
+			createUser(t, ctx, env, "US1", "org1.io")
+			ctx1 := authUserCtx(ctx, env, t, "US1")
+			g := getGroup(t, ctx1, env).Group
+			setUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
+			err := udb.UpdateGroupUsers(ctx1, g.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+				UserId: &uidpb.UserId{Id: "US1"},
+				Role:   role.ToProto(test.Role),
+			}})
+			require.NoError(t, err)
+			// Re-authenticate with the updated role.
+			ctx1 = authUserCtx(ctx, env, t, "US1")
+
+			// Test create with capabilities
+
+			key, err := udb.CreateUserAPIKey(
+				ctx1, g.GroupID, "US1's key", test.Capabilities)
+			if test.OK {
+				require.NoError(t, err)
+			} else {
+				require.Truef(
+					t, status.IsPermissionDeniedError(err),
+					"expected PermissionDenied when creating API key; got: %v", err,
+				)
+			}
+
+			// Test update existing key capabilities
+
+			key, err = udb.CreateUserAPIKey(
+				ctx1, g.GroupID, "US1's key",
+				[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
+			require.NoError(t, err)
+			key.Capabilities = capabilities.ToInt(test.Capabilities)
+			err = udb.UpdateAPIKey(ctx1, key)
+			if test.OK {
+				require.NoError(t, err)
+			} else {
+				require.Truef(
+					t, status.IsPermissionDeniedError(err),
+					"expected PermissionDenied when updating key; got: %v", err,
+				)
+			}
+		})
+	}
 }

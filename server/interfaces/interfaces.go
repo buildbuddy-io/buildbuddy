@@ -376,7 +376,7 @@ type UserDB interface {
 	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
 
 	// CreateUserAPIKey creates a user-owned API key within the group.
-	CreateUserAPIKey(ctx context.Context, groupID, label string) (*tables.APIKey, error)
+	CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
 	// group-owned.
