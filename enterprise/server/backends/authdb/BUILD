@@ -11,6 +11,7 @@ go_library(
         "//server/interfaces",
         "//server/tables",
         "//server/util/db",
+        "//server/util/query_builder",
         "//server/util/status",
     ],
 )
