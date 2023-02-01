@@ -3,6 +3,7 @@ package buildbuddy_enterprise
 import (
 	"bytes"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,13 @@ import (
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
+)
+
+var (
+	webdriverTarget = flag.String("webdriver_target", "local", "Target that should be tested by the webdriver. Should be 'local' or 'remote'. For remote targets, you must also set the --remote_app_endpoint and --remote_sso_slug flags.")
+
+	remoteAppEndpoint = flag.String("remote_app_endpoint", "", "For remote targets, the endpoint to reach the app (Ex. https://app.buildbuddy.dev, or https://app.buildbuddy.io).")
+	remoteSSOSlug     = flag.String("remote_sso_slug", "", "For remote targets, the SSO slug to login. Self-auth must be enabled for these targets.")
 )
 
 const (
@@ -51,6 +59,33 @@ func DefaultAppConfig(t *testing.T) *app.App {
 		HttpPort:       testport.FindFree(t),
 		GRPCPort:       testport.FindFree(t),
 		MonitoringPort: testport.FindFree(t),
+	}
+}
+
+// remote represents a handle on a remote BuildBuddy enterprise server.
+type remote struct{}
+
+func (d *remote) HTTPURL() string {
+	return *remoteAppEndpoint
+}
+
+func (d *remote) SSOSlug() string {
+	return *remoteSSOSlug
+}
+
+type WebTarget interface {
+	HTTPURL() string
+}
+
+func SetupWebTarget(t *testing.T) WebTarget {
+	switch *webdriverTarget {
+	case "local":
+		return Run(t, "--cache.detailed_stats_enabled=true")
+	case "remote":
+		return &remote{}
+	default:
+		require.FailNowf(t, "invalid target", "%s is an invalid target for the webdriver invocation tests.", *webdriverTarget)
+		return nil
 	}
 }
 
