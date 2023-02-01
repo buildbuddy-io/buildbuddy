@@ -56,7 +56,6 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	cacheRequestsCard := wt.FindByDebugID("cache-results-table").Text()
 	assert.Contains(t, cacheRequestsCard, "Write")
 	assert.NotContains(t, cacheRequestsCard, "Hit")
-	wt.FindByDebugID("cache-results-table").Text()
 
 	// Second build of the same target
 	testbazel.Clean(context.Background(), t, workspacePath)
