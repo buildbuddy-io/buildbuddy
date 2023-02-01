@@ -55,3 +55,13 @@ func TestJoinClause(t *testing.T) {
 	assert.Equal(t, expectedQueryStr, strings.TrimSpace(qStr))
 	assert.Equal(t, []interface{}{4, 6, 10}, qArgs)
 }
+
+func TestJoinInOriginalQuery(t *testing.T) {
+	qb := query_builder.NewQuery("SELECT ak.user_id, g.group_id FROM `Groups` AS g, APIKeys AS ak")
+	qb.AddWhereClause(`ak.group_id = g.group_id`)
+	qb.AddWhereClause(`g.group_id = ?`, "GR1")
+	q, args := qb.Build()
+
+	assert.Equal(t, "SELECT ak.user_id, g.group_id FROM `Groups` AS g, APIKeys AS ak WHERE  ak.group_id = g.group_id AND g.group_id = ? ", q)
+	assert.Equal(t, []interface{}{"GR1"}, args)
+}

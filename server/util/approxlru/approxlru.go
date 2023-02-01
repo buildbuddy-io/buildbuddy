@@ -214,12 +214,12 @@ func (l *LRU[T]) resampleK(k int) error {
 
 	if len(l.samplePool) > 0 {
 		sort.Slice(l.samplePool, func(i, j int) bool {
-			return l.samplePool[i].Timestamp.UnixNano() < l.samplePool[j].Timestamp.UnixNano()
+			return l.samplePool[i].Timestamp.UnixNano() > l.samplePool[j].Timestamp.UnixNano()
 		})
 	}
 
 	if len(l.samplePool) > l.samplePoolSize {
-		l.samplePool = l.samplePool[:l.samplePoolSize]
+		l.samplePool = l.samplePool[len(l.samplePool)-l.samplePoolSize:]
 	}
 
 	return nil
@@ -232,7 +232,8 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 	}
 
 	for {
-		for i, sample := range l.samplePool {
+		for i := len(l.samplePool) - 1; i >= 0; i-- {
+			sample := l.samplePool[i]
 			l.mu.Lock()
 			oldLocalSizeBytes := l.localSizeBytes
 			oldGlobalSizeBytes := l.globalSizeBytes

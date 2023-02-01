@@ -38,7 +38,7 @@ export default class CacheCardComponent extends React.Component<Props> {
                 let downloadThroughput = BITS_PER_BYTE * (+cacheStat.downloadThroughputBytesPerSecond / 1000000);
                 let uploadThroughput = BITS_PER_BYTE * (+cacheStat.uploadThroughputBytesPerSecond / 1000000);
                 return (
-                  <div className="cache-sections">
+                  <div debug-id="cache-sections" className="cache-sections">
                     <div className="cache-section">
                       <div className="cache-title">Action cache (AC)</div>
                       <div className="cache-subtitle">Maps action hashes to action result metadata</div>

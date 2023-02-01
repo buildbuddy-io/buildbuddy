@@ -50,10 +50,25 @@ func GetCacheScoreCard(ctx context.Context, env environment.Env, req *capb.GetCa
 		return nil, status.InvalidArgumentError("invalid page token")
 	}
 
-	scorecard, err := Read(ctx, env, req.InvocationId, invocation.Attempt)
+	scorecard := &capb.ScoreCard{}
+	for attempt := uint64(0); attempt < invocation.Attempt; attempt++ {
+		sc, err := Read(ctx, env, req.InvocationId, attempt)
+		if err != nil {
+			if status.IsNotFoundError(err) {
+				// it's okay for scorecards to be missing for prior attempts
+				continue
+			}
+			return nil, err
+		}
+		scorecard.Misses = append(scorecard.Misses, sc.Misses...)
+		scorecard.Results = append(scorecard.Results, sc.Results...)
+	}
+	sc, err := Read(ctx, env, req.InvocationId, invocation.Attempt)
 	if err != nil {
 		return nil, err
 	}
+	scorecard.Misses = append(scorecard.Misses, sc.Misses...)
+	scorecard.Results = append(scorecard.Results, sc.Results...)
 
 	results, err := filterResults(scorecard.Results, req)
 	if err != nil {

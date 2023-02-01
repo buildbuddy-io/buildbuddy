@@ -1612,6 +1612,15 @@ var (
 	/// (sum(buildbuddy_pebble_compression_ratio_count) - sum(buildbuddy_pebble_compression_ratio_bucket{le="1.0"})) / sum(buildbuddy_pebble_compression_ratio_count)
 	/// ```
 
+	Logs = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "logger",
+		Name:      "log_count",
+		Help:      "The number of logs",
+	}, []string{
+		StatusHumanReadableLabel,
+	})
+
 	/// ### Raft cache metrics
 
 	RaftRanges = promauto.NewGaugeVec(prometheus.GaugeOpts{

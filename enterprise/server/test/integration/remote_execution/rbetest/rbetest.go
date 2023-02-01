@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
@@ -60,7 +61,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
@@ -83,8 +83,6 @@ import (
 )
 
 const (
-	ExecutorAPIKey = "EXECUTOR_API_KEY"
-
 	testCommandBinaryRunfilePath = "enterprise/server/test/integration/remote_execution/command/testcommand_/testcommand"
 	testCommandBinaryName        = "testcommand"
 
@@ -114,9 +112,9 @@ type Env struct {
 	executorNameCounter uint64
 	envOpts             *enterprise_testenv.Options
 
-	UserID1         string
-	GroupID1        string
-	ExecutorGroupID string
+	UserID1  string
+	GroupID1 string
+	APIKey1  string
 }
 
 func (r *Env) GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient {
@@ -222,13 +220,12 @@ func NewRBETestEnv(t *testing.T) *Env {
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
 
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
+	auth := enterprise_testauth.Configure(t, testEnv)
+
 	flags.Set(t, "app.enable_write_to_olap_db", true)
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
-	// Create a user and group in the DB for use in tests (this will also create
-	// an API key for the group).
-	// TODO(http://go/b/949): Add a fake OIDC provider and then just have a real
-	// user log into the app to do all of this setup in a more sane way.
-	orgURLID := "test"
+
+	// Create a user, group, and API key with register executor capability.
 	userID := "US1"
 	ctx := context.Background()
 	err := testEnv.GetUserDB().InsertUser(ctx, &tables.User{
@@ -236,41 +233,34 @@ func NewRBETestEnv(t *testing.T) *Env {
 		Email:  "user@example.com",
 	})
 	require.NoError(t, err)
-	groupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(ctx, &tables.Group{
-		URLIdentifier: &orgURLID,
-		UserID:        userID,
-	})
+	ctxUS1, err := auth.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
-	err = testEnv.GetUserDB().AddUserToGroup(ctx, userID, groupID)
+	log.Infof("GetUser:")
+	tu, err := testEnv.GetUserDB().GetUser(ctxUS1)
 	require.NoError(t, err)
-	// Update the API key value to match the user ID, since the test authenticator
-	// treats user IDs and API keys the same.
-	err = testEnv.GetDBHandle().DB(ctx).Exec(
-		`UPDATE APIKeys SET value = ? WHERE group_id = ?`, userID, groupID).Error
+	groupID := tu.Groups[0].Group.GroupID
+	keys, err := testEnv.GetUserDB().GetAPIKeys(ctxUS1, groupID, true)
 	require.NoError(t, err)
-	// Create executor group
-	execGroupSlug := "executor-group"
-	executorGroupID, err := testEnv.GetUserDB().InsertOrUpdateGroup(ctx, &tables.Group{
-		URLIdentifier: &execGroupSlug,
-		UserID:        userID,
-	})
+	key := keys[0]
+	key.Capabilities |= int32(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY)
+	err = testEnv.GetUserDB().UpdateAPIKey(ctxUS1, key)
 	require.NoError(t, err)
+
 	// Note: This root data dir (under which all executors' data is placed) does
 	// not get cleaned up until after all executors are shutdown (in the cleanup
 	// func below), since test cleanup funcs are run in LIFO order.
 	rootDataDir := testfs.MakeTempDir(t)
 	rbe := &Env{
-		testEnv:         testEnv,
-		t:               t,
-		redisTarget:     redisTarget,
-		executors:       make(map[string]*Executor),
-		envOpts:         envOpts,
-		GroupID1:        groupID,
-		UserID1:         userID,
-		ExecutorGroupID: executorGroupID,
-		rootDataDir:     rootDataDir,
+		testEnv:     testEnv,
+		t:           t,
+		redisTarget: redisTarget,
+		executors:   make(map[string]*Executor),
+		envOpts:     envOpts,
+		UserID1:     userID,
+		GroupID1:    groupID,
+		APIKey1:     key.Value,
+		rootDataDir: rootDataDir,
 	}
-	testEnv.SetAuthenticator(rbe.newTestAuthenticator())
 	rbe.testCommandController = newTestCommandController(t)
 	rbe.rbeClient = rbeclient.New(rbe)
 
@@ -340,7 +330,8 @@ func newBuildBuddyServer(t *testing.T, env *buildBuddyServerEnv, opts *BuildBudd
 	port := testport.FindFree(t)
 	opts.SchedulerServerOptions.LocalPortOverride = int32(port)
 
-	env.SetAuthenticator(env.rbeEnv.newTestAuthenticator())
+	env.SetAuthenticator(env.rbeEnv.testEnv.GetAuthenticator())
+
 	router, err := task_router.New(env)
 	require.NoError(t, err, "could not set up TaskRouter")
 	env.SetTaskRouter(router)
@@ -779,7 +770,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 
 	env.SetRemoteExecutionClient(repb.NewExecutionClient(clientConn))
 	env.SetSchedulerClient(scpb.NewSchedulerClient(clientConn))
-	env.SetAuthenticator(r.newTestAuthenticator())
+	env.SetAuthenticator(r.testEnv.GetAuthenticator())
 	xl := xcode.NewXcodeLocator()
 	env.SetXcodeLocator(xl)
 
@@ -883,24 +874,6 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	return executor
 }
 
-func (r *Env) newTestAuthenticator() *testauth.TestAuthenticator {
-	users := testauth.TestUsers(r.UserID1, r.GroupID1)
-	users[ExecutorAPIKey] = &testauth.TestUser{
-		GroupID:       r.ExecutorGroupID,
-		AllowedGroups: []string{r.ExecutorGroupID},
-		// TODO(bduffany): Replace `role.Admin` below with `role.Default` since API
-		// keys cannot have admin rights in practice. This is needed because some
-		// tests perform some RPCs which require admin rights, and we'll need to
-		// either (a) refactor those tests to authenticate as an admin user, or (b)
-		// make it legitimately possible for an API key to have admin role.
-		GroupMemberships: []*interfaces.GroupMembership{
-			{GroupID: r.ExecutorGroupID, Role: role.Admin},
-		},
-		Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY},
-	}
-	return testauth.NewTestAuthenticator(users)
-}
-
 func (r *Env) RemoveExecutor(executor *Executor) {
 	if _, ok := r.executors[executor.hostPort]; !ok {
 		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.hostPort))
@@ -922,7 +895,7 @@ func (r *Env) waitForExecutorRegistration() {
 
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
-	ctx = r.WithUserID(ctx, ExecutorAPIKey)
+	ctx = r.WithUserID(ctx, r.UserID1)
 
 	for time.Now().Before(deadline) {
 		nodesByHostIp = make(map[string]bool)
@@ -930,7 +903,7 @@ func (r *Env) waitForExecutorRegistration() {
 		client := r.GetBuildBuddyServiceClient()
 		req := &scpb.GetExecutionNodesRequest{
 			RequestContext: &ctxpb.RequestContext{
-				GroupId: r.ExecutorGroupID,
+				GroupId: r.GroupID1,
 			},
 		}
 		rsp, err := client.GetExecutionNodes(ctx, req)
@@ -1006,7 +979,7 @@ type Command struct {
 	env *Env
 	*rbeclient.Command
 	rbeClient *rbeclient.Client
-	userID    string
+	apiKey    string
 }
 
 type CommandResult struct {
@@ -1033,7 +1006,7 @@ func (c *Command) getResult() *CommandResult {
 			var stdout, stderr string
 			if result.ActionResult != nil {
 				ctx := context.Background()
-				ctx = c.env.WithUserID(ctx, c.userID)
+				ctx = c.env.WithAPIKey(ctx, c.apiKey)
 				var err error
 				stdout, stderr, err = c.env.GetStdoutAndStderr(ctx, result.ActionResult, result.InstanceName)
 				if err != nil {
@@ -1189,7 +1162,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 	}
 	return &ControlledCommand{
 		t:          r.t,
-		Command:    &Command{r, cmd, r.rbeClient, "" /*=userID*/},
+		Command:    &Command{r, cmd, r.rbeClient, "" /*=apiKey*/},
 		controller: r.testCommandController,
 	}
 }
@@ -1200,22 +1173,20 @@ func (r *Env) ExecuteCustomCommand(args ...string) *Command {
 }
 
 func (r *Env) WithUserID(ctx context.Context, userID string) context.Context {
-	ctx = r.testEnv.GetAuthenticator().AuthContextFromAPIKey(ctx, userID)
-	jwt, _ := testauth.TestJWTForUserID(userID)
-	ctx = metadata.AppendToOutgoingContext(
-		ctx,
-		// Test authenticator treats user IDs as both API keys and JWTs.
-		testauth.APIKeyHeader, userID,
-		"x-buildbuddy-jwt", jwt,
-	)
+	ctx, err := r.testEnv.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, userID)
+	require.NoError(r.t, err)
 	return ctx
+}
+
+func (r *Env) WithAPIKey(ctx context.Context, apiKey string) context.Context {
+	return r.testEnv.GetAuthenticator().(*testauth.TestAuthenticator).AuthContextFromAPIKey(ctx, apiKey)
 }
 
 type ExecuteOpts struct {
 	// InputRootDir is the path to the dir containing inputs for the command.
 	InputRootDir string
-	// UserID is the ID of the authenticated user that should execute the command.
-	UserID string
+	// APIKey is the API key to be used for remote execution.
+	APIKey string
 	// RemoteHeaders is a set of remote headers to append to the outgoing gRPC
 	// context when executing the command.
 	RemoteHeaders map[string]string
@@ -1232,12 +1203,8 @@ type ExecuteOpts struct {
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	ctx := context.Background()
-	if opts.UserID != "" {
-		ctx = r.WithUserID(ctx, opts.UserID)
-	}
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.testEnv)
-	if err != nil {
-		assert.FailNowf(r.t, "could not attach user prefix", err.Error())
+	if opts.APIKey != "" {
+		ctx = r.WithAPIKey(ctx, opts.APIKey)
 	}
 
 	if opts.InvocationID != "" {
@@ -1269,7 +1236,7 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	if err != nil {
 		assert.FailNow(r.t, fmt.Sprintf("Could not execute command %q", name), err.Error())
 	}
-	return &Command{r, cmd, r.rbeClient, opts.UserID}
+	return &Command{r, cmd, r.rbeClient, opts.APIKey}
 }
 
 // RunFunc is the function signature for runner.Runner.Run().
