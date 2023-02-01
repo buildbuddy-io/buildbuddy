@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -266,7 +268,7 @@ func assertResults(t *testing.T, res *capb.GetCacheScoreCardResponse, msg ...*ca
 
 func setupEnv(t *testing.T, scorecard *capb.ScoreCard) *testenv.TestEnv {
 	te := testenv.GetTestEnv(t)
-	te.SetBlobstore(&fakeBlobStore{ScoreCard: scorecard})
+	te.SetBlobstore(&fakeBlobStore{ScoreCard: scorecard, t: t})
 	te.GetInvocationDB().CreateInvocation(context.Background(), &tables.Invocation{
 		InvocationID: invocationID,
 	})
@@ -276,8 +278,13 @@ func setupEnv(t *testing.T, scorecard *capb.ScoreCard) *testenv.TestEnv {
 type fakeBlobStore struct {
 	interfaces.Blobstore
 	ScoreCard *capb.ScoreCard
+	t         *testing.T
 }
 
 func (bs *fakeBlobStore) ReadBlob(ctx context.Context, name string) ([]byte, error) {
-	return proto.Marshal(bs.ScoreCard)
+	tokens := strings.Split(name, "/")
+	if attempt := tokens[1]; attempt == "1" {
+		return proto.Marshal(bs.ScoreCard)
+	}
+	return nil, status.NotFoundError("")
 }
