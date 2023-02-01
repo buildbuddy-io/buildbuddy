@@ -232,7 +232,7 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 	}
 
 	for {
-		for i := len(l.samplePool)-1; i >= 0; i-- {
+		for i := len(l.samplePool) - 1; i >= 0; i-- {
 			sample := l.samplePool[i]
 			l.mu.Lock()
 			oldLocalSizeBytes := l.localSizeBytes
