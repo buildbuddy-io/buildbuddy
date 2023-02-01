@@ -886,8 +886,10 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 }
 
 func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin) (int, error) {
-	// Build the pipeline of bazel output handlers
-	wc, err := PipelineWriter(os.Stdout, plugins)
+	// Build the pipeline of bazel output handlers.
+	// Write to stderr so that build output isn't considered part of the
+	// program's stdout in the `bb run` case.
+	wc, err := PipelineWriter(os.Stderr, plugins)
 	if err != nil {
 		return -1, err
 	}
@@ -911,13 +913,10 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 	// bazel thinks it's writing to a terminal, even though we're capturing its
 	// output via a Writer that is not a terminal. This enables ANSI colors,
 	// proper truncation of progress messages, etc.
-	isStdoutTTY, err := terminal.IsTTY(os.Stdout)
-	if err != nil {
-		return -1, fmt.Errorf("failed to determine whether stdout is a terminal: %s", err)
-	}
+	isWritingToTerminal := terminal.IsTTY(os.Stdout) && terminal.IsTTY(os.Stderr)
 	w := io.MultiWriter(output, wc)
 	opts := &bazelisk.RunOpts{Stdout: w, Stderr: w}
-	if isStdoutTTY {
+	if isWritingToTerminal {
 		ptmx, tty, err := pty.Open()
 		if err != nil {
 			return -1, fmt.Errorf("failed to allocate pty: %s", err)

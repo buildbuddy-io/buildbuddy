@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
@@ -25,10 +26,10 @@ const (
 )
 
 func Run(t *testing.T, args ...string) *app.App {
-	return RunWithConfig(t, DefaultConfig, args...)
+	return RunWithConfig(t, DefaultAppConfig(t), DefaultConfig, args...)
 }
 
-func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
+func RunWithConfig(t *testing.T, appConfig *app.App, configPath string, args ...string) *app.App {
 	redisTarget := testredis.Start(t).Target
 	commandArgs := []string{
 		"--app_directory=/enterprise/app",
@@ -36,12 +37,21 @@ func RunWithConfig(t *testing.T, configPath string, args ...string) *app.App {
 		"--telemetry_port=-1",
 	}
 	commandArgs = append(commandArgs, args...)
-	return app.Run(
+	return app.RunWithApp(
 		t,
+		appConfig,
 		/* commandPath= */ "enterprise/server/cmd/server/buildbuddy_/buildbuddy",
 		commandArgs,
 		/* configPath= */ configPath,
 	)
+}
+
+func DefaultAppConfig(t *testing.T) *app.App {
+	return &app.App{
+		HttpPort:       testport.FindFree(t),
+		GRPCPort:       testport.FindFree(t),
+		MonitoringPort: testport.FindFree(t),
+	}
 }
 
 // WebClient is a lightweight client for testing enterprise functionality that

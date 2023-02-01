@@ -121,16 +121,16 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(pmk.groupID, filePath)
 		}
-		partDir := "/v1/" + PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v1")
 		return []byte(filePath), nil
 	case Version2:
 		filePath := filepath.Join(pmk.hash, pmk.isolation, pmk.remoteInstanceHash)
 		if pmk.isolation == "ac" {
 			filePath = filepath.Join(pmk.groupID, filePath)
 		}
-		partDir := "/v2/" + PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath)
+		partDir := PartitionDirectoryPrefix + pmk.partID
+		filePath = filepath.Join(partDir, filePath, "v2")
 		return []byte(filePath), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
@@ -157,9 +157,9 @@ func (pmk *PebbleKey) parseUndefinedVersion(parts [][]byte) error {
 func (pmk *PebbleKey) parseVersion1(parts [][]byte) error {
 	switch len(parts) {
 	case 4:
-		pmk.partID, pmk.isolation, pmk.hash = string(parts[1]), string(parts[2]), string(parts[3])
+		pmk.partID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2])
 	case 6:
-		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
 		return parseError(parts)
 	}
@@ -170,9 +170,9 @@ func (pmk *PebbleKey) parseVersion1(parts [][]byte) error {
 func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
 	switch len(parts) {
 	case 4:
-		pmk.partID, pmk.hash, pmk.isolation = string(parts[1]), string(parts[2]), string(parts[3])
+		pmk.partID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2])
 	case 6:
-		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4]), string(parts[5])
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
 		return parseError(parts)
 	}
@@ -192,9 +192,12 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 	// Attempt to read the key version, if one is present. This allows for much
 	// simpler parsing because we can restrict the set of valid parse inputs
 	// instead of having to possibly parse any/all versions at once.
-	if len(parts[0]) > 1 && bytes.ContainsRune(parts[0][:1], 'v') {
-		if s, err := strconv.ParseUint(string(parts[0][1:]), 10, 32); err == nil {
-			version = PebbleKeyVersion(s)
+	if len(parts[0]) > 1 {
+		lastPart := parts[len(parts)-1]
+		if bytes.ContainsRune(lastPart[:1], 'v') {
+			if s, err := strconv.ParseUint(string(lastPart[1:]), 10, 32); err == nil {
+				version = PebbleKeyVersion(s)
+			}
 		}
 	}
 

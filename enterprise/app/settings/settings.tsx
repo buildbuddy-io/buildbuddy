@@ -25,6 +25,7 @@ enum TabId {
   OrgApiKeys = "org/api-keys",
   OrgSecrets = "org/secrets",
   PersonalPreferences = "personal/preferences",
+  PersonalApiKeys = "personal/api-keys",
   ServerQuota = "server/quota",
 }
 
@@ -98,7 +99,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </SettingsTab>
                 )}
                 <SettingsTab id={TabId.OrgApiKeys} activeTabId={activeTabId}>
-                  API keys
+                  Org API keys
                 </SettingsTab>
                 {capabilities.config.secretsEnabled && router.canAccessOrgSecretsPage(this.props.user) && (
                   <SettingsTab id={TabId.OrgSecrets} activeTabId={activeTabId}>
@@ -114,6 +115,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 <SettingsTab id={TabId.PersonalPreferences} activeTabId={activeTabId}>
                   Preferences
                 </SettingsTab>
+                {this.props.user?.selectedGroup?.userOwnedKeysEnabled && (
+                  <SettingsTab id={TabId.PersonalApiKeys} activeTabId={activeTabId}>
+                    Personal API keys
+                  </SettingsTab>
+                )}
               </div>
               {this.props.user.canCall("getNamespace") && capabilities.config.quotaManagementEnabled && (
                 <>
@@ -172,13 +178,25 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   {activeTabId === TabId.OrgGitHub && capabilities.github && <GitHubLink user={this.props.user} />}
                   {activeTabId === TabId.OrgApiKeys && capabilities.manageApiKeys && (
                     <>
-                      <div className="settings-option-title">API keys</div>
+                      <div className="settings-option-title">Org API keys</div>
                       <div className="settings-option-description">
                         API keys grant access to your BuildBuddy organization.
                       </div>
                       <ApiKeysComponent user={this.props.user} />
                     </>
                   )}
+                  {activeTabId === TabId.PersonalApiKeys &&
+                    capabilities.manageApiKeys &&
+                    this.props.user?.selectedGroup?.userOwnedKeysEnabled && (
+                      <>
+                        <div className="settings-option-title">Personal API keys</div>
+                        <div className="settings-option-description">
+                          Personal API keys let you run builds within your organization that are authenticated as your
+                          user account.
+                        </div>
+                        <ApiKeysComponent user={this.props.user} userOwnedOnly />
+                      </>
+                    )}
                   {activeTabId === TabId.OrgSecrets && capabilities.config.secretsEnabled && (
                     <SecretsComponent path={this.props.path} search={this.props.search} />
                   )}

@@ -19,7 +19,11 @@ import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
 
 export interface ApiKeysComponentProps {
+  /** The authenticated user. */
   user?: User;
+
+  /** Whether to show only user-owned keys. */
+  userOwnedOnly?: boolean;
 }
 
 interface State {
@@ -79,7 +83,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     try {
       const response = await rpcService.service.getApiKeys(
-        api_key.GetApiKeysRequest.create({ groupId: this.props.user.selectedGroup.id })
+        api_key.GetApiKeysRequest.create({
+          groupId: this.props.user.selectedGroup.id,
+          userId: this.props.userOwnedOnly ? this.props.user.getId() : "",
+        })
       );
       this.setState({ getApiKeysResponse: response });
     } catch (e) {
@@ -89,6 +96,13 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     }
   }
 
+  private defaultCapabilities(): api_key.ApiKey.Capability[] {
+    if (this.props.user.isGroupAdmin()) {
+      return [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY];
+    }
+    return [api_key.ApiKey.Capability.CAS_WRITE_CAPABILITY];
+  }
+
   // Creation modal
 
   private async onClickCreateNew() {
@@ -96,7 +110,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       createForm: {
         isOpen: true,
         request: new api_key.CreateApiKeyRequest({
-          capability: [api_key.ApiKey.Capability.CACHE_WRITE_CAPABILITY],
+          capability: this.defaultCapabilities(),
+          userId: this.props.userOwnedOnly ? this.props.user.getId() : "",
         }),
       },
     });
@@ -277,6 +292,14 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     );
   }
 
+  private canChangeCapabilities(): boolean {
+    return this.props.user.isGroupAdmin();
+  }
+
+  private canEdit(): boolean {
+    return this.props.userOwnedOnly || this.props.user.isGroupAdmin();
+  }
+
   private renderModal<T extends ApiKeyFields>({
     title,
     submitLabel,
@@ -314,6 +337,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     type="radio"
                     onChange={this.onChangeReadWrite.bind(this, request, onChange)}
                     checked={isReadWrite(request)}
+                    disabled={!this.canChangeCapabilities()}
                   />
                   <span>
                     Read+Write key <span className="field-description">(allow all remote cache uploads)</span>
@@ -326,6 +350,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     type="radio"
                     onChange={this.onChangeReadOnly.bind(this, request, onChange)}
                     checked={isReadOnly(request)}
+                    disabled={!this.canChangeCapabilities()}
                   />
                   <span>
                     Read-only key <span className="field-description">(disable all remote cache uploads)</span>
@@ -338,6 +363,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     type="radio"
                     onChange={this.onChangeCASOnly.bind(this, request, onChange)}
                     checked={isCASOnly(request)}
+                    disabled={!this.canChangeCapabilities()}
                   />
                   <span>
                     CAS-only key <span className="field-description">(disable action cache uploads)</span>
@@ -352,6 +378,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                       type="checkbox"
                       onChange={this.onChangeRegisterExecutor.bind(this, request, onChange)}
                       checked={hasCapability(request, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)}
+                      disabled={!this.canChangeCapabilities()}
                     />
                     <span>
                       Executor key <span className="field-description">(for self-hosted executors)</span>
@@ -359,18 +386,21 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   </label>
                 </div>
               )}
-              <div className="field-container">
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    onChange={this.onChangeVisibility.bind(this, request, onChange)}
-                    checked={isVisibleToDevelopers(request)}
-                  />
-                  <span>
-                    Visible to developers <span className="field-description">(users with the role Developer)</span>
-                  </span>
-                </label>
-              </div>
+              {/* "Visible to developers" bit does not apply for user-level keys. */}
+              {!this.props.userOwnedOnly && (
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      onChange={this.onChangeVisibility.bind(this, request, onChange)}
+                      checked={isVisibleToDevelopers(request)}
+                    />
+                    <span>
+                      Visible to developers <span className="field-description">(users with the role Developer)</span>
+                    </span>
+                  </label>
+                </div>
+              )}
             </DialogBody>
             <DialogFooter>
               <DialogFooterButtons>
@@ -408,7 +438,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     return (
       <div className="api-keys">
-        {this.props.user.canCall("createApiKey") && (
+        {this.canEdit() && (
           <div>
             <FilledButton className="big-button" onClick={this.onClickCreateNew.bind(this)}>
               Create new API key
@@ -436,7 +466,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         })}
 
         <div className="api-keys-list">
-          {getApiKeysResponse.apiKey.length == 0 && !this.props.user.canCall("createApiKey") && (
+          {!this.props.userOwnedOnly && getApiKeysResponse.apiKey.length == 0 && !this.canEdit() && (
             <div className="no-api-keys-message">
               No API keys have been made visible to developers. Only organization admins can create API keys.
             </div>

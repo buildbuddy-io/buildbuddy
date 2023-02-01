@@ -127,6 +127,7 @@ def get_latest_remote_version():
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--auto', default=False, action='store_true')
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--skip_version_bump', default=False, action='store_true')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
@@ -150,7 +151,8 @@ def main():
         release_notes = generate_release_notes(old_version)
         print("release notes:\n %s" % release_notes)
         print('I found existing version: %s' % old_version)
-        new_version = confirm_new_version(new_version)
+        if not args.auto:
+            new_version = confirm_new_version(new_version)
         print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
         time.sleep(2)

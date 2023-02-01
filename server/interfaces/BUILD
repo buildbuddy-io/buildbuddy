@@ -28,6 +28,7 @@ go_library(
         "//proto/api/v1:api_v1_go_proto",
         "//server/tables",
         "//server/util/role",
+        "@com_github_golang_jwt_jwt//:jwt",
         "@io_gorm_gorm//:gorm",
         "@org_golang_google_grpc//credentials",
     ],

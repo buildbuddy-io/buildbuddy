@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+	"github.com/golang-jwt/jwt"
 	"google.golang.org/grpc/credentials"
 	"gorm.io/gorm"
 
@@ -65,6 +66,8 @@ type GroupMembership struct {
 }
 
 type UserInfo interface {
+	jwt.Claims
+
 	GetUserID() string
 	GetGroupID() string
 	// IsImpersonating returns whether the group ID is being impersonated by the

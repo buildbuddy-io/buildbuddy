@@ -4,16 +4,16 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/webdriver_target"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAuthenticatedInvocation_LogUploadEnabled(t *testing.T) {
+func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
+	target := webdriver_target.Setup(t)
 	wt := webtester.New(t)
-	app := buildbuddy_enterprise.Run(t)
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
 		"WORKSPACE": "",
@@ -24,27 +24,57 @@ func TestAuthenticatedInvocation_LogUploadEnabled(t *testing.T) {
 		"--show_progress=0",
 		"--build_metadata=COMMIT_SHA=cc5011e9a82b545885025d5f08b531bfbbf95d5b",
 		"--build_metadata=REPO_URL=https://github.com/test-owner/test-repo",
-	}, app.BESBazelFlags()...)
+		"--remote_upload_local_results=1",
+	})
 
-	// Log in and get the build flags needed for BuildBuddy, including API key
-	webtester.Login(wt, app.HTTPURL())
-	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, app.HTTPURL(), webtester.WithEnableCache)
+	webtester.LoginSSO(wt, target.AppURL(), target.SSOSlug())
+
+	// Get the build flags needed for BuildBuddy, including API key, bes results url, bes backend, and remote cache
+	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.AppURL(), webtester.WithEnableCache)
 	t.Log(buildbuddyBuildFlags)
 	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
 
+	testbazel.Clean(context.Background(), t, workspacePath)
 	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
 	require.NotEmpty(t, result.InvocationID)
 
 	// Make sure we can view the invocation while logged in
-	wt.Get(app.HTTPURL() + "/invocation/" + result.InvocationID)
+	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
 
-	details := wt.Find(".details").Text()
-
+	details := wt.FindByDebugID("invocation-details").Text()
 	assert.Contains(t, details, "Succeeded")
 	assert.NotContains(t, details, "Failed")
 	assert.Contains(t, details, "//:a")
-	assert.Contains(t, details, "Log upload on")
+	assert.Contains(t, details, "Cache on")
 	assert.Contains(t, details, "Remote execution off")
+
+	// Make sure we can view the cache section
+	wt.FindByDebugID("cache-sections")
+	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
+	cacheRequestsCard := wt.FindByDebugID("cache-results-table").Text()
+	assert.Contains(t, cacheRequestsCard, "Miss")
+	assert.Contains(t, cacheRequestsCard, "Write")
+	assert.NotContains(t, cacheRequestsCard, "Hit")
+
+	// Second build of the same target
+	testbazel.Clean(context.Background(), t, workspacePath)
+	result = testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
+	require.NotEmpty(t, result.InvocationID)
+
+	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
+
+	details = wt.FindByDebugID("invocation-details").Text()
+	assert.Contains(t, details, "Succeeded")
+	assert.NotContains(t, details, "Failed")
+	assert.Contains(t, details, "//:a")
+	assert.Contains(t, details, "Cache on")
+	assert.Contains(t, details, "Remote execution off")
+
+	// Cache section should contain a cache hit
+	wt.FindByDebugID("cache-sections")
+	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
+	cacheRequestsCard = wt.FindByDebugID("cache-results-table").Text()
+	assert.Contains(t, cacheRequestsCard, "Hit")
 
 	// Make sure it shows up in repo history
 	webtester.ClickSidebarItem(wt, "Repos")
@@ -70,9 +100,9 @@ func TestAuthenticatedInvocation_LogUploadEnabled(t *testing.T) {
 
 	webtester.Logout(wt)
 
-	wt.Get(app.HTTPURL() + "/invocation/" + result.InvocationID)
+	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
 
-	wt.Find(".login-button")
+	wt.FindByDebugID("login-button")
 
 	// TODO(bduffany): Log in as a different self-auth user that is not in the
 	// default BB org, and make sure we get PermissionDenied instead of the

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "clickhouse",
@@ -11,6 +11,7 @@ go_library(
         "//server/environment",
         "//server/metrics",
         "//server/tables",
+        "//server/util/clickhouse/schema",
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/retry",
@@ -19,17 +20,5 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@io_gorm_driver_clickhouse//:clickhouse",
         "@io_gorm_gorm//:gorm",
-    ],
-)
-
-go_test(
-    name = "clickhouse_test",
-    srcs = ["clickhouse_test.go"],
-    deps = [
-        ":clickhouse",
-        "//server/tables",
-        "@com_github_go_faker_faker_v4//:faker",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
     ],
 )

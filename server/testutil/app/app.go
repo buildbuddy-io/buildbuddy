@@ -18,10 +18,12 @@ import (
 
 // App is a handle on a BuildBuddy server scoped to a test case, which provides
 // basic facilities for connecting to the server and running builds against it.
+//
+// NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 type App struct {
-	httpPort       int
-	monitoringPort int
-	gRPCPort       int
+	HttpPort       int
+	MonitoringPort int
+	GRPCPort       int
 }
 
 // Run a local BuildBuddy server for the scope of the given test case.
@@ -29,25 +31,29 @@ type App struct {
 // The given command path and config file path refer to the workspace-relative runfile
 // paths of the BuildBuddy server binary and config file, respectively.
 func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath string) *App {
-	dataDir := testfs.MakeTempDir(t)
-	// NOTE: No SSL ports are required since the server doesn't have an SSL config by default.
 	app := &App{
-		httpPort:       testport.FindFree(t),
-		gRPCPort:       testport.FindFree(t),
-		monitoringPort: testport.FindFree(t),
+		HttpPort:       testport.FindFree(t),
+		GRPCPort:       testport.FindFree(t),
+		MonitoringPort: testport.FindFree(t),
 	}
+	return RunWithApp(t, app, commandPath, commandArgs, configFilePath)
+
+}
+
+func RunWithApp(t *testing.T, app *App, commandPath string, commandArgs []string, configFilePath string) *App {
+	dataDir := testfs.MakeTempDir(t)
 	args := []string{
 		"--app.log_level=debug",
 		"--app.log_include_short_file_name",
 		"--disable_telemetry",
 		fmt.Sprintf("--config_file=%s", runfile(t, configFilePath)),
-		fmt.Sprintf("--port=%d", app.httpPort),
-		fmt.Sprintf("--grpc_port=%d", app.gRPCPort),
+		fmt.Sprintf("--port=%d", app.HttpPort),
+		fmt.Sprintf("--grpc_port=%d", app.GRPCPort),
 		fmt.Sprintf("--internal_grpc_port=%d", testport.FindFree(t)),
-		fmt.Sprintf("--monitoring_port=%d", app.monitoringPort),
+		fmt.Sprintf("--monitoring_port=%d", app.MonitoringPort),
 		"--static_directory=static",
 		"--app_directory=/app",
-		fmt.Sprintf("--app.build_buddy_url=http://localhost:%d", app.httpPort),
+		fmt.Sprintf("--app.build_buddy_url=http://localhost:%d", app.HttpPort),
 		"--database.data_source=sqlite3://:memory:",
 		fmt.Sprintf("--storage.disk.root_directory=%s", filepath.Join(dataDir, "storage")),
 		fmt.Sprintf("--cache.disk.root_directory=%s", filepath.Join(dataDir, "cache")),
@@ -57,7 +63,7 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 	testserver.Run(t, &testserver.Opts{
 		BinaryPath:            commandPath,
 		Args:                  args,
-		HTTPPort:              app.httpPort,
+		HTTPPort:              app.HttpPort,
 		HealthCheckServerType: "buildbuddy-server",
 	})
 
@@ -66,12 +72,12 @@ func Run(t *testing.T, commandPath string, commandArgs []string, configFilePath 
 
 // HTTPURL returns the URL for the web app.
 func (a *App) HTTPURL() string {
-	return fmt.Sprintf("http://localhost:%d", a.httpPort)
+	return fmt.Sprintf("http://localhost:%d", a.HttpPort)
 }
 
 // GRPCAddress returns the gRPC address pointing to the app instance.
 func (a *App) GRPCAddress() string {
-	return fmt.Sprintf("grpc://localhost:%d", a.gRPCPort)
+	return fmt.Sprintf("grpc://localhost:%d", a.GRPCPort)
 }
 
 // BESBazelFlags returns the Bazel flags required to upload build logs to the App.
@@ -85,19 +91,19 @@ func (a *App) BESBazelFlags() []string {
 // RemoteCacheBazelFlags returns the Bazel flags required to use the App's remote cache.
 func (a *App) RemoteCacheBazelFlags() []string {
 	return []string{
-		fmt.Sprintf("--remote_cache=grpc://localhost:%d", a.gRPCPort),
+		fmt.Sprintf("--remote_cache=grpc://localhost:%d", a.GRPCPort),
 	}
 }
 
 // RemoteExecutorBazelFlags returns the Bazel flags required to use the App's remote cache.
 func (a *App) RemoteExecutorBazelFlags() []string {
 	return []string{
-		fmt.Sprintf("--remote_executor=grpc://localhost:%d", a.gRPCPort),
+		fmt.Sprintf("--remote_executor=grpc://localhost:%d", a.GRPCPort),
 	}
 }
 
 func (a *App) PublishBuildEventClient(t *testing.T) pepb.PublishBuildEventClient {
-	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
+	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.GRPCPort), grpc.WithInsecure())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +114,7 @@ func (a *App) PublishBuildEventClient(t *testing.T) pepb.PublishBuildEventClient
 }
 
 func (a *App) BuildBuddyServiceClient(t *testing.T) bbspb.BuildBuddyServiceClient {
-	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
+	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.GRPCPort), grpc.WithInsecure())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +125,7 @@ func (a *App) BuildBuddyServiceClient(t *testing.T) bbspb.BuildBuddyServiceClien
 }
 
 func (a *App) ByteStreamClient(t *testing.T) bspb.ByteStreamClient {
-	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.gRPCPort), grpc.WithInsecure())
+	conn, err := grpc.Dial(fmt.Sprintf("localhost:%d", a.GRPCPort), grpc.WithInsecure())
 	if err != nil {
 		t.Fatal(err)
 	}
