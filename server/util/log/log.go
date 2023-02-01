@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -210,27 +212,42 @@ func (l *Logger) Infof(format string, args ...interface{}) {
 // Warning logs to the WARNING log.
 func (l *Logger) Warning(message string) {
 	l.zl.Warn().Msg(message)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "warning",
+	}).Inc()
 }
 
 // Warningf logs to the WARNING log. Arguments are handled in the manner of fmt.Printf.
 func (l *Logger) Warningf(format string, args ...interface{}) {
 	l.zl.Warn().Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "warning",
+	}).Inc()
 }
 
 // Error logs to the ERROR log.
 func (l *Logger) Error(message string) {
 	l.zl.Error().Msg(message)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "error",
+	}).Inc()
 }
 
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func (l *Logger) Errorf(format string, args ...interface{}) {
 	l.zl.Error().Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "error",
+	}).Inc()
 }
 
 // Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
 // It calls os.Exit() with exit code 1.
 func (l *Logger) Fatal(message string) {
 	log.Fatal().Msg(message)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "fatal",
+	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
@@ -239,6 +256,9 @@ func (l *Logger) Fatal(message string) {
 // It calls os.Exit() with exit code 1.
 func (l *Logger) Fatalf(format string, args ...interface{}) {
 	log.Fatal().Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "fatal",
+	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
