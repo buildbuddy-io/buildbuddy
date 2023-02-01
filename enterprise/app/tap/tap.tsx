@@ -46,7 +46,7 @@ type SortDirection = "asc" | "desc";
 interface CommitGrouping {
   commits: string[] | null;
   commitToMaxInvocationCreatedAtUsec: Map<string, number> | null;
-  commitToTargetIdToStatus: Map<string, Map<string, target.ITargetStatus>> | null;
+  commitToTargetLabelToStatus: Map<string, Map<string, target.ITargetStatus>> | null;
 }
 
 interface CommitStatus {
@@ -77,7 +77,7 @@ export default class TapComponent extends React.Component<Props, State> {
     targetHistory: [],
     nextPageToken: "",
     commits: null,
-    commitToTargetIdToStatus: null,
+    commitToTargetLabelToStatus: null,
     commitToMaxInvocationCreatedAtUsec: null,
     loading: true,
     targetLimit: 100,
@@ -200,7 +200,7 @@ export default class TapComponent extends React.Component<Props, State> {
       stats.avgDuration = stats.totalDuration / stats.count;
       maxInvocations = Math.max(maxInvocations, stats.count);
       maxDuration = Math.max(maxDuration, stats.maxDuration);
-      this.state.stats.set(targetHistory.target.id, stats);
+      this.state.stats.set(targetHistory.target.label, stats);
     }
 
     this.setState({
@@ -216,7 +216,7 @@ export default class TapComponent extends React.Component<Props, State> {
 
   groupByCommit(targetHistories: target.ITargetHistory[]): CommitGrouping {
     const commitToMaxInvocationCreatedAtUsec = new Map<string, number>();
-    const commitToTargetIdToStatus = new Map<string, Map<string, target.ITargetStatus>>();
+    const commitToTargetLabelToStatus = new Map<string, Map<string, target.ITargetStatus>>();
 
     for (const history of targetHistories) {
       for (const targetStatus of history.targetStatus) {
@@ -226,10 +226,10 @@ export default class TapComponent extends React.Component<Props, State> {
           commitToMaxInvocationCreatedAtUsec.set(targetStatus.commitSha, timestamp);
         }
 
-        let targetIdToStatus = commitToTargetIdToStatus.get(targetStatus.commitSha);
-        if (!targetIdToStatus) {
-          targetIdToStatus = new Map<string, target.ITargetStatus>();
-          commitToTargetIdToStatus.set(targetStatus.commitSha, targetIdToStatus);
+        let targetLabelToStatus = commitToTargetLabelToStatus.get(targetStatus.commitSha);
+        if (!targetLabelToStatus) {
+          targetLabelToStatus = new Map<string, target.ITargetStatus>();
+          commitToTargetLabelToStatus.set(targetStatus.commitSha, targetLabelToStatus);
         }
 
         // For a given commit, the representative target status that
@@ -239,9 +239,9 @@ export default class TapComponent extends React.Component<Props, State> {
         // TODO(bduffany): Keep track of per-target count by commit, in
         // case the same target was executed multiple times for a given
         // commit. Otherwise the count stat looks incorrect.
-        const existing = targetIdToStatus.get(history.target.id);
+        const existing = targetLabelToStatus.get(history.target.label);
         if (!existing || timestamp > Number(existing.invocationCreatedAtUsec)) {
-          targetIdToStatus.set(history.target.id, targetStatus);
+          targetLabelToStatus.set(history.target.label, targetStatus);
         }
       }
     }
@@ -249,7 +249,7 @@ export default class TapComponent extends React.Component<Props, State> {
       (a, b) => commitToMaxInvocationCreatedAtUsec.get(b) - commitToMaxInvocationCreatedAtUsec.get(a)
     );
 
-    return { commits, commitToMaxInvocationCreatedAtUsec, commitToTargetIdToStatus };
+    return { commits, commitToMaxInvocationCreatedAtUsec, commitToTargetLabelToStatus };
   }
 
   navigateTo(destination: string, event: React.MouseEvent) {
@@ -344,8 +344,8 @@ export default class TapComponent extends React.Component<Props, State> {
     let first = this.getSortDirection() == "asc" ? a : b;
     let second = this.getSortDirection() == "asc" ? b : a;
 
-    let firstStats = this.state.stats.get(first?.target?.id);
-    let secondStats = this.state.stats.get(second?.target?.id);
+    let firstStats = this.state.stats.get(first?.target?.label);
+    let secondStats = this.state.stats.get(second?.target?.label);
 
     switch (this.getSortMode()) {
       case "target":
@@ -369,7 +369,7 @@ export default class TapComponent extends React.Component<Props, State> {
     // built to order by commit.
     return this.state.commits.map((commitSha) => ({
       commitSha,
-      status: this.state.commitToTargetIdToStatus.get(commitSha)?.get(history.target.id) || null,
+      status: this.state.commitToTargetLabelToStatus.get(commitSha)?.get(history.target.label) || null,
     }));
   }
 
@@ -522,9 +522,9 @@ export default class TapComponent extends React.Component<Props, State> {
               let targetParts = targetHistory.target.label.split(":");
               let targetPath = targetParts.length > 0 ? targetParts[0] : "";
               let targetName = targetParts.length > 1 ? targetParts[1] : "";
-              let stats = this.state.stats.get(targetHistory.target.id);
+              let stats = this.state.stats.get(targetHistory.target.label);
               return (
-                <React.Fragment key={targetHistory.target.id}>
+                <React.Fragment key={targetHistory.target.label}>
                   <div title={targetHistory.target.ruleType} className="tap-target-label">
                     <span className="tap-target-path">{targetPath}</span>:
                     <span className="tap-target-name">{targetName}</span>
@@ -562,7 +562,7 @@ export default class TapComponent extends React.Component<Props, State> {
                         }
                         return (
                           <a
-                            key={targetHistory.target.id + status.invocationId}
+                            key={targetHistory.target.label + status.invocationId}
                             href={destinationUrl}
                             onClick={this.navigateTo.bind(this, destinationUrl)}
                             title={title}
@@ -729,14 +729,14 @@ class InnerTopBar extends React.Component<InnerTopBarProps, InnerTopBarState> {
  * called.
  */
 function mergeHistories(h1: target.TargetHistory[], h2: target.TargetHistory[]): target.TargetHistory[] {
-  const targetIdToHistory = new Map<string, target.TargetHistory>();
+  const targetLabelToHistory = new Map<string, target.TargetHistory>();
   for (const history of h1) {
-    targetIdToHistory.set(history.target.id, history);
+    targetLabelToHistory.set(history.target.label, history);
   }
   for (const history of h2) {
-    const h1History = targetIdToHistory.get(history.target.id);
+    const h1History = targetLabelToHistory.get(history.target.label);
     if (!h1History) {
-      targetIdToHistory.set(history.target.id, history);
+      targetLabelToHistory.set(history.target.label, history);
       h1.push(history);
       continue;
     }
