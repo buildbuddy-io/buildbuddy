@@ -201,11 +201,23 @@ func setBazelVersion() error {
 	return setVersionErr
 }
 
+func isCLIVersion(version string) bool {
+	if strings.HasPrefix(version, "buildbuddy-io/") {
+		return true
+	}
+	// Bazelisk also allows hard-coding a path to the bb CLI as the "version",
+	// like /usr/local/bin/bb.
+	if strings.HasSuffix(version, "/bb") {
+		return true
+	}
+	return false
+}
+
 func setBazelVersionImpl() error {
 	// If USE_BAZEL_VERSION is already set and not pointing to us (the BB CLI),
 	// preserve that value.
 	envVersion := os.Getenv("USE_BAZEL_VERSION")
-	if envVersion != "" && !strings.HasPrefix(envVersion, "buildbuddy-io/") {
+	if envVersion != "" && !isCLIVersion(envVersion) {
 		return nil
 	}
 
@@ -223,7 +235,7 @@ func setBazelVersionImpl() error {
 	// If we appear first in .bazelversion, ignore that version to prevent
 	// bazelisk from invoking us recursively.
 	if IsInvokedByBazelisk() {
-		for len(parts) > 0 && strings.HasPrefix(parts[0], "buildbuddy-io/") {
+		for len(parts) > 0 && isCLIVersion(parts[0]) {
 			parts = parts[1:]
 		}
 	}
