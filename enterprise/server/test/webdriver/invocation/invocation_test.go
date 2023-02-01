@@ -34,8 +34,10 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	t.Log(buildbuddyBuildFlags)
 	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
 
+	// To test that the cache section includes writes, don't use the remote cache for the build
+	noRemoteCacheBuildArgs := append(buildArgs, "--noremote_accept_cached")
 	testbazel.Clean(context.Background(), t, workspacePath)
-	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
+	result := testbazel.Invoke(context.Background(), t, workspacePath, "build", noRemoteCacheBuildArgs...)
 	require.NotEmpty(t, result.InvocationID)
 
 	// Make sure we can view the invocation while logged in
@@ -52,7 +54,6 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	wt.FindByDebugID("cache-sections")
 	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
 	cacheRequestsCard := wt.FindByDebugID("cache-results-table").Text()
-	assert.Contains(t, cacheRequestsCard, "Miss")
 	assert.Contains(t, cacheRequestsCard, "Write")
 	assert.NotContains(t, cacheRequestsCard, "Hit")
 
