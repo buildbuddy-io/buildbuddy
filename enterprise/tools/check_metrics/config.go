@@ -18,5 +18,5 @@ type PrometheusMetric struct {
 	// The max number of times the canary can consecutively report as unhealthy before we should rollback.
 	MaxUnhealthyCount int `yaml:"max_unhealthy_count"`
 	// If the canary's success rate is lower than the other apps by this threshold, it is considered unhealthy.
-	CanaryHealthThreshold float64 `yaml:"canary_health_threshold"`
+	HealthThreshold float64 `yaml:"health_threshold"`
 }

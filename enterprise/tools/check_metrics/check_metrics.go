@@ -51,7 +51,7 @@ func main() {
 		Address: config.PrometheusAddress,
 	})
 	if err != nil {
-		log.Fatalf("Error creating prometheus client: %v\nDid you run the prometheus port-forward command?", err)
+		log.Fatalf("Error creating prometheus client: %s\nDid you run the prometheus port-forward command?", err)
 	}
 	promAPI := v1.NewAPI(prometheusClient)
 
@@ -71,7 +71,7 @@ func main() {
 				case <-monitoringTimer:
 					return nil
 				case <-monitoringTicker.C:
-					healthy, err := canaryHealthy(promAPI, metric.Name, metric.CanaryQuery, metric.BaselineQuery, metric.CanaryHealthThreshold)
+					healthy, err := metricHealthy(promAPI, metric.Name, metric.CanaryQuery, metric.BaselineQuery, metric.HealthThreshold)
 					if err != nil {
 						log.Warningf("Error querying metric %s: %s", metric.Name, err)
 					}
@@ -99,21 +99,21 @@ func main() {
 	os.Exit(metricsHealthyExitCode)
 }
 
-// Returns whether the given metric is healthy for the canary
-// If the canary's success rate is lower than that of the other apps by the input threshold, this will return false
+// Returns whether the given metric is healthy compared to the baseline
+// If the metric's success rate is lower than the baseline's by the input threshold, this will return false
 // Otherwise will return true
-func canaryHealthy(v1api v1.API, metricName string, canaryQuery string, baselineQuery string, canaryHealthThreshold float64) (bool, error) {
+func metricHealthy(v1api v1.API, metricName string, query string, baselineQuery string, healthThreshold float64) (bool, error) {
 	ctx := context.Background()
-	log.Debugf("Querying canary health for metric %s", metricName)
+	log.Debugf("Querying metric %s", metricName)
 
-	canaryResult, _, err := v1api.Query(ctx, canaryQuery, time.Now())
+	result, _, err := v1api.Query(ctx, query, time.Now())
 	if err != nil {
 		return false, err
 	}
-	canaryResultVector := canaryResult.(model.Vector)
-	canaryProberRate := model.SampleValue(0)
-	if len(canaryResultVector) > 0 {
-		canaryProberRate = canaryResultVector[0].Value
+	resultVector := result.(model.Vector)
+	metricValue := model.SampleValue(0)
+	if len(resultVector) > 0 {
+		metricValue = resultVector[0].Value
 	}
 
 	baselineResult, _, err := v1api.Query(ctx, baselineQuery, time.Now())
@@ -121,13 +121,13 @@ func canaryHealthy(v1api v1.API, metricName string, canaryQuery string, baseline
 		return false, err
 	}
 	baselineResultVector := baselineResult.(model.Vector)
-	baselineProberRate := model.SampleValue(0)
+	baselineMetricValue := model.SampleValue(0)
 	if len(baselineResultVector) > 0 {
-		baselineProberRate = baselineResultVector[0].Value
+		baselineMetricValue = baselineResultVector[0].Value
 	}
 
-	// If the canary has lower success rate than the other apps by the set threshold, the canary is considered unhealthy
-	if math.Abs(float64(baselineProberRate-canaryProberRate)) > canaryHealthThreshold {
+	// If the metric differs from the baseline by the set threshold, the metric is considered unhealthy
+	if math.Abs(float64(baselineMetricValue-metricValue)) > healthThreshold {
 		return false, nil
 	}
 	return true, nil
