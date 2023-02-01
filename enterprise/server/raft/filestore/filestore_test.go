@@ -83,3 +83,67 @@ func TestKnownVersions(t *testing.T) {
 		}
 	}
 }
+
+func MustParseKey(t *testing.T, ks string) *filestore.PebbleKey {
+	var key filestore.PebbleKey
+	_, err := key.FromBytes([]byte(ks))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &key
+}
+
+func TestLockID(t *testing.T) {
+	// All versions of a key should have the same LockID.
+	{
+		versions := []string{
+			"PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2",
+			"PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/v1",
+			"PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v2",
+		}
+		control := MustParseKey(t, versions[0]).LockID()
+		for i := 1; i < len(versions); i++ {
+			assert.Equal(t, control, MustParseKey(t, versions[i]).LockID())
+		}
+	}
+	// Different users (with same remote instance name) should have different LockID
+	{
+		versions := []string{
+			"PTFOO/GR1/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
+			"PTFOO/GR2/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
+			"PTFOO/GR3/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v2",
+		}
+		uniqueLocks := make(map[string]struct{}, 0)
+		for _, version := range versions {
+			l := MustParseKey(t, version).LockID()
+			assert.NotContains(t, uniqueLocks, l)
+			uniqueLocks[l] = struct{}{}
+		}
+	}
+	// Same users (with same remote instance name) should have same LockID
+	{
+		versions := []string{
+			"PTFOO/GR1/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
+			"PTFOO/GR1/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
+			"PTFOO/GR1/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v2",
+		}
+		control := MustParseKey(t, versions[0]).LockID()
+		for i := 1; i < len(versions); i++ {
+			assert.Equal(t, control, MustParseKey(t, versions[i]).LockID())
+		}
+	}
+	// Same users (with different remote instance name) should have different LockID
+	{
+		versions := []string{
+			"PTFOO/GR1/ac/1212121212/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
+			"PTFOO/GR1/ac/2323232323/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
+			"PTFOO/GR1/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/4545454545/v2",
+		}
+		uniqueLocks := make(map[string]struct{}, 0)
+		for _, version := range versions {
+			l := MustParseKey(t, version).LockID()
+			assert.NotContains(t, uniqueLocks, l)
+			uniqueLocks[l] = struct{}{}
+		}
+	}
+}

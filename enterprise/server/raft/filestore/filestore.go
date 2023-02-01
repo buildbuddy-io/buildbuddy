@@ -90,7 +90,7 @@ type PebbleKey struct {
 	prioritizeHashInMetadataKey bool
 }
 
-func (pmk *PebbleKey) String() string {
+func (pmk PebbleKey) String() string {
 	fmk, err := pmk.Bytes(UndefinedKeyVersion)
 	if err != nil {
 		return err.Error()
@@ -98,9 +98,9 @@ func (pmk *PebbleKey) String() string {
 	return string(fmk)
 }
 
-func (pmk *PebbleKey) LockID() string {
+func (pmk PebbleKey) LockID() string {
 	if pmk.isolation == "ac" {
-		return filepath.Join(pmk.isolation, pmk.remoteInstanceHash, pmk.hash)
+		return filepath.Join(pmk.isolation, pmk.groupID, pmk.remoteInstanceHash, pmk.hash)
 	}
 	return filepath.Join(pmk.isolation, pmk.hash)
 }
