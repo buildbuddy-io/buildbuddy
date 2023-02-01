@@ -32,6 +32,10 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+const (
+	defaultBazelVersion = "6.0.0"
+)
+
 func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T) *grpc.ClientConn {
 	byteStreamServer, err := NewByteStreamServer(env)
 	if err != nil {
@@ -280,7 +284,7 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 			require.NoError(t, err)
 			uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
 
-			mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob, true)
+			mustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, true)
 
 			sc := hit_tracker.ScoreCard(ctx, te, rmd.ToolInvocationId)
 			require.Len(t, sc.Results, 1)
@@ -351,7 +355,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 
 		// Upload the compressed blob.
 		uploadResourceName := fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
-		mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob, true)
+		mustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, true)
 
 		// Read back the compressed blob we just uploaded, but reference the
 		// decompressed resource name. Server should decompress it for us.
@@ -373,7 +377,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 
 		// Now try uploading a duplicate. The duplicate upload should not fail,
 		// and we should still be able to read the blob.
-		mustUploadChunked(t, ctx, bsClient, uploadResourceName, compressedBlob, false)
+		mustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, false)
 
 		downloadBuf = []byte{}
 		downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
@@ -409,7 +413,7 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 
 		// Upload uncompressed via bytestream.
 		uploadResourceName := fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes)
-		mustUploadChunked(t, ctx, bsClient, uploadResourceName, blob, true)
+		mustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, blob, true)
 
 		// Read back the blob we just uploaded, but reference the compressed resource
 		// name. Server should serve it back compressed since there is no overhead
@@ -450,6 +454,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 		uploadBlob                  []byte
 		downloadResourceName        string
 		expectedDownloadCompression repb.Compressor_Value
+		bazelVersion                string
 	}{
 		{
 			name:                        "Write compressed, read compressed",
@@ -481,9 +486,10 @@ func Test_CacheHandlesCompression(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		{
+		run := func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			ctx := context.Background()
+			ctx = withBazelVersion(t, ctx, tc.bazelVersion)
 
 			// Enable compression
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
@@ -495,7 +501,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 			bsClient := bspb.NewByteStreamClient(clientConn)
 
 			// Upload the blob
-			mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob, true)
+			mustUploadChunked(t, ctx, bsClient, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, true)
 
 			// Read back the blob we just uploaded
 			downloadBuf := []byte{}
@@ -522,7 +528,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 
 			// Now try uploading a duplicate. The duplicate upload should not fail,
 			// and we should still be able to read the blob.
-			mustUploadChunked(t, ctx, bsClient, tc.uploadResourceName, tc.uploadBlob, false)
+			mustUploadChunked(t, ctx, bsClient, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, false)
 
 			downloadBuf = []byte{}
 			downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
@@ -546,6 +552,15 @@ func Test_CacheHandlesCompression(t *testing.T) {
 				require.Equal(t, blob, decompressedDownloadBuf, tc.name)
 			}
 		}
+
+		// Run all tests for both bazel 5.0.0 (which introduced compression) and
+		// 5.1.0 (which added support for short-circuiting duplicate compressed
+		// uploads)
+		tc.bazelVersion = "5.0.0"
+		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
+
+		tc.bazelVersion = "5.1.0"
+		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
 	}
 }
 
@@ -565,7 +580,21 @@ func compressibleBlobOfSize(sizeBytes int) []byte {
 	return out
 }
 
-func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, uploadResourceName string, blob []byte, expectFullStreamRead bool) {
+func withBazelVersion(t *testing.T, ctx context.Context, version string) context.Context {
+	rmd := &repb.RequestMetadata{
+		ToolDetails: &repb.ToolDetails{
+			ToolName:    "bazel",
+			ToolVersion: version,
+		},
+	}
+	ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
+	require.NoError(t, err)
+	return ctx
+}
+
+func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, bazelVersion string, uploadResourceName string, blob []byte, isFirstAttempt bool) {
+	ctx = withBazelVersion(t, ctx, bazelVersion)
+
 	uploadStream, err := bsClient.Write(ctx)
 	require.NoError(t, err)
 
@@ -597,15 +626,36 @@ func mustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 	res, err := uploadStream.CloseAndRecv()
 	require.NoError(t, err)
 
-	// Note: REAPI clients are not advised to perform this committed_size check
-	// for compressed blobs, but we do this check to mimic what Bazel 5.0.0 does
-	// in practice. We also assert that we successfully sent all chunks, since the
-	// server needs all chunks in order to know the committed size. See
-	// https://github.com/bazelbuild/bazel/issues/14654
-	require.Equal(t, int64(len(blob)), res.CommittedSize)
-	if expectFullStreamRead {
-		require.Len(t, remaining, 0, "upload was unexpectedly short-circuited")
+	rn, err := digest.ParseUploadResourceName(uploadResourceName)
+	require.NoError(t, err)
+	isCompressed := rn.GetCompressor() != repb.Compressor_IDENTITY
+
+	// If this is a duplicate write, we expect the upload to be short-circuited.
+	shouldShortCircuit := !isFirstAttempt
+
+	// Note: Bazel pre-5.1.0 doesn't support short-circuiting compressed writes.
+	// Instead, the server should allow the client to upload the full stream,
+	// but just discard the uploaded stream.
+	// See https://github.com/bazelbuild/bazel/issues/14654
+	bazel5_1_0 := bazel_request.MustParseVersion("5.1.0")
+	if v := bazel_request.MustParseVersion(bazelVersion); isCompressed && !v.IsAtLeast(bazel5_1_0) {
+		shouldShortCircuit = false
 	}
+
+	if shouldShortCircuit {
+		// When short-circuiting, we expect committed size to be -1 for
+		// compressed blobs, since the committed size can vary depending on
+		// things like compression level.
+		if isCompressed {
+			require.Equal(t, int64(-1), res.CommittedSize)
+		} else {
+			require.Equal(t, rn.GetDigest().GetSizeBytes(), res.CommittedSize)
+		}
+		return
+	}
+
+	require.Equal(t, int64(len(blob)), res.CommittedSize)
+	require.Len(t, remaining, 0, "not all bytes were uploaded")
 }
 
 func zstdDecompress(t *testing.T, b []byte) []byte {
