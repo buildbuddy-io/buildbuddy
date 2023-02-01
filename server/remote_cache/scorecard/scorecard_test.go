@@ -278,7 +278,7 @@ func setupEnv(t *testing.T, scorecard *capb.ScoreCard) *testenv.TestEnv {
 type fakeBlobStore struct {
 	interfaces.Blobstore
 	ScoreCard *capb.ScoreCard
-	t *testing.T
+	t         *testing.T
 }
 
 func (bs *fakeBlobStore) ReadBlob(ctx context.Context, name string) ([]byte, error) {
