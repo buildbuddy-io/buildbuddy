@@ -73,6 +73,10 @@ func getSelfOwnedGroup(t *testing.T, ctx context.Context, env environment.Env) *
 	return nil
 }
 
+func stringPointer(val string) *string {
+	return &val
+}
+
 func TestGetImpersonatedUser_UserWithoutImpersonationPerms_PermissionDenied(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
@@ -142,10 +146,9 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 	// Attach a slug to GR1 (orgs don't get slugs when they are created as
 	// part of InsertUser).
-	slug := "org1-url-identifier"
 	orgGroupID, err := udb.InsertOrUpdateGroup(ctx1, &tables.Group{
 		GroupID:       "GR1",
-		URLIdentifier: &slug,
+		URLIdentifier: stringPointer("gr1-slug"),
 		OwnedDomain:   "org1.io",
 	})
 	require.NoError(t, err)
@@ -240,6 +243,35 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us2.Role, "second user added to the default group should have the default role")
 }
 
+func TestInsertOrUpdateGroup(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create some users (in different orgs)
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+
+	g1Update := &tables.Group{GroupID: "GR1", URLIdentifier: stringPointer("gr1")}
+
+	_, err := udb.InsertOrUpdateGroup(ctx, g1Update)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated error for update from anonymous user; got: %s", err)
+
+	_, err = udb.InsertOrUpdateGroup(ctx2, g1Update)
+	require.Truef(
+		t, status.IsPermissionDeniedError(err),
+		"expected PermissionDenied error for update from US2; got: %s", err)
+
+	_, err = udb.InsertOrUpdateGroup(ctx1, g1Update)
+	require.NoError(t, err)
+}
+
 func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
@@ -258,9 +290,20 @@ func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	require.Len(t, u.Groups, 1, "cloud users should be added to their self-owned group")
 	us1Group := u.Groups[0].Group
 
-	// Add US2 to it
+	// Try adding US2 to it without proper auth; should fail.
+	err = udb.AddUserToGroup(ctx, "US2", us1Group.GroupID)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated error adding US2 to GR1 as anonymous user; got: %s ", err)
+
 	ctx2 := authUserCtx(ctx, env, t, "US2")
-	udb.AddUserToGroup(ctx2, "US2", us1Group.GroupID)
+	err = udb.AddUserToGroup(ctx2, "US2", us1Group.GroupID)
+	require.Truef(
+		t, status.IsPermissionDeniedError(err),
+		"expected PermissionDenied error adding US2 to GR1 as US2; got: %s ", err)
+
+	err = udb.AddUserToGroup(ctx1, "US2", us1Group.GroupID)
+	require.NoError(t, err, "US1 should be able to add US2 to GR1")
 
 	// Make sure they were added with the proper role
 	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
@@ -270,7 +313,7 @@ func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us2.Role, "users should have default role after being added to another group")
 }
 
-func TestAddUserToGroup_EmptyGroup_UserGetsAdminRole(t *testing.T) {
+func TestCreateGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
@@ -279,18 +322,16 @@ func TestAddUserToGroup_EmptyGroup_UserGetsAdminRole(t *testing.T) {
 
 	// Create a user
 	createUser(t, ctx, env, "US1", "org1.io")
-	// Create an empty group
-	slug := "foo"
-	groupID, err := udb.InsertOrUpdateGroup(ctx, &tables.Group{
-		URLIdentifier: &slug,
-	})
-	require.NoError(t, err)
-	// Add US1 to it
-	err = udb.AddUserToGroup(ctx, "US1", groupID)
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+
+	// Create a new group as US1
+	groupID, err := udb.CreateGroup(ctx1, &tables.Group{})
 	require.NoError(t, err)
 
+	// Re-authenticate to pick up the new group membership
+	ctx1 = authUserCtx(ctx, env, t, "US1")
+
 	// Make sure they are the group admin
-	ctx1 := authUserCtx(ctx, env, t, "US1")
 	groupUsers, err := udb.GetGroupUsers(ctx1, groupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err, "failed to get group users")
 	require.Len(t, groupUsers, 1)
@@ -307,35 +348,21 @@ func TestAddUserToGroup_UserPreviouslyRequestedAccess_UpdatesMembershipStatus(t 
 
 	// Create a user
 	createUser(t, ctx, env, "US1", "org1.io")
-	// Create an empty group
-	slug := "foo"
-	groupID, err := udb.InsertOrUpdateGroup(ctx, &tables.Group{
-		URLIdentifier: &slug,
-	})
-	require.NoError(t, err)
-	// Add US1 to it
-	err = udb.AddUserToGroup(ctx, "US1", groupID)
-	require.NoError(t, err)
-
-	// Make sure they are the group admin
 	ctx1 := authUserCtx(ctx, env, t, "US1")
-	groupUsers, err := udb.GetGroupUsers(ctx1, groupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
-	require.NoError(t, err)
-	require.Len(t, groupUsers, 1)
-	gu := groupUsers[0]
-	require.Equal(t, grpb.Group_ADMIN_ROLE, gu.Role, "users should have admin role when added to a new group")
+	groupID1 := getSelfOwnedGroup(t, ctx1, env).Group.GroupID
 
 	// Now create user US2, also with @org1.io email.
 	// Note, the group does not own the org1.io domain, so US2 shouldn't be
 	// auto-added to the group.
 	createUser(t, ctx, env, "US2", "org1.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
 
-	// Have US2 *request* to join the group
-	err = udb.RequestToJoinGroup(ctx, "US2", groupID)
+	// Have US2 *request* to join US1's group
+	err := udb.RequestToJoinGroup(ctx2, "US2", groupID1)
 	require.NoError(t, err)
 
 	// Now *add* US2 to the group; should update their membership request.
-	err = udb.AddUserToGroup(ctx, "US2", groupID)
+	err = udb.AddUserToGroup(ctx1, "US2", groupID1)
 	require.NoError(t, err)
 }
 

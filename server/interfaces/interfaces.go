@@ -327,6 +327,10 @@ type UserDB interface {
 	CreateDefaultGroup(ctx context.Context) error
 
 	// Groups API
+
+	// CreateGroup creates a new group, adds the authenticated user to it,
+	// and creates an initial API key for the group.
+	CreateGroup(ctx context.Context, g *tables.Group) (string, error)
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)

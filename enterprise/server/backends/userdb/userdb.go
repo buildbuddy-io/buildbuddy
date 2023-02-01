@@ -337,7 +337,56 @@ func getUserGroup(tx *db.DB, userID string, groupID string) (*tables.UserGroup, 
 	return userGroup, nil
 }
 
+func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, error) {
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return "", err
+	}
+	groupID := ""
+	err = d.h.Transaction(ctx, func(tx *db.DB) error {
+		gid, err := d.createGroup(ctx, tx, u.GetUserID(), g)
+		groupID = gid
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return groupID, nil
+}
+
+func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *tables.Group) (string, error) {
+	if g.GroupID != "" {
+		return "", status.InvalidArgumentErrorf("cannot create a Group using an existing group ID")
+	}
+	newGroup := *g // copy
+	groupID, err := tables.PrimaryKeyForTable("Groups")
+	if err != nil {
+		return "", err
+	}
+	newGroup.GroupID = groupID
+	newGroup.WriteToken = randomToken(10)
+
+	if err := tx.Create(&newGroup).Error; err != nil {
+		return "", err
+	}
+	_, err = createAPIKey(
+		tx, groupID, newAPIKeyToken(),
+		defaultAPIKeyLabel, defaultAPIKeyCapabilities,
+		false /*visibleToDevelopers*/)
+	if err != nil {
+		return "", err
+	}
+	if err = d.addUserToGroup(ctx, tx, userID, groupID); err != nil {
+		return "", err
+	}
+	return groupID, nil
+}
+
 func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error) {
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return "", err
+	}
 	if isInOwnedDomainBlocklist(g.OwnedDomain) {
 		return "", status.InvalidArgumentError("This domain is not allowed to be owned by any group.")
 	}
@@ -348,7 +397,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 		return "", status.InvalidArgumentError("Invalid organization URL.")
 	}
 	groupID := ""
-	err := d.h.Transaction(ctx, func(tx *db.DB) error {
+	err = d.h.Transaction(ctx, func(tx *db.DB) error {
 		if g.OwnedDomain != "" {
 			existingDomainOwnerGroup, err := d.getDomainOwnerGroup(ctx, tx, g.OwnedDomain)
 			if err != nil {
@@ -359,23 +408,15 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			}
 		}
 		if g.GroupID == "" {
-			newGroup := g
-			pk, err := tables.PrimaryKeyForTable("Groups")
-			if err != nil {
-				return err
-			}
-			groupID = pk
-			newGroup.GroupID = pk
-			newGroup.WriteToken = randomToken(10)
-
-			if err := tx.Create(&newGroup).Error; err != nil {
-				return err
-			}
-			_, err = createAPIKey(tx, groupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/)
+			groupID, err = d.createGroup(ctx, tx, u.GetUserID(), g)
 			return err
 		}
 
 		groupID = g.GroupID
+		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+			return err
+		}
+
 		res := tx.Exec(`
 			UPDATE `+"`Groups`"+` SET
 				name = ?,
@@ -412,43 +453,54 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 }
 
 func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID string) error {
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return err
+	}
+	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		return err
+	}
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
-		existing, err := getUserGroup(tx, userID, groupID)
-		if err != nil && !db.IsRecordNotFound(err) {
-			return err
-		}
-		if existing != nil {
-			if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
-				return tx.Exec(`
-					UPDATE UserGroups
-					SET membership_status = ?
-					WHERE user_user_id = ?
-					AND group_group_id = ?
-					`,
-					grpb.GroupMembershipStatus_MEMBER,
-					userID,
-					groupID,
-				).Error
-			}
-			return status.AlreadyExistsError("You're already in this organization.")
-		}
-		row := &struct{ Count int64 }{}
-		err = tx.Raw(
-			"SELECT COUNT(*) AS count FROM UserGroups WHERE group_group_id = ?", groupID,
-		).Take(row).Error
-		if err != nil {
-			return err
-		}
-		r := role.Default
-		// If no existing users in the group, promote to admin automatically.
-		if row.Count == 0 {
-			r = role.Admin
-		}
-		return tx.Exec(
-			"INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)",
-			userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
-		).Error
+		return d.addUserToGroup(ctx, tx, userID, groupID)
 	})
+}
+
+func (d *UserDB) addUserToGroup(ctx context.Context, tx *db.DB, userID, groupID string) error {
+	existing, err := getUserGroup(tx, userID, groupID)
+	if err != nil && !db.IsRecordNotFound(err) {
+		return err
+	}
+	if existing != nil {
+		if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
+			return tx.Exec(`
+				UPDATE UserGroups
+				SET membership_status = ?
+				WHERE user_user_id = ?
+				AND group_group_id = ?
+				`,
+				grpb.GroupMembershipStatus_MEMBER,
+				userID,
+				groupID,
+			).Error
+		}
+		return status.AlreadyExistsError("You're already in this organization.")
+	}
+	row := &struct{ Count int64 }{}
+	err = tx.Raw(
+		"SELECT COUNT(*) AS count FROM UserGroups WHERE group_group_id = ?", groupID,
+	).Take(row).Error
+	if err != nil {
+		return err
+	}
+	r := role.Default
+	// If no existing users in the group, promote to admin automatically.
+	if row.Count == 0 {
+		r = role.Admin
+	}
+	return tx.Exec(
+		"INSERT INTO UserGroups (user_user_id, group_group_id, membership_status, role) VALUES(?, ?, ?, ?)",
+		userID, groupID, int32(grpb.GroupMembershipStatus_MEMBER), r,
+	).Error
 }
 
 func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID string) error {
