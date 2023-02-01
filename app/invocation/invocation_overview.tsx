@@ -113,7 +113,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
           {roleLabel && <div className={`role-badge ${this.props.model.getRole()}`}>{roleLabel}</div>}
           <div className="subtitle">{this.props.model.getFormattedStartedDate()}</div>
         </div>
-        <div className="details">
+        <div debug-id="invocation-details" className="details">
           <div className="detail">
             {this.props.model.getStatusIcon()}
             {this.props.model.getStatus()}

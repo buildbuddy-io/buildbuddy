@@ -29,6 +29,7 @@ go_library(
         "//server/tables",
         "//server/util/clickhouse/schema",
         "//server/util/role",
+        "@com_github_golang_jwt_jwt//:jwt",
         "@io_gorm_gorm//:gorm",
         "@org_golang_google_grpc//credentials",
     ],

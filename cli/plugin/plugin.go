@@ -886,10 +886,20 @@ func PipelineWriter(w io.Writer, plugins []*Plugin) (io.WriteCloser, error) {
 }
 
 func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin) (int, error) {
+	// Write terminal output to stdout, so that commands like
+	// `bb info | grep bazel-bin` will work.
+	// With `bb run` though, we want the build step output to go to stderr,
+	// so things like `bb run :tool | jq ...` don't try to consume the
+	// build progress output.
+	termOutput := os.Stdout
+	if cmd, _ := parser.GetBazelCommandAndIndex(args); cmd == "run" {
+		termOutput = os.Stderr
+	}
+
 	// Build the pipeline of bazel output handlers.
 	// Write to stderr so that build output isn't considered part of the
 	// program's stdout in the `bb run` case.
-	wc, err := PipelineWriter(os.Stderr, plugins)
+	wc, err := PipelineWriter(termOutput, plugins)
 	if err != nil {
 		return -1, err
 	}

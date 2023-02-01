@@ -177,7 +177,7 @@ func TestBuild_RemoteCacheFlags_CasOnlyApiKey_SecondBuildIsNotCached(t *testing.
 }
 
 func TestBuild_RemoteCacheFlags_NoAuthConfigured_SecondBuildIsCached(t *testing.T) {
-	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.NoAuthConfig)
+	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig)
 	ctx := context.Background()
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt"}
@@ -208,7 +208,7 @@ func TestBuild_RemoteCacheFlags_NoAuthConfigured_SecondBuildIsCached(t *testing.
 
 func TestBuild_RemoteCacheFlags_Compression_SecondBuildIsCached(t *testing.T) {
 	app := buildbuddy_enterprise.RunWithConfig(
-		t, buildbuddy_enterprise.NoAuthConfig, "--cache.zstd_transcoding_enabled=true")
+		t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig, "--cache.zstd_transcoding_enabled=true")
 	ctx := context.Background()
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
 	buildFlags := []string{"//:hello.txt", "--experimental_remote_cache_compression"}
@@ -239,7 +239,7 @@ func TestBuild_RemoteCacheFlags_Compression_SecondBuildIsCached(t *testing.T) {
 
 func TestBuild_RemoteCache_ScoreCard(t *testing.T) {
 	app := buildbuddy_enterprise.RunWithConfig(
-		t, buildbuddy_enterprise.NoAuthConfig,
+		t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig,
 		"--redis_command_buffer_flush_period=0",
 		"--cache_stats_finalization_delay=0")
 	bbService := app.BuildBuddyServiceClient(t)

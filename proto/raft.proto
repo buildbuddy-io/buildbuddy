@@ -88,6 +88,14 @@ message PartitionMetadatas {
   repeated PartitionMetadata metadata = 1;
 }
 
+message VersionMetadata {
+  // The int64 representation of a PebbleKeyVersion.
+  int64 version = 1;
+
+  // The time when the version was last changed.
+  int64 last_modify_usec = 2;
+}
+
 message FileDeleteRequest {
   FileRecord file_record = 1;
 }

@@ -72,6 +72,8 @@ var (
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 
+	activeKeyVersion = flag.Int64("cache.pebble.activeKeyVersion", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
+
 	// Compression related flags
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
 )
@@ -162,6 +164,9 @@ type PebbleCache struct {
 	atimeUpdateThreshold time.Duration
 	atimeBufferSize      int
 	minEvictionAge       time.Duration
+
+	lastDBVersionUpdate time.Time
+	lastDBVersion       filestore.PebbleKeyVersion
 
 	env    environment.Env
 	db     *pebble.DB
@@ -357,6 +362,12 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
 	}
 
+	versionMetadata, err := pc.databaseVersionMetadata()
+	if err != nil {
+		return nil, err
+	}
+	pc.lastDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetVersion())
+
 	peMu := sync.Mutex{}
 	eg := errgroup.Group{}
 	for i, part := range opts.Partitions {
@@ -399,6 +410,89 @@ func keyRange(key []byte) ([]byte, []byte) {
 func olderThanThreshold(t time.Time, threshold time.Duration) bool {
 	age := time.Since(t)
 	return age >= threshold
+}
+
+// databaseVersionKey returns the key bytes of a key where a serialized,
+// database-wide version metadata proto is stored.
+func (p *PebbleCache) databaseVersionKey() []byte {
+	var key []byte
+	key = append(key, SystemKeyPrefix...)
+	key = append(key, []byte("database-version")...)
+	return key
+}
+
+// databaseVersionKey returns the database-wide version metadata which
+// contains the database version.
+func (p *PebbleCache) databaseVersionMetadata() (*rfpb.VersionMetadata, error) {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	buf, err := pebbleutil.GetCopy(db, p.databaseVersionKey())
+	if err != nil {
+		if status.IsNotFoundError(err) {
+			// If the key is not present in the DB; return an empty
+			// proto.
+			return &rfpb.VersionMetadata{}, nil
+		}
+		return nil, err
+	}
+
+	versionMetadata := &rfpb.VersionMetadata{}
+	if err := proto.Unmarshal(buf, versionMetadata); err != nil {
+		return nil, err
+	}
+	return versionMetadata, nil
+}
+
+// currentDatabaseVersion returns the currently stored filestore.PebbleKeyVersion.
+// It is safe to call this function in a loop -- the underlying metadata will
+// only be fetched a max of once per second.
+func (p *PebbleCache) currentDatabaseVersion() filestore.PebbleKeyVersion {
+	unlockFn := p.locker.RLock(string(p.databaseVersionKey()))
+	defer unlockFn()
+	return p.lastDBVersion
+}
+
+func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
+	return filestore.PebbleKeyVersion(*activeKeyVersion)
+}
+
+// updateDatabaseVersion updates the database version to newVersion.
+func (p *PebbleCache) updateDatabaseVersion(newVersion filestore.PebbleKeyVersion) error {
+	versionKey := p.databaseVersionKey()
+	unlockFn := p.locker.Lock(string(versionKey))
+	defer unlockFn()
+
+	oldVersionMetadata, err := p.databaseVersionMetadata()
+	if err != nil {
+		return err
+	}
+
+	newVersionMetadata := proto.Clone(oldVersionMetadata).(*rfpb.VersionMetadata)
+	newVersionMetadata.Version = int64(newVersion)
+	newVersionMetadata.LastModifyUsec = time.Now().UnixMicro()
+
+	buf, err := proto.Marshal(newVersionMetadata)
+	if err != nil {
+		return err
+	}
+
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := db.Set(versionKey, buf, &pebble.WriteOptions{Sync: true}); err != nil {
+		return err
+	}
+
+	p.lastDBVersion = newVersion
+
+	log.Printf("Pebble Cache: db version changed from %+v to %+v", oldVersionMetadata, newVersionMetadata)
+	return nil
 }
 
 func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
@@ -740,6 +834,7 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 		totalCASCount += casCount
 		totalACCount += acCount
 	}
+	buf += fmt.Sprintf("Stored data version: %d, new writes version: %d\n", p.currentDatabaseVersion(), p.activeDatabaseVersion())
 	buf += fmt.Sprintf("[All Partitions] Total Size: %d bytes\n", totalSizeBytes)
 	buf += fmt.Sprintf("[All Partitions] CAS total: %d items\n", totalCASCount)
 	buf += fmt.Sprintf("[All Partitions] AC total: %d items\n", totalACCount)

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v3"
+	"github.com/lni/dragonboat/v3/client"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 
@@ -26,6 +27,12 @@ import (
 // If a request is received that will result in a nodehost.Sync{Propose/Read},
 // but not deadline is set, defaultContextTimeout will be applied.
 const DefaultContextTimeout = 60 * time.Second
+
+type NodeHost interface {
+	GetNoOPSession(clusterID uint64) *client.Session
+	SyncPropose(ctx context.Context, session *client.Session, cmd []byte) (dbsm.Result, error)
+	SyncRead(ctx context.Context, clusterID uint64, query interface{}) (interface{}, error)
+}
 
 type apiClientAndConn struct {
 	rfspb.ApiClient
@@ -214,34 +221,7 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 	return status.DeadlineExceededErrorf("exceeded retry limit for node host function")
 }
 
-func getRequestState(ctx context.Context, rs *dragonboat.RequestState) (dbsm.Result, error) {
-	select {
-	case r := <-rs.AppliedC():
-		if r.Completed() {
-			return r.GetResult(), nil
-		} else if r.Rejected() {
-			return dbsm.Result{}, dragonboat.ErrRejected
-		} else if r.Timeout() {
-			return dbsm.Result{}, dragonboat.ErrTimeout
-		} else if r.Terminated() {
-			return dbsm.Result{}, dragonboat.ErrClusterClosed
-		} else if r.Dropped() {
-			return dbsm.Result{}, dragonboat.ErrClusterNotReady
-		} else {
-			log.Errorf("unknown v code %v", r)
-			return dbsm.Result{}, status.InternalErrorf("unknown v code %v", r)
-		}
-	case <-ctx.Done():
-		if ctx.Err() == context.Canceled {
-			return dbsm.Result{}, dragonboat.ErrCanceled
-		} else if ctx.Err() == context.DeadlineExceeded {
-			return dbsm.Result{}, dragonboat.ErrTimeout
-		}
-	}
-	return dbsm.Result{}, status.InternalError("unreachable")
-}
-
-func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncProposeLocal(ctx context.Context, nodehost NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	sesh := nodehost.GetNoOPSession(clusterID)
 	buf, err := proto.Marshal(batch)
 	if err != nil {
@@ -249,19 +229,10 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 	}
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		deadline, ok := ctx.Deadline()
-		if !ok {
-			return status.FailedPreconditionError("nodehost.Propose *requires* a context deadline be set")
-		}
-		rs, err := nodehost.Propose(sesh, buf, time.Until(deadline))
+		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
 			return err
 		}
-		result, err := getRequestState(ctx, rs)
-		if err != nil {
-			return err
-		}
-		rs.Release()
 		raftResponse = result
 		return nil
 	})
@@ -275,7 +246,7 @@ func SyncProposeLocal(ctx context.Context, nodehost *dragonboat.NodeHost, cluste
 	return batchResponse, err
 }
 
-func SyncReadLocal(ctx context.Context, nodehost *dragonboat.NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, clusterID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err

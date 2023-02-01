@@ -133,7 +133,7 @@ export default class LoginComponent extends React.Component<Props, State> {
               <button className="signup-button" onClick={this.handleLoginClicked.bind(this)}>
                 Sign up for BuildBuddy
               </button>
-              <button className="login-button" onClick={this.handleLoginClicked.bind(this)}>
+              <button debug-id="login-button" className="login-button" onClick={this.handleLoginClicked.bind(this)}>
                 Log in to BuildBuddy
               </button>
               {capabilities.anonymous && (
@@ -150,6 +150,7 @@ export default class LoginComponent extends React.Component<Props, State> {
               {this.state.showSSO && (
                 <>
                   <Input
+                    debug-id="sso-slug"
                     name="ssoSlug"
                     value={this.state.ssoSlug}
                     onChange={this.onChange.bind(this)}
@@ -158,7 +159,9 @@ export default class LoginComponent extends React.Component<Props, State> {
                   />
                 </>
               )}
-              <Button className={this.state.ssoSlug ? "active" : ""}>Log in with SSO</Button>
+              <Button debug-id="sso-button" className={`${this.state.ssoSlug ? "active" : ""}`}>
+                Log in with SSO
+              </Button>
             </form>
           )}
         </div>

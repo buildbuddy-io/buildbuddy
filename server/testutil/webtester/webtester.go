@@ -87,6 +87,17 @@ func (wt *WebTester) FindAll(cssSelector string) []*Element {
 	return out
 }
 
+// FindByDebugID returns the element matching the given debug-id selector. Exactly one
+// element must be matched, otherwise the test fails.
+//
+// It's recommended to use the debug-id attribute for webdriver tests. Using CSS names, IDs, or classes
+// can be brittle when element style is changed. debug-ids are only used for webdriver tests and should be stable
+func (wt *WebTester) FindByDebugID(debugID string) *Element {
+	el, err := wt.driver.FindElement(selenium.ByCSSSelector, `[debug-id="`+debugID+`"]`)
+	require.NoError(wt.t, err)
+	return &Element{wt.t, el}
+}
+
 // Screenshot takes a screenshot and saves it in the test outputs directory. The
 // given tag is used to disambiguate between other screenhots taken in the test.
 func (wt *WebTester) Screenshot(tag string) {
@@ -149,6 +160,12 @@ func (el *Element) GetAttribute(name string) string {
 	return val
 }
 
+// SendKeys types into the element.
+func (el *Element) SendKeys(keys string) {
+	err := el.webElement.SendKeys(keys)
+	require.NoError(el.t, err)
+}
+
 // ===
 // Utility functions that don't directly correspond with WebElement APIs
 // ===
@@ -168,12 +185,31 @@ func HasClass(el *Element, class string) bool {
 // BuildBuddy-specific functionality
 // ===
 
-// Login uses the Web app to log into BuildBuddy as the default self-auth user.
-// It expects that no user is currently logged in, and that self-auth is
-// enabled.
-func Login(wt *WebTester, appBaseURL string) {
-	wt.Get(appBaseURL)
-	wt.Find(".login-button").Click()
+type Target interface {
+	// HTTPURL is the HTTP endpoint of the target.
+	// Ex: http://localhost:8080
+	HTTPURL() string
+}
+
+type SSOTarget interface {
+	Target
+	// SSOSlug is the slug of the org that should be used for SSO login.
+	SSOSlug() string
+}
+
+func Login(wt *WebTester, target Target) {
+	wt.Get(target.HTTPURL())
+
+	// If the target supports SSO login, prefer that.
+	if target, ok := target.(SSOTarget); ok {
+		wt.FindByDebugID("sso-button").Click()
+		wt.FindByDebugID("sso-slug").SendKeys(target.SSOSlug())
+		wt.FindByDebugID("sso-button").Click()
+		return
+	}
+
+	// Otherwise attempt self-auth.
+	wt.FindByDebugID("login-button").Click()
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,
@@ -212,9 +248,14 @@ var (
 	// WithEnableCache is a setup page option that checks the "enable cache"
 	// checkbox.
 	WithEnableCache SetupPageOption = func(wt *WebTester) {
-		checkbox := wt.Find("#cache")
-		if !checkbox.IsSelected() {
-			checkbox.Click()
+		enableCacheCheckbox := wt.Find("#cache")
+		if !enableCacheCheckbox.IsSelected() {
+			enableCacheCheckbox.Click()
+		}
+
+		fullCacheRadioButton := wt.Find("#cache-full")
+		if !fullCacheRadioButton.IsSelected() {
+			fullCacheRadioButton.Click()
 		}
 	}
 )

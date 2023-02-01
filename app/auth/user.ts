@@ -11,6 +11,10 @@ export class User {
   /** Whether the user is temporarily acting as a member of the selected group. */
   isImpersonating: boolean;
 
+  getId() {
+    return this.displayUser.userId.id;
+  }
+
   selectedGroupName() {
     if (this.selectedGroup?.name == "DEFAULT_GROUP") return "Organization";
     return this.selectedGroup?.name?.trim();
@@ -22,5 +26,9 @@ export class User {
 
   canImpersonate() {
     return this.allowedRpcs.has("getInvocationOwner");
+  }
+
+  isGroupAdmin() {
+    return this.allowedRpcs.has("updateGroup");
   }
 }

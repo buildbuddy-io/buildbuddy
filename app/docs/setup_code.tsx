@@ -207,7 +207,18 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     router.navigateTo(href);
   }
 
+  private getCreateApiKeyLink(): string | null {
+    // If the user is an admin (meaning they can create org-level keys), link to the API keys page.
+    if (this.state.user.isGroupAdmin()) return "/settings/org/api-keys";
+    // If the user is not an admin but user-level keys are enabled, link to the user-level page.
+    if (this.state.user.selectedGroup.userOwnedKeysEnabled) return "/settings/personal/api-keys";
+
+    return null;
+  }
+
   renderMissingApiKeysNotice() {
+    const createLink = this.getCreateApiKeyLink();
+
     return (
       <div className="no-api-keys">
         <div className="no-api-keys-content">
@@ -217,12 +228,12 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
             ) : (
               <>This BuildBuddy installation requires authentication, but no API keys are set up.</>
             )}
-            {!this.state.user.canCall("createApiKey") && <> Only organization administrators can create API keys.</>}
+            {!createLink && <> You do not have permission to create API keys within this organization.</>}
           </div>
-          {this.state.user.canCall("createApiKey") && (
+          {createLink !== null && (
             <div>
               <FilledButton className="manage-keys-button">
-                <a href="/settings/org/api-keys" onClick={this.onClickLink.bind(this, "/settings/org/api-keys")}>
+                <a href={createLink} onClick={this.onClickLink.bind(this, createLink)}>
                   Manage keys
                 </a>
               </FilledButton>
@@ -298,9 +309,10 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
                   name="selectedCredential"
                   value={this.state.selectedCredentialIndex}
                   onChange={this.onChangeCredential.bind(this)}>
-                  {this.state.bazelConfigResponse.credential.map(({ apiKey: { label, value } }, index) => (
+                  {this.state.bazelConfigResponse.credential.map((credential, index) => (
                     <Option key={index} value={index}>
-                      {label || "Untitled key"} - {value}
+                      {credential.apiKey.label || "Untitled key"}
+                      {credential.apiKey.userOwned && " (personal key)"}
                     </Option>
                   ))}
                 </Select>

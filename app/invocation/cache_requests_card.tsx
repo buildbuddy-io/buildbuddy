@@ -302,7 +302,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           {/* Filtering controls */}
           <div className="separator" />
           <label>Show</label>
-          <Select value={this.getFilterIndex()} onChange={this.onChangeFilter.bind(this)}>
+          <Select
+            debug-id="filter-cache-requests"
+            value={this.getFilterIndex()}
+            onChange={this.onChangeFilter.bind(this)}>
             {filters.map((filter, i) => (
               <Option key={filter.label} value={i}>
                 {filter.label}
@@ -530,7 +533,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
         }>
         {this.renderControls()}
-        <div className="results-table">
+        <div debug-id="cache-results-table" className="results-table">
           <div className="row column-headers">
             {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
               <div className="name-column">Name</div>

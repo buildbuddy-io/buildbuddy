@@ -71,4 +71,7 @@ message FrontendConfig {
 
   // Whether to render test outputs.zip contents in the targets UI.
   bool test_output_manifests_enabled = 23;
+
+  // Whether to enable the user-owned keys UI.
+  bool user_owned_keys_enabled = 24;
 }

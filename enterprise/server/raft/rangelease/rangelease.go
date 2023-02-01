@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -36,7 +36,8 @@ func ContainsMetaRange(rd *rfpb.RangeDescriptor) bool {
 }
 
 type Lease struct {
-	sender        sender.ISender
+	nodeHost      client.NodeHost
+	clusterID     uint64
 	liveness      *nodeliveness.Liveness
 	leaseDuration time.Duration
 	gracePeriod   time.Duration
@@ -50,9 +51,10 @@ type Lease struct {
 	quitLease             chan struct{}
 }
 
-func New(sender sender.ISender, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
+func New(nodeHost client.NodeHost, clusterID uint64, liveness *nodeliveness.Liveness, rd *rfpb.RangeDescriptor) *Lease {
 	return &Lease{
-		sender:                sender,
+		nodeHost:              nodeHost,
+		clusterID:             clusterID,
 		liveness:              liveness,
 		leaseDuration:         defaultLeaseDuration,
 		gracePeriod:           defaultGracePeriod,
@@ -131,7 +133,7 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := l.sender.SyncPropose(ctx, l.rangeDescriptor.GetLeft(), casRequest)
+	rsp, err := client.SyncProposeLocal(ctx, l.nodeHost, l.clusterID, casRequest)
 	if err != nil {
 		// This indicates a communication error proposing the message.
 		return nil, err
