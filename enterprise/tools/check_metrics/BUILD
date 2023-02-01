@@ -12,7 +12,6 @@ go_library(
         "//server/util/flagutil",
         "//server/util/flagutil/yaml",
         "//server/util/log",
-        "//server/util/retry",
         "@com_github_prometheus_client_golang//api",
         "@com_github_prometheus_client_golang//api/prometheus/v1:prometheus",
         "@com_github_prometheus_common//model",

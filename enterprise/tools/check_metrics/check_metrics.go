@@ -5,13 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/common/model"
 	"golang.org/x/sync/errgroup"
@@ -59,32 +59,28 @@ func main() {
 			monitoringTicker := time.NewTicker(time.Duration(metric.PollingIntervalSeconds) * time.Second)
 			defer monitoringTicker.Stop()
 
+			unhealthyCount := 0
 			for {
 				select {
 				case <-gctx.Done():
 					return nil
-				case <-monitoringTicker.C:
-					r := retry.New(context.Background(), &retry.Options{
-						InitialBackoff: time.Duration(metric.PollingIntervalSeconds) * time.Second,
-						MaxRetries:     metric.MaxUnhealthyCount,
-					})
-					healthy := false
-					for r.Next() {
-						healthy, err = canaryHealthy(promAPI, metric.Name, metric.CanaryQuery, metric.BaselineQuery, metric.CanaryHealthThreshold)
-						if err != nil {
-							log.Warningf("Error querying metric %s: %s", metric.Name, err)
-						} else if healthy {
-							break
-						}
-					}
-
-					// If metric was consecutively unhealthy for max number of retries, we should rollback
-					if !healthy {
-						return errors.New(fmt.Sprintf("%s metrics unhealthy.", metric.Name))
-					}
-					break
 				case <-monitoringTimer:
 					return nil
+				case <-monitoringTicker.C:
+					healthy, err := canaryHealthy(promAPI, metric.Name, metric.CanaryQuery, metric.BaselineQuery, metric.CanaryHealthThreshold)
+					if err != nil {
+						log.Warningf("Error querying metric %s: %s", metric.Name, err)
+					}
+
+					if healthy {
+						unhealthyCount = 0
+					} else {
+						unhealthyCount++
+					}
+
+					if unhealthyCount >= metric.MaxUnhealthyCount {
+						return errors.New(fmt.Sprintf("%s metrics unhealthy.", metric.Name))
+					}
 				}
 			}
 		})
@@ -104,22 +100,30 @@ func main() {
 // Otherwise will return true
 func canaryHealthy(v1api v1.API, metricName string, canaryQuery string, baselineQuery string, canaryHealthThreshold float64) (bool, error) {
 	ctx := context.Background()
-	log.Infof("Querying canary health for metric %s", metricName)
+	log.Debugf("Querying canary health for metric %s", metricName)
 
 	canaryResult, _, err := v1api.Query(ctx, canaryQuery, time.Now())
 	if err != nil {
 		return false, err
 	}
-	canaryProberSuccessRate := canaryResult.(model.Vector)[0].Value
+	canaryResultVector := canaryResult.(model.Vector)
+	canaryProberRate := model.SampleValue(0)
+	if len(canaryResultVector) > 0 {
+		canaryProberRate = canaryResultVector[0].Value
+	}
 
 	baselineResult, _, err := v1api.Query(ctx, baselineQuery, time.Now())
 	if err != nil {
 		return false, err
 	}
-	baselineProberSuccessRate := baselineResult.(model.Vector)[0].Value
+	baselineResultVector := baselineResult.(model.Vector)
+	baselineProberRate := model.SampleValue(0)
+	if len(baselineResultVector) > 0 {
+		baselineProberRate = baselineResultVector[0].Value
+	}
 
 	// If the canary has lower success rate than the other apps by the set threshold, the canary is considered unhealthy
-	if float64(baselineProberSuccessRate-canaryProberSuccessRate) > canaryHealthThreshold {
+	if math.Abs(float64(baselineProberRate-canaryProberRate)) > canaryHealthThreshold {
 		return false, nil
 	}
 	return true, nil
