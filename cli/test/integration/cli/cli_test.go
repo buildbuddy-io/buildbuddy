@@ -25,7 +25,10 @@ func TestBazelVersion(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	cmd := testcli.Command(t, ws, "version")
 
-	b, err := testcli.CombinedOutput(cmd)
+	// Note: this test makes sure that the version output appears in stdout
+	// (not stderr), so that tools can do things like `bb version | grep ...`
+	// the same way they can with vanilla bazel.
+	b, err := testcli.Output(cmd)
 	output := string(b)
 	require.NoError(t, err, "output: %s", string(b))
 
