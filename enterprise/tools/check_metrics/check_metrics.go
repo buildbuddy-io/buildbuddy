@@ -43,6 +43,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not read metrics config from %s: %s", *configPath, err)
 	}
+	err = log.Configure()
+	if err != nil {
+		log.Fatalf("Could not configure logger: %s", err)
+	}
 	prometheusClient, err := api.NewClient(api.Config{
 		Address: config.PrometheusAddress,
 	})
