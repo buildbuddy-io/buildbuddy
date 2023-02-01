@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/webdriver_target"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
 	"github.com/stretchr/testify/assert"
@@ -12,8 +12,8 @@ import (
 )
 
 func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
-	target := webdriver_target.Setup(t)
 	wt := webtester.New(t)
+	target := buildbuddy_enterprise.SetupWebTarget(t)
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
 		"WORKSPACE": "",
@@ -27,10 +27,10 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 		"--remote_upload_local_results=1",
 	})
 
-	webtester.LoginSSO(wt, target.AppURL(), target.SSOSlug())
+	webtester.Login(wt, target)
 
 	// Get the build flags needed for BuildBuddy, including API key, bes results url, bes backend, and remote cache
-	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.AppURL(), webtester.WithEnableCache)
+	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.HTTPURL(), webtester.WithEnableCache)
 	t.Log(buildbuddyBuildFlags)
 	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
 
@@ -39,7 +39,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	require.NotEmpty(t, result.InvocationID)
 
 	// Make sure we can view the invocation while logged in
-	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
+	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
 
 	details := wt.FindByDebugID("invocation-details").Text()
 	assert.Contains(t, details, "Succeeded")
@@ -61,7 +61,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	result = testbazel.Invoke(context.Background(), t, workspacePath, "build", buildArgs...)
 	require.NotEmpty(t, result.InvocationID)
 
-	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
+	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
 
 	details = wt.FindByDebugID("invocation-details").Text()
 	assert.Contains(t, details, "Succeeded")
@@ -100,7 +100,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 
 	webtester.Logout(wt)
 
-	wt.Get(target.AppURL() + "/invocation/" + result.InvocationID)
+	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
 
 	wt.FindByDebugID("login-button")
 

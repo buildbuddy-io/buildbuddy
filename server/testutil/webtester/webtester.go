@@ -185,13 +185,31 @@ func HasClass(el *Element, class string) bool {
 // BuildBuddy-specific functionality
 // ===
 
-// LoginSSO uses the Web app to log into BuildBuddy via SSO.
-// It expects that the user's slug is associated with a self-auth oauth provider
-func LoginSSO(wt *WebTester, appBaseURL, ssoSlug string) {
-	wt.Get(appBaseURL)
-	wt.FindByDebugID("sso-button").Click()
-	wt.FindByDebugID("sso-slug").SendKeys(ssoSlug)
-	wt.FindByDebugID("sso-button").Click()
+type Target interface {
+	// HTTPURL is the HTTP endpoint of the target.
+	// Ex: http://localhost:8080
+	HTTPURL() string
+}
+
+type SSOTarget interface {
+	Target
+	// SSOSlug is the slug of the org that should be used for SSO login.
+	SSOSlug() string
+}
+
+func Login(wt *WebTester, target Target) {
+	wt.Get(target.HTTPURL())
+
+	// If the target supports SSO login, prefer that.
+	if target, ok := target.(SSOTarget); ok {
+		wt.FindByDebugID("sso-button").Click()
+		wt.FindByDebugID("sso-slug").SendKeys(target.SSOSlug())
+		wt.FindByDebugID("sso-button").Click()
+		return
+	}
+
+	// Otherwise attempt self-auth.
+	wt.FindByDebugID("login-button").Click()
 }
 
 // Logout logs out of the app. It expects that a user is currently logged in,
