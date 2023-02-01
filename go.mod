@@ -64,6 +64,7 @@ require (
 	github.com/klauspost/compress v1.15.12
 	github.com/lestrrat-go/jwx v1.2.11
 	github.com/lni/dragonboat/v3 v3.3.4
+	github.com/lni/goutils v1.3.1-0.20220404072553-ddb2075d2587
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/mattn/go-isatty v0.0.16
 	github.com/mattn/go-shellwords v1.0.12
@@ -202,7 +203,6 @@ require (
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/iter v1.0.2 // indirect
 	github.com/lestrrat-go/option v1.0.0 // indirect
-	github.com/lni/goutils v1.3.1-0.20220404072553-ddb2075d2587 // indirect
 	github.com/lni/vfs v0.2.1-0.20220408085249-8be85be1c3c1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20220913051719-115f729f3c8c // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
