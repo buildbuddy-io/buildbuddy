@@ -73,7 +73,7 @@ func getSelfOwnedGroup(t *testing.T, ctx context.Context, env environment.Env) *
 	return nil
 }
 
-func ptrTo[T any](val T) *T {
+func stringPointer(val string) *string {
 	return &val
 }
 
@@ -148,7 +148,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	// part of InsertUser).
 	orgGroupID, err := udb.InsertOrUpdateGroup(ctx1, &tables.Group{
 		GroupID:       "GR1",
-		URLIdentifier: ptrTo("gr1-slug"),
+		URLIdentifier: stringPointer("gr1-slug"),
 		OwnedDomain:   "org1.io",
 	})
 	require.NoError(t, err)
@@ -256,7 +256,7 @@ func TestInsertOrUpdateGroup(t *testing.T) {
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 
-	g1Update := &tables.Group{GroupID: "GR1", URLIdentifier: ptrTo("gr1")}
+	g1Update := &tables.Group{GroupID: "GR1", URLIdentifier: stringPointer("gr1")}
 
 	_, err := udb.InsertOrUpdateGroup(ctx, g1Update)
 	require.Truef(
