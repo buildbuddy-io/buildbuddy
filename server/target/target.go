@@ -355,7 +355,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	innerCommitQuery := query_builder.NewQuery(`
 		SELECT commit_sha, max(invocation_start_time_usec) as latest_created_at_usec 
 		FROM TestTargetStatuses`)
-	innerCommitQuery.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
+	innerCommitQuery.AddWhereClause("group_id = ?", groupID)
 	innerCommitQuery.AddWhereClause("repo_url = ?", repo)
 	innerCommitQuery.AddWhereClause("commit_sha != ''")
 	innerCommitQuery.SetGroupBy("commit_sha")
@@ -379,7 +379,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 		FROM TestTargetStatuses`)
 
 	q.AddWhereInClause("commit_sha", outerCommitQuery)
-	q.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
+	q.AddWhereClause("group_id = ?", groupID)
 	q.AddWhereClause("repo_url = ?", repo)
 	return fetchTargetsFromOLAPDB(ctx, env, q, repo, groupID)
 }
