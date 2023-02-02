@@ -283,24 +283,47 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 	if invocation == nil {
 		return status.InternalError("failed to write test target statuses: no invocation from build accumulator")
 	}
+	if permissions.GroupID == "" {
+		log.CtxInfo(ctx, "skip writing test target statuses to OLAPDB because group_id is empty")
+		return nil
+	}
+	repoURL := t.buildEventAccumulator.RepoURL()
+	if repoURL == "" {
+		log.CtxInfo(ctx, "skip writing test target status because repo_url is empty")
+		return nil
+	}
+	commitSHA := t.buildEventAccumulator.CommitSHA()
+	if commitSHA == "" {
+		log.CtxInfo(ctx, "skip writing test target status because commit_sha is empty")
+		return nil
+	}
+	invocationStartTime := t.buildEventAccumulator.StartTime()
+	if invocationStartTime.IsZero() {
+		log.CtxInfo(ctx, "skip writing test target status because invocationStartTime is unavailable")
+	}
+
+	invocationUUID := strings.Replace(t.invocationID(), "-", "", -1)
+
 	for _, target := range t.targets {
 		if !isTest(target) {
 			continue
 		}
+
 		testStartTimeUsec := int64(0)
 		if !target.firstStartTime.IsZero() {
 			testStartTimeUsec = target.firstStartTime.UnixMicro()
 		}
+
 		entries = append(entries, &schema.TestTargetStatus{
 			GroupID:                 permissions.GroupID,
-			RepoURL:                 t.buildEventAccumulator.RepoURL(),
-			CommitSHA:               t.buildEventAccumulator.CommitSHA(),
+			RepoURL:                 repoURL,
+			CommitSHA:               commitSHA,
 			Label:                   target.label,
-			InvocationStartTimeUsec: t.buildEventAccumulator.StartTime().UnixMicro(),
+			InvocationStartTimeUsec: invocationStartTime.UnixMicro(),
 
 			RuleType:       target.ruleType,
 			UserID:         permissions.UserID,
-			InvocationUUID: strings.Replace(t.invocationID(), "-", "", -1),
+			InvocationUUID: invocationUUID,
 			TargetType:     int32(target.targetType),
 			TestSize:       int32(target.testSize),
 			Status:         int32(target.overallStatus),
