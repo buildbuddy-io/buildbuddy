@@ -838,7 +838,17 @@ func (p *Plugin) Pipe(r io.Reader) (io.Reader, error) {
 		io.Copy(pw, ptmx)
 	}()
 	go func() {
-		defer tty.Close()
+		// TODO: Properly clean up the tty here. We disable the cleanup since it
+		// seems to cause some plugin output to get dropped in rare cases.
+		// See: https://github.com/creack/pty/issues/127
+		//
+		// The cleanup being disabled is not a problem for the CLI because it
+		// should get cleaned up automatically when the CLI process exits, but
+		// if we want to reuse this code for other things then we should
+		// probably fix this so the tty can get cleaned up sooner.
+
+		// defer tty.Close()
+
 		defer ptmx.Close()
 		defer pw.Close()
 		log.Debugf("Running bazel output handler for %s/%s", p.config.Repo, p.config.Path)
