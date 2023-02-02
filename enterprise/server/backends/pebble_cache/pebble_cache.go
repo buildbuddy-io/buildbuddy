@@ -165,8 +165,7 @@ type PebbleCache struct {
 	atimeBufferSize      int
 	minEvictionAge       time.Duration
 
-	lastDBVersionUpdate time.Time
-	lastDBVersion       filestore.PebbleKeyVersion
+	lastDBVersion filestore.PebbleKeyVersion
 
 	env    environment.Env
 	db     *pebble.DB
@@ -378,7 +377,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
 			if err != nil {
 				return err
 			}
@@ -1193,7 +1192,58 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	return nil
 }
 
-func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRecord) error {
+func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.PebbleKey, version filestore.PebbleKeyVersion, md *rfpb.FileMetadata) error {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	keyBytes, err := key.Bytes(version)
+	if err != nil {
+		return err
+	}
+
+	// N.B. This deletes the file metadata. Because inlined files are stored
+	// with their metadata, this means we don't need to delete the metadata
+	// again below in the switch statement.
+	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
+		return err
+	}
+
+	storageMetadata := md.GetStorageMetadata()
+	partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
+	switch {
+	case storageMetadata.GetFileMetadata() != nil:
+		fp := p.fileStorer.FilePath(p.blobDir(partitionID), storageMetadata.GetFileMetadata())
+		if err := disk.DeleteFile(ctx, fp); err != nil {
+			return err
+		}
+		parentDir := filepath.Dir(fp)
+		if err := deleteDirIfEmptyAndOld(parentDir); err != nil {
+			log.Debugf("Error deleting dir: %s: %s", parentDir, err)
+		}
+	case storageMetadata.GetInlineMetadata() != nil:
+		// Already deleted; see comment above.
+		break
+	default:
+		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
+	}
+
+	p.sendSizeUpdate(partitionID, key, -1*md.GetStoredSizeBytes())
+	return nil
+}
+
+func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	fileRecord, err := p.makeFileRecord(ctx, r)
+	if err != nil {
+		return err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return err
+	}
+
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -1203,43 +1253,24 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRec
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	key, err := p.fileStorer.PebbleKey(fileRecord)
-	if err != nil {
-		return err
-	}
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return err
-	}
-	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+	// Can't lock here until we remove read locking from lookupFileMetadata.
+	// TODO(tylerw): move locking "up" to calling functions, out of utility
+	// functions.
+	// unlockFn := p.locker.Lock(key.LockID())
+	// defer unlockFn()
+	md, err := p.lookupFileMetadata(ctx, iter, key)
 	if err != nil {
 		return err
 	}
 
-	partitionID := fileRecord.GetIsolation().GetPartitionId()
-	blobDir := p.blobDir(partitionID)
-	fp := p.fileStorer.FilePath(blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
-	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
+	unlockFn := p.locker.Lock(key.LockID())
+	defer unlockFn()
+	// TODO(tylerw): Make version aware.
+	if err := p.deleteFileAndMetadata(ctx, key, filestore.UndefinedKeyVersion, md); err != nil {
+		log.Errorf("Error deleting old record %q: %s", key.String(), err)
 		return err
-	}
-	p.sendSizeUpdate(partitionID, key, -1*fileMetadata.GetStoredSizeBytes())
-	if err := disk.DeleteFile(ctx, fp); err != nil {
-		return err
-	}
-	parentDir := filepath.Dir(fp)
-	if err := deleteDirIfEmptyAndOld(parentDir); err != nil {
-		log.Debugf("Error deleting dir: %s: %s", parentDir, err)
 	}
 	return nil
-}
-
-func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) error {
-	fileRecord, err := p.makeFileRecord(ctx, r)
-	if err != nil {
-		return err
-	}
-	return p.deleteRecord(ctx, fileRecord)
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
@@ -1513,15 +1544,16 @@ func (k *evictionKey) String() string {
 }
 
 type partitionEvictor struct {
-	mu         *sync.Mutex
-	part       disk.Partition
-	fileStorer filestore.Store
-	cacheName  string
-	blobDir    string
-	dbGetter   pebbleutil.Leaser
-	locker     lockmap.Locker
-	accesses   chan<- *accessTimeUpdate
-	rng        *rand.Rand
+	mu            *sync.Mutex
+	part          disk.Partition
+	fileStorer    filestore.Store
+	cacheName     string
+	blobDir       string
+	dbGetter      pebbleutil.Leaser
+	locker        lockmap.Locker
+	versionGetter versionGetter
+	accesses      chan<- *accessTimeUpdate
+	rng           *rand.Rand
 
 	lru       *approxlru.LRU[*evictionKey]
 	sizeBytes int64
@@ -1532,7 +1564,11 @@ type partitionEvictor struct {
 	minEvictionAge  time.Duration
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, locker lockmap.Locker, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
+type versionGetter interface {
+	currentDatabaseVersion() filestore.PebbleKeyVersion
+}
+
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, locker lockmap.Locker, vg versionGetter, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:              &sync.Mutex{},
 		part:            part,
@@ -1540,6 +1576,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		blobDir:         blobDir,
 		dbGetter:        dbg,
 		locker:          locker,
+		versionGetter:   vg,
 		accesses:        accesses,
 		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
 		atimeBufferSize: atimeBufferSize,
@@ -1574,6 +1611,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	pe.sizeBytes = sizeBytes
 	pe.casCount = casCount
 	pe.acCount = acCount
+	pe.lru.UpdateSizeBytes(sizeBytes)
 
 	log.Infof("Pebble Cache: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
 	return pe, nil
@@ -1771,16 +1809,30 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 
 var digestChars = []byte("abcdef1234567890")
 
-func (e *partitionEvictor) randomKey(n int) []byte {
-	partID := e.partitionKeyPrefix()
-	cacheType := "/cas/"
-	buf := bytes.NewBuffer(make([]byte, 0, len(partID)+len(cacheType)+n))
-	buf.Write([]byte(partID))
-	buf.Write([]byte(cacheType))
-	for i := 0; i < n; i++ {
+func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
+	version := e.versionGetter.currentDatabaseVersion()
+	buf := bytes.NewBuffer(make([]byte, 0, digestLength))
+	for i := 0; i < digestLength; i++ {
 		buf.WriteByte(digestChars[e.rng.Intn(len(digestChars))])
 	}
-	return buf.Bytes()
+
+	key, err := e.fileStorer.PebbleKey(&rfpb.FileRecord{
+		Isolation: &rfpb.Isolation{
+			CacheType:   resource.CacheType_CAS,
+			PartitionId: e.part.ID,
+		},
+		Digest: &repb.Digest{
+			Hash: string(buf.Bytes()),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	keyBytes, err := key.Bytes(version)
+	if err != nil {
+		return nil, err
+	}
+	return keyBytes, nil
 }
 
 func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*evictionKey]) (bool, error) {
@@ -1860,7 +1912,11 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 	// generate k random digests and for each:
 	//   - seek to the next valid key, and return that file record
 	for i := 0; i < k*2; i++ {
-		randKey := e.randomKey(64)
+		randKey, err := e.randomKey(64)
+		if err != nil {
+			log.Errorf("Error generating random key: %s", err)
+			continue
+		}
 		valid := iter.SeekGE(randKey)
 		if !valid {
 			continue

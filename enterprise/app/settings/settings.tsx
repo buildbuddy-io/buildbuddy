@@ -10,6 +10,7 @@ import router from "../../../app/router/router";
 import UserPreferences from "../../../app/preferences/preferences";
 import GitHubLink from "./github_link";
 import QuotaComponent from "../quota/quota";
+import Banner from "../../../app/components/banner/banner";
 
 export interface SettingsProps {
   user: User;
@@ -31,6 +32,8 @@ enum TabId {
 
 const TAB_IDS = new Set<string>(Object.values(TabId));
 
+const CLI_LOGIN_PATH = "/settings/cli-login";
+
 function isTabId(id: string): id is TabId {
   return TAB_IDS.has(id);
 }
@@ -38,6 +41,23 @@ function isTabId(id: string): id is TabId {
 export default class SettingsComponent extends React.Component<SettingsProps> {
   componentWillMount() {
     document.title = `Settings | BuildBuddy`;
+
+    // Handle the redirect for CLI login.
+    if (this.isCLILoginPath()) {
+      if (capabilities.config.userOwnedKeysEnabled && this.props.user?.selectedGroup?.userOwnedKeysEnabled) {
+        router.replaceURL("/settings/personal/api-keys?cli-login=1");
+      } else {
+        router.replaceURL("/settings/org/api-keys?cli-login=1");
+      }
+    }
+  }
+
+  private isCLILogin() {
+    return this.props.search.get("cli-login") === "1";
+  }
+
+  private isCLILoginPath() {
+    return this.props.path === CLI_LOGIN_PATH || this.props.path === CLI_LOGIN_PATH + "/";
   }
 
   private getDefaultTabId(): TabId {
@@ -66,6 +86,10 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
   }
 
   render() {
+    if (this.isCLILoginPath()) {
+      return null;
+    }
+
     const activeTabId = this.getActiveTabId();
 
     return (
@@ -182,6 +206,22 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <div className="settings-option-description">
                         API keys grant access to your BuildBuddy organization.
                       </div>
+                      {this.isCLILogin() && (
+                        <>
+                          <div className="settings-option-description">
+                            <Banner type="info">
+                              {capabilities.config.userOwnedKeysEnabled && (
+                                <>
+                                  To log in as <b>{this.props.user.displayUser.email}</b>, an organization administrator
+                                  must enable user-owned API keys in Org details.{" "}
+                                </>
+                              )}
+                              To log in as the organization <b>{this.props.user.selectedGroupName()}</b>, copy one of
+                              the keys below and paste it back into the login prompt.
+                            </Banner>
+                          </div>
+                        </>
+                      )}
                       <ApiKeysComponent user={this.props.user} />
                     </>
                   )}
@@ -194,6 +234,13 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                           Personal API keys let you run builds within your organization that are authenticated as your
                           user account.
                         </div>
+                        {this.isCLILogin() && (
+                          <div className="settings-option-description">
+                            <Banner type="info">
+                              To login, copy one of the API keys below and paste it back into the login prompt.
+                            </Banner>
+                          </div>
+                        )}
                         <ApiKeysComponent user={this.props.user} userOwnedOnly />
                       </>
                     )}
