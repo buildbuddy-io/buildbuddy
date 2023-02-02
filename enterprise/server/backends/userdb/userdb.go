@@ -169,15 +169,17 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string, checkVisibility
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
 
-	u, err := perms.AuthenticatedUser(ctx, d.env)
-	if err != nil {
-		return nil, err
-	}
-
 	q := query_builder.NewQuery(`SELECT api_key_id, value, label, perms, capabilities, visible_to_developers FROM APIKeys`)
 	q.AddWhereClause("group_id = ?", groupID)
-	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil && checkVisibility {
-		q.AddWhereClause("visible_to_developers = ?", true)
+	
+	if checkVisibility {
+		u, err := perms.AuthenticatedUser(ctx, d.env)
+		if err != nil {
+			return nil, err
+		}
+		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+			q.AddWhereClause("visible_to_developers = ?", true)
+		}
 	}
 	q.SetOrderBy("label", true /*ascending*/)
 	queryStr, args := q.Build()
