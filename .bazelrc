@@ -128,6 +128,15 @@ build --enable_runfiles
 test --test_tag_filters=-docker
 build --build_tag_filters=-docker
 
+# Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
+# See server/testutil/webtester/webtester.go for more details.
+test:webdriver-debug --test_arg=-webdriver_debug
+# Forward X server display for local webdriver tests.
+test:webdriver-debug --test_env=DISPLAY
+# When debugging, only run one webdriver test at a time (it's overwhelming
+# otherwise), and display verbose webdriver output in the terminal.
+test:webdriver-debug --test_output=streamed
+
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
 # cp template-user.bazelrc user.bazelrc

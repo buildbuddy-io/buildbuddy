@@ -1,6 +1,7 @@
 package webtester
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -14,6 +15,20 @@ import (
 	"github.com/tebeka/selenium/chrome"
 )
 
+var (
+	// To debug webdriver tests visually in your local environment:
+	//
+	// 1. Run the test with --config=webdriver-debug, which sets the
+	//   --webdriver_debug flag below as well as some other necessary flags.
+	//
+	// 2. Optionally, set --webdriver_end_of_test_delay=1h to extend the
+	//    end-of-test wait duration, and set --test_filter=NameOfTest to debug
+	//    a specific failing test.
+
+	debug          = flag.Bool("webdriver_debug", false, "Enable debug mode for webdriver tests.")
+	endOfTestDelay = flag.Duration("webdriver_end_of_test_delay", 3*time.Second, "How long to wait at the end of failed webdriver tests. Has no effect if --webdriver_debug is not set.")
+)
+
 // WebTester wraps selenium.WebDriver, failing the test instead of returning
 // errors for all of its API methods.
 type WebTester struct {
@@ -24,20 +39,33 @@ type WebTester struct {
 // New returns a WebTester scoped to the given test. It registers a cleanup
 // function to record a screenshot if the test fails.
 func New(t *testing.T) *WebTester {
-	driver, err := webtest.NewWebDriverSession(selenium.Capabilities{
-		chrome.CapabilitiesKey: chrome.Capabilities{
-			Args: []string{
-				// `--disable-dev-shm-usage` and `--no-sandbox` are a fix for
-				// "DevToolsActivePort file doesn't exist" on docker
-				// https://stackoverflow.com/questions/50642308
-				"--disable-dev-shm-usage", "--no-sandbox",
-				// Window size is specified as a flag as a workaround for
-				// `SetWindowSize` returning an error in headless mode
-				// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
-				"--window-size=1920,1000",
-			},
-		},
-	})
+	// Note, the chromeArgs and chromedriverArgs below are appended to the
+	// default args defined here:
+	// https://github.com/bazelbuild/rules_webtesting/blob/1460fa2b9a4307765cdf4989019a92ed6e65e51f/browsers/chromium-local.json
+	chromeArgs := []string{
+		// Window size is specified as a flag as a workaround for
+		// `SetWindowSize` returning an error in headless mode
+		// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
+		"--window-size=1920,1000",
+	}
+	chromedriverArgs := []string{}
+	if *debug {
+		// Remove the --headless arg applied to the "chromium-local" browser
+		// that we import from rules_webtesting.
+		// Note, the "REMOVE:" syntax is a feature of rules_webtesting, not
+		// chrome.
+		chromeArgs = append(chromeArgs, "REMOVE:--headless")
+		// Add --verbose to chromedriver so that if it fails to start, we can
+		// see the logs from Chrome with the root cause (e.g. missing system
+		// deps, missing DISPLAY environment variable for X server, etc.)
+		chromedriverArgs = append(chromedriverArgs, "--verbose")
+	}
+
+	capabilities := selenium.Capabilities{
+		chrome.CapabilitiesKey: chrome.Capabilities{Args: chromeArgs},
+		"google:wslConfig":     map[string]any{"args": chromedriverArgs},
+	}
+	driver, err := webtest.NewWebDriverSession(capabilities)
 	require.NoError(t, err, "failed to create webdriver session")
 	// Allow webdriver to wait a short period before giving up on finding an
 	// element. In most cases, Selenium's default heuristics for marking a page
@@ -56,6 +84,9 @@ func New(t *testing.T) *WebTester {
 		// the webdriver if the screenshot fails.
 		assert.NoError(t, err, "failed to take end-of-test screenshot")
 
+		if *debug && t.Failed() {
+			time.Sleep(*endOfTestDelay)
+		}
 		err = driver.Quit()
 		require.NoError(t, err)
 	})

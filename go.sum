@@ -313,8 +313,8 @@ github.com/bazelbuild/bazelisk v1.11.0 h1:dmESc1UeF8iqJTOPxlPw2DH9ykZEMwdlL/jQ+U
 github.com/bazelbuild/bazelisk v1.11.0/go.mod h1:3zOen/lU/rEGgghOIkqfpO2+PhRXvZyMCA9iqFJ2c9Q=
 github.com/bazelbuild/rules_go v0.29.0 h1:SfxjyO/V68rVnzOHop92fB0gv/Aa75KNLAN0PMqXbIw=
 github.com/bazelbuild/rules_go v0.29.0/go.mod h1:MC23Dc/wkXEyk3Wpq6lCqz0ZAYOZDw2DR5y3N1q2i7M=
-github.com/bazelbuild/rules_webtesting v0.2.0 h1:nhqjA2IslEOLViRBF5djQCiOD//7VyyHNKrqAZ1AuYA=
-github.com/bazelbuild/rules_webtesting v0.2.0/go.mod h1:M+vCvqp/1BViNuVL630BoiGqld9Q1vQzvf9bN/dWTeg=
+github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95 h1:zmBkl2nxjRojoW9PtGVEtW/91kHieotlD7cL9vFq06c=
+github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95/go.mod h1:M+vCvqp/1BViNuVL630BoiGqld9Q1vQzvf9bN/dWTeg=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e h1:Th4pNly+xoH2szOq4aA+uAFmg5h37BCyq3pFqnZGJ70=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e/go.mod h1:led5f4NrGeXrUKOlQA36mgNtNs7gVo86eZUOX42q5+8=
 github.com/bduffany/redsync/v4 v4.4.1-minimal h1:wyBDr+ApDWybbLGMSsepl30KzPAl+HlIQMhJSoLdRKg=
