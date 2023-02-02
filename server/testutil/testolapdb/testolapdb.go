@@ -2,10 +2,12 @@ package testolapdb
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -44,6 +46,10 @@ func (h *Handle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvoca
 	}
 	h.executionIDsByInvID.Store(inv.GetInvocationId(), executionIDs)
 	return nil
+}
+
+func (h *Handle) FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error {
+	return errors.New("Not implemented")
 }
 
 func (h *Handle) GetExecutionIDsByInvID(t *testing.T, invID string) []string {

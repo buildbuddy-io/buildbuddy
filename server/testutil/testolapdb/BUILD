@@ -9,6 +9,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
         "//server/tables",
+        "//server/util/clickhouse/schema",
         "@com_github_stretchr_testify//require",
         "@io_gorm_gorm//:gorm",
     ],
