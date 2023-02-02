@@ -95,8 +95,11 @@ func (s *SecretService) ListSecrets(ctx context.Context, req *skpb.ListSecretsRe
 			return nil, err
 		}
 		rsp.Secret = append(rsp.Secret, &skpb.Secret{
-			Name:  k.Name,
-			Value: k.Value,
+			Name: k.Name,
+			// N.B. Omit the value; the frontend doesn't need it and
+			// we don't want these transiting the network any more
+			// than necessary.
+			Value: "",
 		})
 	}
 	return rsp, nil
