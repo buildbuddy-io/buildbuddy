@@ -165,8 +165,7 @@ type PebbleCache struct {
 	atimeBufferSize      int
 	minEvictionAge       time.Duration
 
-	lastDBVersionUpdate time.Time
-	lastDBVersion       filestore.PebbleKeyVersion
+	lastDBVersion filestore.PebbleKeyVersion
 
 	env    environment.Env
 	db     *pebble.DB
@@ -378,7 +377,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(blobDir); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
+			pe, err := newPartitionEvictor(part, pc.fileStorer, blobDir, pc.leaser, pc.locker, pc, pc.accesses, *opts.AtimeBufferSize, *opts.MinEvictionAge, opts.Name)
 			if err != nil {
 				return err
 			}
@@ -1513,15 +1512,16 @@ func (k *evictionKey) String() string {
 }
 
 type partitionEvictor struct {
-	mu         *sync.Mutex
-	part       disk.Partition
-	fileStorer filestore.Store
-	cacheName  string
-	blobDir    string
-	dbGetter   pebbleutil.Leaser
-	locker     lockmap.Locker
-	accesses   chan<- *accessTimeUpdate
-	rng        *rand.Rand
+	mu            *sync.Mutex
+	part          disk.Partition
+	fileStorer    filestore.Store
+	cacheName     string
+	blobDir       string
+	dbGetter      pebbleutil.Leaser
+	locker        lockmap.Locker
+	versionGetter versionGetter
+	accesses      chan<- *accessTimeUpdate
+	rng           *rand.Rand
 
 	lru       *approxlru.LRU[*evictionKey]
 	sizeBytes int64
@@ -1532,7 +1532,11 @@ type partitionEvictor struct {
 	minEvictionAge  time.Duration
 }
 
-func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, locker lockmap.Locker, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
+type versionGetter interface {
+	currentDatabaseVersion() filestore.PebbleKeyVersion
+}
+
+func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebbleutil.Leaser, locker lockmap.Locker, vg versionGetter, accesses chan<- *accessTimeUpdate, atimeBufferSize int, minEvictionAge time.Duration, cacheName string) (*partitionEvictor, error) {
 	pe := &partitionEvictor{
 		mu:              &sync.Mutex{},
 		part:            part,
@@ -1540,6 +1544,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 		blobDir:         blobDir,
 		dbGetter:        dbg,
 		locker:          locker,
+		versionGetter:   vg,
 		accesses:        accesses,
 		rng:             rand.New(rand.NewSource(time.Now().UnixNano())),
 		atimeBufferSize: atimeBufferSize,
@@ -1574,6 +1579,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	pe.sizeBytes = sizeBytes
 	pe.casCount = casCount
 	pe.acCount = acCount
+	pe.lru.UpdateSizeBytes(sizeBytes)
 
 	log.Infof("Pebble Cache: Initialized cache partition %q AC: %d, CAS: %d, Size: %d [bytes] in %s", part.ID, pe.acCount, pe.casCount, pe.sizeBytes, time.Since(start))
 	return pe, nil
@@ -1771,16 +1777,30 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 
 var digestChars = []byte("abcdef1234567890")
 
-func (e *partitionEvictor) randomKey(n int) []byte {
-	partID := e.partitionKeyPrefix()
-	cacheType := "/cas/"
-	buf := bytes.NewBuffer(make([]byte, 0, len(partID)+len(cacheType)+n))
-	buf.Write([]byte(partID))
-	buf.Write([]byte(cacheType))
-	for i := 0; i < n; i++ {
+func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
+	version := e.versionGetter.currentDatabaseVersion()
+	buf := bytes.NewBuffer(make([]byte, 0, digestLength))
+	for i := 0; i < digestLength; i++ {
 		buf.WriteByte(digestChars[e.rng.Intn(len(digestChars))])
 	}
-	return buf.Bytes()
+
+	key, err := e.fileStorer.PebbleKey(&rfpb.FileRecord{
+		Isolation: &rfpb.Isolation{
+			CacheType:   resource.CacheType_CAS,
+			PartitionId: e.part.ID,
+		},
+		Digest: &repb.Digest{
+			Hash: string(buf.Bytes()),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	keyBytes, err := key.Bytes(version)
+	if err != nil {
+		return nil, err
+	}
+	return keyBytes, nil
 }
 
 func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*evictionKey]) (bool, error) {
@@ -1860,7 +1880,11 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 	// generate k random digests and for each:
 	//   - seek to the next valid key, and return that file record
 	for i := 0; i < k*2; i++ {
-		randKey := e.randomKey(64)
+		randKey, err := e.randomKey(64)
+		if err != nil {
+			log.Errorf("Error generating random key: %s", err)
+			continue
+		}
 		valid := iter.SeekGE(randKey)
 		if !valid {
 			continue
