@@ -10,6 +10,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/button",
         "//app/components/select",
+        "//app/errors",
         "//app/router",
         "//app/service",
         "//proto:bazel_config_ts_proto",
