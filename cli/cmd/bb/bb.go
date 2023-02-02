@@ -74,8 +74,10 @@ func run() (exitCode int, err error) {
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
-	// TODO: Convert this to (exitCode, err) convention
-	args = login.HandleLogin(args)
+	exitCode, err = login.HandleLogin(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
 
 	// If none of the CLI subcommand handlers were triggered, assume we have a
 	// bazel invocation.
@@ -124,7 +126,10 @@ func run() (exitCode int, err error) {
 	// Fiddle with Bazel args
 	// TODO(bduffany): model these as "built-in" plugins
 	args = tooltag.ConfigureToolTag(args)
-	args = login.ConfigureAPIKey(args)
+	args, err = login.ConfigureAPIKey(args)
+	if err != nil {
+		return -1, err
+	}
 
 	// Prepare convenience env vars for plugins
 	if err := plugin.PrepareEnv(); err != nil {

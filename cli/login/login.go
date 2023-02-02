@@ -2,64 +2,86 @@ package login
 
 import (
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
+	"os/exec"
+	"runtime"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 )
 
 const (
-	apiKeyFileName = "apikey"
-	apiKeyHeader   = "remote_header=x-buildbuddy-api-key"
+	apiKeyRepoSetting = "api-key"
+	apiKeyHeader      = "remote_header=x-buildbuddy-api-key"
+	loginURL          = "https://app.buildbuddy.io/settings/cli-login"
 )
 
-func HandleLogin(args []string) []string {
+func HandleLogin(args []string) (exitCode int, err error) {
 	if arg.GetCommand(args) != "login" {
-		return args
+		return -1, nil
 	}
-	log.Printf("Enter your api key from https://app.buildbuddy.io/settings/org/api-keys")
+
+	if err := openInBrowser(loginURL); err != nil {
+		log.Printf("Failed to open browser: %s", err)
+		log.Printf("Copy and paste the URL below into a browser window:")
+		log.Printf("    %s", loginURL)
+	}
+
+	io.WriteString(os.Stderr, "Enter your API key from "+loginURL+": ")
 
 	var apiKey string
-	fmt.Scanln(&apiKey)
+	if _, err := fmt.Scanln(&apiKey); err != nil {
+		return -1, fmt.Errorf("failed to read input: %s", err)
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return -1, fmt.Errorf("invalid input: API key is empty")
+	}
+
+	if err := storage.WriteRepoConfig(apiKeyRepoSetting, apiKey); err != nil {
+		return -1, fmt.Errorf("failed to write API key to local .git/config: %s", err)
+	}
+
+	log.Printf("Wrote API key to .git/config")
 
 	log.Printf("You are now logged in!")
 
-	dir, err := storage.ConfigDir()
-	if err != nil {
-		log.Fatalf("error getting config directory: %s", err)
-	}
-	apiKeyFile := filepath.Join(dir, apiKeyFileName)
-	err = os.WriteFile(apiKeyFile, []byte(apiKey), 0644)
-	if err != nil {
-		log.Fatalf("error saving api key: %s", err)
-	}
-	os.Exit(0)
-	return args
+	return 0, nil
 }
 
-func ConfigureAPIKey(args []string) []string {
-	if !isSupportedCommand(arg.GetCommand(args)) {
-		return args
+func openInBrowser(url string) error {
+	cmd := "open"
+	if runtime.GOOS == "linux" {
+		cmd = "xdg-open"
 	}
+	return exec.Command(cmd, url).Run()
+}
 
-	dir, err := storage.ConfigDir()
-	if err != nil {
-		log.Fatalf("error getting config directory: %s", err)
-	}
-	apiKeyFile := filepath.Join(dir, apiKeyFileName)
-	apiKeyBytes, err := os.ReadFile(apiKeyFile)
-	if err != nil {
-		log.Debug(err)
-		return args
+func ConfigureAPIKey(args []string) ([]string, error) {
+	if cmd, _ := parser.GetBazelCommandAndIndex(args); !isSupportedCommand(cmd) {
+		return args, nil
 	}
 
 	// TODO(siggisim): find a more graceful way of finding headers if we change the way we parse flags.
-	if !arg.Has(args, apiKeyHeader) {
-		return append(args, "--"+apiKeyHeader+"="+string(apiKeyBytes))
+	if arg.Has(args, apiKeyHeader) {
+		return args, nil
 	}
-	return args
+
+	apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+	if err != nil {
+		// If we're not in a git repo, we'll fail to read the repo-specific
+		// config.
+		// Making this fatal would be inconvenient for new workspaces,
+		// so just log a debug message and move on.
+		log.Debugf("failed to configure API key from .git/config: %s", err)
+		return nil, nil
+	}
+
+	return append(args, "--"+apiKeyHeader+"="+strings.TrimSpace(apiKey)), nil
 }
 
 // Commands that support the `--remote_header` bazel flag

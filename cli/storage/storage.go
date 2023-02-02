@@ -1,8 +1,19 @@
 package storage
 
 import (
+	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
+)
+
+const (
+	// The section in .git/config where we write all repo-local configuration
+	// for the CLI.
+	gitConfigSection = "buildbuddy"
 )
 
 // ConfigDir returns a user-specific directory for storing BuildBuddy
@@ -38,4 +49,63 @@ func CacheDir() (string, error) {
 		return "", err
 	}
 	return cacheDir, nil
+}
+
+func repoRootPath() (string, error) {
+	ws, err := workspace.Path()
+	if err != nil {
+		return "", err
+	}
+	dotgit, err := os.Stat(filepath.Join(ws, ".git"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("not inside a git repository")
+		}
+		return "", fmt.Errorf("failed to determine git repo root: %s", err)
+	}
+	if dotgit.Mode().IsDir() {
+		return ws, nil
+	}
+	return "", fmt.Errorf("failed to determine git repo root: %q is not a directory", filepath.Join(ws, ".git"))
+}
+
+// ReadRepoConfig reads a repository-local configuration setting.
+func ReadRepoConfig(key string) (string, error) {
+	dir, err := repoRootPath()
+	if err != nil {
+		return "", err
+	}
+	fullKey := gitConfigSection + "." + key
+	cmd := exec.Command("git", "config", "--local", "--get", fullKey)
+	cmd.Dir = dir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := stderr.String()
+		if msg == "" {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to read %q from .git/config: %s", fullKey, msg)
+	}
+	return stdout.String(), nil
+}
+
+// WriteRepoConfig writes a repository-local configuration setting.
+func WriteRepoConfig(key, value string) error {
+	dir, err := repoRootPath()
+	if err != nil {
+		return err
+	}
+	fullKey := gitConfigSection + "." + key
+	cmd := exec.Command("git", "config", "--local", "--replace-all", fullKey, value)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf(
+			"failed to update %q in .git/config (%s): %s",
+			fullKey, err, stderr.String())
+	}
+	return nil
 }

@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
+        "//cli/parser",
         "//cli/storage",
     ],
 )
