@@ -1249,14 +1249,18 @@ func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	unlockFn := p.locker.Lock(key.LockID())
-	defer unlockFn()
-
+	// Can't lock here until we remove read locking from lookupFileMetadata.
+	// TODO(tylerw): move locking "up" to calling functions, out of utility
+	// functions.
+	// unlockFn := p.locker.Lock(key.LockID())
+	// defer unlockFn()
 	md, err := p.lookupFileMetadata(ctx, iter, key)
 	if err != nil {
 		return err
 	}
 
+	unlockFn := p.locker.Lock(key.LockID())
+	defer unlockFn()
 	// TODO(tylerw): Make version aware.
 	if err := p.deleteFileAndMetadata(ctx, key, filestore.UndefinedKeyVersion, md); err != nil {
 		log.Errorf("Error deleting old record %q: %s", key.String(), err)
