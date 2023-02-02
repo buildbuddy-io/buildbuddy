@@ -171,7 +171,7 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string, checkVisibility
 
 	q := query_builder.NewQuery(`SELECT api_key_id, value, label, perms, capabilities, visible_to_developers FROM APIKeys`)
 	q.AddWhereClause("group_id = ?", groupID)
-	
+
 	if checkVisibility {
 		u, err := perms.AuthenticatedUser(ctx, d.env)
 		if err != nil {
