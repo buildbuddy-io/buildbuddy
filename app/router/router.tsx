@@ -215,6 +215,10 @@ class Router {
 
   replaceParams(params: Record<string, string>) {
     const newUrl = getModifiedUrl({ query: params });
+    this.replaceURL(newUrl);
+  }
+
+  replaceURL(newUrl: string) {
     window.history.replaceState({ path: newUrl }, "", newUrl);
   }
 
