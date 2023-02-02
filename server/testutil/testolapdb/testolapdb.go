@@ -2,6 +2,7 @@ package testolapdb
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -17,8 +18,6 @@ import (
 type Handle struct {
 	executionIDsByInvID sync.Map // map of invocationID => a slice of execution IDs
 	invIDs              sync.Map // map of invocationID => struct{}
-	testTargetStatuses  []*schema.TestTargetStatus
-	mutex               sync.Mutex
 }
 
 func NewHandle() *Handle {
@@ -50,10 +49,7 @@ func (h *Handle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvoca
 }
 
 func (h *Handle) FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.testTargetStatuses = append(h.testTargetStatuses, entries...)
-	return nil
+	return errors.New("Not implemented")
 }
 
 func (h *Handle) GetExecutionIDsByInvID(t *testing.T, invID string) []string {
