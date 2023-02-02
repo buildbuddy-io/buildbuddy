@@ -357,7 +357,6 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 		FROM TestTargetStatuses`)
 	innerCommitQuery.AddWhereClause("group_id = ?", groupID)
 	innerCommitQuery.AddWhereClause("repo_url = ?", repo)
-	innerCommitQuery.AddWhereClause("commit_sha != ''")
 	innerCommitQuery.SetGroupBy("commit_sha")
 	innerCommitQuery.SetOrderBy("latest_created_at_usec DESC, commit_sha", true /*=ascending*/)
 
