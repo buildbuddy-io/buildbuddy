@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -16,6 +17,8 @@ import (
 type Handle struct {
 	executionIDsByInvID sync.Map // map of invocationID => a slice of execution IDs
 	invIDs              sync.Map // map of invocationID => struct{}
+	testTargetStatuses  []*schema.TestTargetStatus
+	mutex               sync.Mutex
 }
 
 func NewHandle() *Handle {
@@ -43,6 +46,13 @@ func (h *Handle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvoca
 		executionIDs = append(executionIDs, e.GetExecutionId())
 	}
 	h.executionIDsByInvID.Store(inv.GetInvocationId(), executionIDs)
+	return nil
+}
+
+func (h *Handle) FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.testTargetStatuses = append(h.testTargetStatuses, entries...)
 	return nil
 }
 
