@@ -31,6 +31,8 @@ enum TabId {
 
 const TAB_IDS = new Set<string>(Object.values(TabId));
 
+const CLI_LOGIN_PATH = "/settings/cli-login";
+
 function isTabId(id: string): id is TabId {
   return TAB_IDS.has(id);
 }
@@ -38,6 +40,19 @@ function isTabId(id: string): id is TabId {
 export default class SettingsComponent extends React.Component<SettingsProps> {
   componentWillMount() {
     document.title = `Settings | BuildBuddy`;
+
+    // Handle the redirect for CLI login.
+    if (this.isCLILogin()) {
+      if (capabilities.config.userOwnedKeysEnabled && this.props.user?.selectedGroup?.userOwnedKeysEnabled) {
+        router.replaceURL("/settings/personal/api-keys");
+      } else {
+        router.replaceURL("/settings/org/api-keys");
+      }
+    }
+  }
+
+  private isCLILogin() {
+    return this.props.path === CLI_LOGIN_PATH || this.props.path === CLI_LOGIN_PATH + "/";
   }
 
   private getDefaultTabId(): TabId {
@@ -66,6 +81,10 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
   }
 
   render() {
+    if (this.isCLILogin()) {
+      return null;
+    }
+
     const activeTabId = this.getActiveTabId();
 
     return (
