@@ -13,6 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -26,7 +28,14 @@ import (
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 )
 
-var enableTargetTracking = flag.Bool("app.enable_target_tracking", false, "Cloud-Only")
+var (
+	enableTargetTracking                   = flag.Bool("app.enable_target_tracking", false, "Cloud-Only")
+	writeTestTargetStatusesToOLAPDBEnabled = flag.Bool("app.enable_write_test_target_statuses_to_olap_db", false, "If enabled, test target statuses will be flushed to OLAP DB")
+)
+
+const (
+	writeTestTargetStatusesTimeout = 15 * time.Second
+)
 
 type targetClosure func(event *build_event_stream.BuildEvent)
 type targetState int
@@ -262,6 +271,76 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 	return nil
 }
 
+func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, permissions *perms.UserGroupPerm) error {
+	if !*writeTestTargetStatusesToOLAPDBEnabled || t.env.GetOLAPDBHandle() == nil {
+		return nil
+	}
+	ctx, cancel := background.ExtendContextForFinalization(ctx, writeTestTargetStatusesTimeout)
+	defer cancel()
+
+	entries := make([]*schema.TestTargetStatus, 0)
+	invocation := t.buildEventAccumulator.Invocation()
+	if invocation == nil {
+		return status.InternalError("failed to write test target statuses: no invocation from build accumulator")
+	}
+	if permissions.GroupID == "" {
+		log.CtxInfo(ctx, "skip writing test target statuses to OLAPDB because group_id is empty")
+		return nil
+	}
+	repoURL := t.buildEventAccumulator.RepoURL()
+	if repoURL == "" {
+		log.CtxInfo(ctx, "skip writing test target status because repo_url is empty")
+		return nil
+	}
+	commitSHA := t.buildEventAccumulator.CommitSHA()
+	if commitSHA == "" {
+		log.CtxInfo(ctx, "skip writing test target status because commit_sha is empty")
+		return nil
+	}
+	invocationStartTime := t.buildEventAccumulator.StartTime()
+	if invocationStartTime.IsZero() {
+		log.CtxInfo(ctx, "skip writing test target status because invocationStartTime is unavailable")
+	}
+
+	invocationUUID := strings.Replace(t.invocationID(), "-", "", -1)
+
+	for _, target := range t.targets {
+		if !isTest(target) {
+			continue
+		}
+
+		testStartTimeUsec := int64(0)
+		if !target.firstStartTime.IsZero() {
+			testStartTimeUsec = target.firstStartTime.UnixMicro()
+		}
+
+		entries = append(entries, &schema.TestTargetStatus{
+			GroupID:                 permissions.GroupID,
+			RepoURL:                 repoURL,
+			CommitSHA:               commitSHA,
+			Label:                   target.label,
+			InvocationStartTimeUsec: invocationStartTime.UnixMicro(),
+
+			RuleType:       target.ruleType,
+			UserID:         permissions.UserID,
+			InvocationUUID: invocationUUID,
+			TargetType:     int32(target.targetType),
+			TestSize:       int32(target.testSize),
+			Status:         int32(target.overallStatus),
+			StartTimeUsec:  testStartTimeUsec,
+			DurationUsec:   target.totalDuration.Microseconds(),
+			BranchName:     t.buildEventAccumulator.Invocation().GetBranchName(),
+			Role:           t.buildEventAccumulator.Role(),
+			Command:        t.buildEventAccumulator.Invocation().GetCommand(),
+		})
+	}
+	err := t.env.GetOLAPDBHandle().FlushTestTargetStatuses(ctx, entries)
+	if err == nil {
+		log.CtxInfof(ctx, "successfully wrote %d test target statuses", len(entries))
+	}
+	return err
+}
+
 func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
 	if !*enableTargetTracking {
 		return
@@ -306,24 +385,25 @@ func (t *TargetTracker) handleExpandedEvent(event *build_event_stream.BuildEvent
 }
 
 func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	ctx = log.EnrichContext(ctx, log.InvocationIDKey, t.invocationID())
 	if !t.testTargetsInAtLeastState(targetStateConfigured) {
 		// This should not happen, but it seems it can happen with certain targets.
 		// For now, we will log the targets that do not meet the required state
 		// so we can better understand whats happening to them.
-		log.Warningf("Not all targets for %q reached state: %d, targets: %+v", t.invocationID(), targetStateConfigured, t.targets)
+		log.CtxWarningf(ctx, "Not all targets for %q reached state: %d, targets: %+v", t.invocationID(), targetStateConfigured, t.targets)
 		return
 	}
 	if !isTestCommand(t.buildEventAccumulator.Invocation().GetCommand()) {
-		log.Debugf("Not tracking targets for %q because it's not a test", t.invocationID())
+		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not a test", t.invocationID())
 		return
 	}
 	if t.buildEventAccumulator.Role() != "CI" {
-		log.Debugf("Not tracking targets for %q because it's not a CI build", t.invocationID())
+		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not a CI build", t.invocationID())
 		return
 	}
 	permissions, err := t.permissionsFromContext(ctx)
 	if err != nil {
-		log.Debugf("Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
+		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
 		return
 	}
 	eg, gctx := errgroup.WithContext(ctx)
@@ -332,30 +412,34 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, event *b
 }
 
 func (t *TargetTracker) handleLastEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
+	ctx = log.EnrichContext(ctx, log.InvocationIDKey, t.invocationID())
 	if !isTestCommand(t.buildEventAccumulator.Invocation().GetCommand()) {
 		log.Debugf("Not tracking targets statuses for %q because it's not a test", t.invocationID())
 		return
 	}
 	if t.buildEventAccumulator.Role() != "CI" {
-		log.Debugf("Not tracking target statuses for %q because it's not a CI build", t.invocationID())
+		log.CtxDebugf(ctx, "Not tracking target statuses for %q because it's not a CI build", t.invocationID())
 		return
 	}
 	permissions, err := t.permissionsFromContext(ctx)
 	if err != nil {
-		log.Debugf("Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
+		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
 		return
 	}
 	if t.errGroup == nil {
-		log.Warningf("Not tracking target statuses for %q because targets were not reported", t.invocationID())
+		log.CtxWarningf(ctx, "Not tracking target statuses for %q because targets were not reported", t.invocationID())
 		return
 	}
 	// Synchronization point: make sure that all targets were read (or written).
 	if err := t.errGroup.Wait(); err != nil {
-		log.Warningf("Error getting %q targets: %s", t.invocationID(), err.Error())
+		log.CtxWarningf(ctx, "Error getting %q targets: %s", t.invocationID(), err.Error())
 		return
 	}
 	if err := t.writeTestTargetStatuses(ctx, permissions); err != nil {
-		log.Debugf("Error writing %q target statuses: %s", t.invocationID(), err.Error())
+		log.CtxDebugf(ctx, "Error writing %q target statuses: %s", t.invocationID(), err.Error())
+	}
+	if err := t.writeTestTargetStatusesToOLAPDB(ctx, permissions); err != nil {
+		log.CtxErrorf(ctx, "Error writing %q target statuses: %s", t.invocationID(), err.Error())
 	}
 }
 

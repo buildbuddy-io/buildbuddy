@@ -11,6 +11,8 @@ go_library(
         "//server/build_event_protocol/accumulator",
         "//server/environment",
         "//server/tables",
+        "//server/util/background",
+        "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/log",
         "//server/util/perms",
