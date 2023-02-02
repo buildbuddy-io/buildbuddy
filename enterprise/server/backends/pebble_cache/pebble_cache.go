@@ -1193,7 +1193,53 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	return nil
 }
 
-func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRecord) error {
+func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.PebbleKey, version filestore.PebbleKeyVersion, md *rfpb.FileMetadata) error {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	keyBytes, err := key.Bytes(version)
+	if err != nil {
+		return err
+	}
+	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
+		return err
+	}
+
+	storageMetadata := md.GetStorageMetadata()
+	partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
+	switch {
+	case storageMetadata.GetFileMetadata() != nil:
+		fp := p.fileStorer.FilePath(p.blobDir(partitionID), storageMetadata.GetFileMetadata())
+		if err := disk.DeleteFile(ctx, fp); err != nil {
+			return err
+		}
+		parentDir := filepath.Dir(fp)
+		if err := deleteDirIfEmptyAndOld(parentDir); err != nil {
+			log.Debugf("Error deleting dir: %s: %s", parentDir, err)
+		}
+	case storageMetadata.GetInlineMetadata() != nil:
+		break
+	default:
+		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
+	}
+
+	p.sendSizeUpdate(partitionID, key, -1*md.GetStoredSizeBytes())
+	return nil
+}
+
+func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+	fileRecord, err := p.makeFileRecord(ctx, r)
+	if err != nil {
+		return err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return err
+	}
+
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -1203,43 +1249,20 @@ func (p *PebbleCache) deleteRecord(ctx context.Context, fileRecord *rfpb.FileRec
 	iter := db.NewIter(nil /*default iterOptions*/)
 	defer iter.Close()
 
-	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	key, err := p.fileStorer.PebbleKey(fileRecord)
-	if err != nil {
-		return err
-	}
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return err
-	}
-	fileMetadata, err := p.lookupFileMetadata(ctx, iter, key)
+	unlockFn := p.locker.Lock(key.LockID())
+	defer unlockFn()
+
+	md, err := p.lookupFileMetadata(ctx, iter, key)
 	if err != nil {
 		return err
 	}
 
-	partitionID := fileRecord.GetIsolation().GetPartitionId()
-	blobDir := p.blobDir(partitionID)
-	fp := p.fileStorer.FilePath(blobDir, fileMetadata.GetStorageMetadata().GetFileMetadata())
-	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
+	// TODO(tylerw): Make version aware.
+	if err := p.deleteFileAndMetadata(ctx, key, filestore.UndefinedKeyVersion, md); err != nil {
+		log.Errorf("Error deleting old record %q: %s", key.String(), err)
 		return err
-	}
-	p.sendSizeUpdate(partitionID, key, -1*fileMetadata.GetStoredSizeBytes())
-	if err := disk.DeleteFile(ctx, fp); err != nil {
-		return err
-	}
-	parentDir := filepath.Dir(fp)
-	if err := deleteDirIfEmptyAndOld(parentDir); err != nil {
-		log.Debugf("Error deleting dir: %s: %s", parentDir, err)
 	}
 	return nil
-}
-
-func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) error {
-	fileRecord, err := p.makeFileRecord(ctx, r)
-	if err != nil {
-		return err
-	}
-	return p.deleteRecord(ctx, fileRecord)
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
