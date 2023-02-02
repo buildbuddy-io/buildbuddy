@@ -34,11 +34,19 @@ func TestSchemaInSync(t *testing.T) {
 			clickhouseTable: &Execution{},
 			primaryDBTable:  tables.Execution{},
 		},
+		{
+			clickhouseTable: &TestTargetStatus{},
+			// don't testing schema in sync
+			primaryDBTable: nil,
+		},
 	}
 
 	assert.Equal(t, len(getAllTables()), len(tests), "All clickhouse tables should be present in the tests")
 
 	for _, tc := range tests {
+		if tc.primaryDBTable == nil {
+			continue
+		}
 
 		chType := reflect.Indirect(reflect.ValueOf(tc.clickhouseTable)).Type()
 
@@ -118,5 +126,45 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 			assert.Failf(t, "dest has invalid field %q", primaryField.Name)
 		}
 	}
+}
+
+func TestExtractProjectionNames(t *testing.T) {
+	createStmt := `
+CREATE TABLE bb_test_target.TestTargetStatuses
+(
+` +
+		"`group_id` String," +
+		"`repo_url` String," +
+		`
+    PROJECTION projection_commits
+    (
+        SELECT
+            group_id,
+            role,
+            repo_url,
+            commit_sha,
+            max(created_at_usec) AS latest_created_at_usec
+        GROUP BY
+            group_id,
+            role,
+            repo_url,
+            commit_sha
+    )
+	PROJECTION projection_targets
+	( 
+	    SELECT 
+		    group_id,
+			role,
+			repo_url,
+			label
+	)
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (group_id, repo_url)
+SETTINGS index_granularity = 8192
+`
+	projectionNames := extractProjectionNamesFromCreateStmt(createStmt)
+	assert.Contains(t, projectionNames, "projection_commits")
+	assert.Contains(t, projectionNames, "projection_targets")
 
 }

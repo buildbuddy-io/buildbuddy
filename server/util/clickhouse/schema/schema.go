@@ -1,12 +1,15 @@
 package schema
 
 import (
+	"bufio"
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
 )
 
@@ -17,6 +20,10 @@ var (
 	zooPath                = flag.String("olap_database.zoo_path", "/clickhouse/{installation}/{cluster}/tables/{shard}/{database}/{table}", "The path to the table name in zookeeper, used to set up data replication")
 	replicaName            = flag.String("olap_database.replica_name", "{replica}", "The replica name of the table in zookeeper")
 	clusterName            = flag.String("olap_database.cluster_name", "{cluster}", "The cluster name of the database")
+)
+
+const (
+	projectionCommits = "projection_commits"
 )
 
 // Making a new table? Please make sure you:
@@ -37,6 +44,7 @@ func getAllTables() []Table {
 	return []Table{
 		&Invocation{},
 		&Execution{},
+		&TestTargetStatus{},
 	}
 }
 
@@ -223,6 +231,126 @@ func (e *Execution) AdditionalFields() []string {
 	}
 }
 
+// TestTargetStatus represents the status of a target, the target info and
+// invocation details
+type TestTargetStatus struct {
+	// Sort Keys; and the order of the following fields match TableOptions().
+	GroupID        string
+	RepoURL        string
+	CommitSHA      string
+	Label          string
+	InvocationUUID string
+
+	RuleType      string
+	UserID        string
+	TargetType    int32
+	TestSize      int32
+	Status        int32
+	StartTimeUsec int64
+	DurationUsec  int64
+
+	// The following fields are from Invocation.
+	BranchName string
+	Role       string
+	Command    string
+	// The start time of the invocation. Note: for backfilled records, this field
+	// uses Invocation.CreatedAtUsec because StartTimeUsec is not saved for the
+	// invocation.
+	InvocationStartTimeUsec int64
+}
+
+func (t *TestTargetStatus) ExcludedFields() []string {
+	return []string{}
+}
+
+func (t *TestTargetStatus) AdditionalFields() []string {
+	return []string{}
+}
+
+func (t *TestTargetStatus) TableName() string {
+	return "TestTargetStatuses"
+}
+
+func (t *TestTargetStatus) TableOptions() string {
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, repo_url, commit_sha, label, invocation_uuid)", getEngine())
+}
+
+// hasProjection checks whether a projection exist in the clickhouse
+// schema.
+// gorm-clickhouse doesn't support migration projection.
+func hasProjection(db *gorm.DB, table Table, projectionName string) (bool, error) {
+	currentDatabase := db.Migrator().CurrentDatabase()
+
+	showCreateTableSQL := fmt.Sprintf("SHOW CREATE TABLE %s.%s", currentDatabase, table.TableName())
+	var createStmt string
+	if err := db.Raw(showCreateTableSQL).Row().Scan(&createStmt); err != nil {
+		return false, err
+	}
+
+	projections := extractProjectionNamesFromCreateStmt(createStmt)
+
+	_, ok := projections[projectionName]
+
+	return ok, nil
+}
+
+// addProjectionIfNotExists checks whether a projection exist in the clickhouse
+// schema; if not, add the projection.
+// gorm-clickhouse doesn't support migration projection.
+func addProjectionIfNotExist(db *gorm.DB, table Table, projectionName string, query string) error {
+	hasProjection, err := hasProjection(db, table, projectionName)
+	if err != nil {
+		return status.InternalErrorf("failed to check whether projection %q exists: %s", projectionName, err)
+	}
+	if hasProjection {
+		return nil
+	}
+	projectionStmt := fmt.Sprintf("ALTER TABLE %s ADD PROJECTION %s (%s)", table.TableName(), projectionName, query)
+	return db.Exec(projectionStmt).Error
+}
+
+const (
+	beforeCreateBody int = iota
+	inCreateBody
+	inProjection
+	afterCreateBody
+)
+
+// adapted from https://github.com/go-gorm/clickhouse/blob/master/migrator.go
+func extractProjectionNamesFromCreateStmt(createStmt string) map[string]struct{} {
+	names := make(map[string]struct{})
+	scanner := bufio.NewScanner(strings.NewReader(createStmt))
+	state := beforeCreateBody
+	for scanner.Scan() && state < afterCreateBody {
+		line := scanner.Text()
+		line = strings.TrimSpace(line)
+		switch state {
+		case beforeCreateBody:
+			if strings.HasPrefix(line, "(") {
+				state = inCreateBody
+			}
+		case inProjection:
+			if strings.HasPrefix(line, ")") {
+				state = inCreateBody
+			}
+		case inCreateBody:
+			if strings.HasPrefix(line, ")") {
+				state = afterCreateBody
+				continue
+			}
+			if strings.HasPrefix(line, "PROJECTION ") {
+				line = strings.TrimPrefix(line, "PROJECTION ")
+				elems := strings.Split(line, " ")
+				if len(elems) > 0 {
+					names[elems[0]] = struct{}{}
+				}
+				state = inProjection
+			}
+		}
+	}
+	return names
+}
+
 func RunMigrations(gdb *gorm.DB) error {
 	log.Info("Auto-migrating clickhouse DB")
 	if clusterOpts := getTableClusterOption(); clusterOpts != "" {
@@ -233,6 +361,14 @@ func RunMigrations(gdb *gorm.DB) error {
 		if err := gdb.AutoMigrate(t); err != nil {
 			return err
 		}
+	}
+	// Add Projection/
+	projectionQuery := `select group_id, repo_url, commit_sha,
+	   max(invocation_start_time_usec) as latest_created_at_usec
+	   group by group_id, repo_url, commit_sha`
+	err := addProjectionIfNotExist(gdb, &TestTargetStatus{}, projectionCommits, projectionQuery)
+	if err != nil {
+		return status.InternalErrorf("failed to add projection %q: %s", projectionCommits, err)
 	}
 	return nil
 }
