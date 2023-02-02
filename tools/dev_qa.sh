@@ -61,7 +61,8 @@ run_test \
         --remote_cache=remote.buildbuddy.dev \
         --bes_backend=remote.buildbuddy.dev \
         --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-        --invocation_id="$tensorflow_iid"
+        --invocation_id="$tensorflow_iid" \
+        --nogoogle_default_credentials
 
 echo "---"
 echo "QA results:"
