@@ -1204,6 +1204,10 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	if err != nil {
 		return err
 	}
+
+	// N.B. This deletes the file metadata. Because inlined files are stored
+	// with their metadata, this means we don't need to delete the metadata
+	// again below in the switch statement.
 	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
 		return err
 	}
@@ -1221,6 +1225,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 			log.Debugf("Error deleting dir: %s: %s", parentDir, err)
 		}
 	case storageMetadata.GetInlineMetadata() != nil:
+		// Already deleted; see comment above.
 		break
 	default:
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
