@@ -1659,18 +1659,17 @@ func (e *partitionEvictor) updateSize(key filestore.PebbleKey, deltaSize int64) 
 	e.lru.UpdateSizeBytes(e.sizeBytes)
 }
 
-func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, int64, error) {
+func (e *partitionEvictor) computeSizeInRange(partitionID []byte) (int64, int64, int64, error) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return 0, 0, 0, err
 	}
 	defer db.Close()
 	iter := db.NewIter(&pebble.IterOptions{
-		LowerBound: start,
-		UpperBound: end,
+		LowerBound: keys.MinByte,
+		UpperBound: keys.MaxByte,
 	})
 	defer iter.Close()
-	iter.SeekLT(start)
 
 	casCount := int64(0)
 	acCount := int64(0)
@@ -1678,7 +1677,13 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	metadataSizeBytes := int64(0)
 	fileMetadata := &rfpb.FileMetadata{}
 
-	for iter.Next() {
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
+			continue
+		}
+		if !bytes.Contains(iter.Key(), partitionID) {
+			continue
+		}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
@@ -1755,9 +1760,8 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		}
 	}
 
-	start := append([]byte(e.partitionKeyPrefix()+"/"), keys.MinByte...)
-	end := append([]byte(e.partitionKeyPrefix()+"/"), keys.MaxByte...)
-	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(start, end)
+	partitionSpan := []byte(e.partitionKeyPrefix())
+	totalSizeBytes, totalCasCount, totalAcCount, err := e.computeSizeInRange(partitionSpan)
 
 	partitionMD := &rfpb.PartitionMetadata{
 		PartitionId: e.part.ID,
