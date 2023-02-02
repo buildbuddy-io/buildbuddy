@@ -1133,6 +1133,7 @@ func TestLRU(t *testing.T) {
 		AtimeUpdateThreshold: &atimeUpdateThreshold,
 		AtimeBufferSize:      &atimeBufferSize,
 		MinEvictionAge:       &minEvictionAge,
+		MinBytesAutoZstdCompression: maxSizeBytes,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1219,6 +1220,7 @@ func TestLRU(t *testing.T) {
 
 	require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2]))
 	require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
+	require.Greater(t, len(evictionsByQuartile[3]), 0)
 }
 
 func TestLRU_IsolateByGroupIDs(t *testing.T) {
@@ -1240,6 +1242,7 @@ func TestLRU_IsolateByGroupIDs(t *testing.T) {
 		AtimeUpdateThreshold: &atimeUpdateThreshold,
 		AtimeBufferSize:      &atimeBufferSize,
 		MinEvictionAge:       &minEvictionAge,
+		MinBytesAutoZstdCompression: maxSizeBytes,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1326,6 +1329,7 @@ func TestLRU_IsolateByGroupIDs(t *testing.T) {
 
 	require.LessOrEqual(t, len(evictionsByQuartile[1]), len(evictionsByQuartile[2]))
 	require.LessOrEqual(t, len(evictionsByQuartile[2]), len(evictionsByQuartile[3]))
+	require.Greater(t, len(evictionsByQuartile[3]), 0)
 }
 
 func TestStartupScan(t *testing.T) {
