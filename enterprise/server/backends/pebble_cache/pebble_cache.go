@@ -140,9 +140,9 @@ type Options struct {
 }
 
 type sizeUpdate struct {
-	partID string
-	key    filestore.PebbleKey
-	delta  int64
+	partID    string
+	cacheType resource.CacheType
+	delta     int64
 }
 
 type accessTimeUpdate struct {
@@ -565,7 +565,7 @@ func (p *PebbleCache) processSizeUpdates() {
 
 	for edit := range p.edits {
 		e := evictors[edit.partID]
-		e.updateSize(edit.key, edit.delta)
+		e.updateSize(edit.cacheType, edit.delta)
 	}
 }
 
@@ -1149,11 +1149,11 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceNa
 	return nil
 }
 
-func (p *PebbleCache) sendSizeUpdate(partID string, key filestore.PebbleKey, delta int64) {
+func (p *PebbleCache) sendSizeUpdate(partID string, cacheType resource.CacheType, delta int64) {
 	up := &sizeUpdate{
-		partID: partID,
-		key:    key,
-		delta:  delta,
+		partID:    partID,
+		cacheType: cacheType,
+		delta:     delta,
 	}
 	p.edits <- up
 }
@@ -1206,7 +1206,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	if err := db.Delete(fileMetadataKey, &pebble.WriteOptions{Sync: false}); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key, -1*fileMetadata.GetStoredSizeBytes())
+	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*fileMetadata.GetStoredSizeBytes())
 	return nil
 }
 
@@ -1248,7 +1248,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	p.sendSizeUpdate(partitionID, key, -1*md.GetStoredSizeBytes())
+	p.sendSizeUpdate(partitionID, key.CacheType(), -1*md.GetStoredSizeBytes())
 	return nil
 }
 
@@ -1490,8 +1490,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		if err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false}); err == nil {
 			partitionID := fileRecord.GetIsolation().GetPartitionId()
 			if sizeDelta != 0 {
-				p.sendSizeUpdate(partitionID, key, sizeDelta)
+				p.sendSizeUpdate(partitionID, key.CacheType(), sizeDelta)
 			}
+
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
 		}
 
@@ -1655,7 +1656,7 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 }
 
-func (e *partitionEvictor) updateSize(key filestore.PebbleKey, deltaSize int64) {
+func (e *partitionEvictor) updateSize(cacheType resource.CacheType, deltaSize int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -1664,17 +1665,13 @@ func (e *partitionEvictor) updateSize(key filestore.PebbleKey, deltaSize int64) 
 		deltaCount = -1
 	}
 
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		log.Warningf("Error converting key to bytes: %s", err)
-		return
-	}
-	if bytes.Contains(fileMetadataKey, casDir) {
+	switch cacheType {
+	case resource.CacheType_CAS:
 		e.casCount += deltaCount
-	} else if bytes.Contains(fileMetadataKey, acDir) {
+	case resource.CacheType_AC:
 		e.acCount += deltaCount
-	} else {
-		log.Warningf("Unidentified file (not CAS or AC): %q", fileMetadataKey)
+	case resource.CacheType_UNKNOWN_CACHE_TYPE:
+		log.Errorf("Cannot update cache size: resource of unknown type")
 	}
 	e.sizeBytes += deltaSize
 	e.lru.UpdateSizeBytes(e.sizeBytes)
@@ -2029,7 +2026,7 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, storedSizeBytes i
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	e.updateSize(key, -1*storedSizeBytes)
+	e.updateSize(key.CacheType(), -1*storedSizeBytes)
 	return nil
 }
 
