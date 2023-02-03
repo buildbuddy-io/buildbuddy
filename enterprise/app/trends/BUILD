@@ -17,6 +17,7 @@ ts_library(
         "//app/util:proto",
         "//enterprise/app/filter",
         "//proto:invocation_ts_proto",
+        "//proto:stats_ts_proto",
         "@npm//@types/react",
         "@npm//moment",
         "@npm//react",

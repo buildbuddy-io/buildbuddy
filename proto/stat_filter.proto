@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package stat_filter;
+
+enum MetricType {
+  UNKNOWN_METRIC = 0;
+  DURATION_USEC_METRIC = 1;
+  CAS_CACHE_MISSES_METRIC = 2;
+  EXECUTION_QUEUE_TIME_USEC_METRIC = 3;
+}
+
+message StatFilter {
+  MetricType metric = 1;
+  int64 min = 2;
+  int64 max = 3;
+}

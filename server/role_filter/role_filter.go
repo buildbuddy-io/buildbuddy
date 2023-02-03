@@ -60,6 +60,8 @@ var (
 		"SearchInvocation",
 		"GetInvocationStat",
 		"GetTrend",
+		"GetStatHeatmap",
+		"GetStatDrilldown",
 		// Per-invocation actions
 		"UpdateInvocation",
 		"DeleteInvocation",

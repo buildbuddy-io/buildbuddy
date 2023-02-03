@@ -6,6 +6,7 @@ import "proto/build_event_stream.proto";
 import "proto/cache.proto";
 import "proto/command_line.proto";
 import "proto/context.proto";
+import "proto/stat_filter.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
@@ -237,6 +238,9 @@ message InvocationQuery {
 
   // The maximum invocation duration.
   google.protobuf.Duration maximum_duration = 13;
+
+  // Stat filters (duration_usec, cas_cache_misses, etc.)
+  repeated stat_filter.StatFilter filter = 14;
 }
 
 // OverallStatus is a status representing both the completion status and
@@ -385,6 +389,9 @@ message InvocationStatQuery {
 
   // The bazel command that was used. Ex: "build", "test", "run"
   string command = 11;
+
+  // Stat filters (duration_usec, cas_cache_misses, etc.)
+  repeated stat_filter.StatFilter filter = 12;
 }
 
 message GetInvocationStatRequest {
@@ -406,129 +413,4 @@ message GetInvocationStatResponse {
 
   // The list of invocation stats found.
   repeated InvocationStat invocation_stat = 2;
-}
-
-message TrendStat {
-  string name = 1;
-
-  // The sum of all invocation durations for this entity.
-  int64 total_build_time_usec = 2;
-  double build_time_usec_p50 = 21;
-  double build_time_usec_p75 = 22;
-  double build_time_usec_p90 = 23;
-  double build_time_usec_p95 = 24;
-  double build_time_usec_p99 = 25;
-
-  // The total number of invocations completed by this entity.
-  int64 total_num_builds = 3;
-
-  // The number of invocations with a duration longer than 0 seconds.
-  int64 completed_invocation_count = 4;
-
-  // The number of unique users who stared a build.
-  int64 user_count = 5;
-
-  // The number of unique commits that caused a build.
-  int64 commit_count = 6;
-
-  // The number of unique hosts that ran a build.
-  int64 host_count = 7;
-
-  // The number of unique repos that were built.
-  int64 repo_count = 8;
-
-  // The duration (in microseconds) of the longest build.
-  int64 max_duration_usec = 9;
-
-  // Server-side Action-cache stats.
-  int64 action_cache_hits = 10;
-  int64 action_cache_misses = 11;
-  int64 action_cache_uploads = 12;
-
-  // Server-side CAS-cache stats.
-  int64 cas_cache_hits = 13;
-  int64 cas_cache_misses = 14;
-  int64 cas_cache_uploads = 15;
-
-  // Download / upload stats.
-  int64 total_download_size_bytes = 16;
-  int64 total_upload_size_bytes = 17;
-  int64 total_download_usec = 18;
-  int64 total_upload_usec = 19;
-
-  // The number of unique branches that were built.
-  int64 branch_count = 20;
-}
-
-// Next tag: 7
-message ExecutionStat {
-  string name = 6;
-  // The duration between the execution task is queued and the worker starts.
-  double queue_duration_usec_p50 = 1;
-  double queue_duration_usec_p75 = 2;
-  double queue_duration_usec_p90 = 3;
-  double queue_duration_usec_p95 = 4;
-  double queue_duration_usec_p99 = 5;
-}
-
-message TrendQuery {
-  // The search parameters in this query will be ANDed when performing a
-  // query -- so if a client specifies both "user" and "host", all results
-  // returned must match both fields.
-
-  // The unix-user who performed the build.
-  string user = 1;
-
-  // The host this build was executed on.
-  string host = 2;
-
-  // The git repo the build was for.
-  string repo_url = 4;
-
-  // The commit sha used for the build.
-  string commit_sha = 5;
-
-  // The role played by the build. Ex: "CI". If multiple filters are specified,
-  // they are combined with "OR".
-  repeated string role = 6;
-
-  // The timestamp on or after which the build was last updated (inclusive).
-  google.protobuf.Timestamp updated_after = 7;
-
-  // The timestamp up to which the build was last updated (exclusive).
-  google.protobuf.Timestamp updated_before = 8;
-
-  // Status of the build. If multiple are specified, they are combined with
-  // "OR".
-  repeated OverallStatus status = 9;
-
-  // The git branch used for the build.
-  string branch_name = 10;
-
-  // The bazel command that was used. Ex: "build", "test", "run"
-  string command = 11;
-}
-
-message GetTrendRequest {
-  context.RequestContext request_context = 1;
-
-  TrendQuery query = 2;
-
-  // The maximum number of past days to aggregate. If not set, the server will
-  // pick an appropriate value. Probably 7.
-  // DEPRECATED: Use `query.updated_after` and `query.updated_before` instead.
-  // TODO(bduffany): Delete this once clients no longer use it.
-  int32 lookback_window_days = 3 [deprecated = true];
-}
-
-message GetTrendResponse {
-  context.ResponseContext response_context = 1;
-
-  // The list of trend stats found.
-  repeated TrendStat trend_stat = 2;
-
-  // The list of execution stats found.
-  repeated ExecutionStat execution_stat = 3;
-
-  bool has_invocation_stat_percentiles = 4;
 }

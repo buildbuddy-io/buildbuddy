@@ -66,7 +66,7 @@ func (s *SecretService) GetPublicKey(ctx context.Context, req *skpb.GetPublicKey
 	return rsp, nil
 }
 
-func (s *SecretService) ListSecrets(ctx context.Context, req *skpb.ListSecretsRequest) (*skpb.ListSecretsResponse, error) {
+func (s *SecretService) listSecretsIncludingValues(ctx context.Context) (*skpb.ListSecretsResponse, error) {
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		return nil, err
@@ -95,12 +95,23 @@ func (s *SecretService) ListSecrets(ctx context.Context, req *skpb.ListSecretsRe
 			return nil, err
 		}
 		rsp.Secret = append(rsp.Secret, &skpb.Secret{
-			Name: k.Name,
-			// N.B. Omit the value; the frontend doesn't need it and
-			// we don't want these transiting the network any more
-			// than necessary.
-			Value: "",
+			Name:  k.Name,
+			Value: k.Value,
 		})
+	}
+	return rsp, nil
+}
+
+func (s *SecretService) ListSecrets(ctx context.Context, req *skpb.ListSecretsRequest) (*skpb.ListSecretsResponse, error) {
+	rsp, err := s.listSecretsIncludingValues(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range rsp.Secret {
+		// N.B. Omit the value; the frontend doesn't need it and
+		// we don't want these transiting the network any more
+		// than necessary.
+		s.Value = ""
 	}
 	return rsp, nil
 }
@@ -186,7 +197,7 @@ func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string) ([
 		return nil, err
 	}
 
-	rsp, err := s.ListSecrets(ctx, &skpb.ListSecretsRequest{})
+	rsp, err := s.listSecretsIncludingValues(ctx)
 	if err != nil {
 		return nil, err
 	}

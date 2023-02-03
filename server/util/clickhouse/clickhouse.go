@@ -151,6 +151,17 @@ func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvo
 	return nil
 }
 
+func (h *DBHandle) FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error {
+	num := len(entries)
+	if num == 0 {
+		return nil
+	}
+	if err := h.insertWithRetrier(ctx, (&schema.TestTargetStatus{}).TableName(), num, &entries); err != nil {
+		return status.UnavailableErrorf("failed to insert %d test target statuses for invocation (invocation_uuid = %q), err: %s", num, entries[0].InvocationUUID, err)
+	}
+	return nil
+}
+
 func Register(env environment.Env) error {
 	if *dataSource == "" {
 		return nil
