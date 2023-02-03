@@ -30,32 +30,33 @@ interface CacheChartTooltipProps extends TooltipProps<any, any> {
   extractSecondary: (datum: any) => number;
 }
 
-class CacheChartTooltip extends React.Component<CacheChartTooltipProps> {
-  render() {
-    if (!this.props.active || !this.props.payload || this.props.payload.length < 1) {
-      return null;
-    }
-    let data = this.props.payload[0].payload;
-    return (
-      <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">{this.props.labelFormatter(data)}</div>
-        <div className="trend-chart-hover-value">
-          <div>{this.props.extractHits(data) || 0} hits</div>
-          <div>
-            {this.props.extractSecondary(data) || 0} {this.props.secondaryBarName}
-          </div>
-          <div>
-            {(
-              (100 * this.props.extractHits(data)) /
-                (this.props.extractHits(data) + this.props.extractSecondary(data)) || 0
-            ).toFixed(2)}
-            % hit percentage
-          </div>
+const CacheChartTooltip = ({
+  active,
+  payload,
+  labelFormatter,
+  extractHits,
+  secondaryBarName,
+  extractSecondary,
+}: CacheChartTooltipProps) => {
+  if (!active || !payload || payload.length < 1) {
+    return null;
+  }
+  let data = payload[0].payload;
+  return (
+    <div className="trend-chart-hover">
+      <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
+      <div className="trend-chart-hover-value">
+        <div>{extractHits(data) || 0} hits</div>
+        <div>
+          {extractSecondary(data) || 0} {secondaryBarName}
+        </div>
+        <div>
+          {((100 * extractHits(data)) / (extractHits(data) + extractSecondary(data)) || 0).toFixed(2)}% hit percentage
         </div>
       </div>
-    );
-  }
-}
+    </div>
+  );
+};
 
 export default class CacheChartComponent extends React.Component<Props> {
   render() {

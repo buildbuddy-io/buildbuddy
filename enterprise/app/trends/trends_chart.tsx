@@ -45,29 +45,32 @@ interface TrendsChartTooltipProps extends TooltipProps<any, any> {
   extractSecondaryValue?: (datum: any) => number;
 }
 
-class TrendsChartTooltip extends React.Component<TrendsChartTooltipProps> {
-  render() {
-    const p = this.props;
-    if (!p.active || !p.payload || !(p.payload.length > 0)) {
-      return null;
-    }
-
-    return (
-      <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">{p.labelFormatter(p.payload[0].payload)}</div>
-        <div className="trend-chart-hover-value">
-          <div>{p.valueFormatter ? p.valueFormatter(p.payload[0].value) : p.payload[0].value}</div>
-          {p.extractSecondaryValue && (
-            <div>
-              {p.secondaryValueFormatter
-                ? p.secondaryValueFormatter(p.extractSecondaryValue(p.payload[0].payload))
-                : p.extractSecondaryValue(p.payload[0].payload)}
-            </div>
-          )}
-        </div>
-      </div>
-    );
+function TrendsChartTooltip({
+  active,
+  payload,
+  labelFormatter,
+  valueFormatter,
+  secondaryValueFormatter,
+  extractSecondaryValue,
+}: TrendsChartTooltipProps) {
+  if (!active || !payload || payload.length < 1) {
+    return null;
   }
+  return (
+    <div className="trend-chart-hover">
+      <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
+      <div className="trend-chart-hover-value">
+        <div>{valueFormatter ? valueFormatter(payload[0].value) : payload[0].value}</div>
+        {extractSecondaryValue && (
+          <div>
+            {secondaryValueFormatter
+              ? secondaryValueFormatter(extractSecondaryValue(payload[0].payload))
+              : extractSecondaryValue(payload[0].payload)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default class TrendsChartComponent extends React.Component<Props> {
