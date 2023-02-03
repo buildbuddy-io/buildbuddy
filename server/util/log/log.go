@@ -367,11 +367,17 @@ func CtxInfof(ctx context.Context, format string, args ...interface{}) {
 // Warning logs to the WARNING log.
 func Warning(message string) {
 	log.Warn().Msg(message)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "warning",
+	}).Inc()
 }
 
 // Warningf logs to the WARNING log. Arguments are handled in the manner of fmt.Printf.
 func Warningf(format string, args ...interface{}) {
 	log.Warn().Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "warning",
+	}).Inc()
 }
 
 // CtxWarning logs to the WARNING log.
@@ -381,6 +387,9 @@ func CtxWarning(ctx context.Context, message string) {
 	e := log.Warn()
 	enrichEventFromContext(ctx, e)
 	e.Msg(message)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "warning",
+	}).Inc()
 }
 
 // CtxWarningf logs to the WARNING log. Arguments are handled in the manner of
@@ -391,16 +400,25 @@ func CtxWarningf(ctx context.Context, format string, args ...interface{}) {
 	e := log.Warn()
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "warning",
+	}).Inc()
 }
 
 // Error logs to the ERROR log.
 func Error(message string) {
 	log.Error().Msg(message)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "error",
+	}).Inc()
 }
 
 // Errorf logs to the ERROR log. Arguments are handled in the manner of fmt.Printf.
 func Errorf(format string, args ...interface{}) {
 	log.Error().Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "error",
+	}).Inc()
 }
 
 // CtxError logs to the ERROR log.
@@ -410,6 +428,9 @@ func CtxError(ctx context.Context, message string) {
 	e := log.Error()
 	enrichEventFromContext(ctx, e)
 	e.Msg(message)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "error",
+	}).Inc()
 }
 
 // CtxErrorf logs to the ERROR log. Arguments are handled in the manner of
@@ -420,12 +441,18 @@ func CtxErrorf(ctx context.Context, format string, args ...interface{}) {
 	e := log.Error()
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "error",
+	}).Inc()
 }
 
 // Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
 // It calls os.Exit() with exit code 1.
 func Fatal(message string) {
 	log.Fatal().Msg(message)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "fatal",
+	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
@@ -434,6 +461,9 @@ func Fatal(message string) {
 // It calls os.Exit() with exit code 1.
 func Fatalf(format string, args ...interface{}) {
 	log.Fatal().Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "fatal",
+	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
@@ -447,6 +477,9 @@ func CtxFatalf(ctx context.Context, format string, args ...interface{}) {
 	e := log.Fatal()
 	enrichEventFromContext(ctx, e)
 	e.Msgf(format, args...)
+	metrics.Logs.With(prometheus.Labels{
+		metrics.StatusHumanReadableLabel: "fatal",
+	}).Inc()
 	// Make sure fatal logs will exit.
 	os.Exit(1)
 }
