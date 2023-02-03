@@ -2,6 +2,7 @@ package uuid
 
 import (
 	"context"
+	"encoding/hex"
 	"io"
 	"os"
 	"path"
@@ -35,6 +36,23 @@ func SetInContext(ctx context.Context) (context.Context, error) {
 	return log.EnrichContext(ctx, "request_id", u.String()), nil
 }
 
+// Base64StringToString converts a base64 encoding of the binary form of a UUID
+// into its string representation,
+// i.e. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+func Base64StringToString(text string) (string, error) {
+	decoded, err := hex.DecodeString(text)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("failed to parse uuid %q: %s", text, err)
+	}
+	uuid, err := guuid.FromBytes(decoded)
+	if err != nil {
+		return "", status.InvalidArgumentErrorf("failed to parse uuid %q: %s", text, err)
+	}
+	return uuid.String(), nil
+}
+
+// StringToBytes converts a string in the form
+// of xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx into a binary form.
 func StringToBytes(text string) ([]byte, error) {
 	uuid, err := guuid.Parse(text)
 	if err != nil {
