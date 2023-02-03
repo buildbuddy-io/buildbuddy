@@ -347,7 +347,18 @@ type UserDB interface {
 
 	// API Keys API
 	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
-	GetAPIKeys(ctx context.Context, groupID string, checkVisibility bool) ([]*tables.APIKey, error)
+
+	// GetAPIKeys returns group-level API keys that the user is authorized to
+	// access.
+	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// GetAPIKeyForInternalUseOnly returns any API key for the group. It is only
+	// to be used in situations where the user has a pre-authorized grant to
+	// access resources on behalf of the org, such as a publicly shared
+	// invocation. The returned API key must only be used to access internal
+	// resources and must not be returned to the caller.
+	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
+
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
 	DeleteAPIKey(ctx context.Context, apiKeyID string) error

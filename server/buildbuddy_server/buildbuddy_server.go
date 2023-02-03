@@ -475,7 +475,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
 		return nil, err
 	}
-	tableKeys, err := userDB.GetAPIKeys(ctx, groupID, true /*checkVisibility*/)
+	tableKeys, err := userDB.GetAPIKeys(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -657,7 +657,7 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	}
 	for _, allowedGroupID := range authenticatedUser.GetAllowedGroups() {
 		if allowedGroupID == groupID {
-			tableKeys, err := userDB.GetAPIKeys(ctx, groupID, true /*checkVisibility*/)
+			tableKeys, err := userDB.GetAPIKeys(ctx, groupID)
 			if err != nil {
 				return nil, err
 			}
@@ -1002,14 +1002,7 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	apiKeys, err := userDB.GetAPIKeys(ctx, in.GroupID, false /*checkVisibility*/)
-	if err != nil {
-		return nil, err
-	}
-	if len(apiKeys) == 0 {
-		return nil, status.NotFoundError("The group that owns this invocation doesn't have any API keys configured.")
-	}
-	return apiKeys[0], nil
+	return userDB.GetAPIKeyForInternalUseOnly(ctx, in.GroupID)
 }
 
 // ServeHTTP handles requests for build logs and artifacts either by looking

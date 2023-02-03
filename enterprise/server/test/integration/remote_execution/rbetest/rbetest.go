@@ -239,7 +239,7 @@ func NewRBETestEnv(t *testing.T) *Env {
 	tu, err := testEnv.GetUserDB().GetUser(ctxUS1)
 	require.NoError(t, err)
 	groupID := tu.Groups[0].Group.GroupID
-	keys, err := testEnv.GetUserDB().GetAPIKeys(ctxUS1, groupID, true)
+	keys, err := testEnv.GetUserDB().GetAPIKeys(ctxUS1, groupID)
 	require.NoError(t, err)
 	key := keys[0]
 	key.Capabilities |= int32(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY)
