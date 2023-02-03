@@ -199,6 +199,7 @@ func makeGroups(groupRoles []*tables.GroupRole) []*grpb.Group {
 			GithubLinked:           githubToken != "",
 			UrlIdentifier:          urlIdentifier,
 			SharingEnabled:         g.SharingEnabled,
+			UserOwnedKeysEnabled:   g.UserOwnedKeysEnabled,
 			UseGroupOwnedExecutors: g.UseGroupOwnedExecutors != nil && *g.UseGroupOwnedExecutors,
 			SuggestionPreference:   g.SuggestionPreference,
 		})
@@ -357,6 +358,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		Name:                   groupName,
 		OwnedDomain:            groupOwnedDomain,
 		SharingEnabled:         req.GetSharingEnabled(),
+		UserOwnedKeysEnabled:   req.GetUserOwnedKeysEnabled(),
 		UseGroupOwnedExecutors: &useGroupOwnedExecutors,
 	}
 	urlIdentifier := strings.TrimSpace(req.GetUrlIdentifier())
@@ -421,6 +423,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	}
 	group.SharingEnabled = req.GetSharingEnabled()
 	useGroupOwnedExecutors := req.GetUseGroupOwnedExecutors()
+	group.UserOwnedKeysEnabled = req.GetUserOwnedKeysEnabled()
 	group.UseGroupOwnedExecutors = &useGroupOwnedExecutors
 	group.SuggestionPreference = req.GetSuggestionPreference()
 	if group.SuggestionPreference == grpb.SuggestionPreference_UNKNOWN_SUGGESTION_PREFERENCE {
