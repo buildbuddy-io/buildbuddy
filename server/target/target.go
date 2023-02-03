@@ -165,7 +165,7 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 		}
 
 		statuses[row.Label] = append(statuses[row.Label], &trpb.TargetStatus{
-			InvocationId: invocation_id,
+			InvocationId: invocationID,
 			CommitSha:    row.CommitSHA,
 			Status:       convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
 			Timing: &cmpb.Timing{
