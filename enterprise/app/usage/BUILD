@@ -7,6 +7,7 @@ exports_files(["usage.css"])
 ts_library(
     name = "usage",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/auth",
         "//app/components/select",
