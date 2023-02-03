@@ -82,7 +82,7 @@ html[data-theme="dark"] .menu {
 }
 
 .dsla-search-wrapper {
-  width: 47px;
+  width: 44px;
   height: 44px;
 }
 
@@ -92,9 +92,47 @@ html[data-theme="dark"] .menu {
   }
 }
 
+@keyframes jump {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  }
+  100% {
+    transform: scale(1.25);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.dsla-search-wrapper {
+  transition: all 0.1s ease-in-out;
+}
+
+.aa-DetachedSearchButton svg {
+  transition: all 0.1s ease-in-out;
+}
+
+.aa-DetachedContainer.aa-DetachedContainer--modal {
+  border-radius: 16px;
+}
+
+.aa-DetachedContainer.aa-DetachedContainer--modal .aa-DetachedCancelButton {
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
 .dsla-search-wrapper,
 .aa-DetachedSearchButtonIcon {
+  border-radius: 32px;
   cursor: pointer !important;
+}
+
+.docs-version-current .dsla-search-wrapper {
+  background-color: #2196f3;
+  animation: 0.4s jump ease 6 alternate;
+}
+
+.docs-version-current .aa-DetachedSearchButtonIcon svg {
+  fill: #fff;
 }
 
 .navbar__toggle {
@@ -165,7 +203,6 @@ html[data-theme="dark"] .menu {
 .theme-doc-sidebar-menu.menu__list .menu__list .menu__link {
   color: #455a64;
   padding-left: 16px;
-  margin-left: 10px;
   margin-right: 16px;
 }
 
@@ -175,6 +212,7 @@ html[data-theme="dark"] .menu {
   flex-direction: row-reverse;
   align-items: center;
   justify-content: flex-end;
+  border-left: 0;
 }
 
 .menu__list-item-collapsible button:before,
@@ -184,6 +222,7 @@ html[data-theme="dark"] .menu {
   margin-right: 16px;
   width: 10px;
   min-width: 10px;
+  display: none;
 }
 
 .menu__list-item-collapsible button {
@@ -202,4 +241,33 @@ html[data-theme="dark"] .menu {
 
 .dropdown > .navbar__link:after {
   display: none;
+}
+
+a.menu__link {
+  border-left: 1px solid #e5e7eb;
+  border-radius: 0;
+}
+
+a.menu__link:hover {
+  border-left: 1px solid #888;
+  background: transparent;
+}
+
+a.menu__link.menu__link--active:not(.menu__link--sublist) {
+  color: #03a9f4 !important;
+  background-color: transparent;
+  border-left: 1px solid #03a9f4;
+  border-radius: 0;
+}
+
+a.menu__link.menu__link--active.menu__link--sublist {
+  border-left: 0;
+}
+
+.theme-doc-sidebar-item-link.theme-doc-sidebar-item-link-level-2.menu__list-item {
+  margin: 0;
+}
+
+.navbar-sidebar a.menu__link {
+  border-left: 0;
 }
