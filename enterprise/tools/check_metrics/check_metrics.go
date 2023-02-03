@@ -16,7 +16,7 @@ import (
 	"github.com/prometheus/common/model"
 	"golang.org/x/sync/errgroup"
 
-	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	promapi "github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
 const (
@@ -53,7 +53,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating prometheus client: %s\nDid you run the prometheus port-forward command?", err)
 	}
-	promAPI := v1.NewAPI(prometheusClient)
+	promAPI := promapi.NewAPI(prometheusClient)
 
 	eg, gctx := errgroup.WithContext(context.Background())
 	for _, metric := range config.PrometheusMetrics {
@@ -100,13 +100,13 @@ func main() {
 }
 
 // Returns whether the given metric is healthy compared to the baseline
-// If the metric's success rate is lower than the baseline's by the input threshold, this will return false
+// If the metric's success rate differs from the baseline's by the input threshold, this will return false
 // Otherwise will return true
-func metricHealthy(v1api v1.API, metricName string, query string, baselineQuery string, healthThreshold float64) (bool, error) {
+func metricHealthy(promAPI promapi.API, metricName string, query string, baselineQuery string, healthThreshold float64) (bool, error) {
 	ctx := context.Background()
 	log.Debugf("Querying metric %s", metricName)
 
-	result, _, err := v1api.Query(ctx, query, time.Now())
+	result, _, err := promAPI.Query(ctx, query, time.Now())
 	if err != nil {
 		return false, err
 	}
@@ -116,7 +116,7 @@ func metricHealthy(v1api v1.API, metricName string, query string, baselineQuery 
 		metricValue = resultVector[0].Value
 	}
 
-	baselineResult, _, err := v1api.Query(ctx, baselineQuery, time.Now())
+	baselineResult, _, err := promAPI.Query(ctx, baselineQuery, time.Now())
 	if err != nil {
 		return false, err
 	}
@@ -126,9 +126,10 @@ func metricHealthy(v1api v1.API, metricName string, query string, baselineQuery 
 		baselineMetricValue = baselineResultVector[0].Value
 	}
 
-	// If the metric differs from the baseline by the set threshold, the metric is considered unhealthy
-	if math.Abs(float64(baselineMetricValue-metricValue)) > healthThreshold {
-		return false, nil
+	if healthThreshold < 0 {
+		// If the threshold is negative, the metric is unhealthy if it is too low
+		return float64(baselineMetricValue-metricValue) > math.Abs(healthThreshold), nil
 	}
-	return true, nil
+	// If the threshold is positive, the metric is unhealthy if it is too high
+	return float64(metricValue-baselineMetricValue) > math.Abs(healthThreshold), nil
 }

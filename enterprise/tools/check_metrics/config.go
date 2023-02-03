@@ -17,6 +17,8 @@ type PrometheusMetric struct {
 	PollingIntervalSeconds int `yaml:"polling_interval_seconds"`
 	// The max number of times the canary can consecutively report as unhealthy before we should rollback.
 	MaxUnhealthyCount int `yaml:"max_unhealthy_count"`
-	// If the canary's success rate is lower than the other apps by this threshold, it is considered unhealthy.
+	// If the canary's success rate differs than the other apps by this threshold, it is considered unhealthy.
+	// If the threshold is negative, we do not want the canary's value to be much lower than the baseline (Ex. liveness rate)
+	// If the threshold is positive, we do not want the canary's value to be much higher than the baseline (Ex. error rate)
 	HealthThreshold float64 `yaml:"health_threshold"`
 }
