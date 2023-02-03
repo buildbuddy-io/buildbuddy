@@ -267,3 +267,7 @@ a.menu__link.menu__link--active.menu__link--sublist {
 .theme-doc-sidebar-item-link.theme-doc-sidebar-item-link-level-2.menu__list-item {
   margin: 0;
 }
+
+.navbar-sidebar a.menu__link {
+  border-left: 0;
+}
