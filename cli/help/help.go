@@ -27,7 +27,7 @@ var (
 )
 
 func HandleHelp(args []string) (exitCode int, err error) {
-	args, _ = arg.SplitPassthroughArgs(args)
+	args, _ = arg.SplitExecutableArgs(args)
 
 	cmd, idx := arg.GetCommandAndIndex(args)
 	// If no command is specified, show general help.

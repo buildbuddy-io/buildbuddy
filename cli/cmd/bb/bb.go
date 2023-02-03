@@ -111,9 +111,7 @@ func run() (exitCode int, err error) {
 	}
 
 	// Parse args.
-	// Split out passthrough args and don't let plugins modify them,
-	// since those are intended to be passed to the built binary as-is.
-	bazelArgs, passthroughArgs := arg.SplitPassthroughArgs(args)
+	bazelArgs, execArgs := arg.SplitExecutableArgs(args)
 	// TODO: Expanding configs results in a long explicit command line in the BB
 	// UI. Need to find a way to override the explicit command line in the UI so
 	// that it reflects the args passed to the CLI, not the wrapped Bazel
@@ -142,7 +140,7 @@ func run() (exitCode int, err error) {
 		return -1, err
 	}
 	for _, p := range plugins {
-		args, err = p.PreBazel(args)
+		args, execArgs, err = p.PreBazel(args, execArgs)
 		if err != nil {
 			return -1, err
 		}
@@ -155,7 +153,7 @@ func run() (exitCode int, err error) {
 
 	// Handle remote bazel. Note, pre-bazel hooks apply to remote bazel, but not
 	// output handlers or post-bazel hooks.
-	args = remotebazel.HandleRemoteBazel(args, passthroughArgs)
+	args = remotebazel.HandleRemoteBazel(args, execArgs)
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
@@ -175,7 +173,7 @@ func run() (exitCode int, err error) {
 	log.Debugf("bb initialized in %s", time.Since(start))
 	outputPath := filepath.Join(tempDir, "bazel.log")
 	exitCode, err = plugin.RunBazeliskWithPlugins(
-		arg.JoinPassthroughArgs(args, passthroughArgs),
+		arg.JoinExecutableArgs(args, execArgs),
 		outputPath, plugins)
 	if err != nil {
 		return -1, err
