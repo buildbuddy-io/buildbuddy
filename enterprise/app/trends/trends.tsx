@@ -4,6 +4,7 @@ import * as format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
+import { stats } from "../../../proto/stats_ts_proto";
 import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
 import PercentilesChartComponent from "./percentile_chart";
@@ -24,10 +25,10 @@ interface Props {
 }
 
 interface State {
-  stats: invocation.ITrendStat[];
+  stats: stats.ITrendStat[];
   loading: boolean;
-  dateToStatMap: Map<string, invocation.ITrendStat>;
-  dateToExecutionStatMap: Map<string, invocation.IExecutionStat>;
+  dateToStatMap: Map<string, stats.ITrendStat>;
+  dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
   dates: string[];
   filterOnlyCI: boolean;
@@ -39,8 +40,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
   state: State = {
     stats: [],
     loading: true,
-    dateToStatMap: new Map<string, invocation.ITrendStat>(),
-    dateToExecutionStatMap: new Map<string, invocation.IExecutionStat>(),
+    dateToStatMap: new Map<string, stats.ITrendStat>(),
+    dateToExecutionStatMap: new Map<string, stats.IExecutionStat>(),
     enableInvocationPercentileCharts: false,
     dates: [],
     filterOnlyCI: false,
@@ -78,8 +79,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
   fetchStats() {
     // TODO(bduffany): Cancel in-progress request
 
-    let request = new invocation.GetTrendRequest();
-    request.query = new invocation.TrendQuery();
+    let request = new stats.GetTrendRequest();
+    request.query = new stats.TrendQuery();
 
     if (capabilities.globalFilter) {
       const filterParams = getProtoFilterParams(this.props.search);
@@ -139,11 +140,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
     this.setState({ ...this.state, loading: true });
     rpcService.service.getTrend(request).then((response) => {
       console.log(response);
-      const dateToStatMap = new Map<string, invocation.ITrendStat>();
+      const dateToStatMap = new Map<string, stats.ITrendStat>();
       for (let stat of response.trendStat) {
         dateToStatMap.set(stat.name ?? "", stat);
       }
-      const dateToExecutionStatMap = new Map<string, invocation.IExecutionStat>();
+      const dateToExecutionStatMap = new Map<string, stats.IExecutionStat>();
       for (let stat of response.executionStat) {
         dateToExecutionStatMap.set(stat.name ?? "", stat);
       }
@@ -166,11 +167,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
     });
   }
 
-  getStat(date: string): invocation.ITrendStat {
+  getStat(date: string): stats.ITrendStat {
     return this.state.dateToStatMap.get(date) || {};
   }
 
-  getExecutionStat(date: string): invocation.IExecutionStat {
+  getExecutionStat(date: string): stats.IExecutionStat {
     return this.state.dateToExecutionStatMap.get(date) || {};
   }
 

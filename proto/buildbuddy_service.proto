@@ -8,6 +8,7 @@ import "proto/execution_stats.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/runner.proto";
+import "proto/stats.proto";
 import "proto/target.proto";
 import "proto/user.proto";
 import "proto/workflow.proto";
@@ -36,10 +37,15 @@ service BuildBuddyService {
       returns (invocation.DeleteInvocationResponse);
   rpc CancelExecutions(invocation.CancelExecutionsRequest)
       returns (invocation.CancelExecutionsResponse);
-  rpc GetTrend(invocation.GetTrendRequest)
-      returns (invocation.GetTrendResponse);
   rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
       returns (invocation.GetInvocationOwnerResponse);
+
+  // Fancy build stat breakdowns.
+  rpc GetTrend(stats.GetTrendRequest) returns (stats.GetTrendResponse);
+  rpc GetStatHeatmap(stats.GetStatHeatmapRequest)
+      returns (stats.GetStatHeatmapResponse);
+  rpc GetStatDrilldown(stats.GetStatDrilldownRequest)
+      returns (stats.GetStatDrilldownResponse);
 
   // Zip manifest API
   rpc GetZipManifest(zip.GetZipManifestRequest)
