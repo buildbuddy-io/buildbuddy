@@ -276,6 +276,32 @@ const matchers: SuggestionMatcher[] = [
       reason: <>Shown because this build has remote execution enabled, but a jobs count is not configured.</>,
     };
   },
+  // Suggest --experimental_remote_build_event_upload=minimal
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+
+    if (!model.optionsMap.get("remote_cache")) return null;
+    if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
+    const version = getBazelMajorVersion(model);
+    // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal
+    if (version === null || version < 6) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider setting the Bazel flag <BazelFlag>--experimental_remote_build_event_upload=minimal</BazelFlag> to
+          reduce the number of unnecessary cache uploads that Bazel might perform during a build.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build has remote cache enabled, and{" "}
+          <span className="inline-code">--experimental_remote_build_event_upload</span> is not explicitly set.
+        </>
+      ),
+    };
+  },
   // Suggest timing profile flags
   getTimingDataSuggestion,
   // Suggest using remote_download_minimal
@@ -526,10 +552,14 @@ function buildLogRegex({
 }
 
 function BazelFlag({ children }: { children: string }) {
+  let flag = children.split("=")[0] || "";
+  if (flag.startsWith("--no")) {
+    flag = "--" + flag.substring("--no".length);
+  }
   return (
     <TextLink
       className="inline-code bazel-flag"
-      href={`https://docs.bazel.build/versions/main/command-line-reference.html#flag${children}`}>
+      href={`https://docs.bazel.build/versions/main/command-line-reference.html#flag${flag}`}>
       {children}
     </TextLink>
   );
