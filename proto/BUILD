@@ -176,6 +176,22 @@ proto_library(
 )
 
 proto_library(
+    name = "stat_filter_proto",
+    srcs = ["stat_filter.proto"],
+)
+
+proto_library(
+    name = "stats_proto",
+    srcs = ["stats.proto"],
+    deps = [
+        ":context_proto",
+        ":invocation_proto",
+        ":stat_filter_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
     name = "target_proto",
     srcs = [
         "target.proto",
@@ -294,6 +310,7 @@ proto_library(
         ":cache_proto",
         ":command_line_proto",
         ":context_proto",
+        ":stat_filter_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
@@ -364,6 +381,7 @@ proto_library(
         ":runner_proto",
         ":scheduler_proto",
         ":secrets_proto",
+        ":stats_proto",
         ":target_proto",
         ":usage_proto",
         ":user_proto",
@@ -622,6 +640,23 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "stat_filter_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/stat_filter",
+    proto = ":stat_filter_proto",
+)
+
+go_proto_library(
+    name = "stats_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/stats",
+    proto = ":stats_proto",
+    deps = [
+        ":context_go_proto",
+        ":invocation_go_proto",
+        ":stat_filter_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "target_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/target",
     proto = ":target_proto",
@@ -744,6 +779,7 @@ go_proto_library(
         ":cache_go_proto",
         ":command_line_go_proto",
         ":context_go_proto",
+        ":stat_filter_go_proto",
     ],
 )
 
@@ -783,6 +819,7 @@ go_proto_library(
         ":runner_go_proto",
         ":scheduler_go_proto",
         ":secrets_go_proto",
+        ":stats_go_proto",
         ":target_go_proto",
         ":usage_go_proto",
         ":user_go_proto",
@@ -1018,6 +1055,16 @@ ts_proto_library(
 ts_proto_library(
     name = "secrets_ts_proto",
     proto = ":secrets_proto",
+)
+
+ts_proto_library(
+    name = "stat_filter_ts_proto",
+    proto = ":stat_filter_proto",
+)
+
+ts_proto_library(
+    name = "stats_ts_proto",
+    proto = ":stats_proto",
 )
 
 ts_proto_library(

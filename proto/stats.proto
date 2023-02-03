@@ -1,0 +1,195 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+import "proto/invocation.proto";
+import "proto/stat_filter.proto";
+import "google/protobuf/timestamp.proto";
+
+package stats;
+
+// Next tag: 7
+message ExecutionStat {
+  string name = 6;
+  // The duration between the execution task is queued and the worker starts.
+  double queue_duration_usec_p50 = 1;
+  double queue_duration_usec_p75 = 2;
+  double queue_duration_usec_p90 = 3;
+  double queue_duration_usec_p95 = 4;
+  double queue_duration_usec_p99 = 5;
+}
+
+message TrendQuery {
+  // The search parameters in this query will be ANDed when performing a
+  // query -- so if a client specifies both "user" and "host", all results
+  // returned must match both fields.
+
+  // The unix-user who performed the build.
+  string user = 1;
+
+  // The host this build was executed on.
+  string host = 2;
+
+  // The git repo the build was for.
+  string repo_url = 4;
+
+  // The commit sha used for the build.
+  string commit_sha = 5;
+
+  // The role played by the build. Ex: "CI". If multiple filters are specified,
+  // they are combined with "OR".
+  repeated string role = 6;
+
+  // The timestamp on or after which the build was last updated (inclusive).
+  google.protobuf.Timestamp updated_after = 7;
+
+  // The timestamp up to which the build was last updated (exclusive).
+  google.protobuf.Timestamp updated_before = 8;
+
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
+  repeated invocation.OverallStatus status = 9;
+
+  // The git branch used for the build.
+  string branch_name = 10;
+
+  // The bazel command that was used. Ex: "build", "test", "run"
+  string command = 11;
+
+  // Stat filters (duration_usec, cas_cache_misses, etc.)
+  repeated stat_filter.StatFilter filter = 12;
+}
+
+message TrendStat {
+  string name = 1;
+
+  // The sum of all invocation durations for this entity.
+  int64 total_build_time_usec = 2;
+  double build_time_usec_p50 = 21;
+  double build_time_usec_p75 = 22;
+  double build_time_usec_p90 = 23;
+  double build_time_usec_p95 = 24;
+  double build_time_usec_p99 = 25;
+
+  // The total number of invocations completed by this entity.
+  int64 total_num_builds = 3;
+
+  // The number of invocations with a duration longer than 0 seconds.
+  int64 completed_invocation_count = 4;
+
+  // The number of unique users who stared a build.
+  int64 user_count = 5;
+
+  // The number of unique commits that caused a build.
+  int64 commit_count = 6;
+
+  // The number of unique hosts that ran a build.
+  int64 host_count = 7;
+
+  // The number of unique repos that were built.
+  int64 repo_count = 8;
+
+  // The duration (in microseconds) of the longest build.
+  int64 max_duration_usec = 9;
+
+  // Server-side Action-cache stats.
+  int64 action_cache_hits = 10;
+  int64 action_cache_misses = 11;
+  int64 action_cache_uploads = 12;
+
+  // Server-side CAS-cache stats.
+  int64 cas_cache_hits = 13;
+  int64 cas_cache_misses = 14;
+  int64 cas_cache_uploads = 15;
+
+  // Download / upload stats.
+  int64 total_download_size_bytes = 16;
+  int64 total_upload_size_bytes = 17;
+  int64 total_download_usec = 18;
+  int64 total_upload_usec = 19;
+
+  // The number of unique branches that were built.
+  int64 branch_count = 20;
+}
+
+message GetTrendRequest {
+  context.RequestContext request_context = 1;
+
+  TrendQuery query = 2;
+
+  // The maximum number of past days to aggregate. If not set, the server will
+  // pick an appropriate value. Probably 7.
+  // DEPRECATED: Use `query.updated_after` and `query.updated_before` instead.
+  // TODO(bduffany): Delete this once clients no longer use it.
+  int32 lookback_window_days = 3 [deprecated = true];
+}
+
+message GetTrendResponse {
+  context.ResponseContext response_context = 1;
+
+  // The list of trend stats found.
+  repeated TrendStat trend_stat = 2;
+
+  // The list of execution stats found.
+  repeated ExecutionStat execution_stat = 3;
+
+  bool has_invocation_stat_percentiles = 4;
+}
+
+// Fetches a heatmap for the requested metric--a heatmap is basically a set of
+// columns, where each column represents a histogram for that metric in a window
+// of time.
+message GetStatHeatmapRequest {
+  context.RequestContext request_context = 1;
+  TrendQuery query = 2;
+  stat_filter.MetricType metric = 3;
+  int64 num_metric_buckets = 4;
+}
+
+message HeatmapColumn {
+  int64 timestamp_usec = 1;
+  repeated int64 value = 2;
+}
+
+message GetStatHeatmapResponse {
+  context.ResponseContext response_context = 1;
+  // This array is one entry longer than the number of timestamp buckets, with
+  // the actual buckets being defined by 2 sequential entries in the list.
+  repeated int64 timestamp_bracket = 2;
+  // This array is one entry longer than the number of buckets, with the actual
+  // buckets being defined by 2 sequential entries in the list.
+  repeated int64 bucket_bracket = 3;
+  // Each entry in the heatmap response is a histogram for a given time bucket.
+  repeated HeatmapColumn column = 4;
+}
+
+// A drilldown request fetches a set of charts.  Each chart shows a comparison
+// between two data sets, as defined by the 'filter' field.  The 'selection'
+// value contains all data that matches the filters, and the 'base' set contains
+// all data that *doesn't* match the filter.  The set of charts to be returned
+// is determined automatically based on the requested filters.
+message GetStatDrilldownRequest {
+  context.RequestContext request_context = 1;
+  TrendQuery query = 2;
+  repeated stat_filter.StatFilter filter = 3;
+  stat_filter.MetricType drilldown_metric = 4;
+}
+
+message DrilldownEntry {
+  string label = 1;
+  int64 base_value = 2;
+  int64 selection_value = 3;
+}
+
+message DrilldownChart {
+  invocation.AggType drilldown_dimension = 1;
+  repeated DrilldownEntry entry = 2;
+}
+
+message GetStatDrilldownResponse {
+  context.ResponseContext response_context = 1;
+  // Each chart shows a drilldown based on a different aggregation type.
+  repeated DrilldownChart chart = 2;
+  // Total fields that can be used to render percentages, if that's desirable.
+  int64 total_in_base = 3;
+  int64 total_in_selection = 4;
+}

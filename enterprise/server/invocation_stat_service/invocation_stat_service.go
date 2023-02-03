@@ -20,6 +20,7 @@ import (
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 )
 
 var (
@@ -131,7 +132,7 @@ func flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func addWhereClauses(q *query_builder.Query, req *inpb.GetTrendRequest) error {
+func addWhereClauses(q *query_builder.Query, req *stpb.GetTrendRequest) error {
 	groupID := req.GetRequestContext().GetGroupId()
 
 	if user := req.GetQuery().GetUser(); user != "" {
@@ -197,7 +198,7 @@ func addWhereClauses(q *query_builder.Query, req *inpb.GetTrendRequest) error {
 	return nil
 }
 
-func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *inpb.GetTrendRequest) ([]*inpb.TrendStat, error) {
+func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stpb.GetTrendRequest) ([]*stpb.TrendStat, error) {
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
@@ -222,10 +223,10 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *inp
 	}
 	defer rows.Close()
 
-	res := make([]*inpb.TrendStat, 0)
+	res := make([]*stpb.TrendStat, 0)
 
 	for rows.Next() {
-		stat := &inpb.TrendStat{}
+		stat := &stpb.TrendStat{}
 		if i.isOLAPDBEnabled() {
 			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 				return nil, err
@@ -274,7 +275,7 @@ func getQueryWithFlattenedArray(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *inpb.GetTrendRequest) ([]*inpb.ExecutionStat, error) {
+func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb.GetTrendRequest) ([]*stpb.ExecutionStat, error) {
 	if !i.isOLAPDBEnabled() || !*executionTrendsEnabled {
 		return nil, nil
 	}
@@ -293,10 +294,10 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *inpb
 	}
 	defer rows.Close()
 
-	res := make([]*inpb.ExecutionStat, 0)
+	res := make([]*stpb.ExecutionStat, 0)
 
 	for rows.Next() {
-		stat := &inpb.ExecutionStat{}
+		stat := &stpb.ExecutionStat{}
 		if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
 			return nil, err
 		}
@@ -313,7 +314,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *inpb
 	return res, nil
 }
 
-func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
+func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error) {
 	groupID := req.GetRequestContext().GetGroupId()
 	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
 		return nil, err
@@ -322,7 +323,7 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *inpb.GetTrend
 		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
-	rsp := &inpb.GetTrendResponse{}
+	rsp := &stpb.GetTrendResponse{}
 
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {

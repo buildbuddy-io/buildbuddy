@@ -47,6 +47,7 @@ import (
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
+	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
@@ -745,18 +746,18 @@ func (s *BuildBuddyServer) GetInvocationStat(ctx context.Context, req *inpb.GetI
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) GetTrend(ctx context.Context, req *inpb.GetTrendRequest) (*inpb.GetTrendResponse, error) {
+func (s *BuildBuddyServer) GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error) {
 	if iss := s.env.GetInvocationStatService(); iss != nil {
 		return iss.GetTrend(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) GetStatHeatmap(ctx context.Context, req *inpb.GetStatHeatmapRequest) (*inpb.GetStatHeatmapResponse, error) {
+func (s *BuildBuddyServer) GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error) {
 	return nil, status.UnimplementedError("Not implemented")
 }
 
-func (s *BuildBuddyServer) GetStatDrilldown(ctx context.Context, req *inpb.GetStatDrilldownRequest) (*inpb.GetStatDrilldownResponse, error) {
+func (s *BuildBuddyServer) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {
 	return nil, status.UnimplementedError("Not implemented")
 }
 

@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//proto:context_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:stats_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/util/blocklist",
