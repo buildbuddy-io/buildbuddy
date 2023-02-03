@@ -47,7 +47,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     filterOnlyCI: false,
   };
 
-  subscription: Subscription;
+  subscription?: Subscription;
 
   componentWillMount() {
     document.title = `Trends | BuildBuddy`;
@@ -93,16 +93,16 @@ export default class TrendsComponent extends React.Component<Props, State> {
         request.query.role = ["", "CI"];
       }
 
-      request.query.host = filterParams.host;
-      request.query.user = filterParams.user;
-      request.query.repoUrl = filterParams.repo;
-      request.query.branchName = filterParams.branch;
-      request.query.commitSha = filterParams.commit;
-      request.query.command = filterParams.command;
+      if (filterParams.host) request.query.host = filterParams.host;
+      if (filterParams.user) request.query.user = filterParams.user;
+      if (filterParams.repo) request.query.repoUrl = filterParams.repo;
+      if (filterParams.branch) request.query.branchName = filterParams.branch;
+      if (filterParams.commit) request.query.commitSha = filterParams.commit;
+      if (filterParams.command) request.query.command = filterParams.command;
+      if (filterParams.status) request.query.status = filterParams.status;
 
       request.query.updatedBefore = filterParams.updatedBefore;
       request.query.updatedAfter = filterParams.updatedAfter;
-      request.query.status = filterParams.status;
     } else {
       // TODO(bduffany): Clean up this branch once the global filter is switched on
       if (this.state.filterOnlyCI) {
@@ -113,28 +113,34 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.lookbackWindowDays = this.getLimit();
     }
 
-    if (this.props.search.get("user")) {
-      request.query.user = this.props.search.get("user");
+    const user = this.props.search.get("user");
+    if (user) {
+      request.query.user = user;
     }
 
-    if (this.props.search.get("host")) {
-      request.query.host = this.props.search.get("host");
+    const host = this.props.search.get("host");
+    if (host) {
+      request.query.host = host;
     }
 
-    if (this.props.search.get("commit")) {
-      request.query.commitSha = this.props.search.get("commit");
+    const commit = this.props.search.get("commit");
+    if (commit) {
+      request.query.commitSha = commit;
     }
 
-    if (this.props.search.get("branch")) {
-      request.query.branchName = this.props.search.get("branch");
+    const branch = this.props.search.get("branch");
+    if (branch) {
+      request.query.branchName = branch;
     }
 
-    if (this.props.search.get("repo")) {
-      request.query.repoUrl = this.props.search.get("repo");
+    const repo = this.props.search.get("repo");
+    if (repo) {
+      request.query.repoUrl = repo;
     }
 
-    if (this.props.search.get("command")) {
-      request.query.command = this.props.search.get("command");
+    const command = this.props.search.get("command");
+    if (command) {
+      request.query.command = command;
     }
 
     this.setState({ ...this.state, loading: true });
@@ -154,7 +160,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
         dates: capabilities.globalFilter
           ? getDatesBetween(
               // Start date should always be defined.
-              proto.timestampToDate(request.query!.updatedAfter),
+              proto.timestampToDate(request.query!.updatedAfter || {}),
               // End date may not be defined -- default to today.
               request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date()
             )
@@ -261,7 +267,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryName="average build duration"
                 secondaryLine={true}
                 separateAxis={true}
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : null}
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : undefined}
               />
               {this.state.enableInvocationPercentileCharts && (
                 <PercentilesChartComponent
@@ -274,7 +280,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   extractP90={(date) => +(this.getStat(date).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP95={(date) => +(this.getStat(date).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP99={(date) => +(this.getStat(date).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
-                  onColumnClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : null}
+                  onColumnClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : undefined}
                 />
               )}
               {!this.state.enableInvocationPercentileCharts && (
@@ -293,9 +299,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
                   name="average build duration"
                   secondaryName="slowest build duration"
-                  onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : null}
+                  onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : undefined}
                   onSecondaryBarClicked={
-                    capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : null
+                    capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : undefined
                   }
                 />
               )}
@@ -306,7 +312,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
                 extractHits={(date) => +(this.getStat(date).actionCacheHits ?? 0)}
-                extractMisses={(date) => +(this.getStat(date).actionCacheMisses ?? 0)}
+                secondaryBarName="misses"
+                extractSecondary={(date) => +(this.getStat(date).actionCacheMisses ?? 0)}
               />
               <CacheChartComponent
                 title="Content Addressable Store"
@@ -314,7 +321,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}
                 extractHits={(date) => +(this.getStat(date).casCacheHits ?? 0)}
-                extractWrites={(date) => +(this.getStat(date).casCacheUploads ?? 0)}
+                secondaryBarName="writes"
+                extractSecondary={(date) => +(this.getStat(date).casCacheUploads ?? 0)}
               />
 
               <TrendsChartComponent
@@ -368,7 +376,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#users", "") : null}
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#users", "") : undefined}
               />
               <TrendsChartComponent
                 title="Commits with builds"
@@ -380,7 +388,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#commits", "") : null}
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#commits", "") : undefined}
               />
               <TrendsChartComponent
                 title="Branches with builds"
@@ -403,7 +411,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#hosts", "") : null}
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#hosts", "") : undefined}
               />
               <TrendsChartComponent
                 title="Repos with builds"
@@ -415,7 +423,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#repos", "") : null}
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#repos", "") : undefined}
               />
               {this.state.dateToExecutionStatMap.size > 0 && (
                 <PercentilesChartComponent

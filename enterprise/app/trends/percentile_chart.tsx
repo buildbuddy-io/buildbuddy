@@ -27,7 +27,7 @@ export interface PercentilesChartProps {
 }
 
 export default class PercentilesChartComponent extends React.Component<PercentilesChartProps> {
-  private lastDataFromHover: string;
+  private lastDataFromHover: string = "";
 
   handleRowClick() {
     if (!this.props.onColumnClicked || !this.lastDataFromHover) {
