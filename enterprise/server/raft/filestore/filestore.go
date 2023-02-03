@@ -105,6 +105,17 @@ func (pmk PebbleKey) LockID() string {
 	return filepath.Join(pmk.isolation, pmk.hash)
 }
 
+func (pmk PebbleKey) CacheType() resource.CacheType {
+	switch pmk.isolation {
+	case "ac":
+		return resource.CacheType_AC
+	case "cas":
+		return resource.CacheType_CAS
+	default:
+		return resource.CacheType_UNKNOWN_CACHE_TYPE
+	}
+}
+
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 	switch version {
 	case UndefinedKeyVersion:
