@@ -1,7 +1,17 @@
 import React from "react";
-import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line, Legend, Tooltip } from "recharts";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Bar,
+  Line,
+  Legend,
+  Tooltip,
+  TooltipProps,
+} from "recharts";
 import * as format from "../../../app/format/format";
-import { invocation } from "../../../proto/invocation_ts_proto";
 
 interface Props {
   title: string;
@@ -13,34 +23,39 @@ interface Props {
   extractSecondary: (datum: any) => number;
 }
 
-const CacheChartTooltip = ({
-  active,
-  payload,
-  labelFormatter,
-  extractHits,
-  secondaryBarName,
-  extractSecondary,
-}: any) => {
-  if (active) {
-    let data = payload[0].payload;
+interface CacheChartTooltipProps extends TooltipProps<any, any> {
+  labelFormatter: (datum: any) => string;
+  extractHits: (datum: any) => number;
+  secondaryBarName: string;
+  extractSecondary: (datum: any) => number;
+}
+
+class CacheChartTooltip extends React.Component<CacheChartTooltipProps> {
+  render() {
+    if (!this.props.active || !this.props.payload || this.props.payload.length < 1) {
+      return null;
+    }
+    let data = this.props.payload[0].payload;
     return (
       <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
+        <div className="trend-chart-hover-label">{this.props.labelFormatter(data)}</div>
         <div className="trend-chart-hover-value">
-          <div>{extractHits(data) || 0} hits</div>
+          <div>{this.props.extractHits(data) || 0} hits</div>
           <div>
-            {extractSecondary(data) || 0} {secondaryBarName}
+            {this.props.extractSecondary(data) || 0} {this.props.secondaryBarName}
           </div>
           <div>
-            {((100 * extractHits(data)) / (extractHits(data) + extractSecondary(data)) || 0).toFixed(2)}% hit percentage
+            {(
+              (100 * this.props.extractHits(data)) /
+                (this.props.extractHits(data) + this.props.extractSecondary(data)) || 0
+            ).toFixed(2)}
+            % hit percentage
           </div>
         </div>
       </div>
     );
   }
-
-  return null;
-};
+}
 
 export default class CacheChartComponent extends React.Component<Props> {
   render() {

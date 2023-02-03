@@ -10,8 +10,8 @@ import {
   Line,
   Legend,
   Tooltip,
+  TooltipProps,
   Cell,
-  YAxisProps,
 } from "recharts";
 
 interface Props {
@@ -38,34 +38,37 @@ interface Props {
   onSecondaryBarClicked?: (date: string) => void;
 }
 
-const TrendsChartTooltip = ({
-  active,
-  payload,
-  labelFormatter,
-  valueFormatter,
-  secondaryValueFormatter,
-  extractSecondaryValue,
-}: any) => {
-  if (active) {
+interface TrendsChartTooltipProps extends TooltipProps<any, any> {
+  labelFormatter: (datum: any) => string;
+  valueFormatter?: (datum: number) => string;
+  secondaryValueFormatter?: (datum: number) => string;
+  extractSecondaryValue?: (datum: any) => number;
+}
+
+class TrendsChartTooltip extends React.Component<TrendsChartTooltipProps> {
+  render() {
+    const p = this.props;
+    if (!p.active || !p.payload || !(p.payload.length > 0)) {
+      return null;
+    }
+
     return (
       <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
+        <div className="trend-chart-hover-label">{p.labelFormatter(p.payload[0].payload)}</div>
         <div className="trend-chart-hover-value">
-          <div>{valueFormatter ? valueFormatter(payload[0].value) : payload[0].value}</div>
-          {extractSecondaryValue && (
+          <div>{p.valueFormatter ? p.valueFormatter(p.payload[0].value) : p.payload[0].value}</div>
+          {p.extractSecondaryValue && (
             <div>
-              {secondaryValueFormatter
-                ? secondaryValueFormatter(extractSecondaryValue(payload[0].payload))
-                : extractSecondaryValue(payload[0].payload)}
+              {p.secondaryValueFormatter
+                ? p.secondaryValueFormatter(p.extractSecondaryValue(p.payload[0].payload))
+                : p.extractSecondaryValue(p.payload[0].payload)}
             </div>
           )}
         </div>
       </div>
     );
   }
-
-  return null;
-};
+}
 
 export default class TrendsChartComponent extends React.Component<Props> {
   render() {
