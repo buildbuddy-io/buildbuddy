@@ -59,8 +59,10 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 		return i.dbh.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())
 	case inpb.AggType_BRANCH_AGGREGATION_TYPE:
 		return "branch_name"
+	case inpb.AggType_PATTERN_AGGREGATION_TYPE:
+		return "pattern"
 	default:
-		log.Errorf("Unknown aggregation column type: %s", aggType)
+		log.Errorf("Unknown or unsupported aggregation column type: %s", aggType)
 		return ""
 	}
 }
