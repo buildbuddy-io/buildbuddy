@@ -10,6 +10,7 @@ ts_library(
         ["*.tsx"],
         exclude = glob(["_test.ts"]),
     ),
+    strict = True,
     deps = [
         "//app/components/input",
         "//app/components/spinner",
@@ -32,5 +33,6 @@ ts_library(
 ts_jasmine_node_test(
     name = "text_test",
     srcs = ["text_test.ts"],
+    strict = True,
     deps = [":terminal"],
 )

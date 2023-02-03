@@ -118,7 +118,7 @@ export interface Match {
  * results. It does *not* do a full ANSI parse, which is too expensive. Instead,
  * ANSI parsing is done lazily, when lines are rendered.
  */
-export function getContent(text: string, search: string, lineLengthLimit: number): Content {
+export function getContent(text: string, search: string, lineLengthLimit: number | null): Content {
   // If the line length limit is not yet known, then return empty contents,
   // since we don't yet know how to wrap the contents.
   if (lineLengthLimit === null) {
@@ -230,7 +230,7 @@ export function getMatchedRanges(line: string, search: string): Range[] {
 export function updatedMatchIndexForSearch(
   nextContent: Content,
   nextSearch: string,
-  currentMatch: Match,
+  currentMatch: Match | null,
   rowRangeInView: Range | null
 ): number {
   if (!nextContent.matches.length) return -1;
@@ -290,7 +290,7 @@ function computeRowsImpl(
   // Build up the list of indexes at which we'll split up the ANSI parts.
   let spanOffset = 0;
   let plaintext = "";
-  const splitIndexSet = new Set([]);
+  const splitIndexSet = new Set<number>();
   for (const span of ansiSpans) {
     splitIndexSet.add(spanOffset);
     spanOffset += span.text.length;
@@ -353,7 +353,7 @@ function computeRowsImpl(
     row.push({
       ...span,
       text: span.text.substring(spanTextOffset, spanTextOffset + partLength),
-      matchIndex: isMatched ? matchStartIndex + matchIndex : null,
+      matchIndex: isMatched ? matchStartIndex! + matchIndex : null,
     });
     spanTextOffset += partLength;
   }
