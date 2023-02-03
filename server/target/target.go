@@ -158,7 +158,7 @@ func fetchTargetsFromOLAPDB(ctx context.Context, env environment.Env, q *query_b
 			})
 		}
 
-		invocation_id, err := uuid.Base64StringToString(row.InvocationUUID)
+		invocationID, err := uuid.Base64StringToString(row.InvocationUUID)
 		if err != nil {
 			log.Errorf("cannot parse invocation_id for row (group_id, %q, repo_url: %q, label: %q, invocation_uuid: %q", groupID, repoURL, row.Label, row.InvocationUUID)
 			continue
@@ -308,7 +308,6 @@ func getRepoURL(req *trpb.GetTargetRequest) (string, error) {
 		return repo, nil
 	}
 	if norm, err := gitutil.NormalizeRepoURL(repo); err == nil {
-		repo = norm.String()
 		return norm.String(), nil
 	}
 	return "", status.InvalidArgumentErrorf("Invalid repo_url: %q", repo)
@@ -324,12 +323,12 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	}
 	// Repo URL is required to query OLAP DB for fast query.
 	if repo == "" {
-		return nil, status.InvalidArgumentError("expect non empty repo_url")
+		return nil, status.InvalidArgumentError("expected non empty repo_url")
 	}
 
 	groupID := req.GetRequestContext().GetGroupId()
 	if groupID == "" {
-		return nil, status.InvalidArgumentError("expect non empty group_id")
+		return nil, status.InvalidArgumentError("expected non empty group_id")
 	}
 
 	//  Build the query:
@@ -440,7 +439,6 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 		FROM Targets as t
 		JOIN TargetStatuses as ts ON ts.target_id = t.target_id`)
 	q.AddJoinClause(joinQuery, "i", "ts.invocation_uuid = i.invocation_uuid")
-	q.AddWhereClause(`ts.status != 0`)
 	return fetchTargetsFromPrimaryDB(ctx, env, q, repo)
 }
 
