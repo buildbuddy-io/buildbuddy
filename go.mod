@@ -21,7 +21,7 @@ require (
 	github.com/aws/aws-sdk-go v1.43.9
 	github.com/bazelbuild/bazelisk v1.11.0
 	github.com/bazelbuild/rules_go v0.29.0
-	github.com/bazelbuild/rules_webtesting v0.2.0
+	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
 	github.com/bojand/ghz v0.110.0
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b

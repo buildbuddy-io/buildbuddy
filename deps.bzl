@@ -320,8 +320,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_rules_webtesting",
         importpath = "github.com/bazelbuild/rules_webtesting",
-        sum = "h1:nhqjA2IslEOLViRBF5djQCiOD//7VyyHNKrqAZ1AuYA=",
-        version = "v0.2.0",
+        sum = "h1:zmBkl2nxjRojoW9PtGVEtW/91kHieotlD7cL9vFq06c=",
+        version = "v0.0.0-20210910170740-6b2ef24cfe95",
     )
     go_repository(
         name = "com_github_bduffany_godemon",
