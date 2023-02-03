@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	grp "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -55,7 +56,7 @@ func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, 
 }
 
 func getSingleAPIKey(t *testing.T, ctx context.Context, env environment.Env, groupID string) *tables.APIKey {
-	keys, err := env.GetUserDB().GetAPIKeys(ctx, groupID, true /*=checkVisibility*/)
+	keys, err := env.GetUserDB().GetAPIKeys(ctx, groupID)
 	require.NoError(t, err)
 	require.Len(t, keys, 1, "expected exactly one API key")
 	return keys[0]
@@ -407,6 +408,41 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 		err)
 }
 
+func TestGetAPIKeyForInternalUseOnly(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	// Create user US1, this should create a group and API key.
+	createUser(t, ctx, env, "US1", "org1.io")
+
+	var groupID string
+	{
+		ctx1 := authUserCtx(ctx, env, t, "US1")
+		gr1 := getSelfOwnedGroup(t, ctx1, env)
+		groupID = gr1.Group.GroupID
+	}
+
+	// Get the pre-authorized key; this should succeed.
+	key, err := udb.GetAPIKeyForInternalUseOnly(ctx, groupID)
+	require.NoError(t, err)
+	assert.NotEmpty(t, key.Value, "expected non-empty API key value")
+
+	// Now delete the API key as US1.
+	{
+		ctx1 := authUserCtx(ctx, env, t, "US1")
+		err := udb.DeleteAPIKey(ctx1, key.APIKeyID)
+		require.NoError(t, err)
+	}
+
+	// Try to get the key again; should return NotFound.
+	key, err = udb.GetAPIKeyForInternalUseOnly(ctx, groupID)
+	assert.Truef(
+		t, status.IsNotFoundError(err),
+		"expected NotFound after deleting API keys, got: %v", err)
+	assert.Nil(t, key, "API key should be nil after deleting API keys")
+}
+
 func TestUpdateAPIKey(t *testing.T) {
 	ctx := context.Background()
 	env := newTestEnv(t)
@@ -463,7 +499,7 @@ func TestDeleteAPIKey(t *testing.T) {
 
 	require.NoError(t, err, "US1 should be able to delete their API key")
 
-	keys, err := env.GetUserDB().GetAPIKeys(ctx1, gr1.Group.GroupID, true /*=checkVisibility*/)
+	keys, err := env.GetUserDB().GetAPIKeys(ctx1, gr1.Group.GroupID)
 
 	require.NoError(t, err)
 	require.Empty(t, keys, "US1 group's keys should be empty after deleting")

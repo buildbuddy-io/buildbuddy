@@ -164,22 +164,20 @@ func (d *UserDB) getAPIKey(tx *db.DB, apiKeyID string) (*tables.APIKey, error) {
 	return key, nil
 }
 
-func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string, checkVisibility bool) ([]*tables.APIKey, error) {
+// GetAPIKeys returns group-level API keys that the user is authorized to
+// access.
+func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-
-	q := query_builder.NewQuery(`SELECT api_key_id, value, label, perms, capabilities, visible_to_developers FROM APIKeys`)
-	q.AddWhereClause("group_id = ?", groupID)
-
-	if checkVisibility {
-		u, err := perms.AuthenticatedUser(ctx, d.env)
-		if err != nil {
-			return nil, err
-		}
-		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
-			q.AddWhereClause("visible_to_developers = ?", true)
-		}
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return nil, err
+	}
+	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
+	q.AddWhereClause(`group_id = ?`, groupID)
+	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+		q.AddWhereClause("visible_to_developers = ?", true)
 	}
 	q.SetOrderBy("label", true /*ascending*/)
 	queryStr, args := q.Build()
@@ -199,6 +197,26 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string, checkVisibility
 		keys = append(keys, k)
 	}
 	return keys, nil
+}
+
+// GetAPIKeyForInternalUseOnly returns any API key for the group. It is only to
+// be used in situations where the user has a pre-authorized grant to access
+// resources on behalf of the org, such as a publicly shared invocation. The
+// returned API key must only be used to access internal resources and must
+// not be returned to the caller.
+func (d *UserDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error) {
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
+	}
+	key := &tables.APIKey{}
+	q := `SELECT * FROM APIKeys ORDER BY label ASC LIMIT 1`
+	if err := d.h.DB(ctx).Raw(q).Take(key).Error; err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundError("no API keys were found for the requested group")
+		}
+		return nil, err
+	}
+	return key, nil
 }
 
 func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
