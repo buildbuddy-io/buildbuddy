@@ -14,7 +14,7 @@ import TextInput from "../../../app/components/input/input";
 import Spinner from "../../../app/components/spinner/spinner";
 import Modal from "../../../app/components/modal/modal";
 import errorService from "../../../app/errors/error_service";
-import rpcService from "../../../app/service/rpc_service";
+import { CancelableRpc } from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
 
@@ -24,6 +24,11 @@ export interface ApiKeysComponentProps {
 
   /** Whether to show only user-owned keys. */
   userOwnedOnly?: boolean;
+
+  get: CancelableRpc<api_key.GetApiKeysRequest, api_key.GetApiKeysResponse>;
+  create: CancelableRpc<api_key.CreateApiKeyRequest, api_key.CreateApiKeyResponse>;
+  update: CancelableRpc<api_key.UpdateApiKeyRequest, api_key.UpdateApiKeyResponse>;
+  delete: CancelableRpc<api_key.DeleteApiKeyRequest, api_key.DeleteApiKeyResponse>;
 }
 
 interface State {
@@ -82,10 +87,9 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     if (!this.props.user) return;
 
     try {
-      const response = await rpcService.service.getApiKeys(
+      const response = await this.props.get(
         api_key.GetApiKeysRequest.create({
           groupId: this.props.user.selectedGroup.id,
-          userId: this.props.userOwnedOnly ? this.props.user.getId() : "",
         })
       );
       this.setState({ getApiKeysResponse: response });
@@ -111,7 +115,6 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
         isOpen: true,
         request: new api_key.CreateApiKeyRequest({
           capability: this.defaultCapabilities(),
-          userId: this.props.userOwnedOnly ? this.props.user.getId() : "",
         }),
       },
     });
@@ -136,7 +139,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     try {
       this.setState({ createForm: { ...this.state.createForm, isSubmitting: true } });
-      await rpcService.service.createApiKey(
+      await this.props.create(
         new api_key.CreateApiKeyRequest({
           ...this.state.createForm.request,
           groupId: this.props.user.selectedGroup.id,
@@ -186,7 +189,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
 
     try {
       this.setState({ updateForm: { ...this.state.updateForm, isSubmitting: true } });
-      await rpcService.service.updateApiKey(
+      await this.props.update(
         api_key.UpdateApiKeyRequest.create({
           ...this.state.updateForm.request,
         })
@@ -216,7 +219,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   private async onConfirmDelete() {
     try {
       this.setState({ isDeleteModalSubmitting: true });
-      await rpcService.service.deleteApiKey(new api_key.DeleteApiKeyRequest({ id: this.state.keyToDelete.id }));
+      await this.props.delete(new api_key.DeleteApiKeyRequest({ id: this.state.keyToDelete.id }));
       await this.fetchApiKeys();
       this.setState({ isDeleteModalOpen: false });
     } catch (e) {
@@ -297,7 +300,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 
   private canEdit(): boolean {
-    return this.props.userOwnedOnly || this.props.user.isGroupAdmin();
+    return this.props.userOwnedOnly || this.props.user.canCall("updateApiKey");
   }
 
   private renderModal<T extends ApiKeyFields>({

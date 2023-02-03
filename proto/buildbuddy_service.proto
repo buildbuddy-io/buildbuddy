@@ -70,7 +70,7 @@ service BuildBuddyService {
   rpc CreateGroup(grp.CreateGroupRequest) returns (grp.CreateGroupResponse);
   rpc UpdateGroup(grp.UpdateGroupRequest) returns (grp.UpdateGroupResponse);
 
-  // API Keys API
+  // Org API Keys API
   rpc GetApiKeys(api_key.GetApiKeysRequest)
       returns (api_key.GetApiKeysResponse);
   rpc CreateApiKey(api_key.CreateApiKeyRequest)
@@ -78,6 +78,16 @@ service BuildBuddyService {
   rpc UpdateApiKey(api_key.UpdateApiKeyRequest)
       returns (api_key.UpdateApiKeyResponse);
   rpc DeleteApiKey(api_key.DeleteApiKeyRequest)
+      returns (api_key.DeleteApiKeyResponse);
+
+  // User API keys API
+  rpc GetUserApiKeys(api_key.GetApiKeysRequest)
+      returns (api_key.GetApiKeysResponse);
+  rpc CreateUserApiKey(api_key.CreateApiKeyRequest)
+      returns (api_key.CreateApiKeyResponse);
+  rpc UpdateUserApiKey(api_key.UpdateApiKeyRequest)
+      returns (api_key.UpdateApiKeyResponse);
+  rpc DeleteUserApiKey(api_key.DeleteApiKeyRequest)
       returns (api_key.DeleteApiKeyResponse);
 
   // Execution API
