@@ -8,6 +8,24 @@ set -e
 
 : "${QA_ROOT:=$HOME/buildbuddy-qa}"
 
+usage() { echo "Usage: $0 [-l <loadtest>] [-s <swift>]" 1>&2; exit 1; }
+
+loadtest=0
+swift=0
+while getopts "ls" opt; do
+    case "${opt}" in
+	l)
+	    loadtest=1
+	    ;;
+	s)
+	    swift=1
+	    ;;
+	*)
+	    usage
+	    ;;
+    esac
+done
+
 mkdir -p "$QA_ROOT"
 cd "$QA_ROOT"
 
@@ -31,8 +49,15 @@ run_test() {
 
 buildbuddy_iid=$(invocation_id)
 gazelle_iid=$(invocation_id)
+abseil_iid=$(invocation_id)
+bazel_iid=$(invocation_id)
+python_iid=$(invocation_id)
 tensorflow_iid=$(invocation_id)
+swift_iid=$(invocation_id)
 
+# Go Builds
+
+# Has --experimental_remote_cache_compression and --remote_download_minimal set
 run_test \
     https://github.com/buildbuddy-io/buildbuddy \
     buildbuddy \
@@ -51,7 +76,44 @@ run_test \
         --remote_timeout=10m \
         --invocation_id="$gazelle_iid"
 
+# C++ Build
 run_test \
+    https://github.com/abseil/abseil-cpp \
+    abseil-cpp \
+    bazel build //... \
+        --cxxopt="-std=c++14" \
+        --remote_executor=remote.buildbuddy.dev \
+        --remote_cache=remote.buildbuddy.dev \
+        --bes_backend=remote.buildbuddy.dev \
+        --bes_results_url=https://app.buildbuddy.dev/invocation/ \
+        --remote_timeout=10m \
+        --invocation_id="$abseil_iid"
+
+# Java Build
+run_test \
+    https://github.com/bazelbuild/bazel \
+    bazel \
+    bazel build //src/main/java/com/google/devtools/build/lib/... \
+        --remote_executor=remote.buildbuddy.dev \
+        --remote_cache=remote.buildbuddy.dev \
+        --bes_backend=remote.buildbuddy.dev \
+        --bes_results_url=https://app.buildbuddy.dev/invocation/ \
+        --remote_timeout=10m \
+        --invocation_id="$bazel_iid"
+
+# Python Builds
+run_test \
+    https://github.com/bazelbuild/rules_python \
+    rules_python \
+    bazel build //... \
+        --remote_executor=remote.buildbuddy.dev \
+        --remote_cache=remote.buildbuddy.dev \
+        --bes_backend=remote.buildbuddy.dev \
+        --bes_results_url=https://app.buildbuddy.dev/invocation/ \
+        --remote_timeout=10m \
+        --invocation_id="$python_iid"
+
+(( loadtest )) && run_test \
     https://github.com/tensorflow/tensorflow \
     tensorflow \
     bazel build tensorflow \
@@ -64,9 +126,25 @@ run_test \
         --invocation_id="$tensorflow_iid" \
         --nogoogle_default_credentials
 
+# Swift Build
+(( swift)) && run_test \
+    https://github.com/bazelbuild/rules_swift \
+    rules_swift \
+    bazel build //... \
+        --client_env=CC=clang \
+        --remote_executor=remote.buildbuddy.dev \
+        --remote_cache=remote.buildbuddy.dev \
+        --bes_backend=remote.buildbuddy.dev \
+        --bes_results_url=https://app.buildbuddy.dev/invocation/ \
+        --remote_timeout=10m \
+        --invocation_id="$swift_iid"
+
 echo "---"
 echo "QA results:"
 echo "- BuildBuddy test:   https://app.buildbuddy.dev/invocation/$buildbuddy_iid"
-echo "- Gazelle build:     https://app.buildbuddy.dev/invocation/$gazelle_iid"
-echo "- Tensorflow build:  https://app.buildbuddy.dev/invocation/$tensorflow_iid"
-
+echo "- Gazelle (Go) build:     https://app.buildbuddy.dev/invocation/$gazelle_iid"
+echo "- Abseil (C++) build:     https://app.buildbuddy.dev/invocation/$abseil_iid"
+echo "- Bazel (Java) build:     https://app.buildbuddy.dev/invocation/$bazel_iid"
+echo "- Python build:     https://app.buildbuddy.dev/invocation/$python_iid"
+(( loadtest )) && echo "- Tensorflow build:  https://app.buildbuddy.dev/invocation/$tensorflow_iid"
+(( swift )) && echo "- Swift build:  https://app.buildbuddy.dev/invocation/$swift_iid"
