@@ -327,7 +327,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     formState: FormState<T>;
   }) {
     return (
-      <Modal isOpen={Boolean(isOpen)} onRequestClose={onRequestClose} shouldFocusAfterRender={false}>
+      <Modal isOpen={isOpen} onRequestClose={onRequestClose} shouldFocusAfterRender={false}>
         <Dialog>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
