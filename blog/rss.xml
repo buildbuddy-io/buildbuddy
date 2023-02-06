@@ -4,9 +4,70 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Tue, 10 Jan 2023 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Mon, 06 Feb 2023 09:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
+        <item>
+            <title><![CDATA[Introducing rules_xcodeproj 1.0]]></title>
+            <link>https://www.buildbuddy.io/blog/introducing-rules_xcodeproj-1-0</link>
+            <guid>introducing-rules_xcodeproj-1-0</guid>
+            <pubDate>Mon, 06 Feb 2023 09:00:00 GMT</pubDate>
+            <description><![CDATA[How we got here and what’s next.]]></description>
+            <content:encoded><![CDATA[<p>Almost exactly one year ago I wrote the <a href="https://github.com/buildbuddy-io/rules_xcodeproj/commit/0bb516569aee5dd49b004c89a761b5d186f25b15">first commit</a> for
+<a href="https://github.com/buildbuddy-io/rules_xcodeproj">rules_xcodeproj</a>. Like a lot of software engineers, I’m pretty
+bad at estimating, and thought that I would be able to finish 1.0 in 2 to 4
+months 😅. The longer development cycle was a result of an increased scope and
+level of quality that I came to expect for a proper 1.0 release. Over the course
+of the year, I believe the project has risen to meet my expectations, and today
+I’m happy to announce the release of <a href="https://github.com/buildbuddy-io/rules_xcodeproj/releases/tag/1.0.1">version 1.0</a> of
+rules_xcodeproj!</p><div align="center"><img alt="Screenshot of a rules_xcodeproj generated project open in Xcode" src="/img/blog/rules_xcodeproj_screenshot.png" width="1245"/></div><h2>The road to 1.0</h2><p>The road to 1.0 has been an incredible journey. Early in the development cycle
+Spotify, Robinhood, and Slack engineers became adopters and contributors;
+without their help I wouldn’t be writing this blog post today 🙏.
+<a href="https://github.com/jpsim">JP</a> became a vocal champion of rules_xcodeproj after
+integrating it with the SwiftLint and Envoy Mobile projects. During BazelCon
+2022 the project got a couple shout-outs, including during
+<a href="https://youtu.be/wy3Q38VJ5uQ?t=1209">Erik’s wonderful talk</a>. And I’m also
+incredibly grateful that I was able to
+<a href="https://youtu.be/B__SHnz3K3c">present rules_xcodeproj itself</a> at the same
+conference.</p><p>Deciding what was <em>actually</em> important for the 1.0 release shifted throughout
+the year. Some things that I initially thought were “nice to haves”, such as
+framework targets and comprehensive ruleset support, became “blockers” for the
+release. Other things that I was sure we would need before releasing, such as
+multiple Xcode configurations (e.g. <code>Debug</code>, <code>Profile</code>, and <code>Release</code>),
+diagnostic replaying, and BwX feature parity, ended up not being as important
+(though don’t worry if you are wanting some of those things, we aren’t done
+yet!).</p><p>The supported feature list also expanded throughout the year. It went from just
+needing to support the Core C/C++/Objective-C, <a href="https://github.com/bazelbuild/rules_swift">rules_swift</a>, and
+<a href="https://github.com/bazelbuild/rules_apple">rules_apple</a> rules, to supporting nearly any ruleset. Also,
+outside contributors made their mark: <a href="https://github.com/cgrindel">Chuck</a> added
+support for custom Xcode schemes; <a href="https://github.com/chiragramani">Chirag</a>
+added support for Runtime Sanitizers; <a href="https://github.com/maxwellE">Maxwell</a>
+added support for Launch, Profile, and Test action environment variables and
+command-line arguments; <a href="https://github.com/thii">Thi</a> contributed BwB mode
+speed-ups and assisted with landing many more efficiency changes; and many
+others helped me test changes on their varied and complex projects. Overall
+these contributions, both in actual code and in invaluable time, allowed
+rules_xcodepoj to be what it is today. Without this community effort the scope
+and quality of the 1.0 release wouldn’t be at the same level.</p><h2>What’s next?</h2><p>While the 1.0 release marks a certain level “doneness”, there is still a lot we
+want to add and improve. When I
+<a href="meet-rules_xcodeproj.md">announced rules_xcodeproj</a>, I listed a set of
+requirements that other projects didn’t fulfill, and I stated that I wanted
+rules_xcodeproj to cover all of them. I feel that with the 1.0 release we still
+have a little ways to go to fully cover those requirements; though some
+will have to be in spirit instead of to the letter, as Bazel and Xcode proved
+to be more stubborn than I expected.</p><p>Here’s a list of changes that I hope we can implement in the near future:</p><ul><li>An additional build mode, currently called “Build with Bazel via Proxy”
+(BwBvP)<ul><li>Uses <a href="https://github.com/MobileNativeFoundation/XCBBuildServiceProxyKit">XCBBuildServiceProxyKit</a> to create an
+XCBBuildService proxy</li><li>Adds replaying of diagnostics, which removes duplicate errors/warnings,
+persists warnings, and enables Fix-Its</li><li>Produces a custom Build Report, removing noise from the logs, and fixing the
+progress bar</li></ul></li><li>BwB or BwBvP support for Xcode features that break with relative paths<ul><li>Source code viewer in Instruments</li><li>Undefined Behavior Sanitizer navigation</li><li>Thread Performance Checker navigation</li><li>Memory Graph Analyzer with Malloc stack logging navigation</li><li>Inline code coverage</li></ul></li><li>Support for multiple Xcode configurations</li></ul><h2>Thank you</h2><p>Once again, I would like to thank all of the contributors and users we’ve gained
+throughout the last year. Hopefully you are as proud of the 1.0 release as I am.
+And for anyone reading that hasn’t tried rules_xcodeproj yet, or it didn’t meet
+your requirements in an earlier release, I invite you to give it a shot now.</p><p>If you run into any problems with rules_xcodeproj, please check if
+<a href="https://github.com/buildbuddy-io/rules_xcodeproj/issues">another issue already exists</a> and comment on it, and if not,
+<a href="https://github.com/buildbuddy-io/rules_xcodeproj/issues/new/choose">file an issue</a>! You can also join us in the <code>#rules_xcodeproj</code>
+channel in the <a href="https://slack.bazel.build/">Bazel Slack workspace</a>, and you can email us at
+<a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> with any questions, comments, or thoughts.</p>]]></content:encoded>
+        </item>
         <item>
             <title><![CDATA[Welcoming Son Luong Ngoc]]></title>
             <link>https://www.buildbuddy.io/blog/welcoming-son-luong-ngoc</link>
