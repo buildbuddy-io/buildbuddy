@@ -345,13 +345,6 @@ type UserDB interface {
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 
-	// API Keys API
-	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
-
-	// GetAPIKeys returns group-level API keys that the user is authorized to
-	// access.
-	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
-
 	// GetAPIKeyForInternalUseOnly returns any API key for the group. It is only
 	// to be used in situations where the user has a pre-authorized grant to
 	// access resources on behalf of the org, such as a publicly shared
@@ -359,11 +352,42 @@ type UserDB interface {
 	// resources and must not be returned to the caller.
 	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
 
+	// API Keys API.
+	//
+	// All of these functions authenticate the user if applicable and
+	// authorize access to the relevant user IDs, group IDs, and API keys,
+	// taking the group role into account.
+	//
+	// Any operations involving user-level keys return an error if user-level
+	// keys are not enabled by the org.
+
+	// GetAPIKeys returns group-level API keys that the user is authorized to
+	// access.
+	GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// CreateAPIKey creates a group-level API key.
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+
+	// GetUserAPIKeys returns all user-owned API keys within a group.
+	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+
+	// CreateUserAPIKey creates a user-owned API key within the group.
+	CreateUserAPIKey(ctx context.Context, groupID, label string) (*tables.APIKey, error)
+
+	// GetAPIKey returns an API key by ID. The key may be user-owned or
+	// group-owned.
+	GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey, error)
+
+	// UpdateAPIKey updates an API key by ID. The key may be user-owned or
+	// group-owned.
 	UpdateAPIKey(ctx context.Context, key *tables.APIKey) error
+
+	// DeleteAPIKey deletes an API key by ID. The key may be user-owned or
+	// group-owned.
 	DeleteAPIKey(ctx context.Context, apiKeyID string) error
 
-	// To support secrets API
+	// Secrets API
+
 	GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error)
 }
 

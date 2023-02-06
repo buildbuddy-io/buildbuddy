@@ -130,12 +130,12 @@ proto_library(
 
 proto_library(
     name = "pagination_proto",
-    srcs = [":pagination.proto"],
+    srcs = ["pagination.proto"],
 )
 
 proto_library(
     name = "quota_proto",
-    srcs = [":quota.proto"],
+    srcs = ["quota.proto"],
     deps = [
         ":context_proto",
         "@com_google_protobuf//:duration_proto",

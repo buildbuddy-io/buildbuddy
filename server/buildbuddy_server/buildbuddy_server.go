@@ -565,6 +565,22 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 	return &akpb.DeleteApiKeyResponse{}, nil
 }
 
+func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
+	return nil, status.UnimplementedErrorf("Not implemented")
+}
+
+func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
+	return nil, status.UnimplementedErrorf("Not implemented")
+}
+
+func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
+	return nil, status.UnimplementedErrorf("Not implemented")
+}
+
+func (s *BuildBuddyServer) DeleteUserApiKey(ctx context.Context, req *akpb.DeleteApiKeyRequest) (*akpb.DeleteApiKeyResponse, error) {
+	return nil, status.UnimplementedErrorf("Not implemented")
+}
+
 func selectedGroup(preferredGroupID string, groupRoles []*tables.GroupRole) *tables.GroupRole {
 	if preferredGroupID != "" {
 		for _, gr := range groupRoles {

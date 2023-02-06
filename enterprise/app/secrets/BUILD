@@ -7,6 +7,7 @@ exports_files(["secrets.css"])
 ts_library(
     name = "secrets",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/alert",
         "//app/components/button",

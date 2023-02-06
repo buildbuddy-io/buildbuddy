@@ -23,7 +23,7 @@ def ts_library(name, srcs, strict = False, **kwargs):
         **kwargs
     )
 
-def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
+def ts_jasmine_node_test(name, srcs, deps = [], size = "small", strict = False, **kwargs):
     if len(srcs) != 1:
         fail("srcs must contain exactly one TS source file")
 
@@ -33,6 +33,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
     # do code-splitting properly on commonjs modules that are produced by SWC.
     ts_library(
         name = "%s_esm" % name,
+        strict = strict,
         testonly = 1,
         srcs = srcs,
         deps = deps + ["@npm//@types/jasmine"],

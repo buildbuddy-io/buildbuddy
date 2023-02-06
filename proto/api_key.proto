@@ -57,11 +57,6 @@ message CreateApiKeyRequest {
 
   // True if this API key should be visible to developers.
   bool visible_to_developers = 5;
-
-  // The ID of the user to create the API key for.
-  // Only applicable to user-level API keys.
-  // ex: "US123456789"
-  string user_id = 6;
 }
 
 message CreateApiKeyResponse {
@@ -77,10 +72,6 @@ message GetApiKeysRequest {
   // The ID of the group to get API keys for.
   // ex: "GR123456789"
   string group_id = 2;
-
-  // The ID of the user to get API keys for.
-  // ex: "US123456789"
-  string user_id = 3;
 }
 
 message GetApiKeysResponse {

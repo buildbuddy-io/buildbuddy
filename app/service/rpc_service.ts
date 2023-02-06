@@ -161,7 +161,7 @@ function getRpcMethodNames(serviceClass: Function) {
 
 type Rpc<Request, Response> = (request: Request) => Promise<Response>;
 
-type CancelableRpc<Request, Response> = (request: Request) => CancelablePromise<Response>;
+export type CancelableRpc<Request, Response> = (request: Request) => CancelablePromise<Response>;
 
 type RpcMethodNames<Service> = keyof Omit<Service, keyof protobufjs.rpc.Service>;
 

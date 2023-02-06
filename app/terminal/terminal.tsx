@@ -69,7 +69,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   private listEl: HTMLDivElement | null = null;
 
   private isMouseInside = false;
-  private windowKeyDownListener: (this: Window, ev: KeyboardEvent) => any;
+  private windowKeyDownListener?: (this: Window, ev: KeyboardEvent) => any;
 
   private scroller = new Scroller(() => {
     const list = this.list;
@@ -94,7 +94,9 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   }
 
   componentWillUnmount() {
-    window.removeEventListener("keydown", this.windowKeyDownListener);
+    if (this.windowKeyDownListener) {
+      window.removeEventListener("keydown", this.windowKeyDownListener);
+    }
   }
 
   componentDidUpdate(_prevProps: TerminalProps, prevState: State, snapshot?: Snapshot) {
@@ -133,14 +135,14 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
       this.updateLineLengthLimit();
     }
   }
-  private setList(list: FixedSizeList<ListData>) {
+  private setList(list: FixedSizeList<ListData> | null) {
     this.list = list;
   }
 
   private searchTimeout: number | null = null;
   private onSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
     const search = e.target.value;
-    window.clearTimeout(this.searchTimeout);
+    if (this.searchTimeout !== null) window.clearTimeout(this.searchTimeout);
     this.searchTimeout = window.setTimeout(
       () => {
         const content = this.getContent();
@@ -193,7 +195,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
   private getWrapPreference(): boolean {
     return localStorage.getItem(WRAP_LOCAL_STORAGE_KEY) === WRAP_LOCAL_STORAGE_VALUE;
   }
-  private updateLineLengthLimit(): number | null {
+  private updateLineLengthLimit(): void {
     if (!this.listEl) return;
     this.setState({
       lineLengthLimit: this.getWrapPreference()
@@ -206,7 +208,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
    * Returns the start (inclusive) and end (exclusive) indexes of the range of
    * lines that are in fully in view (indexes are post-wrap).
    */
-  private getRowRangeInView(): Range {
+  private getRowRangeInView(): Range | null {
     if (!this.listEl) return null;
 
     const start = Math.ceil(this.listEl.scrollTop / ROW_HEIGHT_PX);
@@ -292,7 +294,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
 
   private onWrapClick() {
     const wrap = !this.getWrapPreference();
-    localStorage.setItem(WRAP_LOCAL_STORAGE_KEY, wrap ? WRAP_LOCAL_STORAGE_VALUE : undefined);
+    localStorage.setItem(WRAP_LOCAL_STORAGE_KEY, wrap ? WRAP_LOCAL_STORAGE_VALUE : "");
     this.updateLineLengthLimit();
   }
   private onDownloadClick() {
@@ -301,7 +303,7 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
       return;
     }
     const element = document.createElement("a");
-    const plaintext = toPlainText(this.props.value);
+    const plaintext = toPlainText(this.props.value || "");
     element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(plaintext));
     element.setAttribute("download", "build_logs.txt");
     element.click();
@@ -393,13 +395,19 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
                   width={width}
                   className="lines-list"
                   itemSize={ROW_HEIGHT_PX}
-                  itemCount={content.rows.length}
-                  itemData={{
-                    rows: content.rows,
-                    rowLength: this.state.lineLengthLimit,
-                    search: this.state.search,
-                    activeMatchIndex: this.state.activeMatchIndex,
-                  }}>
+                  // Don't render any items if we haven't yet computed the line length
+                  // limit.
+                  itemCount={this.state.lineLengthLimit === null ? 0 : content.rows.length}
+                  itemData={
+                    this.state.lineLengthLimit === null
+                      ? undefined
+                      : {
+                          rows: content.rows,
+                          rowLength: this.state.lineLengthLimit,
+                          search: this.state.search,
+                          activeMatchIndex: this.state.activeMatchIndex,
+                        }
+                  }>
                   {Row}
                 </FixedSizeList>
               )}
