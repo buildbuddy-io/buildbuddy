@@ -156,6 +156,8 @@ func (pmk *PebbleKey) parseUndefinedVersion(parts [][]byte) error {
 	switch len(parts) {
 	case 3:
 		pmk.partID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2])
+	case 4:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
 	case 5:
 		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
@@ -169,6 +171,8 @@ func (pmk *PebbleKey) parseVersion1(parts [][]byte) error {
 	switch len(parts) {
 	case 4:
 		pmk.partID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2])
+	case 5:
+		pmk.partID, pmk.groupID, pmk.isolation, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
 	case 6:
 		pmk.partID, pmk.groupID, pmk.isolation, pmk.remoteInstanceHash, pmk.hash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
@@ -182,6 +186,8 @@ func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
 	switch len(parts) {
 	case 4:
 		pmk.partID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2])
+	case 5:
+		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3])
 	case 6:
 		pmk.partID, pmk.groupID, pmk.hash, pmk.isolation, pmk.remoteInstanceHash = string(parts[0]), string(parts[1]), string(parts[2]), string(parts[3]), string(parts[4])
 	default:
