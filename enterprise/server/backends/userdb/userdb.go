@@ -224,6 +224,12 @@ func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
 
+	// Authorize org-level key creation (authenticated user must be a
+	// group admin).
+	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
+		return nil, err
+	}
+
 	return createAPIKey(d.h.DB(ctx), groupID, newAPIKeyToken(), label, caps, visibleToDevelopers)
 }
 
@@ -305,6 +311,14 @@ func (d *UserDB) authorizeAPIKeyWrite(ctx context.Context, tx *db.DB, apiKeyID s
 	}
 	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
 	return perms.AuthorizeWrite(&user, acl)
+}
+
+func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return err
+	}
+	return authutil.AuthorizeGroupRole(u, groupID, role.Admin)
 }
 
 // TODO(tylerw): Remove this double read of the auth group by consolidating
@@ -483,11 +497,7 @@ func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) err
 }
 
 func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID string) error {
-	u, err := perms.AuthenticatedUser(ctx, d.env)
-	if err != nil {
-		return err
-	}
-	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
+	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
 		return err
 	}
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
