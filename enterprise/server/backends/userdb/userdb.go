@@ -227,6 +227,14 @@ func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 	return createAPIKey(d.h.DB(ctx), groupID, newAPIKeyToken(), label, caps, visibleToDevelopers)
 }
 
+func (d *UserDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (d *UserDB) CreateUserAPIKey(ctx context.Context, groupID, label string) (*tables.APIKey, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func createAPIKey(db *db.DB, groupID, value, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	pk, err := tables.PrimaryKeyForTable("APIKeys")
 	if err != nil {

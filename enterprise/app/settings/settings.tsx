@@ -1,5 +1,6 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
+import rpc_service from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import ApiKeysComponent from "../api_keys/api_keys";
@@ -222,7 +223,13 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                           </div>
                         </>
                       )}
-                      <ApiKeysComponent user={this.props.user} />
+                      <ApiKeysComponent
+                        user={this.props.user}
+                        get={rpc_service.service.getApiKeys}
+                        create={rpc_service.service.createApiKey}
+                        update={rpc_service.service.updateApiKey}
+                        delete={rpc_service.service.deleteApiKey}
+                      />
                     </>
                   )}
                   {activeTabId === TabId.PersonalApiKeys &&
@@ -241,7 +248,14 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                             </Banner>
                           </div>
                         )}
-                        <ApiKeysComponent user={this.props.user} userOwnedOnly />
+                        <ApiKeysComponent
+                          user={this.props.user}
+                          userOwnedOnly
+                          get={rpc_service.service.getUserApiKeys}
+                          create={rpc_service.service.createUserApiKey}
+                          update={rpc_service.service.updateUserApiKey}
+                          delete={rpc_service.service.deleteUserApiKey}
+                        />
                       </>
                     )}
                   {activeTabId === TabId.OrgSecrets && capabilities.config.secretsEnabled && (
