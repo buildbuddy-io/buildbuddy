@@ -20,7 +20,7 @@ import { api_key } from "../../../proto/api_key_ts_proto";
 
 export interface ApiKeysComponentProps {
   /** The authenticated user. */
-  user?: User;
+  user: User;
 
   /** Whether to show only user-owned keys. */
   userOwnedOnly?: boolean;
@@ -35,9 +35,9 @@ interface State {
   initialLoadError: string | null;
   getApiKeysResponse: api_key.GetApiKeysResponse | null;
 
-  createForm: FormState<api_key.CreateApiKeyRequest> | null;
+  createForm: FormState<api_key.CreateApiKeyRequest>;
 
-  updateForm: FormState<api_key.UpdateApiKeyRequest> | null;
+  updateForm: FormState<api_key.UpdateApiKeyRequest>;
 
   keyToDelete: api_key.ApiKey | null;
   isDeleteModalOpen: boolean;
@@ -48,21 +48,21 @@ const INITIAL_STATE: State = {
   initialLoadError: null,
   getApiKeysResponse: null,
 
-  createForm: {},
+  createForm: newFormState(api_key.CreateApiKeyRequest.create()),
 
-  updateForm: {},
+  updateForm: newFormState(api_key.UpdateApiKeyRequest.create()),
 
   keyToDelete: null,
   isDeleteModalOpen: false,
   isDeleteModalSubmitting: false,
 };
 
-type ApiKeyFields = api_key.ICreateApiKeyRequest | api_key.IUpdateApiKeyRequest;
+type ApiKeyFields = api_key.CreateApiKeyRequest | api_key.UpdateApiKeyRequest;
 
 type FormState<T extends ApiKeyFields> = {
-  isOpen?: boolean;
-  isSubmitting?: boolean;
-  request?: T;
+  isOpen: boolean;
+  isSubmitting: boolean;
+  request: T;
 };
 
 export default class ApiKeysComponent extends React.Component<ApiKeysComponentProps, State> {
@@ -96,7 +96,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     } catch (e) {
       this.setState({ initialLoadError: BuildBuddyError.parse(e).description });
     } finally {
-      this.setState({ createForm: {}, updateForm: {} });
+      this.setState({
+        createForm: newFormState(api_key.CreateApiKeyRequest.create()),
+        updateForm: newFormState(api_key.UpdateApiKeyRequest.create()),
+      });
     }
   }
 
@@ -113,6 +116,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.setState({
       createForm: {
         isOpen: true,
+        isSubmitting: false,
         request: new api_key.CreateApiKeyRequest({
           capability: this.defaultCapabilities(),
         }),
@@ -123,7 +127,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     });
   }
   private async onCloseCreateForm() {
-    this.setState({ createForm: {} });
+    this.setState({ createForm: newFormState(api_key.CreateApiKeyRequest.create()) });
   }
   private onChangeCreateForm(name: string, value: any) {
     this.setState({
@@ -160,6 +164,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     this.setState({
       updateForm: {
         isOpen: true,
+        isSubmitting: false,
         request: new api_key.UpdateApiKeyRequest({
           id: apiKey.id,
           label: apiKey.label,
@@ -173,7 +178,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     });
   }
   private async onCloseUpdateForm() {
-    this.setState({ updateForm: {} });
+    this.setState({ updateForm: newFormState(api_key.UpdateApiKeyRequest.create()) });
   }
   private onChangeUpdateForm(name: string, value: any) {
     this.setState({
@@ -219,7 +224,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   private async onConfirmDelete() {
     try {
       this.setState({ isDeleteModalSubmitting: true });
-      await this.props.delete(new api_key.DeleteApiKeyRequest({ id: this.state.keyToDelete.id }));
+      await this.props.delete(new api_key.DeleteApiKeyRequest({ id: this.state.keyToDelete!.id }));
       await this.fetchApiKeys();
       this.setState({ isDeleteModalOpen: false });
     } catch (e) {
@@ -239,6 +244,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     enabled: boolean,
     onChange: (name: string, value: any) => any
   ) {
+    request.capability ??= [];
     if (enabled) {
       request.capability.push(capability);
     } else {
@@ -315,7 +321,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     title: string;
     submitLabel: string;
     onRequestClose: () => any;
-    onSubmit: () => any;
+    onSubmit: (e: React.FormEvent) => any;
     onChange: (name: string, value: any) => any;
     ref: React.RefObject<HTMLFormElement>;
     formState: FormState<T>;
@@ -332,7 +338,11 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 <label className="note-input-label" htmlFor="label">
                   Label <span className="field-description">(what's this key for?)</span>
                 </label>
-                <TextInput name="label" onChange={this.onChangeLabel.bind(this, onChange)} value={request?.label} />
+                <TextInput
+                  name="label"
+                  onChange={this.onChangeLabel.bind(this, onChange)}
+                  value={request?.label || ""}
+                />
               </div>
               <div className="field-container">
                 <label className="checkbox-row">
@@ -396,7 +406,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     <input
                       type="checkbox"
                       onChange={this.onChangeVisibility.bind(this, request, onChange)}
-                      checked={isVisibleToDevelopers(request)}
+                      checked={request.visibleToDevelopers}
                     />
                     <span>
                       Visible to developers <span className="field-description">(users with the role Developer)</span>
@@ -567,11 +577,7 @@ function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
   );
 }
 
-function isVisibleToDevelopers<T extends ApiKeyFields>(apiKey: T | null) {
-  return apiKey?.visibleToDevelopers;
-}
-
-function describeCapabilities<T extends ApiKeyFields>(apiKey: T | null) {
+function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
   let capabilities = "Read+Write";
   if (isReadOnly(apiKey)) {
     capabilities = "Read-only";
@@ -582,8 +588,16 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T | null) {
   if (hasCapability(apiKey, api_key.ApiKey.Capability.REGISTER_EXECUTOR_CAPABILITY)) {
     capabilities += "+Executor";
   }
-  if (isVisibleToDevelopers(apiKey)) {
+  if (apiKey.visibleToDevelopers) {
     capabilities += " [D]";
   }
   return capabilities;
+}
+
+function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
+  return {
+    isOpen: false,
+    isSubmitting: false,
+    request,
+  };
 }
