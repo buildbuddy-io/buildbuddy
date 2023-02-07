@@ -123,7 +123,14 @@ run_test \
         --bes_backend=remote.buildbuddy.dev \
         --bes_results_url=https://app.buildbuddy.dev/invocation/ \
         --remote_timeout=10m \
-        --invocation_id="$bazel_iid"
+        --extra_execution_platforms=@buildbuddy_toolchain//:platform \
+        --host_platform=@buildbuddy_toolchain//:platform \
+        --platforms=@buildbuddy_toolchain//:platform \
+        --crosstool_top=@buildbuddy_toolchain//:toolchain \
+	--noincompatible_disallow_empty_glob \
+	--java_runtime_version=remotejdk_17 \
+	--jobs=100 \
+       --invocation_id="$bazel_iid"
 
 # Python Builds
 run_test \
@@ -135,6 +142,7 @@ run_test \
         --bes_backend=remote.buildbuddy.dev \
         --bes_results_url=https://app.buildbuddy.dev/invocation/ \
         --remote_timeout=10m \
+	--jobs=100 \
         --invocation_id="$python_iid"
 
 (( loadtest )) && run_test \
