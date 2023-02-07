@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -236,7 +237,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	var rows *sql.Rows
 	var err error
 	if i.isOLAPDBEnabled() {
-		rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
+		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 	} else {
 		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 	}
@@ -311,7 +312,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 
 	qStr, qArgs := q.Build()
 	qStr = getQueryWithFlattenedArray(qStr)
-	rows, err := i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
+	rows, err := i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_execution_trends"), qStr, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +417,7 @@ type MetricRange = struct {
 func (i *InvocationStatService) getMetricRange(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (*MetricRange, error) {
 	rangeQuery := fmt.Sprintf("SELECT min(%s) as low, max(%s) as high FROM %s %s", metric, metric, table, whereClauseStr)
 	var rows *sql.Rows
-	rows, err := i.olapdbh.DB(ctx).Raw(rangeQuery, whereClauseArgs...).Rows()
+	rows, err := i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_metric_range"), rangeQuery, whereClauseArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -767,7 +768,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	var rows *sql.Rows
 	var err error
 	if i.isOLAPDBEnabled() {
-		rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
+		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
 	} else {
 		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_stats"), qStr, qArgs...).Rows()
 	}
@@ -932,7 +933,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	}
 
 	var rows *sql.Rows
-	rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
+	rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_stat_drilldown"), qStr, qArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}

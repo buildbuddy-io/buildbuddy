@@ -15,6 +15,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/blocklist",
+        "//server/util/clickhouse",
         "//server/util/db",
         "//server/util/filter",
         "//server/util/log",

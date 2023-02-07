@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/rds/rdsutils"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -244,7 +245,7 @@ func makeStartSpanBeforeFn(spanName string) func(db *gorm.DB) {
 	}
 }
 
-func recordMetricstBeforeFn(db *gorm.DB) {
+func recordMetricsBeforeFn(db *gorm.DB) {
 	if db.DryRun || db.Statement == nil {
 		return
 	}
@@ -303,14 +304,7 @@ func recordSpanAfterFn(db *gorm.DB) {
 
 // instrumentGORM adds GORM callbacks that populate query metrics.
 func instrumentGORM(gdb *gorm.DB) {
-	// Add callback that runs before other callbacks that records when the operation began.
-	// We use this to calculate how long a query takes to run.
-	gdb.Callback().Create().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Delete().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Query().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Raw().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Row().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
-	gdb.Callback().Update().Before("*").Register(gormRecordOpStartTimeCallbackKey, recordMetricstBeforeFn)
+	gormutil.InstrumentMetrics(gdb, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 
 	gdb.Callback().Create().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:create"))
 	gdb.Callback().Delete().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:delete"))
@@ -318,14 +312,6 @@ func instrumentGORM(gdb *gorm.DB) {
 	gdb.Callback().Raw().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:raw"))
 	gdb.Callback().Row().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:row"))
 	gdb.Callback().Update().Before("*").Register(gormStartSpanCallbackKey, makeStartSpanBeforeFn("gorm:update"))
-
-	// Add callback that runs after other callbacks that records executed queries and their durations.
-	gdb.Callback().Create().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Delete().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Query().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Raw().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Row().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	gdb.Callback().Update().After("*").Register(gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 
 	gdb.Callback().Create().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
 	gdb.Callback().Delete().After("*").Register(gormEndSpanCallbackKey, recordSpanAfterFn)
