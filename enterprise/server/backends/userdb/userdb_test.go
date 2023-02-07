@@ -462,6 +462,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	groupID1 := getSelfOwnedGroup(t, ctx1, env).Group.GroupID
 	createUser(t, ctx, env, "US2", "org2.io")
+	createUser(t, ctx, env, "US3", "org3.io")
 
 	// US1 be able to create keys in their self-owned group.
 	adminOnlyKey, err := udb.CreateAPIKey(
@@ -502,6 +503,13 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, apiKeyValues(keys), adminOnlyKey.Value)
 	require.Contains(t, apiKeyValues(keys), developerKey.Value)
+
+	// US3 should not be able to see any keys in group1.
+	ctx3 := authUserCtx(ctx, env, t, "US3")
+	keys, err = udb.GetAPIKeys(ctx3, groupID1)
+	require.NoError(t, err)
+	require.NotContains(t, apiKeyValues(keys), adminOnlyKey.Value)
+	require.NotContains(t, apiKeyValues(keys), developerKey.Value)
 
 	// Attempt to create a key in GR1 as US2 (a developer); should fail.
 	_, err = udb.CreateAPIKey(
