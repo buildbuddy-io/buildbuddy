@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -93,8 +94,9 @@ type IStore interface {
 // It also provides opportunities for the system to signal Raft Log compactions
 // to free up disk spaces.
 type Replica struct {
-	db     *pebble.DB
-	leaser pebbleutil.Leaser
+	dbMu      sync.Mutex
+	rawDB     *pebble.DB
+	rawLeaser pebbleutil.Leaser
 
 	rootDir   string
 	fileDir   string
@@ -164,6 +166,18 @@ func isFileRecordKey(keyBytes []byte) bool {
 		return true
 	}
 	return false
+}
+
+func (sm *Replica) db() *pebble.DB {
+	sm.dbMu.Lock()
+	defer sm.dbMu.Unlock()
+	return sm.rawDB
+}
+
+func (sm *Replica) leaser() pebbleutil.Leaser {
+	sm.dbMu.Lock()
+	defer sm.dbMu.Unlock()
+	return sm.rawLeaser
 }
 
 func (sm *Replica) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
@@ -311,7 +325,7 @@ func (sm *Replica) lookup(db ReplicaReader, query []byte) ([]byte, error) {
 }
 
 func (sm *Replica) LastAppliedIndex() (uint64, error) {
-	readDB, err := sm.leaser.DB()
+	readDB, err := sm.leaser().DB()
 	if err != nil {
 		return 0, err
 	}
@@ -415,10 +429,14 @@ func (sm *Replica) updateAndFlushPartitionMetadatas(wb *pebble.Batch, key, val [
 	return sm.flushPartitionMetadatas(wb)
 }
 
-func (sm *Replica) getDBDir() string {
+func (sm *Replica) DBDirForCluster(clusterID uint64, nodeID uint64) string {
 	return filepath.Join(sm.rootDir,
-		fmt.Sprintf("cluster-%d", sm.ClusterID),
-		fmt.Sprintf("node-%d", sm.NodeID))
+		fmt.Sprintf("cluster-%d", clusterID),
+		fmt.Sprintf("node-%d", nodeID))
+}
+
+func (sm *Replica) getDBDir() string {
+	return sm.DBDirForCluster(sm.ClusterID, sm.NodeID)
 }
 
 type ReplicaReader interface {
@@ -437,6 +455,22 @@ type ReplicaWriter interface {
 	NewSnapshot() *pebble.Snapshot
 }
 
+func (sm *Replica) openDB() (*pebble.DB, error) {
+	dbDir := sm.getDBDir()
+	db, err := pebble.Open(dbDir, &pebble.Options{})
+	if err != nil {
+		return nil, err
+	}
+	sm.dbMu.Lock()
+	defer sm.dbMu.Unlock()
+	if sm.rawLeaser != nil {
+		sm.rawLeaser.Close()
+	}
+	sm.rawDB = db
+	sm.rawLeaser = pebbleutil.NewDBLeaser(db)
+	return db, nil
+}
+
 // Open opens the existing on disk state machine to be used or it creates a
 // new state machine with empty state if it does not exist. Open returns the
 // most recent index value of the Raft log that has been persisted, or it
@@ -450,12 +484,10 @@ type ReplicaWriter interface {
 // and the Lookup method will not be called before the completion of the Open
 // method.
 func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
-	db, err := pebble.Open(sm.getDBDir(), &pebble.Options{})
+	db, err := sm.openDB()
 	if err != nil {
 		return 0, err
 	}
-	sm.db = db
-	sm.leaser = pebbleutil.NewDBLeaser(db)
 
 	sm.checkAndSetRangeDescriptor(db)
 	pms, err := sm.getPartitionMetadatas(db)
@@ -654,7 +686,7 @@ func (sm *Replica) releaseAndClearTimer() {
 		return
 	}
 
-	sm.leaser.ReleaseSplitLock()
+	sm.leaser().ReleaseSplitLock()
 	sm.timer.Stop()
 	sm.timer = nil
 	sm.splitTag = ""
@@ -664,7 +696,7 @@ func (sm *Replica) oneshotCAS(cas *rfpb.CASRequest) error {
 	if cas == nil {
 		return nil
 	}
-	wb := sm.db.NewIndexedBatch()
+	wb := sm.db().NewIndexedBatch()
 	defer wb.Close()
 
 	if _, err := sm.cas(wb, cas); err != nil {
@@ -685,7 +717,7 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 	startNewTimer := func() {
 		sm.log.Debugf("Trying to acquire split lock %q...", req.GetSplitTag())
 		splitAcquireStart := time.Now()
-		sm.leaser.AcquireSplitLock()
+		sm.leaser().AcquireSplitLock()
 		sm.log.Debugf("Acquired split lock %q in %s", req.GetSplitTag(), time.Since(splitAcquireStart))
 		sm.splitTag = req.GetSplitTag()
 		sm.timer = time.AfterFunc(timeTilExpiry, func() {
@@ -709,7 +741,7 @@ func (sm *Replica) splitLease(req *rfpb.SplitLeaseRequest) (*rfpb.SplitLeaseResp
 }
 
 func (sm *Replica) splitRelease(req *rfpb.SplitReleaseRequest) (*rfpb.SplitReleaseResponse, error) {
-	wb := sm.db.NewIndexedBatch()
+	wb := sm.db().NewIndexedBatch()
 	defer wb.Close()
 
 	defer func() {
@@ -759,7 +791,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 		UpperBound: rangeDescriptor.GetRight(),
 	}
 
-	iter := sm.db.NewIter(iterOpts)
+	iter := sm.db().NewIter(iterOpts)
 	defer iter.Close()
 
 	totalSize := int64(0)
@@ -811,7 +843,7 @@ func (sm *Replica) findSplitPoint(req *rfpb.FindSplitPointRequest) (*rfpb.FindSp
 	}
 
 	if splitKey == nil {
-		sm.printRange(sm.db, iterOpts, "unsplittable range")
+		sm.printRange(sm.db(), iterOpts, "unsplittable range")
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, left split size: %d", totalSize, leftSize)
 	}
 	sm.log.Debugf("Cluster %d found split @ %q left rows: %d, size: %d, right rows: %d, size: %d", sm.ClusterID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
@@ -866,7 +898,7 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 
 func (sm *Replica) deleteStoredFiles(start, end []byte) error {
 	ctx := context.Background()
-	iter := sm.db.NewIter(&pebble.IterOptions{
+	iter := sm.db().NewIter(&pebble.IterOptions{
 		LowerBound: start,
 		UpperBound: end,
 	})
@@ -1188,7 +1220,7 @@ func randomKey(partitionID string, n int) []byte {
 }
 
 func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rfpb.FileMetadata, error) {
-	db, err := sm.leaser.DB()
+	db, err := sm.leaser().DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1225,7 +1257,7 @@ func (sm *Replica) Sample(ctx context.Context, partitionID string, n int) ([]*rf
 }
 
 func (sm *Replica) Metadata(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord) (*rfpb.FileMetadata, error) {
-	db, err := sm.leaser.DB()
+	db, err := sm.leaser().DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1239,7 +1271,7 @@ func (sm *Replica) Metadata(ctx context.Context, header *rfpb.Header, fileRecord
 }
 
 func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *rfpb.FileRecord, offset, limit int64) (io.ReadCloser, error) {
-	db, err := sm.leaser.DB()
+	db, err := sm.leaser().DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1266,7 +1298,7 @@ func (sm *Replica) Reader(ctx context.Context, header *rfpb.Header, fileRecord *
 }
 
 func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.FileRecord, error) {
-	reader, err := sm.leaser.DB()
+	reader, err := sm.leaser().DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1293,7 +1325,7 @@ func (sm *Replica) FindMissing(ctx context.Context, header *rfpb.Header, fileRec
 }
 
 func (sm *Replica) GetMulti(ctx context.Context, header *rfpb.Header, fileRecords []*rfpb.FileRecord) ([]*rfpb.GetMultiResponse_Data, error) {
-	reader, err := sm.leaser.DB()
+	reader, err := sm.leaser().DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1394,7 +1426,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 		}
 		sm.timerMu.Unlock()
 
-		wb := sm.db.NewIndexedBatch()
+		wb := sm.db().NewIndexedBatch()
 		defer wb.Close()
 
 		var headerErr error
@@ -1478,7 +1510,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
 	}
 
-	db, err := sm.leaser.DB()
+	db, err := sm.leaser().DB()
 	if err != nil {
 		return nil, err
 	}
@@ -1513,7 +1545,7 @@ func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
 // Sync returns an error when there is unrecoverable error for synchronizing
 // the in-core state.
 func (sm *Replica) Sync() error {
-	return sm.db.LogData(nil, pebble.Sync)
+	return sm.db().LogData(nil, pebble.Sync)
 }
 
 // PrepareSnapshot prepares the snapshot to be concurrently captured and
@@ -1530,7 +1562,7 @@ func (sm *Replica) Sync() error {
 // PrepareSnapshot returns an error when there is unrecoverable error for
 // preparing the snapshot.
 func (sm *Replica) PrepareSnapshot() (interface{}, error) {
-	snap := sm.db.NewSnapshot()
+	snap := sm.db().NewSnapshot()
 	return snap, nil
 }
 
@@ -1729,6 +1761,42 @@ func (sm *Replica) SaveSnapshotRange(preparedSnap interface{}, w io.Writer, star
 	return sm.SaveSnapshotToWriter(w, snap, start, end)
 }
 
+// ImportDB swaps out the underlying pebble database using a clone of the source
+// replica.
+func (sm *Replica) ImportDB(src *Replica) error {
+	appliedIndex, err := sm.LastAppliedIndex()
+	if err != nil {
+		return err
+	}
+
+	if err := sm.db().Close(); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(sm.getDBDir()); err != nil {
+		return err
+	}
+	if err := src.db().Checkpoint(sm.getDBDir(), pebble.WithFlushedWAL()); err != nil {
+		return err
+	}
+	db, err := sm.openDB()
+	if err != nil {
+		return err
+	}
+	if err := db.Set(constants.LastAppliedIndexKey, uint64ToBytes(appliedIndex), pebble.Sync); err != nil {
+		return err
+	}
+	sm.rangeMu.RLock()
+	buf, err := proto.Marshal(sm.rangeDescriptor)
+	sm.rangeMu.RUnlock()
+	if err != nil {
+		return err
+	}
+	if err := db.Set(constants.LocalRangeKey, buf, pebble.Sync); err != nil {
+		return err
+	}
+	return nil
+}
+
 // RecoverFromSnapshot recovers the state of the IOnDiskStateMachine instance
 // from a snapshot captured by the SaveSnapshot() method on a remote node. The
 // saved snapshot is provided as an io.Reader backed by a file stored on disk.
@@ -1748,7 +1816,7 @@ func (sm *Replica) SaveSnapshotRange(preparedSnap interface{}, w io.Writer, star
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
-	db, err := sm.leaser.DB()
+	db, err := sm.leaser().DB()
 	if err != nil {
 		return err
 	}
@@ -1758,7 +1826,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 
-	readDB, err := sm.leaser.DB()
+	readDB, err := sm.leaser().DB()
 	if err != nil {
 		return err
 	}
@@ -1776,7 +1844,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 }
 
 func (sm *Replica) TestingDB() (pebbleutil.IPebbleDB, error) {
-	return sm.leaser.DB()
+	return sm.leaser().DB()
 }
 
 // Close closes the IOnDiskStateMachine instance. Close is invoked when the
@@ -1796,13 +1864,14 @@ func (sm *Replica) TestingDB() (pebbleutil.IPebbleDB, error) {
 // IOnDiskStateMachine instance has been closed, the Close method is not
 // allowed to update the state of IOnDiskStateMachine visible to the outside.
 func (sm *Replica) Close() error {
-	if sm.leaser == nil {
+	leaser := sm.leaser()
+	if leaser == nil {
 		return nil
 	}
 
 	close(sm.quitChan)
 
-	sm.leaser.Close()
+	leaser.Close()
 
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
@@ -1811,7 +1880,7 @@ func (sm *Replica) Close() error {
 	if sm.store != nil && rangeDescriptor != nil {
 		sm.store.RemoveRange(rangeDescriptor, sm)
 	}
-	return sm.db.Close()
+	return sm.db().Close()
 }
 
 // CreateReplica creates an ondisk statemachine.
@@ -1821,7 +1890,7 @@ func New(rootDir string, clusterID, nodeID uint64, store IStore, partitions []di
 		log.Errorf("Error creating fileDir %q for replica: %s", fileDir, err)
 	}
 	r := &Replica{
-		leaser:              nil,
+		rawLeaser:           nil,
 		rootDir:             rootDir,
 		fileDir:             fileDir,
 		ClusterID:           clusterID,

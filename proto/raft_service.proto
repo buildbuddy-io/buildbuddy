@@ -10,6 +10,8 @@ service Api {
   // Raft Meta-API.
   rpc StartCluster(raft.StartClusterRequest)
       returns (raft.StartClusterResponse);
+  rpc CloneCluster(raft.CloneClusterRequest)
+      returns (raft.CloneClusterResponse);
   rpc RemoveData(raft.RemoveDataRequest) returns (raft.RemoveDataResponse);
   rpc AddClusterNode(raft.AddClusterNodeRequest)
       returns (raft.AddClusterNodeResponse);

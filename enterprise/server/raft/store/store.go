@@ -1109,7 +1109,26 @@ func (s *Store) isLeader(clusterID uint64) bool {
 	return false
 }
 
+func (s *Store) CloneCluster(ctx context.Context, req *rfpb.CloneClusterRequest) (*rfpb.CloneClusterResponse, error) {
+	src, err := s.GetReplica(req.GetSourceRangeId())
+	if err != nil {
+		return nil, err
+	}
+
+	dst, err := s.GetReplica(req.GetDestRangeId())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := dst.ImportDB(src); err != nil {
+		return nil, err
+	}
+
+	return &rfpb.CloneClusterResponse{}, nil
+}
+
 func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest) (*rfpb.StartClusterResponse, error) {
+	log.Warningf("VVV start cluster")
 	rc := raftConfig.GetRaftConfig(req.GetClusterId(), req.GetNodeId())
 
 	waitErr := make(chan error, 1)
@@ -1153,12 +1172,15 @@ func (s *Store) StartCluster(ctx context.Context, req *rfpb.StartClusterRequest)
 	}
 	sort.Slice(nodeIDs, func(i, j int) bool { return nodeIDs[i] < nodeIDs[j] })
 	if req.GetNodeId() == nodeIDs[len(nodeIDs)-1] {
+		log.Warningf("VVV propose batch")
 		batchResponse, err := client.SyncProposeLocal(ctx, s.nodeHost, req.GetClusterId(), req.GetBatch())
 		if err != nil {
 			return nil, err
 		}
 		rsp.Batch = batchResponse
+		log.Warningf("VVV done propose batch")
 	}
+	log.Warningf("VVV done start cluster")
 	return rsp, nil
 }
 
@@ -1510,33 +1532,6 @@ func (s *Store) GetClusterMembership(ctx context.Context, clusterID uint64) ([]*
 	return replicas, nil
 }
 
-// createSnapshot saves a snapshot of a replica's pebble database only to a
-// snapshot file on the local filesystem. Stored file data is not part of this
-// snapshot. An identifier for the snapshot is returned.
-func (s *Store) createSnapshot(ctx context.Context, req *rfpb.CreateSnapshotRequest) (*rfpb.CreateSnapshotResponse, error) {
-	r, err := s.GetReplica(req.GetHeader().GetRangeId())
-	if err != nil {
-		return nil, err
-	}
-	snapFile, err := os.CreateTemp(s.rootDir, "snapfile-*")
-	if err != nil {
-		return nil, err
-	}
-	pSnap, err := r.PrepareSnapshot()
-	if err != nil {
-		return nil, err
-	}
-	if err := r.SaveSnapshotRange(pSnap, snapFile, req.GetStart(), req.GetEnd()); err != nil {
-		return nil, err
-	}
-	if err := snapFile.Close(); err != nil {
-		return nil, err
-	}
-	return &rfpb.CreateSnapshotResponse{
-		SnapId: snapFile.Name(),
-	}, nil
-}
-
 // loadSnapshot ingests an already created snapshot (see createSnapshot above)
 // into a range by sending all records in the snapshot over raft to the new
 // range. This may require copying stored file data -- that can be prevented by
@@ -1738,32 +1733,11 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 
 	s.log.Infof("splitlog: acquired split lease")
 
-	// Copy stored data from the old range -> new range by creating a
-	// snapshot of the db, copying stored files, then loading the snapshot
-	// of the db onto the new replica via RAFT.
-	createSnapshotRsp, err := s.createSnapshot(ctx, &rfpb.CreateSnapshotRequest{
-		Header: req.GetHeader(),
-		Start:  findSplitRsp.GetSplit(),
-		End:    oldLeft.GetRight(),
-	})
-	if err != nil {
-		return nil, status.InternalErrorf("could not create snapshot: %s", err)
+	if err := bringup.CloneCluster(ctx, s.apiClient, bootStrapInfo, req.GetRange().GetRangeId(), newIDs.rangeID); err != nil {
+		return nil, status.InternalErrorf("could not clone cluster: %s", err)
 	}
 
-	s.log.Infof("splitlog: snapshotted existing cluster metadata %+v", createSnapshotRsp)
-	loadSnapReq := &rfpb.LoadSnapshotRequest{
-		Header: &rfpb.Header{
-			RangeId:    newIDs.rangeID,
-			Generation: newRight.Generation,
-		},
-		SnapId: createSnapshotRsp.GetSnapId(),
-	}
-	loadSnapRsp, err := s.loadSnapshot(ctx, loadSnapReq)
-	if err != nil {
-		return nil, status.InternalErrorf("could not load snapshot: %s", err)
-	}
-
-	s.log.Infof("splitlog: loaded cluster metadata snapshot into new cluster: %+v", loadSnapRsp)
+	s.log.Infof("splitlog: cloned cluster")
 
 	// As mentioned above, add the replicas to right range now that it is
 	// about to be activated.
@@ -1816,7 +1790,18 @@ func (s *Store) SplitCluster(ctx context.Context, req *rfpb.SplitClusterRequest)
 		return nil, status.InternalErrorf("could not delete old data: %s", err)
 	}
 
-	s.log.Infof("splitlog: cleaned up old data on cluster %d", clusterID)
+	s.log.Infof("splitlog: cleaned up old data on left cluster %d", clusterID)
+
+	// Delete old data from right range
+	rightDeleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRangeRequest{
+		Start: newLeft.Left,
+		End:   newLeft.Right,
+	})
+	if err := client.SyncProposeLocalBatchNoRsp(ctx, s.nodeHost, newIDs.clusterID, rightDeleteReq); err != nil {
+		return nil, status.InternalErrorf("could not delete old data: %s", err)
+	}
+
+	s.log.Infof("splitlog: cleaned up old data on right cluster %d", newIDs.clusterID)
 
 	metrics.RaftSplits.With(prometheus.Labels{
 		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
