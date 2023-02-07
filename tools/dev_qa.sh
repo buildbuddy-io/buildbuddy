@@ -43,6 +43,27 @@ run_test() {
   fi
   (
     cd "$dir"
+
+    # Add buildbuddy rbe toolchain to WORKSPACE if it's not already in there
+    if ! grep -q "io_buildbuddy_buildbuddy_toolchain" "WORKSPACE"; then
+      echo \
+'http_archive (
+    name = "io_buildbuddy_buildbuddy_toolchain",
+    sha256 = "e899f235b36cb901b678bd6f55c1229df23fcbc7921ac7a3585d29bff2bf9cfd",
+    strip_prefix = "buildbuddy-toolchain-fd351ca8f152d66fc97f9d98009e0ae000854e8f",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/fd351ca8f152d66fc97f9d98009e0ae000854e8f.tar.gz"],
+)
+
+load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
+
+buildbuddy_deps()
+
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy")
+
+buildbuddy(name = "buildbuddy_toolchain")' \
+    >> WORKSPACE
+    fi
+    bazel clean
     "$@" || true # if bazel command fails, continue.
   )
 }
@@ -55,8 +76,7 @@ python_iid=$(invocation_id)
 tensorflow_iid=$(invocation_id)
 swift_iid=$(invocation_id)
 
-# Go Builds
-
+# Go Build
 # Has --experimental_remote_cache_compression and --remote_download_minimal set
 run_test \
     https://github.com/buildbuddy-io/buildbuddy \
@@ -87,6 +107,10 @@ run_test \
         --bes_backend=remote.buildbuddy.dev \
         --bes_results_url=https://app.buildbuddy.dev/invocation/ \
         --remote_timeout=10m \
+        --extra_execution_platforms=@buildbuddy_toolchain//:platform \
+        --host_platform=@buildbuddy_toolchain//:platform \
+        --platforms=@buildbuddy_toolchain//:platform \
+        --crosstool_top=@buildbuddy_toolchain//:toolchain \
         --invocation_id="$abseil_iid"
 
 # Java Build
