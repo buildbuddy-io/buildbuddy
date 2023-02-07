@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grp "github.com/buildbuddy-io/buildbuddy/proto/group"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -76,6 +77,14 @@ func getSelfOwnedGroup(t *testing.T, ctx context.Context, env environment.Env) *
 
 func stringPointer(val string) *string {
 	return &val
+}
+
+func apiKeyValues(keys []*tables.APIKey) []string {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k.Value)
+	}
+	return out
 }
 
 func TestGetImpersonatedUser_UserWithoutImpersonationPerms_PermissionDenied(t *testing.T) {
@@ -441,6 +450,87 @@ func TestGetAPIKeyForInternalUseOnly(t *testing.T) {
 		t, status.IsNotFoundError(err),
 		"expected NotFound after deleting API keys, got: %v", err)
 	assert.Nil(t, key, "API key should be nil after deleting API keys")
+}
+
+func TestCreateAndGetAPIKey(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	// Create some users with their own groups.
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	groupID1 := getSelfOwnedGroup(t, ctx1, env).Group.GroupID
+	createUser(t, ctx, env, "US2", "org2.io")
+	createUser(t, ctx, env, "US3", "org3.io")
+
+	// US1 be able to create keys in their self-owned group.
+	adminOnlyKey, err := udb.CreateAPIKey(
+		ctx1, groupID1, "Admin-only key",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	developerKey, err := udb.CreateAPIKey(
+		ctx1, groupID1, "Developer key",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+		true /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+
+	// US1 should be able to see the keys they just created.
+	keys, err := udb.GetAPIKeys(ctx1, groupID1)
+	require.NoError(t, err)
+	require.Contains(t, apiKeyValues(keys), adminOnlyKey.Value)
+	require.Contains(t, apiKeyValues(keys), developerKey.Value)
+
+	// Add US1 to US2's group, and sanity check that they have developer
+	// role.
+	err = udb.AddUserToGroup(ctx1, "US2", groupID1)
+	require.NoError(t, err)
+	users, err := udb.GetGroupUsers(ctx1, groupID1, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
+	require.NoError(t, err)
+	found := false
+	for _, u := range users {
+		if u.GetUser().GetUserId().GetId() == "US2" {
+			found = true
+			require.Equal(t, grpb.Group_DEVELOPER_ROLE, u.GetRole(), "expected US2 to have developer role")
+		}
+	}
+	require.True(t, found, "expected to find US2 in US1's group")
+
+	// US2 should only be able to see developer keys.
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	keys, err = udb.GetAPIKeys(ctx2, groupID1)
+	require.NoError(t, err)
+	require.NotContains(t, apiKeyValues(keys), adminOnlyKey.Value)
+	require.Contains(t, apiKeyValues(keys), developerKey.Value)
+
+	// US3 should not be able to see any keys in group1.
+	ctx3 := authUserCtx(ctx, env, t, "US3")
+	keys, err = udb.GetAPIKeys(ctx3, groupID1)
+	require.True(
+		t, status.IsPermissionDeniedError(err),
+		"expected PermissionDenied, got: %v", err)
+	require.NotContains(t, apiKeyValues(keys), adminOnlyKey.Value)
+	require.NotContains(t, apiKeyValues(keys), developerKey.Value)
+
+	// Attempt to create a key in GR1 as US2 (a developer); should fail.
+	_, err = udb.CreateAPIKey(
+		ctx2, groupID1, "test-label-2",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		false /*=visibleToDevelopers*/)
+	require.Truef(
+		t, status.IsPermissionDeniedError(err),
+		"expected PermissionDenied, got: %v", err)
+
+	// Attempt to create a key in GR1 as US3 (a non-member); should fail.
+	_, err = udb.CreateAPIKey(
+		ctx3, groupID1, "test-label-3",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
+		false /*=visibleToDevelopers*/)
+	require.Truef(
+		t, status.IsPermissionDeniedError(err),
+		"expected PermissionDenied, got: %v", err)
+
 }
 
 func TestUpdateAPIKey(t *testing.T) {

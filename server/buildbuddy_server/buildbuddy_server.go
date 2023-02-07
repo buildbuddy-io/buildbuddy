@@ -471,11 +471,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	groupID := req.GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
-		return nil, err
-	}
-	tableKeys, err := userDB.GetAPIKeys(ctx, groupID)
+	tableKeys, err := userDB.GetAPIKeys(ctx, req.GetGroupId())
 	if err != nil {
 		return nil, err
 	}
@@ -499,11 +495,9 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	groupID := req.GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, s.env, groupID); err != nil {
-		return nil, err
-	}
-	k, err := userDB.CreateAPIKey(ctx, groupID, req.GetLabel(), req.GetCapability(), req.GetVisibleToDevelopers())
+	k, err := userDB.CreateAPIKey(
+		ctx, req.GetGroupId(), req.GetLabel(), req.GetCapability(),
+		req.GetVisibleToDevelopers())
 	if err != nil {
 		return nil, err
 	}
