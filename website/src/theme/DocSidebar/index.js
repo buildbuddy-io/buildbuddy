@@ -18,6 +18,7 @@ import Logo from "@theme/Logo";
 import IconArrow from "@theme/IconArrow";
 import { translate } from "@docusaurus/Translate";
 import { DocSidebarItems } from "@theme/DocSidebarItem";
+import { macos } from "platform-detect/os.mjs";
 import styles from "./styles.module.css";
 
 function useShowAnnouncementBar() {
@@ -71,6 +72,7 @@ function DocSidebarDesktop({ path, sidebar, onCollapse, isHidden }) {
       <nav
         className={clsx("menu", styles.menu, {
           [styles.menuWithAnnouncementBar]: showAnnouncementBar,
+          "thin-scrollbar": !macos,
         })}>
         <ul className={clsx(ThemeClassNames.docs.docSidebarMenu, "menu__list")}>
           <DocSidebarItems items={sidebar} activePath={path} level={1} />

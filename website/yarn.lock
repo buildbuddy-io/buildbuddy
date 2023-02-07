@@ -6920,6 +6920,11 @@ pkg-up@^3.1.0:
   dependencies:
     find-up "^3.0.0"
 
+platform-detect@^3.0.1:
+  version "3.0.1"
+  resolved "https://registry.yarnpkg.com/platform-detect/-/platform-detect-3.0.1.tgz#84cd928f1b5ec61277306d4aefdb229a808f4677"
+  integrity sha512-qAXFCIPz8Kd1b7RXuxsMNoZgLq+NR/fzJBFWpyUYARzh/ORG1xMG6suRLOFg/DkJXtS+pvsjawMfwq1htVBpUg==
+
 pngjs@^3.0.0, pngjs@^3.3.3:
   version "3.4.0"
   resolved "https://registry.yarnpkg.com/pngjs/-/pngjs-3.4.0.tgz#99ca7d725965fb655814eaf65f38f12bbdbf555f"
