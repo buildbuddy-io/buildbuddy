@@ -259,42 +259,39 @@ func (d *UserDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	if err := perms.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
 		return nil, err
 	}
+
+	// Validate that user-level keys are enabled
+	g := &tables.Group{}
+	err = d.h.DB(ctx).Raw(
+		"SELECT user_owned_keys_enabled FROM `Groups` WHERE group_id = ?",
+		groupID,
+	).Take(g).Error
+	if err != nil {
+		return nil, status.InternalErrorf("failed to look up user-owned keys setting: %s", err)
+	}
+	if !g.UserOwnedKeysEnabled {
+		return nil, status.PermissionDeniedError("user-owned keys are not enabled for this group")
+	}
+
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
 	q.AddWhereClause(`user_id = ?`, u.GetUserID())
 	q.AddWhereClause(`group_id = ?`, groupID)
-	q.SetOrderBy("label", true /*ascending*/)
+	q.SetOrderBy("label", true /*=ascending*/)
 	queryStr, args := q.Build()
-	var keys []*tables.APIKey
-	err = d.h.DB(ctx).Transaction(func(tx *db.DB) error {
-		// Validate that user-level keys are enabled, if attempting to list
-		// user-level keys
-		g := &tables.Group{}
-		q := tx.Raw("SELECT user_owned_keys_enabled FROM `Groups` WHERE group_id = ?", groupID)
-		if err := q.Take(g).Error; err != nil {
-			return status.InternalErrorf("failed to look up user-owned keys setting: %s", err)
-		}
-		if !g.UserOwnedKeysEnabled {
-			return status.PermissionDeniedError("user-owned keys are not enabled for this group")
-		}
 
-		// Read API keys
-		query := tx.Raw(queryStr, args...)
-		rows, err := query.Rows()
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			k := &tables.APIKey{}
-			if err := d.h.DB(ctx).ScanRows(rows, k); err != nil {
-				return err
-			}
-			keys = append(keys, k)
-		}
-		return rows.Err()
-	})
+	rows, err := d.h.DB(ctx).Raw(queryStr, args...).Rows()
 	if err != nil {
 		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []*tables.APIKey
+	for rows.Next() {
+		k := &tables.APIKey{}
+		if err := d.h.DB(ctx).ScanRows(rows, k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
 	}
 
 	return keys, nil
@@ -464,14 +461,6 @@ func (d *UserDB) authorizeNewAPIKeyCapabilities(ctx context.Context, groupID str
 		return nil
 	}
 	return d.authorizeGroupAdminRole(ctx, groupID)
-}
-
-func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
-	u, err := perms.AuthenticatedUser(ctx, d.env)
-	if err != nil {
-		return err
-	}
-	return authutil.AuthorizeGroupRole(u, groupID, role.Admin)
 }
 
 func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {

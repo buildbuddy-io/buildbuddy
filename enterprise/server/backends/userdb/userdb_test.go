@@ -68,6 +68,8 @@ func getOrgAPIKey(t *testing.T, ctx context.Context, env environment.Env, groupI
 	return keys[0]
 }
 
+// getGroup returns the group that the user is a part of.
+// It fails the test if the user is not part of exactly one group.
 func getGroup(t *testing.T, ctx context.Context, env environment.Env) *tables.GroupRole {
 	tu, err := env.GetUserDB().GetUser(ctx)
 	require.NoError(t, err, "failed to get self-owned group")
@@ -441,7 +443,7 @@ func TestAddUserToGroup_UserPreviouslyRequestedAccess_UpdatesMembershipStatus(t 
 	// Create a user
 	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
-	groupID1 := getSelfOwnedGroup(t, ctx1, env).Group.GroupID
+	groupID1 := getGroup(t, ctx1, env).Group.GroupID
 
 	// Now create user US2, also with @org1.io email.
 	// Note, the group does not own the org1.io domain, so US2 shouldn't be
@@ -570,7 +572,7 @@ func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
 			if test.User != "" {
 				authCtx = authUserCtx(ctx, env, t, test.User)
 			}
-			gr1 := getSelfOwnedGroup(t, us1Ctx, env).Group.GroupID
+			gr1 := getGroup(t, us1Ctx, env).Group.GroupID
 			updates := []*grpb.UpdateGroupUsersRequest_Update{test.Update}
 
 			err := udb.UpdateGroupUsers(authCtx, gr1, updates)
@@ -593,7 +595,7 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 
 	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
-	us1Group := getSelfOwnedGroup(t, ctx1, env).Group
+	us1Group := getGroup(t, ctx1, env).Group
 
 	err := udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
 		UserId: &uidpb.UserId{Id: "US1"},
@@ -636,7 +638,7 @@ func TestGetAPIKeyForInternalUseOnly(t *testing.T) {
 	var groupID string
 	{
 		ctx1 := authUserCtx(ctx, env, t, "US1")
-		gr1 := getSelfOwnedGroup(t, ctx1, env)
+		gr1 := getGroup(t, ctx1, env)
 		groupID = gr1.Group.GroupID
 	}
 
@@ -675,7 +677,7 @@ func TestGetAPIKeyForInternalUseOnly_ManyUsers(t *testing.T) {
 
 		// Sanity check that they were added to a unique group
 		authCtx := authUserCtx(ctx, env, t, uid)
-		gid := getSelfOwnedGroup(t, authCtx, env).Group.GroupID
+		gid := getGroup(t, authCtx, env).Group.GroupID
 		require.False(t, seen[gid], "expected all users to be added to unique group IDs")
 		seen[gid] = true
 	}
@@ -683,7 +685,7 @@ func TestGetAPIKeyForInternalUseOnly_ManyUsers(t *testing.T) {
 	// Get an API key for each user; should return their self-owned org key.
 	for i := 0; i < nUsers; i++ {
 		authCtx := authUserCtx(ctx, env, t, fmt.Sprintf("US%d", i))
-		gid := getSelfOwnedGroup(t, authCtx, env).Group.GroupID
+		gid := getGroup(t, authCtx, env).Group.GroupID
 		key, err := udb.GetAPIKeyForInternalUseOnly(authCtx, gid)
 		require.NoError(t, err)
 		require.Equal(t, gid, key.GroupID, "mismatched API key group ID")
@@ -698,7 +700,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	// Create some users with their own groups.
 	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
-	groupID1 := getSelfOwnedGroup(t, ctx1, env).Group.GroupID
+	groupID1 := getGroup(t, ctx1, env).Group.GroupID
 	createUser(t, ctx, env, "US2", "org2.io")
 	createUser(t, ctx, env, "US3", "org3.io")
 
@@ -780,7 +782,7 @@ func TestUpdateAPIKey(t *testing.T) {
 
 	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
-	gr1 := getSelfOwnedGroup(t, ctx1, env)
+	gr1 := getGroup(t, ctx1, env)
 
 	k1 := getOrgAPIKey(t, ctx1, env, gr1.Group.GroupID)
 	k1.Label = "US1-Updated-Label"
@@ -809,7 +811,7 @@ func TestDeleteAPIKey(t *testing.T) {
 
 	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
-	gr1 := getSelfOwnedGroup(t, ctx1, env)
+	gr1 := getGroup(t, ctx1, env)
 
 	k1 := getOrgAPIKey(t, ctx1, env, gr1.Group.GroupID)
 
@@ -1048,20 +1050,23 @@ func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 	createUser(t, ctx, env, "US1", "org1.io")
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	takeOwnershipOfDomain(t, ctx1, env, "US1")
+	// Add US2 to org1.io as an admin
 	createUser(t, ctx, env, "US2", "org1.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 	gr1 := getGroup(t, ctx1, env).Group
 	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
+	err := udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US2"}, Role: grpb.Group_ADMIN_ROLE},
+	})
+	require.NoError(t, err)
 
 	us2Key, err := udb.CreateUserAPIKey(
 		ctx2, gr1.GroupID, "US2's key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.NoError(t, err, "US2 should be able to create a user-owned key")
 
-	us2KeyCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, us2Key.Value)
-
-	_, err = udb.GetAuthGroup(us2KeyCtx)
-	require.NoError(t, err, "US2 should be able to get their authenticated group via the user-owned key")
+	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
+	require.NoError(t, err, "US2 should be able to authenticate via their user-owned key")
 
 	// Now boot US2 from the group.
 	err = udb.UpdateGroupUsers(ctx1, gr1.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
@@ -1070,22 +1075,10 @@ func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Re-authenticate and try again; should fail.
-
-	// Need to temporarily instruct the test authenticator to not fail the test
-	// when it sees invalid API keys.
-	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
-	auth.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
-		_, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
-		require.Error(t, err)
-		return nil
-	}
-	us2KeyCtx = env.GetAuthenticator().AuthContextFromAPIKey(ctx, us2Key.Value)
-
-	_, err = udb.GetAuthGroup(us2KeyCtx)
+	_, err = env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.Truef(
 		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated trying to authenticate with inactive user-owned key; got: %v",
+		"expected Unauthenticated trying to authenticate with booted user's key; got: %v",
 		err)
 }
 
