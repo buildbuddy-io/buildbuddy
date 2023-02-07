@@ -90,6 +90,7 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, randKey.Value)
 	require.NoError(t, err)
 
+	assert.Equal(t, "", akg.GetUserID())
 	assert.Equal(t, randKey.GroupID, akg.GetGroupID())
 	assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
@@ -119,6 +120,7 @@ func TestGetAPIKeyGroupFromAPIKeyID(t *testing.T) {
 	akg, err := adb.GetAPIKeyGroupFromAPIKeyID(ctx, randKey.APIKeyID)
 	require.NoError(t, err)
 
+	assert.Equal(t, "", akg.GetUserID())
 	assert.Equal(t, randKey.GroupID, akg.GetGroupID())
 	assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
@@ -155,6 +157,7 @@ func TestGetAPIKeyGroupFromBasicAuth(t *testing.T) {
 	akg, err := adb.GetAPIKeyGroupFromBasicAuth(ctx, g.GroupID, g.WriteToken)
 	require.NoError(t, err)
 
+	assert.Equal(t, "", akg.GetUserID())
 	assert.Equal(t, randKey.GroupID, akg.GetGroupID())
 	assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
 	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
@@ -181,6 +184,90 @@ func TestGetAPIKeyGroupFromBasicAuth(t *testing.T) {
 		t, status.IsUnauthenticatedError(err),
 		"expected Unauthenticated error; got: %v", err)
 	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, g.GroupID, "INVALID")
+	require.Nil(t, akg)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated error; got: %v", err)
+}
+
+func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
+	rand.Seed(time.Now().UnixNano())
+	ctx := context.Background()
+	env := setupEnv(t)
+	adb := env.GetAuthDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if role.Role(u.Groups[0].Role) == role.Admin {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin)
+	// Look up one of their keys and convert it to a user-owned key.
+	// TODO(bduffany): Once user-level keys are implemented in UserDB, use that
+	// instead of directly updating the key in the DB.
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	keys, err := env.GetUserDB().GetAPIKeys(adminCtx, groupID)
+	require.NoError(t, err)
+	key := keys[0]
+	key.UserID = admin.UserID
+	err = env.GetDBHandle().DB(ctx).Updates(key).Error
+	require.NoError(t, err)
+	g, err := env.GetUserDB().GetGroupByID(adminCtx, key.GroupID)
+	require.NoError(t, err)
+	require.NotEmpty(t, g.WriteToken)
+
+	// Should not be able to use this user-level key, since groups have the
+	// setting disabled.
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, key.Value)
+	require.Nil(t, akg)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated error; got: %v", err)
+
+	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.APIKeyID)
+	require.Nil(t, akg)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated error; got: %v", err)
+
+	// The user-owned key should have been the only key in the org, so the
+	// basic auth lookup should fail here.
+	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, g.GroupID, g.WriteToken)
+	require.Nil(t, akg)
+	require.Truef(
+		t, status.IsUnauthenticatedError(err),
+		"expected Unauthenticated error; got: %v", err)
+
+	// Now enable user-owned keys for the group.
+	g.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().InsertOrUpdateGroup(adminCtx, g)
+	require.NoError(t, err)
+
+	// Should now be able to use the user-owned key.
+	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, key.Value)
+	require.NoError(t, err)
+	assert.Equal(t, key.UserID, akg.GetUserID())
+	assert.Equal(t, key.GroupID, akg.GetGroupID())
+	assert.Equal(t, key.Capabilities, akg.GetCapabilities())
+	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+
+	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.APIKeyID)
+	require.NoError(t, err)
+	assert.Equal(t, key.UserID, akg.GetUserID())
+	assert.Equal(t, key.GroupID, akg.GetGroupID())
+	assert.Equal(t, key.Capabilities, akg.GetCapabilities())
+	assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+
+	// The basic auth lookup should still fail, since it should never return
+	// a user-owned key.
+	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, g.GroupID, g.WriteToken)
 	require.Nil(t, akg)
 	require.Truef(
 		t, status.IsUnauthenticatedError(err),
