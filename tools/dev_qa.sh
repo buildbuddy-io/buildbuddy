@@ -176,6 +176,7 @@ run_test \
 (( swift)) && run_test \
     https://github.com/bazelbuild/rules_swift \
     rules_swift \
+    install_swift \
     bazel build //... \
         --client_env=CC=clang \
         --remote_executor=remote.buildbuddy.dev \
