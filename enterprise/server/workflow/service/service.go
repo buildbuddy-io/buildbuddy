@@ -683,6 +683,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
 			"--cache_backend=" + cache_api_url.String(),
 			"--rbe_backend=" + remote_exec_api_url.String(),
+			"--remote_instance_name=" + instanceName,
 			"--commit_sha=" + wd.SHA,
 			"--pushed_repo_url=" + wd.PushedRepoURL,
 			"--pushed_branch=" + wd.PushedBranch,

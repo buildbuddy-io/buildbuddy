@@ -11,7 +11,7 @@ export type TabsContext = {
   hash: string;
   denseMode: boolean;
   role: string;
-  rbeEnabled?: boolean;
+  executionsEnabled?: boolean;
   hasSuggestions?: boolean;
 };
 
@@ -64,7 +64,7 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
         {isBazelInvocation && this.renderTab("artifacts", { label: "Artifacts" })}
         {isBazelInvocation && this.renderTab("timing", { label: "Timing" })}
         {isBazelInvocation && this.renderTab("cache", { label: "Cache" })}
-        {isBazelInvocation && this.props.rbeEnabled && this.renderTab("execution", { label: "Executions" })}
+        {this.props.executionsEnabled && this.renderTab("execution", { label: "Executions" })}
         {this.props.hasSuggestions && this.renderTab("suggestions", { label: "Suggestions" })}
         {this.renderTab("raw", { label: "Raw" })}
       </div>

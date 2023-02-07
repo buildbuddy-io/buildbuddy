@@ -174,11 +174,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   getCacheAddress() {
-    let address = (this.props.model.optionsMap.get("remote_executor") || "").replace("grpc://", "");
-    address = address.replace("grpcs://", "");
-    if (this.props.model.optionsMap.get("remote_cache")) {
-      address = this.props.model.optionsMap.get("remote_cache").replace("grpc://", "");
-      address = address.replace("grpcs://", "");
+    const orderedOptions = ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
+    let address = "";
+    for (const optionName of orderedOptions) {
+      const option = this.props.model.optionsMap.get(optionName);
+      if (!option) continue;
+
+      address = address.replace("grpc://", "").replace("grpcs://", "");
+      break;
     }
     if (this.props.model.optionsMap.get("remote_instance_name")) {
       address = address + "/" + this.props.model.optionsMap.get("remote_instance_name");

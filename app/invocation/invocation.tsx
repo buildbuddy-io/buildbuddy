@@ -239,7 +239,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             hash={this.props.hash}
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
-            rbeEnabled={this.state.model.getIsRBEEnabled() ? true : false}
+            executionsEnabled={this.state.model.getIsRBEEnabled() || this.state.model.isWorkflowInvocation()}
             hasSuggestions={suggestions.length > 0}
           />
 
@@ -322,7 +322,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {isBazelInvocation && activeTab == "execution" && (
+          {activeTab == "execution" && (
             <ExecutionCardComponent
               model={this.state.model}
               inProgress={this.state.inProgress}

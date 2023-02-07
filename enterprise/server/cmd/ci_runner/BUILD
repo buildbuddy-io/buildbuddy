@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
+        "//proto:command_line_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
