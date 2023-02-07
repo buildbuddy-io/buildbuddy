@@ -2,7 +2,7 @@
 
 The config-per-target plugin allows you to specify arguments to pass to
 executables run by bazel on a per-target basis. The arguments will be prepended
-to the options specified on the command line, as this will sometimes allows
+to the options specified on the command line, as this will sometimes allow
 options specified on the command line to override those specified as default
 options by this plugin (dependent on the implementation of the application).
 
