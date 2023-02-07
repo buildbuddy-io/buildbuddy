@@ -2,6 +2,7 @@ package userdb_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
@@ -73,6 +74,22 @@ func getSelfOwnedGroup(t *testing.T, ctx context.Context, env environment.Env) *
 	}
 	require.FailNowf(t, "failed to locate self-owned group", "user: %s", tu.UserID)
 	return nil
+}
+
+func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.Env, userID string) {
+	tu, err := env.GetUserDB().GetUser(ctx)
+	require.NoError(t, err)
+	require.Len(t, tu.Groups, 1, "takeOwnershipOfDomain: user must be part of exactly one group")
+
+	gr := tu.Groups[0].Group
+	slug := gr.URLIdentifier
+	if slug == nil || *slug == "" {
+		slug = stringPointer(strings.ToLower(gr.GroupID + "-slug"))
+	}
+	gr.URLIdentifier = slug
+	gr.OwnedDomain = strings.Split(tu.Email, "@")[1]
+	_, err = env.GetUserDB().InsertOrUpdateGroup(ctx, &gr)
+	require.NoError(t, err)
 }
 
 func stringPointer(val string) *string {
@@ -374,6 +391,132 @@ func TestAddUserToGroup_UserPreviouslyRequestedAccess_UpdatesMembershipStatus(t 
 	// Now *add* US2 to the group; should update their membership request.
 	err = udb.AddUserToGroup(ctx1, "US2", groupID1)
 	require.NoError(t, err)
+}
+
+func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
+	// User IDs
+	const (
+		admin     = "US1"
+		developer = "US2"
+		nonMember = "US3"
+		anonymous = ""
+	)
+
+	for _, test := range []struct {
+		Name   string
+		User   string
+		Update *grpb.UpdateGroupUsersRequest_Update
+		Err    func(err error) bool
+	}{
+		{
+			Name: "AdminCanRemoveAdmin",
+			User: admin,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				UserId:           &uidpb.UserId{Id: admin},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE},
+			Err: nil,
+		},
+		{
+			Name: "AdminCanRemoveDeveloper",
+			User: admin,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				UserId:           &uidpb.UserId{Id: developer},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE},
+			Err: nil,
+		},
+		{
+			Name: "AdminCanAdd",
+			User: admin,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				UserId:           &uidpb.UserId{Id: nonMember},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+			Err: nil,
+		},
+		{
+			Name: "DeveloperCannotRemove",
+			User: developer,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				UserId:           &uidpb.UserId{Id: developer},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE},
+			Err: status.IsPermissionDeniedError,
+		},
+		{
+			Name: "DeveloperCannotAdd",
+			User: developer,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				UserId:           &uidpb.UserId{Id: nonMember},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+			Err: status.IsPermissionDeniedError,
+		},
+		{
+			Name: "NonMemberCannotAdd",
+			User: nonMember,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				UserId:           &uidpb.UserId{Id: nonMember},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+			Err: status.IsPermissionDeniedError,
+		},
+		{
+			Name: "NonMemberCannotRemove",
+			User: nonMember,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				UserId:           &uidpb.UserId{Id: developer},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE},
+			Err: status.IsPermissionDeniedError,
+		},
+		{
+			Name: "AnonymousCannotAdd",
+			User: anonymous,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				UserId:           &uidpb.UserId{Id: nonMember},
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+			Err: status.IsUnauthenticatedError,
+		},
+		{
+			Name: "UserIdIsRequired",
+			User: admin,
+			Update: &grpb.UpdateGroupUsersRequest_Update{
+				MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE},
+			Err: status.IsInvalidArgumentError,
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			env := newTestEnv(t)
+			udb := env.GetUserDB()
+			ctx := context.Background()
+
+			// Create the following setup:
+			//
+			//     org1.io:
+			//       - US1: Admin
+			//       - US2: Developer
+			//     org2.io:
+			//       - US3: Admin
+
+			createUser(t, ctx, env, "US1", "org1.io")
+			// Have US1's group take ownership of org1.io
+			us1Ctx := authUserCtx(ctx, env, t, "US1")
+			takeOwnershipOfDomain(t, us1Ctx, env, "US1")
+			// US2 should only be added to org1.io
+			createUser(t, ctx, env, "US2", "org1.io")
+			createUser(t, ctx, env, "US3", "org2.io")
+
+			authCtx := context.Background()
+			if test.User != "" {
+				authCtx = authUserCtx(ctx, env, t, test.User)
+			}
+			gr1 := getSelfOwnedGroup(t, us1Ctx, env).Group.GroupID
+			updates := []*grpb.UpdateGroupUsersRequest_Update{test.Update}
+
+			err := udb.UpdateGroupUsers(authCtx, gr1, updates)
+
+			if test.Err == nil {
+				require.NoError(t, err)
+			} else {
+				require.Truef(t, test.Err(err), "unexpected error type %v", err)
+			}
+		})
+	}
 }
 
 func TestUpdateGroupUsers_Role(t *testing.T) {
