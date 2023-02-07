@@ -68,6 +68,15 @@ buildbuddy(name = "buildbuddy_toolchain")' \
   )
 }
 
+install_swift() {
+  sudo apt update && sudo apt upgrade
+  sudo apt install binutils git gnupg2 libc6-dev libcurl4 libedit2 libgcc-9-dev libpython2.7 libsqlite3-0 libstdc++-9-dev libxml2 libz3-dev pkg-config tzdata zlib1g-dev
+  wget https://swift.org/builds/swift-5.3.3-release/ubuntu2004/swift-5.3.3-RELEASE/swift-5.3.3-RELEASE-ubuntu20.04.tar.gz
+  tar -xvzf swift-5.3.3-RELEASE-ubuntu20.04.tar.gz -C ~
+  echo "PATH=~/swift-5.3.3-RELEASE-ubuntu20.04/usr/bin:$PATH" >> ~/.bashrc
+  . ~/.bashrc
+}
+
 buildbuddy_iid=$(invocation_id)
 gazelle_iid=$(invocation_id)
 abseil_iid=$(invocation_id)
@@ -162,6 +171,7 @@ run_test \
 (( swift)) && run_test \
     https://github.com/bazelbuild/rules_swift \
     rules_swift \
+    install_swift \
     bazel build //... \
         --client_env=CC=clang \
         --remote_executor=remote.buildbuddy.dev \
