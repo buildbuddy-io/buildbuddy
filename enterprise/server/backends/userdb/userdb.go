@@ -624,8 +624,13 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 }
 
 func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
-	if err := perms.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
 		return err
+	}
+	for _, u := range updates {
+		if u.GetUserId().GetId() == "" {
+			return status.InvalidArgumentError("update contains an empty user ID")
+		}
 	}
 	return d.h.Transaction(ctx, func(tx *db.DB) error {
 		for _, update := range updates {
