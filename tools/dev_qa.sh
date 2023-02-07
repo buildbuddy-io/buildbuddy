@@ -63,9 +63,23 @@ load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy")
 buildbuddy(name = "buildbuddy_toolchain")' \
     >> WORKSPACE
     fi
+    (( swift )) && install_swift
     bazel clean
     "$@" || true # if bazel command fails, continue.
   )
+}
+
+install_swift() {
+  if ! grep -q "swift" "$HOME/.bashrc"; then
+	  cd ~
+	  sudo apt update && sudo apt upgrade
+	  sudo apt install -y binutils git gnupg2 libc6-dev libcurl4 libedit2 libgcc-9-dev libpython2.7 libsqlite3-0 libstdc++-9-dev libxml2 libz3-dev pkg-config tzdata zlib1g-dev
+	  wget https://swift.org/builds/swift-5.3.3-release/ubuntu2004/swift-5.3.3-RELEASE/swift-5.3.3-RELEASE-ubuntu20.04.tar.gz
+	  tar -xvzf swift-5.3.3-RELEASE-ubuntu20.04.tar.gz -C ~
+	  echo "PATH=~/swift-5.3.3-RELEASE-ubuntu20.04/usr/bin:$PATH" >> ~/.bashrc
+	  . ~/.bashrc
+	  cd -
+  fi
 }
 
 buildbuddy_iid=$(invocation_id)
@@ -169,6 +183,8 @@ run_test \
         --bes_backend=remote.buildbuddy.dev \
         --bes_results_url=https://app.buildbuddy.dev/invocation/ \
         --remote_timeout=10m \
+	--remote_default_exec_properties=OSFamily=darwin \
+	--remote_default_exec_properties=enableXcodeOverride=true \
         --invocation_id="$swift_iid"
 
 echo "---"
