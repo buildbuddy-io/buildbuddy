@@ -187,6 +187,7 @@ proto_library(
         ":context_proto",
         ":invocation_proto",
         ":stat_filter_proto",
+        "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )

@@ -7,6 +7,7 @@ enum MetricType {
   DURATION_USEC_METRIC = 1;
   CAS_CACHE_MISSES_METRIC = 2;
   EXECUTION_QUEUE_TIME_USEC_METRIC = 3;
+  UPDATED_AT_USEC_METRIC = 4;
 }
 
 message StatFilter {
