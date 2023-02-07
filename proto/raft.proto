@@ -446,6 +446,10 @@ message StartClusterRequest {
 
   // Don't mark self as ready until this index has been applied.
   uint64 last_applied_index = 6;
+
+  // If set, persisted data for the existing range will be cloned into
+  // the new cluster.
+  uint64 clone_range_id = 7;
 }
 
 message StartClusterResponse {

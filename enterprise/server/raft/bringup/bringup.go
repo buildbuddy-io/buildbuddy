@@ -279,6 +279,7 @@ type ClusterBootstrapInfo struct {
 	nodes          []bootstrapNode
 	initialMembers map[uint64]string
 	Replicas       []*rfpb.ReplicaDescriptor
+	CloneRangeID   uint64
 }
 
 func MakeBootstrapInfo(clusterID, firstNodeID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
@@ -332,6 +333,7 @@ func StartCluster(ctx context.Context, apiClient *client.APIClient, bootstrapInf
 				NodeId:        node.index,
 				InitialMember: bootstrapInfo.initialMembers,
 				Batch:         batchProto,
+				CloneRangeId:  bootstrapInfo.CloneRangeID,
 			})
 			if err != nil {
 				if !status.IsAlreadyExistsError(err) {

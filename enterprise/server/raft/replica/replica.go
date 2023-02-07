@@ -415,10 +415,14 @@ func (sm *Replica) updateAndFlushPartitionMetadatas(wb *pebble.Batch, key, val [
 	return sm.flushPartitionMetadatas(wb)
 }
 
-func (sm *Replica) getDBDir() string {
+func (sm *Replica) DBDirForCluster(clusterID uint64, nodeID uint64) string {
 	return filepath.Join(sm.rootDir,
-		fmt.Sprintf("cluster-%d", sm.ClusterID),
-		fmt.Sprintf("node-%d", sm.NodeID))
+		fmt.Sprintf("cluster-%d", clusterID),
+		fmt.Sprintf("node-%d", nodeID))
+}
+
+func (sm *Replica) getDBDir() string {
+	return sm.DBDirForCluster(sm.ClusterID, sm.NodeID)
 }
 
 type ReplicaReader interface {
@@ -450,7 +454,8 @@ type ReplicaWriter interface {
 // and the Lookup method will not be called before the completion of the Open
 // method.
 func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
-	db, err := pebble.Open(sm.getDBDir(), &pebble.Options{})
+	dbDir := sm.getDBDir()
+	db, err := pebble.Open(dbDir, &pebble.Options{})
 	if err != nil {
 		return 0, err
 	}
@@ -1727,6 +1732,27 @@ func (sm *Replica) SaveSnapshotRange(preparedSnap interface{}, w io.Writer, star
 	}
 	defer snap.Close()
 	return sm.SaveSnapshotToWriter(w, snap, start, end)
+}
+
+// CloneDB performs a fast clone of the underlying Pebble database to the target
+// destination.
+func (sm *Replica) CloneDB(dest string) error {
+	err := sm.db.Checkpoint(dest, pebble.WithFlushedWAL())
+	if err != nil {
+		return err
+	}
+	db, err := pebble.Open(dest, &pebble.Options{})
+	if err != nil {
+		return err
+	}
+	if err := db.Delete(constants.LastAppliedIndexKey, pebble.Sync); err != nil {
+		return err
+	}
+	if err := db.Delete(constants.LocalRangeKey, pebble.Sync); err != nil {
+		return err
+	}
+	defer db.Close()
+	return nil
 }
 
 // RecoverFromSnapshot recovers the state of the IOnDiskStateMachine instance
