@@ -82,7 +82,7 @@ func main() {
 				case <-monitoringTimer:
 					return nil
 				case <-monitoringTicker.C:
-					healthy, err := metricHealthy(promAPI, metric.Name, metric.Query, metric.HealthThreshold)
+					healthy, err := metricHealthy(promAPI, metric.Name, metric.Query, metric.HealthThreshold, metric.IsMissingDataValid)
 					if err != nil {
 						log.Warningf("Error querying metric %s: %s", metric.Name, err)
 					}
@@ -110,7 +110,7 @@ func main() {
 	os.Exit(metricsHealthyExitCode)
 }
 
-func queryMetric(promAPI promapi.API, metricName string, query string) (float64, error) {
+func queryMetric(promAPI promapi.API, metricName string, query string, isMissingDataValid bool) (float64, error) {
 	log.Debugf("Querying metric %s", metricName)
 
 	result, _, err := promAPI.Query(context.Background(), query, time.Now())
@@ -120,13 +120,16 @@ func queryMetric(promAPI promapi.API, metricName string, query string) (float64,
 
 	resultVector := result.(model.Vector)
 	if len(resultVector) == 0 {
+		if isMissingDataValid {
+			return 0, nil
+		}
 		return 0, status.NotFoundErrorf("no data for metric %s", metricName)
 	}
 	return float64(resultVector[0].Value), nil
 }
 
-func metricHealthy(promAPI promapi.API, metricName string, query string, healthThreshold HealthThreshold) (bool, error) {
-	metricValue, err := queryMetric(promAPI, metricName, query)
+func metricHealthy(promAPI promapi.API, metricName string, query string, healthThreshold HealthThreshold, isMissingDataValid bool) (bool, error) {
+	metricValue, err := queryMetric(promAPI, metricName, query, isMissingDataValid)
 	if err != nil {
 		return false, err
 	}
@@ -137,7 +140,7 @@ func metricHealthy(promAPI promapi.API, metricName string, query string, healthT
 	}
 
 	if healthThreshold.RelativeRange != nil {
-		return relativeRangeMetricHealthy(promAPI, metricName, metricValue, *healthThreshold.RelativeRange)
+		return relativeRangeMetricHealthy(promAPI, metricName, metricValue, *healthThreshold.RelativeRange, isMissingDataValid)
 	}
 
 	return false, status.InvalidArgumentErrorf("must specify a health threshold")
@@ -153,8 +156,8 @@ func absoluteRangeMetricHealthy(metricValue float64, min *float64, max *float64)
 	return true
 }
 
-func relativeRangeMetricHealthy(promAPI promapi.API, metricName string, metricValue float64, relativeRange RelativeRange) (bool, error) {
-	comparisonValue, err := queryMetric(promAPI, fmt.Sprintf("comparison-%s", metricName), relativeRange.ComparisonQuery)
+func relativeRangeMetricHealthy(promAPI promapi.API, metricName string, metricValue float64, relativeRange RelativeRange, isMissingDataValid bool) (bool, error) {
+	comparisonValue, err := queryMetric(promAPI, fmt.Sprintf("comparison-%s", metricName), relativeRange.ComparisonQuery, isMissingDataValid)
 	if err != nil {
 		return false, err
 	}

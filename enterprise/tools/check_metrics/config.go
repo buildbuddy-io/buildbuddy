@@ -22,6 +22,9 @@ type PrometheusMetric struct {
 	MaxUnhealthyCount int `yaml:"max_unhealthy_count"`
 	// If the metric does not meet this health threshold, it is considered unhealthy
 	HealthThreshold HealthThreshold `yaml:"health_threshold"`
+	// Set if it's valid for the metric value to be 0 or missing
+	// Ex. For error log count or invocation failure rate, at any given time the value can be 0
+	IsMissingDataValid bool `yaml:"is_missing_data_valid"`
 }
 
 // Exactly one field should be set in the HealthThreshold
