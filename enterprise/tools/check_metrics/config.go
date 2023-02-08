@@ -10,15 +10,58 @@ type Config struct {
 }
 
 type PrometheusMetric struct {
-	Name          string `yaml:"name"`
-	CanaryQuery   string `yaml:"canary_query"`
-	BaselineQuery string `yaml:"baseline_query"`
+	Name  string `yaml:"name"`
+	Query string `yaml:"query"`
 	// The frequency with which we should poll this metric
 	PollingIntervalSeconds int `yaml:"polling_interval_seconds"`
-	// The max number of times the canary can consecutively report as unhealthy before we should rollback.
+	// The max number of times the metric can consecutively report as unhealthy before we should rollback.
 	MaxUnhealthyCount int `yaml:"max_unhealthy_count"`
-	// If the canary's success rate differs than the other apps by this threshold, it is considered unhealthy.
-	// If the threshold is negative, we do not want the canary's value to be much lower than the baseline (Ex. liveness rate)
-	// If the threshold is positive, we do not want the canary's value to be much higher than the baseline (Ex. error rate)
-	HealthThreshold float64 `yaml:"health_threshold"`
+	// If the metric does not meet this health threshold, it is considered unhealthy
+	HealthThreshold HealthThreshold `yaml:"health_threshold"`
+}
+
+// Exactly one field should be set in the HealthThreshold
+type HealthThreshold struct {
+	AbsoluteRange *AbsoluteRange `yaml:"absolute"`
+	RelativeRange *RelativeRange `yaml:"relative"`
+}
+
+// AbsoluteRange is used to ensure a metric's value is within a range specified by Max and Min
+// For example, you would set Min=0.8 to ensure the app health check never dips below 80%
+// If `Max` or `Min` is omitted, it will be ignored
+type AbsoluteRange struct {
+	Max *float64 `yaml:"max"`
+	Min *float64 `yaml:"min"`
+}
+
+// RelativeRange is used to compare a metric against another and ensure their values are similar
+// For example, you might use this to compare metrics for a canary to the baseline
+// Exactly one `Within` field should be set
+type RelativeRange struct {
+	ComparisonQuery string `yaml:"comparison_query"`
+
+	// Within is used to specify an absolute value the metric should not differ from the comparison
+	// For example, if within=100, if the metric is not within 100 of the comparison, it will be considered unhealthy
+	Within *Within `yaml:"within"`
+
+	// WithinPercentage is used to specify that the metric should not differ from the comparison by this percentage
+	// For example, if withinPercentage=0.1, if the metric is not within 10% of the comparison, it will be considered unhealthy
+	// The percentage is taken relative to the comparison (i.e. the comparison value is the denominator when calculating
+	// the percentage)
+	WithinPercentage *Within `yaml:"within_percentage"`
+}
+
+type Within struct {
+	Value float64
+
+	// Set GreaterBy=true if you expect a healthy metric to be less than or equal to the comparison
+	// If it's greater than the comparison by Value, the metric is considered unhealthy
+	// For example, if GreaterBy=true and Value=100, metric=500 and comparison=300, the metric is greater by 200
+	// That is not within the value of 100, so the metric is unhealthy
+	GreaterBy *bool
+	// Set LessBy=true if you expect a healthy metric to be greater than or equal to the comparison
+	// If it's less than the comparison by Value, the metric is considered unhealthy
+	// For example, if LessBy=true and Value=100, metric=300 and comparison=500, the metric is less by 200
+	// That is not within the value of 100, so the metric is unhealthy
+	LessBy *bool
 }

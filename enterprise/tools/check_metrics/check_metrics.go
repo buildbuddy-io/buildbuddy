@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/api"
 	"github.com/prometheus/common/model"
 	"golang.org/x/sync/errgroup"
@@ -71,7 +72,7 @@ func main() {
 				case <-monitoringTimer:
 					return nil
 				case <-monitoringTicker.C:
-					healthy, err := metricHealthy(promAPI, metric.Name, metric.CanaryQuery, metric.BaselineQuery, metric.HealthThreshold)
+					healthy, err := metricHealthy(promAPI, metric.Name, metric.Query, metric.HealthThreshold)
 					if err != nil {
 						log.Warningf("Error querying metric %s: %s", metric.Name, err)
 					}
@@ -99,37 +100,78 @@ func main() {
 	os.Exit(metricsHealthyExitCode)
 }
 
-// Returns whether the given metric is healthy compared to the baseline
-// If the metric's success rate differs from the baseline's by the input threshold, this will return false
-// Otherwise will return true
-func metricHealthy(promAPI promapi.API, metricName string, query string, baselineQuery string, healthThreshold float64) (bool, error) {
-	ctx := context.Background()
+func queryMetric(promAPI promapi.API, metricName string, query string) (float64, error) {
 	log.Debugf("Querying metric %s", metricName)
 
-	result, _, err := promAPI.Query(ctx, query, time.Now())
+	result, _, err := promAPI.Query(context.Background(), query, time.Now())
 	if err != nil {
-		return false, err
+		return 0, err
 	}
+
 	resultVector := result.(model.Vector)
-	metricValue := model.SampleValue(0)
-	if len(resultVector) > 0 {
-		metricValue = resultVector[0].Value
+	if len(resultVector) == 0 {
+		return 0, status.NotFoundErrorf("no data for metric %s", metricName)
 	}
+	return float64(resultVector[0].Value), nil
+}
 
-	baselineResult, _, err := promAPI.Query(ctx, baselineQuery, time.Now())
+func metricHealthy(promAPI promapi.API, metricName string, query string, healthThreshold HealthThreshold) (bool, error) {
+	metricValue, err := queryMetric(promAPI, metricName, query)
 	if err != nil {
 		return false, err
 	}
-	baselineResultVector := baselineResult.(model.Vector)
-	baselineMetricValue := model.SampleValue(0)
-	if len(baselineResultVector) > 0 {
-		baselineMetricValue = baselineResultVector[0].Value
+
+	if healthThreshold.AbsoluteRange != nil {
+		threshold := healthThreshold.AbsoluteRange
+		return absoluteRangeMetricHealthy(metricValue, threshold.Min, threshold.Max), nil
 	}
 
-	if healthThreshold < 0 {
-		// If the threshold is negative, the metric is unhealthy if it is too low
-		return float64(baselineMetricValue-metricValue) > math.Abs(healthThreshold), nil
+	if healthThreshold.RelativeRange != nil {
+		return relativeRangeMetricHealthy(promAPI, metricName, metricValue, *healthThreshold.RelativeRange)
 	}
-	// If the threshold is positive, the metric is unhealthy if it is too high
-	return float64(metricValue-baselineMetricValue) > math.Abs(healthThreshold), nil
+
+	return false, status.InvalidArgumentErrorf("must specify a health threshold")
+}
+
+func absoluteRangeMetricHealthy(metricValue float64, min *float64, max *float64) bool {
+	if min != nil && metricValue < *min {
+		return false
+	}
+	if max != nil && metricValue > *max {
+		return false
+	}
+	return true
+}
+
+func relativeRangeMetricHealthy(promAPI promapi.API, metricName string, metricValue float64, relativeRange RelativeRange) (bool, error) {
+	comparisonValue, err := queryMetric(promAPI, fmt.Sprintf("comparison-%s", metricName), relativeRange.ComparisonQuery)
+	if err != nil {
+		return false, err
+	}
+
+	if relativeRange.Within != nil {
+		within := relativeRange.Within
+		if within.GreaterBy != nil && *within.GreaterBy {
+			greaterBy := metricValue - comparisonValue
+			return greaterBy < 0 || greaterBy < within.Value, nil
+		}
+		if within.LessBy != nil && *within.LessBy {
+			lessBy := comparisonValue - metricValue
+			return lessBy < 0 || lessBy < within.Value, nil
+		}
+		return math.Abs(comparisonValue-metricValue) < within.Value, nil
+	} else if relativeRange.WithinPercentage != nil {
+		within := relativeRange.WithinPercentage
+		if within.GreaterBy != nil && *within.GreaterBy {
+			percentGreater := (metricValue - comparisonValue) / comparisonValue
+			return percentGreater < 0 || percentGreater < within.Value, nil
+		}
+		if within.LessBy != nil && *within.LessBy {
+			percentLess := (comparisonValue - metricValue) / comparisonValue
+			return percentLess < 0 || percentLess < within.Value, nil
+		}
+		absPercentDiff := math.Abs(comparisonValue-metricValue) / comparisonValue
+		return absPercentDiff < within.Value, nil
+	}
+	return false, status.InvalidArgumentErrorf("must specify a Within field for relative range thresholds")
 }
