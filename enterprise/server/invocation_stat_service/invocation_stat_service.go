@@ -400,14 +400,11 @@ func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) str
 	return q
 }
 
-func isExecutionMetric(m sfpb.MetricType) bool {
-	return m == sfpb.MetricType_EXECUTION_QUEUE_TIME_USEC_METRIC
-}
-
-func getTableForMetric(metric sfpb.MetricType) string {
-	if isExecutionMetric(metric) {
+func getTableForMetric(metric *sfpb.Metric) string {
+	switch metric.MetricType.(type) {
+	case *sfpb.Metric_Execution:
 		return "Executions"
-	} else {
+	default:
 		return "Invocations"
 	}
 }

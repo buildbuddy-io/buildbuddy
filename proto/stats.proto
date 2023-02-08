@@ -148,7 +148,7 @@ message GetTrendResponse {
 message GetStatHeatmapRequest {
   context.RequestContext request_context = 1;
   TrendQuery query = 2;
-  stat_filter.MetricType metric = 3;
+  stat_filter.Metric metric = 3;
 }
 
 message HeatmapColumn {
@@ -177,7 +177,7 @@ message GetStatDrilldownRequest {
   context.RequestContext request_context = 1;
   TrendQuery query = 2;
   repeated stat_filter.StatFilter filter = 3;
-  stat_filter.MetricType drilldown_metric = 4;
+  stat_filter.Metric drilldown_metric = 4;
 }
 
 message DrilldownEntry {
