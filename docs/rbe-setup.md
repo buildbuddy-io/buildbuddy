@@ -20,7 +20,7 @@ This points Bazel at BuildBuddy Cloud as a remote executor. A simple repo that h
 
 ## Configuring your workspace
 
-There are several options for configuring your platforms and toolchains, the most fully features of which being [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html). It comes with an `rbe_autoconfig` rule that works nicely with BuildBuddy.
+There are several options for configuring your platforms and toolchains, the most fully featured of which being [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html). It comes with an `rbe_autoconfig` rule that works nicely with BuildBuddy.
 
 Unfortunately, bazel-toolchains has a dependency on Docker and can take quite some time to start up in a clean workspace, so we provide a simple and easy-to-use [BuildBuddy toolchain](https://github.com/buildbuddy-io/toolchain) that enables you to get up and running quickly, and works for most use cases.
 
@@ -29,25 +29,27 @@ To get started with the BuildBuddy Toolchain, add the following lines to your `W
 ```python
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "a2a5cccec251211e2221b1587af2ce43c36d32a42f5d881737db3b546a536510",
-    strip_prefix = "buildbuddy-toolchain-829c8a574f706de5c96c54ca310f139f4acda7dd",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/829c8a574f706de5c96c54ca310f139f4acda7dd.tar.gz"],
+    sha256 = "e899f235b36cb901b678bd6f55c1229df23fcbc7921ac7a3585d29bff2bf9cfd",
+    strip_prefix = "buildbuddy-toolchain-fd351ca8f152d66fc97f9d98009e0ae000854e8f",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/fd351ca8f152d66fc97f9d98009e0ae000854e8f.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 
 buildbuddy_deps()
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy")
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy", "UBUNTU20_04_IMAGE")
 
-buildbuddy(name = "buildbuddy_toolchain")
+# Note: The default RBE image is based on Ubuntu 16.04.
+# Here, we are choosing the newer Ubuntu 20.04 image.
+buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)
 ```
 
 ## Platforms
 
-The first thing you'll want to do is tell BuildBuddy RBE in what environment you'll want to run your build actions. This is tools can be found in different locations on different platforms. This is done with the `--host_platform`, `--platforms`, and `--extra_execution_platforms` flags.
-
-BuildBuddy's default platform is Ubuntu 16.04 with Java 8 installed. We can specify this platform with the `--host_platform`, `--platforms`, and `--extra_execution_platforms` flags:
+The first thing you'll want to do is tell Bazel about BuildBuddy's
+remote execution platform. This is done with the `--host_platform`,
+`--platforms`, and `--extra_execution_platforms` flags:
 
 ```bash
 --host_platform=@buildbuddy_toolchain//:platform
@@ -55,7 +57,25 @@ BuildBuddy's default platform is Ubuntu 16.04 with Java 8 installed. We can spec
 --extra_execution_platforms=@buildbuddy_toolchain//:platform
 ```
 
-If you want to use a different environment, you can specify a custom Docker container image to use. More information on how to do this can be found in our [platforms documentation](rbe-platforms.md).
+To see the constraint values and execution properties that are set by
+this platform, try running:
+
+```bash
+bazel query @buildbuddy_toolchain//:platform_linux --output=build
+```
+
+For example, this output will include:
+
+```python
+platform(
+  name = "platform_linux",
+  exec_properties = {"OSFamily": "Linux", "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04:latest"},
+  constraint_values = ["@platforms//cpu:x86_64", "@platforms//os:linux", "@bazel_tools//tools/cpp:clang"],
+)
+```
+
+If you want to customize these constraints or execution properties,
+see our [platforms documentation](rbe-platforms.md).
 
 ## Toolchains
 
@@ -84,14 +104,30 @@ If you're looking for an llvm based toolchain instead, take a look at [this proj
 
 If your project depends on Java code, you'll need 4 more flags to tell the executors where to look for Java tools.
 
-Using BuildBuddy's default Java 8 config:
+To specify the Java tool paths for the image included in the BuildBuddy
+toolchain, use these flags:
 
 ```bash
---javabase=@buildbuddy_toolchain//:javabase_jdk8
---host_javabase=@buildbuddy_toolchain//:javabase_jdk8
---java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
---host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
+--javabase=@buildbuddy_toolchain//:javabase
+--host_javabase=@buildbuddy_toolchain//:javabase
+--java_toolchain=@buildbuddy_toolchain//:java_toolchain
+--host_java_toolchain=@buildbuddy_toolchain//:java_toolchain
 ```
+
+You can inspect these using `bazel query --output=build`. For example,
+running `bazel query @buildbuddy_toolchain//:javabase --output=build` will
+produce
+
+```python
+java_runtime(
+  name = "javabase",
+  java_home = "/usr/lib/jvm/java-11-openjdk-amd64",
+)
+```
+
+This output shows that we are configuring Bazel to build for Java 11,
+which is insalled at `/usr/lib/jvm/java-11-openjdk-amd64` in BuildBuddy's
+RBE image.
 
 If you need a different version of Java, we recommend using [bazel-toolchains](https://releases.bazel.build/bazel-toolchains.html) for now.
 
@@ -114,10 +150,10 @@ build:remote --platforms=@buildbuddy_toolchain//:platform
 build:remote --extra_execution_platforms=@buildbuddy_toolchain//:platform
 build:remote --crosstool_top=@buildbuddy_toolchain//:toolchain
 build:remote --extra_toolchains=@buildbuddy_toolchain//:cc_toolchain
-build:remote --javabase=@buildbuddy_toolchain//:javabase_jdk8
-build:remote --host_javabase=@buildbuddy_toolchain//:javabase_jdk8
-build:remote --java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
-build:remote --host_java_toolchain=@buildbuddy_toolchain//:toolchain_jdk8
+build:remote --javabase=@buildbuddy_toolchain//:javabase
+build:remote --host_javabase=@buildbuddy_toolchain//:javabase
+build:remote --java_toolchain=@buildbuddy_toolchain//:java_toolchain
+build:remote --host_java_toolchain=@buildbuddy_toolchain//:java_toolchain
 build:remote --define=EXECUTOR=remote
 ```
 

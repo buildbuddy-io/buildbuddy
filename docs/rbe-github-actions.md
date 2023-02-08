@@ -108,18 +108,18 @@ And the following lines to your `WORKSPACE` file:
 ```
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "a2a5cccec251211e2221b1587af2ce43c36d32a42f5d881737db3b546a536510",
-    strip_prefix = "buildbuddy-toolchain-829c8a574f706de5c96c54ca310f139f4acda7dd",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/829c8a574f706de5c96c54ca310f139f4acda7dd.tar.gz"],
+    sha256 = "e899f235b36cb901b678bd6f55c1229df23fcbc7921ac7a3585d29bff2bf9cfd",
+    strip_prefix = "buildbuddy-toolchain-fd351ca8f152d66fc97f9d98009e0ae000854e8f",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/fd351ca8f152d66fc97f9d98009e0ae000854e8f.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 
 buildbuddy_deps()
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy")
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy", "RBE_UBUNTU20_IMAGE")
 
-buildbuddy(name = "buildbuddy_toolchain")
+buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)
 ```
 
 If you're using Java, or have a complex project - you'll likely need to configure the toolchain flags a bit. For more information, see our [Remote Build Execution guide](rbe-setup.md).
