@@ -234,7 +234,7 @@ func main() {
 				writeQPSCounter.Inc()
 
 				if *readQPS == 0 {
-					return nil
+					continue
 				}
 
 				select {
