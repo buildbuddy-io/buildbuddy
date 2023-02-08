@@ -415,6 +415,7 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
+	resourceName.SetCompressor(repb.Compressor_ZSTD)
 	return UploadFromReader(ctx, bsClient, resourceName, f)
 }
 

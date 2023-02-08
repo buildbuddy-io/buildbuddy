@@ -1,10 +1,15 @@
 package ci_runner_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,12 +28,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
 )
 
 var (
@@ -143,6 +151,21 @@ actions:
         merge_with_base: false
     bazel_commands:
       - run :exit -- 0
+`,
+	}
+
+	workspaceContentsWithArtifactUploads = map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
+		"pass.sh":   `exit 0`,
+		"buildbuddy.yaml": `
+	actions:
+	  - name: "Test"
+		triggers:	
+		  pull_request: { branches: [ master ] }
+		  push: { branches: [ master ] }
+		bazel_commands:
+		  - test //... --config=buildbuddy_remote_cache --experimental_remote_grpc_log=$ARTIFACTS_DIRECTORY/grpc.log
 `,
 	}
 
@@ -929,4 +952,94 @@ func TestDisableBaseBranchMerging(t *testing.T) {
 
 	result := invokeRunner(t, runnerFlags, nil, wsPath)
 	checkRunnerResult(t, result)
+}
+
+func TestArtifactUploads(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithArtifactUploads)
+
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES+cache backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+	runnerFlags = append(runnerFlags, "--cache_backend="+app.GRPCAddress())
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+
+	runnerInvocation := singleInvocation(t, app, result)
+
+	var bytestreamURI string
+	for _, event := range runnerInvocation.Event {
+		payload, ok := event.BuildEvent.Payload.(*bespb.BuildEvent_NamedSetOfFiles)
+		if !ok {
+			continue
+		}
+		for _, f := range payload.NamedSetOfFiles.Files {
+			require.Equal(t, "command_0/grpc.log", f.GetName())
+			bytestreamURI = f.GetUri()
+		}
+	}
+	require.NotEmpty(t, bytestreamURI, "failed to locate NamedSetOfFiles event in workflow BES events")
+
+	// Make sure that we can download the artifact and parse it as a gRPC log.
+	downloadURL := fmt.Sprintf(
+		"%s/file/download?invocation_id=%s&bytestream_url=%s",
+		app.HTTPURL(),
+		url.QueryEscape(runnerInvocation.GetInvocationId()),
+		url.QueryEscape(bytestreamURI))
+	res, err := http.Get(downloadURL)
+	require.NoError(t, err)
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		b, _ := io.ReadAll(res.Body)
+		require.FailNowf(t, res.Status, "response body: %s", string(b))
+	}
+
+	pr := NewDelimitedProtoReader(res.Body)
+	m := &rlpb.LogEntry{}
+	nParsed := 0
+	for {
+		err = pr.Unmarshal(m)
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		nParsed++
+	}
+	require.Greater(t, nParsed, 0, "expected to parse at least one grpc log message")
+}
+
+// TODO(bduffany): Move this to a util package and share with //cli/printlog and
+// //server/util/protofile
+type DelimitedProtoReader struct {
+	buf bytes.Buffer
+	r   *bufio.Reader
+}
+
+func NewDelimitedProtoReader(r io.Reader) *DelimitedProtoReader {
+	return &DelimitedProtoReader{r: bufio.NewReader(r)}
+}
+
+func (p *DelimitedProtoReader) Unmarshal(m proto.Message) error {
+	size, err := binary.ReadUvarint(p.r)
+	if err != nil {
+		return err
+	}
+	p.buf.Reset()
+	if _, err := io.CopyN(&p.buf, p.r, int64(size)); err != nil {
+		return err
+	}
+	return proto.Unmarshal(p.buf.Bytes(), m)
 }

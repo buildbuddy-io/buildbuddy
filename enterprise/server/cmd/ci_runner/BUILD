@@ -13,6 +13,8 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
+        "//enterprise/server/auth",
+        "//enterprise/server/bes_artifact_uploader",
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/clientidentity",
         "//enterprise/server/workflow/config",
@@ -35,6 +37,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_creack_pty//:pty",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_google_shlex//:shlex",
         "@com_github_google_uuid//:uuid",
         "@com_github_logrusorgru_aurora//:aurora",
