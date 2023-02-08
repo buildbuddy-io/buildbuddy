@@ -95,7 +95,29 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	return sockPath, nil
 }
 
+func isCI(args []string) bool {
+	if os.Getenv("CI") == "1" || strings.EqualFold(os.Getenv("CI"), "true") {
+		return true
+	}
+	for _, md := range arg.GetMulti(args, "build_metadata") {
+		if md == "ROLE=CI" {
+			return true
+		}
+	}
+	return false
+}
+
 func ConfigureSidecar(args []string) []string {
+	// Disable sidecar on CI for now since the async upload behavior can cause
+	// problems if the CI runner terminates before the uploads have completed.
+	// TODO: The sidecar is just an async BES/cache proxy at the moment, but if
+	// we add more sidecar features then we should find a way to re-enable it in
+	// "synchronous" mode on CI.
+	if isCI(args) {
+		log.Debugf("CI build detected; sidecar is disabled.")
+		return args
+	}
+
 	log.Debugf("Configuring sidecar")
 
 	ctx := context.Background()

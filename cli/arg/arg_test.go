@@ -44,3 +44,11 @@ func TestFindLast(t *testing.T) {
 		)
 	}
 }
+
+func TestGetMulti(t *testing.T) {
+	args := []string{"--build_metadata=COMMIT_SHA=abc123", "--foo", "--build_metadata=ROLE=CI"}
+
+	values := GetMulti(args, "build_metadata")
+
+	assert.Equal(t, []string{"COMMIT_SHA=abc123", "ROLE=CI"}, values)
+}
