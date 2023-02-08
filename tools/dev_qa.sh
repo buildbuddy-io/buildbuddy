@@ -3,22 +3,18 @@
 # Runs a few builds against dev for QA testing.
 # Clones test repos to ~/buildbuddy-qa by default.
 # Set QA_ROOT to override this directory.
-# Pass the -l (loadtest) flag to build tensorflow, pass the -s (swift) flag to build a Swift project
+# Pass the -l (loadtest) flag to build tensorflow
 
 set -e
 
-usage() { echo "Usage: $0 [-l <loadtest>] [-s <swift>] [-c continue if build fails]" 1>&2; exit 1; }
+usage() { echo "Usage: $0 [-l <loadtest>] [-c continue if build fails]" 1>&2; exit 1; }
 
 loadtest=0
-swift=0
 continue_with_failures=0
-while getopts "lsc" opt; do
+while getopts "lc" opt; do
     case "${opt}" in
 	l)
 	    loadtest=1
-	    ;;
-	s)
-	    swift=1
 	    ;;
 	c)
 	    continue_with_failures=1
@@ -77,7 +73,6 @@ abseil_iid=$(invocation_id)
 bazel_iid=$(invocation_id)
 python_iid=$(invocation_id)
 tensorflow_iid=$(invocation_id)
-swift_iid=$(invocation_id)
 
 # Go Builds
 # Has --experimental_remote_cache_compression and --remote_download_minimal set
@@ -161,23 +156,6 @@ run_test \
         --invocation_id="$tensorflow_iid" \
         --nogoogle_default_credentials
 
-
-# Swift Build
-(( swift)) && run_test \
-    https://github.com/bazelbuild/rules_swift \
-    rules_swift \
-    install_swift \
-    bazel build //... \
-        --client_env=CC=clang \
-        --remote_executor=remote.buildbuddy.dev \
-        --remote_cache=remote.buildbuddy.dev \
-        --bes_backend=remote.buildbuddy.dev \
-        --bes_results_url=https://app.buildbuddy.dev/invocation/ \
-        --remote_timeout=10m \
-        --remote_default_exec_properties=OSFamily=darwin \
-        --remote_default_exec_properties=enableXcodeOverride=true \
-        --invocation_id="$swift_iid"
-
 echo "---"
 echo "QA results:"
 echo "- BuildBuddy test:   https://app.buildbuddy.dev/invocation/$buildbuddy_iid"
@@ -186,4 +164,3 @@ echo "- Abseil (C++) build:     https://app.buildbuddy.dev/invocation/$abseil_ii
 echo "- Bazel (Java) build:     https://app.buildbuddy.dev/invocation/$bazel_iid"
 echo "- Python build:     https://app.buildbuddy.dev/invocation/$python_iid"
 (( loadtest )) && echo "- Tensorflow build:  https://app.buildbuddy.dev/invocation/$tensorflow_iid"
-(( swift )) && echo "- Swift build:  https://app.buildbuddy.dev/invocation/$swift_iid"
