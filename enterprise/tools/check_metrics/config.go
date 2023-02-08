@@ -5,16 +5,20 @@ type Config struct {
 	// with command: `kubectl --context="" --namespace=<NAMESPACE> port-forward "<POD_NAME>" --address 0.0.0.0 <FROM_PORT>:<TO_PORT>`
 	PrometheusAddress string `yaml:"prometheus_address"`
 	// The total duration to poll metrics, after which we should continue with the rollout.
-	MonitoringTimeframeSeconds int                `yaml:"monitoring_timeframe_seconds"`
-	PrometheusMetrics          []PrometheusMetric `yaml:"prometheus_metrics"`
+	MonitoringTimeframeSeconds int `yaml:"monitoring_timeframe_seconds"`
+	// The default frequency with which we should poll each metric
+	PollingIntervalSeconds int `yaml:"polling_interval_seconds"`
+	// The default max number of times the metric can consecutively report as unhealthy before we should rollback
+	MaxUnhealthyCount int                `yaml:"max_unhealthy_count"`
+	PrometheusMetrics []PrometheusMetric `yaml:"prometheus_metrics"`
 }
 
 type PrometheusMetric struct {
 	Name  string `yaml:"name"`
 	Query string `yaml:"query"`
-	// The frequency with which we should poll this metric
+	// Set to override the default polling interval
 	PollingIntervalSeconds int `yaml:"polling_interval_seconds"`
-	// The max number of times the metric can consecutively report as unhealthy before we should rollback.
+	// Set to override the default unhealthy count
 	MaxUnhealthyCount int `yaml:"max_unhealthy_count"`
 	// If the metric does not meet this health threshold, it is considered unhealthy
 	HealthThreshold HealthThreshold `yaml:"health_threshold"`

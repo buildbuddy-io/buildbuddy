@@ -60,8 +60,18 @@ func main() {
 	for _, metric := range config.PrometheusMetrics {
 		metric := metric
 		eg.Go(func() error {
+			pollingIntervalSec := config.PollingIntervalSeconds
+			if metric.PollingIntervalSeconds != 0 {
+				pollingIntervalSec = metric.PollingIntervalSeconds
+			}
+
+			maxUnhealthyCount := config.MaxUnhealthyCount
+			if metric.MaxUnhealthyCount != 0 {
+				maxUnhealthyCount = metric.MaxUnhealthyCount
+			}
+
 			monitoringTimer := time.After(time.Duration(config.MonitoringTimeframeSeconds) * time.Second)
-			monitoringTicker := time.NewTicker(time.Duration(metric.PollingIntervalSeconds) * time.Second)
+			monitoringTicker := time.NewTicker(time.Duration(pollingIntervalSec) * time.Second)
 			defer monitoringTicker.Stop()
 
 			unhealthyCount := 0
@@ -83,7 +93,7 @@ func main() {
 						unhealthyCount++
 					}
 
-					if unhealthyCount >= metric.MaxUnhealthyCount {
+					if unhealthyCount >= maxUnhealthyCount {
 						return errors.New(fmt.Sprintf("%s metrics unhealthy.", metric.Name))
 					}
 				}
