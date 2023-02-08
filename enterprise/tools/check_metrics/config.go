@@ -62,10 +62,10 @@ type Within struct {
 	// If it's greater than the comparison by Value, the metric is considered unhealthy
 	// For example, if GreaterBy=true and Value=100, metric=500 and comparison=300, the metric is greater by 200
 	// That is not within the value of 100, so the metric is unhealthy
-	GreaterBy *bool
+	GreaterBy *bool `yaml:"greater_by"`
 	// Set LessBy=true if you expect a healthy metric to be greater than or equal to the comparison
 	// If it's less than the comparison by Value, the metric is considered unhealthy
 	// For example, if LessBy=true and Value=100, metric=300 and comparison=500, the metric is less by 200
 	// That is not within the value of 100, so the metric is unhealthy
-	LessBy *bool
+	LessBy *bool `yaml:"less_by"`
 }
