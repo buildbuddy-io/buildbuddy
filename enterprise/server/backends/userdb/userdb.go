@@ -212,8 +212,12 @@ func (d *UserDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
 	key := &tables.APIKey{}
-	q := `SELECT * FROM APIKeys ORDER BY label ASC LIMIT 1`
-	if err := d.h.DB(ctx).Raw(q).Take(key).Error; err != nil {
+	query := d.h.DB(ctx).Raw(`
+		SELECT * FROM APIKeys
+		WHERE group_id = ?
+		ORDER BY label ASC LIMIT 1
+	`, groupID)
+	if err := query.Take(key).Error; err != nil {
 		if db.IsRecordNotFound(err) {
 			return nil, status.NotFoundError("no API keys were found for the requested group")
 		}
