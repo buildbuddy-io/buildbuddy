@@ -55,3 +55,7 @@
   /* Allow axis labels to extend slightly out of bounds */
   overflow: visible;
 }
+
+.heatmap-svg {
+  user-select: none;
+}
