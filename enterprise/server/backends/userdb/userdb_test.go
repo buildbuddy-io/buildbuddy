@@ -2,6 +2,7 @@ package userdb_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -593,6 +594,36 @@ func TestGetAPIKeyForInternalUseOnly(t *testing.T) {
 		t, status.IsNotFoundError(err),
 		"expected NotFound after deleting API keys, got: %v", err)
 	assert.Nil(t, key, "API key should be nil after deleting API keys")
+}
+
+func TestGetAPIKeyForInternalUseOnly_ManyUsers(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+
+	// Create several users in different orgs
+	const nUsers = 10
+	seen := map[string]bool{}
+	for i := 0; i < nUsers; i++ {
+		uid := fmt.Sprintf("US%d", i)
+		domain := fmt.Sprintf("org%d.io", i)
+		createUser(t, ctx, env, uid, domain)
+
+		// Sanity check that they were added to a unique group
+		authCtx := authUserCtx(ctx, env, t, uid)
+		gid := getSelfOwnedGroup(t, authCtx, env).Group.GroupID
+		require.False(t, seen[gid], "expected all users to be added to unique group IDs")
+		seen[gid] = true
+	}
+
+	// Get an API key for each user; should return their self-owned org key.
+	for i := 0; i < nUsers; i++ {
+		authCtx := authUserCtx(ctx, env, t, fmt.Sprintf("US%d", i))
+		gid := getSelfOwnedGroup(t, authCtx, env).Group.GroupID
+		key, err := udb.GetAPIKeyForInternalUseOnly(authCtx, gid)
+		require.NoError(t, err)
+		require.Equal(t, gid, key.GroupID, "mismatched API key group ID")
+	}
 }
 
 func TestCreateAndGetAPIKey(t *testing.T) {
