@@ -7,17 +7,21 @@
 
 set -e
 
-usage() { echo "Usage: $0 [-l <loadtest>] [-s <swift>]" 1>&2; exit 1; }
+usage() { echo "Usage: $0 [-l <loadtest>] [-s <swift>] [-c continue if build fails]" 1>&2; exit 1; }
 
 loadtest=0
 swift=0
-while getopts "ls" opt; do
+continue_with_failures=0
+while getopts "lsc" opt; do
     case "${opt}" in
 	l)
 	    loadtest=1
 	    ;;
 	s)
 	    swift=1
+	    ;;
+	c)
+	    continue_with_failures=1
 	    ;;
 	*)
 	    usage
@@ -56,13 +60,14 @@ run_test() {
 )
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 buildbuddy_deps()
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy")
-buildbuddy(name = "buildbuddy_toolchain")' \
+
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "buildbuddy", "UBUNTU20_04_IMAGE")
+buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)' \
     >> WORKSPACE
     fi
 
     bazel clean
-    "$@" || true # if bazel command fails, continue.
+    "$@" || (( continue_with_failures )) # if bazel command fails, continue.
   )
 }
 
