@@ -91,6 +91,7 @@ func main() {
 						unhealthyCount = 0
 					} else {
 						unhealthyCount++
+						log.Debugf("Metric %s is unhealthy, increasing unhealthy count to %d", metric.Name, unhealthyCount)
 					}
 
 					if unhealthyCount >= maxUnhealthyCount {
@@ -111,7 +112,7 @@ func main() {
 }
 
 func queryMetric(promAPI promapi.API, metricName string, query string, isMissingDataValid bool) (float64, error) {
-	log.Debugf("Querying metric %s", metricName)
+	log.Debugf("Attempting to query metric %s", metricName)
 
 	result, _, err := promAPI.Query(context.Background(), query, time.Now())
 	if err != nil {
@@ -136,7 +137,7 @@ func metricHealthy(promAPI promapi.API, metricName string, query string, healthT
 
 	if healthThreshold.AbsoluteRange != nil {
 		threshold := healthThreshold.AbsoluteRange
-		return absoluteRangeMetricHealthy(metricValue, threshold.Min, threshold.Max), nil
+		return absoluteRangeMetricHealthy(metricName, metricValue, threshold.Min, threshold.Max), nil
 	}
 
 	if healthThreshold.RelativeRange != nil {
@@ -146,7 +147,9 @@ func metricHealthy(promAPI promapi.API, metricName string, query string, healthT
 	return false, status.InvalidArgumentErrorf("must specify a health threshold")
 }
 
-func absoluteRangeMetricHealthy(metricValue float64, min *float64, max *float64) bool {
+func absoluteRangeMetricHealthy(metricName string, metricValue float64, min *float64, max *float64) bool {
+	log.Debugf("Polling absolute range metric %s, metric value is %v", metricName, metricValue)
+
 	if min != nil && metricValue < *min {
 		return false
 	}
@@ -161,6 +164,8 @@ func relativeRangeMetricHealthy(promAPI promapi.API, metricName string, metricVa
 	if err != nil {
 		return false, err
 	}
+
+	log.Debugf("Polling relative range metric %s, metric value is %v, comparison value is %v", metricName, metricValue, comparisonValue)
 
 	if relativeRange.Within != nil {
 		within := relativeRange.Within
