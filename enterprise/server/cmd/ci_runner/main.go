@@ -486,6 +486,11 @@ func run() error {
 	}
 	ws.rootDir = rootDir
 
+	if *workflowID != "" {
+		if err := os.Setenv("CI", "true"); err != nil {
+			return status.WrapError(err, "set CI=true")
+		}
+	}
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
 		return status.WrapError(err, "ensure HOME")
