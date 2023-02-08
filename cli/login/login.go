@@ -78,7 +78,7 @@ func ConfigureAPIKey(args []string) ([]string, error) {
 		// Making this fatal would be inconvenient for new workspaces,
 		// so just log a debug message and move on.
 		log.Debugf("failed to configure API key from .git/config: %s", err)
-		return nil, nil
+		return args, nil
 	}
 
 	return append(args, "--"+apiKeyHeader+"="+strings.TrimSpace(apiKey)), nil
