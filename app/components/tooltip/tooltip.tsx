@@ -9,7 +9,7 @@ export type MouseCoords = {
 
 type TooltipProps = JSX.IntrinsicElements["div"] & {
   /** Renders the tooltip content if the tooltip is hovered. */
-  renderContent: (c?: MouseCoords) => React.ReactNode;
+  renderContent: (c: MouseCoords) => React.ReactNode;
   /** Specifies the pin position of the tooltip. */
   pin?: PinPositionFunc;
 };
@@ -80,7 +80,7 @@ type PinContext = {
 
 type TooltipContentProps = {
   pin?: PinPositionFunc;
-  render: (c?: MouseCoords) => React.ReactNode;
+  render: (c: MouseCoords) => React.ReactNode;
 };
 
 type TooltipContentState = {

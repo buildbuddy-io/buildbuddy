@@ -17,10 +17,13 @@ interface HeatmapProps {
 }
 
 interface State {
-  selectionToRender?: [TooltipData, TooltipData];
+  // This pair indicates the cells in the heatmap that the user selected.  The
+  // first entry is the cell that the user clicked on first when making the
+  // selection.
+  selectionToRender?: [SelectedCellData, SelectedCellData];
 }
 
-type TooltipData = {
+type SelectedCellData = {
   timestamp: number;
   timestampBucketIndex: number;
   metric: number;
@@ -29,8 +32,8 @@ type TooltipData = {
 };
 
 export type HeatmapSelection = {
-  dateRangeMicros: number[];
-  bucketRange: number[];
+  dateRangeMicros: { startInclusive: number; endExclusive: number };
+  bucketRange: { startInclusive: number; endExclusive: number };
   invocationsSelected: number;
 };
 
@@ -44,10 +47,14 @@ const CHART_MARGINS = {
 // This is a magic number that states there will only be one axis label for
 // every N pixels of rendered axis length (currently 100).
 const TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
+// This is a discretized dump of the 'Purples' scale from d3-scale-chromatic,
+// starting arbitrarily from .3 because it looked nice.  The scale is great but
+// the package itself is heavy.  The d3-scale-chromatic scale is interpolated
+// from https://colorbrewer2.org/#type=sequential&scheme=Purples&n=3
 const heatmapColorScale = [
-  "#d9d8ea",
-  "#cecee5",
-  "#c2c2df",
+  "#d9d8ea", // .30
+  "#cecee5", // .35
+  "#c2c2df", // ...
   "#b6b5d8",
   "#aaa8d0",
   "#9e9bc9",
@@ -59,7 +66,7 @@ const heatmapColorScale = [
   "#61409b",
   "#583093",
   "#501f8c",
-  "#471084",
+  "#471084", // 1
 ];
 
 type SelectionData = {
@@ -74,20 +81,16 @@ type SelectionData = {
 };
 
 class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
-  state: State;
-  svgRef: React.RefObject<SVGSVGElement>;
-  xScaleBand: ScaleBand<number>;
-  yScaleBand: ScaleBand<number>;
-  pendingClick?: [TooltipData, TooltipData];
-  selectedData?: [TooltipData, TooltipData];
+  state: State = {};
+  svgRef: React.RefObject<SVGSVGElement> = React.createRef();
+  xScaleBand: ScaleBand<number> = scaleBand();
+  yScaleBand: ScaleBand<number> = scaleBand();
 
-  constructor(props: HeatmapProps) {
-    super(props);
-    this.state = {};
-    this.xScaleBand = scaleBand();
-    this.yScaleBand = scaleBand();
-    this.svgRef = React.createRef();
-  }
+  // These ordered pairs indicate which cell was first clicked on by the user.
+  // By keeping them in order, we ensure that as the user moves their mouse, the
+  // selection will "pivot" around that cell.
+  pendingClick?: [SelectedCellData, SelectedCellData];
+  selectedData?: [SelectedCellData, SelectedCellData];
 
   renderYBucketValue(v: number) {
     return this.props.metricBucketFormatter(v);
@@ -97,7 +100,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return Math.max(this.props.heatmapData.bucketBracket.length - 1, 1);
   }
 
-  private computeBucket(x: number, y: number): TooltipData | undefined {
+  private computeBucket(x: number, y: number): SelectedCellData | undefined {
     if (!this.svgRef.current) {
       return undefined;
     }
@@ -183,19 +186,28 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     const t1Index = this.selectedData[0].timestampBucketIndex;
     const t2Index = this.selectedData[1].timestampBucketIndex;
 
-    const dateRangeMicros = [
-      Math.min(+this.props.heatmapData.timestampBracket[t1Index], +this.props.heatmapData.timestampBracket[t2Index]),
-      Math.max(
+    const dateRangeMicros = {
+      startInclusive: Math.min(
+        +this.props.heatmapData.timestampBracket[t1Index],
+        +this.props.heatmapData.timestampBracket[t2Index]
+      ),
+      endExclusive: Math.max(
         +this.props.heatmapData.timestampBracket[t1Index + 1],
         +this.props.heatmapData.timestampBracket[t2Index + 1]
       ),
-    ];
+    };
     const m1Index = this.selectedData[0].metricBucketIndex;
     const m2Index = this.selectedData[1].metricBucketIndex;
-    const bucketRange = [
-      Math.min(+this.props.heatmapData.bucketBracket[m1Index], +this.props.heatmapData.bucketBracket[m2Index]),
-      Math.max(+this.props.heatmapData.bucketBracket[m1Index + 1], +this.props.heatmapData.bucketBracket[m2Index + 1]),
-    ];
+    const bucketRange = {
+      startInclusive: Math.min(
+        +this.props.heatmapData.bucketBracket[m1Index],
+        +this.props.heatmapData.bucketBracket[m2Index]
+      ),
+      endExclusive: Math.max(
+        +this.props.heatmapData.bucketBracket[m1Index + 1],
+        +this.props.heatmapData.bucketBracket[m2Index + 1]
+      ),
+    };
 
     let invocationsSelected = 0;
     for (let i = Math.min(t1Index, t2Index); i <= Math.max(t1Index, t2Index); i++) {
@@ -356,8 +368,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
 
     let min = 0;
     let max = 0;
-    this.props.heatmapData.column.map((column) => {
-      column.value.map((value) => {
+    this.props.heatmapData.column.forEach((column) => {
+      column.value.forEach((value) => {
         min = Math.min(+value, min);
         max = Math.max(+value, max);
       });
@@ -365,7 +377,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
 
     const selection = this.maybeRenderSelection();
     const interpolator = (v: number) =>
-      heatmapColorScale[Math.floor((heatmapColorScale.length * 0.99 * (v - min)) / (max - min))];
+      heatmapColorScale[Math.floor(((heatmapColorScale.length - 1) * (v - min)) / (max - min))];
 
     return (
       <div>
