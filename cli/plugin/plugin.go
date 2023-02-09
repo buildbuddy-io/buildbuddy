@@ -747,7 +747,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	log.Debugf("Running pre-bazel hook for %s/%s", p.config.Repo, p.config.Path)
 	// TODO: support "pre_bazel.<any-extension>" as long as the file is
 	// executable and has a shebang line
-	cmd := exec.Command("/usr/bin/env", "bash", scriptPath, argsFile.Name(), execArgsFile.Name())
+	cmd := exec.Command("/usr/bin/env", "bash", scriptPath, argsFile.Name())
 	// TODO: Prefix output with "output from [plugin]" ?
 	cmd.Dir = path
 	cmd.Stderr = os.Stderr
