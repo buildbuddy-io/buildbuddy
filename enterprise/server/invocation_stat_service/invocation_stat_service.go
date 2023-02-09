@@ -976,12 +976,21 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, inpb.AggType_BRANCH_AGGREGATION_TYPE, stat.GormBranchName, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormHost != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_HOSTNAME_AGGREGATION_TYPE, stat.GormHost, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+<<<<<<< HEAD
 		} else if stat.GormRepoURL != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_REPO_URL_AGGREGATION_TYPE, stat.GormRepoURL, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormUser != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_USER_AGGREGATION_TYPE, stat.GormUser, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormCommitSHA != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSHA, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+=======
+		} else if stat.GormRepoUrl != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_REPO_URL_AGGREGATION_TYPE, stat.GormRepoUrl, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormUser != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_USER_AGGREGATION_TYPE, stat.GormUser, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormCommitSha != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSha, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+>>>>>>> ea845c051 (address more comments.)
 		} else if stat.GormPattern != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_PATTERN_AGGREGATION_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
