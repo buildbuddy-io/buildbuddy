@@ -16,10 +16,8 @@ enum ExecutionMetricType {
 }
 
 message Metric {
-  oneof metric_type {
-    InvocationMetricType invocation = 1;
-    ExecutionMetricType execution = 2;
-  }
+  optional InvocationMetricType invocation = 1;
+  optional ExecutionMetricType execution = 2;
 }
 
 message StatFilter {

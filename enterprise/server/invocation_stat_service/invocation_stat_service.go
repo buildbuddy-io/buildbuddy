@@ -201,10 +201,10 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 	}
 
 	if tq.GetMinimumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec >= ?`, tq.GetMinimumDuration().GetSeconds()*1e6)
+		q.AddWhereClause(`duration_usec >= ?`, tq.GetMinimumDuration().AsDuration().Microseconds())
 	}
 	if tq.GetMaximumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec <= ?`, tq.GetMaximumDuration().GetSeconds()*1e6)
+		q.AddWhereClause(`duration_usec <= ?`, tq.GetMaximumDuration().AsDuration().Microseconds())
 	}
 
 	for _, f := range tq.GetFilter() {
@@ -401,30 +401,34 @@ func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) str
 }
 
 func getTableForMetric(metric *sfpb.Metric) string {
-	switch metric.MetricType.(type) {
-	case *sfpb.Metric_Execution:
+	if metric.Execution != nil {
 		return "Executions"
-	default:
-		return "Invocations"
 	}
+	return "Invocations"
 }
 
-func (i *InvocationStatService) getMetricRange(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (int64, int64, int64, error) {
+type MetricRange = struct {
+	Start      int64
+	BucketSize int64
+	NumBuckets int64
+}
+
+func (i *InvocationStatService) getMetricRange(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (*MetricRange, error) {
 	rangeQuery := fmt.Sprintf("SELECT min(%s) as low, max(%s) as high FROM %s %s", metric, metric, table, whereClauseStr)
 	var rows *sql.Rows
 	rows, err := i.olapdbh.DB(ctx).Raw(rangeQuery, whereClauseArgs...).Rows()
 	if err != nil {
-		return 0, 0, 0, err
+		return nil, err
 	}
 	if !rows.Next() {
-		return 0, 0, 0, nil
+		return nil, nil
 	}
 	valueRange := struct {
 		Low  int64
 		High int64
 	}{}
 	if err := i.olapdbh.DB(ctx).ScanRows(rows, &valueRange); err != nil {
-		return 0, 0, 0, err
+		return nil, err
 	}
 
 	// A fun hack: make "High" value 1 higher so that we can put an exclusive
@@ -437,28 +441,33 @@ func (i *InvocationStatService) getMetricRange(ctx context.Context, table string
 		step = 1
 	} else {
 		step = width / bucketCount
-		if width%bucketCount != 0 {
+		if (width % bucketCount) != 0 {
 			step = step + 1
 		}
 	}
 
-	return valueRange.Low, step, bucketCount, nil
+	return &MetricRange{
+			Start:      valueRange.Low,
+			BucketSize: step,
+			NumBuckets: bucketCount,
+		},
+		nil
 }
 
 func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) ([]int64, string, error) {
-	metricLow, metricBucketSize, metricBucketCount, err := i.getMetricRange(ctx, table, metric, whereClauseStr, whereClauseArgs)
+	metricRange, err := i.getMetricRange(ctx, table, metric, whereClauseStr, whereClauseArgs)
 	if err != nil {
 		return nil, "", err
 	}
-	if metricBucketCount == 0 {
+	if metricRange == nil {
 		return nil, "", nil
 	}
 
-	metricBuckets := make([]int64, metricBucketCount+1)
+	metricBuckets := make([]int64, metricRange.NumBuckets+1)
 	for i := range metricBuckets[:] {
-		metricBuckets[i] = metricLow + int64(i)*metricBucketSize
+		metricBuckets[i] = metricRange.Start + int64(i)*metricRange.BucketSize
 	}
-	mStr := make([]string, metricBucketCount)
+	mStr := make([]string, metricRange.NumBuckets)
 	for i := range mStr {
 		mStr[i] = fmt.Sprint(metricBuckets[i])
 	}
@@ -466,7 +475,9 @@ func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table stri
 	return metricBuckets, metricArrayStr, nil
 }
 
-func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffsetMinutes int32) ([]int64, string, error) {
+const ONE_WEEK = 7 * 24 * time.Hour
+
+func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration) ([]int64, string, error) {
 	lowTime := q.GetUpdatedAfter()
 	highTime := q.GetUpdatedBefore()
 	if lowTime != nil && !lowTime.IsValid() {
@@ -476,9 +487,9 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffsetMinutes int32) ([]int
 		return nil, "", status.InvalidArgumentError(fmt.Sprintf("Invalid high timestamp: %v", highTime))
 	}
 
-	offsetSec := int64(timezoneOffsetMinutes) * 60
+	offsetSec := int64(timezoneOffset.Seconds())
 
-	startSec := time.Now().Unix() - ((7 * 24 * time.Hour).Microseconds() / 1e6)
+	startSec := time.Now().Unix() - int64(ONE_WEEK.Seconds())
 	if lowTime != nil {
 		startSec = lowTime.GetSeconds()
 	}
@@ -491,9 +502,9 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffsetMinutes int32) ([]int
 	// TODO(jdhollen): Bucket at true midnight in user timezone instead of fudging
 	// it, this gets hosed around daylight savings transitions.  This matters way
 	// less for hourly buckets (where we can easily let the client format).
-	s := time.Unix(startSec, 0).UTC().Add(-time.Minute * time.Duration(timezoneOffsetMinutes))
+	s := time.Unix(startSec, 0).UTC().Add(-timezoneOffset)
 	localStart := time.Date(s.Year(), s.Month(), s.Day(), 0, 0, 0, 0, s.Location())
-	currentDateBracket := localStart.Add(time.Minute * time.Duration(timezoneOffsetMinutes))
+	currentDateBracket := localStart.Add(timezoneOffset)
 
 	currentString := currentDateBracket.Format("2006-01-02")
 	endString := time.Unix(endSec-offsetSec, 0).UTC().AddDate(0, 0, 2).Format("2006-01-02")
@@ -505,8 +516,10 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffsetMinutes int32) ([]int
 		currentString = currentDateBracket.Format("2006-01-02")
 	}
 
-	dStr := make([]string, len(timestampBuckets)-1)
-	for i, d := range timestampBuckets[:len(timestampBuckets)-1] {
+	numDateBuckets := len(timestampBuckets) - 1
+
+	dStr := make([]string, numDateBuckets)
+	for i, d := range timestampBuckets[:numDateBuckets] {
 		dStr[i] = fmt.Sprintf("%d", d)
 	}
 	timestampArrayStr := fmt.Sprintf("array(%s)", strings.Join(dStr, ","))
@@ -523,7 +536,7 @@ type HeatmapQueryInputs = struct {
 }
 
 func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, timezoneOffsetMinutes int32) (*HeatmapQueryInputs, error) {
-	timestampBuckets, timestampArrayStr, err := getTimestampBuckets(q, timezoneOffsetMinutes)
+	timestampBuckets, timestampArrayStr, err := getTimestampBuckets(q, time.Duration(timezoneOffsetMinutes)*time.Minute)
 	if err != nil {
 		return nil, err
 	}
@@ -567,7 +580,11 @@ type QueryAndBuckets = struct {
 	MetricBuckets    []int64
 }
 
-/** This function returns (nil, nil) if it finds that there is no data to fetch. */
+// getHeatmapQueryAndBuckets usually returns the query that should be run to
+// fetch the heatmap and the buckets that define the heatmap range, but in the
+// event that no events are found at all, it will instead return (nil, nil) to
+// indicate a no-error state with no results--in this case we should return an
+// empty response.
 func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest, timezoneOffsetMinutes int32) (*QueryAndBuckets, error) {
 	table := getTableForMetric(req.GetMetric())
 	metric, err := filter.MetricToDbField(req.GetMetric(), "")
@@ -601,11 +618,12 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 		qi.PlaceholderBucketQuery, qi.TimestampArrayStr, metric, qi.MetricArrayStr, table, whereClauseStr)
 
 	return &QueryAndBuckets{
-		TimestampBuckets: qi.TimestampBuckets,
-		MetricBuckets:    qi.MetricBuckets,
-		Query:            qStr,
-		QueryArgs:        whereClauseArgs,
-	}, nil
+			TimestampBuckets: qi.TimestampBuckets,
+			MetricBuckets:    qi.MetricBuckets,
+			Query:            qStr,
+			QueryArgs:        whereClauseArgs,
+		},
+		nil
 }
 
 func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error) {
@@ -865,25 +883,25 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	return fmt.Sprintf("SELECT * FROM (%s) ORDER BY totals_first", strings.Join(queries, " UNION ALL ")), args, nil
 }
 
-func addOutputChartEntry(m *map[inpb.AggType]*stpb.DrilldownChart, dm *map[inpb.AggType]float64, aggType inpb.AggType, label *string, inverse int64, selection int64, totalInBase int64, totalInSelection int64) {
-	chart, exists := (*m)[aggType]
+func addOutputChartEntry(m map[inpb.AggType]*stpb.DrilldownChart, dm map[inpb.AggType]float64, aggType inpb.AggType, label *string, inverse int64, selection int64, totalInBase int64, totalInSelection int64) {
+	chart, exists := m[aggType]
 	if !exists {
 		chart = &stpb.DrilldownChart{}
 		chart.DrilldownDimension = aggType
-		(*m)[aggType] = chart
-		(*dm)[aggType] = -math.MaxFloat64
+		m[aggType] = chart
+		dm[aggType] = -math.MaxFloat64
 	}
-	(*dm)[aggType] = math.Max((*dm)[aggType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
+	dm[aggType] = math.Max(dm[aggType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
 	chart.Entry = append(chart.Entry, &stpb.DrilldownEntry{Label: *label, BaseValue: inverse, SelectionValue: selection})
 }
 
-func sortDrilldownChartKeys(dm *map[inpb.AggType]float64) *[]inpb.AggType {
+func sortDrilldownChartKeys(dm map[inpb.AggType]float64) *[]inpb.AggType {
 	type pair struct {
 		a inpb.AggType
 		v float64
 	}
 	slice := make([]pair, 0)
-	for k, v := range *dm {
+	for k, v := range dm {
 		slice = append(slice, pair{k, v})
 	}
 	sort.SliceStable(slice, func(a, b int) bool {
@@ -955,17 +973,17 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		}
 
 		if stat.GormBranchName != nil {
-			addOutputChartEntry(&m, &dm, inpb.AggType_BRANCH_AGGREGATION_TYPE, stat.GormBranchName, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, inpb.AggType_BRANCH_AGGREGATION_TYPE, stat.GormBranchName, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormHost != nil {
-			addOutputChartEntry(&m, &dm, inpb.AggType_HOSTNAME_AGGREGATION_TYPE, stat.GormHost, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, inpb.AggType_HOSTNAME_AGGREGATION_TYPE, stat.GormHost, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormRepoUrl != nil {
-			addOutputChartEntry(&m, &dm, inpb.AggType_REPO_URL_AGGREGATION_TYPE, stat.GormRepoUrl, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, inpb.AggType_REPO_URL_AGGREGATION_TYPE, stat.GormRepoUrl, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormUser != nil {
-			addOutputChartEntry(&m, &dm, inpb.AggType_USER_AGGREGATION_TYPE, stat.GormUser, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, inpb.AggType_USER_AGGREGATION_TYPE, stat.GormUser, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormCommitSha != nil {
-			addOutputChartEntry(&m, &dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSha, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSha, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormPattern != nil {
-			addOutputChartEntry(&m, &dm, inpb.AggType_PATTERN_AGGREGATION_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, inpb.AggType_PATTERN_AGGREGATION_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
 			// The above clauses represent all of the GROUP BY options we have in our
 			// query, and we deliberately constructed the query so that the total row
@@ -974,7 +992,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		}
 	}
 
-	order := sortDrilldownChartKeys(&dm)
+	order := sortDrilldownChartKeys(dm)
 
 	for _, aggType := range *order {
 		rsp.Chart = append(rsp.Chart, m[aggType])

@@ -32,14 +32,12 @@ func invocationMetricToDbField(m stat_filter.InvocationMetricType, paramPrefix s
 }
 
 func MetricToDbField(m *stat_filter.Metric, paramPrefix string) (string, error) {
-	switch m.MetricType.(type) {
-	case *stat_filter.Metric_Execution:
-		return executionMetricToDbField(m.GetExecution(), paramPrefix)
-	case *stat_filter.Metric_Invocation:
+	if m.Invocation != nil {
 		return invocationMetricToDbField(m.GetInvocation(), paramPrefix)
-	default:
-		return "", status.InvalidArgumentErrorf("Invalid filter: %v", m)
+	} else if m.Execution != nil {
+		return executionMetricToDbField(m.GetExecution(), paramPrefix)
 	}
+	return "", status.InvalidArgumentErrorf("Invalid filter: %v", m)
 }
 
 func GenerateFilterStringAndArgs(f *stat_filter.StatFilter, paramPrefix string) (string, []interface{}, error) {
