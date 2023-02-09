@@ -164,3 +164,5 @@ echo "- Abseil (C++) build:     https://app.buildbuddy.dev/invocation/$abseil_ii
 echo "- Bazel (Java) build:     https://app.buildbuddy.dev/invocation/$bazel_iid"
 echo "- Python build:     https://app.buildbuddy.dev/invocation/$python_iid"
 (( loadtest )) && echo "- Tensorflow build:  https://app.buildbuddy.dev/invocation/$tensorflow_iid"
+
+exit 0
