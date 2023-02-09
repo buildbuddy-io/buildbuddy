@@ -1,11 +1,8 @@
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
-load("@io_bazel_rules_go//extras:embed_data_deps.bzl", "go_embed_data_dependencies")
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_buildbuddy_dependencies
 def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
-    go_embed_data_dependencies()
-
     go_repository(
         name = "cc_mvdan_gofumpt",
         importpath = "mvdan.cc/gofumpt",
@@ -5887,14 +5884,14 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_mod",
         importpath = "golang.org/x/mod",
-        sum = "h1:b9gGHsz9/HhJ3HF5DHQytPpuwocVTChQJK3AvoLRD5I=",
-        version = "v0.6.0",
+        sum = "h1:LapD9S96VoQRhi/GrNTqeBJFrUjs5UHCAtTlgwA5oZA=",
+        version = "v0.7.0",
     )
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:hZ/3BUoy5aId7sCpA/Tc5lt8DkFgdVS2onTpJsZ/fl0=",
-        version = "v0.1.0",
+        sum = "h1:GyT4nK/YDHSqa1c4753ouYCDajOYKTja9Xb/OHtgvSw=",
+        version = "v0.5.0",
     )
 
     go_repository(
@@ -5916,21 +5913,21 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         # build_file_generation = "off",
         # patch_args = ["-p1"],
         # patches = ["@io_bazel_rules_go//third_party:org_golang_x_sys-gazelle.patch"],
-        sum = "h1:kunALQeHf1/185U1i0GOB/fy1IPRDDpuoOOqRReG57U=",
-        version = "v0.1.0",
+        sum = "h1:MUK/U/4lj1t1oPg0HfuXDN/Z1wv31ZJ/YcPiGccS4DU=",
+        version = "v0.5.0",
     )
     go_repository(
         name = "org_golang_x_term",
         importpath = "golang.org/x/term",
-        sum = "h1:g6Z6vPFA9dYBAF7DWcH6sCcOntplXsDKcliusYijMlw=",
-        version = "v0.1.0",
+        sum = "h1:O7UWfv5+A2qiuulQk30kVinPoMtoIPeVaKLEgLpVkvg=",
+        version = "v0.4.0",
     )
 
     go_repository(
         name = "org_golang_x_text",
         importpath = "golang.org/x/text",
-        sum = "h1:BrVqGRd7+k1DiOgtnFvAkoQEWQvBc25ouMJM6429SFg=",
-        version = "v0.4.0",
+        sum = "h1:3XmdazWV+ubf7QgHSTWeykHOci5oeekaGJBLkrkaw4k=",
+        version = "v0.6.0",
     )
 
     go_repository(
@@ -5942,12 +5939,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "org_golang_x_tools",
+        build_file_generation = "off",
         importpath = "golang.org/x/tools",
-        # build_file_generation = "off",
-        # patch_args = ["-p1"],
-        # patches = ["@io_bazel_rules_go//third_party:org_golang_x_tools-gazelle.patch"],
-        sum = "h1:G6AHpWxTMGY1KyEYoAQ5WTtIekUUvDNjan3ugu60JvE=",
-        version = "v0.2.0",
+        patch_args = ["-p1"],
+        patches = ["@io_bazel_rules_go//third_party:org_golang_x_tools-gazelle.patch"],
+        sum = "h1:+bSpV5HIeWkuvgaMfI3UmKRThoTA5ODJTUd8T17NO+4=",
+        version = "v0.5.0",
     )
 
     go_repository(
