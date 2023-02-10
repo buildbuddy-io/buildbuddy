@@ -39,6 +39,8 @@ run_test() {
   shift
   dir="$1"
   shift
+  num_retries="$1"
+  shift
   if ! [[ -e "$dir" ]]; then
     git clone "$url" "$dir"
   fi
@@ -62,8 +64,19 @@ buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)' 
     >> WORKSPACE
     fi
 
-    bazel clean
-    "$@" || (( continue_with_failures )) # if bazel command fails, continue.
+    bazel_cmd_output=0
+    for attempt in $(seq 1 "$num_retries"); do
+      bazel clean
+      bazel_cmd_output=$("$@")
+
+      if [ "$bazel_cmd_output" -eq 0 ]; then
+            break
+      fi
+    done
+
+    if [ "$bazel_cmd_output" -ne 0 ] && [ $continue_with_failures -eq 0 ]; then
+      exit 1
+    fi
   )
 }
 
@@ -79,6 +92,7 @@ tensorflow_iid=$(invocation_id)
 run_test \
     https://github.com/buildbuddy-io/buildbuddy \
     buildbuddy \
+    3 \
     bazel test //... \
         --config=remote-dev \
         --invocation_id="$buildbuddy_iid"
@@ -86,6 +100,7 @@ run_test \
 run_test \
     https://github.com/bazelbuild/bazel-gazelle \
     bazel-gazelle \
+    0 \
     bazel build //... \
         --remote_executor=remote.buildbuddy.dev \
         --remote_cache=remote.buildbuddy.dev \
@@ -98,6 +113,7 @@ run_test \
 run_test \
     https://github.com/abseil/abseil-cpp \
     abseil-cpp \
+    0 \
     bazel build //... \
         --cxxopt="-std=c++14" \
         --remote_executor=remote.buildbuddy.dev \
@@ -115,6 +131,7 @@ run_test \
 run_test \
     https://github.com/bazelbuild/bazel \
     bazel \
+    0 \
     bazel build //src/main/java/com/google/devtools/build/lib/... \
         --remote_executor=remote.buildbuddy.dev \
         --remote_cache=remote.buildbuddy.dev \
@@ -134,6 +151,7 @@ run_test \
 run_test \
     https://github.com/bazelbuild/rules_python \
     rules_python \
+    0 \
     bazel build //... \
         --remote_executor=remote.buildbuddy.dev \
         --remote_cache=remote.buildbuddy.dev \
@@ -146,6 +164,7 @@ run_test \
 (( loadtest )) && run_test \
     https://github.com/tensorflow/tensorflow \
     tensorflow \
+    0 \
     bazel build tensorflow \
         --config=rbe_cpu_linux \
         --config=monolithic \
