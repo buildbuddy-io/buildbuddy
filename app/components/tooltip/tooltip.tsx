@@ -2,9 +2,14 @@ import React from "react";
 import ReactDOM from "react-dom";
 import { clamp } from "../../util/math";
 
+export type MouseCoords = {
+  readonly clientX: number;
+  readonly clientY: number;
+};
+
 type TooltipProps = JSX.IntrinsicElements["div"] & {
   /** Renders the tooltip content if the tooltip is hovered. */
-  renderContent: () => React.ReactNode;
+  renderContent: (c: MouseCoords) => React.ReactNode;
   /** Specifies the pin position of the tooltip. */
   pin?: PinPositionFunc;
 };
@@ -75,7 +80,7 @@ type PinContext = {
 
 type TooltipContentProps = {
   pin?: PinPositionFunc;
-  render: () => React.ReactNode;
+  render: (c: MouseCoords) => React.ReactNode;
 };
 
 type TooltipContentState = {
@@ -91,6 +96,12 @@ export const pinBottomMiddleToMouse: PinPositionFunc = (ctx) => [
   ctx.mouse.clientY - ctx.tooltip.clientHeight,
 ];
 
+/** Pins the bottom-left corner of the tooltip slightly away from the mouse. */
+export const pinBottomLeftOffsetFromMouse: PinPositionFunc = (ctx) => [
+  ctx.mouse.clientX + 25,
+  ctx.mouse.clientY - ctx.tooltip.clientHeight - 15,
+];
+
 /**
  * `TooltipContent` renders the actual content for the tooltip when the
  * corresponding `<HasTooltip>` component is being hovered.
@@ -99,8 +110,7 @@ class TooltipContent extends React.Component<TooltipContentProps> {
   state: TooltipContentState = { visible: false };
   ref = React.createRef<HTMLDivElement>();
 
-  private mouseX: number = 0;
-  private mouseY: number = 0;
+  private mouseCoords: MouseCoords = { clientX: 0, clientY: 0 };
   private isLayoutCalculated = false;
 
   componentDidUpdate() {
@@ -121,8 +131,7 @@ class TooltipContent extends React.Component<TooltipContentProps> {
   }
 
   setMousePosition(x: number, y: number) {
-    this.mouseX = x;
-    this.mouseY = y;
+    this.mouseCoords = { clientX: x, clientY: y };
 
     if (!this.isLayoutCalculated) return false;
     this.updatePosition();
@@ -133,7 +142,7 @@ class TooltipContent extends React.Component<TooltipContentProps> {
     if (!el) return;
 
     const layoutContext: PinContext = {
-      mouse: { clientX: this.mouseX, clientY: this.mouseY },
+      mouse: this.mouseCoords,
       tooltip: { clientWidth: el.clientWidth, clientHeight: el.clientHeight },
     };
     const layoutFunc = this.props.pin || defaultPinPosition;
@@ -180,7 +189,7 @@ class TooltipContent extends React.Component<TooltipContentProps> {
           opacity: "0",
           pointerEvents: "none",
         }}>
-        {this.state.visible ? this.props.render() : null}
+        {this.state.visible ? this.props.render(this.mouseCoords) : null}
       </div>,
       this.getPortalElement()
     );
