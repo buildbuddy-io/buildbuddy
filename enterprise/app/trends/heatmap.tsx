@@ -130,8 +130,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     };
   }
 
-  renderTooltip(c?: MouseCoords) {
-    if (!c || this.pendingClick) {
+  renderTooltip(c: MouseCoords) {
+    if (this.pendingClick) {
       return null;
     }
     const data = this.computeBucket(c.clientX, c.clientY);
