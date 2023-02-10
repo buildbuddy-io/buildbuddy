@@ -62,6 +62,5 @@ plugins:
   - path: cli/plugins/go-deps
   - path: cli/plugins/open-invocation
   - path: cli/plugins/notify
-  - path: cli/plugins/config-per-target
   - path: cli/example_plugins/go-highlight
   - path: cli/example_plugins/ping-remote
