@@ -33,7 +33,10 @@ container_image(
         "config.yaml": "app/server/cmd/buildbuddy/buildbuddy.runfiles/buildbuddy/config/buildbuddy.release.yaml",
         "buildbuddy": "tmp",
     },
-    tags = ["no-cache"],
+    tags = [
+        "manual",
+        "no-cache",
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -41,6 +44,7 @@ go_image(
     name = "buildbuddy_image",
     base = ":base_image",
     binary = ":buildbuddy",
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 

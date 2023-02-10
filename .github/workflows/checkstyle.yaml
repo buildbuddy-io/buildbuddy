@@ -57,7 +57,7 @@ jobs:
       - name: go deps
         # Keep Gazelle version in sync with WORKSPACE
         run: |
-          go install github.com/bazelbuild/bazel-gazelle/cmd/gazelle@v0.28.0
+          go install github.com/bazelbuild/bazel-gazelle/cmd/gazelle@v0.29.0
           GAZELLE_PATH="$(go env GOPATH)/bin/gazelle" tools/fix_go_deps.sh --diff &> go-deps-diff.txt || true
           echo "go deps diff:"
           cat go-deps-diff.txt
@@ -65,7 +65,7 @@ jobs:
       - name: gazelle
         # Keep Gazelle version in sync with WORKSPACE
         run: |
-          go install github.com/bazelbuild/bazel-gazelle/cmd/gazelle@v0.28.0
+          go install github.com/bazelbuild/bazel-gazelle/cmd/gazelle@v0.29.0
           "$(go env GOPATH)/bin/gazelle" -mode diff > gazelle-diff.txt || true
           echo "gazelle diff:"
           cat gazelle-diff.txt
