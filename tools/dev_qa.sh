@@ -64,14 +64,16 @@ buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)' 
     >> WORKSPACE
     fi
 
-    bazel_cmd_output=0
-    for attempt in $(seq 1 "$num_retries"); do
+    for attempt in $(seq 0 "$num_retries"); do
+      bazel_cmd_output=0
       bazel clean
-      bazel_cmd_output=$("$@")
+      "$@" || bazel_cmd_output=$?
 
       if [ "$bazel_cmd_output" -eq 0 ]; then
             break
       fi
+
+      echo "Retrying buildbuddy tests"
     done
 
     if [ "$bazel_cmd_output" -ne 0 ] && [ $continue_with_failures -eq 0 ]; then
