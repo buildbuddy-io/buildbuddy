@@ -315,8 +315,6 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 		testStartTimeUsec := int64(0)
 		if !target.firstStartTime.IsZero() {
 			testStartTimeUsec = target.firstStartTime.UnixMicro()
-		} else {
-			log.CtxWarningf(ctx, "target %q start time is not set", target.label)
 		}
 
 		entries = append(entries, &schema.TestTargetStatus{
