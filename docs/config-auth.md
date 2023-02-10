@@ -22,11 +22,11 @@ Auth is only configurable in the [Enterprise version](enterprise.md) of BuildBud
 
 If during your OpenID provider configuration you're asked to enter a **Redirect URL**, you should enter `https://YOUR_BUILDBUDDY_URL/auth/`. For example if your BuildBuddy instance was hosted on `https://buildbuddy.acme.com`, you'd enter `https://buildbuddy.acme.com/auth/` as your redirect url.
 
-## Google auth provider
+## Using Google as auth provider
 
 If you'd like to use Google as an auth provider, you can easily obtain your client id and client secret [here](https://console.developers.google.com/apis/credentials).
 
-## Example section
+**Example**:
 
 ```
 auth:
@@ -34,4 +34,36 @@ auth:
     - issuer_url: "https://accounts.google.com"
       client_id: "12345678911-f1r0phjnhbabcdefm32etnia21keeg31.apps.googleusercontent.com"
       client_secret: "sEcRetKeYgOeShErE"
+```
+
+## Using Gitlab as auth provider
+
+You can use Gitlab as an OIDC identity provider for BuildBuddy.
+This feature is available for both Gitlab On-Prem Deployment and Gitlab SaaS offering.
+
+For more details, please refer to [Gitlab's latest Official Documentation](https://docs.gitlab.com/ee/integration/openid_connect_provider.html)
+
+**Note**: Because [Gitlab has yet to support refresh token](https://gitlab.com/gitlab-org/gitlab/-/issues/16620), you would need to disable Refresh Token on BuildBuddy side. This will tell BuildBuddy to not request `offline_access` scope from Gitlab.
+
+```
+auth:
+  disable_refresh_token: true
+```
+
+**Configuration**:
+
+- First, register an Application on Gitlab side:
+  - For Gitlab SaaS, follow [Group-Owned Application Documentation](https://docs.gitlab.com/ee/integration/oauth_provider.html#create-a-group-owned-application) instructions.
+  - For Gitlab On-Prem, follow [Instance-Wide Application Documentation](https://docs.gitlab.com/ee/integration/oauth_provider.html#create-a-group-owned-application) instructions.
+- The Redirect URL should be `https://YOUR_BUILDBUDDY_URL/auth/`, pointing to your existing BuildBuddydeployment.
+- The scopes needed are `openid`, `profile` and `email`.
+
+Once the application is created, you should be able to update BuildBuddy configuration as follow:
+
+```
+auth:
+  oauth_providers:
+    - issuer_url: "https://gitlab.com"
+      client_id: "<GITLAB APPLICATION ID>"
+      client_secret: "<GITLAB APPLICATION SECRET>"
 ```
