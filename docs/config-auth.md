@@ -22,7 +22,7 @@ Auth is only configurable in the [Enterprise version](enterprise.md) of BuildBud
 
 If during your OpenID provider configuration you're asked to enter a **Redirect URL**, you should enter `https://YOUR_BUILDBUDDY_URL/auth/`. For example if your BuildBuddy instance was hosted on `https://buildbuddy.acme.com`, you'd enter `https://buildbuddy.acme.com/auth/` as your redirect url.
 
-## Using Google as auth provider
+## Google auth provider
 
 If you'd like to use Google as an auth provider, you can easily obtain your client id and client secret [here](https://console.developers.google.com/apis/credentials).
 
@@ -36,14 +36,14 @@ auth:
       client_secret: "sEcRetKeYgOeShErE"
 ```
 
-## Using Gitlab as auth provider
+## Gitlab auth provider
 
 You can use Gitlab as an OIDC identity provider for BuildBuddy.
 This feature is available for both Gitlab On-Prem Deployment and Gitlab SaaS offering.
 
 For more details, please refer to [Gitlab's latest Official Documentation](https://docs.gitlab.com/ee/integration/openid_connect_provider.html)
 
-**Note**: Because [Gitlab has yet to support refresh token](https://gitlab.com/gitlab-org/gitlab/-/issues/16620), you would need to disable Refresh Token on BuildBuddy side. This will tell BuildBuddy to not request `offline_access` scope from Gitlab.
+**Note**: Because [Gitlab has yet to support refresh tokens](https://gitlab.com/gitlab-org/gitlab/-/issues/16620), you need to configure BuildBuddy to not request the `offline_access` scope from Gitlab:
 
 ```
 auth:
@@ -58,7 +58,7 @@ auth:
 - The Redirect URL should be `https://YOUR_BUILDBUDDY_URL/auth/`, pointing to your existing BuildBuddydeployment.
 - The scopes needed are `openid`, `profile` and `email`.
 
-Once the application is created, you should be able to update BuildBuddy configuration as follow:
+Once the Gitlab application is created, you can configure it as a BuildBuddy auth provider like so:
 
 ```
 auth:
