@@ -753,7 +753,7 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Env = p.commandEnv()
-	cmd.Env = append(cmd.Env, "EXEC_ARGS_FILE=" + execArgsFile.Name())
+	cmd.Env = append(cmd.Env, "EXEC_ARGS_FILE="+execArgsFile.Name())
 	if err := cmd.Run(); err != nil {
 		return nil, nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
