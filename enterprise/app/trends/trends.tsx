@@ -25,10 +25,10 @@ interface Props {
 }
 
 interface State {
-  stats: stats.TrendStat[];
+  stats: stats.ITrendStat[];
   loading: boolean;
-  dateToStatMap: Map<string, stats.TrendStat>;
-  dateToExecutionStatMap: Map<string, stats.ExecutionStat>;
+  dateToStatMap: Map<string, stats.ITrendStat>;
+  dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
   dates: string[];
   filterOnlyCI: boolean;
@@ -40,8 +40,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
   state: State = {
     stats: [],
     loading: true,
-    dateToStatMap: new Map<string, stats.TrendStat>(),
-    dateToExecutionStatMap: new Map<string, stats.ExecutionStat>(),
+    dateToStatMap: new Map<string, stats.ITrendStat>(),
+    dateToExecutionStatMap: new Map<string, stats.IExecutionStat>(),
     enableInvocationPercentileCharts: false,
     dates: [],
     filterOnlyCI: false,
@@ -157,18 +157,17 @@ export default class TrendsComponent extends React.Component<Props, State> {
     this.setState({ ...this.state, loading: true });
     rpcService.service.getTrend(request).then((response) => {
       console.log(response);
-      const typedResponse = response as stats.GetTrendResponse;
-      const dateToStatMap = new Map<string, stats.TrendStat>();
-      for (let stat of typedResponse.trendStat) {
+      const dateToStatMap = new Map<string, stats.ITrendStat>();
+      for (let stat of response.trendStat) {
         dateToStatMap.set(stat.name ?? "", stat);
       }
-      const dateToExecutionStatMap = new Map<string, stats.ExecutionStat>();
-      for (let stat of typedResponse.executionStat) {
+      const dateToExecutionStatMap = new Map<string, stats.IExecutionStat>();
+      for (let stat of response.executionStat) {
         dateToExecutionStatMap.set(stat.name ?? "", stat);
       }
       this.setState({
         ...this.state,
-        stats: typedResponse.trendStat,
+        stats: response.trendStat,
         dates: capabilities.globalFilter
           ? getDatesBetween(
               // Start date should always be defined.
@@ -179,7 +178,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
           : this.getLastNDates(request.lookbackWindowDays),
         dateToStatMap,
         dateToExecutionStatMap,
-        enableInvocationPercentileCharts: typedResponse.hasInvocationStatPercentiles,
+        enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
         loading: false,
       });
     });
