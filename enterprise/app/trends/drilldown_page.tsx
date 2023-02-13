@@ -26,7 +26,6 @@ interface State {
   drilldownsFailed: boolean;
   loadingInvocations: boolean;
   invocationsFailed: boolean;
-  dates: string[];
   heatmapData?: stats.GetStatHeatmapResponse;
   drilldownData?: stats.GetStatDrilldownResponse;
   invocationsData?: invocation.Invocation[];
@@ -61,7 +60,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     drilldownsFailed: false,
     loadingInvocations: false,
     invocationsFailed: false,
-    dates: [],
     heatmapData: undefined,
     drilldownData: undefined,
     invocationsData: undefined,
