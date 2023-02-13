@@ -5,13 +5,17 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -20,6 +24,7 @@ import (
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 )
 
@@ -135,69 +140,82 @@ func flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func addWhereClauses(q *query_builder.Query, req *stpb.GetTrendRequest) error {
-	groupID := req.GetRequestContext().GetGroupId()
+func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext, lookbackWindowDays int32) error {
 
-	if user := req.GetQuery().GetUser(); user != "" {
+	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
 	}
 
-	if host := req.GetQuery().GetHost(); host != "" {
+	if host := tq.GetHost(); host != "" {
 		q.AddWhereClause("host = ?", host)
 	}
 
-	if repoURL := req.GetQuery().GetRepoUrl(); repoURL != "" {
+	if repoURL := tq.GetRepoUrl(); repoURL != "" {
 		q.AddWhereClause("repo_url = ?", repoURL)
 	}
 
-	if branchName := req.GetQuery().GetBranchName(); branchName != "" {
+	if branchName := tq.GetBranchName(); branchName != "" {
 		q.AddWhereClause("branch_name = ?", branchName)
 	}
 
-	if command := req.GetQuery().GetCommand(); command != "" {
+	if command := tq.GetCommand(); command != "" {
 		q.AddWhereClause("command = ?", command)
 	}
 
-	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
+	if commitSHA := tq.GetCommitSha(); commitSHA != "" {
 		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
 
 	roleClauses := query_builder.OrClauses{}
-	for _, role := range req.GetQuery().GetRole() {
+	for _, role := range tq.GetRole() {
 		roleClauses.AddOr("role = ?", role)
 	}
 	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
 		q.AddWhereClause("("+roleQuery+")", roleArgs...)
 	}
 
-	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
+	if start := tq.GetUpdatedAfter(); start.IsValid() {
 		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
 	} else {
 		// If no start time specified, respect the lookback window field if set,
 		// or default to 7 days.
 		// TODO(bduffany): Delete this once clients no longer need it.
-		lookbackWindowDays := 7 * 24 * time.Hour
-		if w := req.GetLookbackWindowDays(); w != 0 {
-			if w < 1 || w > 365 {
+		lookbackWindowHours := 7 * 24 * time.Hour
+		if lookbackWindowDays != 0 {
+			if lookbackWindowDays < 1 || lookbackWindowDays > 365 {
 				return status.InvalidArgumentErrorf("lookback_window_days must be between 0 and 366")
 			}
-			lookbackWindowDays = time.Duration(w*24) * time.Hour
+			lookbackWindowHours = time.Duration(lookbackWindowDays*24) * time.Hour
 		}
-		q.AddWhereClause("updated_at_usec >= ?", time.Now().Add(-lookbackWindowDays).UnixMicro())
+		q.AddWhereClause("updated_at_usec >= ?", time.Now().Add(-lookbackWindowHours).UnixMicro())
 	}
 
-	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
+	if end := tq.GetUpdatedBefore(); end.IsValid() {
 		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 
-	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
+	statusClauses := toStatusClauses(tq.GetStatus())
 	statusQuery, statusArgs := statusClauses.Build()
 	if statusQuery != "" {
 		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
 	}
 
-	q.AddWhereClause(`group_id = ?`, groupID)
-	q.SetGroupBy("name")
+	if tq.GetMinimumDuration().GetSeconds() != 0 {
+		q.AddWhereClause(`duration_usec >= ?`, tq.GetMinimumDuration().AsDuration().Microseconds())
+	}
+	if tq.GetMaximumDuration().GetSeconds() != 0 {
+		q.AddWhereClause(`duration_usec <= ?`, tq.GetMaximumDuration().AsDuration().Microseconds())
+	}
+
+	for _, f := range tq.GetFilter() {
+		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		if err != nil {
+			return err
+		}
+		q.AddWhereClause(str, args...)
+	}
+
+	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
 	return nil
 }
 
@@ -205,9 +223,10 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
-	if err := addWhereClauses(q, req); err != nil {
+	if err := addWhereClauses(q, req.GetQuery(), reqCtx, req.GetLookbackWindowDays()); err != nil {
 		return nil, err
 	}
+	q.SetGroupBy("name")
 
 	qStr, qArgs := q.Build()
 	if i.isInvocationPercentilesEnabled() {
@@ -285,9 +304,10 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getExecutionTrendQuery(reqCtx.GetTimezoneOffsetMinutes()))
-	if err := addWhereClauses(q, req); err != nil {
+	if err := addWhereClauses(q, req.GetQuery(), req.GetRequestContext(), req.GetLookbackWindowDays()); err != nil {
 		return nil, err
 	}
+	q.SetGroupBy("name")
 
 	qStr, qArgs := q.Build()
 	qStr = getQueryWithFlattenedArray(qStr)
@@ -317,13 +337,19 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	return res, nil
 }
 
-func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error) {
-	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
-		return nil, err
+func validateAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
+	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+		return err
 	}
 	if blocklist.IsBlockedForStatsQuery(groupID) {
-		return nil, status.ResourceExhaustedErrorf("Too many rows.")
+		return status.ResourceExhaustedError("Too many rows.")
+	}
+	return nil
+}
+
+func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error) {
+	if err := validateAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
 	}
 
 	rsp := &stpb.GetTrendResponse{}
@@ -372,6 +398,282 @@ func (i *InvocationStatService) GetInvocationStatBaseQuery(aggColumn string) str
 	    SUM(action_count) as total_actions
             FROM Invocations`
 	return q
+}
+
+func getTableForMetric(metric *sfpb.Metric) string {
+	if metric.Execution != nil {
+		return "Executions"
+	}
+	return "Invocations"
+}
+
+type MetricRange = struct {
+	Start      int64
+	BucketSize int64
+	NumBuckets int64
+}
+
+func (i *InvocationStatService) getMetricRange(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (*MetricRange, error) {
+	rangeQuery := fmt.Sprintf("SELECT min(%s) as low, max(%s) as high FROM %s %s", metric, metric, table, whereClauseStr)
+	var rows *sql.Rows
+	rows, err := i.olapdbh.DB(ctx).Raw(rangeQuery, whereClauseArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	if !rows.Next() {
+		return nil, nil
+	}
+	valueRange := struct {
+		Low  int64
+		High int64
+	}{}
+	if err := i.olapdbh.DB(ctx).ScanRows(rows, &valueRange); err != nil {
+		return nil, err
+	}
+
+	// A fun hack: make "High" value 1 higher so that we can put an exclusive
+	// limit on the upper bound of requested ranges. Each bucket is [min, max).
+	width := valueRange.High + 1 - valueRange.Low
+	var step int64
+
+	bucketCount := int64(20)
+	if width <= bucketCount {
+		step = 1
+	} else {
+		step = width / bucketCount
+		if (width % bucketCount) != 0 {
+			step = step + 1
+		}
+	}
+
+	return &MetricRange{
+			Start:      valueRange.Low,
+			BucketSize: step,
+			NumBuckets: bucketCount,
+		},
+		nil
+}
+
+func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) ([]int64, string, error) {
+	metricRange, err := i.getMetricRange(ctx, table, metric, whereClauseStr, whereClauseArgs)
+	if err != nil {
+		return nil, "", err
+	}
+	if metricRange == nil {
+		return nil, "", nil
+	}
+
+	metricBuckets := make([]int64, metricRange.NumBuckets+1)
+	for i := range metricBuckets[:] {
+		metricBuckets[i] = metricRange.Start + int64(i)*metricRange.BucketSize
+	}
+	mStr := make([]string, metricRange.NumBuckets)
+	for i := range mStr {
+		mStr[i] = fmt.Sprint(metricBuckets[i])
+	}
+	metricArrayStr := "array(" + strings.Join(mStr, ",") + ")"
+	return metricBuckets, metricArrayStr, nil
+}
+
+const ONE_WEEK = 7 * 24 * time.Hour
+
+func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration) ([]int64, string, error) {
+	lowTime := q.GetUpdatedAfter()
+	highTime := q.GetUpdatedBefore()
+	if lowTime != nil && !lowTime.IsValid() {
+		return nil, "", status.InvalidArgumentError(fmt.Sprintf("Invalid low timestamp: %v", lowTime))
+	}
+	if highTime != nil && (!highTime.IsValid() || highTime.AsTime().Unix() < lowTime.AsTime().Unix()) {
+		return nil, "", status.InvalidArgumentError(fmt.Sprintf("Invalid high timestamp: %v", highTime))
+	}
+
+	offsetSec := int64(timezoneOffset.Seconds())
+
+	startSec := time.Now().Unix() - int64(ONE_WEEK.Seconds())
+	if lowTime != nil {
+		startSec = lowTime.GetSeconds()
+	}
+
+	endSec := time.Now().Unix()
+	if highTime != nil {
+		endSec = highTime.GetSeconds()
+	}
+
+	// TODO(jdhollen): Bucket at true midnight in user timezone instead of fudging
+	// it, this gets hosed around daylight savings transitions.  This matters way
+	// less for hourly buckets (where we can easily let the client format).
+	s := time.Unix(startSec, 0).UTC().Add(-timezoneOffset)
+	localStart := time.Date(s.Year(), s.Month(), s.Day(), 0, 0, 0, 0, s.Location())
+	currentDateBracket := localStart.Add(timezoneOffset)
+
+	currentString := currentDateBracket.Format("2006-01-02")
+	endString := time.Unix(endSec-offsetSec, 0).UTC().AddDate(0, 0, 2).Format("2006-01-02")
+
+	var timestampBuckets []int64
+	for currentString != endString {
+		timestampBuckets = append(timestampBuckets, currentDateBracket.UnixMicro())
+		currentDateBracket = currentDateBracket.AddDate(0, 0, 1)
+		currentString = currentDateBracket.Format("2006-01-02")
+	}
+
+	numDateBuckets := len(timestampBuckets) - 1
+
+	dStr := make([]string, numDateBuckets)
+	for i, d := range timestampBuckets[:numDateBuckets] {
+		dStr[i] = fmt.Sprintf("%d", d)
+	}
+	timestampArrayStr := fmt.Sprintf("array(%s)", strings.Join(dStr, ","))
+
+	return timestampBuckets, timestampArrayStr, nil
+}
+
+type HeatmapQueryInputs = struct {
+	PlaceholderBucketQuery string
+	TimestampBuckets       []int64
+	TimestampArrayStr      string
+	MetricBuckets          []int64
+	MetricArrayStr         string
+}
+
+func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, timezoneOffsetMinutes int32) (*HeatmapQueryInputs, error) {
+	timestampBuckets, timestampArrayStr, err := getTimestampBuckets(q, time.Duration(timezoneOffsetMinutes)*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	metricBuckets, metricArrayStr, err := i.getMetricBuckets(ctx, table, metric, whereClauseStr, whereClauseArgs)
+	if err != nil {
+		return nil, err
+	}
+	if len(metricBuckets) == 0 {
+		return nil, nil
+	}
+
+	pbq := fmt.Sprintf(`
+	  SELECT toInt64(timestamp) as timestamp, toInt64(bucket) as bucket, 0 as v FROM (
+			SELECT arrayElement(%s, number + 1) AS timestamp FROM numbers(%d)) AS a
+		CROSS JOIN (
+			SELECT arrayElement(%s, number + 1) AS bucket FROM numbers(%d)) AS b
+		ORDER BY timestamp, bucket`,
+		timestampArrayStr, len(timestampBuckets)-1, metricArrayStr, len(metricBuckets)-1)
+
+	return &HeatmapQueryInputs{
+		PlaceholderBucketQuery: pbq,
+		TimestampBuckets:       timestampBuckets,
+		TimestampArrayStr:      timestampArrayStr,
+		MetricBuckets:          metricBuckets,
+		MetricArrayStr:         metricArrayStr}, nil
+}
+
+func getWhereClauseForHeatmapQuery(q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
+	placeholderQuery := query_builder.NewQuery("")
+	if err := addWhereClauses(placeholderQuery, q, reqCtx, 0); err != nil {
+		return "", nil, err
+	}
+	whereString, whereArgs := placeholderQuery.Build()
+	return whereString, whereArgs, nil
+}
+
+type QueryAndBuckets = struct {
+	Query            string
+	QueryArgs        []interface{}
+	TimestampBuckets []int64
+	MetricBuckets    []int64
+}
+
+// getHeatmapQueryAndBuckets usually returns the query that should be run to
+// fetch the heatmap and the buckets that define the heatmap range, but in the
+// event that no events are found at all, it will instead return (nil, nil) to
+// indicate a no-error state with no results--in this case we should return an
+// empty response.
+func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest, timezoneOffsetMinutes int32) (*QueryAndBuckets, error) {
+	table := getTableForMetric(req.GetMetric())
+	metric, err := filter.MetricToDbField(req.GetMetric(), "")
+	if err != nil {
+		return nil, err
+	}
+	whereClauseStr, whereClauseArgs, err := getWhereClauseForHeatmapQuery(req.GetQuery(), req.GetRequestContext())
+	if err != nil {
+		return nil, err
+	}
+
+	qi, err := i.generateQueryInputs(ctx, table, metric, req.GetQuery(), whereClauseStr, whereClauseArgs, timezoneOffsetMinutes)
+	if err != nil {
+		return nil, err
+	}
+	if qi == nil {
+		return nil, nil
+	}
+	qStr := fmt.Sprintf(`
+		SELECT timestamp, groupArray(v) AS value FROM (
+			SELECT timestamp, bucket, CAST(SUM(v) AS Int64) AS v FROM (
+				%s UNION ALL
+				SELECT
+					roundDown(updated_at_usec, CAST(%s AS Array(Int64))) AS timestamp,
+					roundDown(%s, CAST(%s AS Array(Int64))) AS bucket,
+					count(*) AS v
+					FROM %s %s
+					GROUP BY timestamp, bucket)
+			GROUP BY timestamp, bucket ORDER BY timestamp, bucket)
+		GROUP BY timestamp ORDER BY timestamp`,
+		qi.PlaceholderBucketQuery, qi.TimestampArrayStr, metric, qi.MetricArrayStr, table, whereClauseStr)
+
+	return &QueryAndBuckets{
+			TimestampBuckets: qi.TimestampBuckets,
+			MetricBuckets:    qi.MetricBuckets,
+			Query:            qStr,
+			QueryArgs:        whereClauseArgs,
+		},
+		nil
+}
+
+func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error) {
+	if !config.TrendsHeatmapEnabled() {
+		return nil, status.UnimplementedError("Stat heatmaps are not enabled.")
+	}
+	if !i.isOLAPDBEnabled() {
+		return nil, status.UnimplementedError("Time series charts require using an OLAP DB, but none is configured.")
+	}
+	if err := validateAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	qAndBuckets, err := i.getHeatmapQueryAndBuckets(ctx, req, req.GetRequestContext().GetTimezoneOffsetMinutes())
+	if err != nil {
+		return nil, err
+	}
+	if qAndBuckets == nil {
+		// There are no stats in the requested window; send an empty response.
+		return &stpb.GetStatHeatmapResponse{}, nil
+	}
+
+	var rows *sql.Rows
+	rows, err = i.olapdbh.DB(ctx).Raw(qAndBuckets.Query, qAndBuckets.QueryArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rsp := &stpb.GetStatHeatmapResponse{
+		TimestampBracket: qAndBuckets.TimestampBuckets,
+		BucketBracket:    qAndBuckets.MetricBuckets,
+		Column:           make([]*stpb.HeatmapColumn, 0),
+	}
+
+	for rows.Next() {
+		stat := struct {
+			Timestamp int64
+			Value     []int64 `gorm:"type:int64[]"`
+		}{}
+		if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+			return nil, err
+		}
+		column := &stpb.HeatmapColumn{
+			TimestampUsec: stat.Timestamp,
+			Value:         stat.Value,
+		}
+		rsp.Column = append(rsp.Column, column)
+	}
+	return rsp, nil
 }
 
 func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb.GetInvocationStatRequest) (*inpb.GetInvocationStatResponse, error) {
@@ -442,6 +744,14 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 
+	for _, f := range req.GetQuery().GetFilter() {
+		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
+
 	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
 	statusQuery, statusArgs := statusClauses.Build()
 	if statusQuery != "" {
@@ -481,6 +791,211 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 			}
 		}
 		rsp.InvocationStat = append(rsp.InvocationStat, stat)
+	}
+	return rsp, nil
+}
+
+func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilldownFields []string, req *stpb.GetStatDrilldownRequest, where string, whereArgs []interface{}, drilldown string, drilldownArgs []interface{}, col string) (string, []interface{}) {
+	// This is really ugly--the clickhouse SQL engine doesn't play nice with GORM
+	// when you set a field name to NULL that matches a field in the table you are
+	// selecting--it blows away the type info and turns it into Sql.RawBytes.  To
+	// work around this, we prefix the  fields in our final query with 'gorm_'.
+	queryFields := make([]string, len(drilldownFields))
+	for i, f := range drilldownFields {
+		if f != col {
+			queryFields[i] = "NULL as gorm_" + f
+		} else {
+			queryFields[i] = f + " as gorm_" + f
+		}
+	}
+	nulledOutFieldList := strings.Join(queryFields, ", ")
+
+	table := getTableForMetric(req.GetDrilldownMetric())
+
+	args := append(drilldownArgs, append(drilldownArgs, whereArgs...)...)
+
+	// More filth: we want the total row that counts up the total number of
+	// invocations / executions in each group to come first in the results so that
+	// we can use it as an input into how we rank the charts.  To do this, we
+	// toss in a bogus column and sort by it to ensure that totals come first.
+	if col == "" {
+		return fmt.Sprintf(
+			`(SELECT %s, 0 AS totals_first, count(*) AS total,
+					countIf(%s) AS selection, countIf(not(%s)) AS inverse
+				FROM %s %s)`,
+			nulledOutFieldList, drilldown, drilldown, table, where), args
+	}
+
+	return fmt.Sprintf(`
+		(SELECT %s, 1 AS totals_first, count(*) AS total, countIf(%s) AS selection,
+			countIf(not(%s)) AS inverse
+		FROM %s %s
+		GROUP BY %s ORDER BY selection DESCENDING, total DESCENDING LIMIT 25)`,
+		nulledOutFieldList, drilldown, drilldown, table, where, col), args
+}
+
+func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{}, error) {
+	if len(filters) == 0 {
+		return "", nil, status.InvalidArgumentError("Empty filter for drilldown.")
+	}
+	var result []string
+	var resultArgs []interface{}
+	for _, f := range filters[:] {
+		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		if err != nil {
+			return "", nil, err
+		}
+		result = append(result, str)
+		resultArgs = append(resultArgs, args...)
+	}
+	return strings.Join(result, " AND "), resultArgs, nil
+}
+
+// TODO(jdhollen): This can be made much efficient using GROUPING SETS when we
+// are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
+// from Altinity is supposed to be 2023-02-15.
+func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
+	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
+	placeholderQuery := query_builder.NewQuery("")
+
+	if err := addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0); err != nil {
+		return "", nil, err
+	}
+
+	drilldownStr, drilldownArgs, err := getDrilldownQueryFilter(req.GetFilter())
+	if err != nil {
+		return "", nil, err
+	}
+
+	whereString, whereArgs := placeholderQuery.Build()
+
+	args := make([]interface{}, 0)
+	queries := make([]string, 0)
+	subQStr, subQArgs := i.getDrilldownSubquery(ctx, drilldownFields, req, whereString, whereArgs, drilldownStr, drilldownArgs, "")
+	queries = append(queries, subQStr)
+	args = append(args, subQArgs...)
+	for _, s := range drilldownFields {
+		subQStr, subQArgs := i.getDrilldownSubquery(ctx, drilldownFields, req, whereString, whereArgs, drilldownStr, drilldownArgs, s)
+		queries = append(queries, subQStr)
+		args = append(args, subQArgs...)
+	}
+
+	return fmt.Sprintf("SELECT * FROM (%s) ORDER BY totals_first", strings.Join(queries, " UNION ALL ")), args, nil
+}
+
+func addOutputChartEntry(m map[inpb.AggType]*stpb.DrilldownChart, dm map[inpb.AggType]float64, aggType inpb.AggType, label *string, inverse int64, selection int64, totalInBase int64, totalInSelection int64) {
+	chart, exists := m[aggType]
+	if !exists {
+		chart = &stpb.DrilldownChart{}
+		chart.DrilldownDimension = aggType
+		m[aggType] = chart
+		dm[aggType] = -math.MaxFloat64
+	}
+	dm[aggType] = math.Max(dm[aggType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
+	chart.Entry = append(chart.Entry, &stpb.DrilldownEntry{Label: *label, BaseValue: inverse, SelectionValue: selection})
+}
+
+func sortDrilldownChartKeys(dm map[inpb.AggType]float64) *[]inpb.AggType {
+	type pair struct {
+		a inpb.AggType
+		v float64
+	}
+	slice := make([]pair, 0)
+	for k, v := range dm {
+		slice = append(slice, pair{k, v})
+	}
+	sort.SliceStable(slice, func(a, b int) bool {
+		return slice[a].v >= slice[b].v
+	})
+
+	result := make([]inpb.AggType, len(slice))
+	for v, i := range slice {
+		result[v] = i.a
+	}
+	return &result
+}
+
+func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {
+	if !config.TrendsHeatmapEnabled() {
+		return nil, status.UnimplementedError("Stat heatmaps are not enabled.")
+	}
+	if !i.isOLAPDBEnabled() {
+		return nil, status.UnimplementedError("Time series charts require using an OLAP DB, but none is configured.")
+	}
+	if err := validateAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	qStr, qArgs, err := i.getDrilldownQuery(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var rows *sql.Rows
+	rows, err = i.olapdbh.DB(ctx).Raw(qStr, qArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rsp := &stpb.GetStatDrilldownResponse{}
+
+	rsp.Chart = make([]*stpb.DrilldownChart, 0)
+	m := make(map[inpb.AggType]*stpb.DrilldownChart)
+	dm := make(map[inpb.AggType]float64)
+	type queryOut struct {
+		GormUser       *string
+		GormHost       *string
+		GormRepoURL    *string
+		GormBranchName *string
+		GormCommitSHA  *string
+		GormPattern    *string
+		Selection      int64
+		Inverse        int64
+	}
+	if !rows.Next() {
+		return rsp, nil
+	}
+	totals := queryOut{}
+	if err := i.olapdbh.DB(ctx).ScanRows(rows, &totals); err != nil {
+		return nil, err
+	}
+	if totals.GormUser != nil || totals.GormHost != nil || totals.GormRepoURL != nil || totals.GormBranchName != nil || totals.GormCommitSHA != nil {
+		return nil, status.InternalError("Failed to fetch drilldown data")
+	}
+	rsp.TotalInBase = totals.Inverse
+	rsp.TotalInSelection = totals.Selection
+
+	for rows.Next() {
+		stat := queryOut{}
+		if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+			return nil, err
+		}
+
+		if stat.GormBranchName != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_BRANCH_AGGREGATION_TYPE, stat.GormBranchName, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormHost != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_HOSTNAME_AGGREGATION_TYPE, stat.GormHost, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormRepoURL != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_REPO_URL_AGGREGATION_TYPE, stat.GormRepoURL, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormUser != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_USER_AGGREGATION_TYPE, stat.GormUser, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormCommitSHA != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSHA, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormPattern != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_PATTERN_AGGREGATION_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else {
+			// The above clauses represent all of the GROUP BY options we have in our
+			// query, and we deliberately constructed the query so that the total row
+			// would come first--this is an unexpected state.
+			return nil, status.InternalError("Failed to fetch drilldown data")
+		}
+	}
+
+	order := sortDrilldownChartKeys(dm)
+
+	for _, aggType := range *order {
+		rsp.Chart = append(rsp.Chart, m[aggType])
 	}
 	return rsp, nil
 }

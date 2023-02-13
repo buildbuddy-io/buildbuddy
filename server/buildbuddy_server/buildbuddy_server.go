@@ -760,10 +760,16 @@ func (s *BuildBuddyServer) GetTrend(ctx context.Context, req *stpb.GetTrendReque
 }
 
 func (s *BuildBuddyServer) GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error) {
+	if iss := s.env.GetInvocationStatService(); iss != nil {
+		return iss.GetStatHeatmap(ctx, req)
+	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 
 func (s *BuildBuddyServer) GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error) {
+	if iss := s.env.GetInvocationStatService(); iss != nil {
+		return iss.GetStatDrilldown(ctx, req)
+	}
 	return nil, status.UnimplementedError("Not implemented")
 }
 

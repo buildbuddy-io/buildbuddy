@@ -3,6 +3,7 @@ syntax = "proto3";
 import "proto/context.proto";
 import "proto/invocation.proto";
 import "proto/stat_filter.proto";
+import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
 package stats;
@@ -57,6 +58,12 @@ message TrendQuery {
 
   // Stat filters (duration_usec, cas_cache_misses, etc.)
   repeated stat_filter.StatFilter filter = 12;
+
+  // The minimum invocation duration.
+  google.protobuf.Duration minimum_duration = 13;
+
+  // The maximum invocation duration.
+  google.protobuf.Duration maximum_duration = 14;
 }
 
 message TrendStat {
@@ -141,8 +148,7 @@ message GetTrendResponse {
 message GetStatHeatmapRequest {
   context.RequestContext request_context = 1;
   TrendQuery query = 2;
-  stat_filter.MetricType metric = 3;
-  int64 num_metric_buckets = 4;
+  stat_filter.Metric metric = 3;
 }
 
 message HeatmapColumn {
@@ -171,7 +177,7 @@ message GetStatDrilldownRequest {
   context.RequestContext request_context = 1;
   TrendQuery query = 2;
   repeated stat_filter.StatFilter filter = 3;
-  stat_filter.MetricType drilldown_metric = 4;
+  stat_filter.Metric drilldown_metric = 4;
 }
 
 message DrilldownEntry {
