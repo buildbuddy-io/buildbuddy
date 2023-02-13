@@ -105,7 +105,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       ? stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.UPDATED_AT_USEC_EXECUTION_METRIC })
       : stat_filter.Metric.create({ invocation: stat_filter.InvocationMetricType.UPDATED_AT_USEC_INVOCATION_METRIC });
     return [
-      // XXX
       stat_filter.StatFilter.create({
         metric: updatedAtUsecMetric,
         min: Long.fromNumber(s.dateRangeMicros.startInclusive),
@@ -128,11 +127,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     const filterParams = getProtoFilterParams(this.props.search);
     const drilldownRequest = stats.GetStatDrilldownRequest.create({});
     drilldownRequest.query = new stats.TrendQuery({
-      host: /*this.props.hostname || */ filterParams.host,
-      user: /*this.props.username || */ filterParams.user,
-      repoUrl: /*this.props.repo || */ filterParams.repo,
-      branchName: /*this.props.branch || */ filterParams.branch,
-      commitSha: /*this.props.commit || */ filterParams.commit,
+      host: filterParams.host,
+      user: filterParams.user,
+      repoUrl: filterParams.repo,
+      branchName: filterParams.branch,
+      commitSha: filterParams.commit,
       command: filterParams.command,
 
       role: filterParams.role,
@@ -142,7 +141,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
-    console.log(drilldownRequest);
     rpcService.service
       .getStatDrilldown(drilldownRequest)
       .then((untypedResponse) => {
@@ -154,8 +152,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   fetchInvocationList() {
-    if (!this.props.user?.selectedGroup) {
-      console.log("oh no");
+    // TODO(jdhollen): Support fetching invocations based on executions data.
+    if (!this.props.user?.selectedGroup || isExecutionMetric(this.selectedMetric.metric)) {
       return;
     }
     this.setState({ loadingInvocations: true, invocationsFailed: false });
@@ -188,7 +186,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     rpcService.service
       .searchInvocation(request)
       .then((response) => {
-        console.log(response);
         const typedResponse = response as invocation.SearchInvocationResponse;
         this.setState({
           invocationsData: typedResponse.invocation,
@@ -207,13 +204,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     heatmapRequest.metric = this.selectedMetric.metric;
 
     heatmapRequest.query = new stats.TrendQuery({
-      host: /*this.props.hostname || */ filterParams.host,
-      user: /*this.props.username || */ filterParams.user,
-      repoUrl: /*this.props.repo || */ filterParams.repo,
-      branchName: /*this.props.branch || */ filterParams.branch,
-      commitSha: /*this.props.commit || */ filterParams.commit,
+      host: filterParams.host,
+      user: filterParams.user,
+      repoUrl: filterParams.repo,
+      branchName: filterParams.branch,
+      commitSha: filterParams.commit,
       command: filterParams.command,
-
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -226,7 +222,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       .getStatHeatmap(heatmapRequest)
       .then((untypedResponse) => {
         const response = untypedResponse as stats.GetStatHeatmapResponse;
-        console.log(response);
         this.setState({
           heatmapData: response,
         });
