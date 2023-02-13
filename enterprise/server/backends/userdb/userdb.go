@@ -328,29 +328,6 @@ func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 	return authutil.AuthorizeGroupRole(u, groupID, role.Admin)
 }
 
-// TODO(tylerw): Remove this double read of the auth group by consolidating
-// userdb code into handlers.
-func (d *UserDB) GetAuthGroup(ctx context.Context) (*tables.Group, error) {
-	auth := d.env.GetAuthenticator()
-	if auth == nil {
-		return nil, status.FailedPreconditionError("No auth configured on this BuildBuddy instance")
-	}
-	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	tg := &tables.Group{}
-	existingRow := d.h.DB(ctx).Raw(`SELECT * FROM `+"`Groups`"+` as g WHERE g.group_id = ?`, u.GetGroupID())
-	if err := existingRow.Take(tg).Error; err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Group not found: %q", u.GetGroupID())
-		}
-		return nil, err
-	}
-	return tg, nil
-}
-
 func isInOwnedDomainBlocklist(email string) bool {
 	for _, item := range blockList {
 		if item == email {
@@ -966,16 +943,6 @@ func (d *UserDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat) erro
 		return err
 	}
 	return nil
-}
-
-func (d *UserDB) DeleteUser(ctx context.Context, userID string) error {
-	u := &tables.User{UserID: userID}
-	return d.h.DB(ctx).Delete(u).Error
-}
-
-func (d *UserDB) DeleteGroup(ctx context.Context, groupID string) error {
-	u := &tables.Group{GroupID: groupID}
-	return d.h.DB(ctx).Delete(u).Error
 }
 
 func (d *UserDB) GetOrCreatePublicKey(ctx context.Context, groupID string) (string, error) {
