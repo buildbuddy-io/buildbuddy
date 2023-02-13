@@ -362,3 +362,7 @@ Defines the requested resources for a workflow action.
   workflow action. Can be specified as a number of CPU cores, or a numeric
   string containing an `m` suffix to represent thousandths of a CPU core.
   For example: `8000m` represents 8 CPU cores.
+- **`disk`** (`string` or `number`): Requested amount of disk space for the
+  workflow action. Can be specified as a number of bytes, or a numeric
+  string containing an IEC unit abbreviation. For example: `8GB` represents
+  `8 * (1024)^3` bytes of disk space.
