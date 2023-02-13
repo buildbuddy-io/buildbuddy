@@ -95,7 +95,6 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 			if grep 'Hello' "$EXEC_ARGS_FILE" >/dev/null ; then
 				echo "'Hello' was recognized as a positional argument to forward to the executable!"
 			fi
-			echo "" >> $EXEC_ARGS_FILE
 			echo "World" >> $EXEC_ARGS_FILE
 		`,
 	})
