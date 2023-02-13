@@ -12,7 +12,7 @@ usage() { echo "Usage: $0 [-l loadtest] [-s skip build failures and continue scr
 loadtest=0
 continue_with_failures=0
 cleanup_repos=0
-while getopts "lc" opt; do
+while getopts "cls" opt; do
     case "${opt}" in
 	c)
 	    cleanup_repos=1
