@@ -323,13 +323,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           </div>
           <div>
             Base:{" "}
-            <span className="bd-tt-base">
+            <span className="dd-tt-base">
               {((p.payload[0].payload.baseValue / +this.state.drilldownData.totalInBase) * 100).toFixed(1)}%
             </span>
           </div>
           <div>
             Selection:{" "}
-            <span className="bd-tt-selected">
+            <span className="dd-tt-selected">
               {((p.payload[0].payload.selectionValue / +this.state.drilldownData.totalInSelection) * 100).toFixed(1)}%
             </span>
           </div>

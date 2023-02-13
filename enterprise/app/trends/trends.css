@@ -60,10 +60,6 @@
   user-select: none;
 }
 
-.heatmap-svg {
-  user-select: none;
-}
-
 .drilldown-chart {
   display: inline-block;
 }
@@ -73,11 +69,11 @@
   font-weight: 600;
 }
 
-.bd-tt-base {
+.dd-tt-base {
   color: #8884d8;
 }
 
-.bd-tt-selected {
+.dd-tt-selected {
   color: #82ca9d;
 }
 
