@@ -81,6 +81,7 @@ run_test \
     buildbuddy \
     bazel test //... \
         --config=remote-dev \
+        --flaky_test_attempts=3 \
         --invocation_id="$buildbuddy_iid"
 
 run_test \
