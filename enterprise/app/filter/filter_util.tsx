@@ -146,8 +146,8 @@ export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): str
     .join(" ");
 }
 
-export function isExecutionMetric(m: stat_filter.MetricType): boolean {
-  return m === stat_filter.MetricType.EXECUTION_QUEUE_TIME_USEC_METRIC;
+export function isExecutionMetric(m: stat_filter.Metric): boolean {
+  return m.execution !== null && m.execution !== undefined;
 }
 
 function parseDuration(value: string | null): google_duration.protobuf.Duration | undefined {

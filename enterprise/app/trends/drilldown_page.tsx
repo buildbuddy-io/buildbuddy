@@ -33,10 +33,26 @@ interface State {
   invocationsData?: invocation.Invocation[];
 }
 
-const METRIC_OPTIONS = [
-  { name: "Build duration", metric: stat_filter.MetricType.DURATION_USEC_METRIC },
-  { name: "CAS cache misses", metric: stat_filter.MetricType.CAS_CACHE_MISSES_METRIC },
-  { name: "Queue time", metric: stat_filter.MetricType.EXECUTION_QUEUE_TIME_USEC_METRIC },
+interface MetricOption {
+  name: string;
+  metric: stat_filter.Metric;
+}
+
+const METRIC_OPTIONS: MetricOption[] = [
+  {
+    name: "Build duration",
+    metric: stat_filter.Metric.create({ invocation: stat_filter.InvocationMetricType.DURATION_USEC_INVOCATION_METRIC }),
+  },
+  {
+    name: "CAS cache misses",
+    metric: stat_filter.Metric.create({
+      invocation: stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC,
+    }),
+  },
+  {
+    name: "Queue time",
+    metric: stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC }),
+  },
 ];
 
 export default class DrilldownPageComponent extends React.Component<Props, State> {
@@ -54,12 +70,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   metric: { name: string } = { name: "" };
 
-  selectedMetric: stat_filter.MetricType = stat_filter.MetricType.DURATION_USEC_METRIC;
+  selectedMetric: MetricOption = METRIC_OPTIONS[0];
 
   currentHeatmapSelection?: HeatmapSelection;
 
   renderBucketName(v: number) {
-    if (isExecutionMetric(this.selectedMetric)) {
+    if (isExecutionMetric(this.selectedMetric.metric)) {
       return "execution" + (v === 1 ? "" : "s");
     } else {
       return "invocation" + (v === 1 ? "" : "s");
@@ -67,28 +83,39 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   renderYBucketValue(v: number): string {
-    switch (this.selectedMetric) {
-      case stat_filter.MetricType.DURATION_USEC_METRIC:
-      case stat_filter.MetricType.EXECUTION_QUEUE_TIME_USEC_METRIC:
-        return (v / 1000000).toFixed(2) + "s";
-      case stat_filter.MetricType.CAS_CACHE_MISSES_METRIC:
-      default:
-        return v.toString();
+    if (isExecutionMetric(this.selectedMetric.metric)) {
+      switch (this.selectedMetric.metric.execution) {
+        case stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC:
+          return (v / 1000000).toFixed(2) + "s";
+        default:
+          return v.toString();
+      }
+    } else {
+      switch (this.selectedMetric.metric.invocation) {
+        case stat_filter.InvocationMetricType.DURATION_USEC_INVOCATION_METRIC:
+          return (v / 1000000).toFixed(2) + "s";
+        case stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC:
+        default:
+          return v.toString();
+      }
     }
   }
 
   toStatFilterList(s: HeatmapSelection): stat_filter.StatFilter[] {
+    const updatedAtUsecMetric = isExecutionMetric(this.selectedMetric.metric)
+      ? stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.UPDATED_AT_USEC_EXECUTION_METRIC })
+      : stat_filter.Metric.create({ invocation: stat_filter.InvocationMetricType.UPDATED_AT_USEC_INVOCATION_METRIC });
     return [
       // XXX
       stat_filter.StatFilter.create({
-        metric: stat_filter.MetricType.UPDATED_AT_USEC_METRIC,
-        min: Long.fromNumber(s.dateRangeMicros[0]),
-        max: Long.fromNumber(s.dateRangeMicros[1]),
+        metric: updatedAtUsecMetric,
+        min: Long.fromNumber(s.dateRangeMicros.startInclusive),
+        max: Long.fromNumber(s.dateRangeMicros.endExclusive - 1),
       }),
       stat_filter.StatFilter.create({
-        metric: this.selectedMetric,
-        min: Long.fromNumber(s.bucketRange[0]),
-        max: Long.fromNumber(s.bucketRange[1]),
+        metric: this.selectedMetric.metric,
+        min: Long.fromNumber(s.bucketRange.startInclusive),
+        max: Long.fromNumber(s.bucketRange.endExclusive - 1),
       }),
     ];
   }
@@ -115,7 +142,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       status: filterParams.status,
     });
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
-    drilldownRequest.drilldownMetric = this.selectedMetric;
+    drilldownRequest.drilldownMetric = this.selectedMetric.metric;
     console.log(drilldownRequest);
     rpcService.service
       .getStatDrilldown(drilldownRequest)
@@ -178,7 +205,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
     // Build request...
     const heatmapRequest = stats.GetStatHeatmapRequest.create({});
-    heatmapRequest.metric = this.selectedMetric;
+    heatmapRequest.metric = this.selectedMetric.metric;
 
     heatmapRequest.query = new stats.TrendQuery({
       host: /*this.props.hostname || */ filterParams.host,
@@ -221,12 +248,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   handleMetricChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const newMetric = +e.target.value;
+    const newMetric = e.target.value;
 
-    if (!newMetric || this.selectedMetric === newMetric) {
+    if (!newMetric || this.selectedMetric.name === newMetric) {
       return;
     }
-    this.selectedMetric = newMetric;
+    this.selectedMetric = METRIC_OPTIONS.find((v) => v.name === newMetric) || METRIC_OPTIONS[0];
     this.setState({ loading: true, heatmapData: undefined, drilldownData: undefined, invocationsData: undefined });
     this.fetch();
   }
@@ -327,7 +354,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return "Loading invocations...";
     } else if (this.state.invocationsData) {
       if (this.state.invocationsData.length < (this.currentHeatmapSelection?.invocationsSelected || 0)) {
-        if (isExecutionMetric(this.selectedMetric)) {
+        if (isExecutionMetric(this.selectedMetric.metric)) {
           return `Selected Invocations (showing ${this.state.invocationsData.length} from ${this.currentHeatmapSelection?.invocationsSelected} executions)`;
         }
         return `Selected Invocations (showing ${this.state.invocationsData.length} of ${this.currentHeatmapSelection?.invocationsSelected})`;
@@ -359,11 +386,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           <Select
             className="drilldown-select"
             onChange={this.handleMetricChange.bind(this)}
-            value={this.selectedMetric}>
+            value={this.selectedMetric.name}>
             {METRIC_OPTIONS.map(
               (o) =>
                 o.name && (
-                  <Option key={o.name} value={o.metric}>
+                  <Option key={o.name} value={o.name}>
                     {o.name}
                   </Option>
                 )
@@ -377,9 +404,9 @@ export default class DrilldownPageComponent extends React.Component<Props, State
               <>
                 <HeatmapComponent
                   heatmapData={this.state.heatmapData || stats.GetStatHeatmapResponse.create({})}
-                  statBucketFormatFunction={(v) => this.renderYBucketValue(v)}
-                  statBucketName={METRIC_OPTIONS.find((v) => this.selectedMetric === v.metric)?.name || ""}
-                  tooltipBucketName={(v) => this.renderBucketName(v)}
+                  metricBucketFormatter={(v) => this.renderYBucketValue(v)}
+                  metricBucketName={this.selectedMetric.name}
+                  valueFormatter={(v) => this.renderBucketName(v)}
                   selectionCallback={(s) => this.handleHeatmapSelection(s)}></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
