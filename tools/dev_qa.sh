@@ -7,16 +7,20 @@
 
 set -e
 
-usage() { echo "Usage: $0 [-l <loadtest>] [-c continue if build fails]" 1>&2; exit 1; }
+usage() { echo "Usage: $0 [-l loadtest] [-s skip build failures and continue script] [-c cleanup repos after script completes]" 1>&2; exit 1; }
 
 loadtest=0
 continue_with_failures=0
+cleanup_repos=0
 while getopts "lc" opt; do
     case "${opt}" in
+	c)
+	    cleanup_repos=1
+	    ;;
 	l)
 	    loadtest=1
 	    ;;
-	c)
+	s)
 	    continue_with_failures=1
 	    ;;
 	*)
@@ -63,7 +67,13 @@ buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)' 
     fi
 
     bazel clean
-    "$@" || (( continue_with_failures )) # if bazel command fails, continue.
+    bazel_cmd_output=$("$@")
+
+    (( cleanup_repos )) && cd .. && rm -rf "$dir"
+
+    if [ "$bazel_cmd_output" -ne 0 ] && [ $continue_with_failures -eq 0 ]; then
+      exit 1
+    fi
   )
 }
 
