@@ -274,222 +274,212 @@ export default class TrendsComponent extends React.Component<Props, State> {
             </div>
           )}
           {this.showingDrilldown() && (
-            <DrilldownPageComponent
-              title="Breakdown"
-              user={this.props.user}
-              search={this.props.search}></DrilldownPageComponent>
+            <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
           )}
           {!this.showingDrilldown() && this.state.loading && <div className="loading"></div>}
           {!this.showingDrilldown() && !this.state.loading && (
             <>
-              {!this.showingDrilldown() && (
-                <>
-                  <TrendsChartComponent
-                    title="Builds"
-                    data={this.state.dates}
-                    extractValue={(date) => +(this.getStat(date).totalNumBuilds ?? 0)}
-                    extractSecondaryValue={(date) => {
-                      let stat = this.getStat(date);
-                      return (
-                        (+(stat.totalBuildTimeUsec ?? 0) * SECONDS_PER_MICROSECOND) /
-                        +(stat.completedInvocationCount ?? 0)
-                      );
-                    }}
-                    extractLabel={this.formatShortDate}
-                    formatTickValue={format.count}
-                    allowDecimals={false}
-                    formatHoverLabel={this.formatLongDate}
-                    formatHoverValue={(value) => (value || 0) + " builds"}
-                    formatSecondaryHoverValue={(value) => `${format.durationSec(value)} average`}
-                    formatSecondaryTickValue={format.durationSec}
-                    name="builds"
-                    secondaryName="average build duration"
-                    secondaryLine={true}
-                    separateAxis={true}
-                    onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : undefined}
-                  />
-                  {this.state.enableInvocationPercentileCharts && (
-                    <PercentilesChartComponent
-                      title="Build duration"
-                      data={this.state.dates}
-                      extractLabel={this.formatShortDate}
-                      formatHoverLabel={this.formatLongDate}
-                      extractP50={(date) => +(this.getStat(date).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
-                      extractP75={(date) => +(this.getStat(date).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
-                      extractP90={(date) => +(this.getStat(date).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
-                      extractP95={(date) => +(this.getStat(date).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
-                      extractP99={(date) => +(this.getStat(date).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
-                      onColumnClicked={
-                        capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : undefined
-                      }
-                    />
-                  )}
-                  {!this.state.enableInvocationPercentileCharts && (
-                    <TrendsChartComponent
-                      title="Build duration"
-                      data={this.state.dates}
-                      extractValue={(date) => {
-                        let stat = this.getStat(date);
-                        return +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0) / 1000000;
-                      }}
-                      extractSecondaryValue={(date) => +(this.getStat(date).maxDurationUsec ?? 0) / 1000000}
-                      extractLabel={this.formatShortDate}
-                      formatTickValue={format.durationSec}
-                      formatHoverLabel={this.formatLongDate}
-                      formatHoverValue={(value) => `${format.durationSec(value || 0)} average`}
-                      formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
-                      name="average build duration"
-                      secondaryName="slowest build duration"
-                      onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : undefined}
-                      onSecondaryBarClicked={
-                        capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : undefined
-                      }
-                    />
-                  )}
+              <TrendsChartComponent
+                title="Builds"
+                data={this.state.dates}
+                extractValue={(date) => +(this.getStat(date).totalNumBuilds ?? 0)}
+                extractSecondaryValue={(date) => {
+                  let stat = this.getStat(date);
+                  return (
+                    (+(stat.totalBuildTimeUsec ?? 0) * SECONDS_PER_MICROSECOND) / +(stat.completedInvocationCount ?? 0)
+                  );
+                }}
+                extractLabel={this.formatShortDate}
+                formatTickValue={format.count}
+                allowDecimals={false}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => (value || 0) + " builds"}
+                formatSecondaryHoverValue={(value) => `${format.durationSec(value)} average`}
+                formatSecondaryTickValue={format.durationSec}
+                name="builds"
+                secondaryName="average build duration"
+                secondaryLine={true}
+                separateAxis={true}
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : undefined}
+              />
+              {this.state.enableInvocationPercentileCharts && (
+                <PercentilesChartComponent
+                  title="Build duration"
+                  data={this.state.dates}
+                  extractLabel={this.formatShortDate}
+                  formatHoverLabel={this.formatLongDate}
+                  extractP50={(date) => +(this.getStat(date).buildTimeUsecP50 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP75={(date) => +(this.getStat(date).buildTimeUsecP75 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP90={(date) => +(this.getStat(date).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP95={(date) => +(this.getStat(date).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
+                  extractP99={(date) => +(this.getStat(date).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
+                  onColumnClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : undefined}
+                />
+              )}
+              {!this.state.enableInvocationPercentileCharts && (
+                <TrendsChartComponent
+                  title="Build duration"
+                  data={this.state.dates}
+                  extractValue={(date) => {
+                    let stat = this.getStat(date);
+                    return +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0) / 1000000;
+                  }}
+                  extractSecondaryValue={(date) => +(this.getStat(date).maxDurationUsec ?? 0) / 1000000}
+                  extractLabel={this.formatShortDate}
+                  formatTickValue={format.durationSec}
+                  formatHoverLabel={this.formatLongDate}
+                  formatHoverValue={(value) => `${format.durationSec(value || 0)} average`}
+                  formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
+                  name="average build duration"
+                  secondaryName="slowest build duration"
+                  onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : undefined}
+                  onSecondaryBarClicked={
+                    capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : undefined
+                  }
+                />
+              )}
 
-                  <CacheChartComponent
-                    title="Action Cache"
-                    data={this.state.dates}
-                    extractLabel={this.formatShortDate}
-                    formatHoverLabel={this.formatLongDate}
-                    extractHits={(date) => +(this.getStat(date).actionCacheHits ?? 0)}
-                    secondaryBarName="misses"
-                    extractSecondary={(date) => +(this.getStat(date).actionCacheMisses ?? 0)}
-                  />
-                  <CacheChartComponent
-                    title="Content Addressable Store"
-                    data={this.state.dates}
-                    extractLabel={this.formatShortDate}
-                    formatHoverLabel={this.formatLongDate}
-                    extractHits={(date) => +(this.getStat(date).casCacheHits ?? 0)}
-                    secondaryBarName="writes"
-                    extractSecondary={(date) => +(this.getStat(date).casCacheUploads ?? 0)}
-                  />
+              <CacheChartComponent
+                title="Action Cache"
+                data={this.state.dates}
+                extractLabel={this.formatShortDate}
+                formatHoverLabel={this.formatLongDate}
+                extractHits={(date) => +(this.getStat(date).actionCacheHits ?? 0)}
+                secondaryBarName="misses"
+                extractSecondary={(date) => +(this.getStat(date).actionCacheMisses ?? 0)}
+              />
+              <CacheChartComponent
+                title="Content Addressable Store"
+                data={this.state.dates}
+                extractLabel={this.formatShortDate}
+                formatHoverLabel={this.formatLongDate}
+                extractHits={(date) => +(this.getStat(date).casCacheHits ?? 0)}
+                secondaryBarName="writes"
+                extractSecondary={(date) => +(this.getStat(date).casCacheUploads ?? 0)}
+              />
 
-                  <TrendsChartComponent
-                    title="Cache read throughput"
-                    data={this.state.dates}
-                    extractValue={(date) => +(this.getStat(date).totalDownloadSizeBytes ?? 0)}
-                    extractSecondaryValue={(date) =>
-                      (+(this.getStat(date).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
-                      (+(this.getStat(date).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND)
-                    }
-                    extractLabel={this.formatShortDate}
-                    formatTickValue={format.bytes}
-                    allowDecimals={false}
-                    formatSecondaryTickValue={format.bitsPerSecond}
-                    formatHoverLabel={this.formatLongDate}
-                    formatHoverValue={(value) => `${format.bytes(value || 0)} downloaded`}
-                    formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
-                    name="total download size"
-                    secondaryName="download rate"
-                    secondaryLine={true}
-                    separateAxis={true}
-                  />
+              <TrendsChartComponent
+                title="Cache read throughput"
+                data={this.state.dates}
+                extractValue={(date) => +(this.getStat(date).totalDownloadSizeBytes ?? 0)}
+                extractSecondaryValue={(date) =>
+                  (+(this.getStat(date).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
+                  (+(this.getStat(date).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND)
+                }
+                extractLabel={this.formatShortDate}
+                formatTickValue={format.bytes}
+                allowDecimals={false}
+                formatSecondaryTickValue={format.bitsPerSecond}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => `${format.bytes(value || 0)} downloaded`}
+                formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
+                name="total download size"
+                secondaryName="download rate"
+                secondaryLine={true}
+                separateAxis={true}
+              />
 
-                  <TrendsChartComponent
-                    title="Cache write throughput"
-                    data={this.state.dates}
-                    extractValue={(date) => +(this.getStat(date).totalUploadSizeBytes ?? 0)}
-                    extractSecondaryValue={(date) =>
-                      (+(this.getStat(date).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
-                      (+(this.getStat(date).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND)
-                    }
-                    extractLabel={this.formatShortDate}
-                    formatTickValue={format.bytes}
-                    formatSecondaryTickValue={format.bitsPerSecond}
-                    formatHoverLabel={this.formatLongDate}
-                    formatHoverValue={(value) => `${format.bytes(value || 0)} uploaded`}
-                    formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
-                    name="total upload size"
-                    secondaryName="upload rate"
-                    secondaryLine={true}
-                    separateAxis={true}
-                  />
+              <TrendsChartComponent
+                title="Cache write throughput"
+                data={this.state.dates}
+                extractValue={(date) => +(this.getStat(date).totalUploadSizeBytes ?? 0)}
+                extractSecondaryValue={(date) =>
+                  (+(this.getStat(date).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
+                  (+(this.getStat(date).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND)
+                }
+                extractLabel={this.formatShortDate}
+                formatTickValue={format.bytes}
+                formatSecondaryTickValue={format.bitsPerSecond}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => `${format.bytes(value || 0)} uploaded`}
+                formatSecondaryHoverValue={(value) => format.bitsPerSecond(value || 0)}
+                name="total upload size"
+                secondaryName="upload rate"
+                secondaryLine={true}
+                separateAxis={true}
+              />
 
-                  <TrendsChartComponent
-                    title="Users with builds"
-                    data={this.state.dates}
-                    extractValue={(date) => +(this.getStat(date).userCount ?? 0)}
-                    extractLabel={this.formatShortDate}
-                    formatTickValue={format.count}
-                    allowDecimals={false}
-                    formatHoverLabel={this.formatLongDate}
-                    formatHoverValue={(value) => (value || 0) + " users"}
-                    name="users with builds"
-                    onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#users", "") : undefined}
-                  />
-                  <TrendsChartComponent
-                    title="Commits with builds"
-                    data={this.state.dates}
-                    extractValue={(date) => +(this.getStat(date).commitCount ?? 0)}
-                    extractLabel={this.formatShortDate}
-                    formatTickValue={format.count}
-                    allowDecimals={false}
-                    formatHoverLabel={this.formatLongDate}
-                    formatHoverValue={(value) => (value || 0) + " commits"}
-                    name="commits with builds"
-                    onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#commits", "") : undefined}
-                  />
-                  <TrendsChartComponent
-                    title="Branches with builds"
-                    data={this.state.dates}
-                    extractValue={(date) => +(this.getStat(date).branchCount ?? 0)}
-                    extractLabel={this.formatShortDate}
-                    formatTickValue={format.count}
-                    allowDecimals={false}
-                    formatHoverLabel={this.formatLongDate}
-                    formatHoverValue={(value) => (value || 0) + " branches"}
-                    name="branches with builds"
-                  />
-                  <TrendsChartComponent
-                    title="Hosts with builds"
-                    data={this.state.dates}
-                    extractValue={(date) => +(this.getStat(date).hostCount ?? 0)}
-                    extractLabel={this.formatShortDate}
-                    formatTickValue={format.count}
-                    allowDecimals={false}
-                    formatHoverLabel={this.formatLongDate}
-                    formatHoverValue={(value) => (value || 0) + " hosts"}
-                    name="hosts with builds"
-                    onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#hosts", "") : undefined}
-                  />
-                  <TrendsChartComponent
-                    title="Repos with builds"
-                    data={this.state.dates}
-                    extractValue={(date) => +(this.getStat(date).repoCount ?? 0)}
-                    extractLabel={this.formatShortDate}
-                    formatTickValue={format.count}
-                    allowDecimals={false}
-                    formatHoverLabel={this.formatLongDate}
-                    formatHoverValue={(value) => (value || 0) + " repos"}
-                    name="repos with builds"
-                    onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#repos", "") : undefined}
-                  />
-                  {this.state.dateToExecutionStatMap.size > 0 && (
-                    <PercentilesChartComponent
-                      title="Remote Execution Queue Duration"
-                      data={this.state.dates}
-                      extractLabel={this.formatShortDate}
-                      formatHoverLabel={this.formatLongDate}
-                      extractP50={(date) =>
-                        +(this.getExecutionStat(date).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
-                      }
-                      extractP75={(date) =>
-                        +(this.getExecutionStat(date).queueDurationUsecP75 ?? 0) * SECONDS_PER_MICROSECOND
-                      }
-                      extractP90={(date) =>
-                        +(this.getExecutionStat(date).queueDurationUsecP90 ?? 0) * SECONDS_PER_MICROSECOND
-                      }
-                      extractP95={(date) =>
-                        +(this.getExecutionStat(date).queueDurationUsecP95 ?? 0) * SECONDS_PER_MICROSECOND
-                      }
-                      extractP99={(date) =>
-                        +(this.getExecutionStat(date).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
-                      }
-                    />
-                  )}
-                </>
+              <TrendsChartComponent
+                title="Users with builds"
+                data={this.state.dates}
+                extractValue={(date) => +(this.getStat(date).userCount ?? 0)}
+                extractLabel={this.formatShortDate}
+                formatTickValue={format.count}
+                allowDecimals={false}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => (value || 0) + " users"}
+                name="users with builds"
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#users", "") : undefined}
+              />
+              <TrendsChartComponent
+                title="Commits with builds"
+                data={this.state.dates}
+                extractValue={(date) => +(this.getStat(date).commitCount ?? 0)}
+                extractLabel={this.formatShortDate}
+                formatTickValue={format.count}
+                allowDecimals={false}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => (value || 0) + " commits"}
+                name="commits with builds"
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#commits", "") : undefined}
+              />
+              <TrendsChartComponent
+                title="Branches with builds"
+                data={this.state.dates}
+                extractValue={(date) => +(this.getStat(date).branchCount ?? 0)}
+                extractLabel={this.formatShortDate}
+                formatTickValue={format.count}
+                allowDecimals={false}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => (value || 0) + " branches"}
+                name="branches with builds"
+              />
+              <TrendsChartComponent
+                title="Hosts with builds"
+                data={this.state.dates}
+                extractValue={(date) => +(this.getStat(date).hostCount ?? 0)}
+                extractLabel={this.formatShortDate}
+                formatTickValue={format.count}
+                allowDecimals={false}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => (value || 0) + " hosts"}
+                name="hosts with builds"
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#hosts", "") : undefined}
+              />
+              <TrendsChartComponent
+                title="Repos with builds"
+                data={this.state.dates}
+                extractValue={(date) => +(this.getStat(date).repoCount ?? 0)}
+                extractLabel={this.formatShortDate}
+                formatTickValue={format.count}
+                allowDecimals={false}
+                formatHoverLabel={this.formatLongDate}
+                formatHoverValue={(value) => (value || 0) + " repos"}
+                name="repos with builds"
+                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#repos", "") : undefined}
+              />
+              {this.state.dateToExecutionStatMap.size > 0 && (
+                <PercentilesChartComponent
+                  title="Remote Execution Queue Duration"
+                  data={this.state.dates}
+                  extractLabel={this.formatShortDate}
+                  formatHoverLabel={this.formatLongDate}
+                  extractP50={(date) =>
+                    +(this.getExecutionStat(date).queueDurationUsecP50 ?? 0) * SECONDS_PER_MICROSECOND
+                  }
+                  extractP75={(date) =>
+                    +(this.getExecutionStat(date).queueDurationUsecP75 ?? 0) * SECONDS_PER_MICROSECOND
+                  }
+                  extractP90={(date) =>
+                    +(this.getExecutionStat(date).queueDurationUsecP90 ?? 0) * SECONDS_PER_MICROSECOND
+                  }
+                  extractP95={(date) =>
+                    +(this.getExecutionStat(date).queueDurationUsecP95 ?? 0) * SECONDS_PER_MICROSECOND
+                  }
+                  extractP99={(date) =>
+                    +(this.getExecutionStat(date).queueDurationUsecP99 ?? 0) * SECONDS_PER_MICROSECOND
+                  }
+                />
               )}
             </>
           )}

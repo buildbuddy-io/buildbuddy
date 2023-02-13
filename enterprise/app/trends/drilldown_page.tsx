@@ -16,7 +16,6 @@ import router from "../../../app/router/router";
 import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
 
 interface Props {
-  title: string;
   user?: User;
   search: URLSearchParams;
 }
