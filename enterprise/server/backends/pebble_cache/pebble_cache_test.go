@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -296,7 +297,6 @@ func TestIsolateByGroupIds(t *testing.T) {
 	testGroup := "GR7890"
 	testUsers := testauth.TestUsers(testAPIKey, testGroup)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
-	ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 
 	maxSizeBytes := int64(1_000_000_000) // 1GB
 	rootDir := testfs.MakeTempDir(t)
@@ -329,40 +329,144 @@ func TestIsolateByGroupIds(t *testing.T) {
 	pc.Start()
 	defer pc.Stop()
 
-	// CAS records should not have group ID or remote instance name in their file path
-	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-	r := &resource.ResourceName{
-		Digest:       d,
-		CacheType:    resource.CacheType_CAS,
-		InstanceName: instanceName,
-	}
-	err = pc.Set(ctx, r, buf)
-	require.NoError(t, err)
-	rbuf, err := pc.Get(ctx, r)
-	require.NoError(t, err)
-	require.True(t, bytes.Equal(buf, rbuf))
-	hash := d.GetHash()
-	expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, partitionID, hash[:4], hash)
-	_, err = os.Stat(expectedFilename)
-	require.NoError(t, err)
+	// Matching authenticated user should use non-default partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		// CAS records should not have group ID or remote instance name in their file path
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: instanceName,
+		}
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err := pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		hash := d.GetHash()
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, partitionID, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
 
-	// AC records should have group ID and remote instance hash in their file path
-	d, buf = testdigest.NewRandomDigestBuf(t, 1000)
-	r = &resource.ResourceName{
-		Digest:       d,
-		CacheType:    resource.CacheType_AC,
-		InstanceName: instanceName,
+		// AC records should have group ID and remote instance hash in their file path
+		d, buf = testdigest.NewRandomDigestBuf(t, 1000)
+		r = &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_AC,
+			InstanceName: instanceName,
+		}
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err = pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		instanceNameHash := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(instanceName))))
+		hash = d.GetHash()
+		expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/ac/%s/%v/%v", rootDir, partitionID, testGroup, instanceNameHash, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
 	}
-	err = pc.Set(ctx, r, buf)
+
+	// Anon user should use the default partition.
+	{
+		ctx := getAnonContext(t, te)
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: instanceName,
+		}
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err := pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		hash := d.GetHash()
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, pebble_cache.DefaultPartitionID, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+	}
+}
+
+func TestIsolateAnonUsers(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	partitionID := "FOO"
+	instanceName := "cloud"
+	opts := &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 1, // Ensure file is written to disk
+		Partitions: []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           partitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     interfaces.AuthAnonymousUser,
+				Prefix:      "",
+				PartitionID: partitionID,
+			},
+		},
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	require.NoError(t, err)
-	rbuf, err = pc.Get(ctx, r)
-	require.NoError(t, err)
-	require.True(t, bytes.Equal(buf, rbuf))
-	instanceNameHash := strconv.Itoa(int(crc32.ChecksumIEEE([]byte(instanceName))))
-	hash = d.GetHash()
-	expectedFilename = fmt.Sprintf("%s/blobs/PT%s/%s/ac/%s/%v/%v", rootDir, partitionID, testGroup, instanceNameHash, hash[:4], hash)
-	_, err = os.Stat(expectedFilename)
-	require.NoError(t, err)
+	pc.Start()
+	defer pc.Stop()
+
+	// Anon user should use matching anon partition.
+	{
+		ctx := getAnonContext(t, te)
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: instanceName,
+		}
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err := pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		hash := d.GetHash()
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, partitionID, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+	}
+
+	// Authenticated user should use default partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		// CAS records should not have group ID or remote instance name in their file path
+		d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+		r := &resource.ResourceName{
+			Digest:       d,
+			CacheType:    resource.CacheType_CAS,
+			InstanceName: instanceName,
+		}
+		err = pc.Set(ctx, r, buf)
+		require.NoError(t, err)
+		rbuf, err := pc.Get(ctx, r)
+		require.NoError(t, err)
+		require.True(t, bytes.Equal(buf, rbuf))
+		hash := d.GetHash()
+		expectedFilename := fmt.Sprintf("%s/blobs/PT%s/cas/%v/%v", rootDir, pebble_cache.DefaultPartitionID, hash[:4], hash)
+		_, err = os.Stat(expectedFilename)
+		require.NoError(t, err)
+	}
 }
 
 func TestMetadata(t *testing.T) {

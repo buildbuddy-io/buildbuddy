@@ -106,7 +106,7 @@ const (
 	JanitorCheckPeriod = 1 * time.Second
 	megabyte           = 1e6
 
-	defaultPartitionID           = "default"
+	DefaultPartitionID           = "default"
 	partitionDirectoryPrefix     = "PT"
 	partitionMetadataFlushPeriod = 5 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
@@ -292,7 +292,7 @@ func SetOptionDefaults(opts *Options) {
 func ensureDefaultPartitionExists(opts *Options) {
 	foundDefaultPartition := false
 	for _, part := range opts.Partitions {
-		if part.ID == defaultPartitionID {
+		if part.ID == DefaultPartitionID {
 			foundDefaultPartition = true
 		}
 	}
@@ -300,7 +300,7 @@ func ensureDefaultPartitionExists(opts *Options) {
 		return
 	}
 	opts.Partitions = append(opts.Partitions, disk.Partition{
-		ID:           defaultPartitionID,
+		ID:           DefaultPartitionID,
 		MaxSizeBytes: opts.MaxSizeBytes,
 	})
 }
@@ -851,21 +851,26 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
+func (p *PebbleCache) userGroupID(ctx context.Context) string {
 	auth := p.env.GetAuthenticator()
 	if auth == nil {
-		return interfaces.AuthAnonymousUser, defaultPartitionID, nil
+		return interfaces.AuthAnonymousUser
 	}
 	user, err := auth.AuthenticatedUser(ctx)
 	if err != nil {
-		return interfaces.AuthAnonymousUser, defaultPartitionID, nil
+		return interfaces.AuthAnonymousUser
 	}
+	return user.GetGroupID()
+}
+
+func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
+	groupID := p.userGroupID(ctx)
 	for _, pm := range p.partitionMappings {
-		if pm.GroupID == user.GetGroupID() && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
-			return user.GetGroupID(), pm.PartitionID, nil
+		if pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
+			return groupID, pm.PartitionID, nil
 		}
 	}
-	return user.GetGroupID(), defaultPartitionID, nil
+	return groupID, DefaultPartitionID, nil
 }
 
 func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
