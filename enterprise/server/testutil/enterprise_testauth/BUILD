@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/auth",
         "//server/environment",
         "//server/interfaces",
+        "//server/tables",
         "//server/testutil/testauth",
         "//server/util/request_context",
         "@com_github_stretchr_testify//require",

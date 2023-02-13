@@ -47,7 +47,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
-	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -61,6 +60,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
@@ -221,24 +221,27 @@ func NewRBETestEnv(t *testing.T) *Env {
 
 	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
 	auth := enterprise_testauth.Configure(t, testEnv)
+	// Init with some random groups/users.
+	randUsers := enterprise_testauth.CreateRandomGroups(t, testEnv)
 
 	flags.Set(t, "app.enable_write_to_olap_db", true)
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 
-	// Create a user, group, and API key with register executor capability.
-	userID := "US1"
+	// Pick a random admin user as the test user, and update their group
+	// API key to allow registering executors.
+	var userID, groupID string
+	for _, u := range randUsers {
+		if len(u.Groups) != 1 || u.Groups[0].Role != uint32(role.Admin) {
+			continue
+		}
+		userID = u.UserID
+		groupID = u.Groups[0].Group.GroupID
+		break
+	}
+	require.NotEmpty(t, userID)
 	ctx := context.Background()
-	err := testEnv.GetUserDB().InsertUser(ctx, &tables.User{
-		UserID: userID,
-		Email:  "user@example.com",
-	})
-	require.NoError(t, err)
 	ctxUS1, err := auth.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
-	log.Infof("GetUser:")
-	tu, err := testEnv.GetUserDB().GetUser(ctxUS1)
-	require.NoError(t, err)
-	groupID := tu.Groups[0].Group.GroupID
 	keys, err := testEnv.GetUserDB().GetAPIKeys(ctxUS1, groupID)
 	require.NoError(t, err)
 	key := keys[0]
