@@ -17,6 +17,7 @@ ts_library(
         "//app/router",
         "//app/util:proto",
         "//proto:invocation_ts_proto",
+        "//proto:stat_filter_ts_proto",
         "//proto:timestamp_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",

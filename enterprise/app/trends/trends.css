@@ -59,3 +59,29 @@
 .heatmap-svg {
   user-select: none;
 }
+
+.heatmap-svg {
+  user-select: none;
+}
+
+.drilldown-chart {
+  display: inline-block;
+}
+
+.drilldown-chart-title {
+  margin-left: 4px;
+  font-weight: 600;
+}
+
+.bd-tt-base {
+  color: #8884d8;
+}
+
+.bd-tt-selected {
+  color: #82ca9d;
+}
+
+.select.drilldown-select {
+  font-size: 16px;
+  margin: 0 16px;
+}
