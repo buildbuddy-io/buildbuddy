@@ -67,7 +67,8 @@ buildbuddy(name = "buildbuddy_toolchain", container_image = UBUNTU20_04_IMAGE)' 
     fi
 
     bazel clean
-    bazel_cmd_output=$("$@")
+    bazel_cmd_output=0
+    "$@" || bazel_cmd_output=$?
 
     (( cleanup_repos )) && cd .. && rm -rf "$dir"
 
