@@ -140,7 +140,7 @@ func flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext, lookback int32) error {
+func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext, lookbackWindowDays int32) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
@@ -180,14 +180,14 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 		// If no start time specified, respect the lookback window field if set,
 		// or default to 7 days.
 		// TODO(bduffany): Delete this once clients no longer need it.
-		lookbackWindowDays := 7 * 24 * time.Hour
-		if lookback != 0 {
-			if lookback < 1 || lookback > 365 {
+		lookbackWindowHours := 7 * 24 * time.Hour
+		if lookbackWindowDays != 0 {
+			if lookbackWindowDays < 1 || lookbackWindowDays > 365 {
 				return status.InvalidArgumentErrorf("lookback_window_days must be between 0 and 366")
 			}
-			lookbackWindowDays = time.Duration(lookback*24) * time.Hour
+			lookbackWindowHours = time.Duration(lookbackWindowDays*24) * time.Hour
 		}
-		q.AddWhereClause("updated_at_usec >= ?", time.Now().Add(-lookbackWindowDays).UnixMicro())
+		q.AddWhereClause("updated_at_usec >= ?", time.Now().Add(-lookbackWindowHours).UnixMicro())
 	}
 
 	if end := tq.GetUpdatedBefore(); end.IsValid() {
@@ -946,9 +946,9 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	type queryOut struct {
 		GormUser       *string
 		GormHost       *string
-		GormRepoUrl    *string
+		GormRepoURL    *string
 		GormBranchName *string
-		GormCommitSha  *string
+		GormCommitSHA  *string
 		GormPattern    *string
 		Selection      int64
 		Inverse        int64
@@ -960,7 +960,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	if err := i.olapdbh.DB(ctx).ScanRows(rows, &totals); err != nil {
 		return nil, err
 	}
-	if totals.GormUser != nil || totals.GormHost != nil || totals.GormRepoUrl != nil || totals.GormBranchName != nil || totals.GormCommitSha != nil {
+	if totals.GormUser != nil || totals.GormHost != nil || totals.GormRepoURL != nil || totals.GormBranchName != nil || totals.GormCommitSHA != nil {
 		return nil, status.InternalError("Failed to fetch drilldown data")
 	}
 	rsp.TotalInBase = totals.Inverse
@@ -976,12 +976,12 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, inpb.AggType_BRANCH_AGGREGATION_TYPE, stat.GormBranchName, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormHost != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_HOSTNAME_AGGREGATION_TYPE, stat.GormHost, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
-		} else if stat.GormRepoUrl != nil {
-			addOutputChartEntry(m, dm, inpb.AggType_REPO_URL_AGGREGATION_TYPE, stat.GormRepoUrl, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormRepoURL != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_REPO_URL_AGGREGATION_TYPE, stat.GormRepoURL, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormUser != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_USER_AGGREGATION_TYPE, stat.GormUser, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
-		} else if stat.GormCommitSha != nil {
-			addOutputChartEntry(m, dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSha, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormCommitSHA != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSHA, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormPattern != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_PATTERN_AGGREGATION_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
