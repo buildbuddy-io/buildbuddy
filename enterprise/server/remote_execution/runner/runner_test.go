@@ -30,6 +30,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
@@ -548,6 +549,49 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 	r2 := mustGetNewRunner(t, ctxUser2, pool, newTaskWithAffinityKey("key2"))
 
 	assert.NotSame(t, r1, r2)
+}
+
+func TestRunnerPool_TaskSize(t *testing.T) {
+	oneGB := &scpb.TaskSize{EstimatedMemoryBytes: 1e9}
+	twoGB := &scpb.TaskSize{EstimatedMemoryBytes: 2e9}
+
+	for _, test := range []struct {
+		Name          string
+		Size1, Size2  *scpb.TaskSize
+		WFID1, WFID2  string
+		ShouldRecycle bool
+	}{
+		{Name: "DifferentSize_NonWorkflow_ShouldRecycle", Size1: oneGB, Size2: twoGB, WFID1: "", WFID2: "", ShouldRecycle: true},
+		{Name: "SameSize_Workflow_ShouldRecycle", Size1: oneGB, Size2: oneGB, WFID1: "WF1", WFID2: "WF1", ShouldRecycle: true},
+		{Name: "DifferentSize_Workflow_ShouldNotRecycle", Size1: oneGB, Size2: twoGB, WFID1: "WF1", WFID2: "WF1", ShouldRecycle: false},
+		{Name: "SameSize_DifferentWorkflowIDs_ShouldNotRecycle", Size1: oneGB, Size2: oneGB, WFID1: "WF1", WFID2: "WF2", ShouldRecycle: false},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			env := newTestEnv(t)
+			pool := newRunnerPool(t, env, noLimitsCfg)
+			ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
+			t1 := newTask()
+			t1.SchedulingMetadata = &scpb.SchedulingMetadata{TaskSize: test.Size1}
+			p1 := t1.ExecutionTask.Command.Platform
+			p1.Properties = append(p1.Properties, &repb.Platform_Property{Name: platform.WorkflowIDPropertyName, Value: test.WFID1})
+			t2 := newTask()
+			t2.SchedulingMetadata = &scpb.SchedulingMetadata{TaskSize: test.Size2}
+			p2 := t2.ExecutionTask.Command.Platform
+			p2.Properties = append(p2.Properties, &repb.Platform_Property{Name: platform.WorkflowIDPropertyName, Value: test.WFID2})
+
+			r1 := mustGetNewRunner(t, ctxUser1, pool, t1)
+			mustAddWithoutEviction(t, ctxUser1, pool, r1)
+
+			var r2 *commandRunner
+			if test.ShouldRecycle {
+				r2 = mustGetPausedRunner(t, ctxUser1, pool, t2)
+				require.Same(t, r1, r2)
+			} else {
+				r2 = mustGetNewRunner(t, ctxUser1, pool, t2)
+				require.NotSame(t, r1, r2)
+			}
+		})
+	}
 }
 
 func newPersistentRunnerTask(t *testing.T, key, arg, protocol string, resp *wkpb.WorkResponse) *repb.ScheduledTask {
