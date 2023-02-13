@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,10 @@ func NewHandle() *Handle {
 }
 
 func (h *Handle) DB(ctx context.Context) *gorm.DB {
+	return nil
+}
+
+func (h *Handle) RawWithOptions(ctx context.Context, opts interfaces.OLAPDBOptions, sql string, values ...interface{}) *gorm.DB {
 	return nil
 }
 
