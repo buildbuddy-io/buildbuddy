@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -23,6 +26,13 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gormclickhouse "gorm.io/driver/clickhouse"
+)
+
+const (
+	gormStmtStartTimeKey             = "bb_clickhouse:op_start_time"
+	gormRecordOpStartTimeCallbackKey = "bb_clickhouse:record_op_start_time"
+	gormRecordMetricsCallbackKey     = "bb_clickhouse:record_metrics"
+	gormQueryNameKey                 = "bb_clickhouse:query_name"
 )
 
 var (
@@ -36,6 +46,36 @@ var (
 
 type DBHandle struct {
 	db *gorm.DB
+}
+
+type Options struct {
+	queryName string
+}
+
+func Opts() interfaces.OLAPDBOptions {
+	return &Options{}
+}
+
+// WithQueryName specifies the query label to use in exported metrics.
+func (o *Options) WithQueryName(queryName string) interfaces.OLAPDBOptions {
+	o.queryName = queryName
+	return o
+}
+
+func (o *Options) QueryName() string {
+	return o.queryName
+}
+
+func (dbh *DBHandle) gormHandleForOpts(ctx context.Context, opts interfaces.OLAPDBOptions) *gorm.DB {
+	db := dbh.DB(ctx)
+	if opts.QueryName() != "" {
+		db = db.Set(gormQueryNameKey, opts.QueryName())
+	}
+	return db
+}
+
+func (dbh *DBHandle) RawWithOptions(ctx context.Context, opts interfaces.OLAPDBOptions, sql string, values ...interface{}) *gorm.DB {
+	return dbh.gormHandleForOpts(ctx, opts).Raw(sql, values...)
 }
 
 func (dbh *DBHandle) DB(ctx context.Context) *gorm.DB {
@@ -162,6 +202,40 @@ func (h *DBHandle) FlushTestTargetStatuses(ctx context.Context, entries []*schem
 	return nil
 }
 
+func recordMetricsAfterFn(db *gorm.DB) {
+	if db.DryRun || db.Statement == nil {
+		return
+	}
+
+	labels := prometheus.Labels{}
+	qv, _ := db.Get(gormQueryNameKey)
+	if queryName, ok := qv.(string); ok {
+		labels[metrics.SQLQueryTemplateLabel] = queryName
+	} else {
+		labels[metrics.SQLQueryTemplateLabel] = db.Statement.SQL.String()
+	}
+
+	metrics.ClickhouseQueryCount.With(labels).Inc()
+
+	// v will be nil if our key is not in the map so we can ignore the presence indicator.
+	v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
+	if opStartTime, ok := v.(time.Time); ok {
+		metrics.ClickhouseQueryDurationUsec.With(labels).Observe(float64(time.Now().Sub(opStartTime).Microseconds()))
+	}
+	// Ignore "record not found" errors as they don't generally indicate a
+	// problem with the server.
+	if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
+		metrics.ClickhouseQueryErrorCount.With(labels).Inc()
+	}
+}
+
+func recordMetricsBeforeFn(db *gorm.DB) {
+	if db.DryRun || db.Statement == nil {
+		return
+	}
+	db.Statement.Settings.Store(gormStmtStartTimeKey, time.Now())
+}
+
 func Register(env environment.Env) error {
 	if *dataSource == "" {
 		return nil
@@ -188,6 +262,7 @@ func Register(env environment.Env) error {
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
 	}
+	gormutil.InstrumentMetrics(db, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
 	if *autoMigrateDB {
 		if err := schema.RunMigrations(db); err != nil {
 			return err

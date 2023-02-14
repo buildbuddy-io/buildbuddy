@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
+        "//server/interfaces",
         "//server/tables",
         "//server/util/clickhouse/schema",
         "@com_github_stretchr_testify//require",

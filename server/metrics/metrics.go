@@ -1518,10 +1518,35 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "clickhouse",
 		Name:      "insert_count",
-		Help:      "Num of rows inserted into clickhouse",
+		Help:      "Num of rows inserted into ClickHouse",
 	}, []string{
 		ClickhouseTableName,
 		ClickhouseStatusLabel,
+	})
+	ClickhouseQueryDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "clickhouse",
+		Name:      "query_duration_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "ClickHouse query duration, in **microseconds**.",
+	}, []string{
+		SQLQueryTemplateLabel,
+	})
+	ClickhouseQueryErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "clickhouse",
+		Name:      "error_count",
+		Help:      "Number of ClickHouse SQL queries that resulted in an error.",
+	}, []string{
+		SQLQueryTemplateLabel,
+	})
+	ClickhouseQueryCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "clickhouse",
+		Name:      "query_count",
+		Help:      "Number of ClickHouse SQL queries executed.",
+	}, []string{
+		SQLQueryTemplateLabel,
 	})
 
 	BytesCompressed = promauto.NewCounterVec(prometheus.CounterOpts{
