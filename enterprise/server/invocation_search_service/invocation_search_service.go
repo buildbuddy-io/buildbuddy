@@ -111,6 +111,11 @@ func containsExecutionColumn(f []*sfpb.StatFilter) bool {
 	return false
 }
 
+// This function adds where clauses that can be applied to both invocation- and
+// execution-based searches.  Adding these filters to both phases of an
+// execution-based search is duplicative, but we do it anyway to shrink the
+// result set early while still ensure that our final search in the invocations
+// table matches the query style of "normal" invocations.
 func addCommonWhereClauses(q *query_builder.Query, iq *inpb.InvocationQuery) {
 	// Don't include anonymous builds.
 	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")
