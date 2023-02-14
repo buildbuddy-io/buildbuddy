@@ -215,6 +215,8 @@ func recordMetricsAfterFn(db *gorm.DB) {
 		labels[metrics.SQLQueryTemplateLabel] = db.Statement.SQL.String()
 	}
 
+	metrics.ClickhouseQueryCount.With(labels).Inc()
+
 	// v will be nil if our key is not in the map so we can ignore the presence indicator.
 	v, _ := db.Statement.Settings.LoadAndDelete(gormStmtStartTimeKey)
 	if opStartTime, ok := v.(time.Time); ok {
@@ -223,7 +225,7 @@ func recordMetricsAfterFn(db *gorm.DB) {
 	// Ignore "record not found" errors as they don't generally indicate a
 	// problem with the server.
 	if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
-		metrics.SQLErrorCount.With(labels).Inc()
+		metrics.ClickhouseQueryErrorCount.With(labels).Inc()
 	}
 }
 
