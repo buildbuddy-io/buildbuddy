@@ -140,7 +140,7 @@ func flattenTrendsQuery(innerQuery string) string {
 	FROM (` + innerQuery + ")"
 }
 
-func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext, lookbackWindowDays int32) error {
+func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.RequestContext, lookbackWindowDays int32, isExecutionQuery bool) error {
 
 	if user := tq.GetUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
@@ -208,7 +208,10 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 	}
 
 	for _, f := range tq.GetFilter() {
-		// XXX: Filter here, too, based on original table.
+		if (isExecutionQuery && f.GetMetric().Execution == nil) ||
+			(!isExecutionQuery && f.GetMetric().Invocation == nil) {
+			continue
+		}
 		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
 		if err != nil {
 			return err
@@ -224,7 +227,7 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getTrendBasicQuery(reqCtx.GetTimezoneOffsetMinutes()))
-	if err := addWhereClauses(q, req.GetQuery(), reqCtx, req.GetLookbackWindowDays()); err != nil {
+	if err := addWhereClauses(q, req.GetQuery(), reqCtx, req.GetLookbackWindowDays(), false); err != nil {
 		return nil, err
 	}
 	q.SetGroupBy("name")
@@ -305,7 +308,7 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	reqCtx := req.GetRequestContext()
 
 	q := query_builder.NewQuery(i.getExecutionTrendQuery(reqCtx.GetTimezoneOffsetMinutes()))
-	if err := addWhereClauses(q, req.GetQuery(), req.GetRequestContext(), req.GetLookbackWindowDays()); err != nil {
+	if err := addWhereClauses(q, req.GetQuery(), req.GetRequestContext(), req.GetLookbackWindowDays(), true); err != nil {
 		return nil, err
 	}
 	q.SetGroupBy("name")
@@ -565,9 +568,9 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 		MetricArrayStr:         metricArrayStr}, nil
 }
 
-func getWhereClauseForHeatmapQuery(q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
+func getWhereClauseForHeatmapQuery(req *stpb.GetStatHeatmapRequest) (string, []interface{}, error) {
 	placeholderQuery := query_builder.NewQuery("")
-	if err := addWhereClauses(placeholderQuery, q, reqCtx, 0); err != nil {
+	if err := addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0, req.GetMetric().Execution != nil); err != nil {
 		return "", nil, err
 	}
 	whereString, whereArgs := placeholderQuery.Build()
@@ -592,7 +595,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
-	whereClauseStr, whereClauseArgs, err := getWhereClauseForHeatmapQuery(req.GetQuery(), req.GetRequestContext())
+	whereClauseStr, whereClauseArgs, err := getWhereClauseForHeatmapQuery(req)
 	if err != nil {
 		return nil, err
 	}
@@ -862,7 +865,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
 	placeholderQuery := query_builder.NewQuery("")
 
-	if err := addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0); err != nil {
+	if err := addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0, req.GetDrilldownMetric().Execution != nil); err != nil {
 		return "", nil, err
 	}
 
