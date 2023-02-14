@@ -350,9 +350,8 @@ subcommand itself and the build target. These are generally the arguments
 following a `--` in the argument list passed to bazel, if any.
 
 This environment variable will only be set for the `pre_bazel.sh` script in the
-plugin. Similar to the way in which the bazel args file works, any changes
-made to this file by a plugin will be read in and reflected in the args
-eventually passed to bazel.
+plugin. Plugins can change this file to change the arguments
+passed to Bazel.
 
 The file in question is formatted very similarly to the bazel args file, except
 that the arguments will be split across lines based solely as a result of shell
