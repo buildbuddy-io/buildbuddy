@@ -248,15 +248,20 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 	c.tokenLookup.Do(func() {
 		err = c.populateTokenIfNecessary(ctx)
 	})
+	if err != nil {
+		return nil
+	}
 
 	// If we don't have a github token, we can't post a status.
-	if c.githubToken == "" || err != nil {
-		return err
+	if c.githubToken == "" {
+		return nil
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/statuses/%s", ownerRepo, commitSHA)
 	body := new(bytes.Buffer)
-	json.NewEncoder(body).Encode(payload)
+	if err := json.NewEncoder(body).Encode(payload); err != nil {
+		return status.UnknownErrorf("failed to encode payload: %s", err)
+	}
 
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
@@ -264,11 +269,19 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 	}
 
 	req.Header.Set("Authorization", "token "+c.githubToken)
-	_, err = c.client.Do(req)
+	res, err := c.client.Do(req)
 	if err != nil {
-		log.Warningf("Error posting Github status: %v", err)
+		return err
 	}
-	return err
+	defer res.Body.Close()
+	if res.StatusCode >= 400 {
+		b, err := io.ReadAll(res.Body)
+		if err != nil {
+			return status.UnknownErrorf("HTTP %s: <failed to read response body>", res.Status)
+		}
+		return status.UnknownErrorf("HTTP %s: %q", res.Status, string(b))
+	}
+	return nil
 }
 
 func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {

@@ -136,7 +136,10 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 			break
 		}
 		commitSHA := r.buildEventAccumulator.CommitSHA()
-		r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
+		err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
+		if err != nil {
+			log.Warningf("Failed to report GitHub status: %s", err)
+		}
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)
