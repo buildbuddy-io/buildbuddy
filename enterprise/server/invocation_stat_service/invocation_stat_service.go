@@ -208,7 +208,7 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 	}
 
 	for _, f := range tq.GetFilter() {
-		// XXX: Filter here, too.
+		// XXX: Filter here, too, based on original table.
 		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
 		if err != nil {
 			return err
