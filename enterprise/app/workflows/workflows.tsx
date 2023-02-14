@@ -24,7 +24,7 @@ import GitHubImport from "./github_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
 import { GitMerge, MoreVertical } from "lucide-react";
 
-type Workflow = workflow.GetWorkflowsResponse.IWorkflow;
+type Workflow = workflow.GetWorkflowsResponse.Workflow;
 
 export type WorkflowsProps = {
   path: string;
@@ -56,7 +56,7 @@ export default class WorkflowsComponent extends React.Component<WorkflowsProps> 
 type State = {
   error?: BuildBuddyError;
   response?: workflow.GetWorkflowsResponse;
-  workflowToDelete?: Workflow | null;
+  workflowToDelete?: Workflow;
   isDeleting?: boolean;
   deleteError?: BuildBuddyError;
 };
@@ -109,9 +109,9 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
     this.setState({ isDeleting: true });
     try {
       await rpcService.service.deleteWorkflow(
-        new workflow.DeleteWorkflowRequest({ id: this.state.workflowToDelete.id })
+        new workflow.DeleteWorkflowRequest({ id: this.state.workflowToDelete?.id })
       );
-      this.setState({ workflowToDelete: null });
+      this.setState({ workflowToDelete: undefined });
 
       this.workflowsSubscription.unsubscribe();
       this.fetchWorkflows();
@@ -123,7 +123,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
   }
 
   private onCloseDeleteDialog() {
-    this.setState({ workflowToDelete: null, deleteError: null });
+    this.setState({ workflowToDelete: undefined, deleteError: undefined });
   }
 
   render() {
@@ -181,7 +181,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
           {Boolean(response?.workflow?.length) && (
             <>
               <div className="workflows-list">
-                {response.workflow.map((workflow) => (
+                {response!.workflow.map((workflow) => (
                   <WorkflowItem workflow={workflow} onClickUnlinkItem={this.onClickUnlinkItem.bind(this)} />
                 ))}
               </div>
@@ -225,12 +225,12 @@ type WorkflowItemProps = {
 };
 
 type WorkflowItemState = {
-  isMenuOpen?: boolean;
-  copiedToClipboard?: boolean;
+  isMenuOpen: boolean;
+  copiedToClipboard: boolean;
 };
 
 class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState> {
-  state: WorkflowItemState = {};
+  state: WorkflowItemState = { isMenuOpen: false, copiedToClipboard: false };
 
   private onClickMenuButton() {
     this.setState({ isMenuOpen: !this.state.isMenuOpen });
@@ -256,7 +256,10 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
   private onClickRepoUrl(e: React.MouseEvent) {
     e.preventDefault();
     const path = (e.target as HTMLAnchorElement).getAttribute("href");
-    router.navigateTo(path);
+    // Should always be defined by template below, just making typescript happy.
+    if (path) {
+      router.navigateTo(path);
+    }
   }
 
   render() {
