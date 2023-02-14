@@ -15,13 +15,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grp "github.com/buildbuddy-io/buildbuddy/proto/group"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
@@ -35,6 +39,11 @@ func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID 
 	ctx, err := auth.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
 	return ctx
+}
+
+func withPreferredGroup(ctx context.Context, groupID string) context.Context {
+	reqCtx := &ctxpb.RequestContext{GroupId: groupID}
+	return requestcontext.ContextWithProtoRequestContext(ctx, reqCtx)
 }
 
 func findGroupUser(t *testing.T, userID string, groupUsers []*grpb.GetGroupUsersResponse_GroupUser) *grpb.GetGroupUsersResponse_GroupUser {
@@ -77,7 +86,11 @@ func getSelfOwnedGroup(t *testing.T, ctx context.Context, env environment.Env) *
 	return nil
 }
 
-func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.Env, userID string) {
+func nameProto(first, last string) *uidpb.Name {
+	return &uidpb.Name{First: first, Last: last, Full: first + " " + last}
+}
+
+func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.Env) {
 	tu, err := env.GetUserDB().GetUser(ctx)
 	require.NoError(t, err)
 	require.Len(t, tu.Groups, 1, "takeOwnershipOfDomain: user must be part of exactly one group")
@@ -195,7 +208,7 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 	selfOwnedGroup := u.Groups[0].Group
 	require.Equal(t, "US1", selfOwnedGroup.UserID, "user ID of self-owned group should be the owner's user ID")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, selfOwnedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "self-owned group should have 1 member")
@@ -233,7 +246,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	selectedGroup := u.Groups[0].Group
 	require.Equal(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should be the org's group")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "org group should have 1 member")
@@ -252,7 +265,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	selectedGroup = u2.Groups[0].Group
 	require.NotEqual(t, orgGroupID, selectedGroup.GroupID, "group ID of selected group should not be the org's group")
 
-	groupUsers, err = udb.GetGroupUsers(ctx2, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err = udb.GetGroupUsers(ctx2, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 1, "org1.io should still have 1 member, since US2 is in org2.io")
@@ -272,7 +285,7 @@ func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 
 	// Have US1 inspect their group members again (for org1); they should
 	// now see one more member (US3).
-	groupUsers, err = udb.GetGroupUsers(ctx1, selectedGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err = udb.GetGroupUsers(ctx1, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 
 	require.Len(t, groupUsers, 2, "org1.io group should have 2 members, since US3 is in org1.io")
@@ -305,8 +318,7 @@ func TestCreateUser_OnPrem_OnlyFirstUserCreatedShouldBeMadeAdminOfDefaultGroup(t
 	require.Len(t, u.Groups, 1, "US1 should be added to the default group")
 	require.Equal(t, userdb.DefaultGroupID, u.Groups[0].Group.GroupID)
 
-	defaultGroup := u.Groups[0].Group
-	groupUsers, err := udb.GetGroupUsers(ctx1, defaultGroup.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 	require.Len(t, groupUsers, 2, "default group should have 2 members")
 	us1 := findGroupUser(t, "US1", groupUsers)
@@ -378,7 +390,7 @@ func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
 	require.NoError(t, err, "US1 should be able to add US2 to GR1")
 
 	// Make sure they were added with the proper role
-	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 	require.Len(t, groupUsers, 2, "US1's group should have 2 members after adding US2")
 	us2 := findGroupUser(t, "US2", groupUsers)
@@ -400,11 +412,12 @@ func TestCreateGroup(t *testing.T) {
 	groupID, err := udb.CreateGroup(ctx1, &tables.Group{})
 	require.NoError(t, err)
 
-	// Re-authenticate to pick up the new group membership
-	ctx1 = authUserCtx(ctx, env, t, "US1")
+	// Re-authenticate to pick up the new group membership, with the new
+	// group as the preferred group
+	ctx1 = authUserCtx(withPreferredGroup(ctx, groupID), env, t, "US1")
 
 	// Make sure they are the group admin
-	groupUsers, err := udb.GetGroupUsers(ctx1, groupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err, "failed to get group users")
 	require.Len(t, groupUsers, 1)
 	gu := groupUsers[0]
@@ -436,6 +449,101 @@ func TestAddUserToGroup_UserPreviouslyRequestedAccess_UpdatesMembershipStatus(t 
 	// Now *add* US2 to the group; should update their membership request.
 	err = udb.AddUserToGroup(ctx1, "US2", groupID1)
 	require.NoError(t, err)
+}
+
+func TestGetGroupUsers(t *testing.T) {
+	du1 := &uidpb.DisplayUser{UserId: &uidpb.UserId{Id: "US1"}, Email: "US1@org1.io", Name: nameProto("US1-FirstName", "US1-LastName")}
+	du2 := &uidpb.DisplayUser{UserId: &uidpb.UserId{Id: "US2"}, Email: "US2@org1.io", Name: nameProto("US2-FirstName", "US2-LastName")}
+	du3 := &uidpb.DisplayUser{UserId: &uidpb.UserId{Id: "US3"}, Email: "US3@org2.io", Name: nameProto("US3-FirstName", "US3-LastName")}
+
+	org1Members := []*grpb.GetGroupUsersResponse_GroupUser{
+		{User: du1, GroupMembershipStatus: grpb.GroupMembershipStatus_MEMBER, Role: grpb.Group_ADMIN_ROLE},
+		{User: du2, GroupMembershipStatus: grpb.GroupMembershipStatus_MEMBER, Role: grpb.Group_DEVELOPER_ROLE},
+	}
+	org2Members := []*grpb.GetGroupUsersResponse_GroupUser{
+		{User: du1, GroupMembershipStatus: grpb.GroupMembershipStatus_MEMBER, Role: grpb.Group_ADMIN_ROLE},
+		{User: du3, GroupMembershipStatus: grpb.GroupMembershipStatus_MEMBER, Role: grpb.Group_ADMIN_ROLE},
+	}
+	org2Requests := []*grpb.GetGroupUsersResponse_GroupUser{
+		{User: du2, GroupMembershipStatus: grpb.GroupMembershipStatus_REQUESTED, Role: grpb.Group_DEVELOPER_ROLE},
+	}
+
+	memberOnly := []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER}
+	pendingOnly := []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_REQUESTED}
+
+	for _, test := range []struct {
+		Name     string
+		AuthUser string
+		Org      string
+		Statuses []grpb.GroupMembershipStatus
+		Expected []*grpb.GetGroupUsersResponse_GroupUser
+		Err      func(err error) bool
+	}{
+		{Name: "AdminCanListSelfOwnedGroupMembers", AuthUser: "US1", Org: "org1.io", Statuses: memberOnly, Expected: org1Members},
+		{Name: "AdminCanListSelfOwnedGroupRequests", AuthUser: "US3", Org: "org2.io", Statuses: pendingOnly, Expected: org2Requests},
+		{Name: "AdminCanListOtherGroupsWhereTheyAreAdmin", AuthUser: "US1", Org: "org2.io", Statuses: memberOnly, Expected: org2Members},
+		{Name: "DevCannotListGroup", AuthUser: "US2", Org: "org1.io", Statuses: memberOnly, Err: status.IsPermissionDeniedError},
+		{Name: "AnonymousCannotListGroup", AuthUser: "", Org: "org1.io", Statuses: memberOnly, Err: status.IsUnauthenticatedError},
+		{Name: "DevNonMemberCannotListGroup", AuthUser: "US2", Org: "org2.io", Statuses: memberOnly, Err: status.IsPermissionDeniedError},
+		{Name: "AdminNonMemberCannotListGroup", AuthUser: "US3", Org: "org1.io", Statuses: memberOnly, Err: status.IsPermissionDeniedError},
+		{Name: "PendingMemberCannotListGroup", AuthUser: "US2", Org: "org2.io", Statuses: memberOnly, Err: status.IsPermissionDeniedError},
+		{Name: "StatusesParamIsRequired", AuthUser: "US1", Org: "org1.io", Statuses: nil, Err: status.IsInvalidArgumentError},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			env := newTestEnv(t)
+			udb := env.GetUserDB()
+			ctx := context.Background()
+
+			// Create the following org structure:
+			//
+			//     org1.io:
+			//       - US1 (admin, creator)
+			//       - US2 (dev)
+			//     org2.io:
+			//       - US3 (admin, creator)
+			//       - US1 (admin)
+			//       - US2 (pending approval)
+
+			createUser(t, ctx, env, "US1", "org1.io")
+			ctx1 := authUserCtx(ctx, env, t, "US1")
+			org1GID := getSelfOwnedGroup(t, ctx1, env).Group.GroupID
+			takeOwnershipOfDomain(t, ctx1, env)
+			createUser(t, ctx, env, "US2", "org1.io")
+
+			createUser(t, ctx, env, "US3", "org2.io")
+			ctx3 := authUserCtx(ctx, env, t, "US3")
+			org2GID := getSelfOwnedGroup(t, ctx3, env).Group.GroupID
+			err := udb.AddUserToGroup(ctx3, "US1", org2GID)
+			require.NoError(t, err)
+			err = udb.UpdateGroupUsers(ctx3, org2GID, []*grpb.UpdateGroupUsersRequest_Update{
+				{UserId: &uidpb.UserId{Id: "US1"}, Role: grpb.Group_ADMIN_ROLE},
+			})
+			require.NoError(t, err, "US3 should be able to promote US1 to admin")
+			ctx2 := authUserCtx(ctx, env, t, "US2")
+			err = udb.RequestToJoinGroup(ctx2, "US2", org2GID)
+			require.NoError(t, err)
+
+			preferredGID, ok := map[string]string{
+				"org1.io": org1GID,
+				"org2.io": org2GID,
+			}[test.Org]
+			require.True(t, ok)
+
+			authCtx := withPreferredGroup(ctx, preferredGID)
+			if test.AuthUser != "" {
+				authCtx = authUserCtx(authCtx, env, t, test.AuthUser)
+			}
+
+			users, err := udb.GetGroupUsers(authCtx, test.Statuses)
+			if test.Err != nil {
+				require.Nil(t, users)
+				require.True(t, test.Err(err), "unexpected error: %v", err)
+			} else {
+				require.NoError(t, err)
+				require.Empty(t, cmp.Diff(test.Expected, users, protocmp.Transform()))
+			}
+		})
+	}
 }
 
 func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
@@ -541,7 +649,7 @@ func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
 			createUser(t, ctx, env, "US1", "org1.io")
 			// Have US1's group take ownership of org1.io
 			us1Ctx := authUserCtx(ctx, env, t, "US1")
-			takeOwnershipOfDomain(t, us1Ctx, env, "US1")
+			takeOwnershipOfDomain(t, us1Ctx, env)
 			// US2 should only be added to org1.io
 			createUser(t, ctx, env, "US2", "org1.io")
 			createUser(t, ctx, env, "US3", "org2.io")
@@ -581,19 +689,13 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 	}})
 	require.NoError(t, err, "US1 should be able to update their own group role")
 
-	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
+	groupUsers, err := udb.GetGroupUsers(ctx1, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 	us1 := findGroupUser(t, "US1", groupUsers)
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us1.Role, "US1 role should be DEVELOPER")
 
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
-
-	_, err = udb.GetGroupUsers(ctx2, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
-	require.True(
-		t, status.IsPermissionDeniedError(err),
-		"expected PermissionDeniedError if US2 tries to list US1's group users; got: %T",
-		err)
 
 	err = udb.UpdateGroupUsers(ctx2, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
 		UserId: &uidpb.UserId{Id: "US1"},
@@ -704,7 +806,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 	// role.
 	err = udb.AddUserToGroup(ctx1, "US2", groupID1)
 	require.NoError(t, err)
-	users, err := udb.GetGroupUsers(ctx1, groupID1, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
+	users, err := udb.GetGroupUsers(ctx1, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
 	found := false
 	for _, u := range users {

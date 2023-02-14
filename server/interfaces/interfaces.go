@@ -344,7 +344,13 @@ type UserDB interface {
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
 	AddUserToGroup(ctx context.Context, userID string, groupID string) error
 	RequestToJoinGroup(ctx context.Context, userID string, groupID string) error
-	GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
+
+	// GetGroupUsers returns users in the authenticated user's selected group.
+	// The statuses param must not be empty. The returned set of users is
+	// filtered to those whose membership status matches any of the given
+	// status values.
+	GetGroupUsers(ctx context.Context, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
+
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 

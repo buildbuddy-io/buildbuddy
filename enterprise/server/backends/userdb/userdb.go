@@ -554,14 +554,15 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID 
 	})
 }
 
-func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
-	if groupID == "" {
-		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
-	}
+func (d *UserDB) GetGroupUsers(ctx context.Context, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
 	if len(statuses) == 0 {
 		return nil, status.InvalidArgumentError("A valid status or statuses are required")
 	}
-	if err := perms.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return nil, err
+	}
+	if err := authutil.AuthorizeGroupRole(u, u.GetGroupID(), role.Admin); err != nil {
 		return nil, err
 	}
 
@@ -570,7 +571,7 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 	q := query_builder.NewQuery(`
 			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status, ug.role
 			FROM Users AS u JOIN UserGroups AS ug`)
-	q = q.AddWhereClause(`u.user_id = ug.user_user_id AND ug.group_group_id = ?`, groupID)
+	q = q.AddWhereClause(`u.user_id = ug.user_user_id AND ug.group_group_id = ?`, u.GetGroupID())
 
 	o := query_builder.OrClauses{}
 	for _, s := range statuses {

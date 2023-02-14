@@ -35,7 +35,6 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
     this.setState({ users: null, isLoading: true });
     const response = await rpcService.service.getGroupUsers(
       new grp.GetGroupUsersRequest({
-        groupId: this.props.user.selectedGroup.id,
         groupMembershipStatus: [grp.GroupMembershipStatus.REQUESTED],
       })
     );

@@ -98,7 +98,7 @@ func TestUsers(vals ...string) map[string]interfaces.UserInfo {
 	return testUsers
 }
 
-type userProvider func(userID string) interfaces.UserInfo
+type userProvider func(ctx context.Context, userID string) interfaces.UserInfo
 type apiKeyUserProvider func(apiKey string) interfaces.UserInfo
 
 type TestAuthenticator struct {
@@ -110,7 +110,7 @@ type TestAuthenticator struct {
 func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthenticator {
 	return &TestAuthenticator{
 		NullAuthenticator: &nullauth.NullAuthenticator{},
-		UserProvider:      func(userID string) interfaces.UserInfo { return testUsers[userID] },
+		UserProvider:      func(ctx context.Context, userID string) interfaces.UserInfo { return testUsers[userID] },
 		APIKeyProvider:    func(apiKey string) interfaces.UserInfo { return testUsers[apiKey] },
 	}
 }
@@ -246,7 +246,7 @@ func (a *TestAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt s
 }
 
 func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID string) (context.Context, error) {
-	userInfo := a.UserProvider(userID)
+	userInfo := a.UserProvider(ctx, userID)
 	if userInfo == nil {
 		return nil, status.FailedPreconditionErrorf("User %q unknown to test authenticator.", userID)
 	}
@@ -273,7 +273,7 @@ func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo
 }
 
 func (a *TestAuthenticator) TestJWTForUserID(userID string) (string, error) {
-	u := a.UserProvider(userID)
+	u := a.UserProvider(context.TODO(), userID)
 	if u == nil {
 		return "", status.PermissionDeniedErrorf("user %s is unknown to TestAuthenticator", userID)
 	}

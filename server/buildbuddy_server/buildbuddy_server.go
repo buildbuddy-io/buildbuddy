@@ -312,7 +312,7 @@ func (s *BuildBuddyServer) GetGroupUsers(ctx context.Context, req *grpb.GetGroup
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	users, err := userDB.GetGroupUsers(ctx, req.GetGroupId(), req.GetGroupMembershipStatus())
+	users, err := userDB.GetGroupUsers(ctx, req.GetGroupMembershipStatus())
 	if err != nil {
 		return nil, err
 	}

@@ -19,22 +19,26 @@ import (
 // Configure sets up an Authenticator in the env that authenticates similarly to
 // the real enterprise app, performing queries against UserDB and AuthDB, rather
 // than using a static user mapping.
+// TODO(bduffany): Figure out a way to replace this with a real authenticator
+// instead (maybe using self-auth?)
 func Configure(t *testing.T, env environment.Env) *testauth.TestAuthenticator {
 	a := testauth.NewTestAuthenticator(nil /*=testUsers*/)
 
-	a.UserProvider = func(userID string) interfaces.UserInfo {
+	a.UserProvider = func(ctx context.Context, userID string) interfaces.UserInfo {
 		// Fake the minimal auth context needed to look up the real user and
 		// group memberships.
-		ctx := testauth.WithAuthenticatedUserInfo(
-			context.Background(),
+		ctx = testauth.WithAuthenticatedUserInfo(
+			ctx,
 			&testauth.TestUser{UserID: userID},
 		)
 		u, err := env.GetUserDB().GetUser(ctx)
 		require.NoErrorf(t, err, "failed to lookup user %q", userID)
 		// Now return the claims for the real user.
-		if len(u.Groups) > 0 {
-			// For now, use the first group as the "effective" group for UI
-			// endpoints which use the group_id from request context.
+		// If the preferred group ID is unset, use the first group.
+		// TODO(bduffany): remove this "default" preferred group ID since the
+		// real app doesn't work this way, and have tests explicitly set a
+		// preferred group ID.
+		if requestcontext.ProtoRequestContextFromContext(ctx) == nil && len(u.Groups) > 0 {
 			reqCtx := testauth.RequestContext(u.UserID, u.Groups[0].Group.GroupID)
 			ctx = requestcontext.ContextWithProtoRequestContext(ctx, reqCtx)
 		}
