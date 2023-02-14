@@ -349,7 +349,7 @@ options that take arguments into "--option=value" options, excepting the `run`
 subcommand itself and the build target. These are generally the arguments
 following a `--` in the argument list passed to bazel, if any.
 
-This environment variable will only be set for the `pre_bazel` script in the
+This environment variable will only be set for the `pre_bazel.sh` script in the
 plugin. Similar to the way in which the bazel args file works, any changes
 made to this file by a plugin will be read in and reflected in the args
 eventually passed to bazel.
