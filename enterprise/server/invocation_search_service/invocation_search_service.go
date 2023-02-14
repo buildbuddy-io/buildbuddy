@@ -13,11 +13,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/google/uuid"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 )
 
 const (
@@ -29,12 +32,14 @@ const (
 type InvocationSearchService struct {
 	env environment.Env
 	h   interfaces.DBHandle
+	oh  interfaces.OLAPDBHandle
 }
 
-func NewInvocationSearchService(env environment.Env, h interfaces.DBHandle) *InvocationSearchService {
+func NewInvocationSearchService(env environment.Env, h interfaces.DBHandle, oh interfaces.OLAPDBHandle) *InvocationSearchService {
 	return &InvocationSearchService{
 		env: env,
 		h:   h,
+		oh:  oh,
 	}
 }
 
@@ -94,63 +99,53 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	o.AddOr(groupQueryStr, groupArgs...)
 	o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
 	orQuery, orArgs := o.Build()
-	q = q.AddWhereClause("("+orQuery+")", orArgs...)
+	q.AddWhereClause("("+orQuery+")", orArgs...)
 }
 
-func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
-	if err := s.checkPreconditions(req); err != nil {
-		return nil, err
+func containsExecutionColumn(f []*sfpb.StatFilter) bool {
+	for _, filter := range f {
+		if filter.GetMetric().Execution != nil {
+			return true
+		}
 	}
-	u, err := perms.AuthenticatedUser(ctx, s.env)
-	if err != nil {
-		return nil, err
-	}
-	if blocklist.IsBlockedForStatsQuery(u.GetGroupID()) {
-		return nil, status.ResourceExhaustedErrorf("Too many rows.")
-	}
+	return false
+}
 
-	q := query_builder.NewQuery(`SELECT * FROM Invocations as i`)
-
+func addCommonWhereClauses(q *query_builder.Query, iq *inpb.InvocationQuery) {
 	// Don't include anonymous builds.
 	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")
 
-	if user := req.GetQuery().GetUser(); user != "" {
+	if user := iq.GetUser(); user != "" {
 		q.AddWhereClause("i.user = ?", user)
 	}
-	if host := req.GetQuery().GetHost(); host != "" {
+	if host := iq.GetHost(); host != "" {
 		q.AddWhereClause("i.host = ?", host)
 	}
-	if url := req.GetQuery().GetRepoUrl(); url != "" {
+	if url := iq.GetRepoUrl(); url != "" {
 		q.AddWhereClause("i.repo_url = ?", url)
 	}
-	if branch := req.GetQuery().GetBranchName(); branch != "" {
+	if branch := iq.GetBranchName(); branch != "" {
 		q.AddWhereClause("i.branch_name = ?", branch)
 	}
-	if command := req.GetQuery().GetCommand(); command != "" {
+	if command := iq.GetCommand(); command != "" {
 		q.AddWhereClause("i.command = ?", command)
 	}
-	if sha := req.GetQuery().GetCommitSha(); sha != "" {
+	if sha := iq.GetCommitSha(); sha != "" {
 		q.AddWhereClause("i.commit_sha = ?", sha)
 	}
-	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
+	if group_id := iq.GetGroupId(); group_id != "" {
 		q.AddWhereClause("i.group_id = ?", group_id)
 	}
 	roleClauses := query_builder.OrClauses{}
-	for _, role := range req.GetQuery().GetRole() {
+	for _, role := range iq.GetRole() {
 		roleClauses.AddOr("i.role = ?", role)
 	}
 	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
 		q.AddWhereClause("("+roleQuery+")", roleArgs...)
 	}
-	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
-		q.AddWhereClause("i.updated_at_usec >= ?", start.AsTime().UnixMicro())
-	}
-	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
-		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
-	}
 
 	statusClauses := query_builder.OrClauses{}
-	for _, status := range req.GetQuery().GetStatus() {
+	for _, status := range iq.GetStatus() {
 		switch status {
 		case inpb.OverallStatus_SUCCESS:
 			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 1)
@@ -170,6 +165,90 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if statusQuery != "" {
 		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
 	}
+}
+
+func (s *InvocationSearchService) searchInvocationsInExecutions(ctx context.Context, req *inpb.SearchInvocationRequest) (*query_builder.Query, error) {
+	q := query_builder.NewQuery(`SELECT DISTINCT invocation_uuid FROM Executions as i`)
+	addCommonWhereClauses(q, req.GetQuery())
+	for _, f := range req.GetQuery().GetFilter() {
+		if f.GetMetric().Execution == nil {
+			continue
+		}
+		str, args, err := filter.GenerateFilterStringAndArgs(f, "i.")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
+	}
+
+	// Set a high-ish limit here, but not the request's limit: there may be extra
+	// filters when we go to fetch the actual invocations that filter out even
+	// more results.
+	q.SetLimit(200)
+	qString, qArgs := q.Build()
+
+	if req.Sort != nil || req.PageToken != "" {
+		return nil, status.UnimplementedError("Sorting and pagination is not supported for execution searches.")
+	}
+	q.SetOrderBy("i.updated_at_usec", false)
+
+	// More stuff...
+	rows, err := s.oh.DB(ctx).Raw(qString, qArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	type o struct {
+		InvocationUuid string
+	}
+	var ids []string
+	for rows.Next() {
+		out := o{}
+		if err := s.oh.DB(ctx).ScanRows(rows, &out); err != nil {
+			return nil, err
+		}
+		u, err := uuid.Parse(out.InvocationUuid)
+		if err != nil {
+			return nil, err
+		}
+
+		ids = append(ids, u.String())
+	}
+
+	invocationQuery := query_builder.NewQuery("SELECT * FROM Invocations AS i")
+	invocationQuery.AddWhereClause("i.invocation_id IN ?", ids)
+	return invocationQuery, nil
+}
+
+func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
+	if err := s.checkPreconditions(req); err != nil {
+		return nil, err
+	}
+	u, err := perms.AuthenticatedUser(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+	if blocklist.IsBlockedForStatsQuery(u.GetGroupID()) {
+		return nil, status.ResourceExhaustedErrorf("Too many rows.")
+	}
+
+	isExecution := containsExecutionColumn(req.GetQuery().GetFilter())
+	var q *query_builder.Query
+	if isExecution {
+		q, err = s.searchInvocationsInExecutions(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		q = query_builder.NewQuery(`SELECT * FROM Invocations AS i`)
+	}
+
+	addCommonWhereClauses(q, req.GetQuery())
+	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
+		q.AddWhereClause("i.updated_at_usec >= ?", start.AsTime().UnixMicro())
+	}
+	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
+		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
+	}
 
 	// The underlying data is not precise enough to accurately support nanoseconds and there's no use case for it yet.
 	if req.GetQuery().GetMinimumDuration().GetNanos() != 0 || req.GetQuery().GetMaximumDuration().GetNanos() != 0 {
@@ -181,6 +260,17 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	}
 	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
 		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
+	}
+
+	for _, f := range req.GetQuery().GetFilter() {
+		if f.GetMetric().Invocation == nil {
+			continue
+		}
+		str, args, err := filter.GenerateFilterStringAndArgs(f, "i.")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
 	}
 
 	// Always add permissions check.

@@ -208,6 +208,7 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 	}
 
 	for _, f := range tq.GetFilter() {
+		// XXX: Filter here, too.
 		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
 		if err != nil {
 			return err
@@ -745,6 +746,9 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	for _, f := range req.GetQuery().GetFilter() {
+		if f.GetMetric().Execution != nil {
+			continue
+		}
 		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
 		if err != nil {
 			return nil, err
