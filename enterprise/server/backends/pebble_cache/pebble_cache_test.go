@@ -389,6 +389,155 @@ func TestIsolateByGroupIds(t *testing.T) {
 	}
 }
 
+func TestCopyPartitionData(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	testAPIKey := "AK2222"
+	testGroup := "GR7890"
+	testUsers := testauth.TestUsers(testAPIKey, testGroup)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(testUsers))
+
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	rootDir := testfs.MakeTempDir(t)
+	partitionID := "FOO"
+	instanceName := "cloud"
+	opts := &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 100,
+		Partitions: []disk.Partition{
+			{
+				ID:           pebble_cache.DefaultPartitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           partitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     testGroup,
+				Prefix:      "",
+				PartitionID: partitionID,
+			},
+		},
+	}
+
+	// Create a cache and write some data in default and custom partitions.
+
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	var defaultResources []*resource.ResourceName
+	var customResources []*resource.ResourceName
+
+	// Write some data to the default partition.
+	{
+		ctx := getAnonContext(t, te)
+		for i := 0; i < 10; i++ {
+			size := int64(10)
+			// Mix of inline and extern data.
+			if i > 5 {
+				size = 1000
+			}
+			d, buf := testdigest.NewRandomDigestBuf(t, size)
+			r := digest.NewCASResourceName(d, instanceName).ToProto()
+			defaultResources = append(defaultResources, r)
+			err = pc.Set(ctx, r, buf)
+			require.NoError(t, err)
+		}
+		for i := 0; i < 10; i++ {
+			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			r := digest.NewACResourceName(d, instanceName).ToProto()
+			defaultResources = append(defaultResources, r)
+			err = pc.Set(ctx, r, buf)
+			require.NoError(t, err)
+		}
+	}
+
+	// Write some data to the custom partition.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		for i := 0; i < 10; i++ {
+			d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+			r := digest.NewCASResourceName(d, instanceName).ToProto()
+			customResources = append(customResources, r)
+			err = pc.Set(ctx, r, buf)
+			require.NoError(t, err)
+		}
+		for i := 0; i < 10; i++ {
+			d, buf := testdigest.NewRandomDigestBuf(t, 100)
+			r := digest.NewACResourceName(d, instanceName).ToProto()
+			customResources = append(customResources, r)
+			err = pc.Set(ctx, r, buf)
+			require.NoError(t, err)
+		}
+	}
+
+	err = pc.Stop()
+	require.NoError(t, err)
+
+	// copy data from default to anon partition
+	flags.Set(t, "cache.pebble.copy_partition_data", pebble_cache.DefaultPartitionID+":"+interfaces.AuthAnonymousUser)
+
+	// Now add the anon partition and remove the custom partition.
+	opts = &pebble_cache.Options{
+		RootDirectory:          rootDir,
+		MaxSizeBytes:           maxSizeBytes,
+		MaxInlineFileSizeBytes: 100,
+		Partitions: []disk.Partition{
+			{
+				ID:           pebble_cache.DefaultPartitionID,
+				MaxSizeBytes: maxSizeBytes,
+			},
+			{
+				ID:           interfaces.AuthAnonymousUser,
+				MaxSizeBytes: maxSizeBytes,
+			},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{
+				GroupID:     interfaces.AuthAnonymousUser,
+				Prefix:      "",
+				PartitionID: interfaces.AuthAnonymousUser,
+			},
+			{
+				GroupID:     testGroup,
+				Prefix:      "",
+				PartitionID: interfaces.AuthAnonymousUser,
+			},
+		},
+	}
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	// Data that was in the original partition should be readable.
+	{
+		ctx := getAnonContext(t, te)
+		for _, r := range defaultResources {
+			_, err := pc.Get(ctx, r)
+			require.NoError(t, err)
+		}
+	}
+
+	// Data that was in the custom partition should not have been copied.
+	{
+		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
+		for _, r := range customResources {
+			_, err := pc.Get(ctx, r)
+			require.Error(t, err)
+		}
+	}
+
+	pc.Stop()
+	pc, err = pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+}
+
 func TestIsolateAnonUsers(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	testAPIKey := "AK2222"

@@ -71,6 +71,7 @@ var (
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
+	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 
 	activeKeyVersion = flag.Int64("cache.pebble.activeKeyVersion", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
 
@@ -367,6 +368,24 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 	pc.lastDBVersion = filestore.PebbleKeyVersion(versionMetadata.GetVersion())
 
+	if *copyPartition != "" {
+		partitionIDs := strings.Split(*copyPartition, ":")
+		if len(partitionIDs) != 2 {
+			return nil, status.InvalidArgumentErrorf("ID specifier %q for partition copy operation invalid", *copyPartition)
+		}
+		srcPartitionID, dstPartitionID := partitionIDs[0], partitionIDs[1]
+		if !hasPartition(opts.Partitions, srcPartitionID) {
+			return nil, status.InvalidArgumentErrorf("Copy operation invalid source partition ID %q", srcPartitionID)
+		}
+		if !hasPartition(opts.Partitions, dstPartitionID) {
+			return nil, status.InvalidArgumentErrorf("Copy operation invalid destination partition ID %q", srcPartitionID)
+		}
+		log.Infof("Copying data from partition %s to partition %s", srcPartitionID, dstPartitionID)
+		if err := pc.copyPartitionData(srcPartitionID, dstPartitionID); err != nil {
+			return nil, status.UnknownErrorf("could not copy partition data: %s", err)
+		}
+	}
+
 	peMu := sync.Mutex{}
 	eg := errgroup.Group{}
 	for i, part := range opts.Partitions {
@@ -393,6 +412,15 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 
 	statusz.AddSection(opts.Name, "On disk LRU cache", pc)
 	return pc, nil
+}
+
+func hasPartition(ps []disk.Partition, id string) bool {
+	for _, p := range ps {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func keyPrefix(prefix, key []byte) []byte {
@@ -567,6 +595,81 @@ func (p *PebbleCache) processSizeUpdates() {
 		e := evictors[edit.partID]
 		e.updateSize(edit.cacheType, edit.delta)
 	}
+}
+
+func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) error {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	dstMetadataKey := partitionMetadataKey(dstPartitionID)
+	_, closer, err := db.Get(dstMetadataKey)
+	if err == nil {
+		defer closer.Close()
+		log.Infof("Partition metadata key already exists, skipping copy.")
+		return nil
+	}
+
+	srcKeyPrefix := []byte(partitionDirectoryPrefix + srcPartitionID)
+	dstKeyPrefix := []byte(partitionDirectoryPrefix + dstPartitionID)
+	start, end := keys.Range(srcKeyPrefix)
+	iter := db.NewIter(&pebble.IterOptions{
+		LowerBound: start,
+		UpperBound: end,
+	})
+	defer iter.Close()
+
+	blobDir := p.blobDir()
+	ctx := context.Background()
+	numKeysCopied := 0
+	lastUpdate := time.Now()
+	for iter.First(); iter.Valid(); iter.Next() {
+		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
+			continue
+		}
+		dstKey := append(dstKeyPrefix, bytes.TrimPrefix(iter.Key(), srcKeyPrefix)...)
+
+		fileMetadata := &rfpb.FileMetadata{}
+		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
+			return status.UnknownErrorf("Error unmarshalling metadata: %s", err)
+		}
+
+		dstFileRecord := proto.Clone(fileMetadata.GetFileRecord()).(*rfpb.FileRecord)
+		dstFileRecord.GetIsolation().PartitionId = dstPartitionID
+		newStorageMD, err := p.fileStorer.LinkOrCopyFile(ctx, fileMetadata.GetStorageMetadata(), dstFileRecord, blobDir, blobDir)
+		if err != nil {
+			return status.UnknownErrorf("could not copy files: %s", err)
+		}
+		fileMetadata.StorageMetadata = newStorageMD
+
+		buf, err := proto.Marshal(fileMetadata)
+		if err != nil {
+			return status.UnknownErrorf("could not marshal destination metadata: %s", err)
+		}
+		if err := db.Set(dstKey, buf, pebble.NoSync); err != nil {
+			return status.UnknownErrorf("could not write destination key: %s", err)
+		}
+		numKeysCopied++
+		if time.Since(lastUpdate) > 10*time.Second {
+			log.Infof("Partition copy in progress, copied %d keys, last key: %s", numKeysCopied, string(iter.Key()))
+			lastUpdate = time.Now()
+		}
+	}
+
+	srcMetadataKey := partitionMetadataKey(srcPartitionID)
+	v, closer, err := db.Get(srcMetadataKey)
+	if err == nil {
+		defer closer.Close()
+		if err := db.Set(dstMetadataKey, v, pebble.NoSync); err != nil {
+			return err
+		}
+	} else if err != pebble.ErrNotFound {
+		return err
+	}
+
+	return nil
 }
 
 func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
@@ -1718,10 +1821,10 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
 }
 
-func (e *partitionEvictor) partitionMetadataKey() []byte {
+func partitionMetadataKey(partID string) []byte {
 	var key []byte
 	key = append(key, SystemKeyPrefix...)
-	key = append(key, []byte(e.part.ID)...)
+	key = append(key, []byte(partID)...)
 	key = append(key, []byte("/metadata")...)
 	return key
 }
@@ -1733,7 +1836,7 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*rfpb.PartitionMetadata, e
 	}
 	defer db.Close()
 
-	partitionMDBuf, err := pebbleutil.GetCopy(db, e.partitionMetadataKey())
+	partitionMDBuf, err := pebbleutil.GetCopy(db, partitionMetadataKey(e.part.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -1750,9 +1853,9 @@ func (e *partitionEvictor) writePartitionMetadata(db pebbleutil.IPebbleDB, md *r
 	if err != nil {
 		return err
 	}
-	unlockFn := e.locker.Lock(string(e.partitionMetadataKey()))
+	unlockFn := e.locker.Lock(string(partitionMetadataKey(e.part.ID)))
 	defer unlockFn()
-	return db.Set(e.partitionMetadataKey(), bs, &pebble.WriteOptions{Sync: true})
+	return db.Set(partitionMetadataKey(e.part.ID), bs, &pebble.WriteOptions{Sync: true})
 }
 
 func (e *partitionEvictor) flushPartitionMetadata(db pebbleutil.IPebbleDB) error {
