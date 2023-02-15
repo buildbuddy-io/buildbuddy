@@ -34,8 +34,13 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
     request: new workflow.CreateWorkflowRequest({ gitRepo: new workflow.CreateWorkflowRequest.GitRepo() }),
   };
 
-  private onChange(object: Record<string, any>, key: string, e: React.ChangeEvent<HTMLInputElement>) {
-    object[key] = e.target.value;
+  private handleRepoUrlChange(e: React.ChangeEvent<HTMLInputElement>) {
+    this.state.request.gitRepo!.repoUrl = e.target.value;
+    this.setState({ request: new workflow.CreateWorkflowRequest({ ...this.state.request }) });
+  }
+
+  private handleAccessTokenChange(e: React.ChangeEvent<HTMLInputElement>) {
+    this.state.request.gitRepo!.accessToken = e.target.value;
     this.setState({ request: new workflow.CreateWorkflowRequest({ ...this.state.request }) });
   }
 
@@ -97,8 +102,8 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
                 <label htmlFor="gitRepo.repoUrl">GitHub repository URL</label>
                 <Input
                   name="gitRepo.repoUrl"
-                  value={this.state.request.gitRepo.repoUrl}
-                  onChange={this.onChange.bind(this, this.state.request.gitRepo, "repoUrl")}
+                  value={this.state.request.gitRepo!.repoUrl}
+                  onChange={(e) => this.handleRepoUrlChange(e)}
                   placeholder="https://github.com/acme-inc/app"
                 />
                 <div className="explanation">Currently only GitHub is supported.</div>
@@ -107,8 +112,8 @@ export default class CreateWorkflowComponent extends React.Component<CreateWorkf
                 <label htmlFor="gitRepo.accessToken">Repository access token</label>
                 <Input
                   name="gitRepo.accessToken"
-                  value={this.state.request.gitRepo.accessToken}
-                  onChange={this.onChange.bind(this, this.state.request.gitRepo, "accessToken")}
+                  value={this.state.request.gitRepo!.accessToken}
+                  onChange={(e) => this.handleAccessTokenChange(e)}
                   type="password"
                   {...{ autocomplete: "false" }} // Silence devtools warning.
                 />

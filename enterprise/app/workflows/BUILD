@@ -7,6 +7,7 @@ exports_files(["workflows.css"])
 ts_library(
     name = "workflows",
     srcs = glob(["*.tsx"]),
+    strict = True,
     deps = [
         "//app/alert",
         "//app/auth",
