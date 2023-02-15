@@ -80,6 +80,9 @@ func ConfigureAPIKey(args []string) ([]string, error) {
 		log.Debugf("failed to configure API key from .git/config: %s", err)
 		return args, nil
 	}
+	if apiKey == "" {
+		return args, nil
+	}
 
 	return append(args, "--"+apiKeyHeader+"="+strings.TrimSpace(apiKey)), nil
 }
