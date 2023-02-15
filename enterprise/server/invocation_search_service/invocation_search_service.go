@@ -173,6 +173,9 @@ func addCommonWhereClauses(q *query_builder.Query, iq *inpb.InvocationQuery) {
 }
 
 func (s *InvocationSearchService) searchInvocationsInExecutions(ctx context.Context, req *inpb.SearchInvocationRequest) (*query_builder.Query, error) {
+	if s.oh == nil {
+		return nil, status.UnimplementedError("Execution filters require an OLAP DB.")
+	}
 	q := query_builder.NewQuery(`SELECT DISTINCT invocation_uuid FROM Executions as i`)
 	addCommonWhereClauses(q, req.GetQuery())
 	for _, f := range req.GetQuery().GetFilter() {
