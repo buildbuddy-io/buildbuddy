@@ -559,7 +559,8 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 		ps.MarkPeerAsFailed(peer)
 	}
 
-	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q, peerset: %v", d.GetHash(), ps)
+	c.log.Debugf("Exhausted all peers attempting to query metadata %q. Peerset: %+v", d.GetHash(), ps)
+	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q.", d.GetHash())
 }
 
 func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
@@ -717,7 +718,8 @@ func (c *Cache) distributedReader(ctx context.Context, rn *resource.ResourceName
 		ps.MarkPeerAsFailed(peer)
 
 	}
-	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q, peerset: %v", rn.GetDigest().GetHash(), ps)
+	c.log.Debugf("Exhausted all peers attempting to query metadata %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
+	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
 func (c *Cache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
