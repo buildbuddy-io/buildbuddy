@@ -136,14 +136,21 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 		}
 		localURL.Host = "localhost:" + grpcPort
 		err = streamFromUrl(ctx, localURL, false, offset, limit, writer)
-	} else {
-		// If the local cache did not work, maybe a remote cache is being used.
-		// Try to connect to that, first over grpcs.
-		err = streamFromUrl(ctx, url, true, offset, limit, writer)
-		if err != nil {
-			err = streamFromUrl(ctx, url, false, offset, limit, writer)
-		}
 	}
+
+	// If the local cache did not work, maybe a remote cache is being used.
+	// Try to connect to that, first over grpcs.
+	if err != nil || env.GetCache() == nil {
+		err = streamFromUrl(ctx, url, true, offset, limit, writer)
+	}
+
+	// If that didn't work, try plain old grpc.
+	if err != nil {
+		err = streamFromUrl(ctx, url, false, offset, limit, writer)
+	}
+
+	// Sanitize the error so as to not expose internal services via the
+	// error message.
 	if err != nil {
 		log.Errorf("Error byte-streaming from URL %q: %s", url.String(), err)
 		return status.UnavailableErrorf("Error reading from URL: %q", url.String())
