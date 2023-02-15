@@ -31,7 +31,6 @@ interface State {
   dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
   dates: string[];
-  filterOnlyCI: boolean;
 }
 
 const SECONDS_PER_MICROSECOND = 1e-6;
@@ -44,7 +43,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
     dateToExecutionStatMap: new Map<string, stats.IExecutionStat>(),
     enableInvocationPercentileCharts: false,
     dates: [],
-    filterOnlyCI: false,
   };
 
   subscription?: Subscription;
@@ -68,14 +66,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
     }
   }
 
-  getLimit() {
-    return parseInt(this.props.hash.replace("#", "")) || 30;
-  }
-
-  updateLimit(limit: number) {
-    window.location.hash = "#" + limit;
-  }
-
   updateSelectedTab(tab: "charts" | "drilldown") {
     window.location.hash = "#" + tab;
   }
@@ -93,36 +83,26 @@ export default class TrendsComponent extends React.Component<Props, State> {
     let request = new stats.GetTrendRequest();
     request.query = new stats.TrendQuery();
 
-    if (capabilities.globalFilter) {
-      const filterParams = getProtoFilterParams(this.props.search);
-      if (filterParams.role) {
-        request.query.role = filterParams.role;
-      } else {
-        // Note: Technically we're filtering out workflows and unknown roles,
-        // even though the user has selected "All roles". But we do this to
-        // avoid double-counting build times for workflows and their nested CI runs.
-        request.query.role = ["", "CI"];
-      }
-
-      if (filterParams.host) request.query.host = filterParams.host;
-      if (filterParams.user) request.query.user = filterParams.user;
-      if (filterParams.repo) request.query.repoUrl = filterParams.repo;
-      if (filterParams.branch) request.query.branchName = filterParams.branch;
-      if (filterParams.commit) request.query.commitSha = filterParams.commit;
-      if (filterParams.command) request.query.command = filterParams.command;
-      if (filterParams.status) request.query.status = filterParams.status;
-
-      request.query.updatedBefore = filterParams.updatedBefore;
-      request.query.updatedAfter = filterParams.updatedAfter;
+    const filterParams = getProtoFilterParams(this.props.search);
+    if (filterParams.role) {
+      request.query.role = filterParams.role;
     } else {
-      // TODO(bduffany): Clean up this branch once the global filter is switched on
-      if (this.state.filterOnlyCI) {
-        request.query.role = ["CI"];
-      } else {
-        request.query.role = ["", "CI"];
-      }
-      request.lookbackWindowDays = this.getLimit();
+      // Note: Technically we're filtering out workflows and unknown roles,
+      // even though the user has selected "All roles". But we do this to
+      // avoid double-counting build times for workflows and their nested CI runs.
+      request.query.role = ["", "CI"];
     }
+
+    if (filterParams.host) request.query.host = filterParams.host;
+    if (filterParams.user) request.query.user = filterParams.user;
+    if (filterParams.repo) request.query.repoUrl = filterParams.repo;
+    if (filterParams.branch) request.query.branchName = filterParams.branch;
+    if (filterParams.commit) request.query.commitSha = filterParams.commit;
+    if (filterParams.command) request.query.command = filterParams.command;
+    if (filterParams.status) request.query.status = filterParams.status;
+
+    request.query.updatedBefore = filterParams.updatedBefore;
+    request.query.updatedAfter = filterParams.updatedAfter;
 
     const user = this.props.search.get("user");
     if (user) {
@@ -168,14 +148,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
       this.setState({
         ...this.state,
         stats: response.trendStat,
-        dates: capabilities.globalFilter
-          ? getDatesBetween(
-              // Start date should always be defined.
-              proto.timestampToDate(request.query!.updatedAfter || {}),
-              // End date may not be defined -- default to today.
-              request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date()
-            )
-          : this.getLastNDates(request.lookbackWindowDays),
+        dates: getDatesBetween(
+          // Start date should always be defined.
+          proto.timestampToDate(request.query!.updatedAfter || {}),
+          // End date may not be defined -- default to today.
+          request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date()
+        ),
         dateToStatMap,
         dateToExecutionStatMap,
         enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
@@ -192,24 +170,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return this.state.dateToExecutionStatMap.get(date) || {};
   }
 
-  getLastNDates(n: number) {
-    return [...new Array(n)]
-      .map((i, index) => moment().startOf("day").subtract(index, "days").format("YYYY-MM-DD"))
-      .reverse();
-  }
-
   formatLongDate(date: any) {
     return moment(date).format("dddd, MMMM Do YYYY");
   }
 
   formatShortDate(date: any) {
     return moment(date).format("MMM D");
-  }
-
-  handleCheckboxChange(event: any) {
-    this.setState({ ...this.state, filterOnlyCI: event.target.checked }, () => {
-      this.fetchStats();
-    });
   }
 
   onBarClicked(hash: string, sortBy: string, date: string) {
@@ -226,38 +192,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
         <div className="container">
           <div className="trends-header">
             <div className="trends-title">Trends</div>
-            {capabilities.globalFilter ? (
-              <FilterComponent search={this.props.search} />
-            ) : (
-              <div>
-                <CheckboxButton
-                  className="show-changes-only-button"
-                  onChange={this.handleCheckboxChange.bind(this)}
-                  checked={this.state.filterOnlyCI}>
-                  Only show CI builds
-                </CheckboxButton>
-              </div>
-            )}
+            <FilterComponent search={this.props.search} />
           </div>
-          {!capabilities.globalFilter && (
-            <div className="tabs">
-              <div onClick={() => this.updateLimit(7)} className={`tab ${this.getLimit() == 7 ? "selected" : ""}`}>
-                7 days
-              </div>
-              <div onClick={() => this.updateLimit(30)} className={`tab ${this.getLimit() == 30 ? "selected" : ""}`}>
-                30 days
-              </div>
-              <div onClick={() => this.updateLimit(90)} className={`tab ${this.getLimit() == 90 ? "selected" : ""}`}>
-                90 days
-              </div>
-              <div onClick={() => this.updateLimit(180)} className={`tab ${this.getLimit() == 180 ? "selected" : ""}`}>
-                180 days
-              </div>
-              <div onClick={() => this.updateLimit(365)} className={`tab ${this.getLimit() == 365 ? "selected" : ""}`}>
-                365 days
-              </div>
-            </div>
-          )}
           {capabilities.config.trendsHeatmapEnabled && (
             <div className="tabs">
               <div
@@ -299,7 +235,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 secondaryName="average build duration"
                 secondaryLine={true}
                 separateAxis={true}
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : undefined}
+                onBarClicked={this.onBarClicked.bind(this, "", "")}
               />
               {this.state.enableInvocationPercentileCharts && (
                 <PercentilesChartComponent
@@ -312,7 +248,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   extractP90={(date) => +(this.getStat(date).buildTimeUsecP90 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP95={(date) => +(this.getStat(date).buildTimeUsecP95 ?? 0) * SECONDS_PER_MICROSECOND}
                   extractP99={(date) => +(this.getStat(date).buildTimeUsecP99 ?? 0) * SECONDS_PER_MICROSECOND}
-                  onColumnClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : undefined}
+                  onColumnClicked={this.onBarClicked.bind(this, "", "duration")}
                 />
               )}
               {!this.state.enableInvocationPercentileCharts && (
@@ -331,10 +267,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   formatSecondaryHoverValue={(value) => `${format.durationSec(value || 0)} slowest`}
                   name="average build duration"
                   secondaryName="slowest build duration"
-                  onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "", "") : undefined}
-                  onSecondaryBarClicked={
-                    capabilities.globalFilter ? this.onBarClicked.bind(this, "", "duration") : undefined
-                  }
+                  onBarClicked={this.onBarClicked.bind(this, "", "")}
+                  onSecondaryBarClicked={this.onBarClicked.bind(this, "", "duration")}
                 />
               )}
 
@@ -408,7 +342,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " users"}
                 name="users with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#users", "") : undefined}
+                onBarClicked={this.onBarClicked.bind(this, "#users", "")}
               />
               <TrendsChartComponent
                 title="Commits with builds"
@@ -420,7 +354,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " commits"}
                 name="commits with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#commits", "") : undefined}
+                onBarClicked={this.onBarClicked.bind(this, "#commits", "")}
               />
               <TrendsChartComponent
                 title="Branches with builds"
@@ -443,7 +377,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " hosts"}
                 name="hosts with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#hosts", "") : undefined}
+                onBarClicked={this.onBarClicked.bind(this, "#hosts", "")}
               />
               <TrendsChartComponent
                 title="Repos with builds"
@@ -455,7 +389,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 formatHoverLabel={this.formatLongDate}
                 formatHoverValue={(value) => (value || 0) + " repos"}
                 name="repos with builds"
-                onBarClicked={capabilities.globalFilter ? this.onBarClicked.bind(this, "#repos", "") : undefined}
+                onBarClicked={this.onBarClicked.bind(this, "#repos", "")}
               />
               {this.state.dateToExecutionStatMap.size > 0 && (
                 <PercentilesChartComponent

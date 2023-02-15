@@ -129,12 +129,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
       count: 126,
     });
-    if (capabilities.globalFilter) {
-      request.query.role = filterParams.role;
-      request.query.updatedAfter = filterParams.updatedAfter;
-      request.query.updatedBefore = filterParams.updatedBefore;
-      request.query.status = filterParams.status;
-    }
+    request.query.role = filterParams.role;
+    request.query.updatedAfter = filterParams.updatedAfter;
+    request.query.updatedBefore = filterParams.updatedBefore;
+    request.query.status = filterParams.status;
 
     this.invocationsRpc = rpcService.service
       .searchInvocation(request)
@@ -155,22 +153,20 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
     const aggregationType = this.hashToAggregationTypeMap.get(this.props.hash);
     const request = new invocation.GetInvocationStatRequest({ aggregationType });
-    if (capabilities.globalFilter) {
-      const filterParams = getProtoFilterParams(this.props.search);
-      request.query = new invocation.InvocationStatQuery({
-        host: this.props.hostname || filterParams.host,
-        user: this.props.username || filterParams.user,
-        repoUrl: this.props.repo || filterParams.repo,
-        branchName: this.props.branch || filterParams.branch,
-        commitSha: this.props.commit || filterParams.commit,
-        command: filterParams.command,
+    const filterParams = getProtoFilterParams(this.props.search);
+    request.query = new invocation.InvocationStatQuery({
+      host: this.props.hostname || filterParams.host,
+      user: this.props.username || filterParams.user,
+      repoUrl: this.props.repo || filterParams.repo,
+      branchName: this.props.branch || filterParams.branch,
+      commitSha: this.props.commit || filterParams.commit,
+      command: filterParams.command,
 
-        role: filterParams.role,
-        updatedBefore: filterParams.updatedBefore,
-        updatedAfter: filterParams.updatedAfter,
-        status: filterParams.status,
-      });
-    }
+      role: filterParams.role,
+      updatedBefore: filterParams.updatedBefore,
+      updatedAfter: filterParams.updatedAfter,
+      status: filterParams.status,
+    });
 
     this.aggregateStatsRpc = rpcService.service
       .getInvocationStat(request)
@@ -188,21 +184,19 @@ export default class HistoryComponent extends React.Component<Props, State> {
     const request = new invocation.GetInvocationStatRequest({
       aggregationType: invocation.AggType.GROUP_ID_AGGREGATION_TYPE,
     });
-    if (capabilities.globalFilter) {
-      request.query = new invocation.InvocationQuery({
-        host: this.props.hostname || filterParams.host,
-        user: this.props.username || filterParams.user,
-        repoUrl: this.props.repo || filterParams.repo,
-        branchName: this.props.branch || filterParams.branch,
-        commitSha: this.props.commit || filterParams.commit,
-        command: filterParams.command,
+    request.query = new invocation.InvocationQuery({
+      host: this.props.hostname || filterParams.host,
+      user: this.props.username || filterParams.user,
+      repoUrl: this.props.repo || filterParams.repo,
+      branchName: this.props.branch || filterParams.branch,
+      commitSha: this.props.commit || filterParams.commit,
+      command: filterParams.command,
 
-        role: filterParams.role,
-        updatedAfter: filterParams.updatedAfter,
-        updatedBefore: filterParams.updatedBefore,
-        status: filterParams.status,
-      });
-    }
+      role: filterParams.role,
+      updatedAfter: filterParams.updatedAfter,
+      updatedBefore: filterParams.updatedBefore,
+      status: filterParams.status,
+    });
 
     this.summaryStatRpc = rpcService.service
       .getInvocationStat(request)
@@ -413,7 +407,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
                 )}
               </div>
-              {capabilities.globalFilter && <FilterComponent search={this.props.search} />}
+              <FilterComponent search={this.props.search} />
             </div>
             <div className="titles">
               <div className="title">
