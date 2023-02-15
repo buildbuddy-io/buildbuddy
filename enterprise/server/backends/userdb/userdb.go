@@ -689,15 +689,12 @@ func (d *UserDB) getDefaultGroupConfig() *tables.Group {
 }
 
 func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) error {
-	groupIDs := make([]string, 0)
-	for _, group := range u.Groups {
-		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, *group.Group.URLIdentifier)
-		if err != nil {
-			return err
-		}
-		groupIDs = append(groupIDs, hydratedGroup.GroupID)
+	if u.UserID == "" {
+		return status.FailedPreconditionError("UserID is required")
 	}
-
+	if u.SubID == "" {
+		return status.FailedPreconditionError("SubID is required")
+	}
 	if u.Email == "" {
 		return status.FailedPreconditionErrorf("Auth token does not contain an email address")
 	}
@@ -706,6 +703,15 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		return status.FailedPreconditionErrorf("Invalid email address: %s", u.Email)
 	}
 	emailDomain := emailParts[1]
+
+	groupIDs := make([]string, 0)
+	for _, group := range u.Groups {
+		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, *group.Group.URLIdentifier)
+		if err != nil {
+			return err
+		}
+		groupIDs = append(groupIDs, hydratedGroup.GroupID)
+	}
 
 	// If the user signed up using an authenticator associated with a group (i.e. SAML or OIDC SSO),
 	// don't add it to a group based on domain.
