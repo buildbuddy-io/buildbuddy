@@ -18,6 +18,8 @@ var (
 	outputPath = flag.String("output_path", "migration.txt", "The output file to write the gorm migration logs to.")
 )
 
+// This script prints the SQL commands that would be executed when running db.RunMigrations
+// It does not execute any of the commands
 func main() {
 	flag.Parse()
 
