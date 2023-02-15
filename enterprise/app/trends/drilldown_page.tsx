@@ -3,6 +3,7 @@ import Long from "long";
 
 import rpcService from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
+import Spinner from "../../../app/components/spinner/spinner";
 import HistoryInvocationCardComponent from "../../app/history/history_invocation_card";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
@@ -64,8 +65,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     drilldownData: undefined,
     invocationsData: undefined,
   };
-
-  metric: { name: string } = { name: "" };
 
   selectedMetric: MetricOption = METRIC_OPTIONS[0];
 
@@ -141,8 +140,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
     rpcService.service
       .getStatDrilldown(drilldownRequest)
-      .then((untypedResponse) => {
-        const response = untypedResponse as stats.GetStatDrilldownResponse;
+      .then((response) => {
         this.setState({ drilldownData: response });
       })
       .catch(() => this.setState({ drilldownsFailed: true, drilldownData: undefined }))
@@ -184,9 +182,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     rpcService.service
       .searchInvocation(request)
       .then((response) => {
-        const typedResponse = response as invocation.SearchInvocationResponse;
         this.setState({
-          invocationsData: typedResponse.invocation,
+          invocationsData: response.invocation,
         });
       })
       .catch(() => this.setState({ invocationsFailed: true, invocationsData: undefined }))
@@ -218,8 +215,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
     rpcService.service
       .getStatHeatmap(heatmapRequest)
-      .then((untypedResponse) => {
-        const response = untypedResponse as stats.GetStatHeatmapResponse;
+      .then((response) => {
         this.setState({
           heatmapData: response,
         });
@@ -230,8 +226,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   componentWillMount() {
     this.fetch();
   }
-
-  componentWillUnmount() {}
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.search != prevProps.search) {
@@ -246,7 +240,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return;
     }
     this.selectedMetric = METRIC_OPTIONS.find((v) => v.name === newMetric) || METRIC_OPTIONS[0];
-    this.setState({ loading: true, heatmapData: undefined, drilldownData: undefined, invocationsData: undefined });
     this.fetch();
   }
 
@@ -316,13 +309,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           </div>
           <div>
             Base:{" "}
-            <span className="dd-tt-base">
+            <span className="drilldown-page-tooltip-base">
               {((p.payload[0].payload.baseValue / +this.state.drilldownData.totalInBase) * 100).toFixed(1)}%
             </span>
           </div>
           <div>
             Selection:{" "}
-            <span className="dd-tt-selected">
+            <span className="drilldown-page-tooltip-selected">
               {((p.payload[0].payload.selectionValue / +this.state.drilldownData.totalInSelection) * 100).toFixed(1)}%
             </span>
           </div>
@@ -343,7 +336,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   getInvocationsTitleString(): string {
     if (this.state.loadingInvocations) {
-      return "Loading invocations...";
+      return "";
     } else if (this.state.invocationsData) {
       if (this.state.invocationsData.length < (this.currentHeatmapSelection?.invocationsSelected || 0)) {
         if (isExecutionMetric(this.selectedMetric.metric)) {
@@ -359,6 +352,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return "";
   }
 
+  getInvocationsTitle(): React.ReactElement {
+    const content = this.state.loadingInvocations ? <Spinner></Spinner> : this.getInvocationsTitleString();
+    return <div className="trend-chart-title">{content}</div>;
+  }
+
   getDrilldownChartsTitle(): string {
     if (this.state.loadingDrilldowns) {
       return "Loading drilldown dimensions";
@@ -367,7 +365,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     } else if (this.state.drilldownsFailed) {
       return "Failed to load drilldown dimensions.";
     }
-    return "Make a selection above to see drilldown charts and invocations";
+    return "To see drilldown charts and invocations, click and drag to select a region in the chart above";
   }
 
   render() {
@@ -376,7 +374,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         <div className="trend-chart-title">
           Drilldown by
           <Select
-            className="drilldown-select"
+            className="drilldown-page-select"
             onChange={this.handleMetricChange.bind(this)}
             value={this.selectedMetric.name}>
             {METRIC_OPTIONS.map(
@@ -408,8 +406,10 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                       {!this.state.loadingDrilldowns &&
                         this.state.drilldownData &&
                         this.state.drilldownData.chart.map((chart) => (
-                          <div className="drilldown-chart">
-                            <div className="drilldown-chart-title">{this.formatAggType(chart.drilldownDimension)}</div>
+                          <div className="drilldown-page-dd-chart">
+                            <div className="drilldown-page-dd-chart-title">
+                              {this.formatAggType(chart.drilldownDimension)}
+                            </div>
                             <BarChart
                               width={300}
                               height={200}
@@ -442,7 +442,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   )}
                 </div>
                 <div className="trend-chart">
-                  <div className="trend-chart-title">{this.getInvocationsTitleString()}</div>
+                  {this.getInvocationsTitle()}
                   {this.state.invocationsData && (
                     <div className="history">
                       <div className="container nopadding-dense">

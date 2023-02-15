@@ -60,24 +60,24 @@
   user-select: none;
 }
 
-.drilldown-chart {
+.drilldown-page-dd-chart {
   display: inline-block;
 }
 
-.drilldown-chart-title {
+.drilldown-page-dd-chart-title {
   margin-left: 4px;
   font-weight: 600;
 }
 
-.dd-tt-base {
+.drilldown-page-tooltip-base {
   color: #8884d8;
 }
 
-.dd-tt-selected {
+.drilldown-page-tooltip-selected {
   color: #82ca9d;
 }
 
-.select.drilldown-select {
+.select.drilldown-page-select {
   font-size: 16px;
   margin: 0 16px;
 }
