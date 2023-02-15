@@ -147,7 +147,7 @@ func run() (exitCode int, err error) {
 	}
 
 	// If the command is build, test, or query without a specified target - apply to all targets.
-	// TODO(siggisim): show a picker of executable targets is run is specified without a target.
+	// TODO(siggisim): show a picker of executable targets if run is specified without a target.
 	command := arg.GetCommand(args)
 	if (command == "build" || command == "test" || command == "query") && len(arg.GetTargets(args)) == 0 {
 		args = append(args, "//...")
