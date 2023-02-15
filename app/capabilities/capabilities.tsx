@@ -29,7 +29,6 @@ export class Capabilities {
   executorKeyCreation: boolean;
   code: boolean;
   sso: boolean;
-  globalFilter: boolean;
   usage: boolean;
   userManagement: boolean;
 
@@ -60,7 +59,6 @@ export class Capabilities {
     this.userOwnedExecutors = this.config.userOwnedExecutorsEnabled;
     this.executorKeyCreation = this.config.executorKeyCreationEnabled;
     this.code = this.config.codeEditorEnabled;
-    this.globalFilter = this.config.globalFilterEnabled;
     this.usage = this.config.usageEnabled;
     this.userManagement = this.config.userManagementEnabled;
 

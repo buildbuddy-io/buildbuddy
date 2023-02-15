@@ -169,12 +169,10 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       pageToken: "",
       count: 25,
     });
-    if (capabilities.globalFilter) {
-      request.query!.role = filterParams.role || [];
-      request.query!.updatedAfter = filterParams.updatedAfter;
-      request.query!.updatedBefore = filterParams.updatedBefore;
-      request.query!.status = filterParams.status || [];
-    }
+    request.query!.role = filterParams.role || [];
+    request.query!.updatedAfter = filterParams.updatedAfter;
+    request.query!.updatedBefore = filterParams.updatedBefore;
+    request.query!.status = filterParams.status || [];
     if (this.currentHeatmapSelection) {
       request.query!.filter = this.toStatFilterList(this.currentHeatmapSelection);
     }
