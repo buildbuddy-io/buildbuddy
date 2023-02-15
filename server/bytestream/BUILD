@@ -12,6 +12,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/flagutil",
         "//server/util/grpc_client",
+        "//server/util/log",
         "//server/util/status",
         "//server/util/ziputil",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
