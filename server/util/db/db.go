@@ -216,7 +216,7 @@ func (dbh *DBHandle) ReadRow(ctx context.Context, out interface{}, where ...inte
 	return err
 }
 
-func runMigrations(dialect string, gdb *gorm.DB) error {
+func RunMigrations(dialect string, gdb *gorm.DB) error {
 	log.Info("Auto-migrating DB")
 	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
 	if err != nil {
@@ -344,7 +344,7 @@ func (c *connector) Driver() driver.Driver {
 	return c.d
 }
 
-func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
+func OpenDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
 	ds, err := ParseDatasource(fileResolver, dataSource, advancedConfig)
 	if err != nil {
 		return nil, "", err
@@ -630,7 +630,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 		}
 	}
 
-	primaryDB, driverName, err := openDB(env.GetFileResolver(), *dataSource, advDataSource)
+	primaryDB, driverName, err := OpenDB(env.GetFileResolver(), *dataSource, advDataSource)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
@@ -651,14 +651,14 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	go statsRecorder.poll()
 
 	if *autoMigrateDBAndExit {
-		if err := runMigrations(driverName, primaryDB); err != nil {
+		if err := RunMigrations(driverName, primaryDB); err != nil {
 			log.Fatalf("Database auto-migration failed: %s", err)
 		}
 		log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
 		os.Exit(0)
 	}
 	if *autoMigrateDB {
-		if err := runMigrations(driverName, primaryDB); err != nil {
+		if err := RunMigrations(driverName, primaryDB); err != nil {
 			return nil, err
 		}
 	}
@@ -673,7 +673,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
-		replicaDB, readDialect, err := openDB(env.GetFileResolver(), *readReplica, advReadReplica)
+		replicaDB, readDialect, err := OpenDB(env.GetFileResolver(), *readReplica, advReadReplica)
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("could not configure read replica database: %s", err)
 		}
