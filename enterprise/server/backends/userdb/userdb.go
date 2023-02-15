@@ -555,6 +555,12 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, userID string, groupID 
 }
 
 func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
+	}
+	if len(statuses) == 0 {
+		return nil, status.InvalidArgumentError("A valid status or statuses are required")
+	}
 	if err := perms.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
 		return nil, err
 	}
