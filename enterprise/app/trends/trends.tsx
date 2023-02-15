@@ -217,7 +217,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   showingDrilldown(): boolean {
-    return capabilities.config.trendsHeatmapEnabled && this.props.hash === "#drilldown";
+    return (capabilities.config.trendsHeatmapEnabled || false) && this.props.hash === "#drilldown";
   }
 
   render() {
