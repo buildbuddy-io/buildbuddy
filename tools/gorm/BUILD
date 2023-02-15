@@ -16,6 +16,20 @@ go_library(
 
 go_binary(
     name = "gorm_print_auto_migration",
-    embed = [":gorm_print_auto_migration_lib"],
+    embed = [":gorm_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "gorm_lib",
+    srcs = ["gorm_print_auto_migration.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/tools/gorm",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//:bundle",
+        "//server/util/db",
+        "//server/util/fileresolver",
+        "//server/util/log",
+        "@io_gorm_gorm//:gorm",
+    ],
 )
