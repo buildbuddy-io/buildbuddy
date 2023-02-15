@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ziputil"
 	"google.golang.org/protobuf/proto"
@@ -124,7 +125,7 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 		return status.InvalidArgumentErrorf("Only bytestream:// uris are supported")
 	}
 
-	err := error(nil)
+	var err error
 
 	// If we have a cache enabled, try connecting to that first
 	if env.GetCache() != nil {
@@ -135,19 +136,19 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 		}
 		localURL.Host = "localhost:" + grpcPort
 		err = streamFromUrl(ctx, localURL, false, offset, limit, writer)
-	}
-
-	// If that fails, try to connect over grpcs
-	if err != nil || env.GetCache() == nil {
+	} else {
+		// If the local cache did not work, maybe a remote cache is being used.
+		// Try to connect to that, first over grpcs.
 		err = streamFromUrl(ctx, url, true, offset, limit, writer)
+		if err != nil {
+			err = streamFromUrl(ctx, url, false, offset, limit, writer)
+		}
 	}
-
-	// If that fails, try grpc
 	if err != nil {
-		err = streamFromUrl(ctx, url, false, offset, limit, writer)
+		log.Errorf("Error byte-streaming from URL %q: %s", url.String(), err)
+		return status.UnavailableErrorf("Error reading from URL: %q", url.String())
 	}
-
-	return err
+	return nil
 }
 
 func grpcTargetForFileURL(u *url.URL, grpcs bool) string {
