@@ -3,7 +3,6 @@ package pebble_cache_test
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -481,8 +480,7 @@ func TestCopyPartitionData(t *testing.T) {
 	require.NoError(t, err)
 
 	// copy data from default to anon partition
-	err = flag.Set("cache.pebble.copy_partition_data", pebble_cache.DefaultPartitionID+":"+interfaces.AuthAnonymousUser)
-	require.NoError(t, err)
+	flags.Set(t, "cache.pebble.copy_partition_data", pebble_cache.DefaultPartitionID+":"+interfaces.AuthAnonymousUser)
 
 	// Now add the anon partition and remove the custom partition.
 	opts = &pebble_cache.Options{

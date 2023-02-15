@@ -374,6 +374,12 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			return nil, status.InvalidArgumentErrorf("ID specifier %q for partition copy operation invalid", *copyPartition)
 		}
 		srcPartitionID, dstPartitionID := partitionIDs[0], partitionIDs[1]
+		if !hasPartition(opts.Partitions, srcPartitionID) {
+			return nil, status.InvalidArgumentErrorf("Copy operation invalid source partition ID %q", srcPartitionID)
+		}
+		if !hasPartition(opts.Partitions, dstPartitionID) {
+			return nil, status.InvalidArgumentErrorf("Copy operation invalid destination partition ID %q", srcPartitionID)
+		}
 		log.Infof("Copying data from partition %s to partition %s", srcPartitionID, dstPartitionID)
 		if err := pc.copyPartitionData(srcPartitionID, dstPartitionID); err != nil {
 			return nil, status.UnknownErrorf("could not copy partition data: %s", err)
@@ -406,6 +412,15 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 
 	statusz.AddSection(opts.Name, "On disk LRU cache", pc)
 	return pc, nil
+}
+
+func hasPartition(ps []disk.Partition, id string) bool {
+	for _, p := range ps {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func keyPrefix(prefix, key []byte) []byte {
