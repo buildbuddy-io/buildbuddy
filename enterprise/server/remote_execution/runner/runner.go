@@ -197,6 +197,8 @@ type commandRunner struct {
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
+	// taskSize is the size of the last task assigned to the runner.
+	taskSize *scpb.TaskSize
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
@@ -949,6 +951,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			InstanceName:           instanceName,
 			WorkerKey:              workerKey,
 			WorkspaceOptions:       wsOpts,
+			TaskSize:               st.GetSchedulingMetadata().GetTaskSize(),
 		})
 		if err != nil {
 			return nil, err
@@ -956,6 +959,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
+			r.taskSize = st.GetSchedulingMetadata().GetTaskSize()
 			r.PlatformProperties = props
 			p.mu.Unlock()
 			return r, nil
@@ -1006,6 +1010,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		imageCacheAuth:     p.imageCacheAuth,
 		ACL:                ACLForUser(user),
 		task:               task,
+		taskSize:           st.GetSchedulingMetadata().GetTaskSize(),
 		PlatformProperties: props,
 		InstanceName:       instanceName,
 		WorkerKey:          workerKey,
@@ -1124,6 +1129,11 @@ type query struct {
 	// The workspace options for the desired runner. This query will only match
 	// runners with matching workspace options.
 	WorkspaceOptions *workspace.Opts
+	// TaskSize is the estimated size of the task. The query will only match
+	// runners with the exact estimated task size. Currently only respected
+	// for workflows, since other types of tasks may have variable task size
+	// estimates due to task size measuring.
+	TaskSize *scpb.TaskSize
 }
 
 // take finds the most recently used runner in the pool that matches the given
@@ -1140,6 +1150,7 @@ func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 			platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != q.WorkloadIsolationType ||
 			r.PlatformProperties.InitDockerd != q.InitDockerd ||
 			r.PlatformProperties.WorkflowID != q.WorkflowID ||
+			(q.WorkflowID != "" && !taskSizesEqual(r.taskSize, q.TaskSize)) ||
 			r.PlatformProperties.HostedBazelAffinityKey != q.HostedBazelAffinityKey ||
 			r.WorkerKey != q.WorkerKey ||
 			r.InstanceName != q.InstanceName ||
@@ -1375,6 +1386,12 @@ func (p *pool) setLimits() {
 	log.Infof(
 		"Configured runner pool: max count=%d, max memory (per-runner, bytes)=%d, max disk (per-runner, bytes)=%d",
 		p.maxRunnerCount, p.maxRunnerMemoryUsageBytes, p.maxRunnerDiskUsageBytes)
+}
+
+func taskSizesEqual(a, b *scpb.TaskSize) bool {
+	return a.GetEstimatedFreeDiskBytes() == b.GetEstimatedFreeDiskBytes() &&
+		a.GetEstimatedMilliCpu() == b.GetEstimatedMilliCpu() &&
+		a.GetEstimatedMemoryBytes() == b.GetEstimatedMemoryBytes()
 }
 
 type labeledError struct {

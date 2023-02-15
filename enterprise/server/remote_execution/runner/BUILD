@@ -62,6 +62,7 @@ go_test(
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//proto:worker_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
