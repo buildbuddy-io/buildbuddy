@@ -894,6 +894,8 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			return nil
 		}
 		e.attempt = ti.Attempt
+		e.ctx = log.EnrichContext(e.ctx, "invocation_attempt", fmt.Sprintf("%d", e.attempt))
+		log.CtxInfof(e.ctx, "Created invocation %q, attempt %d", ti.InvocationID, ti.Attempt)
 		chunkFileSizeBytes := *chunkFileSizeBytes
 		if chunkFileSizeBytes == 0 {
 			chunkFileSizeBytes = defaultChunkFileSizeBytes

@@ -132,14 +132,16 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 		repoURL := r.buildEventAccumulator.RepoURL()
 		ownerRepo, err := gitutil.OwnerRepoFromRepoURL(repoURL)
 		if err != nil {
-			log.Warningf("Failed to report GitHub status: %s", err)
+			log.CtxWarningf(ctx, "Failed to report GitHub status: %s", err)
 			break
 		}
 		commitSHA := r.buildEventAccumulator.CommitSHA()
 		err = r.githubClient.CreateStatus(ctx, ownerRepo, commitSHA, r.appendStatusNameSuffix(payload))
 		if err != nil {
-			log.Warningf("Failed to report GitHub status: %s", err)
+			log.CtxWarningf(ctx, "Failed to report GitHub status: %s", err)
+			continue
 		}
+		log.CtxInfof(ctx, "Reported GitHub status %q", payload.State)
 	}
 
 	r.payloads = make([]*github.GithubStatusPayload, 0)
