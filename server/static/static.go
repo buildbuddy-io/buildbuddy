@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	iss_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	scheduler_server_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server/config"
 	cfgpb "github.com/buildbuddy-io/buildbuddy/proto/config"
@@ -155,6 +156,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		SecretsEnabled:                env.GetSecretService() != nil,
 		TestOutputManifestsEnabled:    *testOutputManifestsEnabled,
 		UserOwnedKeysEnabled:          *userOwnedKeysEnabled,
+		TrendsHeatmapEnabled:          iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

@@ -18,6 +18,7 @@ ts_library(
         "//app/service",
         "//app/util:proto",
         "//enterprise/app/filter",
+        "//enterprise/app/history",
         "//proto:invocation_ts_proto",
         "//proto:stats_ts_proto",
         "@npm//@types/d3-scale",

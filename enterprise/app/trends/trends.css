@@ -59,3 +59,25 @@
 .heatmap-svg {
   user-select: none;
 }
+
+.drilldown-page-dd-chart {
+  display: inline-block;
+}
+
+.drilldown-page-dd-chart-title {
+  margin-left: 4px;
+  font-weight: 600;
+}
+
+.drilldown-page-tooltip-base {
+  color: #8884d8;
+}
+
+.drilldown-page-tooltip-selected {
+  color: #82ca9d;
+}
+
+.select.drilldown-page-select {
+  font-size: 16px;
+  margin: 0 16px;
+}

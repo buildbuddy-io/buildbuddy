@@ -2,6 +2,7 @@ import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
+import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import moment from "moment";
 import {
   ROLE_PARAM_NAME,
@@ -143,6 +144,10 @@ export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): str
     .map(statusToString)
     .sort((a, b) => statusFromString(a) - statusFromString(b))
     .join(" ");
+}
+
+export function isExecutionMetric(m: stat_filter.Metric): boolean {
+  return m.execution !== null && m.execution !== undefined;
 }
 
 function parseDuration(value: string | null): google_duration.protobuf.Duration | undefined {

@@ -3,7 +3,6 @@ import moment from "moment";
 import * as format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
-import { invocation } from "../../../proto/invocation_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
 import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
@@ -15,6 +14,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import { getProtoFilterParams } from "../filter/filter_util";
 import router from "../../../app/router/router";
 import * as proto from "../../../app/util/proto";
+import DrilldownPageComponent from "./drilldown_page";
 
 const BITS_PER_BYTE = 8;
 
@@ -74,6 +74,17 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
   updateLimit(limit: number) {
     window.location.hash = "#" + limit;
+  }
+
+  updateSelectedTab(tab: "charts" | "drilldown") {
+    window.location.hash = "#" + tab;
+  }
+
+  getSelectedTab(): "charts" | "drilldown" {
+    if (this.props.hash.replace("#", "") === "drilldown") {
+      return "drilldown";
+    }
+    return "charts";
   }
 
   fetchStats() {
@@ -205,6 +216,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
+  showingDrilldown(): boolean {
+    return (capabilities.config.trendsHeatmapEnabled || false) && this.props.hash === "#drilldown";
+  }
+
   render() {
     return (
       <div className="trends">
@@ -243,8 +258,25 @@ export default class TrendsComponent extends React.Component<Props, State> {
               </div>
             </div>
           )}
-          {this.state.loading && <div className="loading"></div>}
-          {!this.state.loading && (
+          {capabilities.config.trendsHeatmapEnabled && (
+            <div className="tabs">
+              <div
+                onClick={() => this.updateSelectedTab("charts")}
+                className={`tab ${this.getSelectedTab() == "charts" ? "selected" : ""}`}>
+                Charts
+              </div>
+              <div
+                onClick={() => this.updateSelectedTab("drilldown")}
+                className={`tab ${this.getSelectedTab() == "drilldown" ? "selected" : ""}`}>
+                Drilldown
+              </div>
+            </div>
+          )}
+          {this.showingDrilldown() && (
+            <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
+          )}
+          {!this.showingDrilldown() && this.state.loading && <div className="loading"></div>}
+          {!this.showingDrilldown() && !this.state.loading && (
             <>
               <TrendsChartComponent
                 title="Builds"
