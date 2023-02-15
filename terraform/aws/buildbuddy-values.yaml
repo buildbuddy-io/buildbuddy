@@ -1,0 +1,22 @@
+ingress:
+  enabled: true
+  class: "alb"
+  annotations:
+    # Only need this so we can access it from public internet
+    alb.ingress.kubernetes.io/scheme: internet-facing
+  controller:
+    enabled: false
+
+testing: true
+
+mysql:
+  enabled: true
+  mysqlUser: "sampleUser"
+  mysqlPassword: "samplePassword"
+
+redis:
+  enabled: true
+
+config:
+  app:
+    build_buddy_url: "https://buildbuddy.example.com"
