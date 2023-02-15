@@ -340,6 +340,35 @@ config dir, if needed, using something like
 you'll need to decide how to handle differences in preferences across
 different versions of your plugin.
 
+#### $EXEC_ARGS_FILE
+
+This is the path of a file that contains the args that would be passed to an
+executable built by bazel as a result of a `bazel run` command. Specifically,
+these are any positional arguments remaining after canonicalization of any
+options that take arguments into "--option=value" options, excepting the `run`
+subcommand itself and the build target. These are generally the arguments
+following a `--` in the argument list passed to bazel, if any.
+
+This environment variable will only be set for the `pre_bazel.sh` script in the
+plugin. Plugins can change this file to change the arguments
+passed to Bazel.
+
+The file in question is formatted very similarly to the bazel args file, except
+that the arguments will be split across lines based solely as a result of shell
+lexing, as it is not possible to parse or canonicalize options without knowing
+the internals of the executable to be run. The following is an example exec args
+file:
+
+```
+--bool_var
+true
+positional_arg
+--option=value
+--option2
+positional_arg3
+--option4
+```
+
 ### Examples
 
 Here are some examples of plugins that can help you get started quickly:

@@ -77,6 +77,89 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	require.NotContains(t, output, log.WarningPrefix)
 }
 
+func TestBazelRunWithLocalPlugin(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD":   `sh_binary(name = "echo", srcs = ["echo.sh"])`,
+		"echo.sh": "echo $@",
+	})
+	testfs.MakeExecutable(t, ws, "echo.sh")
+
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"plugins/test/pre_bazel.sh": `
+			echo 'Hello from pre_bazel.sh!'
+			if grep '\--build_metadata=FOO=bar' "$1" >/dev/null ; then
+				echo "--build_metadata FOO=bar was canonicalized as expected!"
+			fi
+			if grep 'Hello' "$EXEC_ARGS_FILE" >/dev/null ; then
+				echo "'Hello' was recognized as a positional argument to forward to the executable!"
+			fi
+			echo "World" >> $EXEC_ARGS_FILE
+		`,
+	})
+
+	// Install the workspace-local plugin
+	cmd := testcli.Command(t, ws, "install", "--path=plugins/test")
+
+	err := cmd.Run()
+	require.NoError(t, err)
+
+	app := buildbuddy.Run(t, "--cache.detailed_stats_enabled=true")
+
+	args := []string{"run", ":echo"}
+	args = append(args, "--build_metadata", "FOO=bar")
+	args = append(args, app.BESBazelFlags()...)
+	args = append(args, app.RemoteCacheBazelFlags()...)
+	args = append(args, "--remote_upload_local_results")
+	uid, err := uuid.NewRandom()
+	iid := uid.String()
+	require.NoError(t, err)
+	args = append(args, "--invocation_id="+iid)
+	args = append(args, "--")
+	args = append(args, "Hello")
+
+	cmd = testcli.Command(t, ws, args...)
+
+	b, err := testcli.CombinedOutput(cmd)
+
+	require.NoError(t, err)
+	output := strings.ReplaceAll(string(b), "\r\n", "\n")
+
+	require.Contains(t, output, "Hello from pre_bazel.sh!")
+	require.Contains(t, output, "'Hello' was recognized as a positional argument to forward to the executable!")
+	require.Contains(t, output, "--build_metadata FOO=bar was canonicalized as expected!")
+	require.Contains(t, output, "Hello World")
+	// Make sure we don't print any warnings.
+	require.NotContains(t, output, log.WarningPrefix)
+
+	args = []string{"run", ":echo"}
+	args = append(args, "Hello")
+	args = append(args, "--build_metadata", "FOO=bar")
+	args = append(args, app.BESBazelFlags()...)
+	args = append(args, app.RemoteCacheBazelFlags()...)
+	args = append(args, "--remote_upload_local_results")
+	uid, err = uuid.NewRandom()
+	iid = uid.String()
+	require.NoError(t, err)
+	args = append(args, "--invocation_id="+iid)
+
+	cmd = testcli.Command(t, ws, args...)
+
+	b, err = testcli.CombinedOutput(cmd)
+
+	require.NoError(t, err)
+	output = strings.ReplaceAll(string(b), "\r\n", "\n")
+
+	require.Contains(t, output, "Hello from pre_bazel.sh!")
+	// TODO (tempoz): fix arg parsing so that this is handled correctly
+	// require.Contains(t, output, "'Hello' was recognized as a positional argument to forward to the executable!")
+	require.Contains(t, output, "--build_metadata FOO=bar was canonicalized as expected!")
+	require.Contains(t, output, "Hello World")
+	// Make sure we don't print any warnings.
+	require.NotContains(t, output, log.WarningPrefix)
+}
+
 func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testgit.ConfigureRemoteOrigin(t, ws, "https://secretUser:secretToken@github.com/test-org/test-repo")

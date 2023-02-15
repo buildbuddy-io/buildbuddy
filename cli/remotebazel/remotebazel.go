@@ -503,7 +503,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	fetchOutputs := false
 	runOutput := false
-	bazelArgs := arg.GetNonPassthroughArgs(opts.Args)
+	bazelArgs := arg.GetBazelArgs(opts.Args)
 	if len(bazelArgs) > 0 && (bazelArgs[0] == "build" || bazelArgs[0] == "run") {
 		fetchOutputs = true
 		if bazelArgs[0] == "run" {
@@ -602,7 +602,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			}
 			execArgs := defaultRunArgs
 			// Pass through extra arguments (-- --foo=bar) from the command line.
-			execArgs = append(execArgs, arg.GetPassthroughArgs(opts.Args)...)
+			execArgs = append(execArgs, arg.GetExecutableArgs(opts.Args)...)
 			log.Debugf("Executing %q with arguments %s", binPath, execArgs)
 			cmd := exec.CommandContext(ctx, binPath, execArgs...)
 			cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
@@ -619,7 +619,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	return exitCode, nil
 }
 
-func handleRemoteBazel(args, passthroughArgs []string) []string {
+func handleRemoteBazel(args, execArgs []string) []string {
 	args = arg.Remove(args, "bes_backend")
 	args = arg.Remove(args, "remote_cache")
 	args = arg.Remove(args, "remote_executor")
@@ -643,7 +643,7 @@ func handleRemoteBazel(args, passthroughArgs []string) []string {
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            "grpcs://" + defaultRemoteExecutionURL,
 		APIKey:            arg.Get(args, "remote_header=x-buildbuddy-api-key"),
-		Args:              arg.JoinPassthroughArgs(args, passthroughArgs),
+		Args:              arg.JoinExecutableArgs(args, execArgs),
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
 	if err != nil {
