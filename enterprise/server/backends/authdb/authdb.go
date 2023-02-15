@@ -80,7 +80,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
+			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidToken(apiKey))
 		}
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
+			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidToken(apiKeyID))
 		}
 		return nil, err
 	}
@@ -113,16 +113,15 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 		qb.AddWhereClause(`g.write_token = ?`, pass)
 		q, args := qb.Build()
 		existingRow := tx.Raw(q, args...)
-		return existingRow.Scan(akg).Error
+		return existingRow.Take(akg).Error
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:%s not found", login, pass)
+			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:%s not found", login, redactInvalidToken(pass))
 		}
 		return nil, err
 	}
 	return akg, nil
-
 }
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
@@ -175,7 +174,10 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		}
 		return nil
 	})
-	return user, err
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 func newAPIKeyGroupQuery() *query_builder.Query {
@@ -191,9 +193,9 @@ func newAPIKeyGroupQuery() *query_builder.Query {
 	return qb
 }
 
-func redactInvalidAPIKey(key string) string {
-	if len(key) < 8 {
+func redactInvalidToken(val string) string {
+	if len(val) < 8 {
 		return "***"
 	}
-	return key[:1] + "***" + key[len(key)-1:]
+	return val[:1] + "***" + val[len(val)-1:]
 }
