@@ -146,6 +146,13 @@ func run() (exitCode int, err error) {
 		}
 	}
 
+	// If the command is build, test, or query without a specified target - apply to all targets.
+	// TODO(siggisim): show a picker of executable targets if run is specified without a target.
+	command := arg.GetCommand(args)
+	if (command == "build" || command == "test" || command == "query") && len(arg.GetTargets(args)) == 0 {
+		args = append(args, "//...")
+	}
+
 	// Note: sidecar is configured after pre-bazel plugins, since pre-bazel
 	// plugins may change the value of bes_backend, remote_cache,
 	// remote_instance_name, etc.

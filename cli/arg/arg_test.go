@@ -52,3 +52,29 @@ func TestGetMulti(t *testing.T) {
 
 	assert.Equal(t, []string{"COMMIT_SHA=abc123", "ROLE=CI"}, values)
 }
+
+func TestGetTargets(t *testing.T) {
+	args := []string{"build", "foo"}
+	targets := GetTargets(args)
+	assert.Equal(t, []string{"foo"}, targets)
+
+	args = []string{"build", "foo", "bar"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{"foo", "bar"}, targets)
+
+	args = []string{"build", "--opt=val", "foo", "bar", "--anotheropt=anotherval"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{"foo", "bar"}, targets)
+
+	args = []string{"build", "--opt=val", "foo", "bar", "--", "baz"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{"foo", "bar"}, targets)
+
+	args = []string{"build"}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{}, targets)
+
+	args = []string{}
+	targets = GetTargets(args)
+	assert.Equal(t, []string{}, targets)
+}
