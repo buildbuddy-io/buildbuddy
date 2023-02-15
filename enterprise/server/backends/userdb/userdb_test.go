@@ -105,6 +105,50 @@ func apiKeyValues(keys []*tables.APIKey) []string {
 	return out
 }
 
+func TestInsertUser(t *testing.T) {
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	err := udb.InsertUser(ctx, &tables.User{
+		UserID: "US1",
+		SubID:  "SubID1",
+		Email:  "user1@org1.io",
+	})
+	require.NoError(t, err, "inserting a new user should succeed")
+
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: "US2",
+		SubID:  "SubID2",
+		Email:  "user2@org2.io",
+	})
+	require.NoError(t, err, "inserting multiple users should succeed")
+
+	err = udb.InsertUser(ctx, &tables.User{
+		UserID: "US4",
+		SubID:  "SubID4",
+		Email:  "user1@org1.io",
+	})
+	require.NoError(t, err, "inserting a user with an existing email is OK as long as UserID/SubID are unique")
+
+	// These should all fail:
+	for _, test := range []struct {
+		Name string
+		User *tables.User
+	}{
+		{Name: "MissingUserID", User: &tables.User{UserID: "", SubID: "SubID3", Email: "user3@org3.io"}},
+		{Name: "MissingSubID", User: &tables.User{UserID: "US3", SubID: "", Email: "user3@org3.io"}},
+		{Name: "MissingEmail", User: &tables.User{UserID: "US3", SubID: "SubID3", Email: ""}},
+		{Name: "DuplicateUserID", User: &tables.User{UserID: "US1", SubID: "SubID3", Email: "user3@org3.io"}},
+		{Name: "DuplicateSubID", User: &tables.User{UserID: "US3", SubID: "SubID1", Email: "user3@org3.io"}},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			err := udb.InsertUser(ctx, test.User)
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestGetImpersonatedUser_UserWithoutImpersonationPerms_PermissionDenied(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)

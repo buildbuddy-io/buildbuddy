@@ -698,6 +698,12 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		groupIDs = append(groupIDs, hydratedGroup.GroupID)
 	}
 
+	if u.UserID == "" {
+		return status.FailedPreconditionError("UserID is required")
+	}
+	if u.SubID == "" {
+		return status.FailedPreconditionError("SubID is required")
+	}
 	if u.Email == "" {
 		return status.FailedPreconditionErrorf("Auth token does not contain an email address")
 	}
