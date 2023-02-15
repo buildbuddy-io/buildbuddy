@@ -589,7 +589,7 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 
-	_, err = udb.GetGroupUsers(ctx2, us1Group.GroupID, nil /*=status*/)
+	_, err = udb.GetGroupUsers(ctx2, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
 	require.True(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDeniedError if US2 tries to list US1's group users; got: %T",
