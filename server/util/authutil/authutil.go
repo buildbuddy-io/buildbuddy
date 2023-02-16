@@ -9,6 +9,10 @@ import (
 // AuthorizeGroupRole checks whether the given user has any of the allowed roles
 // within the given group.
 func AuthorizeGroupRole(u interfaces.UserInfo, groupID string, allowedRoles role.Role) error {
+	if groupID == "" {
+		return status.PermissionDeniedError("A group ID is required")
+	}
+
 	r := role.None
 	for _, m := range u.GetGroupMemberships() {
 		if m.GroupID == groupID {
