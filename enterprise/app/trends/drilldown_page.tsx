@@ -355,6 +355,10 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "branch_name";
       case invocation.AggType.PATTERN_AGGREGATION_TYPE:
         return "pattern";
+      case invocation.AggType.EXECUTION_USER_ID_AGGREGATION_TYPE:
+        return "user_id (execution)";
+      case invocation.AggType.EXECUTION_WORKER_AGGREGATION_TYPE:
+        return "worker (execution)";
       default:
         return "???";
     }

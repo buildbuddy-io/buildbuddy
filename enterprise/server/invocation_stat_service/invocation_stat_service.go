@@ -67,6 +67,8 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 		return "branch_name"
 	case inpb.AggType_PATTERN_AGGREGATION_TYPE:
 		return "pattern"
+	case inpb.AggType_EXECUTION_WORKER_AGGREGATION_TYPE:
+		return "worker"
 	default:
 		log.Errorf("Unknown or unsupported aggregation column type: %s", aggType)
 		return ""
@@ -870,6 +872,9 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // from Altinity is supposed to be 2023-02-15.
 func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
 	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
+	if req.GetDrilldownMetric().Execution != nil {
+		drilldownFields = append(drilldownFields, "worker")
+	}
 	placeholderQuery := query_builder.NewQuery("")
 
 	if err := addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0); err != nil {
@@ -964,6 +969,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		GormBranchName *string
 		GormCommitSHA  *string
 		GormPattern    *string
+		GormWorker     *string
 		Selection      int64
 		Inverse        int64
 	}
@@ -998,6 +1004,8 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSHA, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormPattern != nil {
 			addOutputChartEntry(m, dm, inpb.AggType_PATTERN_AGGREGATION_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormWorker != nil {
+			addOutputChartEntry(m, dm, inpb.AggType_EXECUTION_WORKER_AGGREGATION_TYPE, stat.GormWorker, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
 			// The above clauses represent all of the GROUP BY options we have in our
 			// query, and we deliberately constructed the query so that the total row
