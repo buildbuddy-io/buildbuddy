@@ -45,13 +45,13 @@ bb version
 If you're already using Bazelisk, you can easily install the BuildBuddy CLI for your entire project by running:
 
 ```bash
-echo "$(echo "buildbuddy-io/5.0.2"; cat .bazelversion)" > .bazelversion
+echo "$(echo "buildbuddy-io/5.0.3"; cat .bazelversion)" > .bazelversion
 ```
 
-This will simply prepend `buildbuddy-io/5.0.2` on a new line above your `.bazelversion` file like so:
+This will simply prepend `buildbuddy-io/5.0.3` on a new line above your `.bazelversion` file like so:
 
 ```title=".bazelversion"
-buildbuddy-io/5.0.2
+buildbuddy-io/5.0.3
 5.3.2
 ```
 
