@@ -1,0 +1,40 @@
+diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
+index 1cbaea7..f98167e 100644
+--- a/cmd/gazelle/BUILD.bazel
++++ b/cmd/gazelle/BUILD.bazel
+@@ -18,6 +18,7 @@ go_library(
+         "metaresolver.go",
+         "print.go",
+         "update-repos.go",
++        "langs.go",
+     ],
+     importpath = "github.com/bazelbuild/bazel-gazelle/cmd/gazelle",
+     tags = ["manual"],
+diff --git a/cmd/gazelle/gazelle.go b/cmd/gazelle/gazelle.go
+index 2ff57db..7d0c6be 100644
+--- a/cmd/gazelle/gazelle.go
++++ b/cmd/gazelle/gazelle.go
+@@ -56,6 +56,10 @@ func (cmd command) String() string {
+ }
+ 
+ func main() {
++        Run()
++}
++
++func Run() {
+ 	log.SetPrefix("gazelle: ")
+ 	log.SetFlags(0) // don't print timestamps
+ 
+diff --git a/internal/gazelle_binary.bzl b/internal/gazelle_binary.bzl
+index 94797e0..8e6bac4 100644
+--- a/internal/gazelle_binary.bzl
++++ b/internal/gazelle_binary.bzl
+@@ -33,7 +33,7 @@ import (
+ 	{lang_imports}
+ )
+ 
+-var languages = []language.Language{{
++var dynamicLanguages = []language.Language{{
+ 	{lang_calls},
+ }}
+ """

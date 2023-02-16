@@ -29,6 +29,8 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
+    patch_args = ["-p1"],
+    patches = ["//buildpatches:gazelle.patch"],
     sha256 = "ecba0f04f96b4960a5b250c8e8eeec42281035970aa8852dda73098274d14a1d",
     # Keep version in sync with .github/workflows/checkstyle.yaml
     urls = [
