@@ -351,7 +351,7 @@ type UserDB interface {
 	// status values.
 	GetGroupUsers(ctx context.Context, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
 
-	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
+	UpdateGroupUsers(ctx context.Context, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 
 	// GetAPIKeyForInternalUseOnly returns any API key for the group. It is only

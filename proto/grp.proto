@@ -136,7 +136,8 @@ message UpdateGroupUsersRequest {
   context.RequestContext request_context = 1;
 
   // The ID of the group to update.
-  string group_id = 2;
+  // DEPRECATED in favor of the group ID in the request context.
+  string group_id = 2 [deprecated = true];
 
   // Update applied to a user in the group.
   message Update {

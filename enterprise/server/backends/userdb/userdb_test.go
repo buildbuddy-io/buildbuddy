@@ -515,7 +515,7 @@ func TestGetGroupUsers(t *testing.T) {
 			org2GID := getSelfOwnedGroup(t, ctx3, env).Group.GroupID
 			err := udb.AddUserToGroup(ctx3, "US1", org2GID)
 			require.NoError(t, err)
-			err = udb.UpdateGroupUsers(ctx3, org2GID, []*grpb.UpdateGroupUsersRequest_Update{
+			err = udb.UpdateGroupUsers(ctx3, []*grpb.UpdateGroupUsersRequest_Update{
 				{UserId: &uidpb.UserId{Id: "US1"}, Role: grpb.Group_ADMIN_ROLE},
 			})
 			require.NoError(t, err, "US3 should be able to promote US1 to admin")
@@ -654,14 +654,14 @@ func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
 			createUser(t, ctx, env, "US2", "org1.io")
 			createUser(t, ctx, env, "US3", "org2.io")
 
-			authCtx := context.Background()
-			if test.User != "" {
-				authCtx = authUserCtx(ctx, env, t, test.User)
-			}
 			gr1 := getSelfOwnedGroup(t, us1Ctx, env).Group.GroupID
+			authCtx := withPreferredGroup(ctx, gr1)
+			if test.User != "" {
+				authCtx = authUserCtx(authCtx, env, t, test.User)
+			}
 			updates := []*grpb.UpdateGroupUsersRequest_Update{test.Update}
 
-			err := udb.UpdateGroupUsers(authCtx, gr1, updates)
+			err := udb.UpdateGroupUsers(authCtx, updates)
 
 			if test.Err == nil {
 				require.NoError(t, err)
@@ -683,7 +683,7 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	us1Group := getSelfOwnedGroup(t, ctx1, env).Group
 
-	err := udb.UpdateGroupUsers(ctx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+	err := udb.UpdateGroupUsers(ctx1, []*grpb.UpdateGroupUsersRequest_Update{{
 		UserId: &uidpb.UserId{Id: "US1"},
 		Role:   grpb.Group_DEVELOPER_ROLE,
 	}})
@@ -695,9 +695,9 @@ func TestUpdateGroupUsers_Role(t *testing.T) {
 	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us1.Role, "US1 role should be DEVELOPER")
 
 	createUser(t, ctx, env, "US2", "org2.io")
-	ctx2 := authUserCtx(ctx, env, t, "US2")
+	ctx2 := authUserCtx(withPreferredGroup(ctx, us1Group.GroupID), env, t, "US2")
 
-	err = udb.UpdateGroupUsers(ctx2, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+	err = udb.UpdateGroupUsers(ctx2, []*grpb.UpdateGroupUsersRequest_Update{{
 		UserId: &uidpb.UserId{Id: "US1"},
 		Role:   grpb.Group_ADMIN_ROLE,
 	}})

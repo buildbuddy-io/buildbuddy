@@ -611,12 +611,16 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, statuses []grpb.GroupMembers
 	return users, nil
 }
 
-func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error {
-	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
+func (d *UserDB) UpdateGroupUsers(ctx context.Context, updates []*grpb.UpdateGroupUsersRequest_Update) error {
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
 		return err
 	}
-	for _, u := range updates {
-		if u.GetUserId().GetId() == "" {
+	if err := authutil.AuthorizeGroupRole(u, u.GetGroupID(), role.Admin); err != nil {
+		return err
+	}
+	for _, update := range updates {
+		if update.GetUserId().GetId() == "" {
 			return status.InvalidArgumentError("update contains an empty user ID")
 		}
 	}
@@ -628,7 +632,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 						DELETE FROM UserGroups
 						WHERE user_user_id = ? AND group_group_id = ?`,
 					update.GetUserId().GetId(),
-					groupID).Error; err != nil {
+					u.GetGroupID()).Error; err != nil {
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_ADD:
@@ -638,7 +642,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 						WHERE user_user_id = ? AND group_group_id = ?`,
 					int32(grpb.GroupMembershipStatus_MEMBER),
 					update.GetUserId().GetId(),
-					groupID).Error; err != nil {
+					u.GetGroupID()).Error; err != nil {
 					return err
 				}
 			case grpb.UpdateGroupUsersRequest_Update_UNKNOWN_MEMBERSHIP_ACTION:
@@ -651,7 +655,7 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 					UPDATE UserGroups
 					SET role = ?
 					WHERE user_user_id = ? AND group_group_id = ?
-				`, role.FromProto(update.Role), update.GetUserId().GetId(), groupID,
+				`, role.FromProto(update.Role), update.GetUserId().GetId(), u.GetGroupID(),
 				).Error
 				if err != nil {
 					return err

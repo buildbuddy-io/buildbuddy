@@ -326,7 +326,7 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	if err := userDB.UpdateGroupUsers(ctx, req.GetGroupId(), req.GetUpdate()); err != nil {
+	if err := userDB.UpdateGroupUsers(ctx, req.GetUpdate()); err != nil {
 		return nil, err
 	}
 	return &grpb.UpdateGroupUsersResponse{}, nil
