@@ -19,17 +19,17 @@ import (
 )
 
 const (
-	languageName = "ts"
-	tsProjectRuleName = "ts_project"
+	languageName        = "ts"
+	tsProjectRuleName   = "ts_project"
 	tsProjectImportPath = "@npm//@bazel/typescript:index.bzl"
-	srcAttribute = "srcs"
-	depsAttribute = "deps"
-	npmImportPrefix = "@npm//"
+	srcAttribute        = "srcs"
+	depsAttribute       = "deps"
+	npmImportPrefix     = "@npm//"
 	tsTypesImportPrefix = "@types/"
-	tslibImport = "tslib"
-	packageFileName = "package.json"
-	tsFileExtension = ".ts"
-	tsxFileExtension = ".tsx"
+	tslibImport         = "tslib"
+	packageFileName     = "package.json"
+	tsFileExtension     = ".ts"
+	tsxFileExtension    = ".tsx"
 )
 
 var tsImportPattern = regexp.MustCompile(`(?ms)(^|\s)import[\s\(][^;]*['"]([^;]*)['"][^;]*;`)
