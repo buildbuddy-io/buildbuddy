@@ -39,9 +39,7 @@ require (
 	github.com/docker/docker v20.10.20+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/elastic/gosigar v0.11.0
-	github.com/emirpasic/gods v1.18.1
 	github.com/firecracker-microvm/firecracker-go-sdk v0.22.1-0.20220812215434-490e3369bc97
-	github.com/ghodss/yaml v1.0.0
 	github.com/go-faker/faker/v4 v4.0.0-beta.3
 	github.com/go-git/go-git/v5 v5.2.0
 	github.com/go-redis/redis/extra/redisotel/v8 v8.10.0
@@ -149,6 +147,7 @@ require (
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
+	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/envoyproxy/go-control-plane v0.10.2-0.20220325020618-49ff273808a1 // indirect
 	github.com/envoyproxy/protoc-gen-validate v0.1.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
