@@ -339,10 +339,10 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
         <line stroke="#666" x1="0" y1="0" x2="0" y2={height}></line>
         {this.yScaleBand.domain().map((v, i) => {
           return (
-            <g transform={`translate(0, ${height - this.yScaleBand.bandwidth() * i})`}>
-              {i % yTickMod == 0 && (
+            <g transform={`translate(0, ${height - this.yScaleBand.bandwidth() * (numRows - 1 - i)})`}>
+              {(numRows - 1 - i) % yTickMod == 0 && (
                 <text fill="#666" x="-8" y="3" fontSize="12" textAnchor="end">
-                  {this.renderYBucketValue(i)}
+                  {this.renderYBucketValue(v)}
                 </text>
               )}
               <line stroke="#666" x1="0" y1="0" x2="-4" y2="0"></line>

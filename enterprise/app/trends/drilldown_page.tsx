@@ -70,11 +70,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   currentHeatmapSelection?: HeatmapSelection;
 
-  renderBucketName(v: number) {
+  renderBucketValue(v: number) {
     if (isExecutionMetric(this.selectedMetric.metric)) {
-      return "execution" + (v === 1 ? "" : "s");
+      return `${v} execution${v === 1 ? "" : "s"}`;
     } else {
-      return "invocation" + (v === 1 ? "" : "s");
+      return `${v} invocation${v === 1 ? "" : "s"}`;
     }
   }
 
@@ -394,7 +394,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   heatmapData={this.state.heatmapData || stats.GetStatHeatmapResponse.create({})}
                   metricBucketFormatter={(v) => this.renderYBucketValue(v)}
                   metricBucketName={this.selectedMetric.name}
-                  valueFormatter={(v) => this.renderBucketName(v)}
+                  valueFormatter={(v) => this.renderBucketValue(v)}
                   selectionCallback={(s) => this.handleHeatmapSelection(s)}></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
