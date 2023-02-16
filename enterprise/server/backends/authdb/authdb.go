@@ -80,7 +80,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidToken(apiKey))
+			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 		}
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidToken(apiKeyID))
+			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
 		}
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:%s not found", login, redactInvalidToken(pass))
+			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:*** not found", login)
 		}
 		return nil, err
 	}
@@ -193,9 +193,9 @@ func newAPIKeyGroupQuery() *query_builder.Query {
 	return qb
 }
 
-func redactInvalidToken(val string) string {
-	if len(val) < 8 {
+func redactInvalidAPIKey(key string) string {
+	if len(key) < 8 {
 		return "***"
 	}
-	return val[:1] + "***" + val[len(val)-1:]
+	return key[:1] + "***" + key[len(key)-1:]
 }
