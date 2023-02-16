@@ -113,16 +113,15 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 		qb.AddWhereClause(`g.write_token = ?`, pass)
 		q, args := qb.Build()
 		existingRow := tx.Raw(q, args...)
-		return existingRow.Scan(akg).Error
+		return existingRow.Take(akg).Error
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:%s not found", login, pass)
+			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:*** not found", login)
 		}
 		return nil, err
 	}
 	return akg, nil
-
 }
 
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
@@ -175,7 +174,10 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 		}
 		return nil
 	})
-	return user, err
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
 }
 
 func newAPIKeyGroupQuery() *query_builder.Query {
