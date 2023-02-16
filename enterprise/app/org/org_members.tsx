@@ -62,6 +62,7 @@ export default class OrgMembersComponent extends React.Component<OrgMembersProps
     rpcService.service
       .getGroupUsers(
         new grp.GetGroupUsersRequest({
+          groupId: this.props.user.selectedGroup.id,
           // Only show existing members in this table for now.
           // TODO(bduffany): render 2 separate tables; one for membership
           // requests and one for existing members.
