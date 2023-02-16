@@ -44,7 +44,7 @@ import (
 
 	awssession "github.com/aws/aws-sdk-go/aws/session"
 	gomysql "github.com/go-sql-driver/mysql"
-	gosqlite "github.com/mattn/go-sqlite3"
+	gosqlite "modernc.org/sqlite"
 )
 
 const (
@@ -353,7 +353,7 @@ func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfi
 	var drv driver.Driver
 	switch ds.DriverName() {
 	case sqliteDriver:
-		drv = &gosqlite.SQLiteDriver{}
+		drv = &gosqlite.Driver{}
 	case mysqlDriver:
 		drv = &gomysql.MySQLDriver{}
 	default:
@@ -767,9 +767,9 @@ func (h *DBHandle) IsDuplicateKeyError(err error) bool {
 	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 		return true
 	}
-	var sqliteErr gosqlite.Error
+	var sqliteErr *gosqlite.Error
 	// Defined at https://www.sqlite.org/rescode.html#constraint_unique
-	if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == 2067 {
+	if errors.As(err, &sqliteErr) && sqliteErr.Code() == 2067 {
 		return true
 	}
 	return false

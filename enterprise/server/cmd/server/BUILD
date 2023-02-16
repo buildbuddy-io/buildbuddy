@@ -82,6 +82,8 @@ go_binary(
         "//static",
     ],
     embed = [":server_lib"],
+    pure = "on",
+    static = "on",
 )
 
 container_image(

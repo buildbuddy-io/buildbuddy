@@ -19,7 +19,6 @@ go_library(
         "@com_github_aws_aws_sdk_go//service/rds/rdsutils",
         "@com_github_go_sql_driver_mysql//:mysql",
         "@com_github_googlecloudplatform_cloudsql_proxy//proxy/dialers/mysql",
-        "@com_github_mattn_go_sqlite3//:go-sqlite3",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_gorm_driver_mysql//:mysql",
         "@io_gorm_driver_sqlite//:sqlite",
@@ -28,6 +27,7 @@ go_library(
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_modernc_sqlite//:sqlite",
     ],
 )
 

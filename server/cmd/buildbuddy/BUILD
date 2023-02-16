@@ -20,6 +20,8 @@ go_binary(
         "//static",
     ],
     embed = [":buildbuddy_lib"],
+    pure = "on",
+    static = "on",
     visibility = ["//visibility:public"],
 )
 
