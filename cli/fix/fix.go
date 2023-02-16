@@ -18,7 +18,7 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return 1, nil
 	}
 
-	gazelle.Main()
+	gazelle.Run()
 
 	return 0, nil
 }
