@@ -9,6 +9,7 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//proto:remote_execution_log_go_proto",
+        "@org_golang_google_protobuf//encoding/protodelim",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
     ],
