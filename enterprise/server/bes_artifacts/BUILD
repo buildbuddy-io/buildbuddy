@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "bes_artifact_uploader",
-    srcs = ["bes_artifact_uploader.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifact_uploader",
+    name = "bes_artifacts",
+    srcs = ["bes_artifacts.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts",
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/build_event_publisher",
@@ -11,6 +11,8 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/grpc_client",
+        "//server/util/status",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
         "@org_golang_x_sync//errgroup",
     ],

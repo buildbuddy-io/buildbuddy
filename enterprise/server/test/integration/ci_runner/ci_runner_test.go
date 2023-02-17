@@ -985,10 +985,13 @@ func TestArtifactUploads(t *testing.T) {
 		if !ok {
 			continue
 		}
-		for _, f := range payload.NamedSetOfFiles.Files {
-			require.Equal(t, "command_0/grpc.log", f.GetName())
-			bytestreamURI = f.GetUri()
-		}
+		id := event.BuildEvent.Id.GetNamedSet().GetId()
+		require.Equal(t, "command-0", id)
+		files := payload.NamedSetOfFiles.Files
+		require.Len(t, files, 1)
+		require.Equal(t, "grpc.log", files[0].GetName())
+		bytestreamURI = files[0].GetUri()
+		break
 	}
 	require.NotEmpty(t, bytestreamURI, "failed to locate NamedSetOfFiles event in workflow BES events")
 

@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifact_uploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -72,7 +72,7 @@ const (
 
 	// Name of the dir where artifacts can be written.
 	// The CI runner provisions subdirectories under this directory, one per
-	// bazel command, e.g. artifacts/command_0/, artifacts/command_1/, etc.
+	// bazel command, e.g. artifacts/command-0/, artifacts/command-1/, etc.
 	// The absolute path to the numbered directory is exposed to each Bazel
 	// command as ARTIFACTS_DIRECTORY.
 	// Bazel commands can reference this like:
@@ -177,8 +177,8 @@ type workspace struct {
 	//         bazelisk             (copy of embedded bazelisk binary)
 	//         buildbuddy.bazelrc   (BuildBuddy-controlled bazelrc that applies to all bazel commands)
 	//         artifacts/
-	//             command_0/       (artifacts for bazel_commands[0])
-	//             command_1/       (artifacts for bazel_commands[1])
+	//             command-0/       (artifacts for bazel_commands[0])
+	//             command-1/       (artifacts for bazel_commands[1])
 	//             ...
 	//         output-base/         (bazel output base)
 	//         repo-root/           (cloned git repo)
@@ -221,28 +221,12 @@ type workspace struct {
 	log io.Writer
 }
 
-func newArtifactUploader(ctx context.Context, bep *build_event_publisher.Publisher, cacheTarget, instanceName string) (*bes_artifact_uploader.Uploader, error) {
-	u, err := url.Parse(cacheTarget)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("failed to parse cache target %q: %s", cacheTarget, err)
-	}
-	conn, err := grpc_client.DialTarget(cacheTarget)
-	if err != nil {
-		return nil, err
-	}
-	// Note: we don't defer conn.Close() here since it's OK to keep it alive
-	// until the CI runner exits.
-	bsClient := bspb.NewByteStreamClient(conn)
-	ul := bes_artifact_uploader.New(ctx, bsClient, bep, u.Host, instanceName)
-	return ul, nil
-}
-
 func artifactsRootPath(ws *workspace) string {
 	return filepath.Join(ws.rootDir, artifactsDirName)
 }
 
 func artifactsPathForCommand(ws *workspace, bazelCommandIndex int) string {
-	return filepath.Join(artifactsRootPath(ws), fmt.Sprintf("command_%d", bazelCommandIndex))
+	return filepath.Join(artifactsRootPath(ws), fmt.Sprintf("command-%d", bazelCommandIndex))
 }
 
 func provisionArtifactsDir(ws *workspace, bazelCommandIndex int) error {
@@ -256,26 +240,11 @@ func provisionArtifactsDir(ws *workspace, bazelCommandIndex int) error {
 	return nil
 }
 
-func uploadArtifacts(ws *workspace, ul *bes_artifact_uploader.Uploader, bazelCommandIndex int) error {
-	artifactsDir := artifactsPathForCommand(ws, bazelCommandIndex)
-	err := filepath.WalkDir(artifactsDir, func(path string, d fs.DirEntry, err error) error {
-		relpath, err := filepath.Rel(artifactsRootPath(ws), path)
-		if err != nil {
-			return err
-		}
-		if d.Type().IsRegular() {
-			ul.UploadFile(path, relpath) // does not return error
-		}
-		return nil
-	})
-	return err
-}
-
 type buildEventReporter struct {
 	isWorkflow bool
 	apiKey     string
 	bep        *build_event_publisher.Publisher
-	uploader   *bes_artifact_uploader.Uploader
+	uploader   *bes_artifacts.Uploader
 	log        *invocationLog
 
 	invocationID          string
@@ -286,7 +255,7 @@ type buildEventReporter struct {
 	progressCount int32
 }
 
-func newBuildEventReporter(ctx context.Context, besBackend, cacheBackend, instanceName, apiKey, forcedInvocationID string, isWorkflow bool) (*buildEventReporter, error) {
+func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
 		var err error
@@ -302,14 +271,12 @@ func newBuildEventReporter(ctx context.Context, besBackend, cacheBackend, instan
 	}
 	bep.Start(ctx)
 
-	log := newInvocationLog()
-
-	ul, err := newArtifactUploader(ctx, bep, cacheBackend, instanceName)
+	ul, err := bes_artifacts.NewUploader(ctx, bep, *cacheBackend, *remoteInstanceName)
 	if err != nil {
-		log.Printf("WARNING: Failed to initialize BES artifact uploader; artifacts written to $%s will not be uploaded: %s", artifactsDirEnvVarName, err)
+		return nil, status.UnavailableErrorf("failed to initialize BES artifact uploader: %s", err)
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: ul, log: log, invocationID: iid, isWorkflow: isWorkflow}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: ul, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -559,7 +526,7 @@ func run() error {
 		ctx = metadata.AppendToOutgoingContext(ctx, clientidentity.IdentityHeaderName, ci)
 	}
 
-	buildEventReporter, err := newBuildEventReporter(ctx, *besBackend, *cacheBackend, *remoteInstanceName, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
+	buildEventReporter, err := newBuildEventReporter(ctx, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 	if err != nil {
 		return err
 	}
@@ -894,33 +861,24 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return ws.setupError
 	}
 
-	if ul := ar.reporter.uploader; ul != nil {
-		allUploadsChan := make(chan []*bes_artifact_uploader.Result)
-		// Buffer upload results
-		go func() {
-			defer close(allUploadsChan)
-			var uploads []*bes_artifact_uploader.Result
-			for u := range ar.reporter.uploader.Results() {
-				uploads = append(uploads, u)
+	ul := ar.reporter.uploader
+	// Log upload results at the end of all Bazel commands.
+	defer func() {
+		uploads, err := ul.Wait()
+		if err != nil {
+			ar.reporter.Printf("WARNING: failed to upload some artifacts written to $%s: %s", artifactsDirEnvVarName, err)
+		}
+		for _, u := range uploads {
+			if u.Err != nil {
+				ar.reporter.Printf("WARNING: failed to upload artifact %s/%s", u.NamedSetID, u.Name)
+				continue
 			}
-			allUploadsChan <- uploads
-		}()
-		// Log upload results at the end of all Bazel commands.
-		defer func() {
-			if err := ul.Wait(); err != nil {
-				ar.reporter.Printf("WARNING: failed to upload some artifacts written to $%s: %s", artifactsDirEnvVarName, err)
-			}
-			uploads := <-allUploadsChan
-			for _, u := range uploads {
-				if u.Err != nil {
-					continue
-				}
-				ar.reporter.Printf(
-					"Uploaded artifact %s (%s) in %s",
-					u.Name, units.HumanSize(float64(u.Digest.SizeBytes)), u.Duration)
-			}
-		}()
-	}
+			ar.reporter.Printf(
+				"Uploaded artifact %s/%s (%s) in %s",
+				u.NamedSetID, u.Name,
+				units.HumanSize(float64(u.Digest.SizeBytes)), u.Duration)
+		}
+	}()
 
 	for i, bazelCmd := range action.BazelCommands {
 		cmdStartTime := time.Now()
@@ -1044,11 +1002,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		// Kick off background uploads for the action that just completed
-		if ul := ar.reporter.uploader; ul != nil {
-			if err := uploadArtifacts(ws, ul, i); err != nil {
-				ar.reporter.Printf("WARNING: failed to upload some artifacts written to $%s: %s", artifactsDirEnvVarName, err)
-			}
-		}
+		artifactsDir := artifactsPathForCommand(ws, i)
+		namedSetID := filepath.Base(artifactsDir)
+		ul.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 	}
 	return nil
 }

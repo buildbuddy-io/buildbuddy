@@ -14,7 +14,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
         "//enterprise/server/auth",
-        "//enterprise/server/bes_artifact_uploader",
+        "//enterprise/server/bes_artifacts",
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/clientidentity",
         "//enterprise/server/workflow/config",
