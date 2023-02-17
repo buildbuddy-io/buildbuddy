@@ -2067,7 +2067,7 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 		copy(keyBytes, iter.Key())
 		sample := &approxlru.Sample[*evictionKey]{
 			Key: &evictionKey{
-				bytes:        keyBytes,
+				bytes:           keyBytes,
 				storageMetadata: fileMetadata.GetStorageMetadata(),
 			},
 			SizeBytes: fileMetadata.GetStoredSizeBytes(),
