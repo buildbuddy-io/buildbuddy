@@ -489,6 +489,9 @@ func PrepareEnv() error {
 	if err := os.Setenv("USER_CACHE_DIR", cache); err != nil {
 		return err
 	}
+	if err := os.Setenv("BB_EXECUTABLE", os.Args[0]); err != nil {
+		return err
+	}
 	return nil
 }
 
