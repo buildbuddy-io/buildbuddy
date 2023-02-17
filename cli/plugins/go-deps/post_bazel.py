@@ -51,7 +51,7 @@ def main():
 
     with tempfile.NamedTemporaryFile() as run_script:
         print(
-            "\x1b[90m> bazel run //:gazelle -- "
+            "\x1b[90m> bb run //:gazelle -- "
             + "".join(packages)
             + "\x1b[m  🛠️  fixing...",
             end=""
@@ -59,7 +59,7 @@ def main():
         sys.stdout.flush()
         p = subprocess.run(
             [
-                "bazel",
+                "bb",
                 "run",
                 "--script_path=" + run_script.name,
                 "//:gazelle",
@@ -73,7 +73,7 @@ def main():
         if p.returncode != 0:
             erase_current_line()
             print(
-                "\x1b[32m> bazel run //:gazelle -- "
+                "\x1b[32m> bb run //:gazelle -- "
                 + "".join(packages)
                 + "\x1b[m  ❌ fix failed"
             )
@@ -86,7 +86,7 @@ def main():
         # TODO(bduffany): Retry the build up to one time once the fix succeeds.
         erase_current_line()
         print(
-            "\x1b[32m> bazel run //:gazelle -- "
+            "\x1b[32m> bb run //:gazelle -- "
             + "".join(packages)
             + "\x1b[m  ✅ fix applied"
         )
