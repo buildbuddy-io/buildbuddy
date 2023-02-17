@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import sys
+import os
 import tempfile
 
 AUTO_RUN_GAZELLE_PREFERENCE_KEY = "autoRunGazelle"
@@ -49,9 +50,14 @@ def main():
         print("$BUILD_WORKSPACE_DIRECTORY is not set; exiting.", file=sys.stderr)
         return 1
 
+    bb_executable = os.environ.get("BB_EXECUTABLE", "")
+    if not bb_executable:
+        print("$BB_EXECUTABLE is not set; exiting.", file=sys.stderr)
+        return 1
+
     with tempfile.NamedTemporaryFile() as run_script:
         print(
-            "\x1b[90m> bazel run //:gazelle -- "
+            "\x1b[90m> " + bb_executable + " run //:gazelle -- "
             + "".join(packages)
             + "\x1b[m  🛠️  fixing...",
             end=""
@@ -59,7 +65,7 @@ def main():
         sys.stdout.flush()
         p = subprocess.run(
             [
-                "bazel",
+                bb_executable,
                 "run",
                 "--script_path=" + run_script.name,
                 "//:gazelle",
@@ -73,7 +79,7 @@ def main():
         if p.returncode != 0:
             erase_current_line()
             print(
-                "\x1b[32m> bazel run //:gazelle -- "
+                "\x1b[32m> " + bb_executable + " run //:gazelle -- "
                 + "".join(packages)
                 + "\x1b[m  ❌ fix failed"
             )
@@ -86,7 +92,7 @@ def main():
         # TODO(bduffany): Retry the build up to one time once the fix succeeds.
         erase_current_line()
         print(
-            "\x1b[32m> bazel run //:gazelle -- "
+            "\x1b[32m> "+ bb_executable + " run //:gazelle -- "
             + "".join(packages)
             + "\x1b[m  ✅ fix applied"
         )

@@ -301,6 +301,7 @@ type InvocationDB interface {
 
 type APIKeyGroup interface {
 	GetCapabilities() int32
+	GetUserID() string
 	GetGroupID() string
 	GetUseGroupOwnedExecutors() bool
 }

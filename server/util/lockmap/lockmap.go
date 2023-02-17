@@ -24,39 +24,15 @@ func (c *refCount) Val() int64 {
 }
 
 type refCountedMutex struct {
-	mu    sync.RWMutex
+	sync.RWMutex
 	count refCount
-}
-
-func (rcm *refCountedMutex) Lock() {
-	rcm.mu.Lock()
-	rcm.count.Inc()
-}
-
-func (rcm *refCountedMutex) Unlock() {
-	rcm.count.Dec()
-	rcm.mu.Unlock()
-}
-
-func (rcm *refCountedMutex) RLock() {
-	rcm.mu.RLock()
-	rcm.count.Inc()
-}
-
-func (rcm *refCountedMutex) RUnlock() {
-	rcm.count.Dec()
-	rcm.mu.RUnlock()
-}
-
-func (rcm *refCountedMutex) Val() int64 {
-	return rcm.count.Val()
 }
 
 func newRefCountedMutex() *refCountedMutex {
 	var i int64
 	return &refCountedMutex{
-		mu:    sync.RWMutex{},
-		count: refCount{&i},
+		RWMutex: sync.RWMutex{},
+		count:   refCount{&i},
 	}
 }
 
@@ -102,7 +78,7 @@ func (p *perKeyMutex) gc() {
 		p.mutexes.Range(func(key, value any) bool {
 			p.bigLock.Lock()
 			rcm := value.(*refCountedMutex)
-			if rcm.Val() == 0 {
+			if rcm.count.Val() == 0 {
 				p.mutexes.Delete(key)
 			}
 			p.bigLock.Unlock()
@@ -114,22 +90,28 @@ func (p *perKeyMutex) gc() {
 
 func (p *perKeyMutex) Lock(key string) func() {
 	p.bigLock.Lock()
-	defer p.bigLock.Unlock()
-
 	value, _ := p.mutexes.LoadOrStore(key, newRefCountedMutex())
 	rcm := value.(*refCountedMutex)
+	rcm.count.Inc()
+	p.bigLock.Unlock()
 
 	rcm.Lock()
-	return rcm.Unlock
+	return func() {
+		rcm.Unlock()
+		rcm.count.Dec()
+	}
 }
 
 func (p *perKeyMutex) RLock(key string) func() {
 	p.bigLock.Lock()
-	defer p.bigLock.Unlock()
-
 	value, _ := p.mutexes.LoadOrStore(key, newRefCountedMutex())
 	rcm := value.(*refCountedMutex)
+	rcm.count.Inc()
+	p.bigLock.Unlock()
 
 	rcm.RLock()
-	return rcm.RUnlock
+	return func() {
+		rcm.RUnlock()
+		rcm.count.Dec()
+	}
 }

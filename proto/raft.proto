@@ -88,9 +88,15 @@ message PartitionMetadatas {
   repeated PartitionMetadata metadata = 1;
 }
 
+// Next tag: 4
 message VersionMetadata {
   // The int64 representation of a PebbleKeyVersion.
-  int64 version = 1;
+  // This is the minimum version of data stored in the DB.
+  int64 min_version = 1;
+
+  // The int64 representation of a PebbleKeyVersion.
+  // This is the maximum version of data stored in the DB.
+  int64 max_version = 3;
 
   // The time when the version was last changed.
   int64 last_modify_usec = 2;

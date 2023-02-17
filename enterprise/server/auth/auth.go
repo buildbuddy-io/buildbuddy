@@ -726,6 +726,7 @@ func userClaims(u *tables.User, effectiveGroup string) *Claims {
 
 func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 	return &Claims{
+		UserID:        akg.GetUserID(),
 		GroupID:       akg.GetGroupID(),
 		AllowedGroups: []string{akg.GetGroupID()},
 		// For now, API keys are assigned the default role.

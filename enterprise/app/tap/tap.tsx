@@ -13,7 +13,21 @@ import { clamp } from "../../../app/util/math";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Select, { Option } from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
-import { ChevronsRight } from "lucide-react";
+import {
+  Activity,
+  AlarmClock,
+  AlertTriangle,
+  Check,
+  ChevronsRight,
+  Clock,
+  Hammer,
+  HelpCircle,
+  SkipForward,
+  Slash,
+  Snowflake,
+  Wrench,
+  X,
+} from "lucide-react";
 import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton from "../../../app/components/button/button";
 import errorService from "../../../app/errors/error_service";
@@ -298,6 +312,39 @@ export default class TapComponent extends React.Component<Props, State> {
     }
   }
 
+  statusToIcon(s: api.v1.Status) {
+    switch (s) {
+      case Status.STATUS_UNSPECIFIED:
+        return <HelpCircle />;
+      case Status.BUILDING:
+        return <Clock />;
+      case Status.BUILT:
+        return <Hammer />;
+      case Status.FAILED_TO_BUILD:
+        return <AlertTriangle />;
+      case Status.TESTING:
+        return <Clock />;
+      case Status.PASSED:
+        return <Check />;
+      case Status.FAILED:
+        return <X />;
+      case Status.TIMED_OUT:
+        return <AlarmClock />;
+      case Status.CANCELLED:
+        return <Slash />;
+      case Status.TOOL_FAILED:
+        return <Wrench />;
+      case Status.INCOMPLETE:
+        return <Activity />;
+      case Status.FLAKY:
+        return <Snowflake />;
+      case Status.UNKNOWN:
+        return <HelpCircle />;
+      case Status.SKIPPED:
+        return <SkipForward />;
+    }
+  }
+
   loadMoreTargets() {
     this.setState({ targetLimit: this.state.targetLimit + 50 });
   }
@@ -577,7 +624,9 @@ export default class TapComponent extends React.Component<Props, State> {
                             }}
                             className={`tap-block ${
                               this.getColorMode() == "status" ? `status-${status.status}` : "timing"
-                            } clickable`}></a>
+                            } clickable`}>
+                            {this.statusToIcon(status.status)}
+                          </a>
                         );
                       })}
                   </div>
