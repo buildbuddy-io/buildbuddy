@@ -33,12 +33,12 @@ func main() {
 		log.Fatalf("Error opening db: %s", err)
 	}
 
-	// Replace every gorm raw SQL command with a function that appends the SQL string to a slice
+	// After every gorm raw SQL command, append the SQL string to a slice
 	sqlStrings := make([]string, 0)
 	if err := ds.Callback().Raw().After("gorm:raw").Register("save_sql", func(db *gorm.DB) {
 		sqlStrings = append(sqlStrings, db.Statement.SQL.String())
 	}); err != nil {
-		log.Fatalf("Error replacing gorm sql statements: %s", err)
+		log.Fatalf("Error adding callback to gorm: %s", err)
 	}
 
 	if err := db.RunMigrations(driverName, ds); err != nil {
@@ -53,7 +53,10 @@ func main() {
 
 	w := bufio.NewWriter(file)
 	for _, data := range sqlStrings {
-		_, _ = w.WriteString(data + "\n")
+		_, err = w.WriteString(data + "\n")
+		if err != nil {
+			log.Fatalf("Error writing data to file: %s", err)
+		}
 	}
 	err = w.Flush()
 	if err != nil {

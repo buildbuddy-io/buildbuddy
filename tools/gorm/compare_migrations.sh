@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# TODO: Need the port-forwarding command
-# TODO: If temporary db created, clean it up
-
-# TODO: Add some instructions for how to create temp databases
-
 # This script can be used to determine whether there will be any gorm db schema changes from a git branch
 #
 # It assumes that the schema of the data source is already up-to-date with what is defined on the baseline branch,
@@ -11,7 +6,6 @@
 #
 # The script generates the gorm auto-migration SQL statements for the current branch, then compares these statements to the
 # auto-migration SQL statements for the input branch and prints any diff
-# It does not execute any migrations on the db
 
 baseline_git_branch=$1
 new_git_branch=$2
@@ -25,7 +19,6 @@ git checkout "$baseline_git_branch"
 tmpfile="$(mktemp /tmp/auto_migration.XXXXXXXXX)"
 bazel run print_auto_migration -- --data_source "$baseline_db_conn_string" --output_path "$tmpfile"
 
-#TODO: This script only accepts mysql format rn
 # Parse db connection strings
 db_driver=$(echo "$baseline_db_conn_string" | sed -n "s/\(\S*\):\/\/.*$/\1/p")
 copy_db_driver=$(echo "$db_copy_conn_string" | sed -n "s/\(\S*\):\/\/.*$/\1/p")
@@ -43,9 +36,9 @@ if [[ "$db_driver" == "sqlite3" ]]; then
   sqlite3 "$db" ".schema --nosys" | sqlite3 "$copy_db"
 elif [[ "$db_driver" == "mysql" ]]; then
   # Expecting something like: mysql://buildbuddy-dev:password@tcp(127.0.0.1:3308)/buildbuddy_dev
-  username=$(echo "$baseline_db_conn_string" | sed -n "s/^.*:\/\/\(\S*\):.*$/\1/p")
+  username=$(echo "$baseline_db_conn_string" | sed -n "s/^.*:\/\/\(\S*\):.*@.*$/\1/p")
   password=$(echo "$baseline_db_conn_string" | sed -n "s/^.*:\/\/.*:\(\S*\)@.*$/\1/p")
-  ip=$(echo "$baseline_db_conn_string" | sed -n "s/^.*(\(\S*\)).*$/\1/p")
+  ip=$(echo "$baseline_db_conn_string" | sed -n "s/^.*(\(\S*\):.*$/\1/p")
   port=$(echo "$baseline_db_conn_string" | sed -n "s/^.*(.*:\(\S*\)).*$/\1/p")
   db_name=$(echo "$baseline_db_conn_string" | sed -n "s/^.*)\/\(\S*\).*$/\1/p")
 
