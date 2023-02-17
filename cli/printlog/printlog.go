@@ -2,8 +2,6 @@ package printlog
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -68,9 +67,9 @@ func printLog(path string, m proto.Message) error {
 }
 
 func copyUnmarshaled(w io.Writer, grpcLog io.Reader, m proto.Message) error {
-	pr := NewDelimitedProtoReader(grpcLog)
+	br := bufio.NewReader(grpcLog)
 	for {
-		err := pr.Unmarshal(m)
+		err := protodelim.UnmarshalFrom(br, m)
 		if err == io.EOF {
 			return nil
 		}
@@ -88,25 +87,4 @@ func copyUnmarshaled(w io.Writer, grpcLog io.Reader, m proto.Message) error {
 			return err
 		}
 	}
-}
-
-type DelimitedProtoReader struct {
-	buf bytes.Buffer
-	r   *bufio.Reader
-}
-
-func NewDelimitedProtoReader(r io.Reader) *DelimitedProtoReader {
-	return &DelimitedProtoReader{r: bufio.NewReader(r)}
-}
-
-func (p *DelimitedProtoReader) Unmarshal(m proto.Message) error {
-	size, err := binary.ReadUvarint(p.r)
-	if err != nil {
-		return err
-	}
-	p.buf.Reset()
-	if _, err := io.CopyN(&p.buf, p.r, int64(size)); err != nil {
-		return err
-	}
-	return proto.Unmarshal(p.buf.Bytes(), m)
 }

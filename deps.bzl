@@ -5855,8 +5855,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         # build_file_generation = "off",
         # patch_args = ["-p1"],
         # patches = ["@io_bazel_rules_go//third_party:org_golang_google_protobuf-gazelle.patch"],
-        sum = "h1:d0NfwRgPtno5B1Wa6L2DAG+KivqkdutMf1UhdNx175w=",
-        version = "v1.28.1",
+        sum = "h1:ED3clF8cKmSuqHQDqBb1yBDKTBy5QbB144qZpJt5Ohk=",
+        version = "v1.28.2-0.20230209092751-246af0d153ca",
     )
     go_repository(
         name = "org_golang_x_crypto",
