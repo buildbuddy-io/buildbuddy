@@ -114,7 +114,10 @@ func (u *Uploader) uploadDirectory(namedSetID, root string) error {
 		f := &bespb.File{Name: r.Name, File: &bespb.File_Uri{Uri: uri}}
 		files = append(files, f)
 	}
-
+	if len(files) == 0 {
+		// No artifacts uploaded; don't publish an unnecessary event
+		return nil
+	}
 	return u.bep.Publish(&bespb.BuildEvent{
 		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_NamedSet{
 			NamedSet: &bespb.BuildEventId_NamedSetOfFilesId{Id: namedSetID},

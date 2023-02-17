@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -28,7 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/encoding/protodelim"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -156,16 +155,29 @@ actions:
 
 	workspaceContentsWithArtifactUploads = map[string]string{
 		"WORKSPACE": `workspace(name = "test")`,
-		"BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
-		"pass.sh":   `exit 0`,
+		"BUILD": `
+sh_test(name = "pass", srcs = ["pass.sh"])
+sh_binary(name = "check_artifacts_dir", srcs = ["check_artifacts_dir.sh"])
+`,
+		"pass.sh": `exit 0`,
+		"check_artifacts_dir.sh": `
+			# Make sure artifacts dir exists
+			artifacts_root="$1/.."
+			if ! [[ -e "$artifacts_root/command-0" ]]; then exit 1; fi
+			# Make sure there are no files from previous invocations anywhere
+			# under the arrtifacts root dir
+			if [[ "$(find "$artifacts_root" -type f)" ]]; then exit 1; fi
+			exit 0
+		`,
 		"buildbuddy.yaml": `
-	actions:
-	  - name: "Test"
-		triggers:	
-		  pull_request: { branches: [ master ] }
-		  push: { branches: [ master ] }
-		bazel_commands:
-		  - test //... --config=buildbuddy_remote_cache --experimental_remote_grpc_log=$ARTIFACTS_DIRECTORY/grpc.log
+actions:
+  - name: "Test"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    bazel_commands:
+      - run :check_artifacts_dir -- $ARTIFACTS_DIRECTORY
+      - test //... --config=buildbuddy_remote_cache --experimental_remote_grpc_log=$ARTIFACTS_DIRECTORY/grpc.log
 `,
 	}
 
@@ -979,21 +991,23 @@ func TestArtifactUploads(t *testing.T) {
 
 	runnerInvocation := singleInvocation(t, app, result)
 
-	var bytestreamURI string
+	var namedSetEvents []*bespb.BuildEvent
 	for _, event := range runnerInvocation.Event {
-		payload, ok := event.BuildEvent.Payload.(*bespb.BuildEvent_NamedSetOfFiles)
+		_, ok := event.BuildEvent.Payload.(*bespb.BuildEvent_NamedSetOfFiles)
 		if !ok {
 			continue
 		}
-		id := event.BuildEvent.Id.GetNamedSet().GetId()
-		require.Equal(t, "command-0", id)
-		files := payload.NamedSetOfFiles.Files
-		require.Len(t, files, 1)
-		require.Equal(t, "grpc.log", files[0].GetName())
-		bytestreamURI = files[0].GetUri()
-		break
+		namedSetEvents = append(namedSetEvents, event.BuildEvent)
 	}
-	require.NotEmpty(t, bytestreamURI, "failed to locate NamedSetOfFiles event in workflow BES events")
+	require.Len(t, namedSetEvents, 1, "expected exactly 1 NamedSetOfFiles event")
+	event := namedSetEvents[0]
+	payload := event.Payload.(*bespb.BuildEvent_NamedSetOfFiles)
+	files := payload.NamedSetOfFiles.GetFiles()
+	require.Len(t, files, 1, "expected exactly 1 file")
+	bytestreamURI := files[0].GetUri()
+	require.NotEmpty(t, bytestreamURI)
+	require.Equal(t, "command-1", event.GetId().GetNamedSet().GetId(), "expected named set ID to be 'command-1'")
+	require.Equal(t, "grpc.log", files[0].GetName())
 
 	// Make sure that we can download the artifact and parse it as a gRPC log.
 	downloadURL := fmt.Sprintf(
@@ -1010,11 +1024,11 @@ func TestArtifactUploads(t *testing.T) {
 		require.FailNowf(t, res.Status, "response body: %s", string(b))
 	}
 
-	pr := NewDelimitedProtoReader(res.Body)
+	br := bufio.NewReader(res.Body)
 	m := &rlpb.LogEntry{}
 	nParsed := 0
 	for {
-		err = pr.Unmarshal(m)
+		err = protodelim.UnmarshalFrom(br, m)
 		if err == io.EOF {
 			break
 		}
@@ -1022,27 +1036,11 @@ func TestArtifactUploads(t *testing.T) {
 		nParsed++
 	}
 	require.Greater(t, nParsed, 0, "expected to parse at least one grpc log message")
-}
 
-// TODO(bduffany): Move this to a util package and share with //cli/printlog and
-// //server/util/protofile
-type DelimitedProtoReader struct {
-	buf bytes.Buffer
-	r   *bufio.Reader
-}
+	// Run the action again. Note, the workflow bazel command runs a script
+	// which asserts that there are no artifacts sticking around in the artifact
+	// directory from the previous run.
+	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-func NewDelimitedProtoReader(r io.Reader) *DelimitedProtoReader {
-	return &DelimitedProtoReader{r: bufio.NewReader(r)}
-}
-
-func (p *DelimitedProtoReader) Unmarshal(m proto.Message) error {
-	size, err := binary.ReadUvarint(p.r)
-	if err != nil {
-		return err
-	}
-	p.buf.Reset()
-	if _, err := io.CopyN(&p.buf, p.r, int64(size)); err != nil {
-		return err
-	}
-	return proto.Unmarshal(p.buf.Bytes(), m)
+	checkRunnerResult(t, result)
 }

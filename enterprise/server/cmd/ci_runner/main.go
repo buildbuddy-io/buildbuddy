@@ -1406,6 +1406,10 @@ func findAction(actions []*config.Action, name string) (*config.Action, error) {
 }
 
 func (ws *workspace) setup(ctx context.Context) error {
+	// Remove any existing artifacts from previous workflow invocations
+	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
+		return err
+	}
 	repoDirInfo, err := os.Stat(repoDirName)
 	if err != nil && !os.IsNotExist(err) {
 		return status.WrapErrorf(err, "stat %q", repoDirName)
