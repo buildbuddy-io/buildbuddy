@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/protodelim"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
 
@@ -37,10 +38,10 @@ type BufferedProtoWriter struct {
 // N.B. This *DOES NOT* guarantee that a caller has read all data for a
 // streamID, because it may still be written to from another goroutine.
 type BufferedProtoReader struct {
-	bs       interfaces.Blobstore
-	q        *blobQueue
-	readBuf  *bytes.Buffer
-	streamID string
+	bs          interfaces.Blobstore
+	q           *blobQueue
+	delimReader *protodelim.Reader
+	streamID    string
 }
 
 func NewBufferedProtoReader(bs interfaces.Blobstore, streamID string) *BufferedProtoReader {
@@ -211,7 +212,7 @@ func (q *blobQueue) pop(ctx context.Context) ([]byte, error) {
 
 func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) error {
 	for {
-		if w.readBuf == nil {
+		if w.delimReader == nil {
 			// Load file
 			fileData, err := w.q.pop(ctx)
 			if err != nil {
@@ -220,19 +221,14 @@ func (w *BufferedProtoReader) ReadProto(ctx context.Context, msg proto.Message) 
 				}
 				return err
 			}
-			w.readBuf = bytes.NewBuffer(fileData)
+			w.delimReader = protodelim.NewReader(bytes.NewReader(fileData), protodelim.ReadVarint)
 		}
-		// read proto from buf
-		count, err := binary.ReadVarint(w.readBuf)
-		if err != nil {
-			w.readBuf = nil
+		err := w.delimReader.Read(msg)
+		if err == io.EOF {
+			// Move on to the next file
+			w.delimReader = nil
 			continue
 		}
-		protoBytes := make([]byte, count)
-		w.readBuf.Read(protoBytes)
-		if err := proto.Unmarshal(protoBytes, msg); err != nil {
-			return err
-		}
-		return nil
+		return err
 	}
 }
