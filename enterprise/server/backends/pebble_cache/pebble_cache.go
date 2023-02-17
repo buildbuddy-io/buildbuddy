@@ -848,6 +848,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		totalCount++
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
+		fileMetadataKey := iter.Key()
 		var key filestore.PebbleKey
 		_, err := key.FromBytes(iter.Key())
 		if err != nil {
@@ -855,12 +856,6 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			continue
 		}
 
-		// TODO(tylerw): Make version aware.
-		fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-		if err != nil {
-			log.Errorf("Error converting key to bytes: %s", err)
-			continue
-		}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
 			continue
