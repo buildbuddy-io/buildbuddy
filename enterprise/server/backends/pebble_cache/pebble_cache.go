@@ -34,7 +34,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
-	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/cockroachdb/pebble"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
@@ -73,7 +72,7 @@ var (
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 
-	activeKeyVersion = flag.Int64("cache.pebble.activeKeyVersion", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
+	activeKeyVersion = flag.Int64("cache.pebble.active_key_version", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
 
 	// Compression related flags
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
@@ -523,22 +522,20 @@ func (p *PebbleCache) updateDatabaseVersion(newVersion filestore.PebbleKeyVersio
 }
 
 func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return err
-	}
-
-	unlockFn := p.locker.Lock(key.LockID())
-	defer unlockFn()
-
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	md, err := readFileMetadata(db, key)
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	// Write Lock: because we read/modify/write below.
+	unlockFn := p.locker.Lock(key.LockID())
+	defer unlockFn()
+
+	md, version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), iter, key)
 	if err != nil {
 		return err
 	}
@@ -552,7 +549,11 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if err != nil {
 		return err
 	}
-	return db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false})
+	keyBytes, err := key.Bytes(version)
+	if err != nil {
+		return err
+	}
+	return db.Set(keyBytes, protoBytes, &pebble.WriteOptions{Sync: false})
 }
 
 func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
@@ -847,6 +848,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		totalCount++
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
+		fileMetadataKey := iter.Key()
 		var key filestore.PebbleKey
 		_, err := key.FromBytes(iter.Key())
 		if err != nil {
@@ -854,12 +856,6 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			continue
 		}
 
-		// TODO(tylerw): Make version aware.
-		fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-		if err != nil {
-			log.Errorf("Error converting key to bytes: %s", err)
-			continue
-		}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			log.Errorf("Error unmarshaling metadata when scanning for broken files: %s", err)
 			continue
@@ -1005,35 +1001,40 @@ func (p *PebbleCache) blobDir() string {
 	return filePath
 }
 
-func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter *pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return nil, err
-	}
-
+func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, iter *pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, filestore.PebbleKeyVersion, error) {
 	fileMetadata := &rfpb.FileMetadata{}
-	if err := pebbleutil.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
-		return nil, err
+	var lastErr error
+	for version := p.activeDatabaseVersion(); version >= p.currentDatabaseVersion(); version-- {
+		keyBytes, err := key.Bytes(version)
+		if err != nil {
+			return nil, -1, err
+		}
+		lastErr = pebbleutil.LookupProto(iter, keyBytes, fileMetadata)
+		if lastErr == nil {
+			return fileMetadata, version, nil
+		}
 	}
+	return nil, -1, lastErr
+}
 
-	return fileMetadata, nil
+func (p *PebbleCache) lookupFileMetadata(ctx context.Context, iter *pebble.Iterator, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
+	md, _, err := p.lookupFileMetadataAndVersion(ctx, iter, key)
+	return md, err
 }
 
 // iterHasKey returns a bool indicating if the provided iterator has the
 // exact key specified.
-func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey) bool {
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		log.Errorf("Error converting key to bytes: %s", err)
-		return false
+func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey) (bool, error) {
+	for version := p.activeDatabaseVersion(); version >= p.currentDatabaseVersion(); version-- {
+		keyBytes, err := key.Bytes(version)
+		if err != nil {
+			return false, err
+		}
+		if iter.SeekGE(keyBytes) && bytes.Compare(iter.Key(), keyBytes) == 0 {
+			return true, nil
+		}
 	}
-
-	if iter.SeekGE(fileMetadataKey) && bytes.Compare(iter.Key(), fileMetadataKey) == 0 {
-		return true
-	}
-	return false
+	return false, nil
 }
 
 func readFileMetadata(reader pebble.Reader, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
@@ -1096,8 +1097,11 @@ func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	found := p.iterHasKey(iter, key)
-	log.Debugf("Pebble contains %s is %v", key.String(), found)
+	found, err := p.iterHasKey(iter, key)
+	if err != nil {
+		return false, err
+	}
+	log.Debugf("Pebble contains %s is %t", key.String(), found)
 	return found, nil
 }
 
@@ -1162,7 +1166,11 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.Res
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		if !p.iterHasKey(iter, key) {
+		found, err := p.iterHasKey(iter, key)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
 			missing = append(missing, r.GetDigest())
 		}
 		unlockFn()
@@ -1535,11 +1543,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	if err != nil {
 		return nil, err
 	}
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return nil, err
-	}
-	log.Debugf("Attempting pebble writer %s", string(fileMetadataKey))
+	log.Debugf("Attempting pebble writer %s", key.String())
 
 	var wcm interfaces.MetadataWriteCloser
 	if r.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
@@ -1575,29 +1579,27 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 			return err
 		}
 
-		sizeDelta := bytesWritten
 		iter := db.NewIter(nil /*default iterOptions*/)
 		defer iter.Close()
 
 		unlockFn := p.locker.Lock(key.LockID())
 		defer unlockFn()
 
-		existingMD, err := p.lookupFileMetadata(ctx, iter, key)
-		if err == nil {
-			if r.GetCacheType() != resource.CacheType_AC {
-				metrics.DiskCacheDuplicateWrites.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Inc()
-				metrics.DiskCacheDuplicateWritesBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Add(float64(r.GetDigest().GetSizeBytes()))
-				tracing.AddStringAttributeToCurrentSpan(ctx, "pebble.duplicate_write", "true")
+		if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
+			if err := p.deleteFileAndMetadata(ctx, key, version, oldMD); err != nil {
+				log.Errorf("Error deleting old record %q: %s", key.String(), err)
+				return err
 			}
-			sizeDelta = bytesWritten - existingMD.GetStoredSizeBytes()
 		}
 
-		if err = db.Set(fileMetadataKey, protoBytes, &pebble.WriteOptions{Sync: false}); err == nil {
-			partitionID := fileRecord.GetIsolation().GetPartitionId()
-			if sizeDelta != 0 {
-				p.sendSizeUpdate(partitionID, key.CacheType(), sizeDelta)
-			}
+		keyBytes, err := key.Bytes(p.activeDatabaseVersion())
+		if err != nil {
+			return err
+		}
 
+		if err = db.Set(keyBytes, protoBytes, &pebble.WriteOptions{Sync: false}); err == nil {
+			partitionID := fileRecord.GetIsolation().GetPartitionId()
+			p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
 		}
 
