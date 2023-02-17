@@ -18,8 +18,7 @@ var (
 	outputPath = flag.String("output_path", "migration.txt", "The output file to write the gorm migration logs to.")
 )
 
-// This script prints the SQL commands that would be executed when running db.RunMigrations
-// It does not execute any of the commands
+// This script prints the SQL commands that are executed when running db.RunMigrations
 func main() {
 	flag.Parse()
 
@@ -36,7 +35,7 @@ func main() {
 
 	// Replace every gorm raw SQL command with a function that appends the SQL string to a slice
 	sqlStrings := make([]string, 0)
-	if err := ds.Callback().Raw().Replace("gorm:raw", func(db *gorm.DB) {
+	if err := ds.Callback().Raw().After("gorm:raw").Register("save_sql", func(db *gorm.DB) {
 		sqlStrings = append(sqlStrings, db.Statement.SQL.String())
 	}); err != nil {
 		log.Fatalf("Error replacing gorm sql statements: %s", err)
