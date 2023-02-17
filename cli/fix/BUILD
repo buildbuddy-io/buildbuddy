@@ -6,9 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix",
     visibility = ["//visibility:public"],
     deps = [
+        ":gazelle",
         "//cli/arg",
         "//cli/log",
-        ":gazelle",
     ],
 )
 
@@ -16,6 +16,7 @@ go_library(
     name = "gazelle",
     # keep
     srcs = [
+        "langs.go",
         "@bazel_gazelle//cmd/gazelle:diff.go",
         "@bazel_gazelle//cmd/gazelle:fix.go",
         "@bazel_gazelle//cmd/gazelle:fix-update.go",
@@ -23,12 +24,12 @@ go_library(
         "@bazel_gazelle//cmd/gazelle:metaresolver.go",
         "@bazel_gazelle//cmd/gazelle:print.go",
         "@bazel_gazelle//cmd/gazelle:update-repos.go",
-        "langs.go",
     ],
     importpath = "github.com/bazelbuild/bazel-gazelle/cmd/gazelle",
     tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/fix/typescript",
         "@bazel_gazelle//config",
         "@bazel_gazelle//flag",
         "@bazel_gazelle//internal/wspace",
@@ -42,6 +43,5 @@ go_library(
         "@bazel_gazelle//rule",
         "@bazel_gazelle//walk",
         "@com_github_pmezard_go_difflib//difflib",
-        "//cli/fix/typescript"
     ],
 )
