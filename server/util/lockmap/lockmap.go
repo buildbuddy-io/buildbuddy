@@ -114,10 +114,9 @@ func (p *perKeyMutex) gc() {
 
 func (p *perKeyMutex) Lock(key string) func() {
 	p.bigLock.Lock()
-	defer p.bigLock.Unlock()
-
 	value, _ := p.mutexes.LoadOrStore(key, newRefCountedMutex())
 	rcm := value.(*refCountedMutex)
+	p.bigLock.Unlock()
 
 	rcm.Lock()
 	return rcm.Unlock
@@ -125,10 +124,9 @@ func (p *perKeyMutex) Lock(key string) func() {
 
 func (p *perKeyMutex) RLock(key string) func() {
 	p.bigLock.Lock()
-	defer p.bigLock.Unlock()
-
 	value, _ := p.mutexes.LoadOrStore(key, newRefCountedMutex())
 	rcm := value.(*refCountedMutex)
+	p.bigLock.Unlock()
 
 	rcm.RLock()
 	return rcm.RUnlock
