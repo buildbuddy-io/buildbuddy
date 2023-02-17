@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -75,6 +76,7 @@ var (
 
 	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
 	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	autoMigrateDBOutput  = flag.String("database.auto_migrate_db_output", "", "If set, print auto-migration SQL statements to this file.")
 )
 
 type AdvancedConfig struct {
@@ -216,7 +218,7 @@ func (dbh *DBHandle) ReadRow(ctx context.Context, out interface{}, where ...inte
 	return err
 }
 
-func RunMigrations(dialect string, gdb *gorm.DB) error {
+func runMigrations(dialect string, gdb *gorm.DB) error {
 	log.Info("Auto-migrating DB")
 	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
 	if err != nil {
@@ -344,7 +346,7 @@ func (c *connector) Driver() driver.Driver {
 	return c.d
 }
 
-func OpenDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
+func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
 	ds, err := ParseDatasource(fileResolver, dataSource, advancedConfig)
 	if err != nil {
 		return nil, "", err
@@ -630,7 +632,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 		}
 	}
 
-	primaryDB, driverName, err := OpenDB(env.GetFileResolver(), *dataSource, advDataSource)
+	primaryDB, driverName, err := openDB(env.GetFileResolver(), *dataSource, advDataSource)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
@@ -650,16 +652,48 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	}
 	go statsRecorder.poll()
 
-	if *autoMigrateDBAndExit {
-		if err := RunMigrations(driverName, primaryDB); err != nil {
-			log.Fatalf("Database auto-migration failed: %s", err)
+	if *autoMigrateDB || *autoMigrateDBAndExit {
+		sqlStrings := make([]string, 0)
+		if *autoMigrateDBOutput != "" {
+			if err := primaryDB.Callback().Raw().After("gorm:raw").Register("save_sql", func(db *gorm.DB) {
+				sqlStrings = append(sqlStrings, db.Statement.SQL.String())
+			}); err != nil {
+				return nil, err
+			}
 		}
-		log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
-		os.Exit(0)
-	}
-	if *autoMigrateDB {
-		if err := RunMigrations(driverName, primaryDB); err != nil {
+
+		if err := runMigrations(driverName, primaryDB); err != nil {
 			return nil, err
+		}
+
+		if *autoMigrateDBOutput != "" {
+			file, err := os.Create(*autoMigrateDBOutput)
+			if err != nil {
+				return nil, err
+			}
+
+			w := bufio.NewWriter(file)
+			for _, data := range sqlStrings {
+				_, err = w.WriteString(data + "\n")
+				if err != nil {
+					return nil, err
+				}
+			}
+			err = w.Flush()
+			if err != nil {
+				return nil, err
+			}
+			err = file.Close()
+			if err != nil {
+				return nil, err
+			}
+
+			log.Infof("Logged auto-migration SQL to %s.", *autoMigrateDBOutput)
+		}
+
+		if *autoMigrateDBAndExit {
+			log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
+			os.Exit(0)
 		}
 	}
 
@@ -673,7 +707,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
-		replicaDB, readDialect, err := OpenDB(env.GetFileResolver(), *readReplica, advReadReplica)
+		replicaDB, readDialect, err := openDB(env.GetFileResolver(), *readReplica, advReadReplica)
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("could not configure read replica database: %s", err)
 		}
