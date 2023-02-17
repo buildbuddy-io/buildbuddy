@@ -254,7 +254,7 @@
 }
 
 .tap .tap-block {
-  display: block;
+  display: flex;
   width: 32px;
   height: 32px;
   margin: 1px;
@@ -263,11 +263,17 @@
   font-size: 8px;
   padding: 2px;
   align-items: center;
+  justify-content: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.6;
+  opacity: 0.8;
   flex-shrink: 0;
+}
+
+.tap-block svg {
+  color: #fff;
+  width: 50%;
 }
 
 .tap .tap-block:hover,
@@ -276,15 +282,15 @@
 }
 
 .tap .tap-block:nth-of-type(2) {
-  opacity: 0.9;
+  opacity: 0.95;
 }
 
 .tap .tap-block:nth-of-type(3) {
-  opacity: 0.8;
+  opacity: 0.9;
 }
 
 .tap .tap-block:nth-of-type(4) {
-  opacity: 0.7;
+  opacity: 0.85;
 }
 
 .tap .tap-block.no-status {
@@ -323,7 +329,7 @@ SKIPPED = 13;
 }
 
 .tap .tap-block.status-0 {
-  background-color: #eeeeee;
+  background-color: #888;
 }
 
 .tap .tap-block.status-1 {
@@ -363,7 +369,7 @@ SKIPPED = 13;
 }
 
 .tap .tap-block.status-10 {
-  background-color: #e0e0e0;
+  background-color: #888;
 }
 
 .tap .tap-block.status-11 {
@@ -371,11 +377,11 @@ SKIPPED = 13;
 }
 
 .tap .tap-block.status-12 {
-  background-color: #bdbdbd;
+  background-color: #888;
 }
 
 .tap .tap-block.status-13 {
-  background-color: #b0bec5;
+  background-color: #888;
 }
 
 .tap .filter-input {
