@@ -54,6 +54,8 @@ nogo(
 # gazelle:proto disable
 # gazelle:map_kind ts_project ts_library //rules/typescript:index.bzl
 # gazelle:exclude **/node_modules/**
+# TODO(siggisim): remove once we support .css imports properly
+# gazelle:exclude website/**
 gazelle(name = "gazelle")
 
 # Example usage: "bazel run //:gofmt -- -w ."
