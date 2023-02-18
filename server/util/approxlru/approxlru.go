@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -69,6 +70,7 @@ type LRU[T Key] struct {
 	onEvict            OnEvict[T]
 	onSample           OnSample[T]
 	onRefresh          OnRefresh[T]
+	limiter            *rate.Limiter
 
 	samplePool []*Sample[T]
 
@@ -91,9 +93,13 @@ type Opts[T Key] struct {
 	// memory at a time. Increasing this number uses more memory but
 	// improves sampled-LRU accuracy.
 	SamplePoolSize int
-	OnEvict        OnEvict[T]
-	OnSample       OnSample[T]
-	OnRefresh      OnRefresh[T]
+	// RateLimit is the maximum number of evictions to perform per second.
+	// If not set, no limit is enforced.
+	RateLimit float64
+
+	OnEvict   OnEvict[T]
+	OnSample  OnSample[T]
+	OnRefresh OnRefresh[T]
 }
 
 func New[T Key](opts *Opts[T]) (*LRU[T], error) {
@@ -115,6 +121,10 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 	if opts.OnRefresh == nil {
 		return nil, status.FailedPreconditionError("refresh callback is required")
 	}
+	rateLimit := rate.Limit(opts.RateLimit)
+	if rateLimit == 0 {
+		rateLimit = rate.Inf
+	}
 	l := &LRU[T]{
 		samplePoolSize:     opts.SamplePoolSize,
 		samplesPerEviction: opts.SamplesPerEviction,
@@ -122,6 +132,7 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 		onEvict:            opts.OnEvict,
 		onSample:           opts.OnSample,
 		onRefresh:          opts.OnRefresh,
+		limiter:            rate.NewLimiter(rateLimit, 1),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	l.ctx = ctx
@@ -300,6 +311,10 @@ func (l *LRU[T]) ttl() error {
 			return nil
 		default:
 			break
+		}
+
+		if err := l.limiter.Wait(l.ctx); err != nil {
+			return err
 		}
 
 		lastEvicted, err := l.evict()
