@@ -405,8 +405,8 @@ ts_library(
     srcs = ["invocation_query_graph_card.tsx"],
     deps = [
         "//app/invocation:invocation_model",
+        "@npm//@types/dagre-d3",  # keep
         "@npm//@types/react",
-        "@npm//@types/dagre-d3", # keep
         "@npm//dagre-d3-react",
         "@npm//lucide-react",
         "@npm//react",
