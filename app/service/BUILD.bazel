@@ -3,15 +3,15 @@ load("//rules/typescript:index.bzl", "ts_library")
 package(default_visibility = ["//visibility:public"])
 
 ts_library(
-    name = "service",
-    srcs = glob(["*.ts"]),
+    name = "rpc_service",
+    srcs = ["rpc_service.ts"],
     strict = True,
     deps = [
         "//app/util:async",
         "//proto:buildbuddy_service_ts_proto",
         "//proto:context_ts_proto",
-        "@npm//oidc-client",
         "@npm//protobufjs",
         "@npm//rxjs",
+        "@npm//tslib",
     ],
 )

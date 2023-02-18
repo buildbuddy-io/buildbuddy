@@ -4,8 +4,6 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "favicon",
-    srcs = glob(["*.ts"]),
+    srcs = ["favicon.ts"],
     strict = True,
-    deps = [
-    ],
 )

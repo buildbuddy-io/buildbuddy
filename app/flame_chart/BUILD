@@ -4,18 +4,14 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "flame_chart",
-    srcs = glob(
-        [
-            "*.tsx",
-            "*.ts",
-        ],
-        exclude = ["*_test.*"],
-    ),
+    srcs = ["flame_chart.tsx"],
     deps = [
         "//app/components/scrollbar",
+        "//app/flame_chart:flame_chart_model",
+        "//app/flame_chart:profile_model",
+        "//app/flame_chart:style_constants",
         "//app/util:animated_value",
         "//app/util:animation_loop",
-        "//app/util:color",
         "//app/util:dom",
         "//app/util:math",
         "@npm//@types/react",
@@ -30,4 +26,25 @@ ts_jasmine_node_test(
     name = "profile_model_test",
     srcs = ["profile_model_test.ts"],
     deps = [":flame_chart"],
+)
+
+ts_library(
+    name = "flame_chart_model",
+    srcs = ["flame_chart_model.ts"],
+    deps = [
+        "//app/flame_chart:profile_model",
+        "//app/flame_chart:style_constants",
+        "//app/util:color",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "profile_model",
+    srcs = ["profile_model.ts"],
+)
+
+ts_library(
+    name = "style_constants",
+    srcs = ["style_constants.ts"],
 )

@@ -4,19 +4,19 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 ts_library(
     name = "login",
-    srcs = glob(["*.tsx"]),
+    srcs = ["login.tsx"],
     strict = True,
     deps = [
-        "//app/alert",
-        "//app/auth",
+        "//app/alert:alert_service",
+        "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
         "//app/components/input",
         "//app/router",
-        "//app/service",
-        "//proto:invocation_ts_proto",
+        "//app/service:rpc_service",
+        "//proto:group_ts_proto",
         "@npm//@types/react",
-        "@npm//protobufjs",
         "@npm//react",
+        "@npm//tslib",
     ],
 )
