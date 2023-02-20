@@ -133,11 +133,11 @@ class PercentilesChartTooltip extends React.Component<PercentilesChartTooltipPro
       <div className="trend-chart-hover">
         <div className="trend-chart-hover-label">{this.props.labelFormatter(data)}</div>
         <div className="trend-chart-hover-value">
-          <div>p50: {format.durationSec(this.props.extractP50(data))}</div>
-          <div>p75: {format.durationSec(this.props.extractP75(data))}</div>
-          <div>p90: {format.durationSec(this.props.extractP90(data))}</div>
-          <div>p95: {format.durationSec(this.props.extractP95(data))}</div>
           <div>p99: {format.durationSec(this.props.extractP99(data))}</div>
+          <div>p95: {format.durationSec(this.props.extractP95(data))}</div>
+          <div>p90: {format.durationSec(this.props.extractP90(data))}</div>
+          <div>p75: {format.durationSec(this.props.extractP75(data))}</div>
+          <div>p50: {format.durationSec(this.props.extractP50(data))}</div>
         </div>
       </div>
     );
