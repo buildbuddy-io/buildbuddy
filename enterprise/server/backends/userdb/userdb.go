@@ -24,6 +24,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
 const (
@@ -51,8 +52,15 @@ var (
 		"aim.com", "alice.it", "aliceadsl.fr", "aol.com", "arcor.de", "att.net", "bellsouth.net", "bigpond.com", "bigpond.net.au", "bluewin.ch", "blueyonder.co.uk", "bol.com.br", "centurytel.net", "charter.net", "chello.nl", "club-internet.fr", "comcast.net", "cox.net", "earthlink.net", "facebook.com", "free.fr", "freenet.de", "frontiernet.net", "gmail.com", "gmx.de", "gmx.net", "googlemail.com", "hetnet.nl", "home.nl", "hotmail.co.uk", "hotmail.com", "hotmail.de", "hotmail.es", "hotmail.fr", "hotmail.it", "ig.com.br", "juno.com", "laposte.net", "libero.it", "live.ca", "live.co.uk", "live.com", "live.com.au", "live.fr", "live.it", "live.nl", "mac.com", "mail.com", "mail.ru", "me.com", "msn.com", "neuf.fr", "ntlworld.com", "optonline.net", "optusnet.com.au", "orange.fr", "outlook.com", "planet.nl", "qq.com", "rambler.ru", "rediffmail.com", "rocketmail.com", "sbcglobal.net", "sfr.fr", "shaw.ca", "sky.com", "skynet.be", "sympatico.ca", "t-online.de", "telenet.be", "terra.com.br", "tin.it", "tiscali.co.uk", "tiscali.it", "uol.com.br", "verizon.net", "virgilio.it", "voila.fr", "wanadoo.fr", "web.de", "windstream.net", "yahoo.ca", "yahoo.co.id", "yahoo.co.in", "yahoo.co.jp", "yahoo.co.uk", "yahoo.com", "yahoo.com.ar", "yahoo.com.au", "yahoo.com.br", "yahoo.com.mx", "yahoo.com.sg", "yahoo.de", "yahoo.es", "yahoo.fr", "yahoo.in", "yahoo.it", "yandex.ru", "ymail.com", "zonnet.nl"}
 	// Group URL identifiers can only contain a-z, 0-9, and hyphen
 	groupUrlIdentifierPattern = regexp.MustCompile("^[a-z0-9\\-]+$")
+
+	// Default capabilities for group-owned API keys.
 	defaultAPIKeyCapabilities = []akpb.ApiKey_Capability{
 		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+	}
+
+	// Capabilities assigned to user-owned API keys.
+	userAPIKeyCapabilities = []akpb.ApiKey_Capability{
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
 	}
 )
 
@@ -237,30 +245,141 @@ func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 		return nil, err
 	}
 
-	return createAPIKey(d.h.DB(ctx), groupID, newAPIKeyToken(), label, caps, visibleToDevelopers)
+	return createAPIKey(d.h.DB(ctx), "" /*=userID*/, groupID, newAPIKeyToken(), label, caps, visibleToDevelopers)
 }
 
 func (d *UserDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
-	return nil, status.UnimplementedError("Not implemented")
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
+	}
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return nil, err
+	}
+	if err := perms.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+		return nil, err
+	}
+
+	// Validate that user-level keys are enabled
+	g := &tables.Group{}
+	err = d.h.DB(ctx).Raw(
+		"SELECT user_owned_keys_enabled FROM `Groups` WHERE group_id = ?",
+		groupID,
+	).Take(g).Error
+	if err != nil {
+		return nil, status.InternalErrorf("failed to look up user-owned keys setting: %s", err)
+	}
+	if !g.UserOwnedKeysEnabled {
+		return nil, status.PermissionDeniedError("user-owned keys are not enabled for this group")
+	}
+
+	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
+	q.AddWhereClause(`user_id = ?`, u.GetUserID())
+	q.AddWhereClause(`group_id = ?`, groupID)
+	q.SetOrderBy("label", true /*=ascending*/)
+	queryStr, args := q.Build()
+
+	rows, err := d.h.DB(ctx).Raw(queryStr, args...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []*tables.APIKey
+	for rows.Next() {
+		k := &tables.APIKey{}
+		if err := d.h.DB(ctx).ScanRows(rows, k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+
+	return keys, nil
 }
 
-func (d *UserDB) CreateUserAPIKey(ctx context.Context, groupID, label string) (*tables.APIKey, error) {
-	return nil, status.UnimplementedError("Not implemented")
+func (d *UserDB) CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error) {
+	if groupID == "" {
+		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
+	}
+
+	if err := perms.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+		return nil, err
+	}
+
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := d.authorizeNewAPIKeyCapabilities(ctx, groupID, capabilities); err != nil {
+		return nil, err
+	}
+
+	var createdKey *tables.APIKey
+	err = d.h.Transaction(ctx, func(tx *db.DB) error {
+		// Check that the group has user-owned keys enabled.
+		g := &tables.Group{}
+		res := tx.Raw(
+			"SELECT user_owned_keys_enabled FROM `Groups` WHERE group_id = ?",
+			groupID,
+		).Take(g)
+		if res.Error != nil {
+			return status.InternalErrorf("group lookup failed: %s", res.Error)
+		}
+		if !g.UserOwnedKeysEnabled {
+			return status.PermissionDeniedErrorf("group %q does not have user-owned keys enabled", groupID)
+		}
+
+		key, err := createAPIKey(tx, u.GetUserID(), groupID, newAPIKeyToken(), label, userAPIKeyCapabilities, false /*=visibleToDevelopers*/)
+		if err != nil {
+			return err
+		}
+		createdKey = key
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return createdKey, nil
 }
 
-func createAPIKey(db *db.DB, groupID, value, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	pk, err := tables.PrimaryKeyForTable("APIKeys")
 	if err != nil {
 		return nil, err
 	}
-	keyPerms := perms.GROUP_READ | perms.GROUP_WRITE
-	if err := db.Exec(
-		`INSERT INTO APIKeys (api_key_id, group_id, perms, capabilities, value, label, visible_to_developers) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		pk, groupID, keyPerms, capabilities.ToInt(caps), value, label, visibleToDevelopers).Error; err != nil {
+	keyPerms := 0
+	if userID == "" {
+		keyPerms = perms.GROUP_READ | perms.GROUP_WRITE
+	} else {
+		keyPerms = perms.OWNER_READ | perms.OWNER_WRITE
+	}
+	err = db.Exec(`
+		INSERT INTO APIKeys (
+			api_key_id,
+			user_id,
+			group_id,
+			perms,
+			capabilities,
+			value,
+			label,
+			visible_to_developers
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		pk,
+		userID,
+		groupID,
+		keyPerms,
+		capabilities.ToInt(caps),
+		value,
+		label,
+		visibleToDevelopers,
+	).Error
+	if err != nil {
 		return nil, err
 	}
 	return &tables.APIKey{
 		APIKeyID:            pk,
+		UserID:              userID,
 		GroupID:             groupID,
 		Value:               value,
 		Label:               label,
@@ -275,7 +394,16 @@ func (d *UserDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 		return status.InvalidArgumentError("API key cannot be nil.")
 	}
 	return d.h.DB(ctx).Transaction(func(tx *db.DB) error {
-		if err := d.authorizeAPIKeyWrite(ctx, tx, key.APIKeyID); err != nil {
+		existingKey, err := d.authorizeAPIKeyWrite(ctx, tx, key.APIKeyID)
+		if err != nil {
+			return err
+		}
+		if existingKey.UserID != "" && key.VisibleToDevelopers {
+			return status.InvalidArgumentError(`"visible_to_developers" field should not be set for user-owned keys`)
+		}
+		// When updating capabilities, make sure the user has the appropriate
+		// permissions to set them.
+		if err := d.authorizeNewAPIKeyCapabilities(ctx, existingKey.GroupID, capabilities.FromInt(key.Capabilities)); err != nil {
 			return err
 		}
 		return tx.Exec(`
@@ -296,28 +424,43 @@ func (d *UserDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 
 func (d *UserDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 	return d.h.DB(ctx).Transaction(func(tx *db.DB) error {
-		if err := d.authorizeAPIKeyWrite(ctx, tx, apiKeyID); err != nil {
+		if _, err := d.authorizeAPIKeyWrite(ctx, tx, apiKeyID); err != nil {
 			return err
 		}
 		return tx.Exec(`DELETE FROM APIKeys WHERE api_key_id = ?`, apiKeyID).Error
 	})
 }
 
-func (d *UserDB) authorizeAPIKeyWrite(ctx context.Context, tx *db.DB, apiKeyID string) error {
+func (d *UserDB) authorizeAPIKeyWrite(ctx context.Context, tx *db.DB, apiKeyID string) (*tables.APIKey, error) {
 	if apiKeyID == "" {
-		return status.InvalidArgumentError("API key ID is required")
+		return nil, status.InvalidArgumentError("API key ID is required")
 	}
 	user, err := perms.AuthenticatedUser(ctx, d.env)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// Check that the user belongs to the group that owns the requested API key.
 	key, err := d.getAPIKey(tx, apiKeyID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	acl := perms.ToACLProto( /* userID= */ nil, key.GroupID, key.Perms)
-	return perms.AuthorizeWrite(&user, acl)
+	acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
+	if err := perms.AuthorizeWrite(&user, acl); err != nil {
+		return nil, err
+	}
+	// Only group admins can write to group-level API keys.
+	if key.UserID == "" {
+		if err := d.authorizeGroupAdminRole(ctx, key.GroupID); err != nil {
+			return nil, err
+		}
+	}
+	return key, nil
+}
+
+func (d *UserDB) authorizeNewAPIKeyCapabilities(ctx context.Context, groupID string, caps []akpb.ApiKey_Capability) error {
+	if !hasAdminOnlyCapabilities(caps) {
+		return nil
+	}
+	return d.authorizeGroupAdminRole(ctx, groupID)
 }
 
 func (d *UserDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
@@ -395,8 +538,9 @@ func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *t
 	if err := tx.Create(&newGroup).Error; err != nil {
 		return "", err
 	}
+	// Initialize the group with a group-owned key.
 	_, err = createAPIKey(
-		tx, groupID, newAPIKeyToken(),
+		tx, "" /*=userID*/, groupID, newAPIKeyToken(),
 		defaultAPIKeyLabel, defaultAPIKeyCapabilities,
 		false /*visibleToDevelopers*/)
 	if err != nil {
@@ -630,6 +774,13 @@ func (d *UserDB) UpdateGroupUsers(ctx context.Context, groupID string, updates [
 					groupID).Error; err != nil {
 					return err
 				}
+				if err := tx.Exec(`
+						DELETE FROM APIKeys
+						WHERE user_id = ? AND group_id = ?`,
+					update.GetUserId().GetId(),
+					groupID).Error; err != nil {
+					return err
+				}
 			case grpb.UpdateGroupUsersRequest_Update_ADD:
 				if err := tx.Exec(`
 						UPDATE UserGroups
@@ -674,7 +825,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 				if err := tx.Create(g).Error; err != nil {
 					return err
 				}
-				if _, err := createAPIKey(tx, DefaultGroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+				if _, err := createAPIKey(tx, "" /*=userID*/, DefaultGroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 					return err
 				}
 				return nil
@@ -741,7 +892,9 @@ func (d *UserDB) createUser(ctx context.Context, tx *db.DB, u *tables.User) erro
 		if err := tx.Create(&sug).Error; err != nil {
 			return err
 		}
-		if _, err := createAPIKey(tx, sug.GroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+		// For now, user-owned groups are assigned an org-level API key, and
+		// users have to explicitly enable user-owned keys.
+		if _, err := createAPIKey(tx, "" /*=userID*/, sug.GroupID, newAPIKeyToken(), defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 			return err
 		}
 		groupIDs = append(groupIDs, sug.GroupID)
@@ -904,6 +1057,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				owned_domain,
 				github_token,
 				sharing_enabled,
+				user_owned_keys_enabled,
 				use_group_owned_executors,
 				saml_idp_metadata_url,
 				suggestion_preference
@@ -924,6 +1078,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				&gr.Group.OwnedDomain,
 				&gr.Group.GithubToken,
 				&gr.Group.SharingEnabled,
+				&gr.Group.UserOwnedKeysEnabled,
 				&gr.Group.UseGroupOwnedExecutors,
 				&gr.Group.SamlIdpMetadataUrl,
 				&gr.Group.SuggestionPreference,
@@ -980,4 +1135,16 @@ func (d *UserDB) GetOrCreatePublicKey(ctx context.Context, groupID string) (stri
 	}
 
 	return pubKey, nil
+}
+
+// Returns whether the given capabilities list contains any capabilities that
+// requires Admin role in order to assign. We are opinionated here and let
+// developers read and write to CAS; other capabilities require Admin role.
+func hasAdminOnlyCapabilities(capabilities []akpb.ApiKey_Capability) bool {
+	for _, c := range capabilities {
+		if c != akpb.ApiKey_CAS_WRITE_CAPABILITY {
+			return true
+		}
+	}
+	return false
 }
