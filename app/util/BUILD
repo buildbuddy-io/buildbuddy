@@ -6,29 +6,20 @@ ts_library(
     name = "animated_value",
     srcs = ["animated_value.ts"],
     strict = True,
-    deps = [
-        ":math",
-        "@npm//tslib",
-    ],
+    deps = ["//app/util:math"],
 )
 
 ts_library(
     name = "animation_loop",
     srcs = ["animation_loop.ts"],
     strict = True,
-    deps = [
-        ":time_delta",
-        "@npm//tslib",
-    ],
+    deps = ["//app/util:time_delta"],
 )
 
 ts_library(
     name = "async",
     srcs = ["async.ts"],
     strict = True,
-    deps = [
-        "@npm//tslib",
-    ],
 )
 
 ts_jasmine_node_test(
@@ -56,9 +47,6 @@ ts_library(
     name = "dom",
     srcs = ["dom.ts"],
     strict = True,
-    deps = [
-        "@npm//tslib",
-    ],
 )
 
 ts_library(
@@ -86,8 +74,8 @@ ts_library(
     srcs = ["scroller.ts"],
     strict = True,
     deps = [
-        ":animated_value",
-        ":animation_loop",
+        "//app/util:animated_value",
+        "//app/util:animation_loop",
     ],
 )
 
@@ -95,27 +83,18 @@ ts_library(
     name = "time_delta",
     srcs = ["time_delta.ts"],
     strict = True,
-    deps = [
-        "@npm//tslib",
-    ],
 )
 
 ts_library(
     name = "math",
     srcs = ["math.ts"],
     strict = True,
-    deps = [
-        "@npm//tslib",
-    ],
 )
 
 ts_library(
     name = "memo",
     srcs = ["memo.ts"],
     strict = True,
-    deps = [
-        "@npm//tslib",
-    ],
 )
 
 ts_library(

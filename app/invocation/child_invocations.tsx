@@ -1,18 +1,11 @@
 import React from "react";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import InvocationModel from "./invocation_model";
 import ChildInvocationCard from "./child_invocation_card";
 import { CheckCircle, PlayCircle, XCircle } from "lucide-react";
+import { BazelCommandResult } from "./child_invocation_card";
 
 export type ChildInvocationProps = {
   model: InvocationModel;
-};
-
-export type BazelCommandResult = {
-  invocation:
-    | build_event_stream.WorkflowConfigured.IInvocationMetadata
-    | build_event_stream.ChildInvocationsConfigured.IInvocationMetadata;
-  durationMillis?: number;
 };
 
 export default class ChildInvocations extends React.Component<ChildInvocationProps> {

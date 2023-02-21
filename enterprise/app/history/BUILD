@@ -6,27 +6,66 @@ exports_files(glob(["*.css"]))
 
 ts_library(
     name = "history",
-    srcs = glob(["*.tsx"]),
+    srcs = ["history.tsx"],
     deps = [
-        "//app/auth",
+        "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
+        "//app/components/button:link_button",
         "//app/components/link",
         "//app/components/spinner",
         "//app/components/tooltip",
-        "//app/docs",
         "//app/format",
         "//app/router",
-        "//app/service",
+        "//app/service:rpc_service",
         "//enterprise/app/filter",
-        "//enterprise/app/org",
+        "//enterprise/app/filter:filter_util",
+        "//enterprise/app/history:history_invocation_card",
+        "//enterprise/app/history:history_invocation_stat_card",
+        "//enterprise/app/org:org_join_requests",
         "//proto:invocation_ts_proto",
-        "//proto:user_ts_proto",
+        "@npm//@types/long",
         "@npm//@types/react",
+        "@npm//long",
         "@npm//lucide-react",
-        "@npm//moment",
-        "@npm//protobufjs",
         "@npm//react",
         "@npm//rxjs",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "history_invocation_card",
+    srcs = ["history_invocation_card.tsx"],
+    deps = [
+        "//app/format",
+        "//app/router",
+        "//proto:invocation_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "history_invocation_stat_card",
+    srcs = ["history_invocation_stat_card.tsx"],
+    deps = [
+        "//app/format",
+        "//app/router",
+        "//proto:invocation_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "history_tabs",
+    srcs = ["history_tabs.tsx"],
+    deps = [
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )

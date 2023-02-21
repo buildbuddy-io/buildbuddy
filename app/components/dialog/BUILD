@@ -20,8 +20,8 @@ ts_library(
     srcs = ["simple_modal_dialog.tsx"],
     strict = True,
     deps = [
-        ":dialog",
         "//app/components/button",
+        "//app/components/dialog",
         "//app/components/modal",
         "//app/components/spinner",
         "@npm//@types/react",

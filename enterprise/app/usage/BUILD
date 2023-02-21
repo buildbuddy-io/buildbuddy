@@ -6,14 +6,14 @@ exports_files(["usage.css"])
 
 ts_library(
     name = "usage",
-    srcs = glob(["*.tsx"]),
+    srcs = ["usage.tsx"],
     strict = True,
     deps = [
-        "//app/auth",
+        "//app/auth:auth_service",
         "//app/components/select",
-        "//app/errors",
+        "//app/errors:error_service",
         "//app/format",
-        "//app/service",
+        "//app/service:rpc_service",
         "//proto:usage_ts_proto",
         "@npm//@types/react",
         "@npm//react",
