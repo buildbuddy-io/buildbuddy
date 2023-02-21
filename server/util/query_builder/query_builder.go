@@ -140,7 +140,11 @@ func (q *Query) Build() (string, []interface{}) {
 	}
 	q.arguments = append(argsInJoinClauses, q.arguments...)
 	if len(q.whereClauses) > 0 {
-		whereRestrict := strings.Join(q.whereClauses, andQueryJoiner)
+		whereClauses := make([]string, 0, len(q.whereClauses))
+		for _, c := range q.whereClauses {
+			whereClauses = append(whereClauses, " ("+c+") ")
+		}
+		whereRestrict := strings.Join(whereClauses, andQueryJoiner)
 		fullQuery += pad(whereSQLKeyword) + pad(whereRestrict)
 	}
 	if q.groupBy != "" {
