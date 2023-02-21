@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -267,7 +268,7 @@ func NewImageCacheToken(ctx context.Context, env environment.Env, creds PullCred
 	groupID := ""
 	u, err := perms.AuthenticatedUser(ctx, env)
 	if err != nil {
-		if !perms.IsAnonymousUserError(err) {
+		if !authutil.IsAnonymousUserError(err) {
 			return ImageCacheToken{}, err
 		}
 	} else {
