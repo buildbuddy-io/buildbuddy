@@ -10,9 +10,9 @@ go_library(
         "//proto:group_go_proto",
         "//server/interfaces",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/db",
         "//server/util/query_builder",
-        "//server/util/status",
     ],
 )
 
@@ -25,9 +25,9 @@ go_test(
         "//server/environment",
         "//server/tables",
         "//server/testutil/testauth",
+        "//server/util/authutil",
         "//server/util/db",
         "//server/util/role",
-        "//server/util/status",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

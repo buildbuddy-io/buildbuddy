@@ -296,6 +296,50 @@ func TestBuild_RemoteCache_ScoreCard(t *testing.T) {
 	}
 }
 
+func TestBuild_RemoteCache_RejectsInvalidAPIKeys(t *testing.T) {
+	app := buildbuddy_enterprise.Run(t, "--auth.enable_anonymous_usage=true")
+	ctx := context.Background()
+	ws := testbazel.MakeTempWorkspace(t, workspaceContents)
+
+	{
+		// explicit empty API key; should fail
+		testbazel.Clean(ctx, t, ws)
+		iid := newUUID(t)
+		buildFlags := []string{
+			"//:hello.txt", "--invocation_id=" + iid,
+			"--remote_header=x-buildbuddy-api-key=",
+			"--remote_upload_local_results"}
+		buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
+		result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+		require.Contains(t, result.Stderr, "UNAUTHENTICATED")
+		require.Contains(t, result.Stderr, "missing API key")
+	}
+	{
+		// invalid API key; should fail
+		testbazel.Clean(ctx, t, ws)
+		iid := newUUID(t)
+		buildFlags := []string{
+			"//:hello.txt", "--invocation_id=" + iid,
+			"--remote_header=x-buildbuddy-api-key=INVALID",
+			"--remote_upload_local_results"}
+		buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
+		result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+		require.Contains(t, result.Stderr, "UNAUTHENTICATED")
+		require.Contains(t, result.Stderr, "Invalid API key")
+	}
+	{
+		// no explicit API key; should succeed
+		testbazel.Clean(ctx, t, ws)
+		iid := newUUID(t)
+		buildFlags := []string{
+			"//:hello.txt", "--invocation_id=" + iid,
+			"--remote_upload_local_results"}
+		buildFlags = append(buildFlags, app.RemoteCacheBazelFlags()...)
+		result := testbazel.Invoke(ctx, t, ws, "build", buildFlags...)
+		require.NotContains(t, result.Stderr, "UNAUTHENTICATED")
+	}
+}
+
 func clearActionIDs(sc *capb.ScoreCard) {
 	for _, m := range sc.GetMisses() {
 		m.ActionId = ""

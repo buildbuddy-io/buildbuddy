@@ -12,9 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -99,13 +99,13 @@ func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "")
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 	akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "INVALID")
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 }
 
 func TestGetAPIKeyGroupFromAPIKeyID(t *testing.T) {
@@ -129,13 +129,13 @@ func TestGetAPIKeyGroupFromAPIKeyID(t *testing.T) {
 	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, "")
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, "INVALID")
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 }
 
 func TestGetAPIKeyGroupFromBasicAuth(t *testing.T) {
@@ -166,28 +166,28 @@ func TestGetAPIKeyGroupFromBasicAuth(t *testing.T) {
 	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, "", "")
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, "", g.WriteToken)
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, g.GroupID, "")
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, "INVALID", g.WriteToken)
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, g.GroupID, "INVALID")
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 }
 
 func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
@@ -228,22 +228,22 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, key.Value)
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 
 	akg, err = adb.GetAPIKeyGroupFromAPIKeyID(ctx, key.APIKeyID)
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 
 	// The user-owned key should have been the only key in the org, so the
 	// basic auth lookup should fail here.
 	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, g.GroupID, g.WriteToken)
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 
 	// Now enable user-owned keys for the group.
 	g.UserOwnedKeysEnabled = true
@@ -270,8 +270,8 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	akg, err = adb.GetAPIKeyGroupFromBasicAuth(ctx, g.GroupID, g.WriteToken)
 	require.Nil(t, akg)
 	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error; got: %v", err)
+		t, authutil.IsInvalidCredentialsError(err),
+		"expected INVALID_CREDENTIALS error; got: %v", err)
 }
 
 func TestLookupUserFromSubID(t *testing.T) {

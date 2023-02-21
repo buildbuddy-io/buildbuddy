@@ -9,5 +9,8 @@ go_library(
         "//server/interfaces",
         "//server/util/role",
         "//server/util/status",
+        "@go_googleapis//google/rpc:errdetails_go_proto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )

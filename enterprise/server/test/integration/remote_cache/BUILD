@@ -4,7 +4,7 @@ go_test(
     name = "remote_cache_test",
     size = "small",
     srcs = ["remote_cache_test.go"],
-    shard_count = 6,
+    shard_count = 7,
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/testutil/buildbuddy_enterprise",

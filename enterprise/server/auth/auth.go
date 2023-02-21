@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -666,7 +667,7 @@ func (a *OpenIDAuthenticator) getAuthCodeOptions(r *http.Request) []oauth2.AuthC
 
 func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	if apiKey == "" {
-		return nil, status.UnauthenticatedError("missing API key")
+		return nil, authutil.InvalidCredentialsError("missing API key")
 	}
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKey)
@@ -687,7 +688,7 @@ func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKey(ctx context.Context, a
 
 func (a *OpenIDAuthenticator) lookupAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
 	if apiKeyID == "" {
-		return nil, status.UnauthenticatedError("missing API key ID")
+		return nil, authutil.InvalidCredentialsError("missing API key ID")
 	}
 	if a.apiKeyGroupCache != nil {
 		d, ok := a.apiKeyGroupCache.Get(apiKeyID)

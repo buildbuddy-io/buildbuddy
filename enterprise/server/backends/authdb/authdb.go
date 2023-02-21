@@ -5,9 +5,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
@@ -85,7 +85,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
+			return nil, authutil.InvalidCredentialsErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 		}
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
+			return nil, authutil.InvalidCredentialsErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
 		}
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 	})
 	if err != nil {
 		if db.IsRecordNotFound(err) {
-			return nil, status.UnauthenticatedErrorf("User/Group specified by %s:*** not found", login)
+			return nil, authutil.InvalidCredentialsErrorf("User/Group specified by %s:*** not found", login)
 		}
 		return nil, err
 	}

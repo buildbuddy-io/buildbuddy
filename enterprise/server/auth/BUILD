@@ -15,6 +15,7 @@ go_library(
         "//server/nullauth",
         "//server/tables",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/flagutil",
         "//server/util/log",
