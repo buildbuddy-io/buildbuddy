@@ -48,11 +48,7 @@ fi
 
 # Checkout new branch and run auto_migration on db copy
 git checkout "$git_branch"
-tmpfile="$(mktemp /tmp/auto_migration.XXXXXXXXX)"
-bazel run //enterprise/server -- --database.data_source="$db_copy_conn_string" --auto_migrate_db_and_exit=true --database.auto_migrate_db_output_file="$tmpfile"
+schema_changes=$(bazel run //enterprise/server -- --database.data_source="$db_copy_conn_string" --database.print_schema_changes_and_exit=true)
 
-DIFF=$(cat "$tmpfile")
-echo "$DIFF"
-export DIFF
-
-rm "$tmpfile"
+echo "$schema_changes"
+export schema_changes
