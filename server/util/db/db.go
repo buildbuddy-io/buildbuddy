@@ -74,9 +74,9 @@ var (
 	logQueries             = flag.Bool("database.log_queries", false, "If true, log all queries")
 	slowQueryThreshold     = flag.Duration("database.slow_query_threshold", 500*time.Millisecond, "Queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
-	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
-	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
-	autoMigrateDBOutput  = flag.String("database.auto_migrate_db_output", "", "If set, print auto-migration SQL statements to this file.")
+	autoMigrateDB           = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDBAndExit    = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	autoMigrateDBOutputFile = flag.String("database.auto_migrate_db_output_file", "", "If set, print auto-migration SQL statements to this file.")
 )
 
 type AdvancedConfig struct {
@@ -654,7 +654,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 
 	if *autoMigrateDB || *autoMigrateDBAndExit {
 		sqlStrings := make([]string, 0)
-		if *autoMigrateDBOutput != "" {
+		if *autoMigrateDBOutputFile != "" {
 			if err := primaryDB.Callback().Raw().After("gorm:raw").Register("save_sql", func(db *gorm.DB) {
 				sqlStrings = append(sqlStrings, db.Statement.SQL.String())
 			}); err != nil {
@@ -666,8 +666,8 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 			return nil, err
 		}
 
-		if *autoMigrateDBOutput != "" {
-			file, err := os.Create(*autoMigrateDBOutput)
+		if *autoMigrateDBOutputFile != "" {
+			file, err := os.Create(*autoMigrateDBOutputFile)
 			if err != nil {
 				return nil, err
 			}
@@ -688,7 +688,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 				return nil, err
 			}
 
-			log.Infof("Logged auto-migration SQL to %s.", *autoMigrateDBOutput)
+			log.Infof("Logged auto-migration SQL to %s.", *autoMigrateDBOutputFile)
 		}
 
 		if *autoMigrateDBAndExit {

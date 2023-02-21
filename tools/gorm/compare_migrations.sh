@@ -17,7 +17,7 @@ db_copy_conn_string=$4
 # Generate auto-migration file for baseline db
 git checkout "$baseline_git_branch"
 tmpfile="$(mktemp /tmp/auto_migration.XXXXXXXXX)"
-bazel run //enterprise/server -- --database.data_source="$baseline_db_conn_string" --auto_migrate_db_and_exit=true --database.auto_migrate_db_output="$tmpfile"
+bazel run //enterprise/server -- --database.data_source="$baseline_db_conn_string" --auto_migrate_db_and_exit=true --database.auto_migrate_db_output_file="$tmpfile"
 
 # Parse db connection strings
 db_driver=$(echo "$baseline_db_conn_string" | sed -n "s/\(\S*\):\/\/.*$/\1/p")
@@ -58,7 +58,7 @@ fi
 # Checkout new branch and run auto_migration on db copy
 git checkout "$new_git_branch"
 tmpfile2="$(mktemp /tmp/auto_migration.XXXXXXXXX)"
-bazel run //enterprise/server -- --database.data_source="$db_copy_conn_string" --auto_migrate_db_and_exit=true --database.auto_migrate_db_output="$tmpfile2"
+bazel run //enterprise/server -- --database.data_source="$db_copy_conn_string" --auto_migrate_db_and_exit=true --database.auto_migrate_db_output_file="$tmpfile2"
 
 DIFF=$(diff "$tmpfile" "$tmpfile2")
 echo "$DIFF"
