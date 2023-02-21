@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/log",
         "//server/util/status",
+        "@org_golang_x_time//rate",
     ],
 )
 

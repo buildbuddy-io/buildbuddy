@@ -70,6 +70,7 @@ var (
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
+	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 50, "Maximum number of entries to evict per second (per partition).")
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 
 	activeKeyVersion = flag.Int64("cache.pebble.active_key_version", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
@@ -1722,6 +1723,7 @@ func newPartitionEvictor(part disk.Partition, fileStorer filestore.Store, blobDi
 	l, err := approxlru.New(&approxlru.Opts[*evictionKey]{
 		SamplePoolSize:     *samplePoolSize,
 		SamplesPerEviction: *samplesPerEviction,
+		RateLimit:          float64(*evictionRateLimit),
 		MaxSizeBytes:       int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
 		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) (skip bool, err error) {
 			return pe.evict(ctx, sample)
