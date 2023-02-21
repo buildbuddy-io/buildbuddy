@@ -189,8 +189,26 @@ message DrilldownEntry {
   int64 selection_value = 3;
 }
 
+enum ExecutionAggType {
+  UNKNOWN_EXECUTION_AGGREGATION_TYPE = 0;
+  USER_EXECUTION_AGGREGATION_TYPE = 1;
+  HOSTNAME_EXECUTION_AGGREGATION_TYPE = 2;
+  GROUP_ID_EXECUTION_AGGREGATION_TYPE = 3;
+  REPO_URL_EXECUTION_AGGREGATION_TYPE = 4;
+  COMMIT_SHA_EXECUTION_AGGREGATION_TYPE = 5;
+  DATE_EXECUTION_AGGREGATION_TYPE = 6;
+  BRANCH_EXECUTION_AGGREGATION_TYPE = 7;
+  PATTERN_EXECUTION_AGGREGATION_TYPE = 8;
+  WORKER_EXECUTION_AGGREGATION_TYPE = 9;
+}
+
+message DrilldownDimension {
+  optional invocation.AggType invocation = 1;
+  optional ExecutionAggType execution = 2;
+}
+
 message DrilldownChart {
-  invocation.AggType drilldown_dimension = 1;
+  DrilldownDimension drilldown_dimension = 1;
   repeated DrilldownEntry entry = 2;
 }
 
