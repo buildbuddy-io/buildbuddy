@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -387,7 +388,7 @@ func (c *podmanCommandContainer) optImageRefKey(ctx context.Context) (string, er
 	groupID := ""
 	u, err := perms.AuthenticatedUser(ctx, c.env)
 	if err != nil {
-		if !perms.IsAnonymousUserError(err) {
+		if !authutil.IsAnonymousUserError(err) {
 			return "", err
 		}
 	} else {
