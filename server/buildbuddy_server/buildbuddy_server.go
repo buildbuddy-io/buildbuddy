@@ -1221,3 +1221,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 		return
 	}
 }
+
+func (s *BuildBuddyServer) GetTrendsSummary(ctx context.Context, w http.ResponseWriter, params url.Values) {
+
+}
