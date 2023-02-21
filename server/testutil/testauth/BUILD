@@ -13,6 +13,7 @@ go_library(
         "//server/interfaces",
         "//server/nullauth",
         "//server/tables",
+        "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/log",
         "//server/util/role",

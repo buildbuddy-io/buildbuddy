@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -196,14 +197,14 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interf
 			return a.authenticateJWT(jwt)
 		}
 	}
-	return nil, status.UnauthenticatedError("gRPC request is missing credentials.")
+	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")
 }
 
 func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
 	if jwt, ok := ctx.Value(jwtHeader).(string); ok {
 		return a.authenticateJWT(jwt)
 	}
-	return nil, status.UnauthenticatedError("User not found")
+	return nil, authutil.AnonymousUserError("User not found")
 }
 
 func (a *TestAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
