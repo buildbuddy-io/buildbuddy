@@ -27,8 +27,8 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 				return "", err
 			}
 		} else {
-			if u.GetGroupID() == "" && !env.GetAuthenticator().AnonymousUsageEnabled() {
-				return "", status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")
+			if u.GetGroupID() == "" {
+				return "", status.PermissionDeniedErrorf("Attempting to write to cache as a user with no group.")
 			}
 			return addPrefix(u.GetGroupID(), key), nil
 		}
