@@ -3,15 +3,14 @@ load("//rules/typescript:index.bzl", "ts_library")
 package(default_visibility = ["//visibility:public"])
 
 ts_library(
-    name = "menu",
-    srcs = ["menu.tsx"],
+    name = "dense_invocation_overview",
+    srcs = ["dense_invocation_overview.tsx"],
     deps = [
         "//app/auth:auth_service",
-        "//app/capabilities",
-        "//app/preferences",
+        "//app/invocation:invocation_buttons",
+        "//app/invocation:invocation_model",
         "//app/router",
         "@npm//@types/react",
-        "@npm//lucide-react",
         "@npm//react",
     ],
 )

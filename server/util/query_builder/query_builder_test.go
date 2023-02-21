@@ -1,12 +1,45 @@
 package query_builder_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/stretchr/testify/assert"
 )
+
+// normalize adjusts whitespace so that if two queries are syntactically
+// equivalent then they should have the same normalized representation. This
+// makes test assertions easier.
+func normalize(t *testing.T, query string) string {
+	// The current logic in this func blindly strips whitespace, which might
+	// change the meaning of queries containing strings. So for now, just fail
+	// the test if we see any string delimiters.
+	if strings.Contains(query, "\"") || strings.Contains(query, "'") || strings.Contains(query, "`") {
+		assert.FailNow(t, "normalizeSpace cannot yet handle string or backtick literals")
+	}
+
+	// For any tokens where whitespace padding before/after is optional,
+	// pad them with whitespace (currently just handling parens for now).
+	query = strings.ReplaceAll(query, "(", " ( ")
+	query = strings.ReplaceAll(query, ")", " ) ")
+
+	// Collapse all whitespace sequences (space, newline, tab) to a single
+	// space.
+	query = regexp.MustCompile(`\s+`).ReplaceAllLiteralString(query, " ")
+
+	// Force line breaks before certain keywords to make visual diffing easier
+	// when assertions fail.
+	for _, keyword := range []string{"SELECT", "FROM", "WHERE"} {
+		query = strings.ReplaceAll(query, " "+keyword, "\n"+keyword)
+	}
+
+	// Trim leading/trailing whitespace.
+	query = strings.TrimSpace(query)
+
+	return query
+}
 
 func TestOrClauses_Empty(t *testing.T) {
 	q := query_builder.OrClauses{}
@@ -51,18 +84,36 @@ func TestJoinClause(t *testing.T) {
 	q.AddWhereClause("t.t1 > ?", 10)
 
 	qStr, qArgs := q.Build()
-	expectedQueryStr := "SELECT id, t1, t2 FROM targets AS t JOIN (SELECT id, i1, i2 FROM invocations AS i WHERE  i3 > ? AND i4 > ?  ORDER BY  i.id DESC LIMIT  20 ) AS s  ON  f.col1 = s.a  WHERE  t.t1 > ?"
-	assert.Equal(t, expectedQueryStr, strings.TrimSpace(qStr))
+	expectedQueryStr := `
+		SELECT id, t1, t2
+		FROM targets AS t
+		JOIN (
+			SELECT id, i1, i2
+			FROM invocations AS i
+			WHERE (i3 > ?) AND (i4 > ?)
+			ORDER BY i.id DESC
+			LIMIT 20
+		) AS s
+		ON f.col1 = s.a
+		WHERE (t.t1 > ?)
+	`
+	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
 	assert.Equal(t, []interface{}{4, 6, 10}, qArgs)
 }
 
 func TestJoinInOriginalQuery(t *testing.T) {
-	qb := query_builder.NewQuery("SELECT ak.user_id, g.group_id FROM `Groups` AS g, APIKeys AS ak")
+	qb := query_builder.NewQuery("SELECT ak.user_id, g.group_id FROM Groups AS g, APIKeys AS ak")
 	qb.AddWhereClause(`ak.group_id = g.group_id`)
 	qb.AddWhereClause(`g.group_id = ?`, "GR1")
 	q, args := qb.Build()
 
-	assert.Equal(t, "SELECT ak.user_id, g.group_id FROM `Groups` AS g, APIKeys AS ak WHERE  ak.group_id = g.group_id AND g.group_id = ? ", q)
+	expectedQueryStr := `
+		SELECT ak.user_id, g.group_id
+		FROM Groups AS g, APIKeys AS ak
+		WHERE (ak.group_id = g.group_id) AND (g.group_id = ?)
+	`
+
+	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, q))
 	assert.Equal(t, []interface{}{"GR1"}, args)
 }
 
@@ -78,8 +129,17 @@ func TestFromClause(t *testing.T) {
 	q.AddWhereClause("a < ?", 5)
 	q.SetLimit(5)
 	qStr, qArgs := q.Build()
-	expectedQueryStr := "SELECT a FROM (SELECT a, b FROM t WHERE  b > ?  ORDER BY  a DESC, b ASC LIMIT  20 ) WHERE  a < ?  LIMIT  5"
-	assert.Equal(t, expectedQueryStr, strings.TrimSpace(qStr))
+	expectedQueryStr := `
+		SELECT a FROM (
+			SELECT a, b FROM t
+			WHERE (b > ?)
+			ORDER BY a DESC, b ASC
+			LIMIT 20
+		)
+		WHERE (a < ?)
+		LIMIT 5
+	`
+	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
 	assert.Equal(t, []interface{}{10, 5}, qArgs)
 }
 
@@ -100,7 +160,17 @@ func TestWhereInClause(t *testing.T) {
 	q.AddWhereClause("c = ?", 3)
 	q.AddWhereClause("d = ?", 4)
 	qStr, qArgs := q.Build()
-	expectedQueryStr := "SELECT a, b, c, d FROM t WHERE  a IN (SELECT a FROM (SELECT a, b FROM t GROUP BY  a  ORDER BY  a DESC, b ASC) WHERE  c = ? AND d = ?  LIMIT  20 ) AND c = ? AND d = ?"
-	assert.Equal(t, expectedQueryStr, strings.TrimSpace(qStr))
+	expectedQueryStr := `
+		SELECT a, b, c, d
+		FROM t
+		WHERE (a IN (
+			SELECT a FROM ( SELECT a, b FROM t GROUP BY a ORDER BY a DESC, b ASC )
+			WHERE (c = ?) AND (d = ?)
+			LIMIT 20
+		))
+		AND (c = ?)
+		AND (d = ?)
+	`
+	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
 	assert.Equal(t, []interface{}{1, 2, 3, 4}, qArgs)
 }

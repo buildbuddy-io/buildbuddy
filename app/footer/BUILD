@@ -4,7 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "footer",
-    srcs = glob(["*.tsx"]),
+    srcs = ["footer.tsx"],
     strict = True,
     deps = [
         "//app/capabilities",

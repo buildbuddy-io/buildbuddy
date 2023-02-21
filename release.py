@@ -59,9 +59,21 @@ def yes_or_no(question):
         if reply[:1] == "n":
             return False
 
+def is_valid_version(version):
+    return version.startswith("v")
+
+def get_version_override():
+    version = input('What version do you want to release?\n').lower().strip()
+    if is_valid_version(version):
+        return version
+    else:
+        print("Invalid version: %s -- versions must start with 'v'" % version)
+        return get_version_override()
+
+
 def confirm_new_version(version):
     while not yes_or_no("Please confirm you want to release version %s" % version):
-        version = input('What version do you want to release?\n').lower().strip()
+        version = get_version_override()
     return version
 
 def create_and_push_tag(old_version, new_version, release_notes=''):

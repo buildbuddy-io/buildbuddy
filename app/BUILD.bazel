@@ -33,7 +33,7 @@ esbuild(
 
 ts_library(
     name = "app",
-    srcs = glob(["*.tsx"]),
+    srcs = ["app.tsx"],
     strict = True,
     deps = [
         "//app/root",
