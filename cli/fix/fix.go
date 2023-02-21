@@ -1,6 +1,8 @@
 package fix
 
 import (
+	"os"
+
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 
@@ -18,6 +20,14 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return 1, nil
 	}
 
+	// Run gazelle with the transformed args so far (e.g. if we ran bb with
+	// `--verbose=1`, this will make sure we don't pass `--verbose=1` to
+	// gazelle, which doesn't understand that flag).
+	originalArgs := os.Args
+	defer func() {
+		os.Args = originalArgs
+	}()
+	os.Args = args
 	gazelle.Run()
 
 	return 0, nil
