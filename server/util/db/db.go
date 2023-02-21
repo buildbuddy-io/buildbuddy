@@ -655,7 +655,8 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	if *autoMigrateDB || *autoMigrateDBAndExit {
 		sqlStrings := make([]string, 0)
 		if *autoMigrateDBOutputFile != "" {
-			if err := primaryDB.Callback().Raw().After("gorm:raw").Register("save_sql", func(db *gorm.DB) {
+			// TODO(Maggie): Restrict this to only statements that will alter the table schema
+			if err := primaryDB.Callback().Raw().Register("save_sql", func(db *gorm.DB) {
 				sqlStrings = append(sqlStrings, db.Statement.SQL.String())
 			}); err != nil {
 				return nil, err
