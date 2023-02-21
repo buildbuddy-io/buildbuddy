@@ -1,7 +1,6 @@
 package db
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -74,9 +73,9 @@ var (
 	logQueries             = flag.Bool("database.log_queries", false, "If true, log all queries")
 	slowQueryThreshold     = flag.Duration("database.slow_query_threshold", 500*time.Millisecond, "Queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
-	autoMigrateDB           = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
-	autoMigrateDBAndExit    = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
-	autoMigrateDBOutputFile = flag.String("database.auto_migrate_db_output_file", "", "If set, print auto-migration SQL statements to this file.")
+	autoMigrateDB             = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDBAndExit      = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	printSchemaChangesAndExit = flag.Bool("database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
 )
 
 type AdvancedConfig struct {
@@ -652,9 +651,9 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	}
 	go statsRecorder.poll()
 
-	if *autoMigrateDB || *autoMigrateDBAndExit {
+	if *autoMigrateDB || *autoMigrateDBAndExit || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
-		if *autoMigrateDBOutputFile != "" {
+		if *printSchemaChangesAndExit {
 			if err := primaryDB.Callback().Raw().Register("save_sql", func(db *gorm.DB) {
 				executedSql := db.Statement.SQL.String()
 				if !strings.HasPrefix(executedSql, "SELECT") {
@@ -669,33 +668,22 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 			return nil, err
 		}
 
-		if *autoMigrateDBOutputFile != "" {
-			file, err := os.Create(*autoMigrateDBOutputFile)
-			if err != nil {
-				return nil, err
-			}
-
-			w := bufio.NewWriter(file)
-			for _, data := range sqlStrings {
-				_, err = w.WriteString(data + "\n")
-				if err != nil {
-					return nil, err
+		if *printSchemaChangesAndExit {
+			// Print schema changes to stdout
+			// Logs go to stderr, so this output will be easy to isolate and parse
+			if len(sqlStrings) > 0 {
+				fmt.Println("Auto-migration schema changes:")
+				for _, sqlStr := range sqlStrings {
+					fmt.Printf("%s\n", sqlStr)
 				}
+				fmt.Println("End schema changes.")
+			} else {
+				fmt.Println("No auto-migration schema changes.")
 			}
-			err = w.Flush()
-			if err != nil {
-				return nil, err
-			}
-			err = file.Close()
-			if err != nil {
-				return nil, err
-			}
-
-			log.Infof("Logged auto-migration SQL to %s.", *autoMigrateDBOutputFile)
 		}
 
-		if *autoMigrateDBAndExit {
-			log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
+		if *autoMigrateDBAndExit || *printSchemaChangesAndExit {
+			log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit or --database.print_schema_changes_and_exit.")
 			os.Exit(0)
 		}
 	}
