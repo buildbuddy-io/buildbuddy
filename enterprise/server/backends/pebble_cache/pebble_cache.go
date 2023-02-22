@@ -74,7 +74,7 @@ var (
 	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UndefinedKeyVersion), "The key version new data will be written with")
-	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 100000, "QPS limit for data version migration")
+	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 1000, "QPS limit for data version migration")
 
 	// Compression related flags
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", 0, "Blobs larger than this will be zstd compressed before written to disk.")
@@ -423,8 +423,11 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 
 	// Check that there is a migrator enabled to update us to (or past) the
 	// activeKeyVersion (flag configured). Warn if not.
-	if len(pc.migrators) > 0 && pc.activeDatabaseVersion() > pc.migrators[len(pc.migrators)-1].ToVersion() {
-		log.Warningf("Cache versions will never converge!")
+	if len(pc.migrators) > 0 {
+		lastMigratorVersion := pc.migrators[len(pc.migrators)-1].ToVersion()
+		if pc.activeDatabaseVersion() > lastMigratorVersion {
+			log.Fatalf("Cache versions will never converge! Active key version %d > last migrator version: %d", pc.activeDatabaseVersion(), lastMigratorVersion)
+		}
 	}
 
 	if *copyPartition != "" {
@@ -670,7 +673,7 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		_ = limiter.Wait(p.env.GetServerContext())
 
 		if time.Since(lastStatusUpdate) > 10*time.Second {
-			log.Infof("Pebble Cache: data migration progress: saw %d keys, migrated %d to version: %d in %s", keysSeen, keysMigrated, maxVersion, time.Since(migrationStart))
+			log.Infof("Pebble Cache: data migration progress: saw %d keys, migrated %d to version: %d in %s. Current key: %q", keysSeen, keysMigrated, maxVersion, time.Since(migrationStart), string(iter.Key()))
 			lastStatusUpdate = time.Now()
 		}
 		var key filestore.PebbleKey
@@ -682,7 +685,7 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		valBytes := iter.Value()
 
 		for _, migrator := range p.migrators {
-			// If this key was already migrated, skip it.
+			// If this key was already migrated, skip this migrator.
 			if version >= migrator.ToVersion() {
 				continue
 			}
@@ -697,30 +700,41 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 
 			valBytes = migrator.Migrate(valBytes)
 			version = migrator.ToVersion()
-			keysMigrated += 1
-
-			if version > maxVersion {
-				maxVersion = version
-			}
-			if version < minVersion {
-				minVersion = version
-			}
-
 		}
 		if version == oldVersion {
 			continue
 		}
+		keysMigrated += 1
 
-		keyBytes, err := key.Bytes(version)
+		if version > maxVersion {
+			maxVersion = version
+		}
+		if version < minVersion {
+			minVersion = version
+		}
+
+		moveKey := func() error {
+			keyBytes, err := key.Bytes(version)
+			if err != nil {
+				return err
+			}
+			if err := db.Set(keyBytes, valBytes, pebble.NoSync); err != nil {
+				return status.UnknownErrorf("could not write migrated key: %s", err)
+			}
+			if err := db.Delete(iter.Key(), pebble.NoSync); err != nil {
+				return status.UnknownErrorf("could not write migrated key: %s", err)
+			}
+			return nil
+		}
+
+		unlockFn := p.locker.Lock(key.LockID())
+		err = moveKey()
+		unlockFn()
+
 		if err != nil {
 			return err
 		}
-		if err := db.Set(keyBytes, valBytes, pebble.NoSync); err != nil {
-			return status.UnknownErrorf("could not write migrated key: %s", err)
-		}
-		if err := db.Delete(iter.Key(), pebble.NoSync); err != nil {
-			return status.UnknownErrorf("could not write migrated key: %s", err)
-		}
+
 	}
 
 	if p.activeDatabaseVersion() < minVersion {
