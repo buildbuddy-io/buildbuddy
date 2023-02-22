@@ -429,7 +429,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   <span>
                     <span className="history-title">{this.props.username}'s builds</span>
                     <a className="history-button" href={`/trends/?user=${this.props.username}`}>
-                      <BarChart2 /> View Trends
+                      <BarChart2 /> View trends
                     </a>
                   </span>
                 )}
@@ -437,7 +437,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   <span>
                     <span className="history-title">Builds on {this.props.hostname}</span>
                     <a className="history-button" href={`/trends/?host=${this.props.hostname}`}>
-                      <BarChart2 /> View Trends
+                      <BarChart2 /> View trends
                     </a>
                   </span>
                 )}
@@ -446,11 +446,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
                     <span className="history-title">Builds of {format.formatGitUrl(this.props.repo)}</span>
                     {this.getRepoUrl() && (
                       <a className="history-button" target="_blank" href={this.getRepoUrl()}>
-                        <Github /> View Repo
+                        <Github /> View repo
                       </a>
                     )}
                     <a className="history-button" href={`/trends/?repo=${this.props.repo}`}>
-                      <BarChart2 /> View Trends
+                      <BarChart2 /> View trends
                     </a>
                   </>
                 )}
@@ -459,7 +459,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                     <span className="history-title">Workflow runs of {format.formatGitUrl(this.props.repo)}</span>
                     {this.getRepoUrl() && (
                       <a className="history-button" target="_blank" href={this.getRepoUrl()}>
-                        <Github /> View Repo
+                        <Github /> View repo
                       </a>
                     )}
                   </>
@@ -469,11 +469,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
                     <span className="history-title">Builds from branch {this.props.branch}</span>
                     {branchLink && (
                       <a className="history-button" target="_blank" href={branchLink}>
-                        <GitBranch /> View Branch
+                        <GitBranch /> View branch
                       </a>
                     )}
                     <a className="history-button" href={`/trends/?branch=${this.props.branch}`}>
-                      <BarChart2 /> View Trends
+                      <BarChart2 /> View trends
                     </a>
                   </>
                 )}
@@ -484,11 +484,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
                     </span>
                     {commitLink && (
                       <a className="history-button" target="_blank" href={commitLink}>
-                        <GitCommit /> View Commit
+                        <GitCommit /> View commit
                       </a>
                     )}
                     <a className="history-button" href={`/trends/?commit=${this.props.commit}`}>
-                      <BarChart2 /> View Trends
+                      <BarChart2 /> View trends
                     </a>
                   </span>
                 )}
