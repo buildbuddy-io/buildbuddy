@@ -81,3 +81,29 @@
   font-size: 16px;
   margin: 0 16px;
 }
+
+.trends-summary {
+  position: absolute;
+  float: left;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  height: 60%;
+  width: 50%;
+}
+
+.trends-summary-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: green;
+  text-align: center;
+  margin-top: 20%;
+}
+
+.trends-summary-title2 {
+  font-size: 40px;
+  font-weight: 700;
+  color: green;
+  text-align: center;
+  margin-top: 60px;
+}

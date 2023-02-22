@@ -31,6 +31,8 @@ interface State {
   dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
   dates: string[];
+
+  trendSummary: stats.ITrendSummary;
 }
 
 const SECONDS_PER_MICROSECOND = 1e-6;
@@ -43,6 +45,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     dateToExecutionStatMap: new Map<string, stats.IExecutionStat>(),
     enableInvocationPercentileCharts: false,
     dates: [],
+    trendSummary: null,
   };
 
   subscription?: Subscription;
@@ -218,8 +221,14 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.query.command = command;
     }
 
+    this.setState({ ...this.state, loading: true });
     rpcService.service.getTrendSummary(request).then((response) => {
       console.log(response);
+      this.setState({
+        ...this.state,
+        loading:false,
+        trendSummary: response,
+      });
     });
 
     // TODO: Need to subtract time spent uploading/downloading to remote cache
@@ -277,6 +286,16 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {!this.showingDrilldown() && this.state.loading && <div className="loading"></div>}
           {!this.showingDrilldown() && !this.state.loading && (
             <>
+              {/* TODO: Add a cute photo of BB logo with a bow on it*/}
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title">
+                  Buildbuddy Wrapped
+                </div>
+                <div className="trends-summary-title2">
+                  You've had a busy year!
+                </div>
+                {this.state.trendSummary?.secondsSavedCacheHits}
+              </div>
               <TrendsChartComponent
                 title="Builds"
                 data={this.state.dates}
