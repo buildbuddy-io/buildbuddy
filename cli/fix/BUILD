@@ -35,6 +35,7 @@ go_library(
         "@bazel_gazelle//internal/wspace",
         "@bazel_gazelle//label",
         "@bazel_gazelle//language",
+        "@bazel_gazelle//language/bazel/visibility",
         "@bazel_gazelle//language/go",
         "@bazel_gazelle//language/proto",
         "@bazel_gazelle//merger",
