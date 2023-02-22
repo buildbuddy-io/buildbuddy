@@ -42,6 +42,7 @@ service BuildBuddyService {
 
   // Fancy build stat breakdowns.
   rpc GetTrend(stats.GetTrendRequest) returns (stats.GetTrendResponse);
+  rpc GetTrendSummary(stats.GetTrendRequest) returns (stats.GetTrendSummaryResponse);
   rpc GetStatHeatmap(stats.GetStatHeatmapRequest)
       returns (stats.GetStatHeatmapResponse);
   rpc GetStatDrilldown(stats.GetStatDrilldownRequest)

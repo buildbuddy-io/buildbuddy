@@ -279,6 +279,22 @@ func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int
 	`
 }
 
+func (i *InvocationStatService) getExecutionsQuery(timezoneOffsetMinutes int32) string {
+	q := ""
+	if i.isOLAPDBEnabled() {
+		q = fmt.Sprintf("SELECT %s as date,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
+	} else {
+		q = fmt.Sprintf("SELECT %s as date,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
+	}
+
+	q = q + `
+	avg(execution_completed_timestamp_usec - execution_start_timestamp_usec) as avg_execution_time
+	FROM Executions
+`
+
+	return q
+}
+
 // The innerQuery is expected to return rows with the following columns:
 //
 //	(1) name; and
@@ -338,6 +354,46 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	return res, nil
 }
 
+func (i *InvocationStatService) getExecutionSummary(ctx context.Context, req *stpb.GetTrendRequest) (*ExecutionSummary, error) {
+	reqCtx := req.GetRequestContext()
+
+	q := query_builder.NewQuery(i.getExecutionsQuery(reqCtx.GetTimezoneOffsetMinutes()))
+	q.AddWhereClause("execution_completed_timestamp_usec != ?", 0)
+	q.AddWhereClause("execution_start_timestamp_usec != ?", 0)
+	//if err := addWhereClauses(q, req.GetQuery(), req.GetRequestContext(), req.GetLookbackWindowDays()); err != nil {
+	//	return nil, err
+	//}
+	q.SetGroupBy("date")
+
+	qStr, qArgs := q.Build()
+	rows, err := i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_avg_execution_duration"), qStr, qArgs...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make([]*ExecutionSummary, 0)
+
+	for rows.Next() {
+		log.Warningf("Found one row")
+		stat := &ExecutionSummary{}
+		if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+			return nil, err
+		}
+		res = append(res, stat)
+	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scanning rows: %s", err)
+	}
+
+	if len(res) != 1 {
+		log.Errorf("Should be at least one entry")
+	}
+
+	log.Infof("Data is %v", *res[0])
+	return res[0], nil
+}
+
 func validateAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
 	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
 		return err
@@ -376,6 +432,56 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 	}
 	if i.isInvocationPercentilesEnabled() {
 		rsp.HasInvocationStatPercentiles = true
+	}
+	return rsp, nil
+}
+
+type ExecutionSummary struct {
+	Date             string
+	AvgExecutionTime float64
+}
+
+func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendSummaryResponse, error) {
+	eg, ctx := errgroup.WithContext(ctx)
+
+	var totalCacheRequests int64
+	var totalCacheHits int64
+	var avgExecutionTime float64
+
+	eg.Go(func() error {
+		var err error
+		var invocationTrends []*stpb.TrendStat
+		if invocationTrends, err = i.getInvocationTrend(ctx, req); err != nil {
+			return err
+		}
+
+		for _, trend := range invocationTrends {
+			totalCacheHits += trend.ActionCacheHits + trend.CasCacheHits
+			totalCacheRequests += trend.ActionCacheHits + trend.CasCacheHits + trend.ActionCacheMisses + trend.CasCacheMisses
+		}
+
+		return nil
+	})
+	eg.Go(func() error {
+		executionSummary, err := i.getExecutionSummary(ctx, req)
+		if err != nil {
+			return err
+		}
+		avgExecutionTime = executionSummary.AvgExecutionTime
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	avgCoresLaptop := float64(8)
+	usecInSecond := 1e6
+	secSavedFromCache := float64(totalCacheHits) * avgExecutionTime / usecInSecond / avgCoresLaptop
+	log.Infof("Seconds saved %f", secSavedFromCache)
+
+	rsp := &stpb.GetTrendSummaryResponse{
+		SecondsSavedCacheHits: int64(secSavedFromCache),
 	}
 	return rsp, nil
 }

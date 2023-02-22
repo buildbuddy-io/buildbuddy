@@ -406,6 +406,7 @@ type InvocationStatService interface {
 	GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error)
 	GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error)
 	GetStatDrilldown(ctx context.Context, req *stpb.GetStatDrilldownRequest) (*stpb.GetStatDrilldownResponse, error)
+	GetTrendSummary(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendSummaryResponse, error)
 }
 
 // Allows searching invocations.

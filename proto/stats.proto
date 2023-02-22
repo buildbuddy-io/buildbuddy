@@ -142,6 +142,12 @@ message GetTrendResponse {
   bool has_invocation_stat_percentiles = 4;
 }
 
+message GetTrendSummaryResponse {
+  context.ResponseContext response_context = 1;
+
+  int64 seconds_saved_cache_hits = 2;
+}
+
 // Fetches a heatmap for the requested metric--a heatmap is basically a set of
 // columns, where each column represents a histogram for that metric in a window
 // of time.

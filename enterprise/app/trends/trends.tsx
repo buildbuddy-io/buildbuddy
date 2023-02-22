@@ -50,6 +50,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
   componentWillMount() {
     document.title = `Trends | BuildBuddy`;
     this.fetchStats();
+    this.fetchTrendsSummary();
 
     this.subscription = rpcService.events.subscribe({
       next: (name) => name == "refresh" && this.fetchStats(),
@@ -160,6 +161,68 @@ export default class TrendsComponent extends React.Component<Props, State> {
         loading: false,
       });
     });
+  }
+
+  fetchTrendsSummary() {
+    let request = new stats.GetTrendRequest();
+    request.query = new stats.TrendQuery();
+
+    const filterParams = getProtoFilterParams(this.props.search);
+    if (filterParams.role) {
+      request.query.role = filterParams.role;
+    } else {
+      // Note: Technically we're filtering out workflows and unknown roles,
+      // even though the user has selected "All roles". But we do this to
+      // avoid double-counting build times for workflows and their nested CI runs.
+      request.query.role = ["", "CI"];
+    }
+
+    if (filterParams.host) request.query.host = filterParams.host;
+    if (filterParams.user) request.query.user = filterParams.user;
+    if (filterParams.repo) request.query.repoUrl = filterParams.repo;
+    if (filterParams.branch) request.query.branchName = filterParams.branch;
+    if (filterParams.commit) request.query.commitSha = filterParams.commit;
+    if (filterParams.command) request.query.command = filterParams.command;
+    if (filterParams.status) request.query.status = filterParams.status;
+
+    request.query.updatedBefore = filterParams.updatedBefore;
+    request.query.updatedAfter = filterParams.updatedAfter;
+
+    const user = this.props.search.get("user");
+    if (user) {
+      request.query.user = user;
+    }
+
+    const host = this.props.search.get("host");
+    if (host) {
+      request.query.host = host;
+    }
+
+    const commit = this.props.search.get("commit");
+    if (commit) {
+      request.query.commitSha = commit;
+    }
+
+    const branch = this.props.search.get("branch");
+    if (branch) {
+      request.query.branchName = branch;
+    }
+
+    const repo = this.props.search.get("repo");
+    if (repo) {
+      request.query.repoUrl = repo;
+    }
+
+    const command = this.props.search.get("command");
+    if (command) {
+      request.query.command = command;
+    }
+
+    rpcService.service.getTrendSummary(request).then((response) => {
+      console.log(response);
+    });
+
+    // TODO: Need to subtract time spent uploading/downloading to remote cache
   }
 
   getStat(date: string): stats.ITrendStat {
