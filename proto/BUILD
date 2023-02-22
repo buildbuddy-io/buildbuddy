@@ -654,6 +654,8 @@ go_proto_library(
         ":context_go_proto",
         ":invocation_go_proto",
         ":stat_filter_go_proto",
+        "@io_bazel_rules_go//proto/wkt:duration_go_proto",
+        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
     ],
 )
 
@@ -690,6 +692,7 @@ go_proto_library(
     deps = [
         ":remote_execution_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
+        "@io_bazel_rules_go//proto/wkt:duration_go_proto",
     ],
 )
 
@@ -781,6 +784,8 @@ go_proto_library(
         ":command_line_go_proto",
         ":context_go_proto",
         ":stat_filter_go_proto",
+        "@io_bazel_rules_go//proto/wkt:duration_go_proto",
+        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
     ],
 )
 
@@ -886,6 +891,8 @@ go_proto_library(
         ":remote_execution_go_proto",
         ":resource_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
+        "@io_bazel_rules_go//proto/wkt:duration_go_proto",
+        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
     ],
 )
 
@@ -927,8 +934,10 @@ go_proto_library(
         ":remote_execution_go_proto",
         ":semver_go_proto",
         "@go_googleapis//google/api:annotations_go_proto",
-        "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
+        "@io_bazel_rules_go//proto/wkt:duration_go_proto",
+        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
+        "@org_golang_google_genproto//googleapis/longrunning",
     ],
 )
 
@@ -940,8 +949,9 @@ go_proto_library(
         ":remote_execution_go_proto",
         "@go_googleapis//google/api:annotations_go_proto",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
-        "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
+        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
+        "@org_golang_google_genproto//googleapis/longrunning",
     ],
 )
 
@@ -954,8 +964,11 @@ go_proto_library(
         ":scheduler_go_proto",
         ":semver_go_proto",
         "@go_googleapis//google/api:annotations_go_proto",
-        "@go_googleapis//google/longrunning:longrunning_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
+        "@io_bazel_rules_go//proto/wkt:any_go_proto",
+        "@io_bazel_rules_go//proto/wkt:duration_go_proto",
+        "@io_bazel_rules_go//proto/wkt:timestamp_go_proto",
+        "@org_golang_google_genproto//googleapis/longrunning",
     ],
 )
 

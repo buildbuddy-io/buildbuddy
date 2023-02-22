@@ -1,0 +1,34 @@
+From 449797e5f9ab5198e8e2f0d0813d54966f389cc1 Mon Sep 17 00:00:00 2001
+From: Son Luong Ngoc <sluongng@gmail.com>
+Date: Wed, 22 Feb 2023 14:55:27 +0100
+Subject: [PATCH 2/3] directives
+
+---
+ BUILD.bazel        | 6 ++++++
+ google/BUILD.bazel | 1 +
+ 2 files changed, 7 insertions(+)
+ create mode 100644 BUILD.bazel
+ create mode 100644 google/BUILD.bazel
+
+diff --git a/BUILD.bazel b/BUILD.bazel
+new file mode 100644
+index 000000000..a820b310c
+--- /dev/null
++++ b/BUILD.bazel
+@@ -0,0 +1,6 @@
++# gazelle:go_naming_convention import_alias
++# gazelle:proto package
++# gazelle:proto_group go_package
++# gazelle:exclude gapic
++# gazelle:exclude third_party
++# gazelle:exclude google/example/endpointsapis/goapp
+diff --git a/google/BUILD.bazel b/google/BUILD.bazel
+new file mode 100644
+index 000000000..cc47d14ce
+--- /dev/null
++++ b/google/BUILD.bazel
+@@ -0,0 +1 @@
++# gazelle:prefix google.golang.org/genproto/googleapis
+-- 
+2.39.2.722.g9855ee24e9
+

@@ -12,7 +12,7 @@ go_library(
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/status",
-        "@go_googleapis//google/longrunning:longrunning_go_proto",
+        "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/anypb",

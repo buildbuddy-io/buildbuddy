@@ -39,6 +39,27 @@ http_archive(
     ],
 )
 
+http_archive(
+    name = "go_googleapis",
+    generator_function = "go_rules_dependencies",
+    generator_name = "go_googleapis",
+    patch_args = [
+        "-E",
+        "-p1",
+    ],
+    patches = [
+        "//buildpatches:0001-delete-BUILD.bazel.patch",
+        "//buildpatches:0002-directives.patch",
+        "//buildpatches:0003-gazelle.patch",
+    ],
+    sha256 = "1c3d5340dcec5154af6bda6b0e5d551f30a2e4699ddb9a575c5dcc0ff1b38540",
+    strip_prefix = "googleapis-7b0b2a5253990f181a68491236776613b266f966",
+    urls = [
+        "https://mirror.bazel.build/github.com/googleapis/googleapis/archive/7b0b2a5253990f181a68491236776613b266f966.zip",
+        "https://github.com/googleapis/googleapis/archive/7b0b2a5253990f181a68491236776613b266f966.zip",
+    ],
+)
+
 load(":deps.bzl", "install_buildbuddy_dependencies")
 
 # Install gazelle and go_rules dependencies after ours so that our go module versions take precedence.

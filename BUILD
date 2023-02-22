@@ -56,6 +56,11 @@ nogo(
 # gazelle:exclude **/node_modules/**
 # TODO(siggisim): remove once we support .css imports properly
 # gazelle:exclude website/**
+#
+# gazelle:resolve go google.golang.org/genproto/googleapis/iam/v1 @org_golang_google_genproto//googleapis/iam/v1:iam
+# gazelle:resolve go google.golang.org/genproto/googleapis/longrunning @org_golang_google_genproto//googleapis/longrunning
+# gazelle:resolve go google.golang.org/genproto/googleapis/logging/v2 @org_golang_google_genproto//googleapis/logging/v2:logging
+# gazelle:resolve proto go google/longrunning/operations.proto @org_golang_google_genproto//googleapis/longrunning
 gazelle(name = "gazelle")
 
 # Example usage: "bazel run //:gofmt -- -w ."
