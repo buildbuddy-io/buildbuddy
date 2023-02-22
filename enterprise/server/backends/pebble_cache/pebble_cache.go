@@ -37,6 +37,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/docker/go-units"
 	"github.com/elastic/gosigar"
+	"github.com/jotfs/fastcdc-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/language"
@@ -874,7 +875,7 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		removedEntry := false
 		if opts.deleteEntriesWithMissingFiles {
 			blobDir = p.blobDir()
-			_, err := p.fileStorer.NewReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
+			_, err := p.newReader(p.env.GetServerContext(), blobDir, fileMetadata.GetStorageMetadata(), 0, 0)
 			if err != nil {
 				_ = modLim.Wait(p.env.GetServerContext())
 
@@ -1523,6 +1524,209 @@ func (z *zstdCompressor) Close() error {
 	return z.CustomCommitWriteCloser.Close()
 }
 
+func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *rfpb.StorageMetadata_ChunkedMetadata) (io.ReadCloser, error) {
+	missing, err := p.FindMissing(ctx, chunkedMD.GetResource())
+	if err != nil {
+		return nil, err
+	}
+	if len(missing) > 0 {
+		return nil, status.NotFoundError("Chunks were missing")
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		// read chunks and shove them down the pipe
+		for _, resourceName := range chunkedMD.GetResource() {
+			buf, err := p.Get(ctx, resourceName)
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			if _, err := pw.Write(buf); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
+		pw.Close()
+	}()
+	return pr, nil
+}
+
+type cdcWriter struct {
+	ctx           context.Context
+	pc            *PebbleCache
+	db            pebbleutil.IPebbleDB
+	r             *resource.ResourceName
+	pr            *io.PipeReader
+	pw            *io.PipeWriter
+	done          chan struct{}
+	writtenChunks []*resource.ResourceName
+}
+
+func (p *PebbleCache) newCDCWriter(ctx context.Context, r *resource.ResourceName) (*cdcWriter, error) {
+	db, err := p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	// db.Close is called in p.Close()
+
+	pr, pw := io.Pipe()
+	cdcw := &cdcWriter{
+		ctx:  ctx,
+		pc:   p,
+		db:   db,
+		r:    r,
+		pr:   pr,
+		pw:   pw,
+		done: make(chan struct{}, 0),
+	}
+
+	opts := fastcdc.Options{
+		MinSize:     int(p.maxInlineFileSizeBytes),
+		AverageSize: 1 * 1024 * 1024,
+		MaxSize:     4 * 1024 * 1024,
+	}
+	chunker, err := fastcdc.NewChunker(pr, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		for {
+			chunk, err := chunker.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				pr.CloseWithError(err)
+				break
+			}
+			start := time.Now()
+			if err := cdcw.writeRawChunk(chunk); err != nil {
+				log.Errorf("Error writing raw chunk: %s", err)
+				pr.CloseWithError(err)
+				break
+			}
+			log.Printf("Took %s to writeRawChunk", time.Since(start))
+		}
+		close(cdcw.done)
+	}()
+	return cdcw, nil
+}
+
+func (cdcw *cdcWriter) writeRawChunk(chunk fastcdc.Chunk) error {
+	ctx := cdcw.ctx
+	p := cdcw.pc
+
+	newBuf := compression.CompressZstd(nil, chunk.Data)
+	d, err := digest.Compute(bytes.NewReader(newBuf))
+	if err != nil {
+		return err
+	}
+	r := &resource.ResourceName{
+		Digest:       d,
+		InstanceName: cdcw.r.GetInstanceName(),
+		Compressor:   repb.Compressor_ZSTD,
+		CacheType:    resource.CacheType_CAS,
+	}
+	fileRecord, err := p.makeFileRecord(ctx, r)
+	if err != nil {
+		return err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return err
+	}
+	wcm := p.fileStorer.InlineWriter(ctx, d.GetSizeBytes())
+	written, err := wcm.Write(newBuf)
+	if err != nil {
+		return err
+	}
+	if err := wcm.Close(); err != nil {
+		return err
+	}
+
+	now := time.Now().UnixMicro()
+	md := &rfpb.FileMetadata{
+		FileRecord:      fileRecord,
+		StorageMetadata: wcm.Metadata(),
+		StoredSizeBytes: int64(written),
+		LastAccessUsec:  now,
+		LastModifyUsec:  now,
+	}
+	if err := p.writeMetadata(ctx, cdcw.db, key, md); err != nil {
+		return err
+	}
+	cdcw.writtenChunks = append(cdcw.writtenChunks, r)
+	return nil
+}
+
+func (cdcw *cdcWriter) Write(buf []byte) (int, error) {
+	// If the bytes being written are compressed, we decompress them in
+	// order to generate CDC chunks, then compress those chunks.
+	if cdcw.r.GetCompressor() == repb.Compressor_ZSTD {
+		decompressed, err := compression.DecompressZstd(nil, buf)
+		if err != nil {
+			return -1, err
+		}
+		return cdcw.pw.Write(decompressed)
+	}
+	return cdcw.pw.Write(buf)
+}
+
+func (cdcw *cdcWriter) Close() error {
+	if err := cdcw.pw.Close(); err != nil {
+		return err
+	}
+	select {
+	case <-cdcw.ctx.Done():
+		return cdcw.ctx.Err()
+	case <-cdcw.done:
+		break
+	}
+	cdcw.db.Close()
+	return nil
+}
+
+func (cdcw *cdcWriter) Metadata() *rfpb.StorageMetadata {
+	return &rfpb.StorageMetadata{
+		ChunkedMetadata: &rfpb.StorageMetadata_ChunkedMetadata{
+			Resource: cdcw.writtenChunks,
+		},
+	}
+}
+
+func (p *PebbleCache) writeMetadata(ctx context.Context, db pebbleutil.IPebbleDB, key filestore.PebbleKey, md *rfpb.FileMetadata) error {
+	protoBytes, err := proto.Marshal(md)
+	if err != nil {
+		return err
+	}
+
+	iter := db.NewIter(nil /*default iterOptions*/)
+	defer iter.Close()
+
+	unlockFn := p.locker.Lock(key.LockID())
+	defer unlockFn()
+
+	if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
+		if err := p.deleteFileAndMetadata(ctx, key, version, oldMD); err != nil {
+			log.Errorf("Error deleting old record %q: %s", key.String(), err)
+			return err
+		}
+	}
+
+	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
+	if err != nil {
+		return err
+	}
+
+	if err = db.Set(keyBytes, protoBytes, &pebble.WriteOptions{Sync: false}); err == nil {
+		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
+		p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
+		metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(md.GetStoredSizeBytes()))
+	}
+	return nil
+}
+
 func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -1556,12 +1760,11 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	if r.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, r.GetDigest().GetSizeBytes())
 	} else {
-		blobDir := p.blobDir()
-		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)
+		cdcw, err := p.newCDCWriter(ctx, r)
 		if err != nil {
 			return nil, err
 		}
-		wcm = fw
+		wcm = cdcw
 	}
 
 	// Grab another lease and pass the Close function to the writer
@@ -1573,6 +1776,9 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	wc := ioutil.NewCustomCommitWriteCloser(wcm)
 	wc.CloseFn = db.Close
 	wc.CommitFn = func(bytesWritten int64) error {
+		if err := wcm.Close(); err != nil {
+			return err
+		}
 		now := time.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
@@ -1581,36 +1787,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 			LastAccessUsec:  now,
 			LastModifyUsec:  now,
 		}
-		protoBytes, err := proto.Marshal(md)
-		if err != nil {
-			return err
-		}
-
-		iter := db.NewIter(nil /*default iterOptions*/)
-		defer iter.Close()
-
-		unlockFn := p.locker.Lock(key.LockID())
-		defer unlockFn()
-
-		if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
-			if err := p.deleteFileAndMetadata(ctx, key, version, oldMD); err != nil {
-				log.Errorf("Error deleting old record %q: %s", key.String(), err)
-				return err
-			}
-		}
-
-		keyBytes, err := key.Bytes(p.activeDatabaseVersion())
-		if err != nil {
-			return err
-		}
-
-		if err = db.Set(keyBytes, protoBytes, &pebble.WriteOptions{Sync: false}); err == nil {
-			partitionID := fileRecord.GetIsolation().GetPartitionId()
-			p.sendSizeUpdate(partitionID, key.CacheType(), md.GetStoredSizeBytes())
-			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(bytesWritten))
-		}
-
-		return err
+		return p.writeMetadata(ctx, db, key, md)
 	}
 
 	if shouldCompress {
@@ -2228,6 +2405,19 @@ type readCloser struct {
 	io.Closer
 }
 
+func (p *PebbleCache) newReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
+	switch {
+	case md.GetFileMetadata() != nil:
+		return p.fileStorer.FileReader(ctx, fileDir, md.GetFileMetadata(), offset, limit)
+	case md.GetInlineMetadata() != nil:
+		return p.fileStorer.InlineReader(md.GetInlineMetadata(), offset, limit)
+	case md.GetChunkedMetadata() != nil:
+		return p.newChunkedReader(ctx, md.GetChunkedMetadata())
+	default:
+		return nil, status.InvalidArgumentErrorf("No stored metadata: %+v", md)
+	}
+}
+
 func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *resource.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	blobDir := p.blobDir()
 	requestedCompression := resource.GetCompressor()
@@ -2241,7 +2431,7 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *re
 		offset = uncompressedOffset
 		limit = uncompressedLimit
 	}
-	reader, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
+	reader, err := p.newReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
 		return nil, err
 	}
