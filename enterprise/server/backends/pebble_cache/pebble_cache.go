@@ -426,7 +426,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if len(pc.migrators) > 0 {
 		lastMigratorVersion := pc.migrators[len(pc.migrators)-1].ToVersion()
 		if pc.activeDatabaseVersion() > lastMigratorVersion {
-			log.Fatalf("Cache versions will never converge! Active key version %d > last migrator version: %d", pc.activeDatabaseVersion(), lastMigratorVersion)
+			return nil, status.FailedPreconditionErrorf("Cache versions will never converge! Active key version %d > last migrator version: %d", pc.activeDatabaseVersion(), lastMigratorVersion)
 		}
 	}
 
@@ -2504,7 +2504,11 @@ func (p *PebbleCache) Start() error {
 		return p.backgroundRepair(p.quitChan)
 	})
 	p.eg.Go(func() error {
-		return p.migrateData(p.quitChan)
+		err := p.migrateData(p.quitChan)
+		if err != nil {
+			alert.UnexpectedEvent("pebble_cache_error_migrating_keys", "err: %s", err)
+		}
+		return err
 	})
 	if *scanForOrphanedFiles {
 		p.eg.Go(func() error {
