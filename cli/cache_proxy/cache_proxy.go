@@ -140,6 +140,14 @@ func (p *CacheProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlob
 	return p.casClient.BatchReadBlobs(ctx, req)
 }
 
+func (p *CacheProxy) ConcatenateBlobs(ctx context.Context, req *repb.ConcatenateBlobsRequest) (*repb.ConcatenateBlobsResponse, error) {
+	return nil, status.UnimplementedError("ConcatenateBlobs is not yet implemented")
+}
+
+func (p *CacheProxy) SplitBlobs(ctx context.Context, req *repb.SplitBlobsRequest) (*repb.SplitBlobsResponse, error) {
+	return nil, status.UnimplementedError("SplitBlobs is not yet implemented")
+}
+
 func (p *CacheProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	clientStream, err := p.casClient.GetTree(stream.Context(), req)
 	if err != nil {

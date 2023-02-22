@@ -44,7 +44,7 @@ func TestDownloadTree(t *testing.T) {
 		},
 	}
 
-	childDigest, err := digest.ComputeForMessage(childDir)
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 		},
 	}
 
-	childDigest, err := digest.ComputeForMessage(childDir)
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 		},
 	}
 
-	childDigest, err := digest.ComputeForMessage(childDir)
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func addToFileCache(t *testing.T, env *testenv.TestEnv, tempDir, data string) {
 	if _, err := f.Write([]byte(data)); err != nil {
 		t.Fatal(err)
 	}
-	d, err := digest.Compute(strings.NewReader(data))
+	d, err := digest.Compute(strings.NewReader(data), repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}

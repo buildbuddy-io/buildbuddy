@@ -370,6 +370,14 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	return rsp, nil
 }
 
+func (s *ContentAddressableStorageServer) ConcatenateBlobs(ctx context.Context, req *repb.ConcatenateBlobsRequest) (*repb.ConcatenateBlobsResponse, error) {
+	return nil, status.UnimplementedError("ConcatenateBlobs is not yet implemented")
+}
+
+func (s *ContentAddressableStorageServer) SplitBlobs(ctx context.Context, req *repb.SplitBlobsRequest) (*repb.SplitBlobsResponse, error) {
+	return nil, status.UnimplementedError("SplitBlobs is not yet implemented")
+}
+
 func (s *ContentAddressableStorageServer) supportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY ||
 		compressor == repb.Compressor_ZSTD && remote_cache_config.ZstdTranscodingEnabled()
@@ -496,7 +504,7 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName 
 
 func makeTreeCacheDigest(d *repb.Digest) (*repb.Digest, error) {
 	buf := bytes.NewBuffer([]byte(d.GetHash() + *treeCacheSeed))
-	return digest.Compute(buf)
+	return digest.Compute(buf, repb.DigestFunction_SHA256)
 }
 
 func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, remoteInstanceName string, dd *repb.DirectoryWithDigest) ([]*repb.DirectoryWithDigest, error) {

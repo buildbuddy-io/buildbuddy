@@ -1618,7 +1618,7 @@ func (cdcw *cdcWriter) writeRawChunk(chunk fastcdc.Chunk) error {
 	p := cdcw.pc
 
 	newBuf := compression.CompressZstd(nil, chunk.Data)
-	d, err := digest.Compute(bytes.NewReader(newBuf))
+	d, err := digest.Compute(bytes.NewReader(newBuf), repb.DigestFunction_SHA256)
 	if err != nil {
 		return err
 	}

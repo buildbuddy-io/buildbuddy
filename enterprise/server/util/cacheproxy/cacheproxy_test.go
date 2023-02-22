@@ -108,7 +108,7 @@ func TestReaderMaxOffset(t *testing.T) {
 	readSeeker := bytes.NewReader(buf.Bytes())
 
 	// Compute a digest for the random bytes.
-	d, err := digest.Compute(readSeeker)
+	d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestReader(t *testing.T) {
 		readSeeker := bytes.NewReader(buf.Bytes())
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
+		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -387,7 +387,7 @@ func TestWriter(t *testing.T) {
 		readSeeker := bytes.NewReader(buf.Bytes())
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
+		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -590,7 +590,7 @@ func TestContains(t *testing.T) {
 		readSeeker := bytes.NewReader(buf.Bytes())
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
+		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -663,7 +663,7 @@ func TestOversizeBlobs(t *testing.T) {
 		readSeeker := bytes.NewReader(buf.Bytes())
 
 		// Compute a digest for the random bytes.
-		d, err := digest.Compute(readSeeker)
+		d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -690,7 +690,7 @@ func TestOversizeBlobs(t *testing.T) {
 		// bytes that were uploaded, even though they are keyed
 		// under a different digest.
 		readSeeker.Seek(0, 0)
-		d1, err := digest.Compute(readSeeker)
+		d1, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -748,7 +748,7 @@ func TestFindMissing(t *testing.T) {
 			readSeeker := bytes.NewReader(buf.Bytes())
 
 			// Compute a digest for the random bytes.
-			d, err := digest.Compute(readSeeker)
+			d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -817,7 +817,7 @@ func TestGetMulti(t *testing.T) {
 			readSeeker := bytes.NewReader(buf.Bytes())
 
 			// Compute a digest for the random bytes.
-			d, err := digest.Compute(readSeeker)
+			d, err := digest.Compute(readSeeker, repb.DigestFunction_SHA256)
 			if err != nil {
 				t.Fatal(err)
 			}

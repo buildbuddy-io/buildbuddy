@@ -743,14 +743,14 @@ func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *di
 func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
-	rootDigest, err = digest.ComputeForMessage(tree.Root)
+	rootDigest, err = digest.ComputeForMessage(tree.Root, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}
 	dirMap[digest.NewKey(rootDigest)] = tree.Root
 
 	for _, child := range tree.Children {
-		d, err := digest.ComputeForMessage(child)
+		d, err := digest.ComputeForMessage(child, repb.DigestFunction_SHA256)
 		if err != nil {
 			return nil, nil, err
 		}

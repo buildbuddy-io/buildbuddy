@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"hash"
 	"io"
 	"math/rand"
 	"path/filepath"
@@ -218,16 +219,29 @@ func Validate(d *repb.Digest) (string, error) {
 	return d.Hash, nil
 }
 
-func ComputeForMessage(in proto.Message) (*repb.Digest, error) {
+func ComputeForMessage(in proto.Message, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
-	return Compute(bytes.NewReader(data))
+	return Compute(bytes.NewReader(data), digestType)
 }
 
-func Compute(in io.Reader) (*repb.Digest, error) {
-	h := sha256.New()
+func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) {
+	switch digestType {
+	case repb.DigestFunction_SHA256:
+		return sha256.New(), nil
+	default:
+		return nil, status.UnimplementedErrorf("No support for digest type: %s", digestType)
+	}
+}
+
+func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
+	h, err := HashForDigestType(digestType)
+	if err != nil {
+		return nil, err
+	}
+
 	// Read file in 32KB chunks (default)
 	n, err := io.Copy(h, in)
 	if err != nil {
@@ -489,7 +503,7 @@ func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSe
 	readSeeker := bytes.NewReader(buf.Bytes())
 
 	// Compute a digest for the random bytes.
-	d, err := Compute(readSeeker)
+	d, err := Compute(readSeeker, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}
