@@ -83,6 +83,7 @@
 }
 
 .trends-summary {
+  pointer-events: auto;
   position: absolute;
   float: left;
   left: 50%;
@@ -90,12 +91,13 @@
   transform: translate(-50%, -50%);
   height: 60%;
   width: 50%;
+  background-color: #31373a;
 }
 
 .trends-summary-title {
   font-size: 32px;
   font-weight: 700;
-  color: green;
+  color: white;
   text-align: center;
   margin-top: 20%;
 }
@@ -103,7 +105,17 @@
 .trends-summary-title2 {
   font-size: 40px;
   font-weight: 700;
-  color: green;
+  color: white;
   text-align: center;
   margin-top: 60px;
+}
+
+.trends-summary-button {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  color: white;
+  background: #31373a;
+  border-radius: 7px;
+  font-size: 20px;
 }

@@ -1222,7 +1222,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	}
 }
 
-func (s *BuildBuddyServer) GetTrendSummary(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendSummaryResponse, error) {
+func (s *BuildBuddyServer) GetTrendSummary(ctx context.Context, req *stpb.GetTrendSummaryRequest) (*stpb.GetTrendSummaryResponse, error) {
 	if iss := s.env.GetInvocationStatService(); iss != nil {
 		return iss.GetTrendSummary(ctx, req)
 	}

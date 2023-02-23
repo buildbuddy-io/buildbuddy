@@ -142,10 +142,29 @@ message GetTrendResponse {
   bool has_invocation_stat_percentiles = 4;
 }
 
+message GetTrendSummaryRequest {
+  context.RequestContext request_context = 1;
+
+  TrendQuery query = 2;
+  string user = 3;
+}
+
 message GetTrendSummaryResponse {
   context.ResponseContext response_context = 1;
 
-  int64 seconds_saved_cache_hits = 2;
+  double avg_action_execution_time_usec = 2;
+
+  int64 user_total_cache_requests = 3;
+  int64 user_total_cache_hits = 4;
+  int64 user_total_builds = 5;
+  int64 user_repos = 9;
+  int64 user_commits = 10;
+
+  int64 group_total_cache_requests = 6;
+  int64 group_total_cache_hits = 7;
+  int64 group_total_builds = 8;
+  int64 group_repos = 11;
+  int64 group_commits = 12;
 }
 
 // Fetches a heatmap for the requested metric--a heatmap is basically a set of

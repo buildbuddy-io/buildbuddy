@@ -3,6 +3,7 @@ package invocation_stat_service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -394,6 +395,79 @@ func (i *InvocationStatService) getExecutionSummary(ctx context.Context, req *st
 	return res[0], nil
 }
 
+func (i *InvocationStatService) getInvocationsSummaryQuery() string {
+	q := `
+	    SELECT COUNT(1) AS total_num_builds,
+	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
+	    COUNT(DISTINCT user) as user_count,
+	    COUNT(DISTINCT commit_sha) as commit_count,
+	    COUNT(DISTINCT host) as host_count,
+	    COUNT(DISTINCT repo_url) as repo_count,
+	    COUNT(DISTINCT branch_name) as branch_count,
+	    MAX(duration_usec) as max_duration_usec,
+	    SUM(action_cache_hits) as action_cache_hits,
+	    SUM(action_cache_misses) as action_cache_misses,
+	    SUM(action_cache_uploads) as action_cache_uploads,
+	    SUM(cas_cache_hits) as cas_cache_hits,
+	    SUM(cas_cache_misses) as cas_cache_misses,
+	    SUM(cas_cache_uploads) as cas_cache_uploads,
+	    SUM(total_download_size_bytes) as total_download_size_bytes,
+	    SUM(total_upload_size_bytes) as total_upload_size_bytes,
+	    SUM(total_download_usec) as total_download_usec,
+        SUM(total_upload_usec) as total_upload_usec
+        FROM Invocations`
+	return q
+}
+
+func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *stpb.GetTrendRequest, userFilter string) (*stpb.TrendStat, error) {
+	reqCtx := req.GetRequestContext()
+
+	q := query_builder.NewQuery(i.getInvocationsSummaryQuery())
+	if userFilter != "" {
+		q.AddWhereClause("user = ?", userFilter)
+	}
+	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
+	// TODO: Add date filter
+
+	qStr, qArgs := q.Build()
+	var rows *sql.Rows
+	var err error
+	if i.isOLAPDBEnabled() {
+		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	} else {
+		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make([]*stpb.TrendStat, 0)
+
+	for rows.Next() {
+		stat := &stpb.TrendStat{}
+		if i.isOLAPDBEnabled() {
+			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		}
+		res = append(res, stat)
+	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scan rows: %s", err)
+	}
+
+	if len(res) != 1 {
+		return nil, errors.New("Should be exactly one invocation summary row")
+	}
+
+	return res[0], nil
+}
+
 func validateAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
 	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
 		return err
@@ -441,33 +515,60 @@ type ExecutionSummary struct {
 	AvgExecutionTime float64
 }
 
-func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendSummaryResponse, error) {
+func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.GetTrendSummaryRequest) (*stpb.GetTrendSummaryResponse, error) {
 	eg, ctx := errgroup.WithContext(ctx)
-
-	var totalCacheRequests int64
-	var totalCacheHits int64
-	var avgExecutionTime float64
+	rsp := &stpb.GetTrendSummaryResponse{}
 
 	eg.Go(func() error {
-		var err error
-		var invocationTrends []*stpb.TrendStat
-		if invocationTrends, err = i.getInvocationTrend(ctx, req); err != nil {
-			return err
+		query := req.GetQuery()
+		query.User = req.User
+		trendReq := &stpb.GetTrendRequest{
+			RequestContext: req.GetRequestContext(),
+			Query:          query,
 		}
-
-		for _, trend := range invocationTrends {
-			totalCacheHits += trend.ActionCacheHits + trend.CasCacheHits
-			totalCacheRequests += trend.ActionCacheHits + trend.CasCacheHits + trend.ActionCacheMisses + trend.CasCacheMisses
-		}
-
-		return nil
-	})
-	eg.Go(func() error {
-		executionSummary, err := i.getExecutionSummary(ctx, req)
+		userInvocationSummary, err := i.getInvocationSummary(ctx, trendReq, req.User)
 		if err != nil {
 			return err
 		}
-		avgExecutionTime = executionSummary.AvgExecutionTime
+
+		rsp.UserTotalBuilds = userInvocationSummary.TotalNumBuilds
+		rsp.UserTotalCacheHits = userInvocationSummary.ActionCacheHits + userInvocationSummary.CasCacheHits
+		rsp.UserTotalCacheRequests = userInvocationSummary.ActionCacheHits + userInvocationSummary.CasCacheHits + userInvocationSummary.ActionCacheMisses + userInvocationSummary.CasCacheMisses
+		rsp.UserCommits = userInvocationSummary.CommitCount
+		rsp.UserRepos = userInvocationSummary.RepoCount
+
+		return nil
+	})
+
+	eg.Go(func() error {
+		query := req.GetQuery()
+		trendReq := &stpb.GetTrendRequest{
+			RequestContext: req.GetRequestContext(),
+			Query:          query,
+		}
+		groupInvocationSummary, err := i.getInvocationSummary(ctx, trendReq, "")
+		if err != nil {
+			return err
+		}
+
+		rsp.GroupTotalCacheHits = groupInvocationSummary.ActionCacheHits + groupInvocationSummary.CasCacheHits
+		rsp.GroupTotalCacheRequests = groupInvocationSummary.ActionCacheHits + groupInvocationSummary.CasCacheHits + groupInvocationSummary.ActionCacheMisses + groupInvocationSummary.CasCacheMisses
+		rsp.GroupTotalBuilds = groupInvocationSummary.TotalNumBuilds
+		rsp.GroupCommits = groupInvocationSummary.CommitCount
+		rsp.GroupRepos = groupInvocationSummary.RepoCount
+
+		return nil
+	})
+
+	eg.Go(func() error {
+		executionSummary, err := i.getExecutionSummary(ctx, &stpb.GetTrendRequest{
+			RequestContext: req.GetRequestContext(),
+			Query:          req.GetQuery(),
+		})
+		if err != nil {
+			return err
+		}
+		rsp.AvgActionExecutionTimeUsec = executionSummary.AvgExecutionTime
 		return nil
 	})
 
@@ -475,14 +576,6 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 		return nil, err
 	}
 
-	avgCoresLaptop := float64(8)
-	usecInSecond := 1e6
-	secSavedFromCache := float64(totalCacheHits) * avgExecutionTime / usecInSecond / avgCoresLaptop
-	log.Infof("Seconds saved %f", secSavedFromCache)
-
-	rsp := &stpb.GetTrendSummaryResponse{
-		SecondsSavedCacheHits: int64(secSavedFromCache),
-	}
 	return rsp, nil
 }
 

@@ -32,7 +32,9 @@ interface State {
   enableInvocationPercentileCharts: boolean;
   dates: string[];
 
+  loadingTrendSummary: boolean;
   trendSummary: stats.ITrendSummary;
+  summaryModalPage: number;
 }
 
 const SECONDS_PER_MICROSECOND = 1e-6;
@@ -45,7 +47,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
     dateToExecutionStatMap: new Map<string, stats.IExecutionStat>(),
     enableInvocationPercentileCharts: false,
     dates: [],
+
+    loadingTrendSummary: false,
     trendSummary: null,
+    summaryModalPage: 1,
   };
 
   subscription?: Subscription;
@@ -167,8 +172,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   fetchTrendsSummary() {
-    let request = new stats.GetTrendRequest();
+    let request = new stats.GetTrendSummaryRequest();
     request.query = new stats.TrendQuery();
+    // TODO: Input a user
+    request.user = "maggielou";
 
     const filterParams = getProtoFilterParams(this.props.search);
     if (filterParams.role) {
@@ -179,14 +186,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
       // avoid double-counting build times for workflows and their nested CI runs.
       request.query.role = ["", "CI"];
     }
-
-    if (filterParams.host) request.query.host = filterParams.host;
-    if (filterParams.user) request.query.user = filterParams.user;
-    if (filterParams.repo) request.query.repoUrl = filterParams.repo;
-    if (filterParams.branch) request.query.branchName = filterParams.branch;
-    if (filterParams.commit) request.query.commitSha = filterParams.commit;
-    if (filterParams.command) request.query.command = filterParams.command;
-    if (filterParams.status) request.query.status = filterParams.status;
 
     request.query.updatedBefore = filterParams.updatedBefore;
     request.query.updatedAfter = filterParams.updatedAfter;
@@ -221,12 +220,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.query.command = command;
     }
 
-    this.setState({ ...this.state, loading: true });
+    this.setState({ ...this.state, loadingTrendSummary: true });
     rpcService.service.getTrendSummary(request).then((response) => {
       console.log(response);
       this.setState({
         ...this.state,
-        loading:false,
+        loadingTrendSummary:false,
         trendSummary: response,
       });
     });
@@ -258,27 +257,167 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return (capabilities.config.trendsHeatmapEnabled || false) && this.props.hash === "#drilldown";
   }
 
+  onModalNextClick() {
+    this.setState(prevState => {
+      return {summaryModalPage: prevState.summaryModalPage + 1}
+    })
+  }
+
+  trendSummaryModal() {
+    if (this.state.loadingTrendSummary) {
+      return null;
+    }
+
+    const avgHourlyDeveloperSalary = 60;
+    var trendSummary = this.state.trendSummary;
+    var userSecSavedCache = this.secondsSavedWithCache(trendSummary.userTotalCacheHits);
+    var groupSecSavedCache = this.secondsSavedWithCache(trendSummary.groupTotalCacheHits)
+    var userCacheHitRate = trendSummary.userTotalCacheHits / trendSummary.userTotalCacheRequests * 100;
+    var groupCacheHitRate = trendSummary.groupTotalCacheHits / trendSummary.groupTotalCacheRequests * 100;
+
+    // TODO: Add commas
+    return (
+        <div>
+          {this.state.summaryModalPage == 1 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title">
+                  Buildbuddy Wrapped
+                </div>
+                <div className="trends-summary-title">
+                  What's your username used for builds?
+                </div>
+                <input type="text" id="fname" name="fname"> </input>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {/*Make joke: You are a plain old gold digger.*/}
+          {this.state.summaryModalPage == 2 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title">
+                  You're clearly a do-er!
+                </div>
+                <div className="trends-summary-title2">
+                  This year, you had {trendSummary.userTotalBuilds} builds.
+                </div>
+                <div className="trends-summary-title2">
+                  That's #{1} in your company!
+                  (Damn you deserve a raise ;) )
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {this.state.summaryModalPage == 3 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title2">
+                  These builds spanned {trendSummary.userRepos} repo(s) across {trendSummary.userCommits} commits.
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {this.state.summaryModalPage == 4 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title2">
+                  Across your org, there were {trendSummary.groupTotalBuilds} builds.
+                </div>
+                <div className="trends-summary-title2">
+                  That's in the X percentile of all companies using Buildbuddy!
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {this.state.summaryModalPage == 5 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title2">
+                  These builds spanned {trendSummary.groupRepos} repo(s) across {trendSummary.groupCommits} commits.
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {this.state.summaryModalPage == 6 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title2">
+                  You're moving a lot of data!
+                </div>
+                <div className="trends-summary-title2">
+                  You uploaded X bytes, and downloaded Y GB to the cache.
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {this.state.summaryModalPage == 7 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title2">
+                  Your builds made {trendSummary.userTotalCacheRequests} cache requests.
+                  With {trendSummary.userTotalCacheHits} cache hits, that's a {userCacheHitRate.toFixed(2)}% cache hit rate!
+                </div>
+                <div className="trends-summary-title2">
+                  That's {(userSecSavedCache / 3600).toFixed(2)} hours of doom-scrolling Twitter
+                  avoided!
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {this.state.summaryModalPage == 8 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title2">
+                  Across your organization, there were {trendSummary.groupTotalCacheHits} cache hits out of
+                  {trendSummary.groupTotalCacheRequests} total cache requests. That's a
+                  {groupCacheHitRate.toFixed(2)}% cache hit rate!
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+          {this.state.summaryModalPage == 9 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title2">
+                  Based on the average execution time for your org, that's {(groupSecSavedCache / 3600).toFixed(2)}
+                  developer hours saved, or ${(groupSecSavedCache / 3600 * avgHourlyDeveloperSalary).toFixed(2)} in developer salary.
+                </div>
+                <div className="trends-summary-title2">
+                  Cache-ching! $$$
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+      </div>
+    )
+  }
+
+  secondsSavedWithCache(cacheHits: number): number {
+    const avgCoresLaptop = 8;
+    const usecInSec = 1e6;
+    var secondsSaved = cacheHits * this.state.trendSummary.avgActionExecutionTimeUsec / usecInSec / avgCoresLaptop;
+    return secondsSaved;
+  }
+
   render() {
     return (
-      <div className="trends">
-        <div className="container">
-          <div className="trends-header">
-            <div className="trends-title">Trends</div>
-            <FilterComponent search={this.props.search} />
-          </div>
-          {capabilities.config.trendsHeatmapEnabled && (
-            <div className="tabs">
-              <div
-                onClick={() => this.updateSelectedTab("charts")}
-                className={`tab ${this.getSelectedTab() == "charts" ? "selected" : ""}`}>
-                Charts
-              </div>
-              <div
-                onClick={() => this.updateSelectedTab("drilldown")}
-                className={`tab ${this.getSelectedTab() == "drilldown" ? "selected" : ""}`}>
-                Drilldown
-              </div>
+        <div className="trends">
+          <div className="container">
+            <div className="trends-header">
+              <div className="trends-title">Trends</div>
+              <FilterComponent search={this.props.search} />
             </div>
+            {capabilities.config.trendsHeatmapEnabled && (
+                <div className="tabs">
+                  <div
+                      onClick={() => this.updateSelectedTab("charts")}
+                      className={`tab ${this.getSelectedTab() == "charts" ? "selected" : ""}`}>
+                    Charts
+                  </div>
+                  <div
+                      onClick={() => this.updateSelectedTab("drilldown")}
+                      className={`tab ${this.getSelectedTab() == "drilldown" ? "selected" : ""}`}>
+                    Drilldown
+                  </div>
+                </div>
           )}
           {this.showingDrilldown() && (
             <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
@@ -286,16 +425,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {!this.showingDrilldown() && this.state.loading && <div className="loading"></div>}
           {!this.showingDrilldown() && !this.state.loading && (
             <>
-              {/* TODO: Add a cute photo of BB logo with a bow on it*/}
-              <div className="trend-chart-hover trends-summary">
-                <div className="trends-summary-title">
-                  Buildbuddy Wrapped
-                </div>
-                <div className="trends-summary-title2">
-                  You've had a busy year!
-                </div>
-                {this.state.trendSummary?.secondsSavedCacheHits}
-              </div>
+              {this.trendSummaryModal()}
+
               <TrendsChartComponent
                 title="Builds"
                 data={this.state.dates}
