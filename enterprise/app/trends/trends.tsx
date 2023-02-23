@@ -271,10 +271,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <div className="trends-summary-title">
                   Buildbuddy Wrapped
                 </div>
-                <div className="trends-summary-title">
+                <div className="trends-summary-title2">
                   What's your username used for builds?
                 </div>
-                <input ref={textInput} placeholder="Username (e.g. tylerw)" />
+                <div className="trends-summary-username-input">
+                  <input ref={textInput} placeholder="Username (e.g. tylerw)" />
+                </div>
                 <button
                     className="trends-summary-button"
                     onClick={() => {
@@ -316,7 +318,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   This year, you had {trendSummary.userTotalBuilds} builds.
                 </div>
                 <div className="trends-summary-title2">
-                  That's #{1} in your company!
+                  That's #{trendSummary.userBuildRankInOrg} in your company!
                   (Damn you deserve a raise ;) )
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>

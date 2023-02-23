@@ -466,6 +466,67 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
 	return res[0], nil
 }
 
+type UserBuildRank struct {
+	Rank           int64
+	User           string
+	TotalNumBuilds int64
+}
+
+// TODO: Add date filter
+func (i *InvocationStatService) getUsersBuildRankInOrg(ctx context.Context, username string, groupID string) (*UserBuildRank, error) {
+	query := `
+	 SELECT rank, user, total_num_builds FROM ( 
+		SELECT ROW_NUMBER() OVER (ORDER BY total_num_builds DESC) rank, 
+		user, 
+		total_num_builds FROM (
+			SELECT COUNT(1) AS total_num_builds, user 
+			FROM Invocations
+			WHERE group_id = "` + groupID + `" 
+			GROUP BY user
+		) AS ordered_by_num_builds) AS with_row_nums
+`
+	q := query_builder.NewQuery(query)
+	q.AddWhereClause("user = ?", username)
+
+	qStr, qArgs := q.Build()
+	var rows *sql.Rows
+	var err error
+	if i.isOLAPDBEnabled() {
+		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	} else {
+		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make([]*UserBuildRank, 0)
+
+	for rows.Next() {
+		stat := &UserBuildRank{}
+		if i.isOLAPDBEnabled() {
+			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		}
+		res = append(res, stat)
+	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scan rows: %s", err)
+	}
+
+	if len(res) != 1 {
+		return nil, errors.New("Should be exactly one row")
+	}
+
+	return res[0], nil
+}
+
 func validateAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
 	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
 		return err
@@ -567,6 +628,15 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 			return err
 		}
 		rsp.AvgActionExecutionTimeUsec = executionSummary.AvgExecutionTime
+		return nil
+	})
+
+	eg.Go(func() error {
+		userBuildRank, err := i.getUsersBuildRankInOrg(ctx, req.User, req.GetRequestContext().GetGroupId())
+		if err != nil {
+			return err
+		}
+		rsp.UserBuildRankInOrg = userBuildRank.Rank
 		return nil
 	})
 

@@ -165,6 +165,8 @@ message GetTrendSummaryResponse {
   int64 group_total_builds = 8;
   int64 group_repos = 11;
   int64 group_commits = 12;
+
+  int64 user_build_rank_in_org = 13;
 }
 
 // Fetches a heatmap for the requested metric--a heatmap is basically a set of

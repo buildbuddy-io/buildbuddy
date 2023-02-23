@@ -119,3 +119,16 @@
   border-radius: 7px;
   font-size: 20px;
 }
+
+.trends-summary-username-input {
+  display: block;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.trends-summary-username-input > input {
+  width: 30%;
+  text-align: center;
+  border-radius: 5px;
+  padding: 5px;
+}
