@@ -58,7 +58,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
   componentWillMount() {
     document.title = `Trends | BuildBuddy`;
     this.fetchStats();
-    this.fetchTrendsSummary();
 
     this.subscription = rpcService.events.subscribe({
       next: (name) => name == "refresh" && this.fetchStats(),
@@ -171,11 +170,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
     });
   }
 
-  fetchTrendsSummary() {
+  fetchTrendsSummary(username: string) {
     let request = new stats.GetTrendSummaryRequest();
     request.query = new stats.TrendQuery();
     // TODO: Input a user
-    request.user = "maggielou";
+    request.user = username;
 
     const filterParams = getProtoFilterParams(this.props.search);
     if (filterParams.role) {
@@ -263,19 +262,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
     })
   }
 
-  trendSummaryModal() {
-    if (this.state.loadingTrendSummary) {
-      return null;
-    }
-
-    const avgHourlyDeveloperSalary = 60;
-    var trendSummary = this.state.trendSummary;
-    var userSecSavedCache = this.secondsSavedWithCache(trendSummary.userTotalCacheHits);
-    var groupSecSavedCache = this.secondsSavedWithCache(trendSummary.groupTotalCacheHits)
-    var userCacheHitRate = trendSummary.userTotalCacheHits / trendSummary.userTotalCacheRequests * 100;
-    var groupCacheHitRate = trendSummary.groupTotalCacheHits / trendSummary.groupTotalCacheRequests * 100;
-
-    // TODO: Add commas
+  trendSummaryIntro() {
+    let textInput = React.createRef();
     return (
         <div>
           {this.state.summaryModalPage == 1 &&
@@ -286,16 +274,43 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 <div className="trends-summary-title">
                   What's your username used for builds?
                 </div>
-                <input type="text" id="fname" name="fname"> </input>
-                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+                <input ref={textInput} placeholder="Username (e.g. tylerw)" />
+                <button
+                    className="trends-summary-button"
+                    onClick={() => {
+                      var username = textInput.current.value;
+                      this.fetchTrendsSummary(username);
+                      this.onModalNextClick()
+                    }}
+                >
+                  {">"}
+                </button>
               </div>
           }
+        </div>
+    )
+  }
 
-          {/*Make joke: You are a plain old gold digger.*/}
+  trendSummaryModal() {
+    if (!this.state.trendSummary) {
+      return null;
+    }
+
+    const avgHourlyDeveloperSalary = 60;
+
+    var trendSummary = this.state.trendSummary;
+    var userSecSavedCache = this.secondsSavedWithCache(trendSummary.userTotalCacheHits);
+    var groupSecSavedCache = this.secondsSavedWithCache(trendSummary.groupTotalCacheHits)
+    var userCacheHitRate = trendSummary.userTotalCacheHits / trendSummary.userTotalCacheRequests * 100;
+    var groupCacheHitRate = trendSummary.groupTotalCacheHits / trendSummary.groupTotalCacheRequests * 100;
+
+    // TODO: Add commas
+    return (
+        <div>
           {this.state.summaryModalPage == 2 &&
               <div className="trend-chart-hover trends-summary">
                 <div className="trends-summary-title">
-                  You're clearly a do-er!
+                  You've been busy!
                 </div>
                 <div className="trends-summary-title2">
                   This year, you had {trendSummary.userTotalBuilds} builds.
@@ -312,6 +327,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <div className="trend-chart-hover trends-summary">
                 <div className="trends-summary-title2">
                   These builds spanned {trendSummary.userRepos} repo(s) across {trendSummary.userCommits} commits.
+                </div>
+                <div className="trends-summary-title2">
+                  {/*Make joke: You are a plain old gold digger.*/}
+                  You're clearly a do-er!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -368,7 +387,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <div className="trend-chart-hover trends-summary">
                 <div className="trends-summary-title2">
                   Across your organization, there were {trendSummary.groupTotalCacheHits} cache hits out of
-                  {trendSummary.groupTotalCacheRequests} total cache requests. That's a
+                  {trendSummary.groupTotalCacheRequests} total cache requests. That's a 
                   {groupCacheHitRate.toFixed(2)}% cache hit rate!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
@@ -425,6 +444,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {!this.showingDrilldown() && this.state.loading && <div className="loading"></div>}
           {!this.showingDrilldown() && !this.state.loading && (
             <>
+              {this.trendSummaryIntro()}
               {this.trendSummaryModal()}
 
               <TrendsChartComponent

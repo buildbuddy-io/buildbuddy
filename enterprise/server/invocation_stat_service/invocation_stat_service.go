@@ -361,9 +361,7 @@ func (i *InvocationStatService) getExecutionSummary(ctx context.Context, req *st
 	q := query_builder.NewQuery(i.getExecutionsQuery(reqCtx.GetTimezoneOffsetMinutes()))
 	q.AddWhereClause("execution_completed_timestamp_usec != ?", 0)
 	q.AddWhereClause("execution_start_timestamp_usec != ?", 0)
-	//if err := addWhereClauses(q, req.GetQuery(), req.GetRequestContext(), req.GetLookbackWindowDays()); err != nil {
-	//	return nil, err
-	//}
+	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
 	q.SetGroupBy("date")
 
 	qStr, qArgs := q.Build()
