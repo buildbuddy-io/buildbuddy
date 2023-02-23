@@ -527,6 +527,66 @@ func (i *InvocationStatService) getUsersBuildRankInOrg(ctx context.Context, user
 	return res[0], nil
 }
 
+type GroupBuildRank struct {
+	Rank           int64
+	Group          string
+	TotalNumBuilds int64
+}
+
+// TODO: Add date filter
+func (i *InvocationStatService) getGroupsBuildRank(ctx context.Context, groupID string) (*GroupBuildRank, error) {
+	query := `
+	 SELECT rank, group_id, total_num_builds FROM ( 
+		SELECT ROW_NUMBER() OVER (ORDER BY total_num_builds DESC) rank, 
+		group_id, 
+		total_num_builds FROM (
+			SELECT COUNT(1) AS total_num_builds, group_id 
+			FROM Invocations
+			GROUP BY group_id
+		) AS ordered_by_num_builds) AS with_row_nums
+`
+	q := query_builder.NewQuery(query)
+	q.AddWhereClause("group_id = ?", groupID)
+
+	qStr, qArgs := q.Build()
+	var rows *sql.Rows
+	var err error
+	if i.isOLAPDBEnabled() {
+		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	} else {
+		rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make([]*GroupBuildRank, 0)
+
+	for rows.Next() {
+		stat := &GroupBuildRank{}
+		if i.isOLAPDBEnabled() {
+			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		}
+		res = append(res, stat)
+	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scan rows: %s", err)
+	}
+
+	if len(res) != 1 {
+		return nil, errors.New("Should be exactly one row")
+	}
+
+	return res[0], nil
+}
+
 func validateAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
 	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
 		return err
@@ -595,6 +655,8 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 		rsp.UserTotalCacheRequests = userInvocationSummary.ActionCacheHits + userInvocationSummary.CasCacheHits + userInvocationSummary.ActionCacheMisses + userInvocationSummary.CasCacheMisses
 		rsp.UserCommits = userInvocationSummary.CommitCount
 		rsp.UserRepos = userInvocationSummary.RepoCount
+		rsp.UserBytesUploaded = userInvocationSummary.TotalUploadSizeBytes
+		rsp.UserBytesDownloaded = userInvocationSummary.TotalDownloadSizeBytes
 
 		return nil
 	})
@@ -615,6 +677,8 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 		rsp.GroupTotalBuilds = groupInvocationSummary.TotalNumBuilds
 		rsp.GroupCommits = groupInvocationSummary.CommitCount
 		rsp.GroupRepos = groupInvocationSummary.RepoCount
+		rsp.GroupBytesUploaded = groupInvocationSummary.TotalUploadSizeBytes
+		rsp.GroupBytesDownloaded = groupInvocationSummary.TotalDownloadSizeBytes
 
 		return nil
 	})
@@ -637,6 +701,15 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 			return err
 		}
 		rsp.UserBuildRankInOrg = userBuildRank.Rank
+		return nil
+	})
+
+	eg.Go(func() error {
+		groupBuildRank, err := i.getGroupsBuildRank(ctx, req.GetRequestContext().GetGroupId())
+		if err != nil {
+			return err
+		}
+		rsp.GroupBuildRank = groupBuildRank.Rank
 		return nil
 	})
 

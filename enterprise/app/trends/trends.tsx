@@ -269,10 +269,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 1 &&
               <div className="trend-chart-hover trends-summary">
                 <div className="trends-summary-title">
-                  Buildbuddy Wrapped
+                  <img src="/image/bb_wrapped.png" className="trends-img" />
+                  BuildBuddy Wrapped
                 </div>
                 <div className="trends-summary-title2">
-                  What's your username used for builds?
+                  What's your username for builds?
                 </div>
                 <div className="trends-summary-username-input">
                   <input ref={textInput} placeholder="Username (e.g. tylerw)" />
@@ -299,6 +300,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     }
 
     const avgHourlyDeveloperSalary = 60;
+    const avatarSizeGB = 17.28;
 
     var trendSummary = this.state.trendSummary;
     var userSecSavedCache = this.secondsSavedWithCache(trendSummary.userTotalCacheHits);
@@ -309,6 +311,18 @@ export default class TrendsComponent extends React.Component<Props, State> {
     // TODO: Add commas
     return (
         <div>
+          {this.state.summaryModalPage == 2 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title">
+                  Congratulations, you've had a busy year!
+                </div>
+                <div className="trends-summary-title2">
+                  Let's see what you've been up to...
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
           {this.state.summaryModalPage == 2 &&
               <div className="trend-chart-hover trends-summary">
                 <div className="trends-summary-title">
@@ -344,7 +358,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   Across your org, there were {trendSummary.groupTotalBuilds} builds.
                 </div>
                 <div className="trends-summary-title2">
-                  That's in the X percentile of all companies using Buildbuddy!
+                  That's #{trendSummary.groupBuildRank} of all companies using Buildbuddy!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -365,7 +379,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   You're moving a lot of data!
                 </div>
                 <div className="trends-summary-title2">
-                  You uploaded X bytes, and downloaded Y GB to the cache.
+                  You uploaded {this.formatNumber(trendSummary.userBytesUploaded / 1e9)}GB and downloaded
+                  {this.formatNumber(trendSummary.userBytesDownloaded / 1e9)}GB from the cache.
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -374,12 +389,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 7 &&
               <div className="trend-chart-hover trends-summary">
                 <div className="trends-summary-title2">
-                  Your builds made {trendSummary.userTotalCacheRequests} cache requests.
-                  With {trendSummary.userTotalCacheHits} cache hits, that's a {userCacheHitRate.toFixed(2)}% cache hit rate!
+                  Your org uploaded {this.formatNumber(trendSummary.groupBytesUploaded / 1e9)}GB and downloaded
+                  {this.formatNumber(trendSummary.groupBytesDownloaded / 1e9)}GB from the cache.
                 </div>
                 <div className="trends-summary-title2">
-                  That's {(userSecSavedCache / 3600).toFixed(2)} hours of doom-scrolling Twitter
-                  avoided!
+                  That's like streaming Avatar {this.formatNumber(trendSummary.groupBytesDownloaded / 1e9 / avatarSizeGB)} times!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -388,9 +402,13 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 8 &&
               <div className="trend-chart-hover trends-summary">
                 <div className="trends-summary-title2">
-                  Across your organization, there were {trendSummary.groupTotalCacheHits} cache hits out of
-                  {trendSummary.groupTotalCacheRequests} total cache requests. That's a 
-                  {groupCacheHitRate.toFixed(2)}% cache hit rate!
+                  Your builds made {this.formatNumber(trendSummary.userTotalCacheRequests)} cache requests.
+                  With {this.formatNumber(trendSummary.userTotalCacheHits)} cache hits, that's a {this.formatNumber(userCacheHitRate)}% cache hit rate!
+                </div>
+
+                <div className="trends-summary-title2">
+                  That's {this.formatNumber(userSecSavedCache / 3600)} hours of doom-scrolling Twitter
+                  avoided!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -398,8 +416,18 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 9 &&
               <div className="trend-chart-hover trends-summary">
                 <div className="trends-summary-title2">
-                  Based on the average execution time for your org, that's {(groupSecSavedCache / 3600).toFixed(2)}
-                  developer hours saved, or ${(groupSecSavedCache / 3600 * avgHourlyDeveloperSalary).toFixed(2)} in developer salary.
+                  Across your organization, there were {this.formatNumber(trendSummary.groupTotalCacheHits)} cache hits out of
+                  {this.formatNumber(trendSummary.groupTotalCacheRequests)} total cache requests. That's a
+                  {this.formatNumber(groupCacheHitRate)}% cache hit rate!
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+          {this.state.summaryModalPage == 10 &&
+              <div className="trend-chart-hover trends-summary">
+                <div className="trends-summary-title2">
+                  Based on the average execution time for your org, that's {this.formatNumber(groupSecSavedCache / 3600)}
+                  developer hours saved, or ${this.formatNumber(groupSecSavedCache / 3600 * avgHourlyDeveloperSalary)} in developer salary.
                 </div>
                 <div className="trends-summary-title2">
                   Cache-ching! $$$
@@ -416,6 +444,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
     const usecInSec = 1e6;
     var secondsSaved = cacheHits * this.state.trendSummary.avgActionExecutionTimeUsec / usecInSec / avgCoresLaptop;
     return secondsSaved;
+  }
+
+  formatNumber(n: number): string {
+    var truncated = +n.toFixed(2);
+    return truncated.toLocaleString();
   }
 
   render() {

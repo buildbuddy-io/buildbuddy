@@ -159,14 +159,19 @@ message GetTrendSummaryResponse {
   int64 user_total_builds = 5;
   int64 user_repos = 9;
   int64 user_commits = 10;
+  int64 user_bytes_uploaded = 15;
+  int64 user_bytes_downloaded = 16;
 
   int64 group_total_cache_requests = 6;
   int64 group_total_cache_hits = 7;
   int64 group_total_builds = 8;
   int64 group_repos = 11;
   int64 group_commits = 12;
+  int64 group_bytes_uploaded = 17;
+  int64 group_bytes_downloaded = 18;
 
   int64 user_build_rank_in_org = 13;
+  int64 group_build_rank = 14;
 }
 
 // Fetches a heatmap for the requested metric--a heatmap is basically a set of

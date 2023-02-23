@@ -103,7 +103,7 @@
 }
 
 .trends-summary-title2 {
-  font-size: 40px;
+  font-size: 35px;
   font-weight: 700;
   color: white;
   text-align: center;
@@ -131,4 +131,8 @@
   text-align: center;
   border-radius: 5px;
   padding: 5px;
+}
+
+.trends-img {
+  height: 30px;
 }
