@@ -15,7 +15,7 @@ fi
 
 if ((DIFF_MODE)); then
   if ! git diff --quiet; then
-    echo >&2 "Git working tree is dirty. To run in diff mode, 'check_go_deps.sh' must be run from a clean tree."
+    echo >&2 "Git working tree is dirty. To run in diff mode, 'fix_go_deps.sh' must be run from a clean tree."
     git status --short --untracked=no 1>&2
     exit 1
   fi
@@ -24,11 +24,23 @@ fi
 tmp_log_file=$(mktemp)
 cleanup() {
   if ((DIFF_MODE)); then
-    git restore go.mod go.sum deps.bzl
+    git restore go.mod go.sum deps.bzl go.work
   fi
   rm -r "$tmp_log_file"
 }
 trap cleanup EXIT
+
+if ! go work use -r . &>"$tmp_log_file"; then
+  echo "Command 'go work use -r .' failed. Logs:" >&2
+  cat "$tmp_log_file" >&2
+  exit 1
+fi
+
+if ! go work sync &>"$tmp_log_file"; then
+  echo "Command 'go work sync' failed. Logs:" >&2
+  cat "$tmp_log_file" >&2
+  exit 1
+fi
 
 # go mod tidy fails if generated sources are not checked into the repo,
 # and we don't want to require that (yet, at least). So use the `-e`

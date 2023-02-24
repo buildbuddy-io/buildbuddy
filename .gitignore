@@ -25,6 +25,9 @@ tramp
 # Bazel directories
 /bazel-*
 
+# Go dependencies
+/go.work.sum
+
 # Generated protos
 **/proto/**/*.pb.go
 **/proto/**/*_ts_proto.d.ts
