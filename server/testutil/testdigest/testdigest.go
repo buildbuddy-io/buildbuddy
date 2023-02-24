@@ -38,7 +38,7 @@ func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 
 func ReadDigestAndClose(t *testing.T, r io.ReadCloser) *repb.Digest {
 	defer r.Close()
-	d, err := digest.Compute(r, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(r)
 	if err != nil {
 		t.Fatal(err)
 	}

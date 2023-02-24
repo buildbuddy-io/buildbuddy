@@ -107,7 +107,7 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 }
 
 func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.ResourceName, error) {
-	d, err := digest.Compute(in, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(in)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +297,7 @@ func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.Reso
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType resource.CacheType, remoteInstanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	d, err := digest.Compute(in, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(in)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +485,7 @@ func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) 
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +500,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(f, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(f)
 	if err != nil {
 		return nil, err
 	}

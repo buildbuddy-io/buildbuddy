@@ -389,7 +389,7 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *rgpb.ConvertLaye
 	if err := newLayer.Close(); err != nil {
 		return nil, status.UnknownErrorf("could not close new layer reader: %s", err)
 	}
-	newLayerDigest, err := digest.Compute(bytes.NewReader(newLayerData), repb.DigestFunction_SHA256)
+	newLayerDigest, err := digest.Compute(bytes.NewReader(newLayerData))
 	if err != nil {
 		return nil, status.UnknownErrorf("could not compute digest of new layer: %s", err)
 	}

@@ -11,7 +11,6 @@ go_library(
         "//cli/log",
         "//cli/storage",
         "//cli/workspace",
-        "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
         "//server/util/disk",
         "@com_github_google_shlex//:shlex",
