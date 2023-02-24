@@ -5107,11 +5107,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
 
     go_repository(
         name = "com_google_cloud_go_logging",
-        importpath = "cloud.google.com/go/logging",
         build_directives = [
             "gazelle:resolve go google.golang.org/genproto/googleapis/longrunning @org_golang_google_genproto//googleapis/longrunning",  # keep
             "gazelle:resolve go google.golang.org/genproto/googleapis/logging/v2 @org_golang_google_genproto//googleapis/logging/v2:logging",  # keep
         ],
+        importpath = "cloud.google.com/go/logging",
         sum = "h1:kJhL8ZKlOofBHBysS+NkThP3zbMN5nN9z2KNfyprDPU=",
         version = "v1.6.2-0.20230221213717-932ddc87ed38",
     )
