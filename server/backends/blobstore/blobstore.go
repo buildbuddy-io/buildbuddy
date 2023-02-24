@@ -265,7 +265,16 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	}
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
-	err = disk.DeleteFile(ctx, fullPath)
+
+	fileInfo, err := os.Stat(blobName)
+	if err != nil {
+		return err
+	}
+	if fileInfo.IsDir() {
+		err = os.RemoveAll(fullPath)
+	} else {
+		err = disk.DeleteFile(ctx, fullPath)
+	}
 	spn.End()
 	recordDeleteMetrics(diskLabel, start, err)
 	if os.IsNotExist(err) {
