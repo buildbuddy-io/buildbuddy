@@ -127,6 +127,7 @@ build --enable_runfiles
 # on Docker for development.
 test --test_tag_filters=-docker
 build --build_tag_filters=-docker
+test --runs_per_test=^//enterprise/server/vmexec:vmexec_test@5
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
