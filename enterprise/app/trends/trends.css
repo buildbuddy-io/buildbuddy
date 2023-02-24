@@ -91,23 +91,39 @@
   transform: translate(-50%, -50%);
   height: 60%;
   width: 50%;
+}
+
+.trends-summary-intro {
   background-color: #31373a;
 }
 
-.trends-summary-title {
-  font-size: 32px;
-  font-weight: 700;
-  color: white;
-  text-align: center;
-  margin-top: 20%;
+.trends-summary-detail {
+  background-image: url("/image/spotify1.jpeg");
+  background-position: center center;
+  background-size: contain;
 }
 
-.trends-summary-title2 {
+.trends-summary > div:first-child{
+  margin-top:25%;
+}
+
+.trends-summary-title {
   font-size: 35px;
   font-weight: 700;
-  color: white;
+  color: black;
   text-align: center;
-  margin-top: 60px;
+  text-shadow: 2px 1px 1px #dfdfdf;
+  margin-bottom: 25px
+}
+
+.title-white {
+  color: white;
+  text-shadow: 0px 0px 0px;
+}
+
+.title-red {
+  color: #ca2121;
+  text-shadow: 0px 0px 0px;
 }
 
 .trends-summary-button {
@@ -133,6 +149,10 @@
   padding: 5px;
 }
 
-.trends-img {
+.trends-logo {
   height: 30px;
+}
+
+.trends-saboteur {
+  height: 30%;
 }
