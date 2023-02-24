@@ -397,14 +397,6 @@ service ContentAddressableStorage {
     option (google.api.http) = { post: "/v2/{instance_name=**}/blobs:batchRead" body: "*" };
   }
 
-  rpc ConcatenateBlobs(ConcatenateBlobsRequest) returns (ConcatenateBlobsResponse) {
-    option (google.api.http) = { post: "/v2/{instance_name=**}/blobs:concatenate" body: "*" };
-  }
-
-  rpc SplitBlobs(SplitBlobsRequest) returns (SplitBlobsResponse) {
-    option (google.api.http) = { post: "/v2/{instance_name=**}/blobs:split" body: "*" };
-  }
-
   // Fetch the entire directory tree rooted at a node.
   //
   // This request must be targeted at a
@@ -1665,23 +1657,6 @@ message BatchUpdateBlobsResponse {
   repeated Response responses = 1;
 }
 
-
-// A response message for
-// [ContentAddressableStorage.ConcatenateBlobs][build.bazel.remote.execution.v2.ContentAddressableStorage.ConcatenateBlobs].
-message ConcatenateBlobsResponse {
-  // A response corresponding to a single blob that the client tried to upload.
-  message Response {
-    // The blob digest to which this response corresponds.
-    Digest digest = 1;
-
-    // The result of attempting to upload that blob.
-    google.rpc.Status status = 2;
-  }
-
-  // The responses to the requests.
-  repeated Response responses = 1;
-}
-
 // A request message for
 // [ContentAddressableStorage.BatchReadBlobs][build.bazel.remote.execution.v2.ContentAddressableStorage.BatchReadBlobs].
 message BatchReadBlobsRequest {
@@ -1717,76 +1692,6 @@ message BatchReadBlobsResponse {
 
     // The result of attempting to download that blob.
     google.rpc.Status status = 3;
-  }
-
-  // The responses to the requests.
-  repeated Response responses = 1;
-}
-
-message ConcatenateBlobsRequest {
-  message Request {
-    // The digest of the blob to create.
-    Digest large_digest = 1;
-
-    // The hashes of the smaller blobs to concatenate.
-    //
-    // All elements except for the final correspond to the hashes of
-    // blobs having size 2^k. The final element corresponds to the hash
-    // of a blob containing l bytes of trailing data, where
-    // 0 < l <= 2^k. The server may infer the values of k and l using
-    // `large_digest.size_bytes` and the length of this field.
-    repeated string small_hashes = 2;
-  }
-
-  // The instance of the execution system to operate against. A server may
-  // support multiple instances of the execution system (with their own workers,
-  // storage, caches, etc.). The server MAY require use of this field to select
-  // between them in an implementation-defined fashion, otherwise it can be
-  // omitted.
-  string instance_name = 1;
-
-  // The digest function used for constructing the concatenated blobs.
-  //
-  // This field MUST be set to a value other than UNKNOWN.
-  DigestFunction.Value digest_function = 2;
-
-  // The individual concatenation requests.
-  repeated Request requests = 3;
-}
-
-message SplitBlobsRequest {
-  // The instance of the execution system to operate against. A server may
-  // support multiple instances of the execution system (with their own workers,
-  // storage, caches, etc.). The server MAY require use of this field to select
-  // between them in an implementation-defined fashion, otherwise it can be
-  // omitted.
-  string instance_name = 1;
-
-  // The digest function used for constructing the split blobs.
-  //
-  // This field MUST be set to a value other than UNKNOWN.
-  DigestFunction.Value digest_function = 2;
-
-  // The digests of the large blobs to split into smaller blobs.
-  repeated Digest large_digests = 3;
-
-  // The size of the non-trailing blobs to create. It must be less than
-  // the sizes stored in `digests`.
-  int64 split_size_bytes = 4;
-}
-
-message SplitBlobsResponse {
-  message Response {
-    // The result of attempting to split that blob.
-    google.rpc.Status status = 1;
-
-    // The hashes of the smaller blobs that were created.
-    //
-    // All elements except the final correspond to the blobs having size
-    // `split_size_bytes`. The final element corresponds to the the
-    // non-empty blob containing trailing data, having size
-    // `digest.size_bytes % split_size_bytes`.
-    repeated string small_hashes = 2;
   }
 
   // The responses to the requests.
