@@ -508,7 +508,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	// merge the modified pages on top of the existing memory snapshot.
 	baseMemSnapshotPath := ""
 	if baseSnapshotDigest != nil {
-		loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, baseSnapshotDigest)
+		loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName)
 		if err != nil {
 			return nil, err
 		}
@@ -516,7 +516,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		if err := disk.EnsureDirectoryExists(baseDir); err != nil {
 			return nil, err
 		}
-		if err := loader.UnpackSnapshot(baseDir); err != nil {
+		if err := loader.UnpackSnapshot(baseSnapshotDigest, baseDir); err != nil {
 			return nil, err
 		}
 		baseMemSnapshotPath = filepath.Join(baseDir, fullMemSnapshotName)
@@ -577,7 +577,11 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	}
 
 	snaploaderStart := time.Now()
-	snapshotDigest, err := snaploader.CacheSnapshot(ctx, c.env, instanceName, c.jailerRoot, opts)
+	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName)
+	if err != nil {
+		return nil, err
+	}
+	snapshotDigest, err := loader.CacheSnapshot(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -657,12 +661,12 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		ForwardSignals: make([]os.Signal, 0),
 	}
 
-	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName, snapshotDigest)
+	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName)
 	if err != nil {
 		return err
 	}
 
-	configurationData, err := loader.GetConfigurationData()
+	configurationData, err := loader.GetConfigurationData(snapshotDigest)
 	if err != nil {
 		return err
 	}
@@ -692,7 +696,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	}
 	log.Debugf("Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	if err := loader.UnpackSnapshot(c.getChroot()); err != nil {
+	if err := loader.UnpackSnapshot(snapshotDigest, c.getChroot()); err != nil {
 		return err
 	}
 
