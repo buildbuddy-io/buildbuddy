@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -59,7 +60,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 	}
 	if s.supportCAS {
 		c.CacheCapabilities = &repb.CacheCapabilities{
-			DigestFunctions: []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
+			DigestFunctions: digest.SupportedDigestFunctions(),
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
 				UpdateEnabled: s.actionCacheUpdateEnabled(ctx),
 			},

@@ -299,7 +299,7 @@ func TestGetSet(t *testing.T) {
 		// Get() the bytes from the cache.
 		rbuf, err := mc.Get(ctx, r)
 		require.NoError(t, err)
-		d2, err := digest.Compute(bytes.NewReader(rbuf))
+		d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 		require.True(t, d.GetHash() == d2.GetHash())
 	}
 }

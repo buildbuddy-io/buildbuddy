@@ -602,7 +602,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		d := dk.ToDigest()
 
 		// Write empty files directly (skip checking cache and downloading).
-		if d.GetHash() == digest.EmptySha256 {
+		if digest.IsEmpty(d) {
 			for _, fp := range filePointers {
 				if err := writeFile(fp, []byte("")); err != nil {
 					return err
@@ -743,14 +743,14 @@ func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *di
 func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
-	rootDigest, err = digest.ComputeForMessage(tree.Root)
+	rootDigest, err = digest.ComputeForMessage(tree.Root, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}
 	dirMap[digest.NewKey(rootDigest)] = tree.Root
 
 	for _, child := range tree.Children {
-		d, err := digest.ComputeForMessage(child)
+		d, err := digest.ComputeForMessage(child, repb.DigestFunction_SHA256)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -829,7 +829,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
 				return err
 			}
-			if child.GetDigest().Hash == digest.EmptySha256 && child.GetDigest().SizeBytes == 0 {
+			if digest.IsEmpty(child.GetDigest()) && child.GetDigest().SizeBytes == 0 {
 				continue
 			}
 			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]
