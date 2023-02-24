@@ -3,3 +3,6 @@ bazel-buildbuddy
 bazel-out
 bazel-testlogs
 node_modules
+website/.docusaurus
+website/build
+website/node_modules
