@@ -1790,7 +1790,7 @@ func TestMigrateVersions(t *testing.T) {
 			require.NoError(t, err)
 
 			// Compute a digest for the bytes returned.
-			d2, err := digest.Compute(bytes.NewReader(rbuf))
+			d2, err := digest.Compute(bytes.NewReader(rbuf), repb.DigestFunction_SHA256)
 			if d.GetHash() != d2.GetHash() {
 				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
 			}
