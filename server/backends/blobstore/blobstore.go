@@ -268,6 +268,9 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 
 	fileInfo, err := os.Stat(blobName)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	if fileInfo.IsDir() {
@@ -277,9 +280,6 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	}
 	spn.End()
 	recordDeleteMetrics(diskLabel, start, err)
-	if os.IsNotExist(err) {
-		return nil
-	}
 	return err
 }
 
