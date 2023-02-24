@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/gormutil"
+	"github.com/jackc/pgx/v4/stdlib"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -31,6 +32,7 @@ import (
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 
 	// Allow for "cloudsql" type connections that support workload identity.
@@ -48,8 +50,9 @@ import (
 )
 
 const (
-	sqliteDriver = "sqlite3"
-	mysqlDriver  = "mysql"
+	sqliteDriver   = "sqlite3"
+	mysqlDriver    = "mysql"
+	postgresDriver = "postgres"
 
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
@@ -216,12 +219,23 @@ func (dbh *DBHandle) ReadRow(ctx context.Context, out interface{}, where ...inte
 	return err
 }
 
-func runMigrations(dialect string, gdb *gorm.DB) error {
+func runMigrations(driverName string, gdb *gorm.DB) error {
 	log.Info("Auto-migrating DB")
 	postAutoMigrateFuncs, err := tables.PreAutoMigrate(gdb)
 	if err != nil {
 		return err
 	}
+
+	if driverName == postgresDriver {
+		for _, td := range tables.GetAllTableDescriptors() {
+			q := fmt.Sprintf(`DROP VIEW %s`, strings.ToLower(td.Name))
+			log.Warningf("running: %s", q)
+			if err := gdb.Exec(q).Error; err != nil {
+				log.Warningf("could not drop view: %s", err)
+			}
+		}
+	}
+
 	if err := gdb.AutoMigrate(tables.GetAllTables()...); err != nil {
 		return err
 	}
@@ -232,6 +246,15 @@ func runMigrations(dialect string, gdb *gorm.DB) error {
 	}
 	if err := tables.PostAutoMigrate(gdb); err != nil {
 		return err
+	}
+	if driverName == postgresDriver {
+		for _, td := range tables.GetAllTableDescriptors() {
+			q := fmt.Sprintf(`CREATE VIEW %s AS SELECT * FROM "%s"`, strings.ToLower(td.Name), td.Name)
+			log.Warningf("running: %s", q)
+			if err := gdb.Exec(q).Error; err != nil {
+				log.Warningf("could not create view: %s", err)
+			}
+		}
 	}
 	return nil
 }
@@ -337,6 +360,10 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not generate DSN: %s", err)
 	}
+	if c.ds.DriverName() == postgresDriver {
+		dsn = "postgres://" + dsn
+	}
+	log.Warningf("using DSN %q", dsn)
 	return c.d.Open(dsn)
 }
 
@@ -356,6 +383,8 @@ func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfi
 		drv = &gosqlite.SQLiteDriver{}
 	case mysqlDriver:
 		drv = &gomysql.MySQLDriver{}
+	case postgresDriver:
+		drv = &stdlib.Driver{}
 	default:
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
@@ -373,6 +402,8 @@ func openDB(fileResolver fs.FS, dataSource string, advancedConfig *AdvancedConfi
 		// Newer versions of GORM use a smaller default size (191) to account for InnoDB index limits
 		// that don't apply to modern MysQL installations.
 		dialector = mysql.New(mysql.Config{Conn: db, DefaultStringSize: 255})
+	case postgresDriver:
+		dialector = postgres.New(postgres.Config{Conn: db})
 	default:
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
@@ -724,6 +755,8 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 	timestampExpr := fmt.Sprintf("(%s + (%d))/1000000", fieldName, -offsetUsec)
 	if h.driver == sqliteDriver {
 		return fmt.Sprintf("DATE(%s, 'unixepoch')", timestampExpr)
+	} else if h.driver == postgresDriver {
+		return fmt.Sprintf("DATE(TO_TIMESTAMP(%s))", timestampExpr)
 	}
 	return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
 }

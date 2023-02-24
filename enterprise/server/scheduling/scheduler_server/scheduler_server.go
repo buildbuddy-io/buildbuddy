@@ -1021,7 +1021,7 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 		return err
 	}
 
-	permissions := 0
+	permissions := int32(0)
 	if s.requireExecutorAuthorization {
 		permissions = perms.GROUP_WRITE | perms.GROUP_READ
 	} else {

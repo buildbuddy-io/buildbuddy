@@ -60,6 +60,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/hashicorp/memberlist v0.3.1
 	github.com/hashicorp/serf v0.9.6
+	github.com/jackc/pgx/v5 v5.3.0
 	github.com/jhump/protoreflect v1.9.0
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
 	github.com/klauspost/compress v1.15.12
@@ -104,6 +105,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/clickhouse v0.4.2
 	gorm.io/driver/mysql v1.3.4
+	gorm.io/driver/postgres v1.4.4
 	gorm.io/driver/sqlite v1.3.6
 	gorm.io/gorm v1.23.7
 )
@@ -188,6 +190,14 @@ require (
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/huandu/xstrings v1.3.1 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
+	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
+	github.com/jackc/pgconn v1.13.0 // indirect
+	github.com/jackc/pgio v1.0.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgproto3/v2 v2.3.1 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
+	github.com/jackc/pgtype v1.12.0 // indirect
+	github.com/jackc/pgx/v4 v4.17.2 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jinzhu/configor v1.2.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect

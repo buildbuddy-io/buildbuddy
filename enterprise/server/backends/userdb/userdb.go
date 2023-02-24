@@ -114,7 +114,7 @@ func (d *UserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Grou
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
-	query := d.h.DB(ctx).Raw(`SELECT * FROM `+"`Groups`"+` AS g WHERE g.group_id = ?`, groupID)
+	query := d.h.DB(ctx).Raw(`SELECT * FROM Groupz AS g WHERE g.group_id = ?`, groupID)
 	group := &tables.Group{}
 	if err := query.Take(group).Error; err != nil {
 		if db.IsRecordNotFound(err) {
@@ -142,7 +142,7 @@ func (d *UserDB) getGroupByURLIdentifier(ctx context.Context, tx *db.DB, urlIden
 	if urlIdentifier == "" {
 		return nil, status.InvalidArgumentError("URL identifier cannot be empty.")
 	}
-	query := tx.Raw(`SELECT * FROM `+"`Groups`"+` AS g WHERE g.url_identifier = ?`, urlIdentifier)
+	query := tx.Raw(`SELECT * FROM Groupz AS g WHERE g.url_identifier = ?`, urlIdentifier)
 	group := &tables.Group{}
 	if err := query.Take(group).Error; err != nil {
 		if db.IsRecordNotFound(err) {
@@ -263,7 +263,7 @@ func (d *UserDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	// Validate that user-level keys are enabled
 	g := &tables.Group{}
 	err = d.h.DB(ctx).Raw(
-		"SELECT user_owned_keys_enabled FROM `Groups` WHERE group_id = ?",
+		"SELECT user_owned_keys_enabled FROM Groupz WHERE group_id = ?",
 		groupID,
 	).Take(g).Error
 	if err != nil {
@@ -320,7 +320,7 @@ func (d *UserDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 		// Check that the group has user-owned keys enabled.
 		g := &tables.Group{}
 		res := tx.Raw(
-			"SELECT user_owned_keys_enabled FROM `Groups` WHERE group_id = ?",
+			"SELECT user_owned_keys_enabled FROM Groupz WHERE group_id = ?",
 			groupID,
 		).Take(g)
 		if res.Error != nil {
@@ -348,7 +348,7 @@ func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.A
 	if err != nil {
 		return nil, err
 	}
-	keyPerms := 0
+	keyPerms := int32(0)
 	if userID == "" {
 		keyPerms = perms.GROUP_READ | perms.GROUP_WRITE
 	} else {
@@ -482,7 +482,7 @@ func isInOwnedDomainBlocklist(email string) bool {
 
 func (d *UserDB) getDomainOwnerGroup(ctx context.Context, tx *db.DB, domain string) (*tables.Group, error) {
 	tg := &tables.Group{}
-	existingRow := tx.Raw(`SELECT * FROM `+"`Groups`"+` as g
+	existingRow := tx.Raw(`SELECT * FROM Groupz as g
                                WHERE g.owned_domain = ?`, domain)
 	err := existingRow.Take(tg).Error
 	if db.IsRecordNotFound(err) {
@@ -528,7 +528,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx *db.DB, userID string, g *t
 		return "", status.InvalidArgumentErrorf("cannot create a Group using an existing group ID")
 	}
 	newGroup := *g // copy
-	groupID, err := tables.PrimaryKeyForTable("Groups")
+	groupID, err := tables.PrimaryKeyForTable("Groupz")
 	if err != nil {
 		return "", err
 	}
@@ -588,7 +588,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 		}
 
 		res := tx.Exec(`
-			UPDATE `+"`Groups`"+` SET
+			UPDATE Groupz SET
 				name = ?,
 				url_identifier = ?,
 				owned_domain = ?,
@@ -618,7 +618,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
 	q, args := query_builder.
-		NewQuery(`UPDATE `+"`Groups`"+` SET github_token = ""`).
+		NewQuery(`UPDATE Groupz SET github_token = ""`).
 		AddWhereClause("group_id = ?", groupID).
 		Build()
 	return d.h.DB(ctx).Exec(q, args...).Error
@@ -713,8 +713,8 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 
 	q := query_builder.NewQuery(`
 			SELECT u.user_id, u.email, u.first_name, u.last_name, ug.membership_status, ug.role
-			FROM Users AS u JOIN UserGroups AS ug`)
-	q = q.AddWhereClause(`u.user_id = ug.user_user_id AND ug.group_group_id = ?`, groupID)
+			FROM Users AS u JOIN UserGroups AS ug ON ug.user_user_id = u.user_id`)
+	q = q.AddWhereClause(`ug.group_group_id = ?`, groupID)
 
 	o := query_builder.OrClauses{}
 	for _, s := range statuses {
@@ -993,7 +993,7 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 				g.saml_idp_metadata_url,
 				g.suggestion_preference,
 				ug.role
-			FROM `+"`Groups`"+` as g
+			FROM Groupz as g
 			JOIN UserGroups as ug
 			ON g.group_id = ug.group_group_id
 			WHERE ug.user_user_id = ? AND ug.membership_status = ?
@@ -1061,7 +1061,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				use_group_owned_executors,
 				saml_idp_metadata_url,
 				suggestion_preference
-			FROM `+"`Groups`"+`
+			FROM Groupz
 			WHERE group_id = ?
 		`, u.GetGroupID()).Rows()
 		if err != nil {
@@ -1128,7 +1128,7 @@ func (d *UserDB) GetOrCreatePublicKey(ctx context.Context, groupID string) (stri
 	}
 
 	err = d.h.DB(ctx).Exec(
-		`UPDATE`+"`Groups`"+` SET public_key = ?, encrypted_private_key = ? WHERE group_id = ?`,
+		`UPDATE Groupz SET public_key = ?, encrypted_private_key = ? WHERE group_id = ?`,
 		pubKey, encPrivKey, groupID).Error
 	if err != nil {
 		return "", err

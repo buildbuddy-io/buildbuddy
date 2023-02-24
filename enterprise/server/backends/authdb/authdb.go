@@ -151,7 +151,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 				g.use_group_owned_executors,
 				g.saml_idp_metadata_url,
 				ug.role
-			FROM `+"`Groups`"+` AS g, UserGroups AS ug
+			FROM Groupz AS g, UserGroups AS ug
 			WHERE g.group_id = ug.group_group_id
 			AND ug.membership_status = ?
 			AND ug.user_user_id = ?
@@ -196,7 +196,7 @@ func newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Query {
 			ak.user_id,
 			g.group_id,
 			g.use_group_owned_executors
-		FROM ` + "`Groups`" + ` AS g,
+		FROM Groupz AS g,
 		APIKeys AS ak
 	`)
 	qb.AddWhereClause(`ak.group_id = g.group_id`)
@@ -206,12 +206,12 @@ func newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Query {
 		// (but not deleted).
 		qb.AddWhereClause(`(
 			g.user_owned_keys_enabled
-			OR ak.user_id = ""
+			OR ak.user_id = ''
 			OR ak.user_id IS NULL
 		)`)
 	} else {
 		qb.AddWhereClause(`(
-			ak.user_id = ""
+			ak.user_id = ''
 			OR ak.user_id IS NULL
 		)`)
 	}

@@ -2580,8 +2580,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_jackc_pgservicefile",
         importpath = "github.com/jackc/pgservicefile",
-        sum = "h1:C8S2+VttkHFdOOCXJe+YGfa4vHYwlt4Zx+IVXQ97jYg=",
-        version = "v0.0.0-20200714003250-2b9c44734f2b",
+        sum = "h1:bbPeKD0xmW/Y25WS6cokEszi5g+S0QxI/d45PkRi7Nk=",
+        version = "v0.0.0-20221227161230-091c0ba34f0a",
     )
     go_repository(
         name = "com_github_jackc_pgtype",
@@ -2596,11 +2596,28 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v4.17.2",
     )
     go_repository(
+        name = "com_github_jackc_pgx_v5",
+        build_directives = [
+            "gazelle:build_tags unix",
+        ],
+        importpath = "github.com/jackc/pgx/v5",
+        sum = "h1:/NQi8KHMpKWHInxXesC8yD4DhkXPrVhmnwYkjp9AmBA=",
+        version = "v5.3.0",
+    )
+
+    go_repository(
         name = "com_github_jackc_puddle",
         importpath = "github.com/jackc/puddle",
         sum = "h1:eHK/5clGOatcjX3oWGBO/MpxpbHzSwud5EWTSCI+MX0=",
         version = "v1.3.0",
     )
+    go_repository(
+        name = "com_github_jackc_puddle_v2",
+        importpath = "github.com/jackc/puddle/v2",
+        sum = "h1:RdcDk92EJBuBS55nQMMYFXTxwstHug4jkhT5pq8VxPk=",
+        version = "v2.2.0",
+    )
+
     go_repository(
         name = "com_github_jbenet_go_context",
         importpath = "github.com/jbenet/go-context",
@@ -5567,6 +5584,13 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:/KoBMgsUHC3bExsekDcmNYaBnfH2WNeFuXqqrqMc98Q=",
         version = "v1.3.4",
     )
+    go_repository(
+        name = "io_gorm_driver_postgres",
+        importpath = "gorm.io/driver/postgres",
+        sum = "h1:zt1fxJ+C+ajparn0SteEnkoPg0BQ6wOWXEQ99bteAmw=",
+        version = "v1.4.4",
+    )
+
     go_repository(
         name = "io_gorm_driver_sqlite",
         importpath = "gorm.io/driver/sqlite",

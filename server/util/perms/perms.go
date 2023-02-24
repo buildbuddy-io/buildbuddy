@@ -33,7 +33,7 @@ const (
 type UserGroupPerm struct {
 	UserID  string
 	GroupID string
-	Perms   int
+	Perms   int32
 }
 
 func AnonymousUserPermissions() *UserGroupPerm {
@@ -52,7 +52,7 @@ func GroupAuthPermissions(groupID string) *UserGroupPerm {
 	}
 }
 
-func ToACLProto(userID *uidpb.UserId, groupID string, perms int) *aclpb.ACL {
+func ToACLProto(userID *uidpb.UserId, groupID string, perms int32) *aclpb.ACL {
 	return &aclpb.ACL{
 		UserId:  userID,
 		GroupId: groupID,

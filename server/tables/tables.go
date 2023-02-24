@@ -25,12 +25,12 @@ const (
 	mysqlDialect  = "mysql"
 )
 
-type tableDescriptor struct {
+type TableDescriptor struct {
 	table interface{}
 	// 2-letter table prefix
 	prefix string
 	// Table name (must match struct name).
-	name string
+	Name string
 }
 
 // A Table must define the table name.
@@ -40,8 +40,12 @@ type Table interface {
 
 // All tables the DB knows about. If it's not here it doesn't count.
 var (
-	allTables []tableDescriptor
+	allTables []TableDescriptor
 )
+
+func GetAllTableDescriptors() []TableDescriptor {
+	return allTables
+}
 
 func GetAllTables() []interface{} {
 	tableSlice := make([]interface{}, 0)
@@ -53,7 +57,7 @@ func GetAllTables() []interface{} {
 
 func PrimaryKeyForTable(tableName string) (string, error) {
 	for _, d := range allTables {
-		if d.name == tableName {
+		if d.Name == tableName {
 			return fmt.Sprintf("%s%d", d.prefix, random.RandUint64()), nil
 		}
 	}
@@ -63,10 +67,10 @@ func PrimaryKeyForTable(tableName string) (string, error) {
 func registerTable(prefix string, t Table) {
 	// TODO: check pk is defined.
 	// TODO: check model is included.
-	allTables = append(allTables, tableDescriptor{
+	allTables = append(allTables, TableDescriptor{
 		table:  t,
 		prefix: prefix,
-		name:   t.TableName(),
+		Name:   t.TableName(),
 	})
 }
 
@@ -114,9 +118,9 @@ type Invocation struct {
 	DurationUsec                   int64
 	UploadThroughputBytesPerSecond int64
 	ActionCount                    int64
-	Perms                          int `gorm:"index:perms;type:int(11);default:NULL"`
+	Perms                          int32 `gorm:"index:perms;default:NULL"`
 	CreatedWithCapabilities        int32
-	RedactionFlags                 int   `gorm:"default:NULL;type:int(11);default:NULL"`
+	RedactionFlags                 int   `gorm:"default:NULL;type:int;default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                int64
 	ActionCacheMisses              int64
@@ -147,7 +151,7 @@ type Invocation struct {
 	TotalCachedActionExecUsec        int64
 	DownloadThroughputBytesPerSecond int64
 	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
-	Success                          bool   `gorm:"type:tinyint(1)"`
+	Success                          bool
 	Attempt                          uint64 `gorm:"not null;default:0"`
 	BazelExitCode                    string
 }
@@ -199,12 +203,12 @@ type Group struct {
 	GithubToken *string
 	Model
 
-	SharingEnabled       bool `gorm:"default:1;type:tinyint(1)"`
-	UserOwnedKeysEnabled bool `gorm:"not null;default:false;type:tinyint(1)"`
+	SharingEnabled       bool `gorm:"default:1"`
+	UserOwnedKeysEnabled bool `gorm:"not null;default:false"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	UseGroupOwnedExecutors *bool `gorm:"type:tinyint(1)"`
+	UseGroupOwnedExecutors *bool
 
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl *string
@@ -219,7 +223,7 @@ type Group struct {
 }
 
 func (g *Group) TableName() string {
-	return "Groups"
+	return "Groupz"
 }
 
 type UserGroup struct {
@@ -325,13 +329,13 @@ type APIKey struct {
 	// The API key token used for authentication.
 	Value string `gorm:"default:NULL;unique;uniqueIndex:api_key_value_index;"`
 	Model
-	Perms int `gorm:"type:int(11);default:NULL"`
+	Perms int32 `gorm:"default:NULL"`
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
 	Capabilities        int32 `gorm:"default:1"`
-	VisibleToDevelopers bool  `gorm:"not null;default:0;type:tinyint(1)"`
+	VisibleToDevelopers bool  `gorm:"not null;default:0"`
 }
 
 func (k *APIKey) TableName() string {
@@ -343,7 +347,7 @@ type Secret struct {
 	GroupID string `gorm:"primaryKey"`
 	Name    string `gorm:"primaryKey"`
 	Value   string `gorm:"type:text"`
-	Perms   int    `gorm:"type:int(11);default:NULL"`
+	Perms   int    `gorm:"default:NULL"`
 }
 
 func (s *Secret) TableName() string {
@@ -385,7 +389,7 @@ type Execution struct {
 	EstimatedMilliCPU    int64
 
 	// ExecutedActionMetadata (in addition to Worker above)
-	Perms                              int `gorm:"index:executions_perms;type:int(11);default:NULL"`
+	Perms                              int32 `gorm:"index:executions_perms;default:NULL"`
 	QueuedTimestampUsec                int64
 	WorkerStartTimestampUsec           int64
 	WorkerCompletedTimestampUsec       int64
@@ -399,8 +403,8 @@ type Execution struct {
 	StatusCode int32
 	ExitCode   int32
 
-	CachedResult bool `gorm:"type:tinyint(1)"`
-	DoNotCache   bool `gorm:"type:tinyint(1)"`
+	CachedResult bool
+	DoNotCache   bool
 }
 
 func (t *Execution) TableName() string {
@@ -433,10 +437,10 @@ type TelemetryLog struct {
 	BazelUserCount      int64
 	BazelHostCount      int64
 
-	FeatureCacheEnabled bool `gorm:"type:tinyint(1)"`
-	FeatureRBEEnabled   bool `gorm:"type:tinyint(1)"`
-	FeatureAPIEnabled   bool `gorm:"type:tinyint(1)"`
-	FeatureAuthEnabled  bool `gorm:"type:tinyint(1)"`
+	FeatureCacheEnabled bool
+	FeatureRBEEnabled   bool
+	FeatureAPIEnabled   bool
+	FeatureAuthEnabled  bool
 }
 
 func (t *TelemetryLog) TableName() string {
@@ -463,7 +467,7 @@ type Target struct {
 	RepoURL  string
 	Label    string
 	Model
-	Perms int `gorm:"index:target_perms;type:int(11);default:NULL"`
+	Perms int32 `gorm:"index:target_perms;default:NULL"`
 	// TargetID is made up of repoURL + label.
 	TargetID int64 `gorm:"uniqueIndex:target_target_id_group_id_idx,priority:1"`
 }
@@ -501,7 +505,7 @@ type Workflow struct {
 	AccessToken string `gorm:"size:4096"`
 	WebhookID   string `gorm:"default:NULL;unique;uniqueIndex:workflow_webhook_id_index;"`
 	Model
-	Perms int `gorm:"index:workflow_perms;type:int(11);default:NULL"`
+	Perms int32 `gorm:"index:workflow_perms;default:NULL"`
 	// InstanceNameSuffix is appended to the remote instance name for CI runner
 	// actions associated with this workflow. It can be updated in order to
 	// prevent reusing a bad workspace.
@@ -697,11 +701,12 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		})
 	}
 
+	hasUUIDAsPK := true
 	// Populate invocation_uuid if the column doesn't exist.
-	hasUUIDAsPK, err := hasPrimaryKey(db, &TargetStatus{}, "invocation_uuid")
-	if err != nil {
-		return nil, err
-	}
+	//hasUUIDAsPK, err := hasPrimaryKey(db, &TargetStatus{}, "invocation_uuid")
+	//if err != nil {
+	//	return nil, err
+	//}
 	if m.HasTable("TargetStatuses") && !hasUUIDAsPK {
 		if db.Dialector.Name() == sqliteDialect {
 			// Rename the TargetStatuses table with invocation_pk as the primary key,
