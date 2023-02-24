@@ -1,7 +1,14 @@
 import React from "react";
 import format from "../format/format";
 import router from "../router/router";
-import { BazelCommandResult } from "./child_invocations";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+
+export type BazelCommandResult = {
+  invocation:
+    | build_event_stream.WorkflowConfigured.IInvocationMetadata
+    | build_event_stream.ChildInvocationsConfigured.IInvocationMetadata;
+  durationMillis?: number;
+};
 
 export type ChildInvocationCardProps = {
   status: string;

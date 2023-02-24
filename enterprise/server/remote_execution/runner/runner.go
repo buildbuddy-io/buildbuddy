@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
@@ -914,7 +915,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	}
 
 	user, err := auth.UserFromTrustedJWT(ctx)
-	if err != nil && !perms.IsAnonymousUserError(err) {
+	if err != nil && !authutil.IsAnonymousUserError(err) {
 		return nil, err
 	}
 	if props.RecycleRunner && err != nil {

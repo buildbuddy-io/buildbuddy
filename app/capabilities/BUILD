@@ -4,8 +4,9 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "capabilities",
-    srcs = glob(["*.tsx"]),
+    srcs = ["capabilities.tsx"],
     deps = [
         "//proto:config_ts_proto",
+        "@npm//tslib",
     ],
 )

@@ -6,22 +6,23 @@ exports_files(glob(["*.css"]))
 
 ts_library(
     name = "api_keys",
-    srcs = glob(["*.tsx"]),
+    srcs = ["api_keys.tsx"],
     strict = True,
     deps = [
-        "//app/auth",
+        "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/input",
         "//app/components/modal",
         "//app/components/spinner",
-        "//app/errors",
-        "//app/service",
+        "//app/errors:error_service",
+        "//app/service:rpc_service",
         "//app/util:errors",
         "//proto:api_key_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
+        "@npm//tslib",
     ],
 )

@@ -6,24 +6,53 @@ exports_files(["secrets.css"])
 
 ts_library(
     name = "secrets",
-    srcs = glob(["*.tsx"]),
+    srcs = ["secrets.tsx"],
     strict = True,
     deps = [
-        "//app/alert",
+        "//enterprise/app/secrets:secrets_list",
+        "//enterprise/app/secrets:update_secret",
+        "@npm//@types/react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "secrets_list",
+    srcs = ["secrets_list.tsx"],
+    strict = True,
+    deps = [
+        "//app/alert:alert_service",
         "//app/components/button",
+        "//app/components/button:link_button",
         "//app/components/dialog:simple_modal_dialog",
+        "//app/components/link",
+        "//app/errors:error_service",
+        "//app/service:rpc_service",
+        "//proto:secrets_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "update_secret",
+    srcs = ["update_secret.tsx"],
+    strict = True,
+    deps = [
+        "//app/alert:alert_service",
+        "//app/components/button",
         "//app/components/input",
         "//app/components/link",
         "//app/components/spinner",
-        "//app/errors",
+        "//app/errors:error_service",
         "//app/router",
-        "//app/service",
+        "//app/service:rpc_service",
         "//proto:secrets_ts_proto",
         "@npm//@types/libsodium-wrappers",
         "@npm//@types/react",
         "@npm//libsodium-wrappers",
-        "@npm//lucide-react",
-        "@npm//path-browserify",
+        "@npm//path-browserify",  # keep
         "@npm//react",
     ],
 )

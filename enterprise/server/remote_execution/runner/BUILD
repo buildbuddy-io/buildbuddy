@@ -33,6 +33,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/util/alert",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/flagutil",
         "//server/util/lockingbuffer",

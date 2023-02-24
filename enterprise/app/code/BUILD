@@ -9,22 +9,19 @@ exports_files([
 
 ts_library(
     name = "code",
-    srcs = glob([
-        "*.ts",
-        "*.tsx",
-    ]),
+    srcs = ["code.tsx"],
     deps = [
-        "//app/alert",
-        "//app/auth",
+        "//app/alert:alert_service",
+        "//app/auth:auth_service",
         "//app/components/button",
         "//app/components/dialog",
-        "//app/components/menu",
         "//app/components/modal",
-        "//app/components/popup",
         "//app/components/spinner",
-        "//app/format",
-        "//app/service",
-        "//proto:invocation_ts_proto",
+        "//app/service:rpc_service",
+        "//enterprise/app/code:code_build_button",
+        "//enterprise/app/code:code_empty",
+        "//enterprise/app/code:code_pull_request",
+        "//enterprise/app/code:code_sidebar_node",
         "//proto:runner_ts_proto",
         "@npm//@octokit/rest",
         "@npm//@types/diff",
@@ -34,5 +31,54 @@ ts_library(
         "@npm//monaco-editor",
         "@npm//react",
         "@npm//rxjs",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "code_build_button",
+    srcs = ["code_build_button.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/components/button:button_group",
+        "//app/components/menu",
+        "//app/components/popup",
+        "//app/components/spinner",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "code_empty",
+    srcs = ["code_empty.tsx"],
+    deps = [
+        "//app/format",
+        "//app/service:rpc_service",
+        "//proto:invocation_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "code_pull_request",
+    srcs = ["code_pull_request.ts"],
+    deps = [
+        "@npm//@octokit/rest",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "code_sidebar_node",
+    srcs = ["code_sidebar_node.tsx"],
+    deps = [
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
     ],
 )

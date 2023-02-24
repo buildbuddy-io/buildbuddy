@@ -1717,6 +1717,87 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestMigrateVersions(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	options := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+
+	digests := make([]*repb.Digest, 0)
+	{
+		// Set the active key version to 0 and write some data at this
+		// version.
+		flags.Set(t, "cache.pebble.active_key_version", 0)
+		pc, err := pebble_cache.NewPebbleCache(te, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pc.Start()
+		for i := 0; i < 1000; i++ {
+			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
+			d, buf := testdigest.NewRandomDigestBuf(t, 1000)
+			r := &resource.ResourceName{
+				Digest:       d,
+				CacheType:    resource.CacheType_CAS,
+				InstanceName: remoteInstanceName,
+			}
+			err = pc.Set(ctx, r, buf)
+			require.NoError(t, err)
+			digests = append(digests, d)
+		}
+		log.Printf("Wrote %d digests", len(digests))
+		time.Sleep(pebble_cache.JanitorCheckPeriod)
+		pc.TestingWaitForGC()
+		pc.Stop()
+	}
+
+	{
+		// Now set the active key version to 1 (to trigger a migration)
+		// and set the migration QPS low enough to ensure that
+		// migrations are happening during our reads.
+		flags.Set(t, "cache.pebble.active_key_version", 1)
+		flags.Set(t, "cache.pebble.migration_qps_limit", 1000)
+		pc2, err := pebble_cache.NewPebbleCache(te, options)
+		require.NoError(t, err)
+
+		pc2.Start()
+		defer pc2.Stop()
+		startTime := time.Now()
+		j := 0
+		for {
+			if time.Since(startTime) > 2*time.Second {
+				break
+			}
+
+			i := j % len(digests)
+			d := digests[i]
+			j += 1
+
+			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
+			resourceName := &resource.ResourceName{
+				Digest:       d,
+				CacheType:    resource.CacheType_CAS,
+				InstanceName: remoteInstanceName,
+			}
+
+			exists, err := pc2.Contains(ctx, resourceName)
+			require.NoError(t, err)
+			require.True(t, exists)
+
+			rbuf, err := pc2.Get(ctx, resourceName)
+			require.NoError(t, err)
+
+			// Compute a digest for the bytes returned.
+			d2, err := digest.Compute(bytes.NewReader(rbuf))
+			if d.GetHash() != d2.GetHash() {
+				t.Fatalf("Returned digest %q did not match set value: %q", d2.GetHash(), d.GetHash())
+			}
+		}
+	}
+}
+
 func BenchmarkGetMulti(b *testing.B) {
 	*log.LogLevel = "error"
 	*log.IncludeShortFileName = true

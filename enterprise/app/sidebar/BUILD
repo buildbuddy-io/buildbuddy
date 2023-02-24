@@ -6,16 +6,17 @@ exports_files(["sidebar.css"])
 
 ts_library(
     name = "sidebar",
-    srcs = glob(["*.tsx"]),
+    srcs = ["sidebar.tsx"],
     strict = True,
     deps = [
-        "//app/auth",
+        "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/link",
         "//app/router",
-        "//app/service",
+        "//app/service:rpc_service",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
+        "@npm//tslib",
     ],
 )

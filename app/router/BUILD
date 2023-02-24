@@ -4,11 +4,12 @@ package(default_visibility = ["//visibility:public"])
 
 ts_library(
     name = "router",
-    srcs = glob(["*.tsx"]),
+    srcs = ["router.tsx"],
     deps = [
         "//app/auth:user",
         "//app/capabilities",
         "//app/format",
+        "//app/service:rpc_service",
         "@npm//tslib",
     ],
 )

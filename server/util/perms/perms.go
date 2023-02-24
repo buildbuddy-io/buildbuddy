@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -281,16 +282,6 @@ func AuthenticatedGroupID(ctx context.Context, env environment.Env) (string, err
 	return groupID, nil
 }
 
-// IsAnonymousUserError can be used to check whether an error returned by
-// functions which return the authenticated user (such as AuthenticatedUser or
-// AuthenticateSelectedGroupID) is due to an anonymous user accessing the
-// service. This is useful for allowing anonymous users to proceed, in cases
-// where anonymous usage is explicitly enabled in the app config, and we support
-// anonymous usage for the part of the service where this is used.
-func IsAnonymousUserError(err error) bool {
-	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsUnimplementedError(err)
-}
-
 // ForAuthenticatedGroup returns GROUP_READ|GROUP_WRITE permissions for authenticated groups,
 // or OTHERS_READ for anonymous users.
 func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroupPerm, error) {
@@ -301,7 +292,7 @@ func ForAuthenticatedGroup(ctx context.Context, env environment.Env) (*UserGroup
 
 	u, err := auth.AuthenticatedUser(ctx)
 	if err != nil || u.GetGroupID() == "" {
-		if IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
+		if authutil.IsAnonymousUserError(err) && auth.AnonymousUsageEnabled() {
 			return AnonymousUserPermissions(), nil
 		}
 		return nil, status.PermissionDeniedErrorf("Anonymous access disabled, permission denied.")

@@ -38,19 +38,7 @@ esbuild(
     }),
     visibility = ["//visibility:public"],
     deps = [
-        ":enterprise_app",
-    ],
-)
-
-ts_library(
-    name = "enterprise_app",
-    srcs = glob(["*.tsx"]),
-    deps = [
-        "//enterprise/app/root",
-        "@npm//@types/react",
-        "@npm//@types/react-dom",
-        "@npm//react",
-        "@npm//react-dom",
+        ":app",
     ],
 )
 
@@ -95,4 +83,16 @@ sha(
         "//enterprise/app:app_bundle",
     ],
     visibility = ["//visibility:public"],
+)
+
+ts_library(
+    name = "app",
+    srcs = ["app.tsx"],
+    deps = [
+        "//enterprise/app/root",
+        "@npm//@types/react",
+        "@npm//@types/react-dom",
+        "@npm//react",
+        "@npm//react-dom",
+    ],
 )

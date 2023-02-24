@@ -6,7 +6,7 @@ exports_files(glob(["*.css"]))
 
 ts_library(
     name = "spinner",
-    srcs = glob(["*.tsx"]),
+    srcs = ["spinner.tsx"],
     strict = True,
     deps = [
         "@npm//@types/react",
