@@ -278,7 +278,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 
 	var committedWriteCloser interfaces.CommittedWriteCloser
-	if digest.IsEmpty(r.GetDigest()) && !exists {
+	if !digest.IsEmpty(r.GetDigest()) && !exists {
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
