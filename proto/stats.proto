@@ -170,7 +170,7 @@ message GetTrendSummaryResponse {
   int64 group_bytes_uploaded = 17;
   int64 group_bytes_downloaded = 18;
 
-  int64 user_build_rank_in_org = 13;
+  int64 user_build_rank = 13;
   int64 group_build_rank = 14;
 }
 

@@ -281,15 +281,7 @@ func (i *InvocationStatService) getExecutionTrendQuery(timezoneOffsetMinutes int
 }
 
 func (i *InvocationStatService) getExecutionsQuery(timezoneOffsetMinutes int32) string {
-	q := ""
-	if i.isOLAPDBEnabled() {
-		q = fmt.Sprintf("SELECT %s as date,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
-	} else {
-		q = fmt.Sprintf("SELECT %s as date,", i.dbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes))
-	}
-
-	q = q + `
-	avg(execution_completed_timestamp_usec - execution_start_timestamp_usec) as avg_execution_time
+	q := ` SELECT avg(execution_completed_timestamp_usec - execution_start_timestamp_usec) as avg_execution_time
 	FROM Executions
 `
 
@@ -362,7 +354,6 @@ func (i *InvocationStatService) getExecutionSummary(ctx context.Context, req *st
 	q.AddWhereClause("execution_completed_timestamp_usec != ?", 0)
 	q.AddWhereClause("execution_start_timestamp_usec != ?", 0)
 	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
-	q.SetGroupBy("date")
 
 	qStr, qArgs := q.Build()
 	rows, err := i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_avg_execution_duration"), qStr, qArgs...).Rows()
@@ -417,14 +408,14 @@ func (i *InvocationStatService) getInvocationsSummaryQuery() string {
 	return q
 }
 
-func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *stpb.GetTrendRequest, userFilter string) (*stpb.TrendStat, error) {
-	reqCtx := req.GetRequestContext()
-
+func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *stpb.GetTrendRequest, userFilter string, groupFilter string) (*stpb.TrendStat, error) {
 	q := query_builder.NewQuery(i.getInvocationsSummaryQuery())
 	if userFilter != "" {
 		q.AddWhereClause("user = ?", userFilter)
 	}
-	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
+	if groupFilter != "" {
+		q.AddWhereClause(`group_id = ?`, groupFilter)
+	}
 	// TODO: Add date filter
 
 	qStr, qArgs := q.Build()
@@ -467,7 +458,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
 }
 
 type UserBuildRank struct {
-	Rank           int64
+	RankInOrg      int64
 	User           string
 	TotalNumBuilds int64
 }
@@ -475,8 +466,8 @@ type UserBuildRank struct {
 // TODO: Add date filter
 func (i *InvocationStatService) getUsersBuildRankInOrg(ctx context.Context, username string, groupID string) (*UserBuildRank, error) {
 	query := `
-	 SELECT rank, user, total_num_builds FROM ( 
-		SELECT ROW_NUMBER() OVER (ORDER BY total_num_builds DESC) rank, 
+	 SELECT rank_in_org, user, total_num_builds FROM ( 
+		SELECT ROW_NUMBER() OVER (ORDER BY total_num_builds DESC) rank_in_org, 
 		user, 
 		total_num_builds FROM (
 			SELECT COUNT(1) AS total_num_builds, user 
@@ -528,7 +519,7 @@ func (i *InvocationStatService) getUsersBuildRankInOrg(ctx context.Context, user
 }
 
 type GroupBuildRank struct {
-	Rank           int64
+	RankInOrg      int64
 	Group          string
 	TotalNumBuilds int64
 }
@@ -536,8 +527,8 @@ type GroupBuildRank struct {
 // TODO: Add date filter
 func (i *InvocationStatService) getGroupsBuildRank(ctx context.Context, groupID string) (*GroupBuildRank, error) {
 	query := `
-	 SELECT rank, group_id, total_num_builds FROM ( 
-		SELECT ROW_NUMBER() OVER (ORDER BY total_num_builds DESC) rank, 
+	 SELECT rank_in_org, group_id, total_num_builds FROM ( 
+		SELECT ROW_NUMBER() OVER (ORDER BY total_num_builds DESC) rank_in_org, 
 		group_id, 
 		total_num_builds FROM (
 			SELECT COUNT(1) AS total_num_builds, group_id 
@@ -582,6 +573,92 @@ func (i *InvocationStatService) getGroupsBuildRank(ctx context.Context, groupID 
 
 	if len(res) != 1 {
 		return nil, errors.New("Should be exactly one row")
+	}
+
+	return res[0], nil
+}
+
+type MedianInvocation struct {
+	DurationUsec int64
+	RankInOrg    int
+}
+
+func (i *InvocationStatService) getMedianInvocationLength(ctx context.Context, user string, mostlyCached bool) (*MedianInvocation, error) {
+	hitRateFilter := `AND ac_hit_rate > .95`
+	if !mostlyCached {
+		hitRateFilter = `AND ac_hit_rate < .10`
+	}
+
+	query := `
+WITH ordered_high_hit_rate as (
+SELECT duration_usec,  ROW_NUMBER() OVER (ORDER BY duration_usec DESC) rank_in_org FROM
+(
+	SELECT duration_usec,
+	(action_cache_hits / (action_cache_hits+action_cache_misses)) as ac_hit_rate,
+	(action_cache_hits + action_cache_misses) as total_ac
+	FROM Invocations
+	WHERE user="` + user + `"
+) as gen WHERE total_ac <> 0 ` + hitRateFilter + `
+),
+filtered_invocation_count as (
+Select @total_count:=count(*) from ordered_high_hit_rate
+)
+SELECT * FROM ordered_high_hit_rate where rank_in_org=FLOOR((@total_count+1)/2);
+`
+	query = `
+WITH ordered_high_hit_rate as (
+SELECT duration_usec,  ROW_NUMBER() OVER (ORDER BY duration_usec DESC) rank_in_org FROM
+(
+	SELECT duration_usec,
+	(action_cache_hits / (action_cache_hits+action_cache_misses)) as ac_hit_rate,
+	(action_cache_hits + action_cache_misses) as total_ac
+	FROM Invocations
+	WHERE user="maggielou"
+) as gen WHERE total_ac <> 0 AND ac_hit_rate > .95
+),
+filtered_invocation_count as (
+Select count(*) as total_rows from ordered_high_hit_rate
+)
+SELECT duration_usec, rank_in_org FROM ordered_high_hit_rate, filtered_invocation_count where rank_in_org=FLOOR((filtered_invocation_count.total_rows+1)/2);
+`
+	q := query_builder.NewQuery(query)
+
+	qStr, qArgs := q.Build()
+	var rows *sql.Rows
+	var err error
+	if i.isOLAPDBEnabled() {
+		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+	} else {
+		//rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
+		rows, err = i.dbh.DB(ctx).Raw(query).Rows()
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make([]*MedianInvocation, 0)
+
+	for rows.Next() {
+		log.Infof("getMedianInvocationLength")
+		stat := &MedianInvocation{}
+		if i.isOLAPDBEnabled() {
+			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := i.dbh.DB(ctx).ScanRows(rows, &stat); err != nil {
+				return nil, err
+			}
+		}
+		res = append(res, stat)
+	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("Encountered error when scan rows: %s", err)
+	}
+
+	if len(res) != 1 {
+		return nil, errors.New("getMedianInvocationLength Should be exactly one row")
 	}
 
 	return res[0], nil
@@ -645,7 +722,7 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 			RequestContext: req.GetRequestContext(),
 			Query:          query,
 		}
-		userInvocationSummary, err := i.getInvocationSummary(ctx, trendReq, req.User)
+		userInvocationSummary, err := i.getInvocationSummary(ctx, trendReq, req.User, "")
 		if err != nil {
 			return err
 		}
@@ -667,7 +744,7 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 			RequestContext: req.GetRequestContext(),
 			Query:          query,
 		}
-		groupInvocationSummary, err := i.getInvocationSummary(ctx, trendReq, "")
+		groupInvocationSummary, err := i.getInvocationSummary(ctx, trendReq, "", req.GetRequestContext().GetGroupId())
 		if err != nil {
 			return err
 		}
@@ -696,11 +773,21 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 	})
 
 	eg.Go(func() error {
+		executionSummary, err := i.getMedianInvocationLength(ctx, req.User, true)
+		if err != nil {
+			return err
+		}
+		log.Warningf("%v", *executionSummary)
+		return nil
+	})
+
+	eg.Go(func() error {
 		userBuildRank, err := i.getUsersBuildRankInOrg(ctx, req.User, req.GetRequestContext().GetGroupId())
 		if err != nil {
 			return err
 		}
-		rsp.UserBuildRankInOrg = userBuildRank.Rank
+		log.Infof("User build rank is %v", *userBuildRank)
+		rsp.UserBuildRank = userBuildRank.RankInOrg
 		return nil
 	})
 
@@ -709,7 +796,7 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 		if err != nil {
 			return err
 		}
-		rsp.GroupBuildRank = groupBuildRank.Rank
+		rsp.GroupBuildRank = groupBuildRank.RankInOrg
 		return nil
 	})
 

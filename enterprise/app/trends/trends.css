@@ -98,6 +98,12 @@
 }
 
 .trends-summary-detail {
+  background-image: url("/image/spotify2.jpeg");
+  background-position: center center;
+  background-size: contain;
+}
+
+.trends-summary-detail2 {
   background-image: url("/image/spotify1.jpeg");
   background-position: center center;
   background-size: contain;
@@ -113,12 +119,16 @@
   color: black;
   text-align: center;
   text-shadow: 2px 1px 1px #dfdfdf;
-  margin-bottom: 25px
+  margin-bottom: 25px;
+  margin-left: 15%;
+  margin-right: 15%;
 }
 
 .title-white {
   color: white;
   text-shadow: 0px 0px 0px;
+  margin-left: 0%;
+  margin-right: 0%;
 }
 
 .title-red {

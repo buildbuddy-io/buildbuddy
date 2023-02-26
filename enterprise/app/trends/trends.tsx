@@ -312,9 +312,9 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return (
         <div>
           {this.state.summaryModalPage == 2 &&
-              <div className="trend-chart-hover trends-summary trends-summary-detail">
+              <div className="trend-chart-hover trends-summary trends-summary-detail2">
                 <div className="trends-summary-title">
-                  Congratulations, you've had a busy year!
+                  Congratulations! Since you signed up with BuildBuddy, you've been busy!
                 </div>
                 <div className="trends-summary-title">
                   Let's see what you've been up to...
@@ -326,10 +326,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 3 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
-                  This year, you had {trendSummary.userTotalBuilds} builds.
+                  You've had {trendSummary.userTotalBuilds} builds.
                 </div>
                 <div className="trends-summary-title">
-                  That's #{trendSummary.userBuildRankInOrg} in your company!
+                  That's #{trendSummary.userBuildRank} in your org!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -368,10 +368,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 6 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
-                  Across your org, there were {trendSummary.groupTotalBuilds} builds.
+                  Across your org, there were {this.formatNumber(trendSummary.groupTotalBuilds)} builds.
                 </div>
                 <div className="trends-summary-title">
-                  That's #{trendSummary.groupBuildRank} of all companies using BuildBuddy!
+                  That's #{trendSummary.groupBuildRank} of all orgs using BuildBuddy!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -380,7 +380,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 7 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
-                  These builds spanned {trendSummary.groupRepos} repo(s) across {trendSummary.groupCommits} commits.
+                  These builds spanned {trendSummary.groupRepos} repo(s) across {this.formatNumber(trendSummary.groupCommits)} commits.
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -392,8 +392,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   You're moving a lot of data!
                 </div>
                 <div className="trends-summary-title">
-                  You uploaded {this.formatNumber(trendSummary.userBytesUploaded / 1e9)}GB and downloaded
-                  {this.formatNumber(trendSummary.userBytesDownloaded / 1e9)}GB from the cache.
+                  You uploaded {this.formatNumber(trendSummary.userBytesUploaded / 1e9)}GB and
+                  downloaded {this.formatNumber(trendSummary.userBytesDownloaded / 1e9)}GB from the cache.
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -417,6 +417,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
                   Your builds made {this.formatNumber(trendSummary.userTotalCacheRequests)} cache requests.
+                </div>
+                <div className="trends-summary-title">
                   With {this.formatNumber(trendSummary.userTotalCacheHits)} cache hits, that's a {this.formatNumber(userCacheHitRate)}% cache hit rate!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
@@ -450,10 +452,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
                   Or {this.formatNumber(userSecSavedCache / 3600)} hours you
-                  weren't binge boredom eating...
-                </div>
-                <div className="trends-summary-title">
-                  Phew!
+                  weren't boredom eating...
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -463,8 +462,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
                   Across your org, there were {this.formatNumber(trendSummary.groupTotalCacheHits)} cache hits
-                  out of {this.formatNumber(trendSummary.groupTotalCacheRequests)} total cache requests. That's
-                  a {this.formatNumber(groupCacheHitRate)}% cache hit rate!
+                  out of {this.formatNumber(trendSummary.groupTotalCacheRequests)} total cache requests.
+                </div>
+                <div className="trends-summary-title">
+                  That's a {this.formatNumber(groupCacheHitRate)}% cache hit rate!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
