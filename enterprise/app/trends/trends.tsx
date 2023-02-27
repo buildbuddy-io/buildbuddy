@@ -304,10 +304,22 @@ export default class TrendsComponent extends React.Component<Props, State> {
     const avatarSizeGB = 17.28;
 
     var trendSummary = this.state.trendSummary;
-    var userSecSavedCache = this.secondsSavedWithCache(trendSummary.userTotalCacheHits);
-    var groupSecSavedCache = this.secondsSavedWithCache(trendSummary.groupTotalCacheHits)
+    // var userSecSavedCache = this.secondsSavedWithCacheUsingAvgExecutionTime(trendSummary.userTotalCacheHits);
+    // var groupSecSavedCache = this.secondsSavedWithCacheUsingAvgExecutionTime(trendSummary.groupTotalCacheHits)
     var userCacheHitRate = trendSummary.userTotalCacheHits / trendSummary.userTotalCacheRequests * 100;
     var groupCacheHitRate = trendSummary.groupTotalCacheHits / trendSummary.groupTotalCacheRequests * 100;
+    var userSecSavedCache = this.secondsSavedWithCacheUsingMedianInvocationLength(
+        trendSummary.medianCachedInvocationTimeUsec,
+        trendSummary.medianNotCachedInvocationTimeUsec,
+        userCacheHitRate / 100,
+        trendSummary.userTotalBuilds,
+    );
+    var groupSecSavedCache = this.secondsSavedWithCacheUsingMedianInvocationLength(
+        trendSummary.medianCachedInvocationTimeUsec,
+        trendSummary.medianNotCachedInvocationTimeUsec,
+        groupCacheHitRate / 100,
+        trendSummary.groupTotalBuilds,
+    );
 
     return (
         <div>
@@ -428,21 +440,22 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 11 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
-                  Based on the average action execution time for your org,
-                  that's {this.formatNumber(userSecSavedCache / 3600)} hours saved waiting for slow builds!
+                  For builds that were {">"}95% cached, your median build time
+                  was {this.formatNumber(trendSummary.medianCachedInvocationTimeUsec /1e6 / 60)} minutes.
+                </div>
+                <div className="trends-summary-title">
+                  For builds that were {"<"}10% cached, your median build time
+                  was {this.formatNumber(trendSummary.medianNotCachedInvocationTimeUsec /1e6 / 60)} minutes.
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
           }
-
           {this.state.summaryModalPage == 12 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
-                  In other words...
-                </div>
-                <div className="trends-summary-title">
-                  That's {this.formatNumber(userSecSavedCache / 3600)} hours you
-                  weren't doom-scrolling Twitter...
+                  That's
+                  roughly {this.formatNumber((trendSummary.medianNotCachedInvocationTimeUsec - trendSummary.medianCachedInvocationTimeUsec) / 1e6 / 60)} minutes
+                  saved for fully cached builds!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
@@ -451,14 +464,27 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {this.state.summaryModalPage == 13 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
-                  Or {this.formatNumber(userSecSavedCache / 3600)} hours you
-                  weren't boredom eating...
+                  Based on those median build times and your cache hit rate,
+                  that's approximately {this.formatNumber(userSecSavedCache / 3600)} hours you've saved waiting for slow builds!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
           }
 
           {this.state.summaryModalPage == 14 &&
+              <div className="trend-chart-hover trends-summary trends-summary-detail">
+                <div className="trends-summary-title">
+                  In other words...
+                </div>
+                <div className="trends-summary-title">
+                  That's {this.formatNumber(userSecSavedCache / 3600 / 24)} days not
+                  doom-scrolling Twitter while waiting for slow builds!
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {this.state.summaryModalPage == 15 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
                   Across your org, there were {this.formatNumber(trendSummary.groupTotalCacheHits)} cache hits
@@ -471,17 +497,22 @@ export default class TrendsComponent extends React.Component<Props, State> {
               </div>
           }
 
-          {this.state.summaryModalPage == 15 &&
+          {this.state.summaryModalPage == 16 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
-                  Based on the average action execution time for your org,
-                  that's {this.formatNumber(groupSecSavedCache / 3600)} developer hours saved.
+                  Based on your median build times and your org's cache hit rate,
+                  that's roughly {this.formatNumber(groupSecSavedCache / 3600)} developer hours saved.
+                </div>
+                <div className="trends-summary-title">
+                  That's {this.formatNumber(groupSecSavedCache / 3600 / 8)} work days,
+                  or {this.formatNumber(groupSecSavedCache / 3600 / 8 / 5)} weeks,
+                  or {this.formatNumber(groupSecSavedCache / 3600 / 8 / 5 / 52)} years!
                 </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
           }
 
-          {this.state.summaryModalPage == 16 &&
+          {this.state.summaryModalPage == 17 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
                   Based on average developer salary, that's ${this.formatNumber(groupSecSavedCache / 3600 * avgHourlyDeveloperSalary)}!
@@ -493,7 +524,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               </div>
           }
 
-          {this.state.summaryModalPage == 17 &&
+          {this.state.summaryModalPage == 18 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
                   Thanks for spending the past year with us.
@@ -508,11 +539,21 @@ export default class TrendsComponent extends React.Component<Props, State> {
     )
   }
 
-  secondsSavedWithCache(cacheHits: number): number {
+  secondsSavedWithCacheUsingAvgExecutionTime(cacheHits: number): number {
     const avgCoresLaptop = 8;
     const usecInSec = 1e6;
     var secondsSaved = cacheHits * this.state.trendSummary.avgActionExecutionTimeUsec / usecInSec / avgCoresLaptop;
     return secondsSaved;
+  }
+
+  secondsSavedWithCacheUsingMedianInvocationLength(
+      highlyCachedInvocationTime: number,
+      notCachedInvocationTime: number,
+      cachedHitRate: number,
+      numBuilds: number,
+    ): number {
+    const cachedInvocationTimeDiffSec = (notCachedInvocationTime - highlyCachedInvocationTime) / 1e6;
+    return cachedInvocationTimeDiffSec * numBuilds * cachedHitRate;
   }
 
   formatNumber(n: number): string {

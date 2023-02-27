@@ -153,6 +153,8 @@ message GetTrendSummaryResponse {
   context.ResponseContext response_context = 1;
 
   double avg_action_execution_time_usec = 2;
+  int64 median_cached_invocation_time_usec = 19;
+  int64 median_not_cached_invocation_time_usec=20;
 
   int64 user_total_cache_requests = 3;
   int64 user_total_cache_hits = 4;

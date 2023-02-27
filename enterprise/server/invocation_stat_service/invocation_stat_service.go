@@ -601,22 +601,6 @@ SELECT duration_usec,  ROW_NUMBER() OVER (ORDER BY duration_usec DESC) rank_in_o
 ) as gen WHERE total_ac <> 0 ` + hitRateFilter + `
 ),
 filtered_invocation_count as (
-Select @total_count:=count(*) from ordered_high_hit_rate
-)
-SELECT * FROM ordered_high_hit_rate where rank_in_org=FLOOR((@total_count+1)/2);
-`
-	query = `
-WITH ordered_high_hit_rate as (
-SELECT duration_usec,  ROW_NUMBER() OVER (ORDER BY duration_usec DESC) rank_in_org FROM
-(
-	SELECT duration_usec,
-	(action_cache_hits / (action_cache_hits+action_cache_misses)) as ac_hit_rate,
-	(action_cache_hits + action_cache_misses) as total_ac
-	FROM Invocations
-	WHERE user="maggielou"
-) as gen WHERE total_ac <> 0 AND ac_hit_rate > .95
-),
-filtered_invocation_count as (
 Select count(*) as total_rows from ordered_high_hit_rate
 )
 SELECT duration_usec, rank_in_org FROM ordered_high_hit_rate, filtered_invocation_count where rank_in_org=FLOOR((filtered_invocation_count.total_rows+1)/2);
@@ -629,7 +613,6 @@ SELECT duration_usec, rank_in_org FROM ordered_high_hit_rate, filtered_invocatio
 	if i.isOLAPDBEnabled() {
 		rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 	} else {
-		//rows, err = i.dbh.RawWithOptions(ctx, db.Opts().WithQueryName("query_invocation_trends"), qStr, qArgs...).Rows()
 		rows, err = i.dbh.DB(ctx).Raw(query).Rows()
 	}
 	if err != nil {
@@ -640,7 +623,6 @@ SELECT duration_usec, rank_in_org FROM ordered_high_hit_rate, filtered_invocatio
 	res := make([]*MedianInvocation, 0)
 
 	for rows.Next() {
-		log.Infof("getMedianInvocationLength")
 		stat := &MedianInvocation{}
 		if i.isOLAPDBEnabled() {
 			if err := i.olapdbh.DB(ctx).ScanRows(rows, &stat); err != nil {
@@ -773,11 +755,20 @@ func (i *InvocationStatService) GetTrendSummary(ctx context.Context, req *stpb.G
 	})
 
 	eg.Go(func() error {
-		executionSummary, err := i.getMedianInvocationLength(ctx, req.User, true)
+		medianInvocationLenHighlyCached, err := i.getMedianInvocationLength(ctx, req.User, true)
 		if err != nil {
 			return err
 		}
-		log.Warningf("%v", *executionSummary)
+		rsp.MedianCachedInvocationTimeUsec = medianInvocationLenHighlyCached.DurationUsec
+		return nil
+	})
+
+	eg.Go(func() error {
+		medianInvocationLenNotCached, err := i.getMedianInvocationLength(ctx, req.User, false)
+		if err != nil {
+			return err
+		}
+		rsp.MedianNotCachedInvocationTimeUsec = medianInvocationLenNotCached.DurationUsec
 		return nil
 	})
 
