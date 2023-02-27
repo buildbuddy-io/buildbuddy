@@ -3,8 +3,10 @@ package digest
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"fmt"
 	"hash"
 	"io"
@@ -275,15 +277,15 @@ func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) 
 func Type(d *repb.Digest) repb.DigestFunction_Value {
 	// TODO: determine this via enum in digest?
 	switch len(d.GetHash()) {
-	case 40:
+	case sha1.Size * 2:
 		return repb.DigestFunction_SHA1
-	case 32:
+	case md5.Size * 2:
 		return repb.DigestFunction_MD5
-	case 64:
+	case sha256.Size * 2:
 		return repb.DigestFunction_SHA256
-	case 96:
+	case sha512.Size384 * 2:
 		return repb.DigestFunction_SHA384
-	case 128:
+	case sha512.Size * 2:
 		return repb.DigestFunction_SHA512
 	default:
 		return repb.DigestFunction_UNKNOWN
