@@ -1040,9 +1040,9 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		totalCount++
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
-		fileMetadataKey := iter.Key()
+		keyBytes := iter.Key()
 		var key filestore.PebbleKey
-		_, err := key.FromBytes(iter.Key())
+		version, err := key.FromBytes(keyBytes)
 		if err != nil {
 			log.Errorf("Error parsing key: %s", err)
 			continue
@@ -1071,23 +1071,23 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			}
 		}
 
-		if !removedEntry && opts.deleteACEntriesOlderThan != 0 && bytes.Contains(fileMetadataKey, acDir) {
+		if !removedEntry && opts.deleteACEntriesOlderThan != 0 && bytes.Contains(keyBytes, acDir) {
 			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 			age := time.Since(atime)
 			if age > opts.deleteACEntriesOlderThan {
 				e, ok := evictors[fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()]
 				if ok {
 					_ = modLim.Wait(p.env.GetServerContext())
-					err := e.deleteFile(key, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
+					err := e.deleteFile(key, version, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
 					if err != nil {
-						log.Warningf("Could not delete old AC key %q: %s", string(fileMetadataKey), err)
+						log.Warningf("Could not delete old AC key %q: %s", key.String(), err)
 					} else {
 						removedEntry = true
 						oldACEntries++
 						oldACEntriesBytes += fileMetadata.GetStoredSizeBytes()
 					}
 				} else {
-					log.Warningf("Did not find evictor for %q for key %q", fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), string(fileMetadataKey))
+					log.Warningf("Did not find evictor for %q for key %q", fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.String())
 				}
 			}
 		}
@@ -1229,15 +1229,9 @@ func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey)
 	return false, nil
 }
 
-func readFileMetadata(reader pebble.Reader, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return nil, err
-	}
-
+func readFileMetadata(reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
-	buf, err := pebbleutil.GetCopy(reader, fileMetadataKey)
+	buf, err := pebbleutil.GetCopy(reader, keyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -1849,16 +1843,16 @@ func (p *PebbleCache) TestingWaitForGC() error {
 }
 
 type evictionKey struct {
-	key             filestore.PebbleKey
+	bytes           []byte
 	storageMetadata *rfpb.StorageMetadata
 }
 
 func (k *evictionKey) ID() string {
-	return k.key.String()
+	return string(k.bytes)
 }
 
 func (k *evictionKey) String() string {
-	return k.key.String()
+	return string(k.bytes)
 }
 
 type partitionEvictor struct {
@@ -2115,7 +2109,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	lastEvictedStr := "nil"
 	if le := e.lru.LastEvicted(); le != nil {
 		age := time.Since(le.Timestamp)
-		lastEvictedStr = fmt.Sprintf("%q age: %s", le.Key.key.String(), age)
+		lastEvictedStr = fmt.Sprintf("%q age: %s", string(le.Key.bytes), age)
 	}
 	buf += fmt.Sprintf("Last evicted item: %s\n", lastEvictedStr)
 	buf += "</pre>"
@@ -2157,15 +2151,15 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 	}
 	defer db.Close()
 
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := sample.Key.key.Bytes(filestore.UndefinedKeyVersion)
+	var key filestore.PebbleKey
+	version, err := key.FromBytes(sample.Key.bytes)
 	if err != nil {
 		return false, err
 	}
-	unlockFn := e.locker.Lock(sample.Key.key.LockID())
+	unlockFn := e.locker.Lock(key.LockID())
 	defer unlockFn()
 
-	_, closer, err := db.Get(fileMetadataKey)
+	_, closer, err := db.Get(sample.Key.bytes)
 	if err == pebble.ErrNotFound {
 		return true, nil
 	}
@@ -2174,7 +2168,7 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 	}
 	closer.Close()
 	age := time.Since(sample.Timestamp)
-	if err := e.deleteFile(sample.Key.key, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
+	if err := e.deleteFile(key, version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
 		log.Errorf("Error evicting file for key %q: %s (ignoring)", sample.Key, err)
 		return false, nil
 	}
@@ -2192,10 +2186,14 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 	}
 	defer db.Close()
 
-	unlockFn := e.locker.RLock(key.key.LockID())
+	var pebbleKey filestore.PebbleKey
+	if _, err := pebbleKey.FromBytes(key.bytes); err != nil {
+		return false, time.Time{}, err
+	}
+	unlockFn := e.locker.RLock(pebbleKey.LockID())
 	defer unlockFn()
 
-	md, err := readFileMetadata(db, key.key)
+	md, err := readFileMetadata(db, key.bytes)
 	if err != nil {
 		log.Warningf("could not refresh atime for %q: %s", key.String(), err)
 		return true, time.Time{}, nil
@@ -2255,9 +2253,11 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 			continue
 		}
 
+		keyBytes := make([]byte, len(iter.Key()))
+		copy(keyBytes, iter.Key())
 		sample := &approxlru.Sample[*evictionKey]{
 			Key: &evictionKey{
-				key:             key,
+				bytes:           keyBytes,
 				storageMetadata: fileMetadata.GetStorageMetadata(),
 			},
 			SizeBytes: fileMetadata.GetStoredSizeBytes(),
@@ -2291,19 +2291,19 @@ func deleteDirIfEmptyAndOld(dir string) error {
 	return os.Remove(dir)
 }
 
-func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, storedSizeBytes int64, storageMetadata *rfpb.StorageMetadata) error {
+func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore.PebbleKeyVersion, storedSizeBytes int64, storageMetadata *rfpb.StorageMetadata) error {
+	keyBytes, err := key.Bytes(version)
+	if err != nil {
+		return err
+	}
+
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return err
-	}
-	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
+	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
 		return err
 	}
 
