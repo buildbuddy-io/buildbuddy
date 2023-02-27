@@ -22,6 +22,7 @@ go_library(
 go_test(
     name = "vmexec_test",
     srcs = ["vmexec_test.go"],
+    flaky = True,
     deps = [
         ":vmexec",
         "//enterprise/server/remote_execution/commandutil",

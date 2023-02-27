@@ -77,7 +77,7 @@ func TestExecStreamed_Stdio(t *testing.T) {
 func TestExecStreamed_Stats(t *testing.T) {
 	wd := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, wd, map[string]string{
-		"mem.py": useMemPythonScript(1e9, 1*time.Second),
+		"mem.py": useMemPythonScript(1e9, 3*time.Second),
 		"cpu.py": useCPUPythonScript(1 * time.Second),
 	})
 	client := startExecService(t)
