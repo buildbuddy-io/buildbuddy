@@ -1769,10 +1769,14 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		defer unlockFn()
 
 		if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
-			if err := p.deleteFileAndMetadata(ctx, key, version, oldMD); err != nil {
-				log.Errorf("Error deleting old record %q: %s", key.String(), err)
+			oldKeyBytes, err := key.Bytes(version)
+			if err != nil {
 				return err
 			}
+			if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
+				return err
+			}
+			p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*oldMD.GetStoredSizeBytes())
 		}
 
 		keyBytes, err := key.Bytes(p.activeDatabaseVersion())
