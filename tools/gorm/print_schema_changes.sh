@@ -1,7 +1,17 @@
-#!/usr/bin/env bash
-
 # This script can be used to determine whether there will be any gorm db schema changes from a git branch
-# It prints and outputs to the DIFF variable whether the gorm auto-migration will run any SQL that modifies the db
+# It prints and outputs to the schema_changes variable whether the gorm auto-migration will run any SQL that modifies the db
+#
+# Example usage:
+# # Run local mysql server
+# docker run --publish 3306:3306 --name bb-mysql --rm --detach --env MYSQL_ROOT_PASSWORD=root --env MYSQL_DATABASE=buildbuddy_local mysql:8.0
+# # Port-forward dev mysql server so it can be accessed locally
+# kubectl --namespace=tools-dev port-forward deployment/sqlproxy 3308:3306
+# # Run script. Dev mysql password can be found in buildbuddy-internal/enterprise/config/buildbuddy.dev.yaml
+# source print_schema_changes.sh MY_GIT_BRANCH "mysql://buildbuddy-dev:PASSWORD@tcp(127.0.0.1:3308)/buildbuddy_dev" "mysql://root:root@tcp(127.0.0.1)/buildbuddy_local"
+# echo $schema_changes
+
+# If running on a Mac, you may need to uncomment the following for the string parsing to work correctly:
+# alias sed="gsed"
 
 git_branch=$1
 # The db holding the current schema of the db.
