@@ -34,16 +34,7 @@ const (
 )
 
 var (
-	// Cache keys must be:
-	//  - lower case
-	//  - ascii
-	//  - a sha256 sum
-	hashKeyRegex *regexp.Regexp
-
-	// Matches:
-	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
-	// - "blobs/ac/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
-	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
+	hashKeyRegex     *regexp.Regexp
 	uploadRegex      *regexp.Regexp
 	downloadRegex    *regexp.Regexp
 	actionCacheRegex *regexp.Regexp
@@ -71,10 +62,18 @@ func init() {
 		hashMatchers = append(hashMatchers, fmt.Sprintf("[a-f0-9]{%d}", df.sizeBytes*2))
 		knownDigestFunctions = append(knownDigestFunctions, df.digestType)
 	}
-
 	joinedMatchers := strings.Join(hashMatchers, "|")
 
+	// Cache keys must be:
+	//  - lower case
+	//  - ascii
+	//  - a sha256 sum
 	hashKeyRegex = regexp.MustCompile(fmt.Sprintf("^(%s)$", joinedMatchers))
+
+	// Matches:
+	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
+	// - "blobs/ac/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
+	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
 	uploadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
 	downloadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
 	actionCacheRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
