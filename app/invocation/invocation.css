@@ -999,3 +999,8 @@ svg.invocation-query-graph .nodes rect {
 .invocation .build-logs-card .loading.loading-dark {
   background: transparent;
 }
+
+.invocation .more-buttons button {
+  margin-top: 16px;
+  margin-right: 16px;
+}
