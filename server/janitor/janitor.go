@@ -12,7 +12,7 @@ import (
 var (
 	ttlSeconds = flag.Int("storage.ttl_seconds", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
 
-	cleanupBatchSize  = flag.Int("cleanup_batch_size", 10, "How many invocations to delete in each janitor cleanup task")
+	cleanupBatchSize  = flag.Int("storage.cleanup_batch_size", 10, "How many invocations to delete in each janitor cleanup task")
 	cleanupInterval   = flag.Duration("cleanup_interval", 10*60*time.Second, "How often the janitor cleanup tasks will run")
 	cleanupWorkers    = flag.Int("cleanup_workers", 1, "How many cleanup tasks to run")
 	logDeletionErrors = flag.Bool("log_deletion_errors", false, "If true; log errors when ttl-deleting expired data")
