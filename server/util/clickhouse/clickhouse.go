@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -41,7 +42,8 @@ var (
 	maxIdleConns    = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
 	connMaxLifetime = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
 
-	autoMigrateDB = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDB             = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	printSchemaChangesAndExit = flag.Bool("olap_database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
 )
 
 type DBHandle struct {
@@ -263,9 +265,22 @@ func Register(env environment.Env) error {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
 	}
 	gormutil.InstrumentMetrics(db, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	if *autoMigrateDB {
+	if *autoMigrateDB || *printSchemaChangesAndExit {
+		sqlStrings := make([]string, 0)
+		if *printSchemaChangesAndExit {
+			if err := tables.RegisterLogSqlCallback(db, &sqlStrings, true); err != nil {
+				return err
+			}
+		}
+
 		if err := schema.RunMigrations(db); err != nil {
 			return err
+		}
+
+		if *printSchemaChangesAndExit {
+			tables.PrintMigrationSchemaChanges(sqlStrings)
+			log.Infof("Clickhouse migration completed. Exiting due to --clickhouse.print_schema_changes_and_exit.")
+			os.Exit(0)
 		}
 	}
 

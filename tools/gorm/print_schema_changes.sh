@@ -19,6 +19,9 @@ baseline_db_conn_string=$2
 # A temporary db is used to copy the schema of the baseline db, so that an auto-migration can be run against it without
 # risk of corrupting the baseline db.
 db_copy_conn_string=$3
+# For clickhouse, there is no built-in way to copy the schema of the baseline db to the db copy. Instead we can run
+# the auto-migration against the master commit to initialize the db copy's schema so that it matches the baseline
+clickhouse_baseline_git_branch=$4
 
 # Parse db connection strings
 db_driver=$(echo "$baseline_db_conn_string" | sed -n "s/\(\S*\):\/\/.*$/\1/p")
@@ -29,11 +32,40 @@ if [ "$db_driver" != "$copy_db_driver" ]; then
   exit 1
 fi
 
+if [[ "$db_driver" == "clickhouse" ]]; then
+  echo "Branch is $clickhouse_baseline_git_branch"
+  if [[ "$clickhouse_baseline_git_branch" == "" ]]; then
+    echo "For clickhouse, you must pass a baseline git branch against which the db copy's starting schema will be generated from."
+    exit 1
+  fi
+
+  # Migrate db copy to have schema of the baseline branch
+  git checkout "$clickhouse_baseline_git_branch"
+  bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true
+
+  # When auto-migrating clickhouse tables, gorm runs MODIFY COLUMN on all columns even if their types have not changed
+  # To determine whether a meaningful migration is taking place, we need to generate the no-op migration diff against the
+  # baseline, and check whether that matches the migration diff on the new branch
+  baseline_schema_changes=$(bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true)
+
+  # Checkout new branch and run auto_migration on db copy
+  git checkout "$git_branch"
+  schema_changes=$(bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true)
+
+  DIFF=$(diff <(echo "$baseline_schema_changes") <(echo "$schema_changes"))
+
+  export baseline_schema_changes
+  export schema_changes
+  export DIFF
+  echo "$DIFF"
+  return
+fi
+
+# Copy schema from baseline db to db copy
 if [[ "$db_driver" == "sqlite3" ]]; then
   db=$(echo "$baseline_db_conn_string" | sed -n "s/^sqlite3:\/\/\(\S*\)$/\1/p")
   copy_db=$(echo "$db_copy_conn_string" | sed -n "s/^sqlite3:\/\/\(\S*\)$/\1/p")
 
-  # Copy schema from baseline db to db copy
   sqlite3 "$db" ".schema --nosys" | sqlite3 "$copy_db"
 elif [[ "$db_driver" == "mysql" ]]; then
   # Expecting something like: mysql://buildbuddy-dev:password@tcp(127.0.0.1:3308)/buildbuddy_dev
@@ -48,7 +80,7 @@ elif [[ "$db_driver" == "mysql" ]]; then
   copy_ip=$(echo "$db_copy_conn_string" | sed -n "s/^.*(\(\S*\)).*$/\1/p")
   copy_db_name=$(echo "$db_copy_conn_string" | sed -n "s/^.*)\/\(\S*\).*$/\1/p")
 
-  # Copy schema from baseline db to db copy. -d flag to not copy any data
+  # Pass -d flag to not copy any data
   mysqldump -u "$username" -p"$password" -h "$ip" -P "$port" -d  --set-gtid-purged=OFF "$db_name" | \
   mysql -u "$copy_username" -p"$copy_password" -h "$copy_ip" "$copy_db_name"
 else

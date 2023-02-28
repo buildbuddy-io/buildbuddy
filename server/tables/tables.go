@@ -996,6 +996,34 @@ func isStrictModeEnabled(db *gorm.DB) (bool, error) {
 	return isStrictModeEnabled, nil
 }
 
+// RegisterLogSqlCallback adds a callback to the db that appends all SQL executed to a slice of strings
+func RegisterLogSqlCallback(db *gorm.DB, s *[]string, excludeQueries bool) error {
+	if err := db.Callback().Raw().Register("save_sql", func(db *gorm.DB) {
+		executedSql := db.Statement.SQL.String()
+		if excludeQueries && strings.HasPrefix(executedSql, "SELECT") {
+			return
+		}
+		*s = append(*s, executedSql)
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func PrintMigrationSchemaChanges(sqlStrings []string) {
+	// Print schema changes to stdout
+	// Logs go to stderr, so this output will be easy to isolate and parse
+	if len(sqlStrings) > 0 {
+		fmt.Println("Auto-migration schema changes:")
+		for _, sqlStr := range sqlStrings {
+			fmt.Printf("%s\n", sqlStr)
+		}
+		fmt.Println("End schema changes.")
+	} else {
+		fmt.Println("No auto-migration schema changes.")
+	}
+}
+
 func init() {
 	registerTable("IN", &Invocation{})
 	registerTable("CA", &CacheEntry{})
