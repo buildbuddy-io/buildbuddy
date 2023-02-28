@@ -53,7 +53,7 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 	if bsClient == nil {
 		return 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if r.GetDigest().GetHash() == digest.EmptySha256 {
+	if digest.IsEmpty(r.GetDigest()) {
 		return 0, nil
 	}
 
@@ -107,7 +107,7 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 }
 
 func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.ResourceName, error) {
-	d, err := digest.Compute(in)
+	d, err := digest.Compute(in, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if r.GetDigest().GetHash() == digest.EmptySha256 {
+	if digest.IsEmpty(r.GetDigest()) {
 		return r.GetDigest(), nil
 	}
 	resourceName, err := r.UploadString()
@@ -297,11 +297,11 @@ func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.Reso
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType resource.CacheType, remoteInstanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	d, err := digest.Compute(in)
+	d, err := digest.Compute(in, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
-	if d.GetHash() == digest.EmptySha256 {
+	if digest.IsEmpty(d) {
 		return d, nil
 	}
 	// Go back to the beginning so we can re-read the file contents as we upload.
@@ -485,7 +485,7 @@ func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) 
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(bytes.NewReader(data))
+	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +500,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(f)
+	d, err := digest.Compute(f, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}

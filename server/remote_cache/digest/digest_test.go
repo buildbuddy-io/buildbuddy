@@ -69,6 +69,16 @@ func TestParseResourceName(t *testing.T) {
 			matcher:      uploadRegex,
 			wantParsed:   newZstdResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "instance_name"),
 		},
+		{ // action
+			resourceName: "instance_name/blobs/ac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      actionCacheRegex,
+			wantParsed:   NewResourceName(&repb.Digest{Hash: "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d", SizeBytes: 1234}, "instance_name"),
+		},
+		{ // invalid action
+			resourceName: "instance_name/blobs/notac/072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d/1234",
+			matcher:      actionCacheRegex,
+			wantError:    status.InvalidArgumentError(""),
+		},
 	}
 	for _, tc := range cases {
 		gotParsed, gotErr := parseResourceName(tc.resourceName, tc.matcher)

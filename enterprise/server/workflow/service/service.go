@@ -631,7 +631,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{})
+	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}

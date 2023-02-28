@@ -115,7 +115,7 @@ func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	compressedBlob := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob))
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// FindMissingBlobs should report that the blob is missing, initially.
@@ -210,7 +210,7 @@ func TestBatchUpdateRejectsCompressedBlobsIfCompressionDisabled(t *testing.T) {
 	compressedBlob := compression.CompressZstd(nil, blob)
 
 	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob))
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	// Upload compressed blob via BatchUpdate.
@@ -321,7 +321,7 @@ func TestBatchUpdateAndRead_CacheHandlesCompression(t *testing.T) {
 			}
 
 			// Note: Digest is of uncompressed contents
-			d, err := digest.Compute(bytes.NewReader(blob))
+			d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 			require.NoError(t, err, tc.name)
 
 			// FindMissingBlobs should report that the blob is missing, initially.

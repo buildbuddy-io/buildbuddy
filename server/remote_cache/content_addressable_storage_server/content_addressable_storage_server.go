@@ -93,10 +93,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	}
 	digestsToLookup := make([]*resource.ResourceName, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
-		if d.GetHash() == digest.EmptySha256 {
-			continue
-		}
-		if d.GetHash() == digest.EmptyHash {
+		if digest.IsEmpty(d) || d.GetHash() == digest.EmptyHash {
 			continue
 		}
 		rn := digest.NewCASResourceName(d, req.GetInstanceName()).ToProto()
@@ -177,7 +174,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			uploadTracker.CloseWithBytesTransferred(int64(bytesWrittenToCache), int64(bytesFromClient), uploadRequest.GetCompressor(), "cas_server")
 		}()
 
-		if uploadDigest.GetHash() == digest.EmptySha256 {
+		if digest.IsEmpty(uploadDigest) {
 			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 				Digest: uploadDigest,
 				Status: &statuspb.Status{Code: int32(codes.OK)},
@@ -302,7 +299,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			downloadTracker.CloseWithBytesTransferred(int64(data.bytesReadFromCache), int64(data.bytesDownloadedToClient), data.compressor, "cas_server")
 		})
 
-		if readDigest.GetHash() != digest.EmptySha256 {
+		if !digest.IsEmpty(readDigest) {
 			rn := digest.NewCASResourceName(readDigest, req.GetInstanceName())
 			if readZstd {
 				rn.SetCompressor(repb.Compressor_ZSTD)
@@ -313,7 +310,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRsp, err := s.cache.GetMulti(ctx, cacheRequest)
 
 	for _, d := range req.GetDigests() {
-		if d.GetHash() == digest.EmptySha256 {
+		if digest.IsEmpty(d) {
 			rsp.Responses = append(rsp.Responses, &repb.BatchReadBlobsResponse_Response{
 				Digest: d,
 				Status: &statuspb.Status{Code: int32(codes.OK)},
@@ -496,7 +493,7 @@ func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName 
 
 func makeTreeCacheDigest(d *repb.Digest) (*repb.Digest, error) {
 	buf := bytes.NewBuffer([]byte(d.GetHash() + *treeCacheSeed))
-	return digest.Compute(buf)
+	return digest.Compute(buf, digest.Type(d))
 }
 
 func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, remoteInstanceName string, dd *repb.DirectoryWithDigest) ([]*repb.DirectoryWithDigest, error) {
@@ -507,7 +504,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, re
 	subdirDigests := make([]*resource.ResourceName, 0, len(dir.Directories))
 	for _, dirNode := range dir.Directories {
 		d := dirNode.GetDigest()
-		if d.GetHash() == digest.EmptySha256 {
+		if digest.IsEmpty(d) {
 			continue
 		}
 		rn := digest.NewCASResourceName(d, remoteInstanceName).ToProto()
@@ -569,7 +566,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if req.RootDigest == nil {
 		return status.InvalidArgumentError("RootDigest is required to GetTree")
 	}
-	if req.GetRootDigest().GetHash() == digest.EmptySha256 {
+	if digest.IsEmpty(req.GetRootDigest()) {
 		return nil
 	}
 
@@ -709,9 +706,15 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 func isComplete(children []*repb.DirectoryWithDigest) bool {
 	allDigests := make(map[string]struct{}, len(children))
 	for _, child := range children {
+		if digest.IsEmpty(child.GetDigest()) {
+			continue
+		}
 		allDigests[child.GetDigest().GetHash()] = struct{}{}
 	}
 	for _, child := range children {
+		if digest.IsEmpty(child.GetDigest()) {
+			continue
+		}
 		dir := child.Directory
 		if len(dir.Directories) == 0 && len(dir.Files) == 0 && len(dir.Symlinks) == 0 {
 			log.Warningf("corrupted tree: empty dir: %+v, digest: %q", dir, child.GetDigest().GetHash())

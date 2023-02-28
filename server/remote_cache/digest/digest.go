@@ -3,8 +3,12 @@ package digest
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"fmt"
+	"hash"
 	"io"
 	"math/rand"
 	"path/filepath"
@@ -27,26 +31,59 @@ import (
 )
 
 const (
-	hashKeyLength = 64
-	EmptySha256   = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	EmptyHash     = ""
+	EmptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	EmptyHash   = ""
 )
 
 var (
+	hashKeyRegex     *regexp.Regexp
+	uploadRegex      *regexp.Regexp
+	downloadRegex    *regexp.Regexp
+	actionCacheRegex *regexp.Regexp
+
+	knownDigestFunctions []repb.DigestFunction_Value
+)
+
+func init() {
+	digestFunctions := []struct {
+		digestType repb.DigestFunction_Value
+		sizeBytes  int
+	}{
+		{
+			digestType: repb.DigestFunction_SHA256,
+			sizeBytes:  sha256.Size,
+		},
+		{
+			digestType: repb.DigestFunction_SHA1,
+			sizeBytes:  sha1.Size,
+		},
+	}
+
+	hashMatchers := make([]string, 0)
+	for _, df := range digestFunctions {
+		hashMatchers = append(hashMatchers, fmt.Sprintf("[a-f0-9]{%d}", df.sizeBytes*2))
+		knownDigestFunctions = append(knownDigestFunctions, df.digestType)
+	}
+	joinedMatchers := strings.Join(hashMatchers, "|")
+
 	// Cache keys must be:
 	//  - lower case
 	//  - ascii
 	//  - a sha256 sum
-	hashKeyRegex = regexp.MustCompile("^[a-f0-9]{64}$")
+	hashKeyRegex = regexp.MustCompile(fmt.Sprintf("^(%s)$", joinedMatchers))
 
 	// Matches:
 	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "blobs/ac/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex      = regexp.MustCompile(`^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>[a-f0-9]{64})/(?P<size>\d+)`)
-	downloadRegex    = regexp.MustCompile(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>[a-f0-9]{64})/(?P<size>\d+)`)
-	actionCacheRegex = regexp.MustCompile(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?P<hash>[a-f0-9]{64})/(?P<size>\d+)`)
-)
+	uploadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
+	downloadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
+	actionCacheRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
+}
+
+func SupportedDigestFunctions() []repb.DigestFunction_Value {
+	return knownDigestFunctions
+}
 
 type ResourceName struct {
 	rn *rspb.ResourceName
@@ -101,6 +138,10 @@ func (r *ResourceName) ToProto() *rspb.ResourceName {
 
 func (r *ResourceName) GetDigest() *repb.Digest {
 	return r.rn.GetDigest()
+}
+
+func (r *ResourceName) DigestType() repb.DigestFunction_Value {
+	return Type(r.rn.GetDigest())
 }
 
 func (r *ResourceName) GetInstanceName() string {
@@ -202,14 +243,10 @@ func Validate(d *repb.Digest) (string, error) {
 		return "", status.InvalidArgumentErrorf("Invalid (negative) digest size")
 	}
 	if d.SizeBytes == int64(0) {
-		if d.Hash == EmptySha256 {
+		if IsEmpty(d) {
 			return d.Hash, nil
 		}
 		return "", status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
-	}
-
-	if len(d.Hash) != hashKeyLength {
-		return "", status.InvalidArgumentError(fmt.Sprintf("Hash length was %d, expected %d", len(d.Hash), hashKeyLength))
 	}
 
 	if !hashKeyRegex.MatchString(d.Hash) {
@@ -218,16 +255,67 @@ func Validate(d *repb.Digest) (string, error) {
 	return d.Hash, nil
 }
 
-func ComputeForMessage(in proto.Message) (*repb.Digest, error) {
+func ComputeForMessage(in proto.Message, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
-	return Compute(bytes.NewReader(data))
+	return Compute(bytes.NewReader(data), digestType)
 }
 
-func Compute(in io.Reader) (*repb.Digest, error) {
-	h := sha256.New()
+func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) {
+	switch digestType {
+	case repb.DigestFunction_SHA1:
+		return sha1.New(), nil
+	case repb.DigestFunction_SHA256:
+		return sha256.New(), nil
+	default:
+		return nil, status.UnimplementedErrorf("No support for digest type: %s", digestType)
+	}
+}
+
+func Type(d *repb.Digest) repb.DigestFunction_Value {
+	// TODO: determine this via enum in digest?
+	switch len(d.GetHash()) {
+	case sha1.Size * 2:
+		return repb.DigestFunction_SHA1
+	case md5.Size * 2:
+		return repb.DigestFunction_MD5
+	case sha256.Size * 2:
+		return repb.DigestFunction_SHA256
+	case sha512.Size384 * 2:
+		return repb.DigestFunction_SHA384
+	case sha512.Size * 2:
+		return repb.DigestFunction_SHA512
+	default:
+		return repb.DigestFunction_UNKNOWN
+	}
+}
+
+func IsEmpty(d *repb.Digest) bool {
+	digestType := Type(d)
+	switch digestType {
+	case repb.DigestFunction_SHA1:
+		return d.GetHash() == "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+	case repb.DigestFunction_MD5:
+		return d.GetHash() == "d41d8cd98f00b204e9800998ecf8427e"
+	case repb.DigestFunction_SHA256:
+		return d.GetHash() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	case repb.DigestFunction_SHA384:
+		return d.GetHash() == "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	case repb.DigestFunction_SHA512:
+		return d.GetHash() == "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
+	default:
+		return false
+	}
+}
+
+func Compute(in io.Reader, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
+	h, err := HashForDigestType(digestType)
+	if err != nil {
+		return nil, err
+	}
+
 	// Read file in 32KB chunks (default)
 	n, err := io.Copy(h, in)
 	if err != nil {
@@ -356,7 +444,7 @@ func MissingDigestError(d *repb.Digest) error {
 
 func Parse(str string) (*repb.Digest, error) {
 	dParts := strings.SplitN(str, "/", 2)
-	if len(dParts) != 2 || len(dParts[0]) != 64 {
+	if len(dParts) != 2 {
 		return nil, status.FailedPreconditionErrorf("Error parsing digest %q: should be of form 'f31e59431cdc5d631853e28151fb664f859b5f4c5dc94f0695408a6d31b84724/142'", str)
 	}
 	i, err := strconv.ParseInt(dParts[1], 10, 64)
@@ -489,7 +577,7 @@ func (g *Generator) RandomDigestReader(sizeBytes int64) (*repb.Digest, io.ReadSe
 	readSeeker := bytes.NewReader(buf.Bytes())
 
 	// Compute a digest for the random bytes.
-	d, err := Compute(readSeeker)
+	d, err := Compute(readSeeker, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}

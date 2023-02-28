@@ -2,7 +2,6 @@ package byte_stream_server
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"hash"
 	"io"
@@ -106,7 +105,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
-	if r.GetDigest().GetHash() == digest.EmptySha256 {
+	if digest.IsEmpty(r.GetDigest()) {
 		ht.TrackEmptyHit()
 		return nil
 	}
@@ -279,18 +278,23 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 
 	var committedWriteCloser interfaces.CommittedWriteCloser
-	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
+	if digest.IsEmpty(r.GetDigest()) {
+		committedWriteCloser = ioutil.DiscardWriteCloser()
+	} else {
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
 		}
 		committedWriteCloser = cacheWriter
-	} else {
-		committedWriteCloser = ioutil.DiscardWriteCloser()
 	}
 	ws.cacheCommitter = committedWriteCloser
 	ws.cacheCloser = committedWriteCloser
-	ws.checksum = NewChecksum()
+
+	hasher, err := digest.HashForDigestType(r.DigestType())
+	if err != nil {
+		return nil, err
+	}
+	ws.checksum = NewChecksum(hasher)
 	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
@@ -516,9 +520,9 @@ type Checksum struct {
 	bytesWritten int64
 }
 
-func NewChecksum() *Checksum {
+func NewChecksum(h hash.Hash) *Checksum {
 	return &Checksum{
-		hash:         sha256.New(),
+		hash:         h,
 		bytesWritten: 0,
 	}
 }

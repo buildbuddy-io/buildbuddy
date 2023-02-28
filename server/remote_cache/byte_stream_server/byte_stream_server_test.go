@@ -231,7 +231,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 
 	blob, err := random.RandomString(10_000_000)
 	require.NoError(t, err)
-	d, err := digest.Compute(strings.NewReader(blob))
+	d, err := digest.Compute(strings.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	instanceNameDigest := digest.NewResourceName(d, "")
 
@@ -264,7 +264,7 @@ func TestRPCWriteAndReadCompressed(t *testing.T) {
 		require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
 		// Note: Digest is of uncompressed contents
-		d, err := digest.Compute(bytes.NewReader(blob))
+		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 
 		// ByteStream.Read should return NOT_FOUND initially.
@@ -341,7 +341,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 		require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
 		// Note: Digest is of uncompressed contents
-		d, err := digest.Compute(bytes.NewReader(blob))
+		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 
 		// ByteStream.Read should return NOT_FOUND initially.
@@ -408,7 +408,7 @@ func TestRPCWriteUncompressedReadCompressed(t *testing.T) {
 		blob := compressibleBlobOfSize(blobSize)
 
 		// Note: Digest is of uncompressed contents
-		d, err := digest.Compute(bytes.NewReader(blob))
+		d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
 
 		// Upload uncompressed via bytestream.
@@ -445,7 +445,7 @@ func Test_CacheHandlesCompression(t *testing.T) {
 	require.NotEqual(t, blob, compressedBlob, "sanity check: blob != compressedBlob")
 
 	// Note: Digest is of uncompressed contents
-	d, err := digest.Compute(bytes.NewReader(blob))
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 
 	testCases := []struct {
