@@ -262,6 +262,7 @@ ts_library(
     name = "invocation_execution_card",
     srcs = ["invocation_execution_card.tsx"],
     deps = [
+        "//app/components/button",
         "//app/components/digest",
         "//app/components/link",
         "//app/components/select",
