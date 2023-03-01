@@ -21,16 +21,16 @@ clickhouse_baseline_git_branch=$3
 
 # Migrate db copy to have schema of the baseline branch
 git checkout "$clickhouse_baseline_git_branch"
-bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true
+bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true  > /dev/null 2>&1
 
 # When auto-migrating clickhouse tables, gorm runs MODIFY COLUMN on all columns even if their types have not changed
 # To determine whether a meaningful migration is taking place, we need to generate the no-op migration diff against the
 # baseline, and check whether that matches the migration diff on the new branch
-baseline_schema_changes=$(bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true)
+baseline_schema_changes=$(bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true 2>/dev/null)
 
 # Checkout new branch and run auto_migration on db copy
 git checkout "$git_branch"
-new_schema_changes=$(bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true)
+new_schema_changes=$(bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true 2>/dev/null)
 
 clickhouse_schema_changes=$(diff <(echo "$baseline_schema_changes") <(echo "$new_schema_changes"))
 
