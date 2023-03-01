@@ -58,7 +58,7 @@ fi
 
 # Checkout new branch and run auto_migration on db copy
 git checkout "$git_branch"
-schema_changes=$(bazel run //enterprise/server -- --database.data_source="$db_copy_conn_string" --database.print_schema_changes_and_exit=true)
+schema_changes=$(bazel run //enterprise/server -- --database.data_source="$db_copy_conn_string" --database.print_schema_changes_and_exit=true 2>/dev/null)
 
 echo "$schema_changes"
 export schema_changes
