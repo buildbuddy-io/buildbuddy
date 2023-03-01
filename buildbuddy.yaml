@@ -11,6 +11,9 @@ actions:
     bazel_commands:
       - info
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
+    resource_requests:
+      memory: 8GB
+      CPU: 8000m
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:
