@@ -11,6 +11,7 @@ actions:
     bazel_commands:
       - info
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
+      - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
       - info
     git_clean_exclude:
       - bazel-bin
