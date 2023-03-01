@@ -13,6 +13,7 @@ actions:
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
       - info
+      - run //:run_test
     git_clean_exclude:
       - bazel-bin
       - bazel-out

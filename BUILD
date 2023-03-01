@@ -206,6 +206,11 @@ sh_toolchain(
     path = "/bin/bash",
 )
 
+sh_binary(
+    name = "run_test",
+    srcs = ["test.sh"],
+)
+
 toolchain(
     name = "sh_toolchain",
     toolchain = ":bash_rbe_ubuntu1604",
