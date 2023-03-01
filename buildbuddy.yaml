@@ -9,6 +9,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
+      - info
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
   - name: Test (darwin_amd64)
     os: "darwin"
