@@ -11,6 +11,11 @@ actions:
     bazel_commands:
       - info
       - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
+    git_clean_exclude:
+      - bazel-bin
+      - bazel-out
+      - bazel-repo-root
+      - bazel-testlogs
     resource_requests:
       memory: 8GB
       CPU: 8000m

@@ -6,3 +6,5 @@ node_modules
 website/.docusaurus
 website/build
 website/node_modules
+output-base
+.home
