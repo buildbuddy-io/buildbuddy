@@ -503,16 +503,29 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   Based on your median build times and your org's cache hit rate,
                   that's roughly {this.formatNumber(groupSecSavedCache / 3600)} developer hours saved.
                 </div>
-                <div className="trends-summary-title">
-                  That's {this.formatNumber(groupSecSavedCache / 3600 / 8)} work days,
-                  or {this.formatNumber(groupSecSavedCache / 3600 / 8 / 5)} weeks,
-                  or {this.formatNumber(groupSecSavedCache / 3600 / 8 / 5 / 52)} years!
-                </div>
                 <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
               </div>
           }
 
           {this.state.summaryModalPage == 17 &&
+              <div className="trend-chart-hover trends-summary trends-summary-detail">
+                <div className="trends-summary-title">
+                  That's equivalent to...
+                </div>
+                <div className="trends-summary-title">
+                  {this.formatNumber(groupSecSavedCache / 3600 / 8)} work days...
+                </div>
+                <div className="trends-summary-title">
+                  {this.formatNumber(groupSecSavedCache / 3600 / 8 / 5)} weeks...
+                </div>
+                <div className="trends-summary-title">
+                  Or {this.formatNumber(groupSecSavedCache / 3600 / 8 / 5 / 52)} years!
+                </div>
+                <button className="trends-summary-button" onClick={this.onModalNextClick.bind(this)}> {">"} </button>
+              </div>
+          }
+
+          {this.state.summaryModalPage == 18 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
                   Based on average developer salary, that's ${this.formatNumber(groupSecSavedCache / 3600 * avgHourlyDeveloperSalary)}!
@@ -524,7 +537,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               </div>
           }
 
-          {this.state.summaryModalPage == 18 &&
+          {this.state.summaryModalPage == 19 &&
               <div className="trend-chart-hover trends-summary trends-summary-detail">
                 <div className="trends-summary-title">
                   Thanks for spending the past year with us.
