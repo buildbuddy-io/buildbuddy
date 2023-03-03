@@ -1,4 +1,14 @@
 actions:
+  # - name: Checkstyle
+  #   check: true
+  #   check_commands:
+  #     - "bazel run :checkstyle"
+  #     - |
+  #       error in buildbuddy/server.go:80:80: blah
+  #       echo >> "$CHECK_RESULTS" '{"location": {"filename:'..."}}'
+  #   fix_commands:
+  #     - "bazel run :checkstyle_fix"
+
   - name: Test
     container_image: ubuntu-20.04
     triggers:

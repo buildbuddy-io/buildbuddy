@@ -25,7 +25,7 @@ func NewProvider() interfaces.GitProvider {
 	return &bitbucketGitProvider{}
 }
 
-func (*bitbucketGitProvider) ParseWebhookData(r *http.Request) (*interfaces.WebhookData, error) {
+func (*bitbucketGitProvider) ParseWebhookData(r *http.Request, webhookSecret string) (*interfaces.WebhookData, error) {
 	if userAgent := r.Header.Get("User-Agent"); userAgent != expectedUserAgent {
 		return nil, status.UnimplementedErrorf("unexpected user agent: %q; only %q is supported", userAgent, expectedUserAgent)
 	}

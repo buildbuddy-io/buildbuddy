@@ -1,6 +1,8 @@
 import React from "react";
 import { from, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
+import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import { OutlinedLinkButton } from "../../../app/components/button/link_button";
 import Dialog, {
@@ -22,28 +24,34 @@ import { workflow } from "../../../proto/workflow_ts_proto";
 import CreateWorkflowComponent from "./create_workflow";
 import GitHubImport from "./github_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
-import { GitMerge, MoreVertical } from "lucide-react";
+import { AlertCircle, HelpCircle, GitMerge, MoreVertical } from "lucide-react";
+import alert_service from "../../../app/alert/alert_service";
 
 type Workflow = workflow.GetWorkflowsResponse.Workflow;
 
 export type WorkflowsProps = {
   path: string;
+  search: URLSearchParams;
   user: User;
 };
 
 export default class WorkflowsComponent extends React.Component<WorkflowsProps> {
+  private renderGitHubImport() {
+    return <GitHubImport user={this.props.user} search={this.props.search} />;
+  }
+
   render() {
     const { path, user } = this.props;
 
     if (path === "/workflows/new") {
-      if (user.selectedGroup.githubLinked) {
-        return <GitHubImport />;
+      if (user.selectedGroup.githubLinked || (capabilities.config.githubAppEnabled && user.githubToken)) {
+        return this.renderGitHubImport();
       } else {
         return <CreateWorkflowComponent user={user} />;
       }
     }
     if (path === "/workflows/new/github") {
-      return <GitHubImport />;
+      return this.renderGitHubImport();
     }
     if (path === "/workflows/new/custom") {
       return <CreateWorkflowComponent user={user} />;
@@ -111,6 +119,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
       await rpcService.service.deleteWorkflow(
         new workflow.DeleteWorkflowRequest({ id: this.state.workflowToDelete?.id })
       );
+      alert_service.success("Repository successfully unlinked");
       this.setState({ workflowToDelete: undefined });
 
       this.workflowsSubscription.unsubscribe();
@@ -274,13 +283,23 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
         <div className="workflow-item-column">
           <div className="workflow-item-row">
             <GitMerge />
-            <a
-              href={router.getWorkflowHistoryUrl(repoUrl)}
-              onClick={this.onClickRepoUrl.bind(this)}
-              className="repo-url">
-              {url.host}
-              {url.pathname}
-            </a>
+            <div>
+              <div>
+                <a
+                  href={router.getWorkflowHistoryUrl(repoUrl)}
+                  onClick={this.onClickRepoUrl.bind(this)}
+                  className="repo-url">
+                  {url.host}
+                  {url.pathname}
+                </a>
+              </div>
+              {capabilities.config.githubAppEnabled && this.props.workflow.isLegacyWorkflow && (
+                <div className="upgrade-notice">
+                  <AlertCircle className="icon orange" /> Repository is linked using the legacy OAuth app integration.
+                  Unlink and re-link to re-authenticate using the new GitHub App integration.
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="workflow-item-column workflow-dropdown-container">
@@ -293,11 +312,19 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
             </OutlinedButton>
             <Popup isOpen={isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
               <Menu className="workflow-dropdown-menu">
-                <MenuItem
-                  onClick={this.onClickCopyWebhookUrl.bind(this)}
-                  className={copiedToClipboard ? "copied-to-clipboard" : ""}>
-                  {copiedToClipboard ? <>Copied!</> : <>Copy webhook URL</>}
-                </MenuItem>
+                {/* TODO: Provide an easy migration path? */}
+                {/* {Boolean(this.props.workflow.webhookUrl) && capabilities.config.githubAppEnabled && (
+                  <MenuItem onClick={this.onClickUpgradeMenuItem.bind(this)}>
+                    Upgrade to GitHub App integration...
+                  </MenuItem>
+                )} */}
+                {Boolean(this.props.workflow.webhookUrl) && (
+                  <MenuItem
+                    onClick={this.onClickCopyWebhookUrl.bind(this)}
+                    className={copiedToClipboard ? "copied-to-clipboard" : ""}>
+                    {copiedToClipboard ? <>Copied!</> : <>Copy webhook URL</>}
+                  </MenuItem>
+                )}
                 <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
               </Menu>
             </Popup>

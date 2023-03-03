@@ -23,6 +23,7 @@ ts_library(
         "//enterprise/app/secrets",
         "//enterprise/app/settings:github_link",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
     ],
 )
@@ -35,6 +36,8 @@ ts_library(
         "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/auth:user",
+        "//app/capabilities",
+        "//app/components/banner",
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/link",
@@ -43,8 +46,10 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
+        "@npm//@octokit/rest",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
+        "@npm//tslib",
     ],
 )

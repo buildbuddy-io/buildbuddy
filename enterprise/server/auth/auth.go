@@ -1244,9 +1244,13 @@ func (a *OpenIDAuthenticator) Auth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	code := r.URL.Query().Get("code")
+	if code == "" {
+		redirectWithError(w, r, status.InternalError("GitHub did not return an auth code"))
+		return
+	}
 	oauth2Token, err := auth.exchange(ctx, code, a.getAuthCodeOptions(r)...)
 	if err != nil {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", code))
+		redirectWithError(w, r, status.PermissionDeniedErrorf("Error exchanging code for auth token: %s", err))
 		return
 	}
 

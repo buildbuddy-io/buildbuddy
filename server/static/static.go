@@ -136,6 +136,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		ConfiguredIssuers:             env.GetAuthenticator().PublicIssuers(),
 		DefaultToDenseMode:            *defaultToDenseMode,
 		GithubEnabled:                 github.Enabled(),
+		GithubAppEnabled:              env.GetGitHubApp() != nil,
 		AnonymousUsageEnabled:         env.GetAuthenticator().AnonymousUsageEnabled(),
 		TestDashboardEnabled:          target_tracker.TargetTrackingEnabled(),
 		UserOwnedExecutorsEnabled:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),

@@ -116,10 +116,20 @@ service BuildBuddyService {
       returns (workflow.ExecuteWorkflowResponse);
   rpc GetRepos(workflow.GetReposRequest) returns (workflow.GetReposResponse);
 
-  // GitHub account API
-  // Note: GitHub account linking is accomplished via HTTP redirect flow
+  // GitHub link API
+  // Note: GitHub account linking (both for the legacy OAuth-only app and the
+  // new GitHub app) is accomplished via HTTP redirect flow
   rpc UnlinkGitHubAccount(github.UnlinkGitHubAccountRequest)
       returns (github.UnlinkGitHubAccountResponse);
+  rpc InstallGitHubApp(github.InstallGitHubAppRequest)
+      returns (github.InstallGitHubAppResponse);
+  rpc SearchGitHubRepos(github.SearchReposRequest)
+      returns (github.SearchReposResponse);
+  rpc GetGitHubAppInstallations(github.GetGitHubAppInstallationsRequest)
+      returns (github.GetGitHubAppInstallationsResponse);
+  // TODO: Add a GetRepo rpc so that we can show on the repo page whether the
+  // repo is accessible via the GitHub App installation and is enabled for
+  // workflows.
 
   // Runner API
   rpc Run(runner.RunRequest) returns (runner.RunResponse);

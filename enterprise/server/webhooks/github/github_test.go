@@ -24,7 +24,7 @@ func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Reques
 func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "push", test_data.PushEvent)
 
-	data, err := github.NewProvider().ParseWebhookData(req)
+	data, err := github.NewProvider().ParseWebhookData(req, "")
 
 	assert.NoError(t, err)
 	assert.Equal(t, &interfaces.WebhookData{
@@ -40,7 +40,7 @@ func TestParseRequest_ValidPushEvent_Success(t *testing.T) {
 func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "pull_request", test_data.PullRequestEvent)
 
-	data, err := github.NewProvider().ParseWebhookData(req)
+	data, err := github.NewProvider().ParseWebhookData(req, "")
 
 	assert.NoError(t, err)
 	assert.Equal(t, &interfaces.WebhookData{
@@ -57,7 +57,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 func TestParseRequest_ValidPullRequestReviewEvent_Success(t *testing.T) {
 	req := webhookRequest(t, "pull_request_review", test_data.PullRequestApprovedReviewEvent)
 
-	data, err := github.NewProvider().ParseWebhookData(req)
+	data, err := github.NewProvider().ParseWebhookData(req, "")
 
 	assert.NoError(t, err)
 	assert.Equal(t, &interfaces.WebhookData{
@@ -76,7 +76,7 @@ func TestParseRequest_ValidPullRequestReviewEvent_Success(t *testing.T) {
 func TestParseRequest_InvalidEvent_Error(t *testing.T) {
 	req := webhookRequest(t, "push", []byte{})
 
-	data, err := github.NewProvider().ParseWebhookData(req)
+	data, err := github.NewProvider().ParseWebhookData(req, "")
 
 	assert.Error(t, err)
 	assert.Nil(t, data)

@@ -2016,6 +2016,10 @@ code .comment {
   background-image: url("/image/loader-white.svg");
 }
 
+.loading-slim {
+  height: 64px;
+}
+
 .copy-icon {
   color: #888;
   cursor: pointer;

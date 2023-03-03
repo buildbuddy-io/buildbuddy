@@ -3,8 +3,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,6 +15,7 @@ import (
 	"golang.org/x/oauth2"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	"github.com/google/go-github/v43/github"
 	gh "github.com/google/go-github/v43/github"
 )
 
@@ -31,7 +30,7 @@ func NewProvider() interfaces.GitProvider {
 	return &githubGitProvider{}
 }
 
-func newGitHubClient(ctx context.Context, accessToken string) *gh.Client {
+func NewGitHubClient(ctx context.Context, accessToken string) *gh.Client {
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 	tc := oauth2.NewClient(ctx, ts)
 	return gh.NewClient(tc)
@@ -40,11 +39,11 @@ func newGitHubClient(ctx context.Context, accessToken string) *gh.Client {
 // RegisterWebhook registers the given webhook to the repo and returns the ID of
 // the registered webhook.
 func (*githubGitProvider) RegisterWebhook(ctx context.Context, accessToken, repoURL, webhookURL string) (string, error) {
-	owner, repo, err := parseOwnerRepo(repoURL)
+	owner, repo, err := ParseOwnerRepo(repoURL)
 	if err != nil {
 		return "", err
 	}
-	client := newGitHubClient(ctx, accessToken)
+	client := NewGitHubClient(ctx, accessToken)
 	// GitHub's API documentation says this is the only allowed string for the
 	// name field. TODO: Is this actually required?
 	name := "web"
@@ -67,11 +66,11 @@ func (*githubGitProvider) RegisterWebhook(ctx context.Context, accessToken, repo
 
 // UnregisterWebhook removes the webhook from the Git repo.
 func (*githubGitProvider) UnregisterWebhook(ctx context.Context, accessToken, repoURL, webhookID string) error {
-	owner, repo, err := parseOwnerRepo(repoURL)
+	owner, repo, err := ParseOwnerRepo(repoURL)
 	if err != nil {
 		return err
 	}
-	client := newGitHubClient(ctx, accessToken)
+	client := NewGitHubClient(ctx, accessToken)
 	id, err := strconv.ParseInt(webhookID, 10 /*=base*/, 64 /*=bitSize*/)
 	if err != nil {
 		return err
@@ -95,8 +94,8 @@ func (*githubGitProvider) MatchWebhookRequest(r *http.Request) bool {
 	return r.Header.Get("X-Github-Event") != ""
 }
 
-func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.WebhookData, error) {
-	payload, err := webhookJSONPayload(r)
+func (*githubGitProvider) ParseWebhookData(r *http.Request, webhookSecret string) (*interfaces.WebhookData, error) {
+	payload, err := github.ValidatePayload(r, []byte(webhookSecret))
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("failed to parse webhook payload: %s", err)
 	}
@@ -159,6 +158,51 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 		wd.PullRequestApprover = event.GetReview().GetUser().GetLogin()
 		return wd, nil
 
+	case *gh.CheckSuiteEvent:
+		if event.GetAction() != "requested" && event.GetAction() != "rerequested" {
+			return nil, nil
+		}
+		// DO NOT MERGE: handle forks?
+		if event.GetRepo().GetFork() {
+			return nil, nil
+		}
+		return &interfaces.WebhookData{
+			EventName:          webhook_data.EventName.CheckSuite,
+			PushedRepoURL:      event.GetRepo().GetCloneURL(),
+			PushedBranch:       event.GetCheckSuite().GetHeadBranch(),
+			SHA:                event.GetCheckSuite().GetHeadSHA(),
+			TargetRepoURL:      event.GetRepo().GetCloneURL(),
+			IsTargetRepoPublic: !event.GetRepo().GetPrivate(),
+			// TODO: for PRs, can we merge with the target branch?
+			TargetBranch: event.GetCheckSuite().GetHeadBranch(),
+			// TODO: rename PullRequestAuthor to something better
+			PullRequestAuthor: event.GetSender().GetLogin(),
+		}, nil
+
+	case *gh.CheckRunEvent:
+		// "created" means we're responding to a check run being created
+		// in a previous event; "rerequested" means we need to create the
+		// check run again, similarly to the check_suite event.
+		if event.GetAction() != "created" && event.GetAction() != "rerequested" {
+			return nil, nil
+		}
+		wd := &interfaces.WebhookData{
+			EventName:          webhook_data.EventName.CheckRun,
+			PushedRepoURL:      event.GetRepo().GetCloneURL(),
+			PushedBranch:       event.GetCheckRun().GetCheckSuite().GetHeadBranch(),
+			SHA:                event.GetCheckRun().GetCheckSuite().GetHeadSHA(),
+			TargetRepoURL:      event.GetRepo().GetCloneURL(),
+			TargetBranch:       event.GetCheckRun().GetCheckSuite().GetHeadBranch(),
+			IsTargetRepoPublic: !event.GetRepo().GetPrivate(),
+			PullRequestAuthor:  event.GetSender().GetLogin(),
+			ActionName:         event.GetCheckRun().GetName(),
+		}
+		if event.GetAction() == "created" {
+			wd.CheckRunID = event.GetCheckRun().GetID()
+			wd.InvocationID = event.GetCheckRun().GetExternalID()
+		}
+		return wd, nil
+
 	default:
 		return nil, nil
 	}
@@ -194,11 +238,11 @@ func parsePullRequestOrReview(event interface{}) (*interfaces.WebhookData, error
 }
 
 func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
-	owner, repo, err := parseOwnerRepo(repoURL)
+	owner, repo, err := ParseOwnerRepo(repoURL)
 	if err != nil {
 		return nil, err
 	}
-	client := newGitHubClient(ctx, accessToken)
+	client := NewGitHubClient(ctx, accessToken)
 	opts := &gh.RepositoryContentGetOptions{Ref: ref}
 	fileContent, _, rsp, err := client.Repositories.GetContents(ctx, owner, repo, filePath, opts)
 	if rsp != nil && rsp.StatusCode == http.StatusNotFound {
@@ -218,11 +262,11 @@ func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repo
 }
 
 func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
-	owner, repo, err := parseOwnerRepo(repoURL)
+	owner, repo, err := ParseOwnerRepo(repoURL)
 	if err != nil {
 		return false, err
 	}
-	client := newGitHubClient(ctx, accessToken)
+	client := NewGitHubClient(ctx, accessToken)
 	isCollaborator, _, err := client.Repositories.IsCollaborator(ctx, owner, repo, user)
 	if err != nil {
 		return false, status.InternalErrorf("failed to determine whether %s is a collaborator in %s: %s", user, repoURL, err)
@@ -230,36 +274,8 @@ func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, u
 	return isCollaborator, nil
 }
 
-func webhookJSONPayload(r *http.Request) ([]byte, error) {
-	contentType, _, err := mime.ParseMediaType(r.Header.Get("content-type"))
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("failed to parse content type: %s", err)
-	}
-	switch contentType {
-	case "application/json":
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			return nil, status.InternalErrorf("failed to read request body: %s", err)
-		}
-		return body, nil
-	case "application/x-www-form-urlencoded":
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			return nil, status.InternalErrorf("failed to read request body: %s", err)
-		}
-		form, err := url.ParseQuery(string(body))
-		if err != nil {
-			return nil, err
-		}
-		const payloadFormParam = "payload"
-		return []byte(form.Get(payloadFormParam)), nil
-	default:
-		return nil, status.InvalidArgumentErrorf("unhandled MIME type: %q", contentType)
-	}
-}
-
 // returns "owner", "repo" from a string like "https://github.com/owner/repo.git"
-func parseOwnerRepo(url string) (string, string, error) {
+func ParseOwnerRepo(url string) (string, string, error) {
 	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(url)
 	if err != nil {
 		return "", "", status.WrapError(err, "Failed to parse owner/repo from GitHub URL")

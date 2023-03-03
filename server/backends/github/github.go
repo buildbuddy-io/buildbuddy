@@ -29,12 +29,17 @@ import (
 )
 
 var (
+	// TODO: Deprecate these once the new GitHub app is implemented.
+
 	clientID     = flag.String("github.client_id", "", "The client ID of your GitHub Oauth App. ** Enterprise only **")
 	clientSecret = flagutil.New("github.client_secret", "", "The client secret of your GitHub Oauth App. ** Enterprise only **", flagutil.SecretTag)
 	accessToken  = flagutil.New("github.access_token", "", "The GitHub access token used to post GitHub commit statuses. ** Enterprise only **", flagutil.SecretTag)
 )
 
 const (
+	// HTTP handler path for the legacy OAuth app flow.
+	legacyOAuthAppPath = "/auth/github/link/"
+
 	// GitHub status constants
 
 	ErrorState   State = "error"
@@ -68,14 +73,27 @@ func NewGithubStatusPayload(context, URL, description string, state State) *Gith
 }
 
 type GithubAccessTokenResponse struct {
-	AccessToken string `json:"access_token"`
-	Scope       string `json:"scope"`
-	TokenType   string `json:"token_type"`
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+	ErrorURI         string `json:"error_uri"`
+
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
+	TokenType    string `json:"token_type"`
+}
+
+func (r *GithubAccessTokenResponse) Err() error {
+	if r.Error == "" {
+		return nil
+	}
+	return fmt.Errorf("%s", r.ErrorDescription)
 }
 
 type GithubClient struct {
 	env         environment.Env
 	client      *http.Client
+	oauthApp    *OAuthApp
 	githubToken string
 	tokenLookup sync.Once
 }
@@ -83,7 +101,7 @@ type GithubClient struct {
 func Register(env environment.Env) error {
 	githubClient := NewGithubClient(env, "")
 	env.GetMux().Handle(
-		"/auth/github/link/",
+		legacyOAuthAppPath,
 		interceptors.WrapAuthenticatedExternalHandler(env, http.HandlerFunc(githubClient.Link)),
 	)
 	return nil
@@ -94,29 +112,71 @@ func NewGithubClient(env environment.Env, token string) *GithubClient {
 		env:         env,
 		client:      &http.Client{},
 		githubToken: token,
+		oauthApp:    newLegacyOAuthApp(env),
 	}
 }
 
-func ClientSecret() string {
+func newLegacyOAuthApp(env environment.Env) *OAuthApp {
+	if !Enabled() {
+		return nil
+	}
+	a := NewOAuthApp(env, *clientID, legacyClientSecret(), legacyOAuthAppPath)
+	a.GroupLinkEnabled = true
+	return a
+}
+
+func legacyClientSecret() string {
 	if cs := os.Getenv("BB_GITHUB_CLIENT_SECRET"); cs != "" {
 		return cs
 	}
 	return *clientSecret
 }
 
+// Enabled returns whether the *legacy* GitHub client is enabled.
 func Enabled() bool {
-	if *clientID == "" && *clientSecret == "" && *accessToken == "" {
+	if *clientID == "" && legacyClientSecret() == "" && *accessToken == "" {
 		return false
 	}
 	return true
 }
 
 func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
-	if !Enabled() {
+	if c.oauthApp == nil {
 		redirectWithError(w, r, status.PermissionDeniedError("Missing GitHub config"))
 		return
 	}
+	c.oauthApp.ServeHTTP(w, r)
+}
 
+// OAuthApp implements a GitHub OAuth app.
+type OAuthApp struct {
+	env environment.Env
+
+	// ClientID is the OAuth client ID.
+	ClientID string
+
+	// ClientSecret is the OAuth client secret.
+	ClientSecret string
+
+	// Path is the HTTP URL path that handles the OAuth flow.
+	Path string
+
+	// GroupLinkEnabled specifies whether the OAuth app should associate
+	// access tokens with the group (and not just the user). This should only
+	// be set for the legacy OAuth app.
+	GroupLinkEnabled bool
+}
+
+func NewOAuthApp(env environment.Env, clientID, clientSecret, path string) *OAuthApp {
+	return &OAuthApp{
+		env:          env,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Path:         path,
+	}
+}
+
+func (c *OAuthApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If we don't have a state yet parameter, start oauth flow.
 	if r.FormValue("state") == "" {
 		state := fmt.Sprintf("%d", random.RandUint64())
@@ -134,11 +194,17 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 		url := fmt.Sprintf(
 			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
-			*clientID,
+			c.ClientID,
 			state,
-			build_buddy_url.WithPath("/auth/github/link/"),
+			url.QueryEscape(build_buddy_url.WithPath(c.Path).String()),
 			"repo")
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		return
+	}
+
+	// GitHub redirected back to us with an error.
+	if errDesc := r.FormValue("error_description"); errDesc != "" {
+		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub redirected back with error: %s", errDesc))
 		return
 	}
 
@@ -158,11 +224,11 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 	url := fmt.Sprintf(
 		"https://github.com/login/oauth/access_token?client_id=%s&client_secret=%s&code=%s&state=%s&redirect_uri=%s",
-		*clientID,
-		ClientSecret(),
+		c.ClientID,
+		c.ClientSecret,
 		code,
 		state,
-		redirectURL)
+		url.QueryEscape(redirectURL))
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -184,13 +250,29 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		redirectWithError(w, r, status.PermissionDeniedErrorf("Error reading GitHub response: %s", err.Error()))
 		return
 	}
+	if resp.StatusCode != 200 {
+		redirectWithError(w, r, status.UnknownErrorf("Error getting access token: HTTP %d: %s", resp.StatusCode, string(body)))
+		return
+	}
 
 	var accessTokenResponse GithubAccessTokenResponse
-	json.Unmarshal(body, &accessTokenResponse)
+	if err := json.Unmarshal(body, &accessTokenResponse); err != nil {
+		redirectWithError(w, r, status.WrapError(err, "Failed to unmarshal GitHub access token response"))
+		return
+	}
+	if err := accessTokenResponse.Err(); err != nil {
+		redirectWithError(w, r, status.PermissionDeniedErrorf("OAuth token exchange failed: %s", err))
+		return
+	}
+	if accessTokenResponse.RefreshToken != "" {
+		log.Warningf("GitHub refresh tokens are currently unsupported. Opt out of user-to-server token expiration in GitHub app settings.")
+		redirectWithError(w, r, status.PermissionDeniedErrorf("OAuth token exchange failed: response included unsupported refresh token"))
+		return
+	}
 
 	u, err := perms.AuthenticatedUser(r.Context(), c.env)
 	if err != nil {
-		redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account"))
+		redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account: could not authenticate user"))
 		return
 	}
 
@@ -202,9 +284,10 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	// Restore group ID from cookie.
 	groupID := getCookie(r, groupIDCookieName)
-	if groupID != "" {
+	// Associate the token with the org (legacy OAuth-only app only).
+	if groupID != "" && c.GroupLinkEnabled {
 		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
-			redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account"))
+			redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account: role not authorized"))
 			return
 		}
 		err = dbHandle.DB(r.Context()).Exec(
@@ -218,10 +301,14 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 
 	// Restore user ID from cookie.
 	userID := getCookie(r, userIDCookieName)
-	if userID != "" {
+	// Associate the token with the user (if only the legacy OAuth app is
+	// enabled, or if this is the new GitHub app).
+	if userID != "" && (c.env.GetGitHubApp() == nil || !c.GroupLinkEnabled) {
 		if userID != u.GetUserID() {
 			redirectWithError(w, r, status.PermissionDeniedErrorf("Invalid user: %v", userID))
+			return
 		}
+		log.Infof("Linking GitHub account for user %s", userID)
 		err = dbHandle.DB(r.Context()).Exec(
 			`UPDATE `+"`Users`"+` SET github_token = ? WHERE user_id = ?`,
 			accessTokenResponse.AccessToken, userID).Error
@@ -246,7 +333,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 
 	var err error
 	c.tokenLookup.Do(func() {
-		err = c.populateTokenIfNecessary(ctx)
+		err = c.populateTokenIfNecessary(ctx, ownerRepo)
 	})
 	if err != nil {
 		return nil
@@ -284,8 +371,22 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 	return nil
 }
 
-func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
-	if c.githubToken != "" || !Enabled() {
+func (c *GithubClient) populateTokenIfNecessary(ctx context.Context, ownerRepo string) error {
+	if c.githubToken != "" {
+		return nil
+	}
+
+	if app := c.env.GetGitHubApp(); app != nil {
+		token, err := app.GetRepoInstallationToken(ctx, ownerRepo)
+		if err != nil {
+			log.Debug("Failed to look up app installation token; falling back to legacy OAuth lookup.")
+		} else {
+			c.githubToken = token
+			return nil
+		}
+	}
+
+	if !Enabled() {
 		return nil
 	}
 
@@ -338,5 +439,14 @@ func getCookie(r *http.Request, name string) string {
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 	log.Warning(err.Error())
-	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
+	errorParam := err.Error()
+	redirectUrl := getCookie(r, redirectCookieName)
+	u, err := url.Parse(redirectUrl)
+	if err != nil || redirectUrl == "" {
+		u = &url.URL{Path: "/"}
+	}
+	q := u.Query()
+	q.Set("error", errorParam)
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
 }

@@ -381,6 +381,12 @@ func StartAndRunServices(env environment.Env) {
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
+	if gha := env.GetGitHubApp(); gha != nil {
+		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.WebhookHandler()))
+		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.OAuthHandler()))
+		mux.Handle("/auth/github/app/install/", interceptors.WrapAuthenticatedExternalHandler(env, gha.InstallHandler()))
+		mux.Handle("/auth/github/app/postinstall/", interceptors.WrapAuthenticatedExternalHandler(env, gha.PostInstallHandler()))
+	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), *port, grpc_server.GRPCPort())

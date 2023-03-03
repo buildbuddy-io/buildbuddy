@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -43,6 +44,8 @@ import (
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
+	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -67,6 +70,14 @@ var (
 	// run at a commit because it is untrusted. An approving review at the
 	// commit will allow the action to run.
 	ApprovalRequired = status.PermissionDeniedErrorf("approval required")
+)
+
+const (
+	// repoWorkflowIDPrefix is a workflow ID prefix representing legacy Workflow
+	// table rows that were artificially constructed from GitRepository rows
+	// (for backwards-compatibility).
+	// DO NOT MERGE: See if there is a simpler way to handle this.
+	repoWorkflowIDPrefix = "WF_RepoURL="
 )
 
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
@@ -239,6 +250,18 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	if workflowID == "" {
 		return nil, status.InvalidArgumentError("An ID is required to delete a workflow.")
 	}
+	// DO NOT MERGE: Reference the const here
+	if strings.HasPrefix(workflowID, "WF_RepoURL=") {
+		app := ws.env.GetGitHubApp()
+		if app == nil {
+			return nil, status.InternalError("cannot unlink repo. To revoke access, uninstall via GitHub App integrations")
+		}
+		repoURL := strings.TrimPrefix(workflowID, "WF_RepoURL=")
+		if err := app.DeleteRepo(ctx, repoURL); err != nil {
+			return nil, err
+		}
+		return &wfpb.DeleteWorkflowResponse{}, nil
+	}
 	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -314,23 +337,39 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 	}
 
 	rsp := &wfpb.GetWorkflowsResponse{}
-	q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
-	// Respect selected group ID.
-	q.AddWhereClause(`group_id = ?`, groupID)
-	// Adds user / permissions check.
-	if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
-		return nil, err
+	// First, list GitRepository rows, and adapt them to Workflow rows.
+	// TODO: migrate (adapt old Workflow rows to new-style repos instead)
+	ghApp := ws.env.GetGitHubApp()
+	if ghApp != nil {
+		repos, err := ghApp.GetRepos(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, tg := range repos {
+			rsp.Workflow = append(rsp.Workflow, &wfpb.GetWorkflowsResponse_Workflow{
+				Id:      repoWorkflowIDPrefix + tg.RepoURL,
+				RepoUrl: tg.RepoURL,
+			})
+		}
 	}
-	q.SetOrderBy("created_at_usec" /*ascending=*/, true)
-	qStr, qArgs := q.Build()
+
 	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
+		// Next, list legacy workflows.
+		q := query_builder.NewQuery(`SELECT workflow_id, name, repo_url, webhook_id FROM Workflows`)
+		// Respect selected group ID.
+		q.AddWhereClause(`group_id = ?`, groupID)
+		// Adds user / permissions check.
+		if err := perms.AddPermissionsCheckToQuery(ctx, ws.env, q); err != nil {
+			return err
+		}
+		q.SetOrderBy("repo_url", true /*=ascending*/)
+		qStr, qArgs := q.Build()
 		rows, err := tx.Raw(qStr, qArgs...).Rows()
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 
-		rsp.Workflow = make([]*wfpb.GetWorkflowsResponse_Workflow, 0)
 		for rows.Next() {
 			var tw tables.Workflow
 			if err := tx.ScanRows(rows, &tw); err != nil {
@@ -345,6 +384,9 @@ func (ws *workflowService) GetWorkflows(ctx context.Context, req *wfpb.GetWorkfl
 				Name:       tw.Name,
 				RepoUrl:    tw.RepoURL,
 				WebhookUrl: u,
+				// Mark this as a legacy workflow so we can show a message
+				// recommending that the user migrate to the GitHub app.
+				IsLegacyWorkflow: true,
 			})
 		}
 		return nil
@@ -385,17 +427,39 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	// Lookup workflow
-	wf := &tables.Workflow{}
-	err = ws.env.GetDBHandle().DB(ctx).Raw(
-		`SELECT * FROM Workflows WHERE workflow_id = ?`,
-		req.GetWorkflowId(),
-	).Take(wf).Error
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.NotFoundError("Workflow not found")
+	var wf *tables.Workflow
+	// If this is a GitHub App workflow, look up the GitRepository then
+	// adapt it to a legacy workflow.
+	if strings.HasPrefix(req.GetWorkflowId(), repoWorkflowIDPrefix) {
+		app := ws.env.GetGitHubApp()
+		if app == nil {
+			return nil, status.UnimplementedError("GitHub App is not configured")
 		}
-		return nil, status.InternalError(err.Error())
+		repo, err := app.GetRepo(ctx, req.GetTargetRepoUrl())
+		if err != nil {
+			return nil, err
+		}
+		ownerRepo, err := git.OwnerRepoFromRepoURL(req.GetTargetRepoUrl())
+		if err != nil {
+			return nil, err
+		}
+		token, err := app.GetRepoInstallationToken(ctx, ownerRepo)
+		if err != nil {
+			return nil, err
+		}
+		wf = workflowForRepo(repo, token)
+	} else {
+		wf = &tables.Workflow{}
+		err = ws.env.GetDBHandle().DB(ctx).Raw(
+			`SELECT * FROM Workflows WHERE workflow_id = ?`,
+			req.GetWorkflowId(),
+		).Take(wf).Error
+		if err != nil {
+			if db.IsRecordNotFound(err) {
+				return nil, status.NotFoundError("Workflow not found")
+			}
+			return nil, status.InternalError(err.Error())
+		}
 	}
 
 	// Authorize workflow access
@@ -548,6 +612,11 @@ func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context,
 }
 
 func (ws *workflowService) GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error) {
+	app := ws.env.GetGitHubApp()
+	if app != nil {
+		return app.GetAccessibleRepos(ctx, req)
+	}
+
 	if req.GetGitProvider() == wfpb.GitProvider_UNKNOWN_GIT_PROVIDER {
 		return nil, status.FailedPreconditionError("Unknown git provider")
 	}
@@ -694,6 +763,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			"--trigger_event=" + wd.EventName,
 			"--bazel_command=" + ws.ciRunnerBazelCommand(),
 			"--debug=" + fmt.Sprintf("%v", ws.ciRunnerDebugMode()),
+			"--check_run_id=" + fmt.Sprintf("%d", wd.CheckRunID),
 		}, extraArgs...),
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
@@ -841,7 +911,45 @@ func (ws *workflowService) isTrustedCommit(ctx context.Context, gitProvider inte
 	return gitProvider.IsTrusted(ctx, wf.AccessToken, wd.TargetRepoURL, wd.PullRequestAuthor)
 }
 
-func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {
+func (ws *workflowService) startWorkflowFromGitHubAppInstallation(r *http.Request) error {
+	ctx := r.Context()
+
+	// Parse the webhook payload, validating with the app webhook secret.
+	ghApp := ws.env.GetGitHubApp()
+	gitProvider := gh_webhooks.NewProvider()
+	wd, err := gitProvider.ParseWebhookData(r, ghApp.WebhookSecret())
+	if err != nil {
+		return err
+	}
+	if wd == nil {
+		return nil
+	}
+
+	// Look up the linked GitRepository.
+	repo, err := ghApp.GetRepo(ctx, wd.TargetRepoURL)
+	if err != nil {
+		// Repo is accessible to the installation but the user hasn't explicitly
+		// linked it via the BB UI; don't start workflows for it.
+		if status.IsNotFoundError(err) {
+			log.Debugf("Failed to get repo, will not start workflow: %s", err)
+			return nil
+		}
+		return err
+	}
+
+	// DO NOT MERGE: Does the webhook payload contain an installation ID? If so,
+	// we should check here that it matches the one in the DB.
+
+	// Create an installation access token for the repo.
+	installationAccessToken, err := ghApp.GetWebhookInstallationToken(ctx, wd)
+	if err != nil {
+		return err
+	}
+	wf := workflowForRepo(repo, installationAccessToken)
+	return ws.startWorkflow(ctx, gitProvider, wd, wf)
+}
+
+func (ws *workflowService) startLegacyWorkflow(webhookID string, r *http.Request) error {
 	ctx := r.Context()
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
@@ -850,7 +958,7 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	wd, err := gitProvider.ParseWebhookData(r)
+	wd, err := gitProvider.ParseWebhookData(r, "")
 	if err != nil {
 		return err
 	}
@@ -864,6 +972,10 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return status.WrapErrorf(err, "failed to lookup workflow for webhook ID %q", webhookID)
 	}
+	return ws.startWorkflow(ctx, gitProvider, wd, wf)
+}
+
+func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow) error {
 	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return err
@@ -897,14 +1009,55 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 		return err
 	}
 	for _, action := range cfg.Actions {
+		if wd.ActionName != "" && action.Name != wd.ActionName {
+			continue
+		}
+		invocationID := wd.InvocationID
+		if invocationID == "" {
+			invocationUUID, err := guuid.NewRandom()
+			if err != nil {
+				return err
+			}
+			invocationID = invocationUUID.String()
+		}
+
+		// If this is a check_suite event and the action is listening for
+		// check_run events, create a check run to trigger the action. Note,
+		// check suite runs are only implemented for GitHub repos, and only
+		// parsed from webhook data when the GitHub App is enabled.
+		if (wd.EventName == webhook_data.EventName.CheckSuite || wd.EventName == webhook_data.EventName.CheckRunRerequested) && config.MatchesAnyTrigger(action, webhook_data.EventName.CheckRun, wd.PushedBranch) {
+			client := gh_webhooks.NewGitHubClient(ctx, wf.AccessToken)
+			owner, repo, err := gh_webhooks.ParseOwnerRepo(wd.PushedRepoURL)
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to parse owner/repo from %q: %s", wd.PushedRepoURL, err)
+				continue
+			}
+			invocationURL := build_buddy_url.WithPath("/invocation/" + invocationID).String()
+			opts := githubapi.CreateCheckRunOptions{
+				Name:       action.Name,
+				HeadSHA:    wd.SHA,
+				DetailsURL: &invocationURL,
+				ExternalID: &invocationID,
+				// TODO: Provide Actions/Outputs here?
+			}
+			checkRun, res, err := client.Checks.CreateCheckRun(ctx, owner, repo, opts)
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to create check run: %s", err)
+				continue
+			}
+			if res.StatusCode >= 300 {
+				log.CtxErrorf(ctx, "Failed to create check run: unexpected HTTP status %d", res.StatusCode)
+				continue
+			}
+			log.CtxInfof(
+				ctx, "Created check run %q (invocation ID %s) in repo %q, branch %q",
+				checkRun.GetName(), checkRun.GetExternalID(), wd.PushedBranch, wd.PushedBranch)
+			continue
+		}
+
 		if !config.MatchesAnyTrigger(action, wd.EventName, wd.TargetBranch) {
 			continue
 		}
-		invocationUUID, err := guuid.NewRandom()
-		if err != nil {
-			return err
-		}
-		invocationID := invocationUUID.String()
 		_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
 		if err != nil {
 			if err == ApprovalRequired {
@@ -997,18 +1150,46 @@ func workflowHomeDir(user string) string {
 }
 
 func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// DO NOT MERGE: share this const
+	if r.URL.Path == "/webhooks/github/app" {
+		if err := ws.startWorkflowFromGitHubAppInstallation(r); err != nil {
+			log.Errorf("Failed to start workflow for GitHub App installation: %s", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Write([]byte("OK"))
+		return
+	}
+
 	workflowMatch := workflowURLMatcher.FindStringSubmatch(r.URL.Path)
 	if len(workflowMatch) != 2 {
 		http.Error(w, "workflow URL not recognized", http.StatusNotFound)
 		return
 	}
 	webhookID := workflowMatch[1]
-	if err := ws.startWorkflow(webhookID, r); err != nil {
+	if err := ws.startLegacyWorkflow(webhookID, r); err != nil {
 		log.Errorf("Failed to start workflow (webhook ID: %q): %s", webhookID, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.Write([]byte("OK"))
+}
+
+// Creates a legacy workflow for a git repository and associated GitHub App
+// installation token.
+// TODO: Migrate away from legacy workflows
+func workflowForRepo(repo *tables.GitRepository, accessToken string) *tables.Workflow {
+	return &tables.Workflow{
+		// Construct a workflow ID that allows us to distinguish this artificial
+		// workflow from a legacy workflow that actually exists in the DB.
+		WorkflowID:         repoWorkflowIDPrefix + repo.RepoURL,
+		UserID:             repo.UserID,
+		GroupID:            repo.GroupID,
+		Perms:              repo.Perms,
+		RepoURL:            repo.RepoURL,
+		InstanceNameSuffix: repo.InstanceNameSuffix,
+		AccessToken:        accessToken,
+	}
 }
 
 func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {

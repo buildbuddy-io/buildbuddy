@@ -39,6 +39,7 @@ type Action struct {
 type Triggers struct {
 	Push        *PushTrigger        `yaml:"push"`
 	PullRequest *PullRequestTrigger `yaml:"pull_request"`
+	CheckRun    *CheckRunTrigger    `yaml:"check_run"`
 }
 
 type PushTrigger struct {
@@ -46,6 +47,10 @@ type PushTrigger struct {
 }
 
 type PullRequestTrigger struct {
+	Branches []string `yaml:"branches"`
+}
+
+type CheckRunTrigger struct {
 	Branches []string `yaml:"branches"`
 }
 
@@ -143,6 +148,10 @@ func MatchesAnyTrigger(action *Action, event, branch string) bool {
 
 	if prCfg := action.Triggers.PullRequest; prCfg != nil && event == webhook_data.EventName.PullRequest {
 		return matchesAnyBranch(prCfg.Branches, branch)
+	}
+
+	if checkCfg := action.Triggers.CheckRun; checkCfg != nil && event == webhook_data.EventName.CheckRun {
+		return matchesAnyBranch(checkCfg.Branches, branch)
 	}
 	return false
 }

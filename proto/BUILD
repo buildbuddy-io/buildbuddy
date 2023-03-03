@@ -125,7 +125,10 @@ proto_library(
 proto_library(
     name = "github_proto",
     srcs = ["github.proto"],
-    deps = [":context_proto"],
+    deps = [
+        ":context_proto",
+        ":workflow_proto",
+    ],
 )
 
 proto_library(
@@ -582,6 +585,7 @@ go_proto_library(
     proto = ":github_proto",
     deps = [
         ":context_go_proto",
+        ":workflow_go_proto",
     ],
 )
 

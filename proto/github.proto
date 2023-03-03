@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "proto/workflow.proto";
 
 package github;
 
@@ -8,6 +9,10 @@ package github;
 // associated with the group selected in the request context.
 message UnlinkGitHubAccountRequest {
   context.RequestContext request_context = 1;
+
+  // Whether this is a user-level unlink.
+  // If false, attempt to unlink from the organization.
+  bool user = 2;
 }
 
 message UnlinkGitHubAccountResponse {
@@ -17,4 +22,55 @@ message UnlinkGitHubAccountResponse {
   // to delete webhooks if the linked GitHub token has already been revoked via
   // the GitHub UI.
   repeated string warning = 2;
+}
+
+// InstallGitHubAppRequest is a request to install the BuildBuddy GitHub App to
+// the authenticated user's currently selected organization.
+//
+// The user must have a personal GitHub account linked to BuildBuddy.
+message InstallGitHubAppRequest {
+  context.RequestContext request_context = 1;
+
+  // The repository to link to the currently selected org.
+  string repo_url = 2;
+
+  // The installation ID. This is only set after completing the first-time
+  // setup. If the app is already installed, this can be blank. The server will
+  // return a NotFound error if this is blank and the app is not yet installed.
+  int64 installation_id = 3;
+}
+
+message InstallGitHubAppResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message GetGitHubAppInstallationsRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetGitHubAppInstallationsResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated Installation installations = 2;
+}
+
+message Installation {
+  int64 id = 1;
+  string owner = 2;
+  // Whether this installation is linked to the organization.
+  bool is_linked = 3;
+}
+
+message SearchReposRequest {
+  context.RequestContext request_context = 1;
+
+  string query = 2;
+
+  string owner = 3;
+}
+
+message SearchReposResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated workflow.Repo repos = 2;
 }

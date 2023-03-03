@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//enterprise/server/auth",
         "//enterprise/server/build_event_publisher",
+        "//enterprise/server/workflow/checks",
         "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",

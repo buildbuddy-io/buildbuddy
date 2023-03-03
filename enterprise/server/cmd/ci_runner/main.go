@@ -21,6 +21,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/checks"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -121,6 +122,7 @@ var (
 	patchDigests       = flagutil.New("patch_digest", []string{}, "Digests of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 	gitCleanExclude    = flagutil.New("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
+	checkRunID         = flag.Int64("check_run_id", 0, "GitHub check run ID where check run results should be posted.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -188,10 +190,11 @@ type workspace struct {
 }
 
 type buildEventReporter struct {
-	isWorkflow bool
-	apiKey     string
-	bep        *build_event_publisher.Publisher
-	log        *invocationLog
+	isWorkflow    bool
+	apiKey        string
+	workspaceRoot string
+	bep           *build_event_publisher.Publisher
+	log           *invocationLog
 
 	invocationID          string
 	startTime             time.Time
@@ -465,9 +468,7 @@ func run() error {
 		return err
 	}
 
-	// Write setup logs to the current task's stderr (to make debugging easier),
-	// and also to the invocation.
-	ws.log = io.MultiWriter(os.Stderr, buildEventReporter)
+	ws.log = buildEventReporter
 	ws.hostname, ws.username = getHostAndUserName()
 
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
@@ -565,14 +566,57 @@ func run() error {
 	if err := buildEventReporter.Start(ws.startTime); err != nil {
 		return status.WrapError(err, "could not publish started event")
 	}
+
+	var checkRun *checks.Run
+	if *checkRunID != 0 {
+		checkRun = &checks.Run{
+			Name:          *actionName,
+			ID:            *checkRunID,
+			RepoURL:       *targetRepoURL,
+			AccessToken:   os.Getenv(repoTokenEnvVarName),
+			WorkspaceRoot: ws.rootDir,
+			DetailsURL:    *besResultsURL + *invocationID,
+		}
+	}
+
+	// NOTE: be careful changing the code below; it is optimized for returning
+	// the maximum amount of debugging info possible if something goes wrong.
+	result, setupAndRunErr := setupAndRunAction(ctx, ws, checkRun, buildEventReporter)
+	if result == nil {
+		result = &actionResult{noExitCode, failedExitCodeName}
+	}
+	if checkRun != nil {
+		if err := checkRun.Finish(ctx, result.exitCode, result.exitCodeName); err != nil {
+			buildEventReporter.log.Printf("ERROR: failed to update check run: %s", err)
+		}
+	}
+	if err := buildEventReporter.Stop(result.exitCode, result.exitCodeName); err != nil {
+		// At this point, there will be no more build events, so write only to
+		// the CI runner action logs.
+		io.WriteString(os.Stderr, fmt.Sprintln("ERROR: incomplete build event stream:", err))
+	}
+	return setupAndRunErr
+}
+
+func setupAndRunAction(ctx context.Context, ws *workspace, checkRun *checks.Run, buildEventReporter *buildEventReporter) (*actionResult, error) {
+	// Update the check run before doing anything else, so that the user knows
+	// that the check is in progress.
+	if checkRun != nil {
+		// TODO: Maybe do this in the background, since the GH API can be slow.
+		if err := checkRun.Start(ctx); err != nil {
+			buildEventReporter.log.Printf("ERROR: failed to update GitHub check run: %s", err)
+		}
+		if err := checkRun.ProvisionAnnotationsFile(); err != nil {
+			return nil, fmt.Errorf("failed to provision check run annotations file: %s", err)
+		}
+	}
+
 	if err := ws.setup(ctx); err != nil {
-		_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
-		return status.WrapError(err, "failed to set up git repo")
+		return nil, status.WrapError(err, "failed to set up git repo")
 	}
 	cfg, err := readConfig()
 	if err != nil {
-		_ = buildEventReporter.Stop(noExitCode, failedExitCodeName)
-		return status.WrapError(err, "failed to read BuildBuddy config")
+		return nil, status.WrapError(err, "failed to read BuildBuddy config")
 	}
 
 	var action *config.Action
@@ -588,23 +632,17 @@ func run() error {
 		// actions with a matching action name.
 		action, err = findAction(cfg.Actions, *actionName)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else {
-		return status.InvalidArgumentError("One of --action or --bazel_sub_command must be specified.")
+		return nil, status.InvalidArgumentError("One of --action or --bazel_sub_command must be specified.")
 	}
 
 	result, err := ws.RunAction(ctx, action, buildEventReporter)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := buildEventReporter.Stop(result.exitCode, result.exitCodeName); err != nil {
-		return err
-	}
-	if result.exitCode != 0 {
-		return result // as error
-	}
-	return nil
+	return result, nil
 }
 
 type actionResult struct {
@@ -663,6 +701,8 @@ type invocationLog struct {
 
 func newInvocationLog() *invocationLog {
 	invLog := &invocationLog{writeListener: func() {}}
+	// Write invocation logs to the current task's stderr (to make debugging
+	// easier), and also to the invocation progress.
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
@@ -772,6 +812,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	}
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
+	}
+	// This is a check, not a normal workflow action. Statuses are published via
+	// the check API; do not publish normal build statuses.
+	if *checkRunID != 0 {
+		buildMetadata.Metadata["DISABLE_COMMIT_STATUS_REPORTING"] = "true"
 	}
 	buildMetadataEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},

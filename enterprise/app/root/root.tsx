@@ -279,7 +279,9 @@ export default class EnterpriseRootComponent extends React.Component {
                   {home && (
                     <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />
                   )}
-                  {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
+                  {workflows && (
+                    <WorkflowsComponent path={this.state.path} search={this.state.search} user={this.state.user} />
+                  )}
                   {code && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent

@@ -911,6 +911,27 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 		return nil, status.InternalErrorf("authenticated user's group ID is empty")
 	}
 
+	if req.User {
+		// Unlink user-level account.
+		dbu, err := udb.GetUser(ctx)
+		if err != nil {
+			return nil, status.InternalErrorf("authenticated user lookup failed: %s", err)
+		}
+		if dbu.GithubToken == "" {
+			return nil, status.FailedPreconditionErrorf("authenticated user does not have a linked GitHub account")
+		}
+		dbh := s.env.GetDBHandle()
+		// DO NOT MERGE: Move to UserDB
+		err = dbh.DB(ctx).Exec(
+			`UPDATE Users SET github_token = "" WHERE user_id = ? `,
+			u.GetUserID(),
+		).Error
+		if err != nil {
+			return nil, status.InternalErrorf("failed to update user: %s", err)
+		}
+		return &ghpb.UnlinkGitHubAccountResponse{}, nil
+	}
+
 	// Lookup linked token
 	g, err := udb.GetGroupByID(ctx, u.GetGroupID())
 	if err != nil {
@@ -940,6 +961,27 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 		return nil, err
 	}
 	return res, nil
+}
+
+func (s *BuildBuddyServer) InstallGitHubApp(ctx context.Context, req *ghpb.InstallGitHubAppRequest) (*ghpb.InstallGitHubAppResponse, error) {
+	if s.env.GetGitHubApp() == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+	return s.env.GetGitHubApp().Install(ctx, req)
+}
+
+func (s *BuildBuddyServer) GetGitHubAppInstallations(ctx context.Context, req *ghpb.GetGitHubAppInstallationsRequest) (*ghpb.GetGitHubAppInstallationsResponse, error) {
+	if s.env.GetGitHubApp() == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+	return s.env.GetGitHubApp().GetInstallations(ctx, req)
+}
+
+func (s *BuildBuddyServer) SearchGitHubRepos(ctx context.Context, req *ghpb.SearchReposRequest) (*ghpb.SearchReposResponse, error) {
+	if s.env.GetGitHubApp() == nil {
+		return nil, status.UnimplementedError("not implemented")
+	}
+	return s.env.GetGitHubApp().SearchRepos(ctx, req)
 }
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {

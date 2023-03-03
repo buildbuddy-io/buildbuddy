@@ -489,6 +489,48 @@ func (ts *TargetStatus) TableName() string {
 	return "TargetStatuses"
 }
 
+// GitHubAppInstallation represents a BuildBuddy GitHub App installation linked
+// to an organization. Note that GitHub is the source of truth for these, so
+// application logic needs to check validity of the installation before use as
+// applicable. Typically, the app will try to create a token for the
+// installation ID, and GitHub will return an error due to the installation no
+// longer existing or no longer enabled for a particular repo.
+type GitHubAppInstallation struct {
+	// UserID is the user that registered this installation to BuildBuddy.
+	UserID string `gorm:"not null;default:''"`
+	// GroupID is the group linked to the GitHub app installation.
+	GroupID string `gorm:"primaryKey"`
+	// InstallationID is the GitHub app installation ID.
+	InstallationID int64 `gorm:"not null"`
+	// Owner is the GitHub login of the installation (either a user or
+	// organization name). This can be computed from the installation ID, but we
+	// store it here so that we can run queries to associate repos with
+	// installations.
+	Owner string `gorm:"primaryKey"`
+}
+
+func (gh *GitHubAppInstallation) TableName() string {
+	return "GitHubAppInstallations"
+}
+
+// GitRepository represents a Git repository linked to a BB organization.
+// Currently, these can only be created by linking to a repository accessible
+// to a GitHub App installation.
+type GitRepository struct {
+	RepoURL string `gorm:"primaryKey;unique"`
+	UserID  string
+	GroupID string `gorm:"primaryKey"`
+	Perms   int
+
+	// InstanceNameSuffix is the remote instance name suffix to apply to any
+	// invocations invoked within this repo, such as workflows or remote Bazel.
+	InstanceNameSuffix string `gorm:"default:''"`
+}
+
+func (g *GitRepository) TableName() string {
+	return "GitRepositories"
+}
+
 // Workflow represents a set of BuildBuddy actions to be run in response to
 // events published to a Git webhook.
 type Workflow struct {
@@ -997,23 +1039,25 @@ func isStrictModeEnabled(db *gorm.DB) (bool, error) {
 }
 
 func init() {
-	registerTable("IN", &Invocation{})
-	registerTable("CA", &CacheEntry{})
-	registerTable("US", &User{})
-	registerTable("GR", &Group{})
-	registerTable("UG", &UserGroup{})
 	registerTable("AK", &APIKey{})
-	registerTable("TO", &Token{})
-	registerTable("SE", &Session{})
-	registerTable("EX", &Execution{})
-	registerTable("IE", &InvocationExecution{})
-	registerTable("TL", &TelemetryLog{})
+	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
-	registerTable("SK", &Secret{})
-	registerTable("TA", &Target{})
-	registerTable("TS", &TargetStatus{})
-	registerTable("WF", &Workflow{})
-	registerTable("UA", &Usage{})
+	registerTable("EX", &Execution{})
+	registerTable("GH", &GitHubAppInstallation{})
+	registerTable("GR", &Group{})
+	registerTable("IE", &InvocationExecution{})
+	registerTable("IN", &Invocation{})
 	registerTable("QB", &QuotaBucket{})
 	registerTable("QG", &QuotaGroup{})
+	registerTable("RE", &GitRepository{})
+	registerTable("SE", &Session{})
+	registerTable("SK", &Secret{})
+	registerTable("TA", &Target{})
+	registerTable("TL", &TelemetryLog{})
+	registerTable("TO", &Token{})
+	registerTable("TS", &TargetStatus{})
+	registerTable("UA", &Usage{})
+	registerTable("UG", &UserGroup{})
+	registerTable("US", &User{})
+	registerTable("WF", &Workflow{})
 }

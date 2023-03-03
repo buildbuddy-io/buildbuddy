@@ -21,6 +21,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -433,12 +434,13 @@ type ApiService interface {
 }
 
 type WorkflowService interface {
+	http.Handler
+
 	CreateWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
 	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
 	GetWorkflows(ctx context.Context, req *wfpb.GetWorkflowsRequest) (*wfpb.GetWorkflowsResponse, error)
 	ExecuteWorkflow(ctx context.Context, req *wfpb.ExecuteWorkflowRequest) (*wfpb.ExecuteWorkflowResponse, error)
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
-	ServeHTTP(w http.ResponseWriter, r *http.Request)
 
 	// GetLinkedWorkflows returns any workflows linked with the given repo access
 	// token.
@@ -446,6 +448,59 @@ type WorkflowService interface {
 
 	// WorkflowsPoolName returns the name of the executor pool to use for workflow actions.
 	WorkflowsPoolName() string
+}
+
+type GitHubApp interface {
+	// Install handles the initial setup flow for linking a GitHub app
+	// installation to an organization as well as linking an initial repository
+	// as part of the installation. GitHub app installations must
+	// be linked to a group as a way to associate repositories with BuildBuddy
+	// organizations.
+	Install(ctx context.Context, req *ghpb.InstallGitHubAppRequest) (*ghpb.InstallGitHubAppResponse, error)
+
+	// GetInstallations returns the GitHub app installations that are linked to
+	// the authenticated user's selected group.
+	GetInstallations(ctx context.Context, req *ghpb.GetGitHubAppInstallationsRequest) (*ghpb.GetGitHubAppInstallationsResponse, error)
+
+	// GetAccessibleRepos returns any repos that are accessible to the app
+	// installation for the owner specified in the request. If an installation
+	// for the given owner does not exist for the authenticated org, an error is
+	// returned.
+	GetAccessibleRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
+
+	// SearchRepos searches for repos accessible to the authenticated group's
+	// GitHub app installation.
+	SearchRepos(ctx context.Context, req *ghpb.SearchReposRequest) (*ghpb.SearchReposResponse, error)
+
+	GetRepo(ctx context.Context, url string) (*tables.GitRepository, error)
+
+	DeleteRepo(ctx context.Context, url string) error
+
+	// GetRepos returns any explicitly linked repos. It does not validate
+	// whether the original app installation ID is still valid. Clients are
+	// responsible for checking whether the installation was revoked.
+	GetRepos(ctx context.Context) ([]*tables.GitRepository, error)
+
+	// GetRepoInstallationToken attempts to return an installation auth token
+	// for the given repo. An explicit GitRepository does not have to exist
+	// in the DB.
+	GetRepoInstallationToken(ctx context.Context, ownerRepo string) (string, error)
+
+	GetWebhookInstallationToken(ctx context.Context, wd *WebhookData) (string, error)
+
+	WebhookSecret() string
+
+	// WebhookHandler returns the webhook HTTP handler.
+	WebhookHandler() http.Handler
+
+	// OAuthHandler returns the OAuth HTTP handler.
+	OAuthHandler() http.Handler
+
+	// InstallHandler returns the installation HTTP handler.
+	InstallHandler() http.Handler
+
+	// PostInstallHandler returns the post-installation setup HTTP handler.
+	PostInstallHandler() http.Handler
 }
 
 type RunnerService interface {
@@ -468,7 +523,7 @@ type GitProvider interface {
 	// ParseWebhookData parses webhook data from the given HTTP request sent to
 	// a webhook endpoint. It should only be called if MatchWebhookRequest returns
 	// true.
-	ParseWebhookData(req *http.Request) (*WebhookData, error)
+	ParseWebhookData(req *http.Request, webhookSecret string) (*WebhookData, error)
 
 	// RegisterWebhook registers the given webhook URL to listen for push and
 	// pull request (also called "merge request") events.
@@ -533,6 +588,19 @@ type WebhookData struct {
 	// request, if applicable.
 	// Ex: "acmedev123"
 	PullRequestApprover string
+
+	// CheckRunID is an optional check run ID, for check run events only.
+	CheckRunID int64
+
+	// ActionName is an optional workflow action name created in a previous
+	// stage (ex: check_suite creates a check_run for each action, then the
+	// check_run event determines the action to run here).
+	ActionName string
+
+	// InvocationID is an optional invocation ID created in a previous stage
+	// (ex: check_suite determines the invocation ID, then the check_run
+	// consumes it from the field here).
+	InvocationID string
 }
 
 type SplashPrinter interface {

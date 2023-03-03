@@ -27,8 +27,10 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
           if (e.defaultPrevented) return;
         }
 
-        e.preventDefault();
-        if (href) router.navigateTo(href);
+        if (!isHandledByServer(href || "")) {
+          e.preventDefault();
+          if (href) router.navigateTo(href);
+        }
       };
   const externalProps: React.HTMLProps<HTMLAnchorElement> = isExternal ? { target: "_blank" } : {};
   return (
@@ -42,6 +44,10 @@ export const Link = React.forwardRef((props: LinkProps, ref: React.Ref<HTMLAncho
     />
   );
 });
+
+function isHandledByServer(href: string) {
+  return href.startsWith("/auth/");
+}
 
 export type TextLinkProps = LinkProps;
 

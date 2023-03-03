@@ -6,6 +6,10 @@
   align-items: start;
 }
 
+.banner .banner-content > p:first-child {
+  margin-top: 0;
+}
+
 .banner.banner-info {
   background: #e1f5fe;
 }

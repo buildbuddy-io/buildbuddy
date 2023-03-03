@@ -108,6 +108,9 @@ message GetWorkflowsResponse {
     // URL will trigger a build of this project.
     // Ex. "https://app.buildbuddy.io/webhooks/workflows/abcd123letitflow"
     string webhook_url = 4;
+
+    // Whether this is a legacy workflow created with the OAuth app.
+    bool is_legacy_workflow = 5;
   }
 
   repeated Workflow workflow = 2;
@@ -183,6 +186,11 @@ message GetReposRequest {
 
   // The provider to fetch repos for (required).
   GitProvider git_provider = 2;
+
+  // The github user or organization to list repos for. If unset, the server
+  // will pick an owner from one of the app installations linked to the
+  // organization (if any) and return it in the response.
+  string owner = 3;
 }
 
 message GetReposResponse {
@@ -190,4 +198,11 @@ message GetReposResponse {
 
   // Repos fetched from the provider.
   repeated Repo repo = 2;
+
+  // The owner of all the returned repos.
+  string owner = 3;
+
+  // The list of allowed "owner" values for subsequent GetReposRequests.
+  // If empty, the server is not aware of any GitHub app installations.
+  repeated string owners = 4;
 }

@@ -63,10 +63,6 @@
   border-bottom: 1px solid #eee;
 }
 
-.workflows-page .workflow-item > :not(:last-child) {
-  margin-right: 16px;
-}
-
 .workflows-page .workflow-name {
   font-size: 18px;
   font-weight: 600;
@@ -87,13 +83,26 @@
   padding: 4px 8px;
 }
 
+.workflows-page .workflow-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.workflows-page .workflow-item > :first-child {
+  flex-grow: 1;
+}
+
 .workflows-page .workflow-item-row {
   display: flex;
   align-items: center;
+  gap: 16px;
 }
 
-.workflows-page .workflow-item-row > :not(:last-child) {
-  margin-right: 16px;
+.workflows-page .help-icon {
+  margin-left: 8px;
+  width: 16px;
+  height: 16px;
 }
 
 .workflows-page .workflow-item-column {
@@ -109,11 +118,23 @@
 .workflows-page .workflow-dropdown-container {
   margin-left: auto;
   position: relative;
-  align-self: start;
 }
 
 .workflows-page .copied-to-clipboard {
   color: #aaa;
+}
+
+.workflows-page .upgrade-notice {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #757575;
+  display: flex;
+  gap: 4px;
+}
+
+.workflows-page .upgrade-notice .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .workflows-page .workflow-item-row .git-merge-icon {
@@ -169,6 +190,21 @@
 .workflows-github-import .content-container {
   width: 600px;
   max-width: 100%;
+}
+
+.workflows-github-import .repo-search {
+  margin-top: 32px;
+  display: flex;
+  gap: 8px;
+}
+
+.workflows-github-import .repo-search > :first-child {
+  max-width: 200px;
+  flex-shrink: 0;
+}
+
+.workflows-github-import .search-loading {
+  height: 64px;
 }
 
 .workflows-github-import .content-container > :not(:last-child) {
