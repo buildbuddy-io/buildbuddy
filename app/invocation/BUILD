@@ -96,6 +96,7 @@ ts_library(
     deps = [
         "//app/invocation:child_invocation_card",
         "//app/invocation:invocation_model",
+        "//app/util:proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
@@ -268,7 +269,6 @@ ts_library(
         "//app/components/select",
         "//app/format",
         "//app/invocation:invocation_model",
-        "//app/router",
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
