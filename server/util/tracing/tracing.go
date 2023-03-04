@@ -255,6 +255,10 @@ func NewHttpServeMux(delegate *http.ServeMux) *HttpServeMux {
 	return &HttpServeMux{delegateMux: delegate, tracingHandler: handler}
 }
 
+func (m *HttpServeMux) GimmeThatMux() *http.ServeMux {
+	return m.delegateMux
+}
+
 func (m *HttpServeMux) Handle(pattern string, handler http.Handler) {
 	m.delegateMux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 		span := trace.SpanFromContext(r.Context())

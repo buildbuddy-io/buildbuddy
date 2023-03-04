@@ -62,6 +62,15 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"kythe.io/kythe/go/services/filetree"
+	"kythe.io/kythe/go/services/graph"
+	"kythe.io/kythe/go/services/xrefs"
+	ftsrv "kythe.io/kythe/go/serving/filetree"
+	gsrv "kythe.io/kythe/go/serving/graph"
+	"kythe.io/kythe/go/serving/identifiers"
+	xsrv "kythe.io/kythe/go/serving/xrefs"
+	"kythe.io/kythe/go/storage/leveldb"
+	"kythe.io/kythe/go/storage/table"
 )
 
 var (
@@ -343,6 +352,27 @@ func StartAndRunServices(env environment.Env) {
 	if err := grpc_server.RegisterGRPCSServer(env, registerGRPCServices); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	var servingTable = "/home/jdhollen/bb-src/buildbuddy/.kythe_serving"
+
+	ctx := context.Background()
+	db, err := leveldb.Open(servingTable, nil)
+	if err != nil {
+		log.Fatalf("Error opening db at %q: %v", servingTable, err)
+	}
+	log.Warning("Hello..")
+	defer db.Close(ctx)
+	xs := xsrv.NewService(ctx, db)
+	tbl := &table.KVProto{db}
+	gs := gsrv.NewCombinedTable(tbl)
+	ft := &ftsrv.Table{Proto: tbl, PrefixedKeys: true}
+	idst := &identifiers.Table{Proto: tbl}
+
+	xrefs.RegisterHTTPHandlers(ctx, xs, env.GetMux().GimmeThatMux())
+	graph.RegisterHTTPHandlers(ctx, gs, env.GetMux().GimmeThatMux())
+	filetree.RegisterHTTPHandlers(ctx, ft, env.GetMux().GimmeThatMux())
+	identifiers.RegisterHTTPHandlers(ctx, idst, env.GetMux().GimmeThatMux())
+	log.Warning("World")
 
 	mux := env.GetMux()
 	// Register all of our HTTP handlers on the default mux.

@@ -24,6 +24,7 @@ func ValidateRedirect(env environment.Env, redirectURL string) error {
 	if err != nil {
 		return err
 	}
+	// Qux
 	myURL := build_buddy_url.WithPath("")
 	if redir.Hostname() != "" && redir.Hostname() != myURL.Hostname() {
 		return status.InvalidArgumentErrorf("Redirect url %q not found on this domain %q", redirectURL, myURL.Host)

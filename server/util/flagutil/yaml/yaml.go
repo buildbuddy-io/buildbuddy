@@ -563,7 +563,7 @@ func GenerateYAMLMapWithValuesFromFlags[T any](generateValue func(*flag.Flag) (T
 		}
 		v, err := generateValue(flg)
 		if err != nil {
-			errors = append(errors, err)
+			// errors = append(errors, err)
 			return
 		}
 		value := reflect.ValueOf(v)

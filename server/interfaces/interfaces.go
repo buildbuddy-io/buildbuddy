@@ -42,6 +42,7 @@ import (
 type HttpServeMux interface {
 	Handle(pattern string, handler http.Handler)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+	GimmeThatMux() *http.ServeMux
 }
 
 // An interface representing the user info gleaned from an authorization header.

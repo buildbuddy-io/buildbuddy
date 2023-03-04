@@ -31,7 +31,7 @@ interface Props {
   search: URLSearchParams;
 }
 interface State {
-  commitSHA: string;
+  currentAnchor: any;
   repoResponse: any;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, any[]>;
@@ -41,6 +41,7 @@ interface State {
   changes: Map<string, string>;
   mergeConflicts: Map<string, string>;
   pathToIncludeChanges: Map<string, boolean>;
+  searchResults: any;
   prLink: string;
   prNumber: string;
   prBranch: string;
@@ -60,7 +61,7 @@ const LOCAL_STORAGE_STATE_KEY = "code-state-v1";
 // TODO(siggisim): Add some form of search
 export default class CodeComponent extends React.Component<Props, State> {
   state: State = {
-    commitSHA: "",
+    currentAnchor: undefined,
     repoResponse: undefined,
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, any[]>(),
@@ -70,6 +71,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     changes: new Map<string, string>(),
     mergeConflicts: new Map<string, string>(),
     pathToIncludeChanges: new Map<string, boolean>(),
+    searchResults: undefined,
     prLink: "",
     prBranch: "",
     prNumber: "",
@@ -83,7 +85,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     prBody: "",
   };
 
-  editor: any;
+  editor: monaco.editor.IStandaloneCodeEditor;
   diffEditor: any;
 
   codeViewer = React.createRef<HTMLDivElement>();
@@ -92,6 +94,9 @@ export default class CodeComponent extends React.Component<Props, State> {
   octokit: Octokit;
 
   subscription: Subscription;
+
+  oldDecorations = [];
+  decorationTrash = [];
 
   componentWillMount() {
     document.title = `Code | BuildBuddy`;
@@ -119,6 +124,134 @@ export default class CodeComponent extends React.Component<Props, State> {
     return Boolean(this.props.search.get("bytestream_url"));
   }
 
+  getDisplayOptions(o: any): any | null {
+    let type = "";
+    switch (o.kind) {
+      case "/kythe/edge/ref/call":
+        type = "fncall";
+        break;
+      case "/kythe/edge/ref/imports":
+        type = "import";
+        break;
+      case "/kythe/edge/defines/binding":
+        type = "def";
+        break;
+      case "/kythe/edge/ref":
+        type = "";
+        break;
+      default:
+        return null;
+    }
+    return { inlineClassName: "code-hover " + type, hoverMessage: { value: o.target_ticket } };
+  }
+
+  fetchDecor(file: string) {
+    console.log(file);
+    if (!file) {
+      return;
+    }
+    fetch("/decorations", {
+      method: "POST",
+      body: `{"location":{"ticket":"${file}"},"references":true,"target_definitions":true,"semantic_scopes":true,"diagnostics":true}`,
+    })
+      .then((r) => r.json())
+      .then((r) => {
+        console.log(r);
+        const newDecor = r.reference
+          .map((x) => {
+            const startLine = x.span.start.line_number;
+            const startColumn = x.span.start.column_offset || 0;
+            const endLine = x.span.end.line_number;
+            const endColumn = x.span.end.column_offset || 0;
+            const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
+            const displayOptions = this.getDisplayOptions(x);
+            if (displayOptions === null) {
+              return null;
+            }
+            return {
+              range: monacoRange,
+              options: displayOptions,
+            };
+          })
+          .filter((x) => x !== null);
+        this.oldDecorations = this.editor.deltaDecorations(this.oldDecorations, []);
+        this.oldDecorations = this.editor.deltaDecorations(this.oldDecorations, newDecor);
+        this.decorationTrash = r.reference;
+      });
+  }
+
+  prettyPrintFilename(f) {
+    const u = new URL(f);
+    const path = (u.search.match(/path\=([^?]*)(\?|$)/) || [])[1] || "";
+    const root = (u.search.match(/root\=([^?]*)(\?|$)/) || [])[1] || "";
+    return u.pathname + "/" + root + "/" + path;
+  }
+
+  renderSearchResultCategory(r, t): React.ReactElement {
+    return (
+      <div className="search-category-container">
+        <div className="search-category-title">{t}</div>
+        <>
+          {r.map((v) => (
+            <div className="search-category-results" onClick={() => this.navigateToAnchor(v.anchor)}>
+              <div>
+                {this.prettyPrintFilename(v.anchor.parent)}
+                <span className="search-line">(line {v.anchor.snippet_span.start.line_number})</span>
+              </div>
+              <div className="search-snippet">{v.anchor.snippet}</div>
+            </div>
+          ))}
+        </>
+      </div>
+    );
+  }
+
+  renderSearchResults(): React.ReactElement | null {
+    if (!this.state.searchResults) {
+      return null;
+    }
+    const r = this.state.searchResults;
+    return (
+      <div>
+        {r.definition && this.renderSearchResultCategory(r.definition, "Definitions")}
+        {r.declaration && this.renderSearchResultCategory(r.declaration, "Declarations")}
+        {r.reference && this.renderSearchResultCategory(r.reference, "References")}
+      </div>
+    );
+  }
+
+  searchForTicket(v: any) {
+    const t = v.target_ticket;
+    if (!t) {
+      return;
+    }
+    console.log();
+    fetch("/xrefs", {
+      method: "POST",
+      body: `{"ticket":["${t}"],"snippets":1,"definition_kind":1,"declaration_kind":1,"reference_kind":3}`,
+    })
+      .then((r) => r.json())
+      .then((r) => {
+        console.log(r);
+        if (!r.cross_references || !r.cross_references[t]) {
+          this.setState({ searchResults: undefined });
+          return;
+        }
+        this.setState({ searchResults: r.cross_references[t] });
+      });
+  }
+
+  navigateToAnchor(a: any) {
+    console.log("NAVIGATING");
+    const path = a.parent.split("?path=")[1];
+    console.log("uhh" + path);
+    this.handleFileClicked({ type: "kythe", kytheUrl: a.parent }, path)?.then(() => {
+      const post = this.editor.getModel()!.getPositionAt(a.span.start.byte_offset);
+      this.editor.setPosition(post);
+      this.editor.revealLineInCenterIfOutsideViewport(post.lineNumber);
+    });
+  }
+
   componentDidMount() {
     if (!this.currentRepo() && !this.isSingleFile()) {
       return;
@@ -126,17 +259,70 @@ export default class CodeComponent extends React.Component<Props, State> {
 
     window.addEventListener("resize", () => this.handleWindowResize());
 
-    this.editor = monaco.editor.create(this.codeViewer.current, {
-      value: ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n"),
+    this.editor = monaco.editor.create(this.codeViewer.current!, {
+      value: ["// Welcome to BuildBuddy Code!", "", "// CHOOSE A FILE ON THE LEFT AND GET A-CLICKIN'."].join("\n"),
       theme: "vs",
-      readOnly: this.isSingleFile(),
+      readOnly: true,
     });
+    this.editor.addAction({
+      // An unique identifier of the contributed action.
+      id: "go-to-ref-jh",
+
+      // A label of the action that will be presented to the user.
+      label: "Find references",
+
+      // An optional array of keybindings for the action.
+      keybindings: [],
+
+      contextMenuGroupId: "navigation",
+
+      contextMenuOrder: 1.5,
+
+      // Method that will be executed when the action is triggered.
+      // @param editor The editor instance is passed in as a convenience
+      run: (ed) => {
+        const pos = ed.getPosition();
+        if (!pos) return;
+        const col = pos.column;
+        const line = pos.lineNumber;
+        console.log(ed.getPosition());
+        console.log(this.decorationTrash);
+        let shortestLength = 100000;
+        let v = undefined;
+        this.decorationTrash.forEach((x: any) => {
+          // XXX: This seemed to be messing with finding references to
+          // definitions, but might still need to exclude some stuff.
+          // if (x.kind !== "/kythe/edge/ref") {
+          //  return false;
+          // }
+          const startLine = x.span.start.line_number;
+          const startColumn = x.span.start.column_offset || 0;
+          const endLine = x.span.end.line_number;
+          const endColumn = x.span.end.column_offset || 0;
+          let shortest = 1000000;
+          if (col >= startColumn + 1 && col <= endColumn + 1 && line >= startLine && line <= endLine) {
+            const len = x.span.end.byte_offset - x.span.start.byte_offset;
+            if (len < shortest) {
+              v = x;
+              shortest = len;
+              console.log(shortest);
+            }
+          }
+        });
+        if (v) {
+          console.log(v);
+          this.searchForTicket(v);
+        }
+      },
+    });
+
+    this.fetchDecor(`kythe://buildbuddy?path=${this.currentPath()}`);
 
     let bytestreamURL = this.props.search.get("bytestream_url");
     let invocationID = this.props.search.get("invocation_id");
     let filename = this.props.search.get("filename");
     if (this.isSingleFile()) {
-      rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result: any) => {
+      rpcService.fetchBytestreamFile(bytestreamURL!, invocationID!, "text").then((result: any) => {
         this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
       });
       return;
@@ -146,7 +332,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       if (this.state.mergeConflicts.has(this.currentPath())) {
         this.handleViewConflictClicked(
           this.currentPath(),
-          this.state.mergeConflicts.get(this.currentPath()),
+          this.state.mergeConflicts.get(this.currentPath()) || "",
           undefined
         );
       } else {
@@ -191,6 +377,9 @@ export default class CodeComponent extends React.Component<Props, State> {
     if (this.props.user != prevProps.user) {
       this.updateUser();
     }
+    if (this.props.path != prevProps.path) {
+      // !!!
+    }
   }
 
   parsePath() {
@@ -216,21 +405,23 @@ export default class CodeComponent extends React.Component<Props, State> {
       : undefined;
     if (storedState) {
       this.setState(storedState);
-      if (storedState.repoResponse && storedState.commitSHA) {
-        return;
-      }
     }
     if (!this.currentOwner() || !this.currentRepo()) {
       return;
     }
 
-    let commit = this.state.commitSHA || "master";
-    this.octokit
-      .request(`/repos/${this.currentOwner()}/${this.currentRepo()}/git/trees/${commit}`)
-      .then((response: any) => {
-        console.log(response);
-        this.updateState({ repoResponse: response, commitSHA: response.data.sha });
-      });
+    let source = this.state.currentAnchor;
+    if (!this.state.currentAnchor) {
+      if (this.currentPath()) {
+        const fudgedPath = this.currentPath();
+        this.handleFileClicked({ type: "kythe", kytheUrl: `kythe://buildbuddy?path=${fudgedPath}` }, fudgedPath);
+      }
+      return;
+    }
+    this.handleFileClicked(
+      { type: "kythe", kytheUrl: this.state.currentAnchor.parent },
+      this.state.currentAnchor.parent
+    );
   }
 
   // TODO(siggisim): Support deleting files
@@ -240,6 +431,8 @@ export default class CodeComponent extends React.Component<Props, State> {
   // TODO(siggisim): Support tabs
   // TODO(siggisim): Remove the use of all `any` types
   handleFileClicked(node: any, fullPath: string) {
+    console.log("FILE CLICKED>... ");
+    console.log(node);
     if (node.type === "tree") {
       if (this.state.treeShaToExpanded.get(node.sha)) {
         this.state.treeShaToExpanded.set(node.sha, false);
@@ -259,8 +452,38 @@ export default class CodeComponent extends React.Component<Props, State> {
         });
       return;
     }
+    if (node.type === "kythe") {
+      return fetch("/nodes", {
+        method: "POST",
+        body: `{"ticket":["${node.kytheUrl}"]}`,
+      })
+        .then((r) => r.json())
+        .then((r) => {
+          console.log(r);
+          let fileContents = atob(r.nodes[node.kytheUrl]["facts"]["/kythe/text"]);
+          if (!fileContents) {
+            return;
+          }
+          this.state.originalFileContents.set(fullPath, fileContents);
+          this.updateState({
+            originalFileContents: this.state.originalFileContents,
+            changes: this.state.changes,
+          });
+          let model: monaco.editor.ITextModel = this.state.fullPathToModelMap.get(fullPath);
+          if (!model) {
+            model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fullPath));
+            this.state.fullPathToModelMap.set(fullPath, model);
+            this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
+          }
+          this.editor.setModel(model);
+          this.navigateToPath(fullPath);
+        })
+        .then((response: any) => {
+          this.fetchDecor(node.kytheUrl);
+        });
+    }
 
-    this.octokit.rest.git
+    return this.octokit.rest.git
       .getBlob({
         owner: this.currentOwner(),
         repo: this.currentRepo(),
@@ -274,7 +497,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           originalFileContents: this.state.originalFileContents,
           changes: this.state.changes,
         });
-        let model = this.state.fullPathToModelMap.get(fullPath);
+        let model: monaco.editor.ITextModel = this.state.fullPathToModelMap.get(fullPath);
         if (!model) {
           model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fullPath));
           this.state.fullPathToModelMap.set(fullPath, model);
@@ -282,6 +505,9 @@ export default class CodeComponent extends React.Component<Props, State> {
         }
         this.editor.setModel(model);
         this.navigateToPath(fullPath);
+      })
+      .then((response: any) => {
+        this.fetchDecor(`kythe://buildbuddy?path=${fullPath}`);
       });
   }
 
@@ -598,7 +824,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     });
   }
 
-  handleViewConflictClicked(fullPath: string, sha: string, event: MouseEvent) {
+  handleViewConflictClicked(fullPath: string, sha: string, event?: MouseEvent) {
     event?.stopPropagation();
     this.octokit.rest.git
       .getBlob({
@@ -771,17 +997,21 @@ export default class CodeComponent extends React.Component<Props, State> {
             <div className="code-sidebar">
               <div className="code-sidebar-tree">
                 {this.state.repoResponse &&
-                  this.state.repoResponse.data.tree
-                    .sort(compareNodes)
-                    .map((node: any) => (
-                      <SidebarNodeComponent
-                        node={node}
-                        treeShaToExpanded={this.state.treeShaToExpanded}
-                        treeShaToChildrenMap={this.state.treeShaToChildrenMap}
-                        handleFileClicked={this.handleFileClicked.bind(this)}
-                        fullPath={node.path}
-                      />
-                    ))}
+                  this.state.repoResponse.data.tree.sort(compareNodes).map((node: any) => (
+                    <SidebarNodeComponent
+                      node={node}
+                      treeShaToExpanded={this.state.treeShaToExpanded}
+                      treeShaToChildrenMap={this.state.treeShaToChildrenMap}
+                      handleFileClicked={(a, b) => {
+                        if (a.type === "file") {
+                          this.handleFileClicked({ type: "kythe", kytheUrl: `kythe://buildbuddy?path=${b}` }, b);
+                        } else {
+                          this.handleFileClicked(a, b);
+                        }
+                      }}
+                      fullPath={node.path}
+                    />
+                  ))}
               </div>
               <div className="code-sidebar-actions">
                 {!this.props.user.githubToken && (
@@ -803,6 +1033,12 @@ export default class CodeComponent extends React.Component<Props, State> {
               <div className={`code-viewer ${showDiffView ? "hidden-viewer" : ""}`} ref={this.codeViewer} />
               <div className={`diff-viewer ${showDiffView ? "" : "hidden-viewer"}`} ref={this.diffViewer} />
             </div>
+            {this.state.searchResults && (
+              <div className="search-container">
+                <div className="search-title">Search results</div>
+                {this.renderSearchResults()}
+              </div>
+            )}
             {this.state.changes.size > 0 && (
               <div className="code-diff-viewer">
                 <div className="code-diff-viewer-title">

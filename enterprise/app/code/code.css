@@ -309,3 +309,77 @@
   cursor: pointer;
   stroke: #2196f3;
 }
+
+.fncall {
+  font-style: italic;
+}
+
+.struct {
+  background-color: rgb(180, 200, 250);
+}
+
+.def {
+  background-color: rgb(200, 250, 180);
+}
+
+.import {
+  background-color: rgb(250, 200, 180);
+}
+
+.constant {
+  background-color: rgb(200, 250, 180);
+  font-weight: bold;
+}
+
+.code-hover:hover {
+  text-decoration: underline;
+}
+
+.search-container {
+  padding-left: 24px;
+  height: 350px;
+  max-height: 350px;
+  overflow: auto;
+  background: #f8f8f8;
+}
+
+.search-title {
+  font-weight: bold;
+  margin: 4px 0;
+}
+
+.search-category-container {
+  margin-bottom: 8px;
+}
+
+.search-category-title {
+  font-weight: 600;
+}
+
+.search-category-results {
+  font-size: 14px;
+  margin: 4px 0 0 -24px;
+  padding-left: 24px;
+  cursor: pointer;
+}
+
+.search-category-results:hover {
+  background: #eee;
+}
+
+.search-line {
+  margin-left: 4px;
+  font-size: 12px;
+  color: #555;
+}
+
+.search-snippet {
+  font-family: "Droid Sans Mono", "monospace", monospace, "Droid Sans Fallback";
+  font-feature-settings: "liga" 0, "calt" 0;
+  letter-spacing: 0px;
+  margin: 4px 0 0 24px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: calc(100vw - 274px);
+  overflow: hidden;
+}
