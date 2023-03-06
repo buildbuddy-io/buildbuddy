@@ -4,60 +4,24 @@ actions:
     triggers:
       push:
         branches:
-          - "master"
+          - "foo"
       pull_request:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
-  - name: Test (darwin_amd64)
-    os: "darwin"
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "master"
-    bazel_commands:
-      # TODO: Fix `test //...` on Mac and do that instead
-      - build //enterprise/server/cmd/executor //enterprise/server //server //cli/cmd/bb --config=mac-workflows
-      - test //enterprise/server/remote_execution/... //cli/... --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker
-  - name: Benchmark
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-    bazel_commands:
-      - test //... --config=workflows --test_tag_filters=+performance
-  - name: Browser tests
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "master"
-    bazel_commands:
-      # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
-      - test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
-  # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
-  - name: Docker tests
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "master"
-    bazel_commands:
-      # TODO(http://go/b/1249): Increase reliability of runner recycling when
-      # executing with high concurrency, and remove `--jobs=3`
-      - test //... --config=workflows --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
-
+      - run //:setup_ci --config=workflows
+      - --bazelrc=custom.bazelrc build //... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
+      - --bazelrc=custom.bazelrc test //server/util/... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR --build_tests_only
+      - run //:setup_ci --config=workflows
+      - --bazelrc=custom.bazelrc build //... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
+      - --bazelrc=custom.bazelrc test //server/util/... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR --build_tests_only
+      - run //:setup_ci --config=workflows
+      - --bazelrc=custom.bazelrc build //... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
+      - --bazelrc=custom.bazelrc test //server/util/... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR --build_tests_only
+      - run //:setup_ci --config=workflows
+      - --bazelrc=custom.bazelrc build //... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
+      - --bazelrc=custom.bazelrc test //server/util/... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR --build_tests_only
+      
 plugins:
   - path: cli/plugins/go-deps
   - path: cli/plugins/open-invocation

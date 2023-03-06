@@ -70,3 +70,5 @@ If you have any questions, join the [BuildBuddy Slack channel](https://slack.bui
 
 - **Slack webhook support** - BuildBuddy allows you to message a Slack channel when builds finish. It's a nice way of getting a quick notification when a long running build completes, or a CI build fails. See the [configuration docs](https://github.com/buildbuddy-io/buildbuddy/blob/master/docs/config-integrations.md) for more information.
   ![Slack webhook support](https://uploads-ssl.webflow.com/5eeba6a68ba54530ffd09006/5ef50dc7caabdd3e23528f51_slack.png)
+
+

@@ -64,6 +64,9 @@ build:untrusted-ci --flaky_test_attempts=2
 
 # Configuration used for BuildBuddy workflows
 build:workflows --config=remote-shared
+#build:workflows --experimental_merged_skyframe_analysis_execution
+build:workflows --watchfs
+build:workflows --noslim_profile
 build:workflows --build_metadata=ROLE=CI
 build:workflows --build_metadata=VISIBILITY=PUBLIC
 build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows

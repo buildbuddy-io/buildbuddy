@@ -125,16 +125,10 @@ config_setting(
 
 # Synthesize a copy of the file in the current package so it can be embedded.
 genrule(
-    name = "aws_rds_certs",
-    srcs = ["@aws_rds_certs//file:rds-combined-ca-bundle.pem"],
-    outs = ["rds-combined-ca-bundle.pem"],
-    cmd_bash = "cp $(SRCS) $@",
-)
-
-# Certs that are distributed with the server binary.
-filegroup(
-    name = "embedded_certs",
-    srcs = [":rds-combined-ca-bundle.pem"],
+    name = "setup_ci",
+    outs = ["setup_ci.sh"],
+    executable = True,
+    cmd_bash = "touch $@",
 )
 
 # N.B. this is ignored by gazelle so must be updated by hand.
@@ -145,7 +139,7 @@ go_library(
     srcs = ["bundle.go"],
     embedsrcs = [
         "//:config_files",
-        "//:embedded_certs",
+        # "//:embedded_certs",
         "//static",
     ] + select({
         ":fastbuild": [],
