@@ -722,11 +722,15 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	}
 
 	// List user-owned keys first.
-	userKeys, err := userDB.GetUserAPIKeys(ctx, groupID)
-	// PermissionDenied means the Group doesn't have user-owned API keys
-	// enabled; ignore.
-	if err != nil && !status.IsPermissionDeniedError(err) {
-		return nil, err
+	var userKeys []*tables.APIKey
+	if userDB.GetUserOwnedKeysEnabled() {
+		keys, err := userDB.GetUserAPIKeys(ctx, groupID)
+		// PermissionDenied means the Group doesn't have user-owned API keys
+		// enabled; ignore.
+		if err != nil && !status.IsPermissionDeniedError(err) {
+			return nil, err
+		}
+		userKeys = keys
 	}
 	// Then list group-owned keys
 	groupKeys, err := userDB.GetAPIKeys(ctx, groupID)
@@ -1087,6 +1091,9 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	// If we couldn't find any group-level keys, look up user-level keys for
 	// the authenticated user. This handles the edge case where an org
 	// *only* has user-level keys.
+	if !userDB.GetUserOwnedKeysEnabled() {
+		return nil, status.NotFoundErrorf("the organization does not have any API keys configured")
+	}
 	apiKeys, err := userDB.GetUserAPIKeys(ctx, in.GroupID)
 	if err != nil {
 		return nil, err
