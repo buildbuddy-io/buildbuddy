@@ -26,6 +26,9 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: "1.19.3" # Keep in sync with WORKSPACE
+      - uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
 
       - name: Mount go cache
         uses: actions/cache@v2
@@ -93,19 +96,21 @@ jobs:
           cat prettier-errors.txt
 
       - name: Check
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
         run: |
           echo "===== gofmt diff (fix with ./buildfix.sh) ====="
-          cat gofmt-diff.txt
+          cat gofmt-diff.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
           echo "===== buildifier diff (fix with ./buildfix.sh) ====="
-          cat buildifier-diff.txt
+          cat buildifier-diff.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
           echo "===== gazelle diff (fix with ./buildfix.sh --gazelle) ====="
-          cat gazelle-diff.txt
+          cat gazelle-diff.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
           echo "===== go deps diff (fix with ./buildfix.sh --go_deps) ====="
-          cat go-deps-diff.txt
+          cat go-deps-diff.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
           echo "===== clang-format errors (fix with ./buildfix.sh) ====="
-          cat clang-format-errors.txt
+          cat clang-format-errors.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
           echo "===== prettier errors (fix with ./buildfix.sh) ====="
-          cat prettier-errors.txt
+          cat prettier-errors.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
 
           if [ -s gazelle-diff.txt ]; then exit 1; fi
           if [ -s go-deps-diff.txt ]; then exit 1; fi
