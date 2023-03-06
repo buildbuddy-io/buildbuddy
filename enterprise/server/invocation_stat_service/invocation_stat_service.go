@@ -648,7 +648,7 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 	}
 
 	var rows *sql.Rows
-	rows, err = i.olapdbh.DB(ctx).Raw(qAndBuckets.Query, qAndBuckets.QueryArgs...).Rows()
+	rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_stat_heatmap"), qAndBuckets.Query, qAndBuckets.QueryArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
