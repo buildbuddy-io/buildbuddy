@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -320,6 +321,7 @@ func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env)
 }
 
 func setupEnv(t *testing.T) environment.Env {
+	flags.Set(t, "app.user_owned_keys_enabled", true)
 	env := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, env) // provisions AuthDB and UserDB
 	return env

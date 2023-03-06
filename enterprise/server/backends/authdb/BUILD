@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb",
     deps = [
         "//proto:group_go_proto",
+        "//server/environment",
         "//server/interfaces",
         "//server/tables",
         "//server/util/db",
@@ -28,6 +29,7 @@ go_test(
         "//server/util/db",
         "//server/util/role",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

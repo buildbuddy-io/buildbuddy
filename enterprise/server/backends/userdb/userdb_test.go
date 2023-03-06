@@ -28,6 +28,7 @@ import (
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
+	flags.Set(t, "app.user_owned_keys_enabled", true)
 	env := enterprise_testenv.New(t)
 	enterprise_testauth.Configure(t, env)
 	return env

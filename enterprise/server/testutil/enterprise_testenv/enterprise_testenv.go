@@ -52,6 +52,6 @@ func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
 		assert.FailNow(t, "could not create user DB", err.Error())
 	}
 	env.SetUserDB(userDB)
-	env.SetAuthDB(authdb.NewAuthDB(env.GetDBHandle()))
+	env.SetAuthDB(authdb.NewAuthDB(env, env.GetDBHandle()))
 	return env
 }

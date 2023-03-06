@@ -372,6 +372,9 @@ type UserDB interface {
 	// CreateAPIKey creates a group-level API key.
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
 
+	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
+	GetUserOwnedKeysEnabled() bool
+
 	// GetUserAPIKeys returns all user-owned API keys within a group.
 	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
 
