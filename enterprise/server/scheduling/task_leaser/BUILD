@@ -13,5 +13,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
     ],
 )

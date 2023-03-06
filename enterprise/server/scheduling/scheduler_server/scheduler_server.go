@@ -1409,7 +1409,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			}
 		}
 
-		done := req.GetFinalize() || req.GetRelease()
+		done := req.GetFinalize() || req.GetRelease() || req.GetReEnqueue()
 
 		if req.GetFinalize() && claimed {
 			// Finalize deletes the task (and implicitly releases the lease).
@@ -1422,8 +1422,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			} else {
 				log.CtxWarningf(ctx, "Could not delete claimed task %q: %s", taskID, err)
 			}
-		} else if req.GetRelease() && claimed {
+		} else if (req.GetRelease() || req.GetReEnqueue()) && claimed {
 			// Release removes the claim on the task without deleting the task.
+			// "release" was deprecated in favor of "reEnqueue" but remains
+			// for backwards compatibility with older executors.
 
 			err := s.unclaimTask(ctx, taskID)
 			if err == nil {
@@ -1431,6 +1433,12 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 				log.CtxInfof(ctx, "LeaseTask task %q successfully released by %q", taskID, executorID)
 			} else {
 				log.CtxWarningf(ctx, "Could not release lease for task %q: %s", taskID, err)
+			}
+
+			if req.GetReEnqueue() {
+				if _, err := s.ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{TaskId: taskID, Reason: req.GetReEnqueueReason().GetMessage()}); err != nil {
+					log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task requested by executor but failed with err: %s", taskID, err)
+				}
 			}
 		}
 
