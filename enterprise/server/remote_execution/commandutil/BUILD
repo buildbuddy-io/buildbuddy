@@ -22,6 +22,9 @@ go_test(
     size = "small",
     srcs = ["commandutil_test.go"],
     data = ["//enterprise/server/remote_execution/commandutil/test_binary"],
+    # Marking this exclusive for now since CPU usage measurements
+    # in the test depend on other jobs running on the same machine.
+    tags = ["exclusive"],
     deps = [
         ":commandutil",
         "//enterprise/server/remote_execution/container",

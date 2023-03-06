@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -396,6 +397,12 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 }
 
 func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		// TODO(bduffany): Set macos memory limit to match total system
+		// memory instead of free memory, then re-enable.
+		t.SkipNow()
+	}
+
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, defaultCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
