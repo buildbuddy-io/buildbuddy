@@ -5,6 +5,7 @@ go_test(
     size = "small",
     srcs = ["bazel_rbe_test.go"],
     shard_count = 15,
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/test/integration/remote_execution/rbetest",

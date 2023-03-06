@@ -230,7 +230,7 @@ func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *t
 	app := buildbuddy.Run(t)
 	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
 
-	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	result := invokeRunner(t, runnerFlags, []string{"USER=root", "HOME=/root"}, wsPath)
 
 	checkRunnerResult(t, result)
 

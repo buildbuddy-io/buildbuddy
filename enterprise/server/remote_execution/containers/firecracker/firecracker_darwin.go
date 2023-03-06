@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 )
 
 type FirecrackerContainer struct{}
@@ -62,4 +63,16 @@ func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 }
 
 func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
+}
+
+func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride string, instanceName string, snapshotDigest *repb.Digest) error {
+	return status.UnimplementedError("Not yet implemented.")
+}
+
+func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName string, d *repb.Digest, baseSnapshotDigest *repb.Digest) (*repb.Digest, error) {
+	return nil, status.UnimplementedError("Not yet implemented.")
+}
+
+func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
+	return nil, status.UnimplementedError("Not yet implemented.")
 }

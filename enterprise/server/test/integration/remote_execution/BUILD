@@ -9,6 +9,7 @@ go_test(
         "//enterprise/server/test/integration/remote_execution/command:testcommand",
     ],
     shard_count = 32,
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
