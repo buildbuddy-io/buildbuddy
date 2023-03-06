@@ -12,6 +12,7 @@ replace (
 require (
 	cloud.google.com/go/compute/metadata v0.2.1
 	cloud.google.com/go/logging v1.5.0
+
 	cloud.google.com/go/storage v1.27.0
 	github.com/AlecAivazis/survey/v2 v2.3.4
 	github.com/Azure/azure-storage-blob-go v0.14.0
@@ -108,8 +109,6 @@ require (
 	gorm.io/gorm v1.23.7
 )
 
-require github.com/golang/protobuf v1.5.2
-
 require (
 	cloud.google.com/go v0.105.0 // indirect
 	cloud.google.com/go/compute v1.12.1 // indirect
@@ -176,6 +175,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.4.3 // indirect
 	github.com/golang/glog v1.0.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
