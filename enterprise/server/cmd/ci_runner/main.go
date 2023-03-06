@@ -467,7 +467,7 @@ func run() error {
 
 	// Write setup logs to the current task's stderr (to make debugging easier),
 	// and also to the invocation.
-	ws.log = io.MultiWriter(os.Stderr, buildEventReporter)
+	ws.log = buildEventReporter
 	ws.hostname, ws.username = getHostAndUserName()
 
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.

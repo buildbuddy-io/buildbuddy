@@ -963,6 +963,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			r.taskSize = st.GetSchedulingMetadata().GetTaskSize()
 			r.PlatformProperties = props
 			p.mu.Unlock()
+			log.CtxInfof(ctx, "Using pooled runner for task")
 			return r, nil
 		}
 	}
@@ -1032,6 +1033,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			p.pendingRemovals.Done()
 		}
 	}
+	log.CtxInfof(ctx, "Created new runner for task")
 	return r, nil
 }
 
@@ -1075,7 +1077,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
-			DebugMode:              *commandutil.DebugStreamCommandOutputs,
+			// DebugMode:              *commandutil.DebugStreamCommandOutputs,
 		}
 		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
 		if err != nil {

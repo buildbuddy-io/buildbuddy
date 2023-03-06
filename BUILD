@@ -123,6 +123,19 @@ config_setting(
     values = {"compilation_mode": "fastbuild"},
 )
 
+genrule(
+    name = "setup_ci",
+    outs = ["setup_ci.sh"],
+    cmd_bash = """
+    echo > $@ '
+      set -x
+      cat /proc/sys/fs/inotify/max_user_watches
+      tail -n100 ../output-base/java.log
+    '
+    """,
+    executable = True,
+)
+
 # Synthesize a copy of the file in the current package so it can be embedded.
 genrule(
     name = "aws_rds_certs",

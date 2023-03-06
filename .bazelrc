@@ -62,6 +62,11 @@ build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
 build:untrusted-ci --disk_cache=
 build:untrusted-ci --flaky_test_attempts=2
 
+build:buildbuddy_bes_backend --bes_backend=grpc://192.168.1.39:1985
+build:buildbuddy_bes_results_url --bes_results_url=http://localhost:8080/invocation/
+build:buildbuddy_remote_cache --remote_cache=grpc://192.168.1.39:1985
+build:buildbuddy_remote_executor --remote_executor=grpc://192.168.1.39:1985
+
 # Configuration used for BuildBuddy workflows
 build:workflows --config=remote-shared
 build:workflows --build_metadata=ROLE=CI
@@ -78,6 +83,11 @@ build:workflows --config=buildbuddy_bes_results_url
 build:workflows --config=buildbuddy_remote_cache
 build:workflows --config=buildbuddy_remote_executor
 build:workflows --@io_bazel_rules_go//go/config:race
+
+build:workflows --experimental_merged_skyframe_analysis_execution
+build:workflows --watchfs
+build:workflows --noslim_profile
+build:workflows --remote_executor=
 
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
 build:mac-workflows --config=cache
