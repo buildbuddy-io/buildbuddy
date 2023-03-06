@@ -2,3 +2,5 @@
 # and let it manage deps for existing go_web_test_suite rules.
 
 # gazelle:map_kind go_test go_web_test_suite //rules/webdriver:index.bzl
+
+package(default_visibility = ["//enterprise:__subpackages__"])

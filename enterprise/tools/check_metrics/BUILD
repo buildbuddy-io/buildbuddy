@@ -25,3 +25,5 @@ go_binary(
     embed = [":check_metrics_lib"],
     visibility = ["//enterprise:__subpackages__"],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

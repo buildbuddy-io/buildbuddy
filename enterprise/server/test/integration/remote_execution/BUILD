@@ -41,3 +41,5 @@ go_test(
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
