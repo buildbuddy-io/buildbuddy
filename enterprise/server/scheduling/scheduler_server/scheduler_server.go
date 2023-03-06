@@ -997,7 +997,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 		return nil
 	}
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
-	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, addr %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, poolKey)
+	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, addr %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, node.GetVersion(), poolKey)
 
 	go func() {
 		if err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
