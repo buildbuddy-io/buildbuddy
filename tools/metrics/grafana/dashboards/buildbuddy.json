@@ -473,6 +473,7 @@
             "success": "green"
           },
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
@@ -485,7 +486,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 27
+            "y": 3
           },
           "hiddenSeries": false,
           "id": 13,
@@ -506,7 +507,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -563,6 +564,7 @@
         {
           "aliasColors": {},
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
@@ -575,7 +577,7 @@
             "h": 8,
             "w": 10,
             "x": 9,
-            "y": 27
+            "y": 3
           },
           "hiddenSeries": false,
           "id": 25,
@@ -595,7 +597,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -656,6 +658,7 @@
             "success": "green"
           },
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
@@ -668,7 +671,7 @@
             "h": 8,
             "w": 9,
             "x": 0,
-            "y": 35
+            "y": 11
           },
           "hiddenSeries": false,
           "id": 1232,
@@ -690,7 +693,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -769,6 +772,7 @@
         {
           "aliasColors": {},
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
@@ -781,7 +785,7 @@
             "h": 8,
             "w": 12,
             "x": 9,
-            "y": 35
+            "y": 11
           },
           "hiddenSeries": false,
           "id": 65,
@@ -801,7 +805,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -4558,7 +4562,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 10
       },
       "id": 264,
       "panels": [
@@ -5191,39 +5195,19 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 12
       },
       "id": 38,
       "panels": [
         {
           "aliasColors": {},
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "filterable": false
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
           },
           "fill": 1,
           "fillGradient": 0,
@@ -5231,7 +5215,7 @@
             "h": 13,
             "w": 24,
             "x": 0,
-            "y": 36
+            "y": 13
           },
           "hiddenSeries": false,
           "id": 40,
@@ -5256,7 +5240,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -5322,6 +5306,7 @@
         {
           "aliasColors": {},
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
@@ -5329,19 +5314,13 @@
             "uid": "prom"
           },
           "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
             "h": 14,
             "w": 24,
             "x": 0,
-            "y": 49
+            "y": 26
           },
           "hiddenSeries": false,
           "id": 76,
@@ -5366,7 +5345,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -5423,17 +5402,12 @@
         {
           "aliasColors": {},
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
           },
           "fill": 1,
           "fillGradient": 0,
@@ -5441,7 +5415,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 63
+            "y": 40
           },
           "hiddenSeries": false,
           "id": 42,
@@ -5461,7 +5435,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -5520,17 +5494,12 @@
             "Value": "dark-red"
           },
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
           },
           "fill": 0,
           "fillGradient": 0,
@@ -5538,7 +5507,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 63
+            "y": 40
           },
           "hiddenSeries": false,
           "id": 46,
@@ -5558,7 +5527,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -5617,17 +5586,12 @@
             "Value": "dark-red"
           },
           "bars": false,
+          "collapsed": true,
           "dashLength": 10,
           "dashes": false,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
           },
           "fill": 1,
           "fillGradient": 0,
@@ -5635,7 +5599,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 71
+            "y": 48
           },
           "hiddenSeries": false,
           "id": 44,
@@ -5655,7 +5619,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -5732,7 +5696,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 13
       },
       "id": 458,
       "panels": [
@@ -6372,7 +6336,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 14
       },
       "id": 48,
       "panels": [
@@ -6784,7 +6748,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 15
       },
       "id": 384,
       "panels": [
@@ -7378,7 +7342,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 16
       },
       "id": 107,
       "panels": [
@@ -7993,7 +7957,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 17
       },
       "id": 28,
       "panels": [
@@ -9668,7 +9632,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 19
       },
       "id": 83,
       "panels": [
@@ -10070,7 +10034,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 22
       },
       "id": 71,
       "panels": [
@@ -10500,7 +10464,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 23
       },
       "id": 1088,
       "panels": [
@@ -10823,7 +10787,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 27
       },
       "id": 962,
       "panels": [
@@ -11023,7 +10987,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 28
       },
       "id": 1975,
       "panels": [
@@ -11269,7 +11233,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 29
       },
       "id": 1988,
       "panels": [
@@ -11284,6 +11248,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -11330,9 +11296,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 6,
             "x": 0,
-            "y": 45
+            "y": 102
           },
           "id": 1991,
           "options": {
@@ -11343,7 +11309,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "repeat": "kubenode",
@@ -11387,7 +11354,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 30
       },
       "id": 1983,
       "panels": [
@@ -11403,6 +11370,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -11480,9 +11449,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 6,
             "x": 0,
-            "y": 46
+            "y": 103
           },
           "id": 1261,
           "options": {
@@ -11493,7 +11462,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "repeat": "kubenode",
@@ -11549,7 +11519,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 31
       },
       "id": 8,
       "panels": [
@@ -11571,7 +11541,7 @@
             "h": 10,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 104
           },
           "hiddenSeries": false,
           "id": 2,
@@ -11593,7 +11563,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -11684,7 +11654,7 @@
             "h": 10,
             "w": 12,
             "x": 12,
-            "y": 43
+            "y": 104
           },
           "hiddenSeries": false,
           "id": 578,
@@ -11704,7 +11674,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "9.3.1",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -11769,6 +11739,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -11816,7 +11788,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 53
+            "y": 114
           },
           "id": 1239,
           "options": {
@@ -11827,7 +11799,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -11869,11 +11842,404 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 32
       },
       "id": 1346,
       "panels": [
         {
+          "aliasColors": {},
+          "bars": false,
+          "collapsed": true,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 13,
+            "w": 24,
+            "x": 0,
+            "y": 33
+          },
+          "hiddenSeries": false,
+          "id": 2556,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "hideZero": false,
+            "max": false,
+            "min": false,
+            "rightSide": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "9.3.1",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum by (sql_query_template) (rate(buildbuddy_clickhouse_query_count{region=\"${region}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "{{sql_query_template}}",
+              "queryType": "randomWalk",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [
+            {
+              "colorMode": "background6",
+              "fill": true,
+              "fillColor": "rgba(234, 112, 112, 0.12)",
+              "line": false,
+              "lineColor": "rgba(237, 46, 24, 0.60)",
+              "op": "time"
+            }
+          ],
+          "title": "ClickHouse SQL queries per second (by query template)",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:3993",
+              "format": "ops",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:3994",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "collapsed": true,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "description": "",
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 14,
+            "w": 24,
+            "x": 0,
+            "y": 46
+          },
+          "hiddenSeries": false,
+          "id": 2840,
+          "legend": {
+            "alignAsTable": true,
+            "avg": false,
+            "current": true,
+            "hideEmpty": true,
+            "hideZero": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "sort": "current",
+            "sortDesc": true,
+            "total": false,
+            "values": true
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "9.3.1",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "histogram_quantile(\n  0.5,\n  sum by (sql_query_template, le) (rate(buildbuddy_clickhouse_query_duration_usec_bucket{region=\"${region}\"}[${window}]))\n)",
+              "interval": "",
+              "legendFormat": "{{sql_query_template}}",
+              "queryType": "randomWalk",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "Median ClickHouse SQL query duration by query template",
+          "tooltip": {
+            "shared": true,
+            "sort": 2,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:4070",
+              "format": "µs",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:4071",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "aliasColors": {
+            "Value": "dark-red"
+          },
+          "bars": false,
+          "collapsed": true,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 60
+          },
+          "hiddenSeries": false,
+          "id": 2890,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "9.3.1",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_clickhouse_error_count{region=\"${region}\"}[${window}]))",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "ClickHouse SQL errors per second",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:4307",
+              "format": "ops",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:4308",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "aliasColors": {
+            "Value": "dark-red"
+          },
+          "bars": false,
+          "collapsed": true,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prom"
+          },
+          "fill": 0,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 60
+          },
+          "hiddenSeries": false,
+          "id": 2940,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "max": false,
+            "min": false,
+            "show": false,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "9.3.1",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prom"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_clickhouse_error_count{region=\"${region}\"}[${window}]))\n/ (sum(rate(buildbuddy_clickhouse_query_count{region=\"${region}\"}[${window}])))",
+              "interval": "",
+              "legendFormat": "",
+              "queryType": "randomWalk",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeRegions": [],
+          "title": "ClickHouse SQL error rate (errors per second / queries per second)",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "mode": "time",
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:4229",
+              "format": "percent",
+              "logBase": 1,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:4230",
+              "format": "short",
+              "logBase": 1,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false
+          }
+        },
+        {
+          "collapsed": true,
           "datasource": {
             "type": "prometheus",
             "uid": "prom"
@@ -11885,6 +12251,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -11932,7 +12300,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 45
+            "y": 68
           },
           "id": 1353,
           "links": [
@@ -11949,7 +12317,8 @@
               "showLegend": true
             },
             "tooltip": {
-              "mode": "single"
+              "mode": "single",
+              "sort": "none"
             }
           },
           "targets": [
@@ -11965,7 +12334,7 @@
               "refId": "A"
             }
           ],
-          "title": "Clickhouse Insert Count by Table and Status",
+          "title": "ClickHouse Insert Count by Table and Status",
           "type": "timeseries"
         }
       ],
@@ -11978,7 +12347,7 @@
           "refId": "A"
         }
       ],
-      "title": "Clickhouse",
+      "title": "ClickHouse",
       "type": "row"
     }
   ],
@@ -12294,6 +12663,10 @@
           "selected": true,
           "text": "All",
           "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prom"
         },
         "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, partition_id)",
         "hide": 0,
