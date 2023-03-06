@@ -23,5 +23,5 @@ go_library(
 go_binary(
     name = "check_metrics",
     embed = [":check_metrics_lib"],
-    visibility = ["//visibility:public"],
+    visibility = ["//enterprise:__subpackages__"],
 )
