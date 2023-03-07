@@ -654,10 +654,11 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	if *autoMigrateDB || *autoMigrateDBAndExit || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
 		if *printSchemaChangesAndExit {
-			if err := primaryDB.Callback().Raw().Register("save_sql", func(db *gorm.DB) {
-				executedSql := db.Statement.SQL.String()
-				if !strings.HasPrefix(executedSql, "SELECT") {
-					sqlStrings = append(sqlStrings, executedSql)
+			// Replace every gorm raw SQL command with a function that appends the SQL string to a slice
+			if err := primaryDB.Callback().Raw().Replace("gorm:raw", func(db *gorm.DB) {
+				sqlToExecute := db.Statement.SQL.String()
+				if !strings.HasPrefix(sqlToExecute, "SELECT") {
+					sqlStrings = append(sqlStrings, sqlToExecute)
 				}
 			}); err != nil {
 				return nil, err
