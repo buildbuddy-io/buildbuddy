@@ -194,7 +194,7 @@ func (t *TargetTracker) invocationID() string {
 }
 
 func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms.UserGroupPerm) error {
-	if t.writeToOLAPDBEnabled() {
+	if t.WriteToOLAPDBEnabled() {
 		// Stop write test targets to MySQL when writes to OLAP DB is enabled
 		return nil
 	}
@@ -248,7 +248,7 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms
 }
 
 func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions *perms.UserGroupPerm) error {
-	if t.writeToOLAPDBEnabled() {
+	if t.WriteToOLAPDBEnabled() {
 		// Stop write test targets to MySQL when writes to OLAP DB is enabled
 		return nil
 	}
@@ -280,7 +280,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 }
 
 func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, permissions *perms.UserGroupPerm) error {
-	if !t.writeToOLAPDBEnabled() {
+	if !t.WriteToOLAPDBEnabled() {
 		return nil
 	}
 	ctx, cancel := background.ExtendContextForFinalization(ctx, writeTestTargetStatusesTimeout)
@@ -606,7 +606,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 	return nil
 }
 
-func (t *TargetTracker) writeToOLAPDBEnabled() bool {
+func (t *TargetTracker) WriteToOLAPDBEnabled() bool {
 	return *writeTestTargetStatusesToOLAPDBEnabled && t.env.GetOLAPDBHandle() != nil
 }
 

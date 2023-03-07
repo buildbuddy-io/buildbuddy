@@ -7,6 +7,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -19,12 +21,16 @@ import (
 )
 
 type Row struct {
+	GroupID    string
+	CommitSHA  string
 	TestSize   int32
 	Status     int32
 	TargetType int32
 	RuleType   string
 	Label      string
 	RepoURL    string
+	Role       string
+	Command    string
 }
 
 func targetConfiguredId(label string) *build_event_stream.BuildEventId {
@@ -72,6 +78,7 @@ type fakeAccumulator struct {
 	command      string
 	repoURL      string
 	invocationID string
+	commitSHA    string
 }
 
 func (a *fakeAccumulator) Invocation() *inpb.Invocation {
@@ -80,6 +87,7 @@ func (a *fakeAccumulator) Invocation() *inpb.Invocation {
 		Command:      a.command,
 		RepoUrl:      a.repoURL,
 		InvocationId: a.invocationID,
+		CommitSha:    a.commitSHA,
 	}
 }
 
@@ -119,15 +127,13 @@ func (a *fakeAccumulator) BuildFinished() bool {
 	return true
 }
 
-func newFakeAccumulator(t *testing.T) *fakeAccumulator {
-	testUUID, err := uuid.NewRandom()
-	require.NoError(t, err)
-	testInvocationID := testUUID.String()
+func newFakeAccumulator(t *testing.T, testInvocationID string) *fakeAccumulator {
 	return &fakeAccumulator{
 		invocationID: testInvocationID,
 		command:      "test",
 		role:         "CI",
 		repoURL:      "bb/foo",
+		commitSHA:    "abcdef",
 	}
 }
 
@@ -140,7 +146,10 @@ func TestTrackTargetsForEvents(t *testing.T) {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "USER1")
 	require.NoError(t, err)
 
-	accumulator := newFakeAccumulator(t)
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+
+	accumulator := newFakeAccumulator(t, testUUID.String())
 	tracker := target_tracker.NewTargetTracker(te, accumulator)
 
 	events := []*build_event_stream.BuildEvent{
@@ -296,6 +305,10 @@ func TestTrackTargetsForEvents(t *testing.T) {
 
 	expected := []Row{
 		{
+			Role:       "CI",
+			GroupID:    "GROUP1",
+			CommitSHA:  "abcdef",
+			Command:    "test",
 			RuleType:   "go_test rule",
 			Label:      "//server:baz_test",
 			RepoURL:    "bb/foo",
@@ -304,6 +317,10 @@ func TestTrackTargetsForEvents(t *testing.T) {
 			TargetType: int32(cmpb.TargetType_TEST),
 		},
 		{
+			Role:       "CI",
+			GroupID:    "GROUP1",
+			CommitSHA:  "abcdef",
+			Command:    "test",
 			RuleType:   "go_test rule",
 			Label:      "//server:foo_test",
 			RepoURL:    "bb/foo",
@@ -312,6 +329,10 @@ func TestTrackTargetsForEvents(t *testing.T) {
 			TargetType: int32(cmpb.TargetType_TEST),
 		},
 		{
+			Role:       "CI",
+			GroupID:    "GROUP1",
+			CommitSHA:  "abcdef",
+			Command:    "test",
 			RuleType:   "go_test rule",
 			Label:      "//server:bar_test",
 			RepoURL:    "bb/foo",
@@ -320,19 +341,29 @@ func TestTrackTargetsForEvents(t *testing.T) {
 			TargetType: int32(cmpb.TargetType_TEST),
 		},
 	}
-	assertTargetsAndTargetStatusesMatch(t, te, expected)
+	if tracker.WriteToOLAPDBEnabled() {
+		assertTestTargetStatusesMatchOLAPDB(t, te, expected)
+	} else {
+		assertTestTargetStatusesMatchPrimaryDB(t, ctx, te, testUUID, expected)
+	}
 }
 
 func TestTrackTargetsForEventsAborted(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	ta := testauth.NewTestAuthenticator(testauth.TestUsers("USER1", "GROUP1"))
+	user := &testauth.TestUser{
+		UserID:  "USER1",
+		GroupID: "GROUP1",
+	}
+	ta := testauth.NewTestAuthenticator(map[string]interfaces.UserInfo{user.UserID: user})
 	te.SetAuthenticator(ta)
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
+
 	flags.Set(t, "app.enable_target_tracking", true)
 
-	ctx, err := ta.WithAuthenticatedUser(context.Background(), "USER1")
+	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 
-	accumulator := newFakeAccumulator(t)
+	accumulator := newFakeAccumulator(t, testUUID.String())
 	tracker := target_tracker.NewTargetTracker(te, accumulator)
 
 	events := []*build_event_stream.BuildEvent{
@@ -419,6 +450,10 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 			TestSize:   int32(cmpb.TestSize_SMALL),
 			Status:     int32(build_event_stream.TestStatus_FAILED_TO_BUILD),
 			TargetType: int32(cmpb.TargetType_TEST),
+			Role:       "CI",
+			GroupID:    "GROUP1",
+			CommitSHA:  "abcdef",
+			Command:    "test",
 		},
 		{
 			RuleType:   "go_test rule",
@@ -427,15 +462,45 @@ func TestTrackTargetsForEventsAborted(t *testing.T) {
 			TestSize:   int32(cmpb.TestSize_MEDIUM),
 			Status:     int32(build_event_stream.TestStatus_FAILED_TO_BUILD),
 			TargetType: int32(cmpb.TargetType_TEST),
+			Role:       "CI",
+			GroupID:    "GROUP1",
+			CommitSHA:  "abcdef",
+			Command:    "test",
 		},
 	}
-	assertTargetsAndTargetStatusesMatch(t, te, expected)
+	if tracker.WriteToOLAPDBEnabled() {
+		assertTestTargetStatusesMatchOLAPDB(t, te, expected)
+	} else {
+		assertTestTargetStatusesMatchPrimaryDB(t, ctx, te, testUUID, expected)
+	}
 }
 
-func assertTargetsAndTargetStatusesMatch(t *testing.T, te *testenv.TestEnv, expected []Row) {
+func assertTestTargetStatusesMatchOLAPDB(t *testing.T, te *testenv.TestEnv, expected []Row) {
 	var got []Row
-	query := `SELECT rule_type, label, repo_url, test_size, status, target_type FROM "Targets" t JOIN "TargetStatuses" ts ON t.target_id = ts.target_id`
-	err := te.GetDBHandle().DB(context.Background()).Raw(query).Scan(&got).Error
+	query := `SELECT group_id, commit_sha, rule_type, label, repo_url, role, command, test_size, status, target_type FROM "TestTargetStatuses"`
+	err := te.GetOLAPDBHandle().DB(context.Background()).Raw(query).Scan(&got).Error
+	require.NoError(t, err)
+	assert.ElementsMatch(t, got, expected)
+}
+
+func assertTestTargetStatusesMatchPrimaryDB(t *testing.T, ctx context.Context, te *testenv.TestEnv, testUUID uuid.UUID, expected []Row) {
+	invocationUUID, err := testUUID.MarshalBinary()
+	require.NoError(t, err)
+	te.GetInvocationDB().CreateInvocation(ctx, &tables.Invocation{
+		InvocationID:   testUUID.String(),
+		InvocationUUID: invocationUUID,
+		RepoURL:        "bb/foo",
+		Role:           "CI",
+		CommitSHA:      "abcdef",
+		Command:        "test",
+	})
+	var got []Row
+	query := `SELECT i.group_id, i.commit_sha, t.rule_type, t.label, i.repo_url,
+      i.role, i.command, ts.test_size, ts.status, ts.target_type 
+	  FROM "Targets" as t 
+	  JOIN "TargetStatuses" as ts ON ts.target_id = t.target_id 
+	  JOIN Invocations as i ON i.invocation_uuid = ts.invocation_uuid`
+	err = te.GetDBHandle().DB(ctx).Raw(query).Scan(&got).Error
 	require.NoError(t, err)
 	assert.ElementsMatch(t, got, expected)
 }
