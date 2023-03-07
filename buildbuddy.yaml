@@ -11,7 +11,7 @@ actions:
     bazel_commands:
       # - run //:setup_ci --config=workflows
       - --bazelrc=custom.bazelrc run //:get-log --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
-      - --bazelrc=custom.bazelrc run //:upload-log --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
+      - --bazelrc=custom.bazelrc build //:upload-log --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
       - --bazelrc=custom.bazelrc build //... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
       - --bazelrc=custom.bazelrc test //server/util/... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR --build_tests_only
       - --bazelrc=custom.bazelrc build //... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
@@ -20,6 +20,8 @@ actions:
       - --bazelrc=custom.bazelrc test //server/util/... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR --build_tests_only
       - --bazelrc=custom.bazelrc build //... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
       - --bazelrc=custom.bazelrc test //server/util/... --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR --build_tests_only
+      - --bazelrc=custom.bazelrc run //:get-log --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
+      - --bazelrc=custom.bazelrc build //:upload-log --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
       
 plugins:
   - path: cli/plugins/go-deps
