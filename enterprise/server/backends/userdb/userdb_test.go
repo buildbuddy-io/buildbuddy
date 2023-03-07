@@ -1144,3 +1144,36 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 		})
 	}
 }
+
+func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	g := getGroup(t, ctx1, env).Group
+	setUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
+
+	// Delete any group-level keys so that user-level keys will be the only
+	// keys associated with the org.
+	keys, err := udb.GetAPIKeys(ctx1, g.GroupID)
+	require.NoError(t, err)
+	for _, key := range keys {
+		err := udb.DeleteAPIKey(ctx1, key.APIKeyID)
+		require.NoError(t, err)
+	}
+
+	// Create a user-level key.
+	_, err = udb.CreateUserAPIKey(ctx1, g.GroupID, "test-personal-key", nil /*=capabilities*/)
+	require.NoError(t, err)
+
+	// Test all group-level APIs; none should return the user-level key we
+	// created.
+	key, err := udb.GetAPIKeyForInternalUseOnly(ctx1, g.GroupID)
+	require.Nil(t, key)
+	require.Truef(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+
+	keys, err = udb.GetAPIKeys(ctx1, g.GroupID)
+	require.NoError(t, err)
+	require.Empty(t, keys)
+}
