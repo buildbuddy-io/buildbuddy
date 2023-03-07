@@ -24,8 +24,6 @@ actions:
         test --config=mac-workflows
              --
              //...
-             -//deployment:all
-             -//tools/smarter_device_manager:push_image
              -//enterprise/server/test/integration/remote_execution/bazel_rbe:all
   - name: Benchmark
     container_image: ubuntu-20.04

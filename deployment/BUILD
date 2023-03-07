@@ -13,6 +13,7 @@ k8s_object(
     images = {
         "gcr.io/flame-build/buildbuddy-app-dev:server_image": "//server:buildbuddy_image",
     },
+    tags = ["manual"],
     template = ":buildbuddy-app.dev.yaml",
 )
 
@@ -21,6 +22,7 @@ k8s_objects(
     objects = [
         ":buildbuddy_dev_app",
     ],
+    tags = ["manual"],
 )
 
 # Set --//deployment:image_tag to set the tag when running container_push
