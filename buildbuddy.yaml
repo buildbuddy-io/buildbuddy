@@ -8,6 +8,9 @@ actions:
       pull_request:
         branches:
           - "master"
+    resource_requests:
+      cpu: 6
+      memory: 16GB
     bazel_commands:
       # - run //:setup_ci --config=workflows
       - --bazelrc=custom.bazelrc run //:get-log --config=workflows --build_tag_filters=-no-bazelci --repo_env=FOO=BAR
