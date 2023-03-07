@@ -464,9 +464,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	// Write setup logs to the current task's stderr (to make debugging easier),
-	// and also to the invocation.
+	// Note: logs written to the buildEventReporter will be written as
+	// invocation progress events as well as written to the workflow action's
+	// stderr.
 	ws.log = buildEventReporter
 	ws.hostname, ws.username = getHostAndUserName()
 
