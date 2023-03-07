@@ -8,8 +8,10 @@ actions:
       pull_request:
         branches:
           - "master"
-    bazel_commands:
-      - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
+    steps:
+      - run: echo 'Hello world!'
+      - bazel: test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
+      - run: echo 'Hello again!'
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:

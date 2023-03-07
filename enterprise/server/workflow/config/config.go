@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gopkg.in/yaml.v2"
 )
 
@@ -34,6 +35,26 @@ type Action struct {
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
 	BazelCommands     []string          `yaml:"bazel_commands"`
+	Steps             []Step            `yaml:"steps"`
+}
+
+func (a *Action) Normalize() error {
+	if len(a.Steps) > 0 && len(a.BazelCommands) > 0 {
+		return status.InvalidArgumentError("at most one of 'bazel_commands' or 'steps' is allowed")
+	}
+	if len(a.BazelCommands) > 0 {
+		a.Steps = make([]Step, 0, len(a.BazelCommands))
+		for _, c := range a.BazelCommands {
+			a.Steps = append(a.Steps, Step{Bazel: c})
+		}
+		a.BazelCommands = nil
+	}
+	return nil
+}
+
+type Step struct {
+	Run   string `yaml:"run"`
+	Bazel string `yaml:"bazel"`
 }
 
 type Triggers struct {
@@ -125,7 +146,7 @@ func GetDefault() *BuildBuddyConfig {
 					// with the PR.
 				},
 				// Note: default Bazel flags are written by the runner to ~/.bazelrc
-				BazelCommands: []string{"test //..."},
+				Steps: []Step{{Bazel: "test //..."}},
 			},
 		},
 	}

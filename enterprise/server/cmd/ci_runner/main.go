@@ -578,10 +578,8 @@ func run() error {
 	var action *config.Action
 	if *bazelSubCommand != "" {
 		action = &config.Action{
-			Name: "run",
-			BazelCommands: []string{
-				*bazelSubCommand,
-			},
+			Name:  "run",
+			Steps: []config.Step{{Bazel: *bazelSubCommand}},
 		}
 	} else if *actionName != "" {
 		// If a specific action was specified, filter to configured
@@ -593,7 +591,9 @@ func run() error {
 	} else {
 		return status.InvalidArgumentError("One of --action or --bazel_sub_command must be specified.")
 	}
-
+	if err := action.Normalize(); err != nil {
+		return err
+	}
 	result, err := ws.RunAction(ctx, action, buildEventReporter)
 	if err != nil {
 		return err
@@ -728,14 +728,20 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// exit early without running those commands and does not need to create
 	// invocation streams for them.
 	if ws.setupError == nil {
-		for _, bazelCmd := range ar.action.BazelCommands {
+		for _, step := range ar.action.Steps {
 			iid, err := newUUID()
 			if err != nil {
 				return err
 			}
+			// TODO: Find a better way to publish events for shell commands,
+			// since this will lead to broken command links in the UI.
+			cmd := step.Bazel
+			if cmd == "" {
+				cmd = "(shell script)"
+			}
 			wfc.Invocation = append(wfc.Invocation, &bespb.WorkflowConfigured_InvocationMetadata{
 				InvocationId: iid,
-				BazelCommand: bazelCmd,
+				BazelCommand: step.Bazel,
 			})
 			wfcEvent.Children = append(wfcEvent.Children, &bespb.BuildEventId{
 				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
@@ -744,7 +750,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			})
 			cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
 				InvocationId: iid,
-				BazelCommand: bazelCmd,
+				BazelCommand: cmd,
 			})
 			cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
 				Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
@@ -808,37 +814,52 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return ws.setupError
 	}
 
-	for i, bazelCmd := range ar.action.BazelCommands {
+	for i, step := range ar.action.Steps {
 		cmdStartTime := time.Now()
 
 		if i >= len(wfc.GetInvocation()) {
 			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
 		}
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		args, err := bazelArgs(ar.rootDir, ar.action.BazelWorkspaceDir, bazelCmd)
-		if err != nil {
-			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
-		}
-		printCommandLine(ar.reporter, *bazelCommand, args...)
-		// Transparently set the invocation ID from the one we computed ahead of
-		// time. The UI is expecting this invocation ID so that it can render a
-		// BuildBuddy invocation URL for each bazel_command that is executed.
-		args = appendBazelSubcommandArgs(args, fmt.Sprintf("--invocation_id=%s", iid))
 
-		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
-		// extract run options (i.e. args, runfile information) from the generated run script.
+		cmd := "/usr/bin/env"
+		// TODO: pipe command to stdin instead of passing as arg
+		args := []string{"bash", "-e", "-c", step.Run}
+
+		// Bazel commands are handled specially (shlex the command and pass
+		// directly to bazel binary instead of using a shell)
 		runScript := ""
-		if *recordRunMetadata {
-			tmpDir, err := os.MkdirTemp("", "bazel-run-script-*")
+		if step.Bazel != "" {
+			cmd = *bazelCommand
+			var err error
+			args, err = bazelArgs(ar.rootDir, ar.action.BazelWorkspaceDir, step.Bazel)
 			if err != nil {
-				return err
+				return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 			}
-			defer os.RemoveAll(tmpDir)
-			runScript = filepath.Join(tmpDir, "run.sh")
-			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
+			// Set the invocation ID from the one we computed ahead of time. The
+			// UI is expecting this invocation ID so that it can render a
+			// BuildBuddy invocation URL for each bazel_command that is
+			// executed.
+			args = appendBazelSubcommandArgs(args, fmt.Sprintf("--invocation_id=%s", iid))
+			// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
+			// extract run options (i.e. args, runfile information) from the generated run script.
+			if *recordRunMetadata {
+				tmpDir, err := os.MkdirTemp("", "bazel-run-script-*")
+				if err != nil {
+					return err
+				}
+				defer os.RemoveAll(tmpDir)
+				runScript = filepath.Join(tmpDir, "run.sh")
+				args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
+			}
+			// NOTE: intentionally printing args *before* expanding env.
+			printCommandLine(ar.reporter, cmd, args...)
+			args = expandEnv(args)
+		} else {
+			printCommandLine(ar.reporter, cmd, args...)
 		}
 
-		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
+		runErr := runCommand(ctx, cmd, args, ar.action.Env, ar.action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
