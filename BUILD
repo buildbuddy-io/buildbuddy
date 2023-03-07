@@ -140,7 +140,11 @@ sh_binary(
 genrule(
     name = "upload-log",
     outs = ["bazel-jvm.log"],
-    cmd_bash = "cp $(location java.log) $@",
+    cmd_bash = """
+    FILE="$(location java.log)"
+    echo $$FILE
+    cp $$FILE $@
+    """,
     executable = True,
     tags = ["manual"],
     tools = ["java.log"],
