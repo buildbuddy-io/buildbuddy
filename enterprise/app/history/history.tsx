@@ -117,6 +117,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         branchName: this.props.branch || filterParams.branch,
         commitSha: this.props.commit || filterParams.commit,
         command: filterParams.command,
+        pattern: filterParams.pattern,
         groupId: this.props.user?.selectedGroup?.id,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
@@ -161,7 +162,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       branchName: this.props.branch || filterParams.branch,
       commitSha: this.props.commit || filterParams.commit,
       command: filterParams.command,
-
+      pattern: filterParams.pattern,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -191,7 +192,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
       branchName: this.props.branch || filterParams.branch,
       commitSha: this.props.commit || filterParams.commit,
       command: filterParams.command,
-
+      pattern: filterParams.pattern,
       role: filterParams.role,
       updatedAfter: filterParams.updatedAfter,
       updatedBefore: filterParams.updatedBefore,

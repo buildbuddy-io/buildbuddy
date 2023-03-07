@@ -1,3 +1,4 @@
+import capabilities from "../../../app/capabilities/capabilities";
 import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -16,6 +17,7 @@ import {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
+  PATTERN_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
@@ -52,6 +54,7 @@ export interface ProtoFilterParams {
   commit?: string;
   host?: string;
   command?: string;
+  pattern?: string;
   minimumDuration?: google_duration.protobuf.Duration;
   maximumDuration?: google_duration.protobuf.Duration;
 
@@ -75,6 +78,7 @@ export function getProtoFilterParams(search: URLSearchParams): ProtoFilterParams
     commit: search.get(COMMIT_PARAM_NAME) || undefined,
     host: search.get(HOST_PARAM_NAME) || undefined,
     command: search.get(COMMAND_PARAM_NAME) || undefined,
+    pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
     minimumDuration: parseDuration(search.get(MINIMUM_DURATION_PARAM_NAME)),
     maximumDuration: parseDuration(search.get(MAXIMUM_DURATION_PARAM_NAME)),
 

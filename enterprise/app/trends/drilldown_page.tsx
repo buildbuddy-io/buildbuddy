@@ -130,7 +130,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       branchName: filterParams.branch,
       commitSha: filterParams.commit,
       command: filterParams.command,
-
+      pattern: filterParams.pattern,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -162,6 +162,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         branchName: filterParams.branch,
         commitSha: filterParams.commit,
         command: filterParams.command,
+        pattern: filterParams.pattern,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
         groupId: this.props.user.selectedGroup.id,
@@ -203,6 +204,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       branchName: filterParams.branch,
       commitSha: filterParams.commit,
       command: filterParams.command,
+      pattern: filterParams.pattern,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -266,6 +268,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return;
       case invocation.AggType.BRANCH_AGGREGATION_TYPE:
         router.setQueryParam("branch", e.activeLabel);
+        return;
+      case invocation.AggType.PATTERN_AGGREGATION_TYPE:
+        if (capabilities.config.patternFilterEnabled) {
+          router.setQueryParam("pattern", e.activeLabel);
+        }
         return;
       case invocation.AggType.GROUP_ID_AGGREGATION_TYPE:
       case invocation.AggType.DATE_AGGREGATION_TYPE:

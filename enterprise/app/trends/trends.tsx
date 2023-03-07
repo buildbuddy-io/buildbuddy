@@ -99,6 +99,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     if (filterParams.branch) request.query.branchName = filterParams.branch;
     if (filterParams.commit) request.query.commitSha = filterParams.commit;
     if (filterParams.command) request.query.command = filterParams.command;
+    if (filterParams.pattern) request.query.pattern = filterParams.pattern;
     if (filterParams.status) request.query.status = filterParams.status;
 
     request.query.updatedBefore = filterParams.updatedBefore;
@@ -132,6 +133,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
     const command = this.props.search.get("command");
     if (command) {
       request.query.command = command;
+    }
+
+    const pattern = capabilities.config.patternFilterEnabled && this.props.search.get("pattern");
+    if (pattern) {
+      request.query.pattern = pattern;
     }
 
     this.setState({ ...this.state, loading: true });
