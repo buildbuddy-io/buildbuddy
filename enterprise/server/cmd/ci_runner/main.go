@@ -464,10 +464,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	// Write setup logs to the current task's stderr (to make debugging easier),
-	// and also to the invocation.
-	ws.log = io.MultiWriter(os.Stderr, buildEventReporter)
+	// Note: logs written to the buildEventReporter will be written as
+	// invocation progress events as well as written to the workflow action's
+	// stderr.
+	ws.log = buildEventReporter
 	ws.hostname, ws.username = getHostAndUserName()
 
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
