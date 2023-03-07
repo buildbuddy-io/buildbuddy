@@ -84,6 +84,7 @@ var (
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", false, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
 	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 	bareEnableStats           = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
+	firecrackerDebugMode      = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
 )
 
 const (
@@ -1075,7 +1076,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
-			DebugMode:              *commandutil.DebugStreamCommandOutputs,
+			DebugMode:              *firecrackerDebugMode,
 		}
 		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
 		if err != nil {
