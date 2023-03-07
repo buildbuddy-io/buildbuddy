@@ -152,7 +152,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     if (!this.props.user?.selectedGroup || isExecutionMetric(this.selectedMetric.metric)) {
       return;
     }
-    this.setState({ loadingInvocations: true, invocationsFailed: false });
+    this.setState({ loadingInvocations: true, invocationsFailed: false, invocationsData: undefined });
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
