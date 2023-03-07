@@ -60,5 +60,11 @@ fi
 git checkout "$git_branch"
 schema_changes=$(bazel run //enterprise/server -- --database.data_source="$db_copy_conn_string" --database.print_schema_changes_and_exit=true 2>/dev/null)
 
-echo "$schema_changes"
+if [[ "$schema_changes" != "" ]]; then
+  echo "Auto-migration schema changes:"
+  echo "$schema_changes"
+else
+  echo "No auto-migration schema changes."
+fi
+
 export schema_changes

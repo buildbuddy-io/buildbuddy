@@ -672,13 +672,9 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 			// Print schema changes to stdout
 			// Logs go to stderr, so this output will be easy to isolate and parse
 			if len(sqlStrings) > 0 {
-				fmt.Println("Auto-migration schema changes:")
 				for _, sqlStr := range sqlStrings {
 					fmt.Printf("%s\n", sqlStr)
 				}
-				fmt.Println("End schema changes.")
-			} else {
-				fmt.Println("No auto-migration schema changes.")
 			}
 		}
 
