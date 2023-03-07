@@ -630,7 +630,7 @@ func TestCopyDataInBackground_RateLimitMin(t *testing.T) {
 	eg.Wait()
 
 	// Copies should not be rate limited, and should complete within 1 second
-	require.True(t, time.Since(start) <= 1*time.Second)
+	require.LessOrEqual(t, time.Since(start), 1*time.Second)
 }
 
 func TestCopyDataInBackground_DrainOnShutdown(t *testing.T) {
