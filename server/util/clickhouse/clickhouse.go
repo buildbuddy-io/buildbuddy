@@ -268,7 +268,7 @@ func Register(env environment.Env) error {
 	if *autoMigrateDB || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
 		if *printSchemaChangesAndExit {
-			if err := tables.RegisterLogSqlCallback(db, &sqlStrings, true); err != nil {
+			if err := tables.RegisterLogSQLCallback(db, &sqlStrings, true); err != nil {
 				return err
 			}
 		}

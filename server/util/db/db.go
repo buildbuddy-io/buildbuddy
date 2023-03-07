@@ -654,7 +654,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	if *autoMigrateDB || *autoMigrateDBAndExit || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
 		if *printSchemaChangesAndExit {
-			if err := tables.RegisterLogSqlCallback(primaryDB, &sqlStrings, true); err != nil {
+			if err := tables.RegisterLogSQLCallback(primaryDB, &sqlStrings, true); err != nil {
 				return nil, err
 			}
 		}

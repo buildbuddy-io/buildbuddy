@@ -996,8 +996,8 @@ func isStrictModeEnabled(db *gorm.DB) (bool, error) {
 	return isStrictModeEnabled, nil
 }
 
-// RegisterLogSqlCallback adds a callback to the db that appends all SQL executed to a slice of strings
-func RegisterLogSqlCallback(db *gorm.DB, s *[]string, excludeQueries bool) error {
+// RegisterLogSQLCallback adds a callback to the db that appends all SQL executed to a slice of strings
+func RegisterLogSQLCallback(db *gorm.DB, s *[]string, excludeQueries bool) error {
 	// Replace every gorm raw SQL command with a function that appends the SQL string to a slice
 	if err := db.Callback().Raw().Replace("gorm:raw", func(db *gorm.DB) {
 		sqlToExecute := db.Statement.SQL.String()

@@ -5,8 +5,7 @@
 # # Run local clickhouse server
 # ./clickhouse server
 # # Create local clickhouse database
-#  ./clickhouse client
-#     > create database buildbuddy_local
+#  ./clickhouse client -q "create database buildbuddy_local"
 # # Run script
 # source print_clickhouse_schema_changes.sh MY_GIT_BRANCH "clickhouse://default:@127.0.0.1:9000/buildbuddy_local"
 # echo $clickhouse_schema_changes
@@ -23,6 +22,7 @@ clickhouse_baseline_git_branch=$3
 git checkout "$clickhouse_baseline_git_branch"
 bazel run //enterprise/server -- --olap_database.data_source="$db_copy_conn_string" --olap_database.print_schema_changes_and_exit=true  > /dev/null 2>&1
 
+# TODO: Remove when buildbuddy-internal#2096 is fixed
 # When auto-migrating clickhouse tables, gorm runs MODIFY COLUMN on all columns even if their types have not changed
 # To determine whether a meaningful migration is taking place, we need to generate the no-op migration diff against the
 # baseline, and check whether that matches the migration diff on the new branch
