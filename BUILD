@@ -127,8 +127,23 @@ config_setting(
 genrule(
     name = "setup_ci",
     outs = ["setup_ci.sh"],
-    executable = True,
     cmd_bash = "touch $@",
+    executable = True,
+)
+
+sh_binary(
+    name = "get-log",
+    srcs = ["get-log.sh"],
+    tags = ["manual"],
+)
+
+genrule(
+    name = "upload-log",
+    outs = ["bazel-jvm.log"],
+    cmd_bash = "cp $(location java.log) $@",
+    executable = True,
+    tags = ["manual"],
+    tools = ["java.log"],
 )
 
 # N.B. this is ignored by gazelle so must be updated by hand.
