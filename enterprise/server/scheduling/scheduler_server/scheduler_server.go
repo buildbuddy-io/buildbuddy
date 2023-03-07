@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -998,6 +999,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	}
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
 	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, addr %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, node.GetVersion(), poolKey)
+	metrics.RemoteExecutionNumExecutorRegistrations.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
 	go func() {
 		if err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
