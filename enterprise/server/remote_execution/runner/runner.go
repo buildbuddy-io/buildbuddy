@@ -582,7 +582,6 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
 		}
-		log.Info("Using docker for execution")
 	}
 
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
@@ -964,6 +963,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			r.taskSize = st.GetSchedulingMetadata().GetTaskSize()
 			r.PlatformProperties = props
 			p.mu.Unlock()
+			log.CtxInfof(ctx, "Reusing existing %s runner for task", props.WorkloadIsolationType)
 			return r, nil
 		}
 	}
@@ -1033,6 +1033,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			p.pendingRemovals.Done()
 		}
 	}
+	log.CtxInfof(ctx, "Created new %s runner for task", props.WorkloadIsolationType)
 	return r, nil
 }
 
