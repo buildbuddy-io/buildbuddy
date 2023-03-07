@@ -163,6 +163,10 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 		q.AddWhereClause("command = ?", command)
 	}
 
+	if pattern := tq.GetPattern(); pattern != "" {
+		q.AddWhereClause("pattern = ?", pattern)
+	}
+
 	if commitSHA := tq.GetCommitSha(); commitSHA != "" {
 		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
@@ -723,6 +727,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	if command := req.GetQuery().GetCommand(); command != "" {
 		q.AddWhereClause("command = ?", command)
+	}
+
+	if pattern := req.GetQuery().GetPattern(); pattern != "" {
+		q.AddWhereClause("pattern = ?", pattern)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
