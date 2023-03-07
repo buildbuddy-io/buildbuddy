@@ -5564,6 +5564,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_gorm_gorm",
         importpath = "gorm.io/gorm",
+        patch_args = ["-p1"],
+        patches = ["//buildpatches:gorm.patch"],
+        patch_tool = "patch --ignore-whitespace",
         sum = "h1:ww+9Mu5WwHKDSOQZFC4ipu/sgpKMr9EtrJ0uwBqNtB0=",
         version = "v1.23.7",
     )
