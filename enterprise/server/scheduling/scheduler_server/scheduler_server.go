@@ -999,7 +999,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	}
 	addr := fmt.Sprintf("%s:%d", node.GetHost(), node.GetPort())
 	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, addr %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), addr, node.GetVersion(), poolKey)
-	metrics.RemoteExecutionNumExecutorRegistrations.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
+	metrics.RemoteExecutionExecutorRegistrationCount.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
 	go func() {
 		if err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {

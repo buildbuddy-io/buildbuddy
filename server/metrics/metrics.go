@@ -662,10 +662,10 @@ var (
 		Arch,
 	})
 
-	RemoteExecutionNumExecutorRegistrations = prometheus.NewCounterVec(prometheus.CounterOpts{
+	RemoteExecutionExecutorRegistrationCount = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name:      "num_executor_registrations",
+		Name:      "executor_registration_count",
 		Help:      "Number of executor registrations on the scheduler.",
 	}, []string{
 		VersionLabel,
