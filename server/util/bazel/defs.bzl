@@ -4,8 +4,16 @@ def _extract_bazel_installation_impl(ctx):
         outputs = [out_dir],
         inputs = [ctx.executable.bazel],
         command = """
+            USER=nobody "$BAZEL" --output_user_root="$OUT_DIR/.output_user_root" --install_base="$OUT_DIR"/.install --output_base="$OUT_DIR"/.output &>action.log
+            code="$?"
+            trap 'rm action.log' EXIT
+            if (( code )); then
+                cat action.log >&2
+                exit "$code"
+            fi
+
             set -e
-            "$BAZEL" --install_base="$OUT_DIR"/.install --output_base="$OUT_DIR"/.output &>/dev/null
+            rm -rf "$OUT_DIR"/.output_user_root
             rm -rf "$OUT_DIR"/.output
             mv "$OUT_DIR"/.install/* "$OUT_DIR"/
             rmdir "$OUT_DIR"/.install
