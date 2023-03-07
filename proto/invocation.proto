@@ -241,6 +241,9 @@ message InvocationQuery {
 
   // Stat filters (duration_usec, cas_cache_misses, etc.)
   repeated stat_filter.StatFilter filter = 14;
+
+  // The pattern for the targets built (exact match). Ex: "//..."
+  string pattern = 15;
 }
 
 // OverallStatus is a status representing both the completion status and
@@ -393,6 +396,9 @@ message InvocationStatQuery {
 
   // Stat filters (duration_usec, cas_cache_misses, etc.)
   repeated stat_filter.StatFilter filter = 12;
+
+  // The pattern for the targets built (exact match). Ex: "//..."
+  string pattern = 13;
 }
 
 message GetInvocationStatRequest {
