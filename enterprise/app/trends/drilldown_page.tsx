@@ -403,39 +403,45 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                     <div className="container nopadding-dense">
                       {!this.state.loadingDrilldowns &&
                         this.state.drilldownData &&
-                        this.state.drilldownData.chart.map((chart) => (
-                          <div className="drilldown-page-dd-chart">
-                            <div className="drilldown-page-dd-chart-title">
-                              {this.formatAggType(chart.drilldownDimension)}
-                            </div>
-                            <BarChart
-                              width={300}
-                              height={200}
-                              data={chart.entry}
-                              onClick={this.handleBarClick.bind(this, chart.drilldownDimension)}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis interval="preserveStart" dataKey={(entry: stats.DrilldownEntry) => entry.label} />
-                              <Tooltip
-                                content={this.renderCustomTooltip.bind(
-                                  this,
-                                  this.formatAggType(chart.drilldownDimension)
-                                )}
-                              />
-                              <Bar
-                                dataKey={(entry: stats.DrilldownEntry) =>
-                                  +entry.baseValue / +(this.state.drilldownData?.totalInBase || 1)
-                                }
-                                fill="#8884d8"
-                              />
-                              <Bar
-                                dataKey={(entry: stats.DrilldownEntry) =>
-                                  +entry.selectionValue / +(this.state.drilldownData?.totalInSelection || 1)
-                                }
-                                fill="#82ca9d"
-                              />
-                            </BarChart>
-                          </div>
-                        ))}
+                        this.state.drilldownData.chart.map(
+                          (chart) =>
+                            chart.entry.length > 1 && (
+                              <div className="drilldown-page-dd-chart">
+                                <div className="drilldown-page-dd-chart-title">
+                                  {this.formatAggType(chart.drilldownDimension)}
+                                </div>
+                                <BarChart
+                                  width={300}
+                                  height={200}
+                                  data={chart.entry}
+                                  onClick={this.handleBarClick.bind(this, chart.drilldownDimension)}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis
+                                    interval="preserveStart"
+                                    dataKey={(entry: stats.DrilldownEntry) => entry.label}
+                                  />
+                                  <Tooltip
+                                    content={this.renderCustomTooltip.bind(
+                                      this,
+                                      this.formatAggType(chart.drilldownDimension)
+                                    )}
+                                  />
+                                  <Bar
+                                    dataKey={(entry: stats.DrilldownEntry) =>
+                                      +entry.baseValue / +(this.state.drilldownData?.totalInBase || 1)
+                                    }
+                                    fill="#8884d8"
+                                  />
+                                  <Bar
+                                    dataKey={(entry: stats.DrilldownEntry) =>
+                                      +entry.selectionValue / +(this.state.drilldownData?.totalInSelection || 1)
+                                    }
+                                    fill="#82ca9d"
+                                  />
+                                </BarChart>
+                              </div>
+                            )
+                        )}
                     </div>
                   )}
                 </div>
