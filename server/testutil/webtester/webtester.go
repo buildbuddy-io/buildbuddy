@@ -197,6 +197,28 @@ func (el *Element) SendKeys(keys string) {
 	require.NoError(el.t, err)
 }
 
+// Find returns the child element matching the given CSS selector. Exactly one
+// element must be matched, otherwise the test fails.
+func (el *Element) Find(cssSelector string) *Element {
+	child, err := el.webElement.FindElement(selenium.ByCSSSelector, cssSelector)
+	require.NoError(el.t, err)
+	return &Element{t: el.t, webElement: child}
+}
+
+func (el *Element) FirstSelectedOption() *Element {
+	options, err := el.webElement.FindElements(selenium.ByCSSSelector, "option")
+	require.NoError(el.t, err)
+	for _, option := range options {
+		selected, err := option.IsSelected()
+		require.NoError(el.t, err)
+		if selected {
+			return &Element{t: el.t, webElement: option}
+		}
+	}
+	require.FailNow(el.t, "no options were selected")
+	return nil
+}
+
 // ===
 // Utility functions that don't directly correspond with WebElement APIs
 // ===
@@ -290,6 +312,17 @@ var (
 		}
 	}
 )
+
+// WithAPIKeySelection returns a setup page option that selects a given API key
+// from the dropdown.
+func WithAPIKeySelection(label string) SetupPageOption {
+	return func(wt *WebTester) {
+		picker := wt.Find(`.credential-picker`)
+		picker.SendKeys(label)
+		selectedOption := picker.FirstSelectedOption()
+		require.Equal(wt.t, label, selectedOption.Text())
+	}
+}
 
 // GetBazelBuildFlags uses the Web app to navigate to the setup page and get the
 // Bazel config flags recommended by BuildBuddy. Options can be passed to select

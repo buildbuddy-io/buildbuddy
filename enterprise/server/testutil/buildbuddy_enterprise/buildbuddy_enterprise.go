@@ -80,7 +80,7 @@ type WebTarget interface {
 func SetupWebTarget(t *testing.T) WebTarget {
 	switch *webdriverTarget {
 	case "local":
-		return Run(t, "--cache.detailed_stats_enabled=true")
+		return Run(t, "--cache.detailed_stats_enabled=true", "--app.user_owned_keys_enabled=true")
 	case "remote":
 		return &remote{}
 	default:
