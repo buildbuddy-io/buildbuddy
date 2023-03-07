@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -x
 
 (
   cd ${BUILD_WORKING_DIRECTORY}
