@@ -108,6 +108,7 @@ func main() {
 	}
 
 	// If all metrics look healthy for the duration of the monitoring timeframe, continue with rollout
+	log.Info("Metrics look healthy! Exiting the script.")
 	os.Exit(metricsHealthyExitCode)
 }
 
@@ -126,7 +127,14 @@ func queryMetric(promAPI promapi.API, metricName string, query string, isMissing
 		}
 		return 0, status.NotFoundErrorf("no data for metric %s", metricName)
 	}
-	return float64(resultVector[0].Value), nil
+
+	// Default NAN values to 0
+	// NAN is reported if there is no data (Ex. if there are no invocations on dev, invocation failure rate can't be reported)
+	var value float64
+	if !math.IsNaN(float64(resultVector[0].Value)) {
+		value = float64(resultVector[0].Value)
+	}
+	return value, nil
 }
 
 func metricHealthy(promAPI promapi.API, metricName string, query string, healthThreshold HealthThreshold, isMissingDataValid bool) (bool, error) {
