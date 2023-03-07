@@ -67,10 +67,6 @@ func newServer(t *testing.T) (*vfs_server.Server, string) {
 }
 
 func TestGetLayout(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		// TODO(sluongng): the directory size and default symlink permission is different on MacOS
-		t.Skipf("Test assumed running on linux")
-	}
 	server, tmpDir := newServer(t)
 
 	dir1File1Contents := "file one"

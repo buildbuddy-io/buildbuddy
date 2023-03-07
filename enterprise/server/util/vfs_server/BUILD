@@ -34,6 +34,9 @@ go_test(
     name = "vfs_server_test",
     size = "small",
     srcs = ["vfs_server_test.go"],
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         ":vfs_server",
         "//proto:vfs_go_proto",
