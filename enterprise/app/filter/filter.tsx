@@ -15,7 +15,7 @@ import {
   GitBranch,
   GitCommit,
   HardDrive,
-  Target,
+  LayoutGrid,
   Wrench,
   SortAsc,
   SortDesc,
@@ -439,7 +439,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             )}
             {capabilities.config.patternFilterEnabled && patternValue && (
               <span className="advanced-badge">
-                <Target /> {patternValue}
+                <LayoutGrid /> {patternValue}
               </span>
             )}
             {(minimumDurationValue || maximumDurationValue) && (
