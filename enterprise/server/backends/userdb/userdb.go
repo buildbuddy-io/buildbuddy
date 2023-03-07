@@ -186,6 +186,8 @@ func (d *UserDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 		return nil, err
 	}
 	q := query_builder.NewQuery(`SELECT * FROM APIKeys`)
+	// Select group-owned keys only
+	q.AddWhereClause(`user_id IS NULL OR user_id = ""`)
 	q.AddWhereClause(`group_id = ?`, groupID)
 	if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
 		q.AddWhereClause("visible_to_developers = ?", true)
@@ -223,6 +225,7 @@ func (d *UserDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string
 	query := d.h.DB(ctx).Raw(`
 		SELECT * FROM APIKeys
 		WHERE group_id = ?
+		AND (user_id IS NULL OR user_id = "")
 		ORDER BY label ASC LIMIT 1
 	`, groupID)
 	if err := query.Take(key).Error; err != nil {

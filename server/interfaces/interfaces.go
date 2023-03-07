@@ -349,11 +349,11 @@ type UserDB interface {
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 
-	// GetAPIKeyForInternalUseOnly returns any API key for the group. It is only
-	// to be used in situations where the user has a pre-authorized grant to
-	// access resources on behalf of the org, such as a publicly shared
-	// invocation. The returned API key must only be used to access internal
-	// resources and must not be returned to the caller.
+	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
+	// group. It is only to be used in situations where the user has a
+	// pre-authorized grant to access resources on behalf of the org, such as a
+	// publicly shared invocation. The returned API key must only be used to
+	// access internal resources and must not be returned to the caller.
 	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
 
 	// API Keys API.
