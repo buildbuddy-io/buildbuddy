@@ -22,7 +22,6 @@ actions:
     bazel_commands:
       - |
         test --config=mac-workflows
-             --test_tag_filters=-performance,-webdriver,-docker
              --
              //...
              -//deployment:all
