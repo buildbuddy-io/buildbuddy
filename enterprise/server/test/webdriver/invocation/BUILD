@@ -4,7 +4,7 @@ go_web_test_suite(
     name = "invocation_test",
     size = "small",
     srcs = ["invocation_test.go"],
-    shard_count = 1,
+    shard_count = 2,
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//server/testutil/testbazel",
