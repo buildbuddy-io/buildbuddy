@@ -377,6 +377,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     onChange={this.onChangeCASOnly.bind(this, request, onChange)}
                     checked={isCASOnly(request)}
                     disabled={!this.canChangeCapabilities()}
+                    debug-id="cas-only-radio-button"
                   />
                   <span>
                     CAS-only key <span className="field-description">(disable action cache uploads)</span>
