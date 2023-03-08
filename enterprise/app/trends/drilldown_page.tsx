@@ -573,12 +573,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                     )}
                                   />
                                   <Bar
+                                    cursor="pointer"
                                     dataKey={(entry: stats.DrilldownEntry) =>
                                       +entry.baseValue / +(this.state.drilldownData?.totalInBase || 1)
                                     }
                                     fill="#8884d8"
                                   />
                                   <Bar
+                                    cursor="pointer"
                                     dataKey={(entry: stats.DrilldownEntry) =>
                                       +entry.selectionValue / +(this.state.drilldownData?.totalInSelection || 1)
                                     }
