@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/manifoldco/promptui"
 )
 
@@ -49,6 +50,11 @@ func HandlePicker(args []string) []string {
 	// If there is only one executable target, run it.
 	if len(targets) == 1 {
 		args = append(args, targets[0])
+		return args
+	}
+
+	// If not running interactively, we can't show a prompt.
+	if !terminal.IsTTY(os.Stdin) || !terminal.IsTTY(os.Stderr) {
 		return args
 	}
 

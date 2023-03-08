@@ -9,6 +9,7 @@ go_library(
         "//cli/arg",
         "//cli/bazelisk",
         "//cli/log",
+        "//cli/terminal",
         "@com_github_manifoldco_promptui//:promptui",
     ],
 )
