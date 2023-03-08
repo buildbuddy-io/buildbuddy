@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/manifoldco/promptui"
 )
 
@@ -16,10 +16,10 @@ func HandlePicker(args []string) []string {
 	if len(arg.GetTargets(args)) > 0 {
 		return args
 	}
-	
+
 	// If the command is build, test, or query without a specified target - apply to all targets.
 	command := arg.GetCommand(args)
-	
+
 	// If it's a build, test, or query - apply to all targets.
 	if command == "build" || command == "test" || command == "query" {
 		args = append(args, "//...")
@@ -50,15 +50,15 @@ func HandlePicker(args []string) []string {
 	if len(targets) == 1 {
 		args = append(args, targets[0])
 		return args
-	} 
-	
+	}
+
 	// If there are more than one executable targets, show a picker.
 	prompt := promptui.Select{
-		Label: "Select target to run",
-		Items: targets,
-		Stdout: &bellSkipper{},
-		Size: 10,
-		Searcher: searcher(targets),
+		Label:             "Select target to run",
+		Items:             targets,
+		Stdout:            &bellSkipper{},
+		Size:              10,
+		Searcher:          searcher(targets),
 		StartInSearchMode: true,
 		Keys: &promptui.SelectKeys{
 			Prev:     promptui.Key{Code: promptui.KeyPrev, Display: promptui.KeyPrevDisplay},
@@ -78,10 +78,10 @@ func HandlePicker(args []string) []string {
 	return args
 }
 
-func searcher(targets []string) (func(input string, index int) bool) {
+func searcher(targets []string) func(input string, index int) bool {
 	return func(input string, index int) bool {
 		return strings.Contains(targets[index], input)
-	}	
+	}
 }
 
 // This is a workaround for the bell issue documented in
