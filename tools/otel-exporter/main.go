@@ -38,9 +38,7 @@ func main() {
 	tracer, shutdown := initOtel(ctx, serviceName)
 	defer shutdown()
 
-	// Default to HoneycombMaxRetention on initial run
-	// should be updated on subsequent runs
-	lastFinishedAt := time.Now().Add(-1 * honeycombMaxRetention)
+	lastFinishedAt := time.Now().Add(-1 * time.Hour * 24 * 7)
 
 	c := NewCache(*cachePath)
 	defer c.fileStore.Close()
