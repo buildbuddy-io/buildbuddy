@@ -200,7 +200,7 @@ type Group struct {
 	Model
 
 	SharingEnabled       bool `gorm:"default:1;type:tinyint(1)"`
-	UserOwnedKeysEnabled bool `gorm:"not null;default:false;type:tinyint(1)"`
+	UserOwnedKeysEnabled bool `gorm:"not null;default:0;type:tinyint(1)"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
