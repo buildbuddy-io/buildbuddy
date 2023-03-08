@@ -23,12 +23,12 @@ import (
 func (d *daemon) processBazelProfile(ctx context.Context, profile *bespb.File, startTime time.Time) error {
 	rn, err := getResourceNameFromURI(profile.GetUri())
 	if err != nil {
-		return fmt.Errorf("error getting resource name: %v", err)
+		return err
 	}
 
 	profileRaw, err := d.downloadProfileBlob(ctx, rn, strings.HasSuffix(profile.GetName(), ".gz"))
 	if err != nil {
-		return fmt.Errorf("error downloading profile blob: %v", err)
+		return err
 	}
 
 	var bProfile BazelProfile
@@ -78,7 +78,7 @@ func (d *daemon) downloadProfileBlob(ctx context.Context, rn *digest.ResourceNam
 	var out bytes.Buffer
 	outCtx := metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *bbAPIKey)
 	if err := cachetools.GetBlob(outCtx, d.byteStreamClient, rn, &out); err != nil {
-		return nil, fmt.Errorf("error downloading profile: %v", err)
+		return nil, err
 	}
 
 	var reader io.Reader = &out
