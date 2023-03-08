@@ -38,6 +38,7 @@ var (
 	addUserToDomainGroup = flag.Bool("app.add_user_to_domain_group", false, "Cloud-Only")
 	createGroupPerUser   = flag.Bool("app.create_group_per_user", false, "Cloud-Only")
 	noDefaultUserGroup   = flag.Bool("app.no_default_user_group", false, "Cloud-Only")
+	userOwnedKeysEnabled = flag.Bool("app.user_owned_keys_enabled", false, "If true, enable user-owned API keys.")
 
 	orgName   = flag.String("org.name", "Organization", "The name of your organization, which is displayed on your organization's build history.")
 	orgDomain = flag.String("org.domain", "", "Your organization's email domain. If this is set, only users with email addresses in this domain will be able to register for a BuildBuddy account.")
@@ -251,7 +252,14 @@ func (d *UserDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 	return createAPIKey(d.h.DB(ctx), "" /*=userID*/, groupID, newAPIKeyToken(), label, caps, visibleToDevelopers)
 }
 
+func (d *UserDB) GetUserOwnedKeysEnabled() bool {
+	return *userOwnedKeysEnabled
+}
+
 func (d *UserDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
+	if !*userOwnedKeysEnabled {
+		return nil, status.UnimplementedError("not implemented")
+	}
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
@@ -301,6 +309,9 @@ func (d *UserDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 }
 
 func (d *UserDB) CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error) {
+	if !*userOwnedKeysEnabled {
+		return nil, status.UnimplementedError("not implemented")
+	}
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}

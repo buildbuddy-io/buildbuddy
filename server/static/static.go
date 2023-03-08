@@ -37,7 +37,6 @@ var (
 	testGridV2Enabled          = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
 	usageEnabled               = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
 	expandedSuggestionsEnabled = flag.Bool("app.expanded_suggestions_enabled", false, "If set, enable more build suggestions in the UI.")
-	userOwnedKeysEnabled       = flag.Bool("app.user_owned_keys_enabled", false, "If set, enable the UI controls for user-owned API keys.")
 	enableWorkflows            = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
 	enableExecutorKeyCreation  = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
 	testOutputManifestsEnabled = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
@@ -154,7 +153,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		QuotaManagementEnabled:        env.GetQuotaManager() != nil,
 		SecretsEnabled:                env.GetSecretService() != nil,
 		TestOutputManifestsEnabled:    *testOutputManifestsEnabled,
-		UserOwnedKeysEnabled:          *userOwnedKeysEnabled,
+		UserOwnedKeysEnabled:          env.GetUserDB() != nil && env.GetUserDB().GetUserOwnedKeysEnabled(),
 		TrendsHeatmapEnabled:          iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 	}
 
