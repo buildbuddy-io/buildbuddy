@@ -21,7 +21,6 @@ require (
 	github.com/aws/aws-sdk-go v1.43.9
 	github.com/bazelbuild/bazel-gazelle v0.29.0
 	github.com/bazelbuild/bazelisk v1.11.0
-	github.com/bazelbuild/buildtools v0.0.0-20230111132423-06e8e2436a75
 	github.com/bazelbuild/rules_go v0.37.0
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
@@ -127,6 +126,7 @@ require (
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
+	github.com/bazelbuild/buildtools v0.0.0-20230111132423-06e8e2436a75 // indirect
 	github.com/beevik/etree v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
