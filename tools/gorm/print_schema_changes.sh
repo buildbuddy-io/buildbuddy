@@ -3,8 +3,13 @@
 # Example usage:
 # # Port-forward dev mysql server so it can be accessed locally
 # kubectl --namespace=tools-dev port-forward deployment/sqlproxy 3308:3306
-# # Run script. Dev mysql password can be found in buildbuddy-internal/enterprise/config/buildbuddy.dev.yaml
+# # Run script for mysql: Dev mysql password can be found in buildbuddy-internal/enterprise/config/buildbuddy.dev.yaml
 # schema_changes=$(./print_schema_changes.sh MY_GIT_BRANCH "mysql://buildbuddy-dev:PASSWORD@tcp(127.0.0.1:3308)/buildbuddy_dev")
+#
+# # Port-forward dev clickhouse server so it can be accessed locally
+# kubectl -n clickhouse-operator-dev port-forward chi-repl-dev-replicated-0-0-0 9001:9000
+# # Run script for clickhouse: Dev clickhouse password can be found in buildbuddy-internal/enterprise/config/buildbuddy.dev.yaml
+# schema_changes=$(./print_schema_changes.sh MY_GIT_BRANCH "clickhouse://buildbuddy_dev:PASSWORD@localhost:9001/buildbuddy_dev" master)
 
 git_branch=$1
 db_conn_string=$2
