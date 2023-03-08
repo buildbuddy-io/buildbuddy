@@ -18,6 +18,6 @@ message ACL {
 
   message Permissions {
     bool read = 1;
-    bool write = 2;
+    bool      write = 2;
   }
 }
