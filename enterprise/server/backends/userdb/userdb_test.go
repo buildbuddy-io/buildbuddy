@@ -1094,7 +1094,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 		{Name: "Developer_CASWrite_OK", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY}, OK: true},
 		{Name: "Admin_ACWrite_OK", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: true},
 		{Name: "Developer_ACWrite_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY}, OK: false},
-		{Name: "Admin_Executor_OK", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: true},
+		{Name: "Admin_Executor_Fail", Role: role.Admin, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
 		{Name: "Developer_Executor_Fail", Role: role.Developer, Capabilities: []akpb.ApiKey_Capability{akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY}, OK: false},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
