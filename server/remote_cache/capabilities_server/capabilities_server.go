@@ -87,6 +87,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 					{MinPriority: math.MinInt32, MaxPriority: math.MaxInt32},
 				},
 			},
+			DigestFunctions: digest.SupportedDigestFunctions(),
 		}
 	}
 	return &c, nil
