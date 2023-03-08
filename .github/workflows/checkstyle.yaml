@@ -108,9 +108,9 @@ jobs:
           echo "===== go deps diff (fix with ./buildfix.sh --go_deps) ====="
           cat go-deps-diff.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
           echo "===== clang-format errors (fix with ./buildfix.sh) ====="
-          cat clang-format-errors.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
+          cat clang-format-errors.txt | reviewdog -reporter=github-pr-check -f=clang-format
           echo "===== prettier errors (fix with ./buildfix.sh) ====="
-          cat prettier-errors.txt | reviewdog -reporter=github-pr-review -f=diff -f.diff.strip=1
+          cat prettier-errors.txt | reviewdog -reporter=github-pr-check -f=prettier
 
           if [ -s gazelle-diff.txt ]; then exit 1; fi
           if [ -s go-deps-diff.txt ]; then exit 1; fi
