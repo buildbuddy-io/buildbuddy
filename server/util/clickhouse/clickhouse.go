@@ -268,7 +268,7 @@ func Register(env environment.Env) error {
 	if *autoMigrateDB || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
 		if *printSchemaChangesAndExit {
-			if err := tables.RegisterLogSQLCallback(db, &sqlStrings, true); err != nil {
+			if err := gormutil.RegisterLogSQLCallback(db, &sqlStrings, true); err != nil {
 				return err
 			}
 		}
@@ -278,7 +278,7 @@ func Register(env environment.Env) error {
 		}
 
 		if *printSchemaChangesAndExit {
-			tables.PrintMigrationSchemaChanges(sqlStrings)
+			gormutil.PrintMigrationSchemaChanges(sqlStrings)
 			log.Infof("Clickhouse migration completed. Exiting due to --clickhouse.print_schema_changes_and_exit.")
 			os.Exit(0)
 		}
