@@ -1701,6 +1701,7 @@ message BatchUpdateBlobsRequest {
   // that case the server SHOULD infer the digest function using the
   // length of the blob digest hashes and the digest functions announced
   // in the server's capabilities.
+  DigestFunction.Value digest_function = 5;
 }
 
 // A response message for
