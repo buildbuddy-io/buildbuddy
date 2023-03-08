@@ -14,6 +14,7 @@ interface HeatmapProps {
   metricBucketName: string;
   metricBucketFormatter: (value: number) => string;
   selectionCallback?: (s?: HeatmapSelection) => void;
+  zoomCallback?: (s?: HeatmapSelection) => void;
 }
 
 interface State {
@@ -226,6 +227,13 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     }
   }
 
+  maybeFireZoomCallback() {
+    const s = this.computeHeatmapSelection();
+    if (s && this.props.zoomCallback) {
+      this.props.zoomCallback(s);
+    }
+  }
+
   onMouseUp(e: MouseEvent) {
     if (!this.pendingClick) {
       this.selectedData = undefined;
@@ -254,7 +262,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return;
   }
 
-  maybeRenderSelection(): SelectionData | undefined {
+  computeSelectionData(): SelectionData | undefined {
     const selectionToDraw = this.pendingClick || this.selectedData;
     if (!selectionToDraw) {
       return;
@@ -375,7 +383,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
       });
     });
 
-    const selection = this.maybeRenderSelection();
+    const selection = this.computeSelectionData();
     const interpolator = (v: number) =>
       heatmapColorScale[Math.floor(((heatmapColorScale.length - 1) * (v - min)) / (max - min))];
 
