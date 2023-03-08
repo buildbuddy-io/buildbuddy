@@ -15,9 +15,6 @@ db_conn_string=$2
 # baseline
 baseline_git_branch=$3
 
-# If running on a Mac, you may need to uncomment the following for the string parsing to work correctly:
-# alias sed="gsed"
-
 # Parse db connection string
 db_driver=$(echo "$db_conn_string" | sed -n "s/\(\S*\):\/\/.*$/\1/p")
 if [[ "$db_driver" == "clickhouse" ]]; then
