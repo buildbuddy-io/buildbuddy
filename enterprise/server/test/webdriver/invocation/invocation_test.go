@@ -146,7 +146,7 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 		wt.Find(`.organization-form-submit-button`).Click()
 		wt.Find(`.form-success-message`)
 	}
-	// Create a personal API key
+	// Create a personal API key with CAS-only permissions
 	wt.Find(`[href="/settings/personal/api-keys"]`).Click()
 	existingKeys := wt.FindAll(`.api-key-value`)
 	apiKey := ""
@@ -155,6 +155,7 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	} else {
 		wt.FindByDebugID("create-new-api-key").Click()
 		wt.Find(`.dialog-wrapper [name="label"]`).SendKeys("test-personal-key")
+		wt.FindByDebugID("cas-only-radio-button").Click()
 		wt.Find(`.dialog-wrapper button[type="submit"]`).Click()
 		apiKey = wt.Find(`.api-key-value`).Text()
 	}

@@ -1119,6 +1119,10 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 				ctx1, g.GroupID, "US1's key", test.Capabilities)
 			if test.OK {
 				require.NoError(t, err)
+				// Read back the capabilities, make sure they took effect.
+				key, err := udb.GetAPIKey(ctx1, key.APIKeyID)
+				require.NoError(t, err)
+				require.Equal(t, capabilities.ToInt(test.Capabilities), key.Capabilities)
 			} else {
 				require.Truef(
 					t, status.IsPermissionDeniedError(err),
@@ -1136,6 +1140,10 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 			err = udb.UpdateAPIKey(ctx1, key)
 			if test.OK {
 				require.NoError(t, err)
+				// Capabilities should not have changed.
+				key, err := udb.GetAPIKey(ctx1, key.APIKeyID)
+				require.NoError(t, err)
+				require.Equal(t, capabilities.ToInt(test.Capabilities), key.Capabilities)
 			} else {
 				require.Truef(
 					t, status.IsPermissionDeniedError(err),

@@ -344,7 +344,7 @@ func (d *UserDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 			return status.PermissionDeniedErrorf("group %q does not have user-owned keys enabled", groupID)
 		}
 
-		key, err := createAPIKey(tx, u.GetUserID(), groupID, newAPIKeyToken(), label, userAPIKeyCapabilities, false /*=visibleToDevelopers*/)
+		key, err := createAPIKey(tx, u.GetUserID(), groupID, newAPIKeyToken(), label, capabilities, false /*=visibleToDevelopers*/)
 		if err != nil {
 			return err
 		}
