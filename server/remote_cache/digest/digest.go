@@ -25,6 +25,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	guuid "github.com/google/uuid"
+	_ "github.com/zeebo/blake3"
 	gcodes "google.golang.org/grpc/codes"
 	gmetadata "google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
