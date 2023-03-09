@@ -113,7 +113,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
 
     const timestamp = this.props.heatmapData.timestampBracket[stepX];
     const metric = this.props.heatmapData.bucketBracket[stepY];
-    if (!timestamp || !metric) {
+    if (timestamp === undefined || metric === undefined) {
       return undefined;
     }
     const column = this.props.heatmapData.column[stepX];
