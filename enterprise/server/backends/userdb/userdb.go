@@ -649,6 +649,9 @@ func (d *UserDB) AddUserToGroup(ctx context.Context, userID string, groupID stri
 }
 
 func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) error {
+	// Count the number of users in the group.
+	// If there are no existing users, then user should join with admin role,
+	// otherwise they should join with default role.
 	row := &struct{ Count int64 }{}
 	err := tx.Raw(`
 		SELECT COUNT(*) AS count FROM UserGroups
@@ -658,7 +661,6 @@ func (d *UserDB) addUserToGroup(tx *db.DB, userID, groupID string) error {
 		return err
 	}
 	r := role.Default
-	// If no existing users in the group, promote to admin automatically.
 	if row.Count == 0 {
 		r = role.Admin
 	}
@@ -701,7 +703,7 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 	if groupID == "" {
 		return 0, status.InvalidArgumentError("Group ID is required.")
 	}
-	var newStatus grpb.GroupMembershipStatus
+	var membershipStatus grpb.GroupMembershipStatus
 	err = d.h.Transaction(ctx, func(tx *db.DB) error {
 		tu, err := d.getUser(tx, u.GetUserID())
 		if err != nil {
@@ -713,9 +715,9 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 		}
 		// If the org has an owned domain that matches the user's email,
 		// the user can join directly as a member.
-		newStatus = grpb.GroupMembershipStatus_REQUESTED
+		membershipStatus = grpb.GroupMembershipStatus_REQUESTED
 		if group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(tu.Email) {
-			newStatus = grpb.GroupMembershipStatus_MEMBER
+			membershipStatus = grpb.GroupMembershipStatus_MEMBER
 			return d.addUserToGroup(tx, userID, groupID)
 		}
 
@@ -731,13 +733,13 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 			UserUserID:       userID,
 			GroupGroupID:     groupID,
 			Role:             uint32(role.Default),
-			MembershipStatus: int32(newStatus),
+			MembershipStatus: int32(membershipStatus),
 		}).Error
 	})
 	if err != nil {
 		return 0, err
 	}
-	return newStatus, nil
+	return membershipStatus, nil
 }
 
 func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error) {
@@ -1192,9 +1194,9 @@ func hasAdminOnlyCapabilities(capabilities []akpb.ApiKey_Capability) bool {
 }
 
 func getEmailDomain(email string) string {
-	chunks := strings.Split(email, "@")
-	if len(chunks) == 0 {
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
 		return ""
 	}
-	return chunks[len(chunks)-1]
+	return parts[len(parts)-1]
 }
