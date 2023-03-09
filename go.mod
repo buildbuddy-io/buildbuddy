@@ -84,6 +84,7 @@ require (
 	github.com/tebeka/selenium v0.9.9
 	github.com/throttled/throttled/v2 v2.0.0-00010101000000-000000000000
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
+	github.com/zeebo/blake3 v0.2.3
 	go.opentelemetry.io/contrib/detectors/gcp v1.11.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.36.4
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.36.4
@@ -202,6 +203,7 @@ require (
 	github.com/juju/ratelimit v1.0.2 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.12 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lestrrat-go/backoff/v2 v2.0.8 // indirect

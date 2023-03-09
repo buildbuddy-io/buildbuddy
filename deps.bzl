@@ -2894,6 +2894,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:vJi+O/nMdFt0vqm8NZBI6wzALWdA2X+egi0ogNyrC/w=",
         version = "v1.2.1",
     )
+    go_repository(
+        name = "com_github_klauspost_cpuid_v2",
+        importpath = "github.com/klauspost/cpuid/v2",
+        sum = "h1:p9dKCg8i4gmOxtv35DvrYoWqYzQrvEVdjQ762Y0OqZE=",
+        version = "v2.0.12",
+    )
 
     go_repository(
         name = "com_github_konsorten_go_windows_terminal_sequences",
@@ -4642,6 +4648,24 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/yvasiyarov/newrelic_platform_go",
         sum = "h1:ERexzlUfuTvpE74urLSbIQW0Z/6hF9t8U4NsJLaioAY=",
         version = "v0.0.0-20140908184405-b21fdbd4370f",
+    )
+    go_repository(
+        name = "com_github_zeebo_assert",
+        importpath = "github.com/zeebo/assert",
+        sum = "h1:hU1L1vLTHsnO8x8c9KAR5GmM5QscxHg5RNU5z5qbUWY=",
+        version = "v1.1.0",
+    )
+    go_repository(
+        name = "com_github_zeebo_blake3",
+        importpath = "github.com/zeebo/blake3",
+        sum = "h1:TFoLXsjeXqRNFxSbk35Dk4YtszE/MQQGK10BH4ptoTg=",
+        version = "v0.2.3",
+    )
+    go_repository(
+        name = "com_github_zeebo_pcg",
+        importpath = "github.com/zeebo/pcg",
+        sum = "h1:lyqfGeWiv4ahac6ttHs+I5hwtH/+1mrhlCtVNQM2kHo=",
+        version = "v1.0.1",
     )
 
     go_repository(

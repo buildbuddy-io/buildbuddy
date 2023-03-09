@@ -11,6 +11,7 @@ go_library(
         "//server/util/alert",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
+        "@com_github_zeebo_blake3//:blake3",
         "@go_googleapis//google/rpc:errdetails_go_proto",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
