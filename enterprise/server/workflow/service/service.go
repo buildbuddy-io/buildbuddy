@@ -641,7 +641,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	os := strings.ToLower(workflowAction.OS)
 	computeUnits := *workflowsMacComputeUnits
 	// Use the CI runner image if the OS supports containerized actions.
-	if !workflowAction.selfHosted && (os == "" || os == platform.LinuxOperatingSystemName) {
+	if !workflowAction.SelfHosted && (os == "" || os == platform.LinuxOperatingSystemName) {
 		computeUnits = *workflowsLinuxComputeUnits
 		containerImage = ws.containerImage(workflowAction)
 		if *enableFirecracker {
@@ -671,7 +671,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		estimatedDisk = fmt.Sprintf("%d", 20_000_000_000) // 20 GB
 	}
 	useSelfHostedExecutors := "false"
-	if workflowAction.selfHosted {
+	if workflowAction.SelfHosted {
 		useSelfHostedExecutors = "true"
 	}
 	cmd := &repb.Command{
@@ -712,7 +712,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// re-cloned each time.
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "preserve-workspace", Value: "true"},
-				{Name: "use-self-hosted-executors", Value: useSelfHostedExecutors}
+				{Name: "use-self-hosted-executors", Value: useSelfHostedExecutors},
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
 				{Name: "workflow-id", Value: wf.WorkflowID},
