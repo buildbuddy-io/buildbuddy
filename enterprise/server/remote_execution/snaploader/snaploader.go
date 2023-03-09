@@ -161,8 +161,8 @@ func (l *FileCacheLoader) GetConfigurationData(snapshotDigest *repb.Digest) ([]b
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
 // directory.
 func (l *FileCacheLoader) UnpackSnapshot(snapshotDigest *repb.Digest, outputDirectory string) error {
-	if l.snapshotDigest != snapshotDigest {
-		return status.InvalidArgumentError("Snapshot configration already fetched with different digest")
+	if l.snapshotDigest != nil && l.snapshotDigest != snapshotDigest {
+		return status.InvalidArgumentErrorf("Snapshot configuration already fetched with different digest %q", digest.String(l.snapshotDigest))
 	}
 
 	if l.manifest == nil {
