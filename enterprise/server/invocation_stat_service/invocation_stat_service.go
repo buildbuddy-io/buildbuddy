@@ -501,7 +501,7 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration) ([]in
 
 	endSec := time.Now().Unix()
 	if highTime != nil {
-		endSec = highTime.GetSeconds()
+		endSec = highTime.GetSeconds() - 1
 	}
 
 	// TODO(jdhollen): Bucket at true midnight in user timezone instead of fudging
