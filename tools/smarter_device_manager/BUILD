@@ -16,4 +16,7 @@ container_push(
     registry = "gcr.io",
     repository = "flame-build/smarter-device-manager",
     tag = "server_image",
+    tags = [
+        "manual",
+    ],
 )

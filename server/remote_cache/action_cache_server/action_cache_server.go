@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -19,6 +18,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 type ActionCacheServer struct {
@@ -50,7 +50,7 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*resource.ResourceName) error {
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*rspb.ResourceName) error {
 	missing, err := cache.FindMissing(ctx, digests)
 	if err != nil {
 		return err
@@ -62,12 +62,12 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*res
 }
 
 func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, r *repb.ActionResult) error {
-	outputFileDigests := make([]*resource.ResourceName, 0, len(r.OutputFiles))
+	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
 		if d != nil && d.GetSizeBytes() > 0 {
 			mu.Lock()
-			rn := digest.NewCASResourceName(d, remoteInstanceName).ToProto()
+			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS).ToProto()
 			outputFileDigests = append(outputFileDigests, rn)
 			mu.Unlock()
 		}
@@ -80,7 +80,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			rn := digest.NewCASResourceName(dc.GetTreeDigest(), remoteInstanceName).ToProto()
+			rn := digest.NewResourceName(dc.GetTreeDigest(), remoteInstanceName, rspb.CacheType_CAS).ToProto()
 			blob, err := cache.Get(gCtx, rn)
 			if err != nil {
 				return err
@@ -150,9 +150,9 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 	downloadTracker := ht.TrackDownload(d)
-	blob, err := s.cache.Get(ctx, &resource.ResourceName{
+	blob, err := s.cache.Get(ctx, &rspb.ResourceName{
 		Digest:       d,
-		CacheType:    resource.CacheType_AC,
+		CacheType:    rspb.CacheType_AC,
 		InstanceName: req.GetInstanceName(),
 	})
 	if err != nil {
@@ -214,7 +214,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
-	acResource := digest.NewACResourceName(d, req.GetInstanceName())
+	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC)
 	uploadTracker := ht.TrackUpload(d)
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131

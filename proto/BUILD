@@ -476,6 +476,7 @@ proto_library(
         ":context_proto",
         ":trace_proto",
         "@com_google_protobuf//:timestamp_proto",
+        "@go_googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -978,6 +979,7 @@ go_proto_library(
         ":acl_go_proto",
         ":context_go_proto",
         ":trace_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
 

@@ -106,7 +106,7 @@ func MakeTempRepo(t testing.TB, contents map[string]string) (path, commitSHA str
 // and initializes the directory with an initial commit of all the existing
 // files.
 func Init(t testing.TB, dir string) {
-	testshell.Run(t, dir, `git init`)
+	testshell.Run(t, dir, `git -c init.defaultBranch=master init`)
 	configure(t, dir)
 	testshell.Run(t, dir, `git add . && git commit -m "Initial commit"`)
 }

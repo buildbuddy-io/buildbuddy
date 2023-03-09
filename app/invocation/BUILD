@@ -96,6 +96,7 @@ ts_library(
     deps = [
         "//app/invocation:child_invocation_card",
         "//app/invocation:invocation_model",
+        "//app/util:proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
@@ -262,12 +263,12 @@ ts_library(
     name = "invocation_execution_card",
     srcs = ["invocation_execution_card.tsx"],
     deps = [
+        "//app/components/button",
         "//app/components/digest",
         "//app/components/link",
         "//app/components/select",
         "//app/format",
         "//app/invocation:invocation_model",
-        "//app/router",
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",

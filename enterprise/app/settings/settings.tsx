@@ -238,8 +238,8 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <>
                         <div className="settings-option-title">Personal API keys</div>
                         <div className="settings-option-description">
-                          Personal API keys let you run builds within your organization that are authenticated as your
-                          user account.
+                          Personal API keys associate builds with both your individual user account and your
+                          organization.
                         </div>
                         {this.isCLILogin() && (
                           <div className="settings-option-description">

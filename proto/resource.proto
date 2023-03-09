@@ -27,6 +27,12 @@ message ResourceName {
   // be either CAS or AC. Other cache types may exist in the future.
   // Ex. CAS, AC
   CacheType cache_type = 4;
+
+  // The digest function used to hash this resource and create the digest.
+  // If unset, the value is inferred from the digest.Hash length, but note
+  // that this is only correct for the following digest types:
+  // MD5, MURMUR3, SHA1, SHA256, SHA384, SHA512, VSO.
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 5;
 }
 
 // CacheType represents the type of cache being written to.

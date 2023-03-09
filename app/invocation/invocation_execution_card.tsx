@@ -1,7 +1,6 @@
 import React from "react";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import router from "../router/router";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
@@ -10,6 +9,7 @@ import rpcService from "../service/rpc_service";
 import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
+import { OutlinedButton } from "../components/button/button";
 
 interface Props {
   model: InvocationModel;
@@ -24,6 +24,7 @@ interface State {
   sort: string;
   direction: "asc" | "desc";
   statusFilter: string;
+  limit: number;
 }
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
@@ -73,6 +74,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     sort: "status",
     direction: "desc",
     statusFilter: "all",
+    limit: 100,
   };
 
   timeoutRef: number;
@@ -262,6 +264,14 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     return `/invocation/${this.props.model.getId()}?${search}#action`;
   }
 
+  handleMoreClicked() {
+    this.setState({ limit: this.state.limit + 100 });
+  }
+
+  handleAllClicked() {
+    this.setState({ limit: Number.MAX_SAFE_INTEGER });
+  }
+
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
@@ -370,42 +380,51 @@ export default class ExecutionCardComponent extends React.Component<Props, State
             <div>
               {filteredActions.length ? (
                 <div className="invocation-execution-table">
-                  {filteredActions.sort(this.sort.bind(this)).map((execution, index) => {
-                    const status = getExecutionStatus(execution);
-                    return (
-                      <Link key={index} className="invocation-execution-row" href={this.getActionPageLink(execution)}>
-                        <div className="invocation-execution-row-image">{status.icon}</div>
-                        <div>
-                          <div className="invocation-execution-row-header">
-                            <span className="invocation-execution-row-header-status">{status.name}</span>
-                            <DigestComponent digest={execution?.actionDigest} expanded={true} />
-                          </div>
-                          <div>{execution.commandSnippet}</div>
-                          <div className="invocation-execution-row-stats">
-                            <div>Executor Host ID: {execution?.executedActionMetadata?.worker}</div>
-                            <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
-                            <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
-                            <div>
-                              File download duration: {format.durationUsec(this.downloadDuration(execution))} (
-                              {format.bytes(execution?.executedActionMetadata?.ioStats?.fileDownloadSizeBytes)} across{" "}
-                              {execution?.executedActionMetadata?.ioStats?.fileDownloadCount} files)
+                  {filteredActions
+                    .sort(this.sort.bind(this))
+                    .slice(0, this.state.limit)
+                    .map((execution, index) => {
+                      const status = getExecutionStatus(execution);
+                      return (
+                        <Link key={index} className="invocation-execution-row" href={this.getActionPageLink(execution)}>
+                          <div className="invocation-execution-row-image">{status.icon}</div>
+                          <div>
+                            <div className="invocation-execution-row-header">
+                              <span className="invocation-execution-row-header-status">{status.name}</span>
+                              <DigestComponent digest={execution?.actionDigest} expanded={true} />
                             </div>
-                            <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
-                            <div>
-                              File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
-                              {format.bytes(execution?.executedActionMetadata?.ioStats?.fileUploadSizeBytes)} across{" "}
-                              {execution?.executedActionMetadata?.ioStats?.fileUploadCount} files)
+                            <div>{execution.commandSnippet}</div>
+                            <div className="invocation-execution-row-stats">
+                              <div>Executor Host ID: {execution?.executedActionMetadata?.worker}</div>
+                              <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
+                              <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
+                              <div>
+                                File download duration: {format.durationUsec(this.downloadDuration(execution))} (
+                                {format.bytes(execution?.executedActionMetadata?.ioStats?.fileDownloadSizeBytes)} across{" "}
+                                {execution?.executedActionMetadata?.ioStats?.fileDownloadCount} files)
+                              </div>
+                              <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
+                              <div>
+                                File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
+                                {format.bytes(execution?.executedActionMetadata?.ioStats?.fileUploadSizeBytes)} across{" "}
+                                {execution?.executedActionMetadata?.ioStats?.fileUploadCount} files)
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </Link>
-                    );
-                  })}
+                        </Link>
+                      );
+                    })}
                 </div>
               ) : (
                 <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}
             </div>
+            {filteredActions.length > this.state.limit && (
+              <div className="more-buttons">
+                <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more executions</OutlinedButton>
+                <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all executions</OutlinedButton>
+              </div>
+            )}
           </div>
         </div>
       </div>

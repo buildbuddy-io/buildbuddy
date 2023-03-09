@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -129,6 +130,9 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if command := req.GetQuery().GetCommand(); command != "" {
 		q.AddWhereClause("i.command = ?", command)
 	}
+	if pattern := req.GetQuery().GetPattern(); pattern != "" {
+		q.AddWhereClause("i.pattern = ?", pattern)
+	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
 		q.AddWhereClause("i.commit_sha = ?", sha)
 	}
@@ -181,6 +185,17 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	}
 	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
 		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
+	}
+
+	for _, f := range req.GetQuery().GetFilter() {
+		if f.GetMetric().Invocation == nil {
+			continue
+		}
+		str, args, err := filter.GenerateFilterStringAndArgs(f, "i.")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
 	}
 
 	// Always add permissions check.

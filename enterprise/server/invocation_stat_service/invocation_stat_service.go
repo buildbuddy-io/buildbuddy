@@ -163,6 +163,10 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 		q.AddWhereClause("command = ?", command)
 	}
 
+	if pattern := tq.GetPattern(); pattern != "" {
+		q.AddWhereClause("pattern = ?", pattern)
+	}
+
 	if commitSHA := tq.GetCommitSha(); commitSHA != "" {
 		q.AddWhereClause("commit_sha = ?", commitSHA)
 	}
@@ -648,7 +652,7 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 	}
 
 	var rows *sql.Rows
-	rows, err = i.olapdbh.DB(ctx).Raw(qAndBuckets.Query, qAndBuckets.QueryArgs...).Rows()
+	rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_stat_heatmap"), qAndBuckets.Query, qAndBuckets.QueryArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -723,6 +727,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	if command := req.GetQuery().GetCommand(); command != "" {
 		q.AddWhereClause("command = ?", command)
+	}
+
+	if pattern := req.GetQuery().GetPattern(); pattern != "" {
+		q.AddWhereClause("pattern = ?", pattern)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {

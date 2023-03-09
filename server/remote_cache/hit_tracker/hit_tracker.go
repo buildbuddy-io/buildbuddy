@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -24,6 +23,7 @@ import (
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -268,9 +268,9 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 
 	// TODO(bduffany): Use protos instead of counterType so we can avoid this
 	// translation
-	cacheType := resource.CacheType_CAS
+	cacheType := rspb.CacheType_CAS
 	if h.actionCache {
-		cacheType = resource.CacheType_AC
+		cacheType = rspb.CacheType_AC
 	}
 	requestType := capb.RequestType_READ
 	if stats.Status == Upload {

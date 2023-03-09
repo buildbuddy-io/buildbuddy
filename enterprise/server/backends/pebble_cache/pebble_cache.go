@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -46,6 +45,7 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
@@ -143,7 +143,7 @@ type Options struct {
 
 type sizeUpdate struct {
 	partID    string
-	cacheType resource.CacheType
+	cacheType rspb.CacheType
 	delta     int64
 }
 
@@ -1040,9 +1040,9 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 		totalCount++
 
 		// Attempt a read -- if the file is unreadable; update the metadata.
-		fileMetadataKey := iter.Key()
+		keyBytes := iter.Key()
 		var key filestore.PebbleKey
-		_, err := key.FromBytes(iter.Key())
+		version, err := key.FromBytes(keyBytes)
 		if err != nil {
 			log.Errorf("Error parsing key: %s", err)
 			continue
@@ -1071,23 +1071,23 @@ func (p *PebbleCache) backgroundRepairIteration(quitChan chan struct{}, opts *re
 			}
 		}
 
-		if !removedEntry && opts.deleteACEntriesOlderThan != 0 && bytes.Contains(fileMetadataKey, acDir) {
+		if !removedEntry && opts.deleteACEntriesOlderThan != 0 && bytes.Contains(keyBytes, acDir) {
 			atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 			age := time.Since(atime)
 			if age > opts.deleteACEntriesOlderThan {
 				e, ok := evictors[fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()]
 				if ok {
 					_ = modLim.Wait(p.env.GetServerContext())
-					err := e.deleteFile(key, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
+					err := e.deleteFile(key, version, fileMetadata.GetStoredSizeBytes(), fileMetadata.GetStorageMetadata())
 					if err != nil {
-						log.Warningf("Could not delete old AC key %q: %s", string(fileMetadataKey), err)
+						log.Warningf("Could not delete old AC key %q: %s", key.String(), err)
 					} else {
 						removedEntry = true
 						oldACEntries++
 						oldACEntriesBytes += fileMetadata.GetStoredSizeBytes()
 					}
 				} else {
-					log.Warningf("Did not find evictor for %q for key %q", fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), string(fileMetadataKey))
+					log.Warningf("Did not find evictor for %q for key %q", fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.String())
 				}
 			}
 		}
@@ -1164,7 +1164,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 	return groupID, DefaultPartitionID, nil
 }
 
-func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
+func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {
 	_, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return nil, err
@@ -1229,15 +1229,9 @@ func (p *PebbleCache) iterHasKey(iter *pebble.Iterator, key filestore.PebbleKey)
 	return false, nil
 }
 
-func readFileMetadata(reader pebble.Reader, key filestore.PebbleKey) (*rfpb.FileMetadata, error) {
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return nil, err
-	}
-
+func readFileMetadata(reader pebble.Reader, keyBytes []byte) (*rfpb.FileMetadata, error) {
 	fileMetadata := &rfpb.FileMetadata{}
-	buf, err := pebbleutil.GetCopy(reader, fileMetadataKey)
+	buf, err := pebbleutil.GetCopy(reader, keyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -1268,7 +1262,7 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 	return false
 }
 
-func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return false, err
@@ -1297,7 +1291,7 @@ func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	return found, nil
 }
 
-func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1332,7 +1326,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	}, nil
 }
 
-func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1367,7 +1361,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.Res
 	return missing, nil
 }
 
-func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	rc, err := p.Reader(ctx, r, 0, 0)
 	if err != nil {
 		return nil, err
@@ -1376,7 +1370,7 @@ func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	return io.ReadAll(rc)
 }
 
-func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1431,7 +1425,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 	return foundMap, nil
 }
 
-func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (p *PebbleCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	wc, err := p.Writer(ctx, r)
 	if err != nil {
 		return err
@@ -1443,7 +1437,7 @@ func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []
 	return wc.Commit()
 }
 
-func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	for r, data := range kvs {
 		if err := p.Set(ctx, r, data); err != nil {
 			return err
@@ -1452,7 +1446,7 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceNa
 	return nil
 }
 
-func (p *PebbleCache) sendSizeUpdate(partID string, cacheType resource.CacheType, delta int64) {
+func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, delta int64) {
 	up := &sizeUpdate{
 		partID:    partID,
 		cacheType: cacheType,
@@ -1555,7 +1549,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	return nil
 }
 
-func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return err
@@ -1589,7 +1583,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 	return nil
 }
 
-func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1705,7 +1699,7 @@ func (z *zstdCompressor) Close() error {
 	return z.CustomCommitWriteCloser.Close()
 }
 
-func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1716,7 +1710,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	// Only compress data over a given size for more optimal compression ratios
 	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
 	if shouldCompress {
-		r = &resource.ResourceName{
+		r = &rspb.ResourceName{
 			Digest:       r.GetDigest(),
 			InstanceName: r.GetInstanceName(),
 			Compressor:   repb.Compressor_ZSTD,
@@ -1775,10 +1769,14 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 		defer unlockFn()
 
 		if oldMD, version, err := p.lookupFileMetadataAndVersion(ctx, iter, key); err == nil {
-			if err := p.deleteFileAndMetadata(ctx, key, version, oldMD); err != nil {
-				log.Errorf("Error deleting old record %q: %s", key.String(), err)
+			oldKeyBytes, err := key.Bytes(version)
+			if err != nil {
 				return err
 			}
+			if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
+				return err
+			}
+			p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), -1*oldMD.GetStoredSizeBytes())
 		}
 
 		keyBytes, err := key.Bytes(p.activeDatabaseVersion())
@@ -1849,16 +1847,16 @@ func (p *PebbleCache) TestingWaitForGC() error {
 }
 
 type evictionKey struct {
-	key             filestore.PebbleKey
+	bytes           []byte
 	storageMetadata *rfpb.StorageMetadata
 }
 
 func (k *evictionKey) ID() string {
-	return k.key.String()
+	return string(k.bytes)
 }
 
 func (k *evictionKey) String() string {
-	return k.key.String()
+	return string(k.bytes)
 }
 
 type partitionEvictor struct {
@@ -1953,7 +1951,7 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 }
 
-func (e *partitionEvictor) updateSize(cacheType resource.CacheType, deltaSize int64) {
+func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, deltaSize int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -1963,11 +1961,11 @@ func (e *partitionEvictor) updateSize(cacheType resource.CacheType, deltaSize in
 	}
 
 	switch cacheType {
-	case resource.CacheType_CAS:
+	case rspb.CacheType_CAS:
 		e.casCount += deltaCount
-	case resource.CacheType_AC:
+	case rspb.CacheType_AC:
 		e.acCount += deltaCount
-	case resource.CacheType_UNKNOWN_CACHE_TYPE:
+	case rspb.CacheType_UNKNOWN_CACHE_TYPE:
 		log.Errorf("Cannot update cache size: resource of unknown type")
 	}
 	e.sizeBytes += deltaSize
@@ -2115,7 +2113,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	lastEvictedStr := "nil"
 	if le := e.lru.LastEvicted(); le != nil {
 		age := time.Since(le.Timestamp)
-		lastEvictedStr = fmt.Sprintf("%q age: %s", le.Key.key.String(), age)
+		lastEvictedStr = fmt.Sprintf("%q age: %s", string(le.Key.bytes), age)
 	}
 	buf += fmt.Sprintf("Last evicted item: %s\n", lastEvictedStr)
 	buf += "</pre>"
@@ -2133,7 +2131,7 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 
 	key, err := e.fileStorer.PebbleKey(&rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   resource.CacheType_CAS,
+			CacheType:   rspb.CacheType_CAS,
 			PartitionId: e.part.ID,
 		},
 		Digest: &repb.Digest{
@@ -2157,15 +2155,15 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 	}
 	defer db.Close()
 
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := sample.Key.key.Bytes(filestore.UndefinedKeyVersion)
+	var key filestore.PebbleKey
+	version, err := key.FromBytes(sample.Key.bytes)
 	if err != nil {
 		return false, err
 	}
-	unlockFn := e.locker.Lock(sample.Key.key.LockID())
+	unlockFn := e.locker.Lock(key.LockID())
 	defer unlockFn()
 
-	_, closer, err := db.Get(fileMetadataKey)
+	_, closer, err := db.Get(sample.Key.bytes)
 	if err == pebble.ErrNotFound {
 		return true, nil
 	}
@@ -2174,7 +2172,7 @@ func (e *partitionEvictor) evict(ctx context.Context, sample *approxlru.Sample[*
 	}
 	closer.Close()
 	age := time.Since(sample.Timestamp)
-	if err := e.deleteFile(sample.Key.key, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
+	if err := e.deleteFile(key, version, sample.SizeBytes, sample.Key.storageMetadata); err != nil {
 		log.Errorf("Error evicting file for key %q: %s (ignoring)", sample.Key, err)
 		return false, nil
 	}
@@ -2192,10 +2190,14 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 	}
 	defer db.Close()
 
-	unlockFn := e.locker.RLock(key.key.LockID())
+	var pebbleKey filestore.PebbleKey
+	if _, err := pebbleKey.FromBytes(key.bytes); err != nil {
+		return false, time.Time{}, err
+	}
+	unlockFn := e.locker.RLock(pebbleKey.LockID())
 	defer unlockFn()
 
-	md, err := readFileMetadata(db, key.key)
+	md, err := readFileMetadata(db, key.bytes)
 	if err != nil {
 		log.Warningf("could not refresh atime for %q: %s", key.String(), err)
 		return true, time.Time{}, nil
@@ -2255,9 +2257,11 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 			continue
 		}
 
+		keyBytes := make([]byte, len(iter.Key()))
+		copy(keyBytes, iter.Key())
 		sample := &approxlru.Sample[*evictionKey]{
 			Key: &evictionKey{
-				key:             key,
+				bytes:           keyBytes,
 				storageMetadata: fileMetadata.GetStorageMetadata(),
 			},
 			SizeBytes: fileMetadata.GetStoredSizeBytes(),
@@ -2291,19 +2295,19 @@ func deleteDirIfEmptyAndOld(dir string) error {
 	return os.Remove(dir)
 }
 
-func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, storedSizeBytes int64, storageMetadata *rfpb.StorageMetadata) error {
+func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore.PebbleKeyVersion, storedSizeBytes int64, storageMetadata *rfpb.StorageMetadata) error {
+	keyBytes, err := key.Bytes(version)
+	if err != nil {
+		return err
+	}
+
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	// TODO(tylerw): Make version aware.
-	fileMetadataKey, err := key.Bytes(filestore.UndefinedKeyVersion)
-	if err != nil {
-		return err
-	}
-	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
+	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
 		return err
 	}
 
@@ -2411,7 +2415,7 @@ type readCloser struct {
 	io.Closer
 }
 
-func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *resource.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *rspb.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	blobDir := p.blobDir()
 	requestedCompression := resource.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()

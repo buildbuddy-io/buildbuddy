@@ -15,6 +15,7 @@ go_library(
         "//server/util/alert",
         "//server/util/blocklist",
         "//server/util/db",
+        "//server/util/filter",
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",

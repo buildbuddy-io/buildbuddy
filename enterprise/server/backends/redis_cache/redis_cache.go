@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -25,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var maxValueSizeBytes = flag.Int64("cache.redis.max_value_size_bytes", 10000000, "The maximum value size to cache in redis (in bytes).")
@@ -79,7 +79,7 @@ func (c *Cache) eligibleForCache(d *repb.Digest) bool {
 	return d.GetSizeBytes() < c.cutoffSizeBytes
 }
 
-func (c *Cache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+func (c *Cache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
 	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
@@ -138,7 +138,7 @@ func (c *Cache) rdbSet(ctx context.Context, key string, data []byte) error {
 	return err
 }
 
-func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	key, err := c.key(ctx, r)
 	if err != nil {
 		return false, err
@@ -152,7 +152,7 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
 // Note: Can't use rdb.ObjectIdleTime to calculate last access time, because rdb.StrLen resets the idle time to 0,
 // so this API will always incorrectly set the last access time to the current time
-func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	key, err := c.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 
 	// TODO - Add digest size support for AC
 	digestSizeBytes := int64(-1)
-	if r.GetCacheType() == resource.CacheType_CAS {
+	if r.GetCacheType() == rspb.CacheType_CAS {
 		digestSizeBytes = blobLen
 	}
 
@@ -182,7 +182,7 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 	}, nil
 }
 
-func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}
@@ -214,7 +214,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceN
 	return missing, nil
 }
 
-func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	if !c.eligibleForCache(r.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for redis", r.GetDigest())
 	}
@@ -229,7 +229,7 @@ func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, erro
 	return b, err
 }
 
-func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}
@@ -272,7 +272,7 @@ func stringToBytes(s string) []byte {
 	))
 }
 
-func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	if !c.eligibleForCache(r.GetDigest()) {
 		return status.ResourceExhaustedErrorf("Set: Digest %v too big for redis", r.GetDigest())
 	}
@@ -287,7 +287,7 @@ func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) 
 	return err
 }
 
-func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	if len(kvs) == 0 {
 		return nil
 	}
@@ -302,7 +302,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]b
 	return c.rdbMultiSet(ctx, setMap)
 }
 
-func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	k, err := c.key(ctx, r)
 	if err != nil {
 		return err
@@ -315,7 +315,7 @@ func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	if !c.eligibleForCache(rn.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for redis", rn.GetDigest())
 	}
@@ -341,7 +341,7 @@ func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, uncompres
 	return io.NopCloser(timer.NewInstrumentedReader(r, length)), nil
 }
 
-func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	if !c.eligibleForCache(r.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for redis", r.GetDigest())
 	}

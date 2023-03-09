@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
@@ -28,6 +27,7 @@ import (
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
@@ -222,18 +222,18 @@ type CacheMetadata struct {
 // storing of blob data based on its size.
 type Cache interface {
 	// Normal cache-like operations
-	Contains(ctx context.Context, r *resource.ResourceName) (bool, error)
-	Metadata(ctx context.Context, r *resource.ResourceName) (*CacheMetadata, error)
-	FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error)
-	Get(ctx context.Context, r *resource.ResourceName) ([]byte, error)
-	GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error)
-	Set(ctx context.Context, r *resource.ResourceName, data []byte) error
-	SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error
-	Delete(ctx context.Context, r *resource.ResourceName) error
+	Contains(ctx context.Context, r *rspb.ResourceName) (bool, error)
+	Metadata(ctx context.Context, r *rspb.ResourceName) (*CacheMetadata, error)
+	FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error)
+	Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error)
+	GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error)
+	Set(ctx context.Context, r *rspb.ResourceName, data []byte) error
+	SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error
+	Delete(ctx context.Context, r *rspb.ResourceName) error
 
 	// Low level interface used for seeking and stream-writing.
-	Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error)
-	Writer(ctx context.Context, r *resource.ResourceName) (CommittedWriteCloser, error)
+	Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error)
+	Writer(ctx context.Context, r *rspb.ResourceName) (CommittedWriteCloser, error)
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
@@ -349,11 +349,11 @@ type UserDB interface {
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 
-	// GetAPIKeyForInternalUseOnly returns any API key for the group. It is only
-	// to be used in situations where the user has a pre-authorized grant to
-	// access resources on behalf of the org, such as a publicly shared
-	// invocation. The returned API key must only be used to access internal
-	// resources and must not be returned to the caller.
+	// GetAPIKeyForInternalUseOnly returns any group-level API key for the
+	// group. It is only to be used in situations where the user has a
+	// pre-authorized grant to access resources on behalf of the org, such as a
+	// publicly shared invocation. The returned API key must only be used to
+	// access internal resources and must not be returned to the caller.
 	GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error)
 
 	// API Keys API.
@@ -371,6 +371,9 @@ type UserDB interface {
 
 	// CreateAPIKey creates a group-level API key.
 	CreateAPIKey(ctx context.Context, groupID string, label string, capabilities []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error)
+
+	// GetUserOwnedKeysEnabled returns whether user-owned keys are enabled.
+	GetUserOwnedKeysEnabled() bool
 
 	// GetUserAPIKeys returns all user-owned API keys within a group.
 	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)

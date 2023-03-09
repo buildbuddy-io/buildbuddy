@@ -662,6 +662,15 @@ var (
 		Arch,
 	})
 
+	RemoteExecutionExecutorRegistrationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "executor_registration_count",
+		Help:      "Number of executor registrations on the scheduler.",
+	}, []string{
+		VersionLabel,
+	})
+
 	/// #### Examples
 	///
 	/// ```promql

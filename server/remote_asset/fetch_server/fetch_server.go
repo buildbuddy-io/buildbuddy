@@ -22,6 +22,7 @@ import (
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
@@ -125,7 +126,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				SizeBytes: 1,
 			}
 			expectedSHA256 = blobDigest.Hash
-			cacheRN := digest.NewCASResourceName(blobDigest, req.GetInstanceName())
+			cacheRN := digest.NewResourceName(blobDigest, req.GetInstanceName(), rspb.CacheType_CAS)
 
 			log.CtxInfof(ctx, "Looking up %s in cache", blobDigest.Hash)
 
@@ -142,7 +143,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			// Even though we successfully fetched metadata, we need to renew
 			// the cache entry (using Contains()) to ensure that it doesn't
 			// expire by the time the client requests it from cache.
-			cacheRN = digest.NewCASResourceName(blobDigest, req.GetInstanceName())
+			cacheRN = digest.NewResourceName(blobDigest, req.GetInstanceName(), rspb.CacheType_CAS)
 			exists, err := cache.Contains(ctx, cacheRN.ToProto())
 			if err != nil {
 				log.CtxErrorf(ctx, "Failed to renew %s: %s", digest.String(blobDigest), err)
@@ -221,7 +222,7 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 	// response to cache.
 	if expectedSHA256 != "" && rsp.ContentLength >= 0 {
 		d := &repb.Digest{Hash: expectedSHA256, SizeBytes: rsp.ContentLength}
-		rn := digest.NewResourceName(d, remoteInstanceName)
+		rn := digest.NewGenericResourceName(d, remoteInstanceName)
 		if _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
 			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
 		}

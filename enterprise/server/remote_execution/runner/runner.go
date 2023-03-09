@@ -84,6 +84,7 @@ var (
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", false, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
 	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
 	bareEnableStats           = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
+	firecrackerDebugMode      = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
 )
 
 const (
@@ -268,7 +269,7 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 }
 
 func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
-	rootInstanceDigest := digest.NewResourceName(
+	rootInstanceDigest := digest.NewGenericResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 	)
@@ -581,7 +582,6 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
 		}
-		log.Info("Using docker for execution")
 	}
 
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
@@ -963,6 +963,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			r.taskSize = st.GetSchedulingMetadata().GetTaskSize()
 			r.PlatformProperties = props
 			p.mu.Unlock()
+			log.CtxInfof(ctx, "Reusing existing %s runner for task", props.WorkloadIsolationType)
 			return r, nil
 		}
 	}
@@ -1032,6 +1033,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			p.pendingRemovals.Done()
 		}
 	}
+	log.CtxInfof(ctx, "Created new %s runner for task", props.WorkloadIsolationType)
 	return r, nil
 }
 
@@ -1075,7 +1077,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
 			AllowSnapshotStart:     false,
-			DebugMode:              *commandutil.DebugStreamCommandOutputs,
+			DebugMode:              *firecrackerDebugMode,
 		}
 		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -41,6 +42,10 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	stderrw := io.Writer(&stderr)
 	if stdio.Stderr != nil {
 		stderrw = stdio.Stderr
+	}
+	if *commandutil.DebugStreamCommandOutputs {
+		stdoutw = io.MultiWriter(os.Stdout, stdoutw)
+		stderrw = io.MultiWriter(os.Stderr, stderrw)
 	}
 	req := &vmxpb.ExecRequest{
 		WorkingDirectory: workDir,

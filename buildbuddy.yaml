@@ -20,9 +20,11 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      # TODO: Fix `test //...` on Mac and do that instead
-      - build //enterprise/server/cmd/executor //enterprise/server //server //cli/cmd/bb --config=mac-workflows
-      - test //cli/... --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker
+      - |
+        test --config=mac-workflows
+             --
+             //...
+             -//enterprise/server/test/integration/remote_execution/bazel_rbe:all
   - name: Benchmark
     container_image: ubuntu-20.04
     triggers:

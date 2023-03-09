@@ -28,7 +28,6 @@ go_test(
         ":sandbox",
         "//enterprise/server/remote_execution/container",
         "//proto:remote_execution_go_proto",
-        "//server/config",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",
     ],

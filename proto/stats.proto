@@ -64,6 +64,9 @@ message TrendQuery {
 
   // The maximum invocation duration.
   google.protobuf.Duration maximum_duration = 14;
+
+  // The pattern for the targets built (exact match). Ex: "//..."
+  string pattern = 15;
 }
 
 message TrendStat {

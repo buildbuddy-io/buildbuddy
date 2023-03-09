@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var apiKey = flag.String("executor.api_key", "", "API Key used to authorize the executor with the BuildBuddy app server.")
@@ -126,15 +127,18 @@ func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {
 		TaskId:     t.taskID,
 	}
 
-	shouldReEnqueue := false
-
-	// We can finalize the task if the execution was successful, or if it failed and we're not going to retry it.
-	// Otherwise, we should release the lease without finalizing the task so that it can be retried.
+	// We can finalize the task if the execution was successful, or if it failed
+	// and we're not going to retry it.
+	// Otherwise, we should let the scheduler know that the task needs to be
+	// retried.
 	if taskErr == nil || !retry {
 		req.Finalize = true
 	} else {
-		req.Release = true
-		shouldReEnqueue = true
+		req.ReEnqueue = true
+		if taskErr != nil {
+			s, _ := gstatus.FromError(taskErr)
+			req.ReEnqueueReason = s.Proto()
+		}
 	}
 	if err := t.stream.Send(req); err != nil {
 		log.CtxWarningf(ctx, "Could not send request: %s", err)
@@ -154,10 +158,6 @@ func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {
 
 	if !closedCleanly {
 		log.CtxWarningf(ctx, "TaskLeaser %q: did not close cleanly but should have. Will re-enqueue.", t.taskID)
-		shouldReEnqueue = true
-	}
-
-	if shouldReEnqueue {
 		reason := ""
 		if taskErr != nil {
 			reason = taskErr.Error()
