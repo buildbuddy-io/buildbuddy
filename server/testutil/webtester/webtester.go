@@ -25,8 +25,9 @@ var (
 	//    end-of-test wait duration, and set --test_filter=NameOfTest to debug
 	//    a specific failing test.
 
-	debug          = flag.Bool("webdriver_debug", false, "Enable debug mode for webdriver tests.")
-	endOfTestDelay = flag.Duration("webdriver_end_of_test_delay", 3*time.Second, "How long to wait at the end of failed webdriver tests. Has no effect if --webdriver_debug is not set.")
+	debug               = flag.Bool("webdriver_debug", false, "Enable debug mode for webdriver tests.")
+	endOfTestDelay      = flag.Duration("webdriver_end_of_test_delay", 3*time.Second, "How long to wait at the end of failed webdriver tests. Has no effect if --webdriver_debug is not set.")
+	implicitWaitTimeout = flag.Duration("webdriver_implicit_wait_timeout", 1*time.Second, "Max time webtester should wait to find an element.")
 )
 
 // WebTester wraps selenium.WebDriver, failing the test instead of returning
@@ -76,7 +77,7 @@ func New(t *testing.T) *WebTester {
 	// never be located.
 	//
 	// See also https://stackoverflow.com/q/11001030
-	driver.SetImplicitWaitTimeout(1 * time.Second)
+	driver.SetImplicitWaitTimeout(*implicitWaitTimeout)
 	wt := &WebTester{t, driver}
 	t.Cleanup(func() {
 		err := wt.screenshot("END_OF_TEST")
