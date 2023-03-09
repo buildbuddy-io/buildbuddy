@@ -534,7 +534,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                       <div className="option-group-title">Pattern</div>
                       <div className="option-group-input">
                         <TextInput
-                          placeholder={"e.g. test"}
+                          placeholder={"e.g. //foo/..."}
                           value={this.state.pattern}
                           onChange={(e) => this.setState({ pattern: e.target.value })}
                         />
