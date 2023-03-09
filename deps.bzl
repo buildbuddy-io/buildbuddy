@@ -4137,6 +4137,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:wxW0mFpKI6DIb3s6m1jCDYvkWXCskrimXMuGd0K/kSQ=",
         version = "v1.5.0",
     )
+    go_repository(
+        name = "com_github_smacker_go_tree_sitter",
+        importpath = "github.com/smacker/go-tree-sitter",
+        sum = "h1:hd1+Vqu6uQZlNG0hGncjAvqENdxfAd0X4MKR2Tjclt8=",
+        version = "v0.0.0-20230226123037-c459dbde1464",
+    )
 
     go_repository(
         name = "com_github_smartystreets_assertions",
