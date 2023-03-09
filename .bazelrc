@@ -123,6 +123,10 @@ build --incompatible_strict_action_env
 # rules_nodejs needs runfiles to be explicitly enabled.
 build --enable_runfiles
 
+# Use syscall to create symlink in-process.
+# Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
+build --experimental_inprocess_symlink_creation
+
 # Don't build or run Docker tests by default, to avoid a hard dependency
 # on Docker for development.
 test --test_tag_filters=-docker

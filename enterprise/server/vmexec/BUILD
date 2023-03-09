@@ -6,6 +6,9 @@ go_library(
     name = "vmexec",
     srcs = ["vmexec.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/vmexec",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//proto:remote_execution_go_proto",
