@@ -10,7 +10,6 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -19,9 +18,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"golang.org/x/sync/errgroup"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var memcacheTargets = flagutil.New("cache.memcache_targets", []string{}, "Deprecated. Use Redis Target instead.")
@@ -66,7 +66,7 @@ func NewCache(mcServers ...string) *Cache {
 	}
 }
 
-func (c *Cache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+func (c *Cache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
 	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
@@ -105,7 +105,7 @@ func (c *Cache) mcSet(key string, data []byte) error {
 	return c.mc.Set(makeItem(key, data))
 }
 
-func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	key, err := c.key(ctx, r)
 	if err != nil {
 		return false, err
@@ -122,7 +122,7 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
-func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	key, err := c.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 
 	// TODO - Add digest size support for AC
 	digestSizeBytes := int64(-1)
-	if r.GetCacheType() == resource.CacheType_CAS {
+	if r.GetCacheType() == rspb.CacheType_CAS {
 		digestSizeBytes = int64(len(data))
 	}
 
@@ -149,13 +149,13 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 	}, nil
 }
 
-func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, r := range resources {
-		fetchFn := func(r *resource.ResourceName) {
+		fetchFn := func(r *rspb.ResourceName) {
 			eg.Go(func() error {
 				exists, err := c.Contains(ctx, r)
 				if err != nil {
@@ -179,7 +179,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceN
 	return missing, nil
 }
 
-func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	d := r.GetDigest()
 	if !eligibleForMc(d) {
 		return nil, status.ResourceExhaustedErrorf("Get: Digest %v too big for memcache", d)
@@ -192,7 +192,7 @@ func (c *Cache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, erro
 	return c.mcGet(k)
 }
 
-func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	keys := make([]string, 0, len(resources))
 	digestsByKey := make(map[string]*repb.Digest, len(resources))
 	for _, r := range resources {
@@ -221,7 +221,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 	return response, nil
 }
 
-func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	if !eligibleForMc(r.GetDigest()) {
 		return status.ResourceExhaustedErrorf("Set: Digest %v too big for memcache", r.GetDigest())
 	}
@@ -233,11 +233,11 @@ func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) 
 	return c.mcSet(k, data)
 }
 
-func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for r, data := range kvs {
-		setFn := func(r *resource.ResourceName, data []byte) {
+		setFn := func(r *rspb.ResourceName, data []byte) {
 			eg.Go(func() error {
 				return c.Set(ctx, r, data)
 			})
@@ -252,7 +252,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]b
 	return nil
 }
 
-func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	k, err := c.key(ctx, r)
 	if err != nil {
 		return err
@@ -267,7 +267,7 @@ func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 }
 
 // Low level interface used for seeking and stream-writing.
-func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	if !eligibleForMc(rn.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Reader: Digest %v too big for memcache", rn.GetDigest())
 	}
@@ -292,7 +292,7 @@ func (c *Cache) Reader(ctx context.Context, rn *resource.ResourceName, uncompres
 	return io.NopCloser(r), nil
 }
 
-func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	if !eligibleForMc(r.GetDigest()) {
 		return nil, status.ResourceExhaustedErrorf("Writer: Digest %v too big for memcache", r.GetDigest())
 	}

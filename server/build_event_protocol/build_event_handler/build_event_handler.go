@@ -14,7 +14,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
@@ -50,6 +49,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
@@ -576,7 +576,7 @@ func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationJW
 						"response_type",
 					},
 				},
-				CacheType:    resource.CacheType_AC,
+				CacheType:    rspb.CacheType_AC,
 				RequestType:  capb.RequestType_READ,
 				ResponseType: capb.ResponseType_NOT_FOUND,
 			},

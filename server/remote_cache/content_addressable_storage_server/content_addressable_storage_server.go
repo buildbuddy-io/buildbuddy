@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -28,6 +27,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
@@ -91,7 +91,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	digestsToLookup := make([]*resource.ResourceName, 0, len(req.GetBlobDigests()))
+	digestsToLookup := make([]*rspb.ResourceName, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
 		if digest.IsEmpty(d) || d.GetHash() == digest.EmptyHash {
 			continue
@@ -158,7 +158,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
-	kvs := make(map[*resource.ResourceName][]byte, len(req.Requests))
+	kvs := make(map[*rspb.ResourceName][]byte, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
 		uploadDigest := uploadRequest.GetDigest()
 		_, err := digest.Validate(uploadDigest)
@@ -284,7 +284,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	closeTrackerData := make([]downloadTrackerData, 0, len(req.Digests))
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 
-	cacheRequest := make([]*resource.ResourceName, 0, len(req.Digests))
+	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
@@ -473,7 +473,7 @@ func (d *dirStack) SerializeToToken() (string, error) {
 	return token, nil
 }
 
-func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName *resource.ResourceName) (*repb.Directory, error) {
+func (s *ContentAddressableStorageServer) fetchDir(ctx context.Context, dirName *rspb.ResourceName) (*repb.Directory, error) {
 	_, err := digest.Validate(dirName.GetDigest())
 	if err != nil {
 		return nil, err
@@ -501,7 +501,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, re
 	if len(dir.Directories) == 0 {
 		return nil, nil
 	}
-	subdirDigests := make([]*resource.ResourceName, 0, len(dir.Directories))
+	subdirDigests := make([]*rspb.ResourceName, 0, len(dir.Directories))
 	for _, dirNode := range dir.Directories {
 		d := dirNode.GetDigest()
 		if digest.IsEmpty(d) {

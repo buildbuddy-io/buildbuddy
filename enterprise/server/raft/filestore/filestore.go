@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -37,9 +37,9 @@ func fileRecordSegments(r *rfpb.FileRecord) (partID string, groupID string, isol
 	partID = r.GetIsolation().GetPartitionId()
 	groupID = r.GetIsolation().GetGroupId()
 
-	if r.GetIsolation().GetCacheType() == resource.CacheType_CAS {
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_CAS {
 		isolation = "cas"
-	} else if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
+	} else if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
 		isolation = "ac"
 		if remoteInstanceName := r.GetIsolation().GetRemoteInstanceName(); remoteInstanceName != "" {
 			remoteInstanceHash = strconv.Itoa(int(crc32.ChecksumIEEE([]byte(remoteInstanceName))))
@@ -105,14 +105,14 @@ func (pmk PebbleKey) LockID() string {
 	return filepath.Join(pmk.isolation, pmk.hash)
 }
 
-func (pmk PebbleKey) CacheType() resource.CacheType {
+func (pmk PebbleKey) CacheType() rspb.CacheType {
 	switch pmk.isolation {
 	case "ac":
-		return resource.CacheType_AC
+		return rspb.CacheType_AC
 	case "cas":
-		return resource.CacheType_CAS
+		return rspb.CacheType_CAS
 	default:
-		return resource.CacheType_UNKNOWN_CACHE_TYPE
+		return rspb.CacheType_UNKNOWN_CACHE_TYPE
 	}
 }
 
@@ -292,7 +292,7 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 		return nil, err
 	}
 	partDir := PartitionDirectoryPrefix + partID
-	if r.GetIsolation().GetCacheType() == resource.CacheType_AC {
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
 		return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	} else {
 		return []byte(filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil

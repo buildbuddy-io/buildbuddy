@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -25,6 +24,7 @@ import (
 	"google.golang.org/api/option"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
@@ -141,7 +141,7 @@ func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDay
 	return err
 }
 
-func (g *GCSCache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+func (g *GCSCache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
 	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
@@ -157,7 +157,7 @@ func (g *GCSCache) key(ctx context.Context, r *resource.ResourceName) (string, e
 	return userPrefix + isolationPrefix + hash, nil
 }
 
-func (g *GCSCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (g *GCSCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -181,13 +181,13 @@ func (g *GCSCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, e
 	return b, err
 }
 
-func (g *GCSCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (g *GCSCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	lock := sync.RWMutex{} // protects(foundMap)
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, r := range resources {
-		fetchFn := func(r *resource.ResourceName) {
+		fetchFn := func(r *rspb.ResourceName) {
 			eg.Go(func() error {
 				data, err := g.Get(ctx, r)
 				if err != nil {
@@ -231,7 +231,7 @@ func swallowGCSAlreadyExistsError(err error) error {
 	return err
 }
 
-func (g *GCSCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (g *GCSCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	k, err := g.key(ctx, r)
 	if err != nil {
 		return err
@@ -258,11 +258,11 @@ func (g *GCSCache) Set(ctx context.Context, r *resource.ResourceName, data []byt
 	return err
 }
 
-func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for r, data := range kvs {
-		setFn := func(r *resource.ResourceName, data []byte) {
+		setFn := func(r *rspb.ResourceName, data []byte) {
 			eg.Go(func() error {
 				return g.Set(ctx, r, data)
 			})
@@ -277,7 +277,7 @@ func (g *GCSCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName]
 	return nil
 }
 
-func (g *GCSCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (g *GCSCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	k, err := g.key(ctx, r)
 	if err != nil {
 		return err
@@ -313,7 +313,7 @@ func (g *GCSCache) bumpTTLIfStale(ctx context.Context, key string, t time.Time) 
 	return true
 }
 
-func (g *GCSCache) metadata(ctx context.Context, r *resource.ResourceName) (*storage.ObjectAttrs, error) {
+func (g *GCSCache) metadata(ctx context.Context, r *rspb.ResourceName) (*storage.ObjectAttrs, error) {
 	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -342,7 +342,7 @@ func (g *GCSCache) metadata(ctx context.Context, r *resource.ResourceName) (*sto
 	return nil, finalErr
 }
 
-func (g *GCSCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (g *GCSCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	metadata, err := g.metadata(ctx, r)
 	if err != nil || metadata == nil {
 		return false, err
@@ -362,7 +362,7 @@ func (g *GCSCache) Contains(ctx context.Context, r *resource.ResourceName) (bool
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access time
-func (g *GCSCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (g *GCSCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	metadata, err := g.metadata(ctx, r)
 	if err != nil {
 		return nil, err
@@ -374,7 +374,7 @@ func (g *GCSCache) Metadata(ctx context.Context, r *resource.ResourceName) (*int
 
 	// TODO - Add digest size support for AC
 	digestSizeBytes := int64(-1)
-	if r.GetCacheType() == resource.CacheType_CAS {
+	if r.GetCacheType() == rspb.CacheType_CAS {
 		digestSizeBytes = metadata.Size
 	}
 
@@ -385,13 +385,13 @@ func (g *GCSCache) Metadata(ctx context.Context, r *resource.ResourceName) (*int
 	}, nil
 }
 
-func (g *GCSCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (g *GCSCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	lock := sync.RWMutex{} // protects(missing)
 	var missing []*repb.Digest
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, r := range resources {
-		fetchFn := func(r *resource.ResourceName) {
+		fetchFn := func(r *rspb.ResourceName) {
 			eg.Go(func() error {
 				exists, err := g.Contains(ctx, r)
 				if err != nil {
@@ -415,7 +415,7 @@ func (g *GCSCache) FindMissing(ctx context.Context, resources []*resource.Resour
 	return missing, nil
 }
 
-func (g *GCSCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (g *GCSCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -495,7 +495,7 @@ func setChunkSize(d *repb.Digest, w *storage.Writer) {
 	}
 }
 
-func (g *GCSCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (g *GCSCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	k, err := g.key(ctx, r)
 	if err != nil {
 		return nil, err

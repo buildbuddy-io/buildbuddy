@@ -9,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -19,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -245,9 +245,9 @@ func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceNa
 		Hash:      hashString,
 		SizeBytes: int64(len(dataBytes)),
 	}
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:       d,
-		CacheType:    resource.CacheType_CAS,
+		CacheType:    rspb.CacheType_CAS,
 		InstanceName: instanceName,
 	}
 	env.GetCache().Set(ctx, r, dataBytes)

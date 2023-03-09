@@ -9,14 +9,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/composable_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 func testEnvAndContext(t *testing.T) (environment.Env, context.Context) {
@@ -29,9 +30,9 @@ func testEnvAndContext(t *testing.T) (environment.Env, context.Context) {
 
 func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeBytes int64) *repb.Digest {
 	d, buf := testdigest.NewRandomDigestBuf(t, sizeBytes)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 	w, err := c.Writer(ctx, r)
 	require.NoError(t, err)
@@ -44,7 +45,7 @@ func writeDigest(ctx context.Context, t *testing.T, c interfaces.Cache, sizeByte
 	return d
 }
 
-func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *resource.ResourceName) {
+func readAndVerifyDigest(ctx context.Context, t *testing.T, c interfaces.Cache, d *rspb.ResourceName) {
 	r, err := c.Reader(ctx, d, 0, 0)
 	require.NoError(t, err)
 	rd, err := digest.Compute(r, repb.DigestFunction_SHA256)
@@ -69,9 +70,9 @@ func TestReadThrough(t *testing.T) {
 	// outer cache on read.
 	{
 		d := writeDigest(ctx, t, inner, 99)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 
 		// Check that we can read the digest through the composable cache.
@@ -85,9 +86,9 @@ func TestReadThrough(t *testing.T) {
 	// still read it from the composable cache.
 	{
 		d := writeDigest(ctx, t, inner, 100)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 
 		// Check that we can read the digest through the composable cache.
@@ -97,9 +98,9 @@ func TestReadThrough(t *testing.T) {
 	// Perform a partial read and check that outer has the correct (full) blob.
 	{
 		d := writeDigest(ctx, t, inner, 99)
-		rn := &resource.ResourceName{
+		rn := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 
 		r, err := c.Reader(ctx, rn, 0, 0)

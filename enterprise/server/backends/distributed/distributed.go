@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cacheproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/heartbeat"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -28,6 +27,7 @@ import (
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
@@ -63,7 +63,7 @@ type CacheConfig struct {
 
 type hintedHandoffOrder struct {
 	ctx context.Context
-	r   *resource.ResourceName
+	r   *rspb.ResourceName
 }
 
 func (o *hintedHandoffOrder) String() string {
@@ -229,7 +229,7 @@ func (c *Cache) recvHeartbeatCallback(ctx context.Context, peer string) {
 	c.heartbeatMu.Unlock()
 }
 
-func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *resource.ResourceName) {
+func (c *Cache) recvHintedHandoffCallback(ctx context.Context, peer string, r *rspb.ResourceName) {
 	c.hintedHandoffsMu.Lock()
 	defer c.hintedHandoffsMu.Unlock()
 	if _, ok := c.hintedHandoffsByPeer[peer]; !ok {
@@ -369,53 +369,53 @@ func (c *Cache) readPeers(d *repb.Digest) *peerset.PeerSet {
 	return peerset.New(primaryPeers, secondaryPeers)
 }
 
-func (c *Cache) remoteContains(ctx context.Context, peer string, r *resource.ResourceName) (bool, error) {
+func (c *Cache) remoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Contains(ctx, r)
 	}
 	return c.cacheProxy.RemoteContains(ctx, peer, r)
 }
 
-func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (c *Cache) remoteMetadata(ctx context.Context, peer string, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Metadata(ctx, r)
 	}
 	return c.cacheProxy.RemoteMetadata(ctx, peer, r)
 }
 
-func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*resource.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) remoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.FindMissing(ctx, rns)
 	}
 	return c.cacheProxy.RemoteFindMissing(ctx, peer, isolation, rns)
 }
 
-func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *Cache) remoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, rns []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.GetMulti(ctx, rns)
 	}
 	return c.cacheProxy.RemoteGetMulti(ctx, peer, isolation, rns)
 }
-func (c *Cache) remoteReader(ctx context.Context, peer string, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Reader(ctx, r, offset, limit)
 	}
 	return c.cacheProxy.RemoteReader(ctx, peer, r, offset, limit)
 }
-func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	if c.config.EnableLocalWrites && peer == c.config.ListenAddr {
 		return c.local.Writer(ctx, r)
 	}
 	return c.cacheProxy.RemoteWriter(ctx, peer, handoffPeer, r)
 }
-func (c *Cache) remoteDelete(ctx context.Context, peer string, r *resource.ResourceName) error {
+func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
 	if !c.config.DisableLocalLookup && peer == c.config.ListenAddr {
 		return c.local.Delete(ctx, r)
 	}
 	return c.cacheProxy.RemoteDelete(ctx, peer, r)
 }
 
-func (c *Cache) sendFile(ctx context.Context, rn *resource.ResourceName, dest string) error {
+func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string) error {
 	if exists, err := c.cacheProxy.RemoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
@@ -436,7 +436,7 @@ func (c *Cache) sendFile(ctx context.Context, rn *resource.ResourceName, dest st
 	return rwc.Commit()
 }
 
-func (c *Cache) copyFile(ctx context.Context, rn *resource.ResourceName, source string, dest string) error {
+func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source string, dest string) error {
 	if exists, err := c.remoteContains(ctx, dest, rn); err == nil && exists {
 		return nil
 	}
@@ -457,7 +457,7 @@ func (c *Cache) copyFile(ctx context.Context, rn *resource.ResourceName, source 
 }
 
 type backfillOrder struct {
-	r      *resource.ResourceName
+	r      *rspb.ResourceName
 	source string
 	dest   string
 }
@@ -491,7 +491,7 @@ func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) e
 	return eg.Wait()
 }
 
-func (c *Cache) getBackfillOrders(r *resource.ResourceName, ps *peerset.PeerSet) []*backfillOrder {
+func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*backfillOrder {
 	source, targets := ps.GetBackfillTargets()
 	if len(targets) == 0 {
 		return nil
@@ -514,7 +514,7 @@ func (c *Cache) getBackfillOrders(r *resource.ResourceName, ps *peerset.PeerSet)
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	ps := c.readPeers(r.GetDigest())
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
@@ -540,7 +540,7 @@ func (c *Cache) Contains(ctx context.Context, r *resource.ResourceName) (bool, e
 	return false, nil
 }
 
-func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	ps := c.readPeers(d)
 
@@ -563,14 +563,14 @@ func (c *Cache) Metadata(ctx context.Context, r *resource.ResourceName) (*interf
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to query metadata %q.", d.GetHash())
 }
 
-func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	isolation := getIsolation(resources)
 	if isolation == nil {
 		return nil, nil
 	}
 
 	mu := sync.RWMutex{} // protects(foundMap)
-	hashResources := make(map[string][]*resource.ResourceName, 0)
+	hashResources := make(map[string][]*rspb.ResourceName, 0)
 	foundMap := make(map[string]struct{}, len(resources))
 	peerMap := make(map[string]*peerset.PeerSet, len(resources))
 	for _, r := range resources {
@@ -585,7 +585,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceN
 		// Each iteration through this outer loop sends a "batch" of requests in
 		// parallel, until all digests have been found or we have exhausted all
 		// peers.
-		peerRequests := make(map[string][]*resource.ResourceName, 0)
+		peerRequests := make(map[string][]*rspb.ResourceName, 0)
 		for h, perHashResources := range hashResources {
 			// If a previous request has already found this digest, skip it.
 			if _, ok := foundMap[h]; ok {
@@ -678,7 +678,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*resource.ResourceN
 }
 
 // Returns the isolation from the first resource name, assuming that all resources have the same isolation
-func getIsolation(resources []*resource.ResourceName) *dcpb.Isolation {
+func getIsolation(resources []*rspb.ResourceName) *dcpb.Isolation {
 	if len(resources) == 0 {
 		return nil
 	}
@@ -694,7 +694,7 @@ func getIsolation(resources []*resource.ResourceName) *dcpb.Isolation {
 // This is like setting READ_CONSISTENCY = ONE.
 //
 // Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) distributedReader(ctx context.Context, rn *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	ps := c.readPeers(rn.GetDigest())
 	backfill := func() {
 		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
@@ -722,7 +722,7 @@ func (c *Cache) distributedReader(ctx context.Context, rn *resource.ResourceName
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
-func (c *Cache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
+func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
 	r, err := c.distributedReader(ctx, rn, 0, 0)
 	if err != nil {
 		return nil, err
@@ -731,14 +731,14 @@ func (c *Cache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, err
 	return io.ReadAll(r)
 }
 
-func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	isolation := getIsolation(resources)
 	if isolation == nil {
 		return nil, nil
 	}
 
 	mu := sync.RWMutex{} // protects(gotMap)
-	hashResources := make(map[string][]*resource.ResourceName, 0)
+	hashResources := make(map[string][]*rspb.ResourceName, 0)
 	gotMap := make(map[string][]byte, len(resources))
 	peerMap := make(map[string]*peerset.PeerSet, len(resources))
 	for _, r := range resources {
@@ -753,7 +753,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*resource.ResourceName
 		// Each iteration through this outer loop sends a "batch" of requests in
 		// parallel, until all digests have been found or we have exhausted all
 		// peers.
-		peerRequests := make(map[string][]*resource.ResourceName, 0)
+		peerRequests := make(map[string][]*rspb.ResourceName, 0)
 		for h, perHashResources := range hashResources {
 			// If a previous request has already found this digest, skip it.
 			if _, ok := gotMap[h]; ok {
@@ -845,7 +845,7 @@ type multiWriteCloser struct {
 	log           log.Logger
 	peerClosers   map[string]interfaces.CommittedWriteCloser
 	mu            *sync.Mutex
-	r             *resource.ResourceName
+	r             *rspb.ResourceName
 	listenAddr    string
 	totalNumPeers int
 }
@@ -914,7 +914,7 @@ func (mc *multiWriteCloser) Close() error {
 // written to.
 //
 // This is like setting WRITE_CONSISTENCY = QUORUM.
-func (c *Cache) multiWriter(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	ps := c.peers(r.GetDigest())
 	mwc := &multiWriteCloser{
 		ctx:         ctx,
@@ -945,7 +945,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *resource.ResourceName) (inte
 	return mwc, nil
 }
 
-func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (c *Cache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	wc, err := c.multiWriter(ctx, r)
 	if err != nil {
 		return err
@@ -957,11 +957,11 @@ func (c *Cache) Set(ctx context.Context, r *resource.ResourceName, data []byte) 
 	return wc.Commit()
 }
 
-func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (c *Cache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for r, data := range kvs {
-		setFn := func(r *resource.ResourceName, data []byte) {
+		setFn := func(r *rspb.ResourceName, data []byte) {
 			eg.Go(func() error {
 				return c.Set(ctx, r, data)
 			})
@@ -976,7 +976,7 @@ func (c *Cache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]b
 	return nil
 }
 
-func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	ps := c.readPeers(r.GetDigest())
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		err := c.remoteDelete(ctx, peer, r)
@@ -990,11 +990,11 @@ func (c *Cache) Delete(ctx context.Context, r *resource.ResourceName) error {
 	return nil
 }
 
-func (c *Cache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	return c.distributedReader(ctx, r, uncompressedOffset, limit)
 }
 
-func (c *Cache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	mwc, err := c.multiWriter(ctx, r)
 	if err != nil {
 		return nil, err

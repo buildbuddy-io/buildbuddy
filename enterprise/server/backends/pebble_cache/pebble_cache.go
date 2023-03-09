@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebbleutil"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -46,6 +45,7 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
@@ -143,7 +143,7 @@ type Options struct {
 
 type sizeUpdate struct {
 	partID    string
-	cacheType resource.CacheType
+	cacheType rspb.CacheType
 	delta     int64
 }
 
@@ -1164,7 +1164,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 	return groupID, DefaultPartitionID, nil
 }
 
-func (p *PebbleCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
+func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {
 	_, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return nil, err
@@ -1262,7 +1262,7 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 	return false
 }
 
-func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return false, err
@@ -1291,7 +1291,7 @@ func (p *PebbleCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 	return found, nil
 }
 
-func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1326,7 +1326,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	}, nil
 }
 
-func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1361,7 +1361,7 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*resource.Res
 	return missing, nil
 }
 
-func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	rc, err := p.Reader(ctx, r, 0, 0)
 	if err != nil {
 		return nil, err
@@ -1370,7 +1370,7 @@ func (p *PebbleCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	return io.ReadAll(rc)
 }
 
-func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1425,7 +1425,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*resource.Resour
 	return foundMap, nil
 }
 
-func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (p *PebbleCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	wc, err := p.Writer(ctx, r)
 	if err != nil {
 		return err
@@ -1437,7 +1437,7 @@ func (p *PebbleCache) Set(ctx context.Context, r *resource.ResourceName, data []
 	return wc.Commit()
 }
 
-func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	for r, data := range kvs {
 		if err := p.Set(ctx, r, data); err != nil {
 			return err
@@ -1446,7 +1446,7 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceNa
 	return nil
 }
 
-func (p *PebbleCache) sendSizeUpdate(partID string, cacheType resource.CacheType, delta int64) {
+func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, delta int64) {
 	up := &sizeUpdate{
 		partID:    partID,
 		cacheType: cacheType,
@@ -1549,7 +1549,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	return nil
 }
 
-func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	fileRecord, err := p.makeFileRecord(ctx, r)
 	if err != nil {
 		return err
@@ -1583,7 +1583,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 	return nil
 }
 
-func (p *PebbleCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1699,7 +1699,7 @@ func (z *zstdCompressor) Close() error {
 	return z.CustomCommitWriteCloser.Close()
 }
 
-func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1710,7 +1710,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *resource.ResourceName) (int
 	// Only compress data over a given size for more optimal compression ratios
 	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
 	if shouldCompress {
-		r = &resource.ResourceName{
+		r = &rspb.ResourceName{
 			Digest:       r.GetDigest(),
 			InstanceName: r.GetInstanceName(),
 			Compressor:   repb.Compressor_ZSTD,
@@ -1951,7 +1951,7 @@ func (e *partitionEvictor) updateMetrics() {
 		metrics.CacheTypeLabel: "cas"}).Set(float64(e.casCount))
 }
 
-func (e *partitionEvictor) updateSize(cacheType resource.CacheType, deltaSize int64) {
+func (e *partitionEvictor) updateSize(cacheType rspb.CacheType, deltaSize int64) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -1961,11 +1961,11 @@ func (e *partitionEvictor) updateSize(cacheType resource.CacheType, deltaSize in
 	}
 
 	switch cacheType {
-	case resource.CacheType_CAS:
+	case rspb.CacheType_CAS:
 		e.casCount += deltaCount
-	case resource.CacheType_AC:
+	case rspb.CacheType_AC:
 		e.acCount += deltaCount
-	case resource.CacheType_UNKNOWN_CACHE_TYPE:
+	case rspb.CacheType_UNKNOWN_CACHE_TYPE:
 		log.Errorf("Cannot update cache size: resource of unknown type")
 	}
 	e.sizeBytes += deltaSize
@@ -2131,7 +2131,7 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 
 	key, err := e.fileStorer.PebbleKey(&rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
-			CacheType:   resource.CacheType_CAS,
+			CacheType:   rspb.CacheType_CAS,
 			PartitionId: e.part.ID,
 		},
 		Digest: &repb.Digest{
@@ -2415,7 +2415,7 @@ type readCloser struct {
 	io.Closer
 }
 
-func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *resource.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *rspb.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	blobDir := p.blobDir()
 	requestedCompression := resource.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
