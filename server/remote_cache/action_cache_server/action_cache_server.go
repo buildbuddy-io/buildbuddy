@@ -67,7 +67,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	appendDigest := func(d *repb.Digest) {
 		if d != nil && d.GetSizeBytes() > 0 {
 			mu.Lock()
-			rn := digest.NewCASResourceName(d, remoteInstanceName).ToProto()
+			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS).ToProto()
 			outputFileDigests = append(outputFileDigests, rn)
 			mu.Unlock()
 		}
@@ -80,7 +80,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			rn := digest.NewCASResourceName(dc.GetTreeDigest(), remoteInstanceName).ToProto()
+			rn := digest.NewResourceName(dc.GetTreeDigest(), remoteInstanceName, rspb.CacheType_CAS).ToProto()
 			blob, err := cache.Get(gCtx, rn)
 			if err != nil {
 				return err
@@ -214,7 +214,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
-	acResource := digest.NewACResourceName(d, req.GetInstanceName())
+	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC)
 	uploadTracker := ht.TrackUpload(d)
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131

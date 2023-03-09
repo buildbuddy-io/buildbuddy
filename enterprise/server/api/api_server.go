@@ -413,13 +413,13 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
 		}
-		resourceName = digest.NewACResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName()).ToProto()
+		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_AC).ToProto()
 	} else if digest.IsDownloadResourceName(urlStr) {
 		parsedRN, err := digest.ParseDownloadResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
 		}
-		resourceName = digest.NewCASResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName()).ToProto()
+		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_CAS).ToProto()
 	} else {
 		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
 	}

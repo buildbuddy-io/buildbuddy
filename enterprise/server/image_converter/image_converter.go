@@ -394,7 +394,7 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *rgpb.ConvertLaye
 		return nil, status.UnknownErrorf("could not compute digest of new layer: %s", err)
 	}
 
-	rn := digest.NewResourceName(newLayerDigest, registryInstanceName)
+	rn := digest.NewGenericResourceName(newLayerDigest, registryInstanceName)
 	casDigest, err := cachetools.UploadFromReader(ctx, c.bsClient, rn, bytes.NewReader(newLayerData))
 	if err != nil {
 		return nil, status.UnknownErrorf("could not upload converted layer %q: %s", newLayerDigest, err)

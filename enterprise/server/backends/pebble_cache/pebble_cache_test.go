@@ -508,14 +508,14 @@ func TestCopyPartitionData(t *testing.T) {
 				size = 1000
 			}
 			d, buf := testdigest.NewRandomDigestBuf(t, size)
-			r := digest.NewCASResourceName(d, instanceName).ToProto()
+			r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS).ToProto()
 			defaultResources = append(defaultResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
 		}
 		for i := 0; i < 10; i++ {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
-			r := digest.NewACResourceName(d, instanceName).ToProto()
+			r := digest.NewResourceName(d, instanceName, rspb.CacheType_AC).ToProto()
 			defaultResources = append(defaultResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
@@ -527,14 +527,14 @@ func TestCopyPartitionData(t *testing.T) {
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		for i := 0; i < 10; i++ {
 			d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-			r := digest.NewCASResourceName(d, instanceName).ToProto()
+			r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS).ToProto()
 			customResources = append(customResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
 		}
 		for i := 0; i < 10; i++ {
 			d, buf := testdigest.NewRandomDigestBuf(t, 100)
-			r := digest.NewACResourceName(d, instanceName).ToProto()
+			r := digest.NewResourceName(d, instanceName, rspb.CacheType_AC).ToProto()
 			customResources = append(customResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)

@@ -701,7 +701,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if err != nil {
 		return err
 	}
-	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName)
+	resourceName := digest.NewGenericResourceName(fp.FileNode.Digest, instanceName)
 	if ff.supportsCompression() {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}

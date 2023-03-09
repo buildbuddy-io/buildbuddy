@@ -42,6 +42,7 @@ import (
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gstatus "google.golang.org/grpc/status"
@@ -369,7 +370,7 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
 func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.ResourceName) (*repb.ActionResult, error) {
-	cacheResource := digest.NewACResourceName(r.GetDigest(), r.GetInstanceName())
+	cacheResource := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_AC)
 	data, err := s.cache.Get(ctx, cacheResource.ToProto())
 	if err != nil {
 		if status.IsNotFoundError(err) {
@@ -413,20 +414,20 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if sizer == nil {
 		return "", status.FailedPreconditionError("No task sizer configured")
 	}
-	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
+	adInstanceDigest := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
 		log.CtxErrorf(ctx, "Error fetching action: %s", err.Error())
 		return "", err
 	}
-	cmdInstanceDigest := digest.NewResourceName(action.GetCommandDigest(), req.GetInstanceName())
+	cmdInstanceDigest := digest.NewGenericResourceName(action.GetCommandDigest(), req.GetInstanceName())
 	command := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceDigest, command); err != nil {
 		log.CtxErrorf(ctx, "Error fetching command: %s", err.Error())
 		return "", err
 	}
 
-	r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
+	r := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
 	executionID, err := r.UploadString()
 	if err != nil {
 		return "", err
@@ -606,7 +607,7 @@ func (s *ExecutionServer) deletePendingExecution(ctx context.Context, executionI
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
-	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
+	adInstanceDigest := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
 		return err
@@ -617,7 +618,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
-			r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName())
+			r := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
 			executionID, err := r.UploadString()
 			if err != nil {
 				return err
@@ -1022,7 +1023,7 @@ func (s *ExecutionServer) fetchCommandForTask(ctx context.Context, actionResourc
 		return nil, err
 	}
 	cmdDigest := action.GetCommandDigest()
-	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName())
+	cmdInstanceNameDigest := digest.NewGenericResourceName(cmdDigest, actionResourceName.GetInstanceName())
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		return nil, err

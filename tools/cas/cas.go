@@ -75,7 +75,7 @@ func main() {
 	if *blobType == "ActionResult" {
 		cacheType = rspb.CacheType_AC
 	}
-	ind := digest.NewCacheResourceName(d, *instanceName, cacheType)
+	ind := digest.NewResourceName(d, *instanceName, cacheType)
 	conn, err := grpc_client.DialTarget(*target)
 	if err != nil {
 		log.Fatalf("Error dialing CAS target: %s", err)
@@ -134,7 +134,7 @@ func main() {
 			if err != nil {
 				log.Fatalf(err.Error())
 			}
-			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName())
+			ind := digest.NewGenericResourceName(failedDigest, ind.GetInstanceName())
 			ar, err = cachetools.GetActionResult(ctx, acClient, ind)
 			if err != nil {
 				log.Fatal(err.Error())

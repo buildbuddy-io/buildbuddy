@@ -96,7 +96,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		if digest.IsEmpty(d) || d.GetHash() == digest.EmptyHash {
 			continue
 		}
-		rn := digest.NewCASResourceName(d, req.GetInstanceName()).ToProto()
+		rn := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_CAS).ToProto()
 		digestsToLookup = append(digestsToLookup, rn)
 	}
 	missing, err := s.cache.FindMissing(ctx, digestsToLookup)
@@ -222,7 +222,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			continue
 		}
 
-		rn := digest.NewCASResourceName(uploadDigest, req.GetInstanceName())
+		rn := digest.NewResourceName(uploadDigest, req.GetInstanceName(), rspb.CacheType_CAS)
 		// If cache doesn't support compression type, store decompressed data
 		dataToCache := decompressedData
 		if s.cache.SupportsCompressor(uploadRequest.GetCompressor()) {
@@ -300,7 +300,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		})
 
 		if !digest.IsEmpty(readDigest) {
-			rn := digest.NewCASResourceName(readDigest, req.GetInstanceName())
+			rn := digest.NewResourceName(readDigest, req.GetInstanceName(), rspb.CacheType_CAS)
 			if readZstd {
 				rn.SetCompressor(repb.Compressor_ZSTD)
 			}
@@ -507,7 +507,7 @@ func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, re
 		if digest.IsEmpty(d) {
 			continue
 		}
-		rn := digest.NewCASResourceName(d, remoteInstanceName).ToProto()
+		rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS).ToProto()
 		subdirDigests = append(subdirDigests, rn)
 	}
 	rspMap, err := s.cache.GetMulti(ctx, subdirDigests)
@@ -574,7 +574,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if err != nil {
 		return err
 	}
-	rootDirRN := digest.NewCASResourceName(req.GetRootDigest(), req.GetInstanceName()).ToProto()
+	rootDirRN := digest.NewResourceName(req.GetRootDigest(), req.GetInstanceName(), rspb.CacheType_CAS).ToProto()
 	rootDir, err := s.fetchDir(ctx, rootDirRN)
 	if err != nil {
 		return err
@@ -618,7 +618,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 		if *enableTreeCaching {
-			treeCacheRN := digest.NewACResourceName(treeCacheDigest, req.GetInstanceName()).ToProto()
+			treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC).ToProto()
 			if blob, err := s.cache.Get(ctx, treeCacheRN); err == nil {
 				treeCache := &repb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
@@ -672,7 +672,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				if err != nil {
 					return nil, err
 				}
-				treeCacheRN := digest.NewACResourceName(treeCacheDigest, req.GetInstanceName()).ToProto()
+				treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC).ToProto()
 				if err := s.cache.Set(ctx, treeCacheRN, buf); err != nil {
 					log.Warningf("Error setting treeCache blob: %s", err)
 				}
