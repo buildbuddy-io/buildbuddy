@@ -906,8 +906,8 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 		Name:    sharedPoolName,
 	}
 
-	// Linux workflows are currently only supported on shared executors.
-	if os == platform.LinuxOperatingSystemName && workflowID != "" {
+	// Linux workflows use shared executors unless self_hosted is set.
+	if os == platform.LinuxOperatingSystemName && workflowID != "" && !useSelfHosted {
 		return sharedPool, nil
 	}
 
