@@ -40,6 +40,7 @@ var (
 	enableWorkflows            = flag.Bool("remote_execution.enable_workflows", false, "Whether to enable BuildBuddy workflows.")
 	enableExecutorKeyCreation  = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
 	testOutputManifestsEnabled = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
+	patternFilterEnabled       = flag.Bool("app.pattern_filter_enabled", false, "If set, allow filtering by pattern in the client.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -155,6 +156,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		TestOutputManifestsEnabled:    *testOutputManifestsEnabled,
 		UserOwnedKeysEnabled:          env.GetUserDB() != nil && env.GetUserDB().GetUserOwnedKeysEnabled(),
 		TrendsHeatmapEnabled:          iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
+		PatternFilterEnabled:          *patternFilterEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

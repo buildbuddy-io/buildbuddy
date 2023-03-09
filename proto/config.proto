@@ -77,4 +77,7 @@ message FrontendConfig {
 
   // Whether to show the new heatmap and drilldowns UI for build stats
   bool trends_heatmap_enabled = 25;
+
+  // Whether to allow filtering invocations, trends, etc. by pattern.
+  bool pattern_filter_enabled = 26;
 }

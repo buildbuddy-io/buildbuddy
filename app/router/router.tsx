@@ -18,6 +18,7 @@ export const BRANCH_PARAM_NAME = "branch";
 export const COMMIT_PARAM_NAME = "commit";
 export const HOST_PARAM_NAME = "host";
 export const COMMAND_PARAM_NAME = "command";
+export const PATTERN_PARAM_NAME = "pattern";
 export const MINIMUM_DURATION_PARAM_NAME = "min-dur";
 export const MAXIMUM_DURATION_PARAM_NAME = "max-dur";
 
@@ -39,6 +40,7 @@ const GLOBAL_FILTER_PARAM_NAMES = [
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
+  PATTERN_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
 ];
