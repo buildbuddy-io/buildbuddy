@@ -641,10 +641,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	os := strings.ToLower(workflowAction.OS)
 	computeUnits := *workflowsMacComputeUnits
 	// Use the CI runner image if the OS supports containerized actions.
-	if !workflowAction.SelfHosted && (os == "" || os == platform.LinuxOperatingSystemName) {
+	if os == "" || os == platform.LinuxOperatingSystemName {
 		computeUnits = *workflowsLinuxComputeUnits
 		containerImage = ws.containerImage(workflowAction)
-		if *enableFirecracker {
+		if *enableFirecracker && !workflowAction.SelfHosted {
 			isolationType = string(platform.FirecrackerContainerType)
 			// When using Firecracker, write all outputs to the scratch disk, which
 			// has more space than the workspace disk and doesn't need to be extracted
