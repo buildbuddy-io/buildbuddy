@@ -501,7 +501,12 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration) ([]in
 
 	endSec := time.Now().Unix()
 	if highTime != nil {
-		endSec = highTime.GetSeconds()
+		// Drop a second from the end date (which is normally a round hour) so that
+		// we don't include the next day as a bucket.  This value isn't actually
+		// used for filtering, so this hack is fine, provided that nobody starts
+		// using this code with (midnight + 1s).  That wouldn't make much sense,
+		// since the feature only shows day-based buckets.
+		endSec = highTime.GetSeconds() - 1
 	}
 
 	// TODO(jdhollen): Bucket at true midnight in user timezone instead of fudging
