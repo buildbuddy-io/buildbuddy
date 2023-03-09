@@ -989,7 +989,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		runfiles = append(runfiles, &bespb.File{
 			Name: relPath,
 			File: &bespb.File_Uri{
-				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewResourceName(d.ToDigest(), *remoteInstanceName).DownloadString()),
+				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewGenericResourceName(d.ToDigest(), *remoteInstanceName).DownloadString()),
 			},
 		})
 	}
@@ -1043,7 +1043,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			mu.Lock()
 			runfileDirs = append(runfileDirs, &bespb.Tree{
 				Name: relPath,
-				Uri:  fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewResourceName(td, *remoteInstanceName).DownloadString()),
+				Uri:  fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewGenericResourceName(td, *remoteInstanceName).DownloadString()),
 			})
 			mu.Unlock()
 			return nil
@@ -1325,7 +1325,7 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, bsClient, digest.NewResourceName(d, *remoteInstanceName), f); err != nil {
+	if err := cachetools.GetBlob(ctx, bsClient, digest.NewGenericResourceName(d, *remoteInstanceName), f); err != nil {
 		_ = f.Close()
 		return err
 	}

@@ -90,7 +90,7 @@ type ResourceName struct {
 	rn *rspb.ResourceName
 }
 
-func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
+func NewGenericResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	return &ResourceName{
 		rn: &rspb.ResourceName{
 			Digest:       d,
@@ -100,35 +100,13 @@ func NewResourceName(d *repb.Digest, instanceName string) *ResourceName {
 	}
 }
 
-func NewCacheResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType) *ResourceName {
+func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType) *ResourceName {
 	return &ResourceName{
 		rn: &rspb.ResourceName{
 			Digest:       d,
 			InstanceName: instanceName,
 			Compressor:   repb.Compressor_IDENTITY,
 			CacheType:    cacheType,
-		},
-	}
-}
-
-func NewCASResourceName(d *repb.Digest, instanceName string) *ResourceName {
-	return &ResourceName{
-		rn: &rspb.ResourceName{
-			Digest:       d,
-			InstanceName: instanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    rspb.CacheType_CAS,
-		},
-	}
-}
-
-func NewACResourceName(d *repb.Digest, instanceName string) *ResourceName {
-	return &ResourceName{
-		rn: &rspb.ResourceName{
-			Digest:       d,
-			InstanceName: instanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    rspb.CacheType_AC,
 		},
 	}
 }
@@ -385,7 +363,7 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp) (*ResourceNa
 		compressor = repb.Compressor_ZSTD
 	}
 	d := &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
-	r := NewResourceName(d, instanceName)
+	r := NewGenericResourceName(d, instanceName)
 	r.SetCompressor(compressor)
 	return r, nil
 }

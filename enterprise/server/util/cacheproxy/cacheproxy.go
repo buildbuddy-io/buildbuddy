@@ -202,7 +202,7 @@ func getResources(resources []*rspb.ResourceName, isolation *dcpb.Isolation, dig
 	rns := make([]*rspb.ResourceName, 0)
 	for _, k := range digestKeys {
 		d := digestFromKey(k)
-		rn := digest.NewCacheResourceName(d, instanceName, cacheType).ToProto()
+		rn := digest.NewResourceName(d, instanceName, cacheType).ToProto()
 		rns = append(rns, rn)
 	}
 

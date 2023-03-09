@@ -137,7 +137,7 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 
 func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName, err := digest.NewResourceName(d, *instanceName).UploadString()
+	resourceName, err := digest.NewGenericResourceName(d, *instanceName).UploadString()
 	if err != nil {
 		log.Fatalf("Error computing upload resource name: %s", err)
 	}
@@ -157,7 +157,7 @@ func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 func readDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	randomDigest := preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 
-	resourceName := digest.NewResourceName(randomDigest, *instanceName).DownloadString()
+	resourceName := digest.NewGenericResourceName(randomDigest, *instanceName).DownloadString()
 	rr := &bspb.ReadRequest{
 		ResourceName: resourceName,
 		ReadOffset:   0,

@@ -261,7 +261,7 @@ func TestCacheShutdown(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := digest.NewCASResourceName(d, "remote/instance/name").ToProto()
+		rn := digest.NewResourceName(d, "remote/instance/name", rspb.CacheType_CAS).ToProto()
 		writeDigest(t, ctx, rc1, rn, buf)
 		digestsWritten = append(digestsWritten, rn)
 	}
@@ -273,7 +273,7 @@ func TestCacheShutdown(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := digest.NewCASResourceName(d, "remote/instance/name").ToProto()
+		rn := digest.NewResourceName(d, "remote/instance/name", rspb.CacheType_CAS).ToProto()
 		writeDigest(t, ctx, rc1, rn, buf)
 		digestsWritten = append(digestsWritten, rn)
 	}

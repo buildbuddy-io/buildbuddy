@@ -269,7 +269,7 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 }
 
 func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
-	rootInstanceDigest := digest.NewResourceName(
+	rootInstanceDigest := digest.NewGenericResourceName(
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 	)

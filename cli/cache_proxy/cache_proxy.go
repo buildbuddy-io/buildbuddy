@@ -214,7 +214,7 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 		if err != nil {
 			if err == io.EOF {
 				if localFile != nil {
-					resourceName := digest.NewResourceName(d, instanceName)
+					resourceName := digest.NewGenericResourceName(d, instanceName)
 					if _, err := cachetools.UploadFromReader(ctx, p.localBSSClient, resourceName, localFile); err != nil {
 						log.Errorf("error uploading from reader: %s", err.Error())
 					}
