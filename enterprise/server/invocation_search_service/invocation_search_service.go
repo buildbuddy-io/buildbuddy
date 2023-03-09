@@ -130,6 +130,9 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if command := req.GetQuery().GetCommand(); command != "" {
 		q.AddWhereClause("i.command = ?", command)
 	}
+	if pattern := req.GetQuery().GetPattern(); pattern != "" {
+		q.AddWhereClause("i.pattern = ?", pattern)
+	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
 		q.AddWhereClause("i.commit_sha = ?", sha)
 	}
