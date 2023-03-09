@@ -77,7 +77,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	// Cache section should contain a cache hit
 	wt.FindByDebugID("cache-sections")
 	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
-	cacheRequestsCard = wt.FindByDebugID("cache-results-table").Text()
+	cacheRequestsCard = wt.FindWithMaxDelay("cache-results-table", 5*time.Second).Text()
 	assert.Contains(t, cacheRequestsCard, "Hit")
 
 	// Make sure it shows up in repo history

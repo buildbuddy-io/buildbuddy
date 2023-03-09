@@ -15,6 +15,10 @@ import (
 	"github.com/tebeka/selenium/chrome"
 )
 
+const (
+	implicitWaitTimeout = 1 * time.Second
+)
+
 var (
 	// To debug webdriver tests visually in your local environment:
 	//
@@ -76,7 +80,7 @@ func New(t *testing.T) *WebTester {
 	// never be located.
 	//
 	// See also https://stackoverflow.com/q/11001030
-	driver.SetImplicitWaitTimeout(1 * time.Second)
+	driver.SetImplicitWaitTimeout(implicitWaitTimeout)
 	wt := &WebTester{t, driver}
 	t.Cleanup(func() {
 		err := wt.screenshot("END_OF_TEST")
@@ -91,6 +95,18 @@ func New(t *testing.T) *WebTester {
 		require.NoError(t, err)
 	})
 	return wt
+}
+
+// FindWithMaxDelay can be used to increase the timeout for finding elements that are known to load slower
+func (wt *WebTester) FindWithMaxDelay(debugID string, maxWait time.Duration) *Element {
+	for delay := implicitWaitTimeout; delay <= maxWait; delay += implicitWaitTimeout {
+		el, _ := wt.driver.FindElement(selenium.ByCSSSelector, `[debug-id="`+debugID+`"]`)
+		if el != nil {
+			return &Element{wt.t, el}
+		}
+	}
+	require.FailNowf(wt.t, "timeout", "Timed out finding element with debug id %s", debugID)
+	return nil
 }
 
 // Get navigates to the given URL.
