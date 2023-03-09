@@ -80,6 +80,7 @@ require (
 	github.com/rs/zerolog v1.20.0
 	github.com/shirou/gopsutil/v3 v3.22.10
 	github.com/sirupsen/logrus v1.9.0
+	github.com/smacker/go-tree-sitter v0.0.0-20230226123037-c459dbde1464
 	github.com/stretchr/testify v1.8.1
 	github.com/tebeka/selenium v0.9.9
 	github.com/throttled/throttled/v2 v2.0.0-00010101000000-000000000000
@@ -244,7 +245,6 @@ require (
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/sergi/go-diff v1.2.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
-	github.com/smacker/go-tree-sitter v0.0.0-20230226123037-c459dbde1464 // indirect
 	github.com/spf13/cast v1.4.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.10 // indirect
 	github.com/tklauser/numcpus v0.5.0 // indirect
