@@ -269,30 +269,33 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		}
 	})
 
-	if err := c.Pause(ctx); err != nil {
-		t.Fatalf("unable to pause container: %s", err)
-	}
-	if err := c.Unpause(ctx); err != nil {
-		t.Fatalf("unable to unpause container: %s", err)
-	}
+	// Try pause, unpause, exec several times.
+	for i := 0; i < 3; i++ {
+		if err := c.Pause(ctx); err != nil {
+			t.Fatalf("unable to pause container: %s", err)
+		}
+		if err := c.Unpause(ctx); err != nil {
+			t.Fatalf("unable to unpause container: %s", err)
+		}
 
-	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "GREETING", Value: "Hello"},
-		},
-	}
-	expectedResult := &interfaces.CommandResult{
-		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
-		Stderr:   []byte("foo"),
-	}
+		cmd := &repb.Command{
+			Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{Name: "GREETING", Value: "Hello"},
+			},
+		}
+		expectedResult := &interfaces.CommandResult{
+			ExitCode: 0,
+			Stdout:   []byte("Hello world"),
+			Stderr:   []byte("foo"),
+		}
 
-	res := c.Exec(ctx, cmd, nil /*=stdio*/)
-	if res.Error != nil {
-		t.Fatalf("error: %s", res.Error)
+		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+		if res.Error != nil {
+			t.Fatalf("error: %s", res.Error)
+		}
+		assert.Equal(t, expectedResult, res)
 	}
-	assert.Equal(t, expectedResult, res)
 }
 
 func TestFirecrackerFileMapping(t *testing.T) {
