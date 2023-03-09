@@ -13,8 +13,16 @@ func executionMetricToDbField(m stat_filter.ExecutionMetricType, paramPrefix str
 		return paramPrefix + "updated_at_usec", nil
 	case stat_filter.ExecutionMetricType_QUEUE_TIME_USEC_EXECUTION_METRIC:
 		return fmt.Sprintf("(%sworker_start_timestamp_usec - %squeued_timestamp_usec)", paramPrefix, paramPrefix), nil
+	case stat_filter.ExecutionMetricType_INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
+		return fmt.Sprintf("(%sinput_fetch_completed_timestamp_usec - %sinput_fetch_start_timestamp_usec)", paramPrefix, paramPrefix), nil
+	case stat_filter.ExecutionMetricType_REAL_EXECUTION_TIME_EXECUTION_METRIC:
+		return fmt.Sprintf("(%sexecution_completed_timestamp_usec - %sexecution_start_timestamp_usec)", paramPrefix, paramPrefix), nil
+	case stat_filter.ExecutionMetricType_OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
+		return fmt.Sprintf("(%soutput_upload_completed_timestamp_usec - %soutput_upload_start_timestamp_usec)", paramPrefix, paramPrefix), nil
+	case stat_filter.ExecutionMetricType_PEAK_MEMORY_EXECUTION_METRIC:
+		return paramPrefix + "peak_memory_bytes", nil
 	default:
-		return "", status.InvalidArgumentErrorf("Invalid filter: %s", m.String())
+		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}
 }
 
@@ -26,8 +34,16 @@ func invocationMetricToDbField(m stat_filter.InvocationMetricType, paramPrefix s
 		return paramPrefix + "updated_at_usec", nil
 	case stat_filter.InvocationMetricType_CAS_CACHE_MISSES_INVOCATION_METRIC:
 		return paramPrefix + "cas_cache_misses", nil
+	case stat_filter.InvocationMetricType_CAS_CACHE_DOWNLOAD_SIZE_INVOCATION_METRIC:
+		return paramPrefix + "total_download_size_bytes", nil
+	case stat_filter.InvocationMetricType_CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC:
+		return paramPrefix + "total_upload_size_bytes", nil
+	case stat_filter.InvocationMetricType_CAS_CACHE_DOWNLOAD_SPEED_INVOCATION_METRIC:
+		return paramPrefix + "download_throughput_bytes_per_second", nil
+	case stat_filter.InvocationMetricType_CAS_CACHE_UPLOAD_SPEED_INVOCATION_METRIC:
+		return paramPrefix + "upload_throughput_bytes_per_second", nil
 	default:
-		return "", status.InvalidArgumentErrorf("Invalid filter: %s", m.String())
+		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}
 }
 
