@@ -475,13 +475,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                             chart.entry.length > 1 && (
                               <div className="drilldown-page-dd-chart">
                                 <div className="drilldown-page-dd-chart-title">
-                                  {this.formatDrilldownType(chart.drilldownDimension)}
+                                  {this.formatDrilldownType(chart.drilldownType)}
                                 </div>
                                 <BarChart
                                   width={300}
                                   height={200}
                                   data={chart.entry}
-                                  onClick={this.handleBarClick.bind(this, chart.drilldownDimension)}>
+                                  onClick={this.handleBarClick.bind(this, chart.drilldownType)}>
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis
                                     interval="preserveStart"
@@ -490,7 +490,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                   <Tooltip
                                     content={this.renderCustomTooltip.bind(
                                       this,
-                                      this.formatDrilldownType(chart.drilldownDimension)
+                                      this.formatDrilldownType(chart.drilldownType)
                                     )}
                                   />
                                   <Bar
