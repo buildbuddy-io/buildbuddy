@@ -84,7 +84,7 @@ const METRIC_OPTIONS: MetricOption[] = [
     }),
   },
   {
-    name: 'Execution "real" execution time',
+    name: "Execution action execution time",
     metric: stat_filter.Metric.create({
       execution: stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC,
     }),
