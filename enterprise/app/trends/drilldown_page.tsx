@@ -12,6 +12,8 @@ import FilledButton, { OutlinedButton } from "../../../app/components/button/but
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
+import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
+import { usecToTimestamp } from "../../../app/util/proto";
 import { getProtoFilterParams, isExecutionMetric } from "../filter/filter_util";
 import { HeatmapComponent, HeatmapSelection } from "./heatmap";
 import { BarChart, Bar, XAxis, Tooltip, CartesianGrid, TooltipProps } from "recharts";
@@ -198,7 +200,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
     });
-    drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection).concat(this.getZoomFilters());
+    this.addZoomFiltersToQuery(drilldownRequest.query);
+    drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
     rpcService.service
       .getStatDrilldown(drilldownRequest)
@@ -232,15 +235,16 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
         groupId: this.props.user.selectedGroup.id,
+        role: filterParams.role || [],
+        updatedAfter: filterParams.updatedAfter,
+        updatedBefore: filterParams.updatedBefore,
+        status: filterParams.status || [],
+        filter: this.toStatFilterList(this.currentHeatmapSelection),
       }),
       pageToken: "",
       count: 25,
     });
-    request.query!.role = filterParams.role || [];
-    request.query!.updatedAfter = filterParams.updatedAfter;
-    request.query!.updatedBefore = filterParams.updatedBefore;
-    request.query!.status = filterParams.status || [];
-    request.query!.filter = this.toStatFilterList(this.currentHeatmapSelection).concat(this.getZoomFilters());
+    this.addZoomFiltersToQuery(request.query);
 
     rpcService.service
       .searchInvocation(request)
@@ -275,8 +279,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       minimumDuration: filterParams.minimumDuration,
       maximumDuration: filterParams.maximumDuration,
       status: filterParams.status,
-      filter: this.getZoomFilters(),
     });
+    this.addZoomFiltersToQuery(heatmapRequest.query);
 
     console.log(heatmapRequest);
     rpcService.service
@@ -329,9 +333,31 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.fetch();
   }
 
-  getZoomFilters() {
+  addZoomFiltersToQuery(
+    // A little bit of duck typing for TrendQuery and InvocationQuery
+    query: {
+      updatedBefore: google_timestamp.proto.Timestamp;
+      updatedAfter: google_timestamp.proto.Timestamp;
+      filter: stat_filter.StatFilter[];
+    }
+  ) {
     console.log(this.currentZoomFilters);
-    return this.currentZoomFilters ? this.toStatFilterList(this.currentZoomFilters) : [];
+    if (!this.currentZoomFilters) {
+      return;
+    }
+
+    query.updatedAfter = usecToTimestamp(this.currentZoomFilters.dateRangeMicros.startInclusive);
+    query.updatedBefore = usecToTimestamp(this.currentZoomFilters.dateRangeMicros.endExclusive);
+    if (!query.filter) {
+      query.filter = [];
+    }
+    query.filter.push(
+      stat_filter.StatFilter.create({
+        metric: this.selectedMetric.metric,
+        min: Long.fromNumber(this.currentZoomFilters.bucketRange.startInclusive),
+        max: Long.fromNumber(this.currentZoomFilters.bucketRange.endExclusive - 1),
+      })
+    );
   }
 
   handleBarClick(a: invocation.AggType, e?: CategoricalChartState) {
@@ -466,7 +492,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     }
 
     const startDate = moment(zoomToSummarize.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
-    const endDate = moment(zoomToSummarize.dateRangeMicros.endExclusive / 1000).format("YYYY-MM-DD");
+    const endDate = moment((zoomToSummarize.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
     const startValue = this.renderYBucketValue(zoomToSummarize.bucketRange.startInclusive);
     const endValue = this.renderYBucketValue(zoomToSummarize.bucketRange.endExclusive);
 
