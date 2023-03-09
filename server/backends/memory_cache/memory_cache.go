@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -19,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
@@ -67,7 +67,7 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 	}, nil
 }
 
-func (m *MemoryCache) key(ctx context.Context, r *resource.ResourceName) (string, error) {
+func (m *MemoryCache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
 	hash, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return "", err
@@ -78,7 +78,7 @@ func (m *MemoryCache) key(ctx context.Context, r *resource.ResourceName) (string
 	}
 
 	var key string
-	if r.GetCacheType() == resource.CacheType_AC {
+	if r.GetCacheType() == rspb.CacheType_AC {
 		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), r.GetInstanceName(), hash)
 	} else {
 		key = filepath.Join(userPrefix, digest.CacheTypeToPrefix(r.GetCacheType()), hash)
@@ -86,7 +86,7 @@ func (m *MemoryCache) key(ctx context.Context, r *resource.ResourceName) (string
 	return key, nil
 }
 
-func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (m *MemoryCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	k, err := m.key(ctx, r)
 	if err != nil {
 		return false, err
@@ -99,7 +99,7 @@ func (m *MemoryCache) Contains(ctx context.Context, r *resource.ResourceName) (b
 }
 
 // TODO(buildbuddy-internal#1485) - Add last access and modify time
-func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (m *MemoryCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	k, err := m.key(ctx, r)
 	if err != nil {
@@ -120,7 +120,7 @@ func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 
 	// TODO - Add digest size support for AC
 	digestSizeBytes := int64(-1)
-	if r.GetCacheType() == resource.CacheType_CAS {
+	if r.GetCacheType() == rspb.CacheType_CAS {
 		digestSizeBytes = int64(len(vb))
 	}
 
@@ -130,7 +130,7 @@ func (m *MemoryCache) Metadata(ctx context.Context, r *resource.ResourceName) (*
 	}, nil
 }
 
-func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (m *MemoryCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	var missing []*repb.Digest
 	// No parallelism here either. Not necessary for an in-memory cache.
 	for _, r := range resources {
@@ -145,7 +145,7 @@ func (m *MemoryCache) FindMissing(ctx context.Context, resources []*resource.Res
 	return missing, nil
 }
 
-func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (m *MemoryCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	k, err := m.key(ctx, r)
 	if err != nil {
 		return nil, err
@@ -163,7 +163,7 @@ func (m *MemoryCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte
 	return value, nil
 }
 
-func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (m *MemoryCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	// No parallelism here either. Not necessary for an in-memory cache.
 	for _, r := range resources {
@@ -179,7 +179,7 @@ func (m *MemoryCache) GetMulti(ctx context.Context, resources []*resource.Resour
 	return foundMap, nil
 }
 
-func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (m *MemoryCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	k, err := m.key(ctx, r)
 	if err != nil {
 		return err
@@ -190,7 +190,7 @@ func (m *MemoryCache) Set(ctx context.Context, r *resource.ResourceName, data []
 	return nil
 }
 
-func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	for r, data := range kvs {
 		if err := m.Set(ctx, r, data); err != nil {
 			return err
@@ -199,7 +199,7 @@ func (m *MemoryCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceNa
 	return nil
 }
 
-func (m *MemoryCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (m *MemoryCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	k, err := m.key(ctx, r)
 	if err != nil {
 		return err
@@ -215,7 +215,7 @@ func (m *MemoryCache) Delete(ctx context.Context, r *resource.ResourceName) erro
 }
 
 // Low level interface used for seeking and stream-writing.
-func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (m *MemoryCache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	// Locking and key prefixing are handled in Get.
 	buf, err := m.Get(ctx, rn)
 	if err != nil {
@@ -233,7 +233,7 @@ func (m *MemoryCache) Reader(ctx context.Context, rn *resource.ResourceName, unc
 	return io.NopCloser(r), nil
 }
 
-func (m *MemoryCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (m *MemoryCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	var buffer bytes.Buffer
 	wc := ioutil.NewCustomCommitWriteCloser(&buffer)
 	wc.CommitFn = func(int64) error {

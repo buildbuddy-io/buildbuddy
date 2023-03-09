@@ -6,7 +6,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -17,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
@@ -47,46 +47,46 @@ func TestIsolation(t *testing.T) {
 	ctx := getAnonContext(t)
 
 	type test struct {
-		cacheType1     resource.CacheType
+		cacheType1     rspb.CacheType
 		instanceName1  string
-		cacheType2     resource.CacheType
+		cacheType2     rspb.CacheType
 		instanceName2  string
 		shouldBeShared bool
 	}
 
 	tests := []test{
 		{ // caches with the same isolation are shared.
-			cacheType1:     resource.CacheType_CAS,
+			cacheType1:     rspb.CacheType_CAS,
 			instanceName1:  "remoteInstanceName",
-			cacheType2:     resource.CacheType_CAS,
+			cacheType2:     rspb.CacheType_CAS,
 			instanceName2:  "remoteInstanceName",
 			shouldBeShared: true,
 		},
 		{ // action caches with the same isolation are shared.
-			cacheType1:     resource.CacheType_AC,
+			cacheType1:     rspb.CacheType_AC,
 			instanceName1:  "remoteInstanceName",
-			cacheType2:     resource.CacheType_AC,
+			cacheType2:     rspb.CacheType_AC,
 			instanceName2:  "remoteInstanceName",
 			shouldBeShared: true,
 		},
 		{ // CAS caches with different remote instance names are shared.
-			cacheType1:     resource.CacheType_CAS,
+			cacheType1:     rspb.CacheType_CAS,
 			instanceName1:  "remoteInstanceName",
-			cacheType2:     resource.CacheType_CAS,
+			cacheType2:     rspb.CacheType_CAS,
 			instanceName2:  "otherInstanceName",
 			shouldBeShared: true,
 		},
 		{ // Action caches with different remote instance names are not shared.
-			cacheType1:     resource.CacheType_AC,
+			cacheType1:     rspb.CacheType_AC,
 			instanceName1:  "remoteInstanceName",
-			cacheType2:     resource.CacheType_AC,
+			cacheType2:     rspb.CacheType_AC,
 			instanceName2:  "otherInstanceName",
 			shouldBeShared: false,
 		},
 		{ // CAS and Action caches are not shared.
-			cacheType1:     resource.CacheType_CAS,
+			cacheType1:     rspb.CacheType_CAS,
 			instanceName1:  "remoteInstanceName",
-			cacheType2:     resource.CacheType_AC,
+			cacheType2:     rspb.CacheType_AC,
 			instanceName2:  "remoteInstanceName",
 			shouldBeShared: false,
 		},
@@ -94,12 +94,12 @@ func TestIsolation(t *testing.T) {
 
 	for _, test := range tests {
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r1 := &resource.ResourceName{
+		r1 := &rspb.ResourceName{
 			Digest:       d,
 			CacheType:    test.cacheType1,
 			InstanceName: test.instanceName1,
 		}
-		r2 := &resource.ResourceName{
+		r2 := &rspb.ResourceName{
 			Digest:       d,
 			CacheType:    test.cacheType2,
 			InstanceName: test.instanceName2,
@@ -149,9 +149,9 @@ func TestGetSet(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
 		d, buf := testdigest.NewRandomDigestBuf(t, testSize)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		// Set() the bytes in the cache.
 		err := mc.Set(ctx, r, buf)
@@ -189,11 +189,11 @@ func TestMultiGetSet(t *testing.T) {
 	}
 	ctx := getAnonContext(t)
 	digests := randomDigests(t, 10, 20, 11, 30, 40)
-	rns := digest.ResourceNameMap(resource.CacheType_CAS, "", digests)
+	rns := digest.ResourceNameMap(rspb.CacheType_CAS, "", digests)
 	if err := mc.SetMulti(ctx, rns); err != nil {
 		t.Fatalf("Error multi-setting digests: %s", err.Error())
 	}
-	digestKeys := make([]*resource.ResourceName, 0, len(digests))
+	digestKeys := make([]*rspb.ResourceName, 0, len(digests))
 	for d := range rns {
 		digestKeys = append(digestKeys, d)
 	}
@@ -228,9 +228,9 @@ func TestReadWrite(t *testing.T) {
 	for _, testSize := range testSizes {
 		ctx := getAnonContext(t)
 		d, r := testdigest.NewRandomDigestReader(t, testSize)
-		rn := &resource.ResourceName{
+		rn := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		// Use Writer() to set the bytes in the cache.
 		wc, err := mc.Writer(ctx, rn)
@@ -265,9 +265,9 @@ func TestReadOffsetLimit(t *testing.T) {
 	ctx := getAnonContext(t)
 	size := int64(10)
 	d, buf := testdigest.NewRandomDigestBuf(t, size)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 	err = mc.Set(ctx, r, buf)
 	require.NoError(t, err)
@@ -291,11 +291,11 @@ func TestSizeLimit(t *testing.T) {
 	}
 	ctx := getAnonContext(t)
 	digestBufs := randomDigests(t, 400, 400, 400)
-	digestKeys := make([]*resource.ResourceName, 0, len(digestBufs))
+	digestKeys := make([]*rspb.ResourceName, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		if err := mc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
@@ -331,11 +331,11 @@ func TestLRU(t *testing.T) {
 	}
 	ctx := getAnonContext(t)
 	digestBufs := randomDigests(t, 400, 400)
-	digestKeys := make([]*resource.ResourceName, 0, len(digestBufs))
+	digestKeys := make([]*rspb.ResourceName, 0, len(digestBufs))
 	for d, buf := range digestBufs {
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		if err := mc.Set(ctx, r, buf); err != nil {
 			t.Fatalf("Error setting %q in cache: %s", d.GetHash(), err.Error())
@@ -353,9 +353,9 @@ func TestLRU(t *testing.T) {
 	// Now write one more digest, which should evict the oldest digest,
 	// (the second one we wrote).
 	d, buf := testdigest.NewRandomDigestBuf(t, 400)
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:    d,
-		CacheType: resource.CacheType_CAS,
+		CacheType: rspb.CacheType_CAS,
 	}
 	if err := mc.Set(ctx, r, buf); err != nil {
 		t.Fatal(err)

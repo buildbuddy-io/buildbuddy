@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/store"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -42,6 +41,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 	dbConfig "github.com/lni/dragonboat/v3/config"
 )
@@ -333,7 +333,7 @@ func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstan
 	return user.GetGroupID(), DefaultPartitionID, nil
 }
 
-func (rc *RaftCache) makeFileRecord(ctx context.Context, r *resource.ResourceName) (*rfpb.FileRecord, error) {
+func (rc *RaftCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {
 	_, err := digest.Validate(r.GetDigest())
 	if err != nil {
 		return nil, err
@@ -363,7 +363,7 @@ func (rc *RaftCache) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
 	return pebbleKey.Bytes(filestore.Version2)
 }
 
-func (rc *RaftCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -406,7 +406,7 @@ func (rwc *raftWriteCloser) Close() error {
 	return nil
 }
 
-func (rc *RaftCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	fileRecord, err := rc.makeFileRecord(ctx, r)
 	if err != nil {
 		return nil, err
@@ -461,19 +461,19 @@ func (rc *RaftCache) Stop() error {
 	return nil
 }
 
-func (rc *RaftCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
-	missing, err := rc.findMissingResourceNames(ctx, []*resource.ResourceName{r})
+func (rc *RaftCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+	missing, err := rc.findMissingResourceNames(ctx, []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
 	return len(missing) == 0, nil
 }
 
-func (rc *RaftCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (rc *RaftCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames []*resource.ResourceName) ([]*sender.KeyMeta, error) {
+func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames []*rspb.ResourceName) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
 	for _, rn := range resourceNames {
 		fileRecord, err := rc.makeFileRecord(ctx, rn)
@@ -489,7 +489,7 @@ func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames 
 	return keys, nil
 }
 
-func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames []*resource.ResourceName) ([]*repb.Digest, error) {
+func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames []*rspb.ResourceName) ([]*repb.Digest, error) {
 	keys, err := rc.resourceNamesToKeyMetas(ctx, resourceNames)
 	if err != nil {
 		return nil, err
@@ -524,11 +524,11 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 	return missingDigests, nil
 }
 
-func (rc *RaftCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (rc *RaftCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	return rc.findMissingResourceNames(ctx, resources)
 }
 
-func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte, error) {
+func (rc *RaftCache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
 	r, err := rc.Reader(ctx, rn, 0, 0)
 	if err != nil {
 		return nil, err
@@ -537,7 +537,7 @@ func (rc *RaftCache) Get(ctx context.Context, rn *resource.ResourceName) ([]byte
 	return io.ReadAll(r)
 }
 
-func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	keys, err := rc.resourceNamesToKeyMetas(ctx, resources)
 	if err != nil {
 		return nil, err
@@ -572,7 +572,7 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*resource.Resourc
 	return dataMap, nil
 }
 
-func (rc *RaftCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (rc *RaftCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	wc, err := rc.Writer(ctx, r)
 	if err != nil {
 		return err
@@ -583,11 +583,11 @@ func (rc *RaftCache) Set(ctx context.Context, r *resource.ResourceName, data []b
 	return wc.Close()
 }
 
-func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (rc *RaftCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	return nil
 }
 
-func (rc *RaftCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (rc *RaftCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return nil
 }
 
