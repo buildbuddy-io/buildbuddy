@@ -343,8 +343,15 @@ type UserDB interface {
 	InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (string, error)
 	GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error)
 	GetGroupByURLIdentifier(ctx context.Context, urlIdentifier string) (*tables.Group, error)
-	AddUserToGroup(ctx context.Context, userID string, groupID string) error
-	RequestToJoinGroup(ctx context.Context, userID string, groupID string) error
+
+	// RequestToJoinGroup performs an attempt for the authenticated user to join
+	// the given group. If the user email matches the group's owned domain, the
+	// user is immediately added to the group. Otherwise, a pending membership
+	// request is submitted. The return value is the user's new membership
+	// status within the group after the transaction is performed (either
+	// REQUESTED or MEMBER).
+	RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error)
+
 	GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error

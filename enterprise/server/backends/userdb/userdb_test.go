@@ -94,6 +94,17 @@ func takeOwnershipOfDomain(t *testing.T, ctx context.Context, env environment.En
 	require.NoError(t, err)
 }
 
+func getGroupRole(t *testing.T, ctx context.Context, env environment.Env, groupID string) *tables.GroupRole {
+	tu, err := env.GetUserDB().GetUser(ctx)
+	require.NoError(t, err)
+	for _, gr := range tu.Groups {
+		if gr.Group.GroupID == groupID {
+			return gr
+		}
+	}
+	return nil
+}
+
 func stringPointer(val string) *string {
 	return &val
 }
@@ -367,47 +378,6 @@ func TestInsertOrUpdateGroup(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAddUserToGroup_AddsUserWithDefaultRole(t *testing.T) {
-	env := newTestEnv(t)
-	flags.Set(t, "app.create_group_per_user", true)
-	flags.Set(t, "app.no_default_user_group", true)
-	udb := env.GetUserDB()
-	ctx := context.Background()
-
-	// Create some users (in different orgs)
-	createUser(t, ctx, env, "US1", "org1.io")
-	createUser(t, ctx, env, "US2", "org2.io")
-
-	// Get US1's self owned group
-	ctx1 := authUserCtx(ctx, env, t, "US1")
-	u, err := udb.GetUser(ctx1)
-	require.NoError(t, err)
-	require.Len(t, u.Groups, 1, "cloud users should be added to their self-owned group")
-	us1Group := u.Groups[0].Group
-
-	// Try adding US2 to it without proper auth; should fail.
-	err = udb.AddUserToGroup(ctx, "US2", us1Group.GroupID)
-	require.Truef(
-		t, status.IsUnauthenticatedError(err),
-		"expected Unauthenticated error adding US2 to GR1 as anonymous user; got: %s ", err)
-
-	ctx2 := authUserCtx(ctx, env, t, "US2")
-	err = udb.AddUserToGroup(ctx2, "US2", us1Group.GroupID)
-	require.Truef(
-		t, status.IsPermissionDeniedError(err),
-		"expected PermissionDenied error adding US2 to GR1 as US2; got: %s ", err)
-
-	err = udb.AddUserToGroup(ctx1, "US2", us1Group.GroupID)
-	require.NoError(t, err, "US1 should be able to add US2 to GR1")
-
-	// Make sure they were added with the proper role
-	groupUsers, err := udb.GetGroupUsers(ctx1, us1Group.GroupID, []grp.GroupMembershipStatus{grp.GroupMembershipStatus_MEMBER})
-	require.NoError(t, err)
-	require.Len(t, groupUsers, 2, "US1's group should have 2 members after adding US2")
-	us2 := findGroupUser(t, "US2", groupUsers)
-	require.Equal(t, grpb.Group_DEVELOPER_ROLE, us2.Role, "users should have default role after being added to another group")
-}
-
 func TestCreateGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.create_group_per_user", true)
@@ -432,33 +402,6 @@ func TestCreateGroup(t *testing.T) {
 	require.Len(t, groupUsers, 1)
 	gu := groupUsers[0]
 	require.Equal(t, grpb.Group_ADMIN_ROLE, gu.Role, "users should have admin role when added to a new group")
-}
-
-func TestAddUserToGroup_UserPreviouslyRequestedAccess_UpdatesMembershipStatus(t *testing.T) {
-	env := newTestEnv(t)
-	flags.Set(t, "app.create_group_per_user", true)
-	flags.Set(t, "app.no_default_user_group", true)
-	udb := env.GetUserDB()
-	ctx := context.Background()
-
-	// Create a user
-	createUser(t, ctx, env, "US1", "org1.io")
-	ctx1 := authUserCtx(ctx, env, t, "US1")
-	groupID1 := getGroup(t, ctx1, env).Group.GroupID
-
-	// Now create user US2, also with @org1.io email.
-	// Note, the group does not own the org1.io domain, so US2 shouldn't be
-	// auto-added to the group.
-	createUser(t, ctx, env, "US2", "org1.io")
-	ctx2 := authUserCtx(ctx, env, t, "US2")
-
-	// Have US2 *request* to join US1's group
-	err := udb.RequestToJoinGroup(ctx2, "US2", groupID1)
-	require.NoError(t, err)
-
-	// Now *add* US2 to the group; should update their membership request.
-	err = udb.AddUserToGroup(ctx1, "US2", groupID1)
-	require.NoError(t, err)
 }
 
 func TestUpdateGroupUsers_RoleAuth(t *testing.T) {
@@ -725,7 +668,9 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 
 	// Add US1 to US2's group, and sanity check that they have developer
 	// role.
-	err = udb.AddUserToGroup(ctx1, "US2", groupID1)
+	err = udb.UpdateGroupUsers(ctx1, groupID1, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US2"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+	})
 	require.NoError(t, err)
 	users, err := udb.GetGroupUsers(ctx1, groupID1, []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER})
 	require.NoError(t, err)
@@ -839,7 +784,9 @@ func TestDeleteAPIKey(t *testing.T) {
 	require.Empty(t, keys, "US1 group's keys should be empty after deleting")
 
 	// Have US3 join org1 (as a developer)
-	err = udb.AddUserToGroup(ctx1, "US3", gr1.Group.GroupID)
+	err = udb.UpdateGroupUsers(ctx1, gr1.Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US3"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD},
+	})
 	require.NoError(t, err)
 	// Re-authenticate with the new group role
 	ctx3 = authUserCtx(ctx, env, t, "US3")
@@ -1185,4 +1132,141 @@ func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 	keys, err = udb.GetAPIKeys(ctx1, g.GroupID)
 	require.NoError(t, err)
 	require.Empty(t, keys)
+}
+
+func TestRequestToJoinGroup_DomainNonMember_CreatesRequest(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grp.GroupMembershipStatus_REQUESTED, s)
+	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
+
+	// Submit the same request again; should get AlreadyExists and should still
+	// not be a member of the group.
+	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
+	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
+}
+
+func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	createUser(t, ctx, env, "US2", "org1.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	// Note: US1 takes ownership of org1.io *after* US2 is created,
+	// so US2 doesn't get auto-added to org1.io
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grp.GroupMembershipStatus_MEMBER, s)
+	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+
+	// Try to join again via domain association; should get AlreadyExists and
+	// group role should remain the same.
+	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
+	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+}
+
+func TestRequestToJoinGroup_DomainMember_EmptyGroup_GetsAdminRole(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	createUser(t, ctx, env, "US2", "org1.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	// Note: US1 takes ownership of org1.io *after* US2 is created,
+	// so US2 doesn't get auto-added to org1.io
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+	// Have US1 leave GR1 to make the group empty.
+	err := udb.UpdateGroupUsers(ctx1, "GR1", []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US1"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE},
+	})
+	require.NoError(t, err)
+
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grp.GroupMembershipStatus_MEMBER, s)
+	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+}
+
+func TestRequestToJoinGroup_DomainMember_AlreadyInGroup_GetAlreadyExistsError(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+	// Since US1 took domain ownership of org1.io, US2 should be auto-added.
+	createUser(t, ctx, env, "US2", "org1.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+}
+
+func TestRequestToJoinGroup_DomainMember_AlreadyRequested_GetDeveloperRole(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	// Slightly complex setup: US1 (@org1.io) creates a group, US2 (also
+	// @org1.io) requests to join it, then US1 takes domain ownership of
+	// org1.io. If US2 tries to join again, they should be auto-added by domain
+	// association, and with *developer* role.
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	createUser(t, ctx, env, "US2", "org1.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, s)
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+
+	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
+	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
+}
+
+func TestRequestToJoinGroup_DomainMember_AlreadyRequested_EmptyGroup_GetAdminRole(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	// Complex setup: US1 (@org1.io) creates a group, US2 (also @org1.io)
+	// requests to join it, then US1 takes domain ownership of org1.io. Then US1
+	// leaves the group. If US2 tries to join again, they should be auto-added
+	// by domain association, and be auto-promoted to admin because the group is
+	// emtpy.
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	createUser(t, ctx, env, "US2", "org1.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_REQUESTED, s)
+	takeOwnershipOfDomain(t, ctx1, env, "US1")
+	err = udb.UpdateGroupUsers(ctx1, "GR1", []*grpb.UpdateGroupUsersRequest_Update{
+		{UserId: &uidpb.UserId{Id: "US1"}, MembershipAction: grpb.UpdateGroupUsersRequest_Update_REMOVE},
+	})
+	require.NoError(t, err)
+
+	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
+	require.NoError(t, err)
+	require.Equal(t, grpb.GroupMembershipStatus_MEMBER, s)
+	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
 }
