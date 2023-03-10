@@ -52,6 +52,7 @@ ts_library(
     deps = [
         "//app/auth:user",
         "//app/capabilities",
+        "//app/components/button",
         "//app/components/select",
         "//app/components/spinner",
         "//app/router",
@@ -62,6 +63,7 @@ ts_library(
         "//proto:invocation_ts_proto",
         "//proto:stat_filter_ts_proto",
         "//proto:stats_ts_proto",
+        "//proto:timestamp_ts_proto",
         "@npm//@types/long",
         "@npm//@types/react",
         "@npm//long",

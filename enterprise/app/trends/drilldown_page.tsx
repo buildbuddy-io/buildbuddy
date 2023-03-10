@@ -12,7 +12,7 @@ import FilledButton, { OutlinedButton } from "../../../app/components/button/but
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
-import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
+import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 import { usecToTimestamp } from "../../../app/util/proto";
 import { getProtoFilterParams, isExecutionMetric } from "../filter/filter_util";
 import { HeatmapComponent, HeatmapSelection } from "./heatmap";
@@ -244,7 +244,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       pageToken: "",
       count: 25,
     });
-    this.addZoomFiltersToQuery(request.query);
+    this.addZoomFiltersToQuery(request.query!);
 
     rpcService.service
       .searchInvocation(request)
@@ -334,11 +334,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   addZoomFiltersToQuery(
-    // A little bit of duck typing for TrendQuery and InvocationQuery
+    // A little bit of structural typing for TrendQuery and InvocationQuery
     query: {
-      updatedBefore: google_timestamp.proto.Timestamp;
-      updatedAfter: google_timestamp.proto.Timestamp;
-      filter: stat_filter.StatFilter[];
+      updatedBefore?: google_timestamp.protobuf.Timestamp | null;
+      updatedAfter?: google_timestamp.protobuf.Timestamp | null;
+      filter?: stat_filter.StatFilter[];
     }
   ) {
     console.log(this.currentZoomFilters);
