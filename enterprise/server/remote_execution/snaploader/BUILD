@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -12,5 +12,20 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/hash",
         "//server/util/status",
+    ],
+)
+
+go_test(
+    name = "snaploader_test",
+    srcs = ["snaploader_test.go"],
+    deps = [
+        ":snaploader",
+        "//enterprise/server/remote_execution/filecache",
+        "//proto:remote_execution_go_proto",
+        "//server/environment",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/hash",
+        "@com_github_stretchr_testify//require",
     ],
 )
