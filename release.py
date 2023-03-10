@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+from github import Github
 import re
 import subprocess
 import sys
@@ -44,6 +45,11 @@ def workspace_is_clean():
                          shell=True, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)
     return len(p.stdout.readlines()) == 0
+
+def is_draft_release(version_tag):
+    g = Github()
+    release = g.get_repo("buildbuddy-io/buildbuddy").get_release(version_tag)
+    return release.draft
 
 def bump_patch_version(version):
     parts = version.split(".")
@@ -145,9 +151,6 @@ def main():
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     args = parser.parse_args()
 
-    bump_version = not args.skip_version_bump
-    update_latest_tag = not args.skip_latest_tag
-
     if workspace_is_clean():
         print("Workspace is clean!")
     elif args.allow_dirty:
@@ -157,6 +160,7 @@ def main():
             'Please run this in a clean workspace!')
 
     old_version = get_latest_remote_version()
+    bump_version = not(args.skip_version_bump or is_draft_release(old_version))
     new_version = old_version
     if bump_version:
         new_version = bump_patch_version(old_version)
@@ -171,6 +175,7 @@ def main():
         create_and_push_tag(old_version, new_version, release_notes)
         print("Pushed tag for new version %s" % new_version)
 
+    update_latest_tag = not args.skip_latest_tag
     update_docker_images(new_version, update_latest_tag)
     print("Pushed docker images for new version %s" % new_version)
     print("Done -- proceed with the release guide!")
