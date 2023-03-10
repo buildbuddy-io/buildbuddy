@@ -8,7 +8,10 @@ go_test(
     data = [
         "//enterprise/server/test/integration/remote_execution/command:testcommand",
     ],
-    shard_count = 32,
+    # Shard count is intentionally somewhat small here to avoid
+    # excessive cache transfer for each test shard action, since this test
+    # pulls in a lot of dependencies.
+    shard_count = 4,
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
