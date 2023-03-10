@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools",
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/cachetools",

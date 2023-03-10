@@ -58,8 +58,12 @@ func runByteStreamServer(ctx context.Context, env *testenv.TestEnv, t *testing.T
 }
 
 func readBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer, offset int64) error {
+	downloadString, err := r.DownloadString()
+	if err != nil {
+		return err
+	}
 	req := &bspb.ReadRequest{
-		ResourceName: r.DownloadString(),
+		ResourceName: downloadString,
 		ReadOffset:   offset,
 		ReadLimit:    r.GetDigest().GetSizeBytes(),
 	}
@@ -185,7 +189,7 @@ func TestRPCWrite(t *testing.T) {
 
 	// Test that a regular bytestream upload works.
 	d, readSeeker := testdigest.NewRandomDigestReader(t, 1000)
-	instanceNameDigest := digest.NewGenericResourceName(d, "")
+	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS)
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +204,7 @@ func TestRPCMalformedWrite(t *testing.T) {
 
 	// Test that a malformed upload (incorrect digest) is rejected.
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
-	instanceNameDigest := digest.NewGenericResourceName(d, "")
+	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS)
 	buf[0] = ^buf[0] // flip bits in byte to corrupt digest.
 
 	readSeeker := bytes.NewReader(buf)
@@ -219,7 +223,7 @@ func TestRPCTooLongWrite(t *testing.T) {
 	// Test that a malformed upload (wrong bytesize) is rejected.
 	d, buf := testdigest.NewRandomDigestBuf(t, 1000)
 	d.SizeBytes += 1 // increment expected byte count by 1 to trigger mismatch.
-	instanceNameDigest := digest.NewGenericResourceName(d, "")
+	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS)
 
 	readSeeker := bytes.NewReader(buf)
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
@@ -239,7 +243,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	require.NoError(t, err)
 	d, err := digest.Compute(strings.NewReader(blob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
-	instanceNameDigest := digest.NewGenericResourceName(d, "")
+	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS)
 
 	// Write
 	_, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, strings.NewReader(blob))

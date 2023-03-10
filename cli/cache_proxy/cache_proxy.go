@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -214,7 +215,7 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 		if err != nil {
 			if err == io.EOF {
 				if localFile != nil {
-					resourceName := digest.NewGenericResourceName(d, instanceName)
+					resourceName := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS)
 					if _, err := cachetools.UploadFromReader(ctx, p.localBSSClient, resourceName, localFile); err != nil {
 						log.Errorf("error uploading from reader: %s", err.Error())
 					}

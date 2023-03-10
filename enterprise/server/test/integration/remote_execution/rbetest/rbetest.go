@@ -77,6 +77,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -955,7 +956,7 @@ func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, 
 func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {
 	stdout := ""
 	if actionResult.GetStdoutDigest() != nil {
-		d := digest.NewGenericResourceName(actionResult.GetStdoutDigest(), instanceName)
+		d := digest.NewResourceName(actionResult.GetStdoutDigest(), instanceName, rspb.CacheType_CAS)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetDigest().GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {
@@ -966,7 +967,7 @@ func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionR
 
 	stderr := ""
 	if actionResult.GetStderrDigest() != nil {
-		d := digest.NewGenericResourceName(actionResult.GetStderrDigest(), instanceName)
+		d := digest.NewResourceName(actionResult.GetStderrDigest(), instanceName, rspb.CacheType_CAS)
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetDigest().GetSizeBytes()))
 		err := cachetools.GetBlob(ctx, r.GetByteStreamClient(), d, buf)
 		if err != nil {

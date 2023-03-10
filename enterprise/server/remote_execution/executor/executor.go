@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -157,7 +158,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	task := st.ExecutionTask
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
-	adInstanceDigest := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
+	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC)
 
 	acClient := s.env.GetActionCacheClient()
 
@@ -307,7 +308,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		if err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}
-		adInstanceDigest = digest.NewGenericResourceName(resultDigest, req.GetInstanceName())
+		adInstanceDigest = digest.NewResourceName(resultDigest, req.GetInstanceName(), rspb.CacheType_AC)
 	}
 	if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))

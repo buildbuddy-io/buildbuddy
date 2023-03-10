@@ -57,8 +57,12 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 		return 0, nil
 	}
 
+	downloadString, err := r.DownloadString()
+	if err != nil {
+		return 0, err
+	}
 	req := &bspb.ReadRequest{
-		ResourceName: r.DownloadString(),
+		ResourceName: downloadString,
 		ReadOffset:   opts.Offset,
 		ReadLimit:    opts.Limit,
 	}
@@ -111,7 +115,7 @@ func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.ResourceName,
 	if err != nil {
 		return nil, err
 	}
-	return digest.NewGenericResourceName(d, instanceName), nil
+	return digest.NewResourceName(d, instanceName, rspb.CacheType_CAS), nil
 }
 
 func ComputeFileDigest(fullFilePath, instanceName string) (*digest.ResourceName, error) {
@@ -189,6 +193,9 @@ func GetActionResult(ctx context.Context, acClient repb.ActionCacheClient, ar *d
 	if acClient == nil {
 		return nil, status.FailedPreconditionError("ActionCacheClient not configured")
 	}
+	if ar.GetCacheType() != rspb.CacheType_AC {
+		return nil, status.InvalidArgumentError("Cannot download non-AC resource from action cache")
+	}
 	req := &repb.GetActionResultRequest{
 		ActionDigest: ar.GetDigest(),
 		InstanceName: ar.GetInstanceName(),
@@ -200,6 +207,10 @@ func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r 
 	if acClient == nil {
 		return status.FailedPreconditionError("ActionCacheClient not configured")
 	}
+	if r.GetCacheType() != rspb.CacheType_AC {
+		return status.InvalidArgumentError("Cannot upload non-AC resource to action cache")
+	}
+
 	req := &repb.UpdateActionResultRequest{
 		InstanceName: r.GetInstanceName(),
 		ActionDigest: r.GetDigest(),
@@ -256,6 +267,9 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 }
 
 func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out proto.Message) error {
+	if r.GetCacheType() != rspb.CacheType_CAS {
+		return status.InvalidArgumentError("Cannot download non-CAS resource from CAS cache")
+	}
 	buf := bytes.NewBuffer(make([]byte, 0, r.GetDigest().GetSizeBytes()))
 	if err := GetBlob(ctx, bsClient, r, buf); err != nil {
 		return err
@@ -269,7 +283,7 @@ func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 		return nil, nil, status.WrapErrorf(err, "could not fetch action")
 	}
 	cmd := &repb.Command{}
-	if err := GetBlobAsProto(ctx, bsClient, digest.NewGenericResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName()), cmd); err != nil {
+	if err := GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), rspb.CacheType_CAS), cmd); err != nil {
 		return nil, nil, status.WrapErrorf(err, "could not fetch command")
 	}
 	return action, cmd, nil
@@ -442,7 +456,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	}
 
 	if d.GetSizeBytes() > gRPCMaxSize {
-		resourceName := digest.NewGenericResourceName(d, ul.instanceName)
+		resourceName := digest.NewResourceName(d, ul.instanceName, rspb.CacheType_CAS)
 		resourceName.SetCompressor(compressor)
 
 		byteStreamClient := ul.env.GetByteStreamClient()
