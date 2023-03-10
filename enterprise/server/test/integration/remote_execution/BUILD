@@ -8,7 +8,7 @@ go_test(
     data = [
         "//enterprise/server/test/integration/remote_execution/command:testcommand",
     ],
-    shard_count = 32,
+    shard_count = 4,
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
