@@ -289,16 +289,16 @@ http_archive(
     urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/fd351ca8f152d66fc97f9d98009e0ae000854e8f.tar.gz"],
 )
 
-load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
-
-buildbuddy_deps()
-
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
-
-buildbuddy(
-    name = "buildbuddy_toolchain",
-    container_image = UBUNTU20_04_IMAGE,
-)
+# load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
+#
+# buildbuddy_deps()
+#
+# load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
+#
+# buildbuddy(
+#     name = "buildbuddy_toolchain",
+#     container_image = UBUNTU20_04_IMAGE,
+# )
 
 http_archive(
     name = "cloudprober",
@@ -363,4 +363,22 @@ http_file(
     downloaded_file_path = "rds-combined-ca-bundle.pem",
     sha256 = "6a8ba1c9f858386edba0ea82b7bf8168ef513d1eb0df3a08cc7cf4bb89f856d0",
     url = "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem",
+)
+
+http_archive(
+    name = "bazel-zig-cc",
+    sha256 = "e9f82bfb74b3df5ca0e67f4d4989e7f1f7ce3386c295fd7fda881ab91f83e509",
+    strip_prefix = "bazel-zig-cc-v1.0.1",
+    urls = ["https://github.com/uber/bazel-zig-cc/archive/v1.0.1.tar.gz"],
+)
+
+load("@bazel-zig-cc//toolchain:defs.bzl", zig_toolchains = "toolchains")
+
+zig_toolchains()
+
+register_toolchains(
+    "@zig_sdk//toolchain:linux_amd64_gnu.2.34",
+    "@zig_sdk//toolchain:linux_arm64_gnu.2.34",
+    "@zig_sdk//toolchain:darwin_amd64",
+    "@zig_sdk//toolchain:darwin_arm64",
 )

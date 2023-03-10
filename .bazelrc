@@ -24,9 +24,7 @@ build:cache --experimental_remote_cache_compression
 
 # Flags shared across remote configs
 build:remote-shared --remote_upload_local_results
-build:remote-shared --host_platform=@buildbuddy_toolchain//:platform
-build:remote-shared --platforms=@buildbuddy_toolchain//:platform
-build:remote-shared --crosstool_top=@buildbuddy_toolchain//:toolchain
+build:remote-shared --platforms=@zig_sdk//platform:linux_amd64
 build:remote-shared --extra_toolchains=//:sh_toolchain
 build:remote-shared --remote_timeout=600
 build:remote-shared --remote_download_minimal
@@ -126,6 +124,9 @@ build --enable_runfiles
 # Use syscall to create symlink in-process.
 # Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
 build --experimental_inprocess_symlink_creation
+
+# Detects cc toolchain automatically
+build --incompatible_enable_cc_toolchain_resolution
 
 # Don't build or run Docker tests by default, to avoid a hard dependency
 # on Docker for development.
