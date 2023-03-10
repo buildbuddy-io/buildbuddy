@@ -307,6 +307,9 @@ type FirecrackerContainer struct {
 	rmOnce *sync.Once
 	rmErr  error
 
+	// Whether networking has been set up (and needs to be cleaned up).
+	isNetworkSetup bool
+
 	// dockerClient is used to optimize image pulls by reusing image layers from
 	// the Docker cache as well as deduping multiple requests for the same image.
 	dockerClient *dockerclient.Client
@@ -1110,6 +1113,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	if !c.constants.EnableNetworking {
 		return nil
 	}
+	c.isNetworkSetup = true
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1165,9 +1169,11 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
-	if !c.constants.EnableNetworking {
+	if !c.isNetworkSetup {
 		return nil
 	}
+	c.isNetworkSetup = false
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
