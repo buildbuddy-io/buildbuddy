@@ -82,7 +82,7 @@ func TestParseResourceName(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		gotParsed, gotErr := parseResourceName(tc.resourceName, tc.matcher)
+		gotParsed, gotErr := parseResourceName(tc.resourceName, tc.matcher, rspb.CacheType_CAS)
 		if gstatus.Code(gotErr) != gstatus.Code(tc.wantError) {
 			t.Errorf("parseResourceName(%q) got err %v; want %v", tc.resourceName, gotErr, tc.wantError)
 			continue
