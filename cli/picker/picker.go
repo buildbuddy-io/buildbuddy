@@ -33,7 +33,7 @@ func HandlePicker(args []string) []string {
 	}
 
 	// If it's a run, query executable targets.
-	queryArgs := []string{"query", `kind(.*_binary, //...) union kind(.*_application, //...) union attr(executable, 1, //...)`}
+	queryArgs := []string{"query", "--keep_going", `kind(".*_(binary|application)", ...) + attr(executable, 1, ...)`}
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	opts := &bazelisk.RunOpts{Stdout: stdout, Stderr: stderr}
