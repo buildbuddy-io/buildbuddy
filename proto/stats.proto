@@ -189,8 +189,21 @@ message DrilldownEntry {
   int64 selection_value = 3;
 }
 
+enum DrilldownType {
+  UNKNOWN_DRILLDOWN_TYPE = 0;
+  USER_DRILLDOWN_TYPE = 1;
+  HOSTNAME_DRILLDOWN_TYPE = 2;
+  GROUP_ID_DRILLDOWN_TYPE = 3;
+  REPO_URL_DRILLDOWN_TYPE = 4;
+  COMMIT_SHA_DRILLDOWN_TYPE = 5;
+  DATE_DRILLDOWN_TYPE = 6;
+  BRANCH_DRILLDOWN_TYPE = 7;
+  PATTERN_DRILLDOWN_TYPE = 8;
+  WORKER_DRILLDOWN_TYPE = 9;
+}
+
 message DrilldownChart {
-  invocation.AggType drilldown_dimension = 1;
+  DrilldownType drilldown_type = 1;
   repeated DrilldownEntry entry = 2;
 }
 

@@ -358,60 +358,62 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     );
   }
 
-  handleBarClick(a: invocation.AggType, e?: CategoricalChartState) {
+  handleBarClick(d: stats.DrilldownType, e?: CategoricalChartState) {
     if (!e || !e.activeLabel) {
       return;
     }
-    switch (a) {
-      case invocation.AggType.USER_AGGREGATION_TYPE:
+    switch (d) {
+      case stats.DrilldownType.USER_DRILLDOWN_TYPE:
         router.setQueryParam("user", e.activeLabel);
         return;
-      case invocation.AggType.HOSTNAME_AGGREGATION_TYPE:
+      case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
         router.setQueryParam("host", e.activeLabel);
         return;
-      case invocation.AggType.REPO_URL_AGGREGATION_TYPE:
+      case stats.DrilldownType.REPO_URL_DRILLDOWN_TYPE:
         router.setQueryParam("repo", e.activeLabel);
         return;
-      case invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE:
+      case stats.DrilldownType.COMMIT_SHA_DRILLDOWN_TYPE:
         router.setQueryParam("commit", e.activeLabel);
         return;
-      case invocation.AggType.BRANCH_AGGREGATION_TYPE:
+      case stats.DrilldownType.BRANCH_DRILLDOWN_TYPE:
         router.setQueryParam("branch", e.activeLabel);
         return;
-      case invocation.AggType.PATTERN_AGGREGATION_TYPE:
+      case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         if (capabilities.config.patternFilterEnabled) {
           router.setQueryParam("pattern", e.activeLabel);
         }
         return;
-      case invocation.AggType.GROUP_ID_AGGREGATION_TYPE:
-      case invocation.AggType.DATE_AGGREGATION_TYPE:
+      case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
+      case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
         return;
     }
   }
 
-  formatAggType(a: invocation.AggType) {
-    switch (a) {
-      case invocation.AggType.USER_AGGREGATION_TYPE:
+  formatDrilldownType(d: stats.DrilldownType) {
+    switch (d) {
+      case stats.DrilldownType.USER_DRILLDOWN_TYPE:
         return "user";
-      case invocation.AggType.HOSTNAME_AGGREGATION_TYPE:
+      case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
         return "host";
-      case invocation.AggType.GROUP_ID_AGGREGATION_TYPE:
+      case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
         return "group_id";
-      case invocation.AggType.REPO_URL_AGGREGATION_TYPE:
+      case stats.DrilldownType.REPO_URL_DRILLDOWN_TYPE:
         return "repo_url";
-      case invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE:
+      case stats.DrilldownType.COMMIT_SHA_DRILLDOWN_TYPE:
         return "commit_sha";
-      case invocation.AggType.BRANCH_AGGREGATION_TYPE:
+      case stats.DrilldownType.BRANCH_DRILLDOWN_TYPE:
         return "branch_name";
-      case invocation.AggType.PATTERN_AGGREGATION_TYPE:
+      case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         return "pattern";
+      case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
+        return "worker (execution)";
       default:
         return "???";
     }
   }
 
-  renderCustomTooltip(aggType: string, p: TooltipProps<any, any>) {
+  renderCustomTooltip(drilldownType: string, p: TooltipProps<any, any>) {
     if (!this.state.drilldownData) {
       return null;
     }
@@ -419,7 +421,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return (
         <div className="trend-chart-hover">
           <div>
-            {aggType}: {p.label}
+            {drilldownType}: {p.label}
           </div>
           <div>
             Base:{" "}
@@ -578,13 +580,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                             chart.entry.length > 1 && (
                               <div className="drilldown-page-dd-chart">
                                 <div className="drilldown-page-dd-chart-title">
-                                  {this.formatAggType(chart.drilldownDimension)}
+                                  {this.formatDrilldownType(chart.drilldownType)}
                                 </div>
                                 <BarChart
                                   width={300}
                                   height={200}
                                   data={chart.entry}
-                                  onClick={this.handleBarClick.bind(this, chart.drilldownDimension)}>
+                                  onClick={this.handleBarClick.bind(this, chart.drilldownType)}>
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis
                                     interval="preserveStart"
@@ -593,7 +595,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                   <Tooltip
                                     content={this.renderCustomTooltip.bind(
                                       this,
-                                      this.formatAggType(chart.drilldownDimension)
+                                      this.formatDrilldownType(chart.drilldownType)
                                     )}
                                   />
                                   <Bar
