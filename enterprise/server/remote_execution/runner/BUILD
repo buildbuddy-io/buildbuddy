@@ -22,6 +22,7 @@ go_library(
         "//enterprise/server/util/vfs_server",
         "//proto:acl_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:user_id_go_proto",
         "//proto:vfs_go_proto",

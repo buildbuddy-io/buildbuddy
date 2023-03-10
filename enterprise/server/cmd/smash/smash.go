@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -137,7 +138,7 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 
 func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName, err := digest.NewGenericResourceName(d, *instanceName).UploadString()
+	resourceName, err := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS).UploadString()
 	if err != nil {
 		log.Fatalf("Error computing upload resource name: %s", err)
 	}
@@ -157,9 +158,13 @@ func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 func readDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	randomDigest := preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 
-	resourceName := digest.NewGenericResourceName(randomDigest, *instanceName).DownloadString()
+	downloadString, err := digest.NewResourceName(randomDigest, *instanceName, rspb.CacheType_CAS).DownloadString()
+	if err != nil {
+		log.Fatalf("Error computing download string: %s", err)
+	}
+
 	rr := &bspb.ReadRequest{
-		ResourceName: resourceName,
+		ResourceName: downloadString,
 		ReadOffset:   0,
 		ReadLimit:    0,
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -271,7 +272,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	command := &Command{
 		gRPCClientSource:   c.gRPClientSource,
 		Name:               name,
-		actionResourceName: digest.NewGenericResourceName(actionDigest, instanceName),
+		actionResourceName: digest.NewResourceName(actionDigest, instanceName, rspb.CacheType_AC),
 	}
 
 	return command, nil
@@ -283,7 +284,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(filepath.Dir(path), 0777); err != nil {
 			return err
 		}
-		d := digest.NewGenericResourceName(out.GetDigest(), res.InstanceName)
+		d := digest.NewResourceName(out.GetDigest(), res.InstanceName, rspb.CacheType_CAS)
 		f, err := os.Create(path)
 		if err != nil {
 			return err
@@ -299,7 +300,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := os.MkdirAll(path, 0777); err != nil {
 			return err
 		}
-		treeDigest := digest.NewGenericResourceName(dir.GetTreeDigest(), res.InstanceName)
+		treeDigest := digest.NewResourceName(dir.GetTreeDigest(), res.InstanceName, rspb.CacheType_CAS)
 		tree := &repb.Tree{}
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err

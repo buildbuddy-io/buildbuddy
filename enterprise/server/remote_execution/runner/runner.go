@@ -53,6 +53,7 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
@@ -269,10 +270,10 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 }
 
 func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
-	rootInstanceDigest := digest.NewGenericResourceName(
+	rootInstanceDigest := digest.NewResourceName(
 		r.task.GetAction().GetInputRootDigest(),
-		r.task.GetExecuteRequest().GetInstanceName(),
-	)
+		r.task.GetExecuteRequest().GetInstanceName(), rspb.CacheType_CAS)
+
 	inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return err

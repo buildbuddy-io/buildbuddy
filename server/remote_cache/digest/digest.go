@@ -127,6 +127,10 @@ func (r *ResourceName) GetInstanceName() string {
 	return r.rn.GetInstanceName()
 }
 
+func (r *ResourceName) GetCacheType() rspb.CacheType {
+	return r.rn.GetCacheType()
+}
+
 func (r *ResourceName) GetCompressor() repb.Compressor_Value {
 	return r.rn.GetCompressor()
 }
@@ -137,18 +141,24 @@ func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 
 // DownloadString returns a string representing the resource name for download
 // purposes.
-func (r *ResourceName) DownloadString() string {
+func (r *ResourceName) DownloadString() (string, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_CAS {
+		return "", status.FailedPreconditionError("Cannot compute bytestream download string for non-CAS resource name")
+	}
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	return fmt.Sprintf(
 		"%s/%s/%s/%d",
 		instanceName, blobTypeSegment(r.GetCompressor()),
-		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
+		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
 }
 
 // UploadString returns a string representing the resource name for upload
 // purposes.
 func (r *ResourceName) UploadString() (string, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_CAS {
+		return "", status.FailedPreconditionError("Cannot compute bytestream upload string for non-CAS resource name")
+	}
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	u, err := guuid.NewRandom()

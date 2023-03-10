@@ -35,6 +35,7 @@ import (
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -125,12 +126,12 @@ type execution struct {
 // getExecution fetches digest contents of an ExecuteRequest.
 func getExecution(t *testing.T, ctx context.Context, te *testenv.TestEnv, executeRequest *repb.ExecuteRequest) *execution {
 	instanceName := executeRequest.GetInstanceName()
-	ar := digest.NewGenericResourceName(executeRequest.GetActionDigest(), instanceName)
+	ar := digest.NewResourceName(executeRequest.GetActionDigest(), instanceName, rspb.CacheType_CAS)
 	action := &repb.Action{}
 	err := cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), ar, action)
 	require.NoError(t, err)
 	command := &repb.Command{}
-	cr := digest.NewGenericResourceName(action.GetCommandDigest(), instanceName)
+	cr := digest.NewResourceName(action.GetCommandDigest(), instanceName, rspb.CacheType_CAS)
 	err = cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), cr, command)
 	require.NoError(t, err)
 	return &execution{

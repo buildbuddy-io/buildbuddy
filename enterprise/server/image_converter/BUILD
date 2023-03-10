@@ -12,6 +12,7 @@ go_library(
         "//enterprise/server/backends/redis_client",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/config",
         "//server/environment",
         "//server/interfaces",
