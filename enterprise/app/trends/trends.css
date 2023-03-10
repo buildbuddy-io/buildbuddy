@@ -77,6 +77,46 @@
   color: #82ca9d;
 }
 
+.drilldown-page-zoom-summary {
+  display: inline-block;
+  height: 40px;
+  margin: 0 0 0 36px;
+  vertical-align: bottom;
+}
+
+.drilldown-page-zoom-summary.zoomed {
+  /* 1px of extra margin keeps spacing consistent with the button border. */
+  margin: 0 0 0 61px;
+}
+
+.drilldown-page-zoom-filters {
+  display: inline-block;
+  vertical-align: bottom;
+  margin-left: 8px;
+  height: 40px;
+  max-height: 40px;
+}
+
+.drilldown-page-zoom-summary.zoomed .drilldown-page-zoom-filters {
+  margin-right: 16px;
+}
+
+.drilldown-page-zoom-filter-attr {
+  font-size: 14px;
+  height: 20px;
+  max-height: 20px;
+  text-align: left;
+}
+
+.drilldown-page-zoom-button {
+  margin-left: 8px;
+  max-height: 40px;
+}
+
+.drilldown-page-zoom-button.square {
+  padding: 8px;
+}
+
 .select.drilldown-page-select {
   font-size: 16px;
   margin: 0 16px;
