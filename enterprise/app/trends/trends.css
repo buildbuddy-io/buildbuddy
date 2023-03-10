@@ -84,7 +84,8 @@
   vertical-align: bottom;
 }
 
-.drilldown-page-zoom-summary.buttonless {
+.drilldown-page-zoom-summary.zoomed {
+  /* 1px of extra margin keeps spacing consistent with the button border. */
   margin: 0 0 0 61px;
 }
 
@@ -96,7 +97,7 @@
   max-height: 40px;
 }
 
-.drilldown-page-zoom-summary.buttonless .drilldown-page-zoom-filters {
+.drilldown-page-zoom-summary.zoomed .drilldown-page-zoom-filters {
   margin-right: 16px;
 }
 

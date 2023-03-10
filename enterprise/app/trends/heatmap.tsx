@@ -221,16 +221,16 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 
   maybeFireSelectionCallback() {
-    const s = this.computeHeatmapSelection();
-    if (s && this.props.selectionCallback) {
-      this.props.selectionCallback(s);
+    const selection = this.computeHeatmapSelection();
+    if (selection && this.props.selectionCallback) {
+      this.props.selectionCallback(selection);
     }
   }
 
   maybeFireZoomCallback() {
-    const s = this.computeHeatmapSelection();
-    if (s && this.props.zoomCallback) {
-      this.props.zoomCallback(s);
+    const selection = this.computeHeatmapSelection();
+    if (selection && this.props.zoomCallback) {
+      this.props.zoomCallback(selection);
     }
   }
 

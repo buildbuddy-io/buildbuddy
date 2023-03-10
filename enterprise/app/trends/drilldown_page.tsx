@@ -43,6 +43,13 @@ interface MetricOption {
   metric: stat_filter.Metric;
 }
 
+// A little bit of structural typing for TrendQuery and InvocationQuery
+type CommonQueryFields = {
+  updatedBefore?: google_timestamp.protobuf.Timestamp | null;
+  updatedAfter?: google_timestamp.protobuf.Timestamp | null;
+  filter?: stat_filter.StatFilter[];
+};
+
 const METRIC_OPTIONS: MetricOption[] = [
   {
     name: "Build duration",
@@ -282,7 +289,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
     this.addZoomFiltersToQuery(heatmapRequest.query);
 
-    console.log(heatmapRequest);
     rpcService.service
       .getStatHeatmap(heatmapRequest)
       .then((response) => {
@@ -333,15 +339,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.fetch();
   }
 
-  addZoomFiltersToQuery(
-    // A little bit of structural typing for TrendQuery and InvocationQuery
-    query: {
-      updatedBefore?: google_timestamp.protobuf.Timestamp | null;
-      updatedAfter?: google_timestamp.protobuf.Timestamp | null;
-      filter?: stat_filter.StatFilter[];
-    }
-  ) {
-    console.log(this.currentZoomFilters);
+  addZoomFiltersToQuery(query: CommonQueryFields) {
     if (!this.currentZoomFilters) {
       return;
     }
@@ -514,7 +512,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         </OutlinedButton>
       </div>
     ) : (
-      <div className="drilldown-page-zoom-summary buttonless">
+      <div className="drilldown-page-zoom-summary zoomed">
         <ZoomIn className="icon"></ZoomIn>
         {this.currentZoomFilters && (
           <div className="drilldown-page-zoom-filters">
