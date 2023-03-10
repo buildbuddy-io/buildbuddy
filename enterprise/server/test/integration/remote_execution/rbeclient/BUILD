@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/dirtools",
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",

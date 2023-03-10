@@ -27,6 +27,7 @@ go_test(
     embed = [":digest"],
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/util/compression",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",

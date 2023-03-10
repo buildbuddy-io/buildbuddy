@@ -90,16 +90,6 @@ type ResourceName struct {
 	rn *rspb.ResourceName
 }
 
-func NewGenericResourceName(d *repb.Digest, instanceName string) *ResourceName {
-	return &ResourceName{
-		rn: &rspb.ResourceName{
-			Digest:       d,
-			InstanceName: instanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-		},
-	}
-}
-
 func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType) *ResourceName {
 	return &ResourceName{
 		rn: &rspb.ResourceName{
@@ -127,6 +117,10 @@ func (r *ResourceName) GetInstanceName() string {
 	return r.rn.GetInstanceName()
 }
 
+func (r *ResourceName) GetCacheType() rspb.CacheType {
+	return r.rn.GetCacheType()
+}
+
 func (r *ResourceName) GetCompressor() repb.Compressor_Value {
 	return r.rn.GetCompressor()
 }
@@ -137,18 +131,24 @@ func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 
 // DownloadString returns a string representing the resource name for download
 // purposes.
-func (r *ResourceName) DownloadString() string {
+func (r *ResourceName) DownloadString() (string, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_CAS {
+		return "", status.FailedPreconditionError("Cannot compute bytestream download string for non-CAS resource name")
+	}
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	return fmt.Sprintf(
 		"%s/%s/%s/%d",
 		instanceName, blobTypeSegment(r.GetCompressor()),
-		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
+		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
 }
 
 // UploadString returns a string representing the resource name for upload
 // purposes.
 func (r *ResourceName) UploadString() (string, error) {
+	if r.rn.GetCacheType() != rspb.CacheType_CAS {
+		return "", status.FailedPreconditionError("Cannot compute bytestream upload string for non-CAS resource name")
+	}
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
 	u, err := guuid.NewRandom()
@@ -325,7 +325,7 @@ func isResourceName(url string, matcher *regexp.Regexp) bool {
 	return matcher.MatchString(url)
 }
 
-func parseResourceName(resourceName string, matcher *regexp.Regexp) (*ResourceName, error) {
+func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rspb.CacheType) (*ResourceName, error) {
 	match := matcher.FindStringSubmatch(resourceName)
 	result := make(map[string]string, len(match))
 	for i, name := range matcher.SubexpNames() {
@@ -363,21 +363,21 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp) (*ResourceNa
 		compressor = repb.Compressor_ZSTD
 	}
 	d := &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
-	r := NewGenericResourceName(d, instanceName)
+	r := NewResourceName(d, instanceName, cacheType)
 	r.SetCompressor(compressor)
 	return r, nil
 }
 
 func ParseUploadResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, uploadRegex)
+	return parseResourceName(resourceName, uploadRegex, rspb.CacheType_CAS)
 }
 
 func ParseDownloadResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, downloadRegex)
+	return parseResourceName(resourceName, downloadRegex, rspb.CacheType_CAS)
 }
 
 func ParseActionCacheResourceName(resourceName string) (*ResourceName, error) {
-	return parseResourceName(resourceName, actionCacheRegex)
+	return parseResourceName(resourceName, actionCacheRegex, rspb.CacheType_AC)
 }
 
 func IsDownloadResourceName(url string) bool {

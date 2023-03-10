@@ -47,6 +47,7 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
@@ -986,10 +987,15 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		if err != nil {
 			return nil, nil, err
 		}
+		downloadString, err := digest.NewResourceName(d.ToDigest(), *remoteInstanceName, rspb.CacheType_CAS).DownloadString()
+		if err != nil {
+			return nil, nil, err
+		}
+
 		runfiles = append(runfiles, &bespb.File{
 			Name: relPath,
 			File: &bespb.File_Uri{
-				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewGenericResourceName(d.ToDigest(), *remoteInstanceName).DownloadString()),
+				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, downloadString),
 			},
 		})
 	}
@@ -1040,10 +1046,14 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			if err != nil {
 				return err
 			}
+			downloadString, err := digest.NewResourceName(td, *remoteInstanceName, rspb.CacheType_CAS).DownloadString()
+			if err != nil {
+				return err
+			}
 			mu.Lock()
 			runfileDirs = append(runfileDirs, &bespb.Tree{
 				Name: relPath,
-				Uri:  fmt.Sprintf("%s%s", bytestreamURIPrefix, digest.NewGenericResourceName(td, *remoteInstanceName).DownloadString()),
+				Uri:  fmt.Sprintf("%s%s", bytestreamURIPrefix, downloadString),
 			})
 			mu.Unlock()
 			return nil
@@ -1325,7 +1335,7 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, bsClient, digest.NewGenericResourceName(d, *remoteInstanceName), f); err != nil {
+	if err := cachetools.GetBlob(ctx, bsClient, digest.NewResourceName(d, *remoteInstanceName, rspb.CacheType_CAS), f); err != nil {
 		_ = f.Close()
 		return err
 	}

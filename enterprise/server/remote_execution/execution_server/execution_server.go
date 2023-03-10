@@ -118,7 +118,11 @@ func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.Resou
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, adResource.DownloadString()), nil
+	downloadString, err := adResource.DownloadString()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, downloadString), nil
 }
 
 func redisKeyForPendingExecutionDigest(executionID string) string {
@@ -414,20 +418,20 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if sizer == nil {
 		return "", status.FailedPreconditionError("No task sizer configured")
 	}
-	adInstanceDigest := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
+	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS)
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
 		log.CtxErrorf(ctx, "Error fetching action: %s", err.Error())
 		return "", err
 	}
-	cmdInstanceDigest := digest.NewGenericResourceName(action.GetCommandDigest(), req.GetInstanceName())
+	cmdInstanceDigest := digest.NewResourceName(action.GetCommandDigest(), req.GetInstanceName(), rspb.CacheType_CAS)
 	command := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceDigest, command); err != nil {
 		log.CtxErrorf(ctx, "Error fetching command: %s", err.Error())
 		return "", err
 	}
 
-	r := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
+	r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS)
 	executionID, err := r.UploadString()
 	if err != nil {
 		return "", err
@@ -607,18 +611,22 @@ func (s *ExecutionServer) deletePendingExecution(ctx context.Context, executionI
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
-	adInstanceDigest := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
+	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS)
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
 		return err
 	}
 
+	downloadString, err := adInstanceDigest.DownloadString()
+	if err != nil {
+		return err
+	}
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
-			r := digest.NewGenericResourceName(req.GetActionDigest(), req.GetInstanceName())
+			r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS)
 			executionID, err := r.UploadString()
 			if err != nil {
 				return err
@@ -640,7 +648,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			}
 			if ee != "" {
 				ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
-				log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, adInstanceDigest.DownloadString(), invocationID)
+				log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, downloadString, invocationID)
 				executionID = ee
 				metrics.RemoteExecutionMergedActions.With(prometheus.Labels{metrics.GroupID: s.getGroupIDForMetrics(ctx)}).Inc()
 				if err := s.insertInvocationLink(ctx, ee, invocationID, sipb.StoredInvocationLink_MERGED); err != nil {
@@ -653,15 +661,15 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// Create a new execution unless we found an existing identical action we
 	// can wait on.
 	if executionID == "" {
-		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", adInstanceDigest.DownloadString(), invocationID)
+		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", downloadString, invocationID)
 		newExecutionID, err := s.Dispatch(ctx, req)
 		if err != nil {
-			log.CtxErrorf(ctx, "Error dispatching execution for %q: %s", adInstanceDigest.DownloadString(), err)
+			log.CtxErrorf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
 			return err
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, newExecutionID)
 		executionID = newExecutionID
-		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, adInstanceDigest.DownloadString(), invocationID)
+		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 	}
 
 	waitReq := repb.WaitExecutionRequest{
@@ -1023,7 +1031,7 @@ func (s *ExecutionServer) fetchCommandForTask(ctx context.Context, actionResourc
 		return nil, err
 	}
 	cmdDigest := action.GetCommandDigest()
-	cmdInstanceNameDigest := digest.NewGenericResourceName(cmdDigest, actionResourceName.GetInstanceName())
+	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName(), rspb.CacheType_CAS)
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		return nil, err

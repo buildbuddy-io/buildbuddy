@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -122,7 +123,7 @@ func incrementPromErrorMetric(err error) {
 
 func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest, error) {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName := digest.NewGenericResourceName(d, *instanceName)
+	resourceName := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS)
 	if *writeCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
@@ -142,7 +143,7 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 }
 
 func readBlob(ctx context.Context, client bspb.ByteStreamClient, d *repb.Digest) error {
-	resourceName := digest.NewGenericResourceName(d, *instanceName)
+	resourceName := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS)
 	if *readCompressed {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
