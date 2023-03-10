@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
-from github import Github
 import re
+import requests
 import subprocess
 import sys
 import tempfile
@@ -46,10 +46,16 @@ def workspace_is_clean():
                          stderr=subprocess.STDOUT)
     return len(p.stdout.readlines()) == 0
 
-def is_draft_release(version_tag):
-    g = Github()
-    release = g.get_repo("buildbuddy-io/buildbuddy").get_release(version_tag)
-    return release.draft
+def is_draft_release(github_token, version_tag):
+    query_url = f"https://api.github.com/repos/buildbuddy-io/buildbuddy/releases/tags/{version_tag}"
+    headers = {'Authorization': f'token {github_token}'}
+    r = requests.get(query_url, headers=headers)
+    if r.status_code == 401:
+        die("Invalid github credentials. Did you pass a valid github token?")
+    elif r.status_code == 404:
+        die(f"No release found for version tag {version_tag}.")
+
+    return r.json()["draft"]
 
 def bump_patch_version(version):
     parts = version.split(".")
@@ -149,6 +155,7 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--skip_version_bump', default=False, action='store_true')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
+    parser.add_argument('--github_token')
     args = parser.parse_args()
 
     if workspace_is_clean():
@@ -160,7 +167,7 @@ def main():
             'Please run this in a clean workspace!')
 
     old_version = get_latest_remote_version()
-    bump_version = not(args.skip_version_bump or is_draft_release(old_version))
+    bump_version = not(args.skip_version_bump or is_draft_release(args.github_token, old_version))
     new_version = old_version
     if bump_version:
         new_version = bump_patch_version(old_version)
