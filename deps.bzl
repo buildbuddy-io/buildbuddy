@@ -2456,6 +2456,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:KyZDvZ/GGn+r+Y3DKZ7UOQ/TP4xV6HNkrwiVMB1GnNY=",
         version = "v0.0.0-20200120041712-dcc25e7acd91",
     )
+    go_repository(
+        name = "com_github_iain_macdonald_soci_snapshotter",
+        importpath = "github.com/iain-macdonald/soci-snapshotter",
+        sum = "h1:IC4GjfizUFUFZ/4id6+TM6HPjJX4Thb3hhvqWPyOLLo=",
+        version = "v0.2.1",
+    )
 
     go_repository(
         name = "com_github_ianlancetaylor_demangle",
