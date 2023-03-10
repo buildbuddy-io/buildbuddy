@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "typescript",
     srcs = ["typescript.go"],
+    embedsrcs = ["typescript.scm"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix/typescript",
     visibility = ["//visibility:public"],
     deps = [

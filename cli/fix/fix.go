@@ -2,6 +2,7 @@ package fix
 
 import (
 	"os"
+	"runtime/pprof"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -28,6 +29,17 @@ func HandleFix(args []string) (exitCode int, err error) {
 		os.Args = originalArgs
 	}()
 	os.Args = args
+
+	if os.Getenv("GAZELLE_ENABLE_CPU_PPROF") != "" {
+		f, err := os.Create("/tmp/gazelle-ts.pprof")
+		if err != nil {
+			log.Fatal("could not create pprof output", err)
+		}
+		// runtime.SetCPUProfileRate(4096)
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
 	gazelle.Run()
 
 	return 0, nil
