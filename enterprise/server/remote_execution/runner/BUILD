@@ -40,6 +40,7 @@ go_library(
         "//server/util/lockingbuffer",
         "//server/util/log",
         "//server/util/perms",
+        "//server/util/random",
         "//server/util/status",
         "@com_github_docker_docker//client",
         "@com_github_prometheus_client_golang//prometheus",
