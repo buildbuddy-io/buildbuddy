@@ -167,8 +167,12 @@ def main():
             'Please run this in a clean workspace!')
 
     old_version = get_latest_remote_version()
-    bump_version = not(args.skip_version_bump or is_draft_release(args.github_token, old_version))
     new_version = old_version
+    draft_release = is_draft_release(args.github_token, old_version)
+    if draft_release:
+        print(f"Version {old_version} already has a draft release. Skipping version bump.")
+
+    bump_version = not(args.skip_version_bump or draft_release)
     if bump_version:
         new_version = bump_patch_version(old_version)
         release_notes = generate_release_notes(old_version)
