@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
