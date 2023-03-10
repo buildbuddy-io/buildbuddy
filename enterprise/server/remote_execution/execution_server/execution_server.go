@@ -119,9 +119,9 @@ func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.Resou
 		return "", err
 	}
 	downloadString, err := adResource.DownloadString()
-        if err != nil {
-                return "", err
-        }
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, downloadString), nil
 }
 
@@ -618,9 +618,9 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 
 	downloadString, err := adInstanceDigest.DownloadString()
-        if err != nil {
-                return err
-        }
+	if err != nil {
+		return err
+	}
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
 	executionID := ""
