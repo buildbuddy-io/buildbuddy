@@ -91,6 +91,11 @@ def confirm_new_version(version):
         version = get_version_override()
     return version
 
+def gcr_tag_exists(project, tag):
+    query_url = f"https://gcr.io/v2/{project}/tags/list"
+    r = requests.get(query_url)
+    return tag in r.json()["tags"]
+
 def create_and_push_tag(old_version, new_version, release_notes=''):
     commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
     if len(release_notes) > 0:
@@ -107,6 +112,7 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     run_or_die(push_tag_cmd)
 
 def push_image(target, image_tag):
+    print(f"Pushed docker image target {target} tag {image_tag}")
     command = (
         'bazel run -c opt --stamp '+
         '--define=release=true '+
@@ -120,20 +126,34 @@ def update_docker_images(version_tag, update_latest_tag):
     run_or_die(clean_cmd)
 
     # OSS app
-    push_image('//deployment:release_onprem', image_tag=version_tag)
+    oss_tag = version_tag
+    enterprise_tag = 'enterprise-'+version_tag
+    pushed_oss_image = False
+    pushed_enterprise_image = False
+    pushed_enterprise_exec_image = False
+    if not gcr_tag_exists("flame-public/buildbuddy-app-onprem", oss_tag):
+        push_image('//deployment:release_onprem', image_tag=oss_tag)
+        pushed_oss_image = True
     # Enterprise app
-    push_image('//enterprise/deployment:release_enterprise', image_tag='enterprise-'+version_tag)
+    if not gcr_tag_exists("flame-public/buildbuddy-app-enterprise", enterprise_tag):
+        push_image('//enterprise/deployment:release_enterprise', image_tag=enterprise_tag)
+        pushed_enterprise_image = True
     # Enterprise executor
-    push_image('//enterprise/deployment:release_executor_enterprise', image_tag='enterprise-'+version_tag)
+    if not gcr_tag_exists("flame-public/buildbuddy-executor-enterprise", enterprise_tag):
+        push_image('//enterprise/deployment:release_executor_enterprise', image_tag=enterprise_tag)
+        pushed_enterprise_exec_image = True
 
     # update "latest" tags
     if update_latest_tag:
         # OSS app
-        push_image('//deployment:release_onprem', image_tag='latest')
+        if pushed_oss_image:
+            push_image('//deployment:release_onprem', image_tag='latest')
         # Enterprise app
-        push_image('//enterprise/deployment:release_enterprise', image_tag='latest')
+        if pushed_enterprise_image:
+            push_image('//enterprise/deployment:release_enterprise', image_tag='latest')
         # Enterprise executor
-        push_image('//enterprise/deployment:release_executor_enterprise', image_tag='latest')
+        if pushed_enterprise_exec_image:
+            push_image('//enterprise/deployment:release_executor_enterprise', image_tag='latest')
 
 
 def generate_release_notes(old_version):
@@ -193,7 +213,6 @@ def main():
 
     update_latest_tag = not args.skip_latest_tag
     update_docker_images(new_version, update_latest_tag)
-    print("Pushed docker images for new version %s" % new_version)
     print("Done -- proceed with the release guide!")
 
 if __name__ == "__main__":
