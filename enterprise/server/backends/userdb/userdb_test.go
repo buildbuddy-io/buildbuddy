@@ -1151,8 +1151,23 @@ func TestRequestToJoinGroup_DomainNonMember_CreatesRequest(t *testing.T) {
 	// not be a member of the group.
 	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+	require.Equal(t, status.Message(err), "You've already requested to join this organization.")
 	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Nil(t, getGroupRole(t, ctx2, env, "GR1"))
+}
+
+func TestRequestToJoinGroup_AlreadyInGroup_GetAlreadyExists(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+
+	s, err := udb.RequestToJoinGroup(ctx1, "GR1")
+	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+	require.Equal(t, status.Message(err), "You're already in this organization.")
+	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
+	require.Equal(t, role.Admin, role.Role(getGroupRole(t, ctx1, env, "GR1").Role))
 }
 
 func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {
@@ -1176,6 +1191,7 @@ func TestRequestToJoinGroup_DomainMember_GetsDeveloperRole(t *testing.T) {
 	// group role should remain the same.
 	s, err = udb.RequestToJoinGroup(ctx2, "GR1")
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+	require.Equal(t, status.Message(err), "You're already in this organization.")
 	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
 }
@@ -1216,6 +1232,7 @@ func TestRequestToJoinGroup_DomainMember_AlreadyInGroup_GetAlreadyExistsError(t 
 
 	s, err := udb.RequestToJoinGroup(ctx2, "GR1")
 	require.Truef(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
+	require.Equal(t, status.Message(err), "You're already in this organization.")
 	require.Equal(t, grp.GroupMembershipStatus_UNKNOWN_MEMBERSHIP_STATUS, s)
 	require.Equal(t, role.Developer, role.Role(getGroupRole(t, ctx2, env, "GR1").Role))
 }

@@ -727,7 +727,10 @@ func (d *UserDB) RequestToJoinGroup(ctx context.Context, groupID string) (grpb.G
 			return err
 		}
 		if existing != nil {
-			return status.AlreadyExistsError("You've already requested to join this organization.")
+			if existing.MembershipStatus == int32(grpb.GroupMembershipStatus_REQUESTED) {
+				return status.AlreadyExistsError("You've already requested to join this organization.")
+			}
+			return status.AlreadyExistsError("You're already in this organization.")
 		}
 		return tx.Create(&tables.UserGroup{
 			UserUserID:       userID,
