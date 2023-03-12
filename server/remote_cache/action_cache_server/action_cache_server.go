@@ -137,11 +137,11 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if req.ActionDigest == nil {
 		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
-	_, err := digest.Validate(req.ActionDigest)
-	if err != nil {
+	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC)
+	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
@@ -194,11 +194,11 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if req.ActionResult == nil {
 		return nil, status.InvalidArgumentError("ActionResult is a required field")
 	}
-	_, err := digest.Validate(req.GetActionDigest())
-	if err != nil {
+	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC)
+	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, s.env)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}

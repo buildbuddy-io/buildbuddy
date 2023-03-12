@@ -53,7 +53,7 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 	if bsClient == nil {
 		return 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if digest.IsEmpty(r.GetDigest()) {
+	if r.IsEmpty() {
 		return 0, nil
 	}
 
@@ -131,7 +131,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if bsClient == nil {
 		return nil, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
-	if digest.IsEmpty(r.GetDigest()) {
+	if r.IsEmpty() {
 		return r.GetDigest(), nil
 	}
 	resourceName, err := r.UploadString()
@@ -315,15 +315,15 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType r
 	if err != nil {
 		return nil, err
 	}
-	if digest.IsEmpty(d) {
+	resourceName := digest.NewResourceName(d, remoteInstanceName, cacheType)
+	if resourceName.IsEmpty() {
 		return d, nil
 	}
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := in.Seek(0, io.SeekStart); err != nil {
 		return nil, err
 	}
-	resourceName := digest.NewResourceName(d, remoteInstanceName, cacheType).ToProto()
-	wc, err := cache.Writer(ctx, resourceName)
+	wc, err := cache.Writer(ctx, resourceName.ToProto())
 	if err != nil {
 		return nil, err
 	}

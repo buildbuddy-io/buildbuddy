@@ -225,10 +225,11 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 }
 
 func (s3c *S3Cache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
-	hash, err := digest.Validate(r.GetDigest())
-	if err != nil {
+	rn := digest.ResourceNameFromProto(r)
+	if err := rn.Validate(); err != nil {
 		return "", err
 	}
+	hash := rn.GetDigest().GetHash()
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
 		return "", err

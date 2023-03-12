@@ -68,14 +68,15 @@ func NewMemoryCache(maxSizeBytes int64) (*MemoryCache, error) {
 }
 
 func (m *MemoryCache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
-	hash, err := digest.Validate(r.GetDigest())
-	if err != nil {
+	rn := digest.ResourceNameFromProto(r)
+	if err := rn.Validate(); err != nil {
 		return "", err
 	}
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
 		return "", err
 	}
+	hash := rn.GetDigest().GetHash()
 
 	var key string
 	if r.GetCacheType() == rspb.CacheType_AC {

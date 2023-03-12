@@ -106,7 +106,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
-	if digest.IsEmpty(r.GetDigest()) {
+	if r.IsEmpty() {
 		ht.TrackEmptyHit()
 		return nil
 	}
@@ -279,7 +279,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 
 	var committedWriteCloser interfaces.CommittedWriteCloser
-	if digest.IsEmpty(r.GetDigest()) {
+	if r.IsEmpty() {
 		committedWriteCloser = ioutil.DiscardWriteCloser()
 	} else {
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())

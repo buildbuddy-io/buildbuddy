@@ -80,8 +80,8 @@ func (c *Cache) eligibleForCache(d *repb.Digest) bool {
 }
 
 func (c *Cache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
-	hash, err := digest.Validate(r.GetDigest())
-	if err != nil {
+	rn := digest.ResourceNameFromProto(r)
+	if err := rn.Validate(); err != nil {
 		return "", err
 	}
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
@@ -92,7 +92,7 @@ func (c *Cache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
 	if len(isolationPrefix) > 0 && isolationPrefix[len(isolationPrefix)-1] != '/' {
 		isolationPrefix += "/"
 	}
-	return userPrefix + isolationPrefix + hash, nil
+	return userPrefix + isolationPrefix + rn.GetDigest().GetHash(), nil
 }
 
 func (c *Cache) rdbGet(ctx context.Context, key string) ([]byte, error) {

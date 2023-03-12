@@ -334,8 +334,8 @@ func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstan
 }
 
 func (rc *RaftCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {
-	_, err := digest.Validate(r.GetDigest())
-	if err != nil {
+	rn := digest.ResourceNameFromProto(r)
+	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
 
