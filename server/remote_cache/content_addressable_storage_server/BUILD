@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:api_key_go_proto",
+        "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",

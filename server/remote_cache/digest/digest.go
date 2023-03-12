@@ -19,13 +19,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/zeebo/blake3"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	guuid "github.com/google/uuid"
-	_ "github.com/zeebo/blake3"
 	gcodes "google.golang.org/grpc/codes"
 	gmetadata "google.golang.org/grpc/metadata"
 	gstatus "google.golang.org/grpc/status"
@@ -58,6 +58,10 @@ func init() {
 			digestType: repb.DigestFunction_SHA1,
 			sizeBytes:  sha1.Size,
 		},
+		{
+			digestType: repb.DigestFunction_BLAKE3,
+			sizeBytes:  32,
+		},
 	}
 
 	hashMatchers := make([]string, 0)
@@ -77,8 +81,8 @@ func init() {
 	// - "blobs/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "blobs/ac/469db13020c60f8bdf9c89aa4e9a449914db23139b53a24d064f967a51057868/39120"
 	// - "uploads/2042a8f9-eade-4271-ae58-f5f6f5a32555/blobs/8afb02ca7aace3ae5cd8748ac589e2e33022b1a4bfd22d5d234c5887e270fe9c/17997850"
-	uploadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
-	downloadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
+	uploadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?:(?P<instance_name>.*)/)?uploads/(?P<uuid>[a-f0-9-]{36})/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?:(?P<digest_function>blake3)/)?(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
+	downloadRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/(?:(?P<digest_function>blake3)/)?(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
 	actionCacheRegex = regexp.MustCompile(fmt.Sprintf(`^(?:(?P<instance_name>.*)/)?(?P<blob_type>blobs|compressed-blobs/zstd)/ac/(?P<hash>%s)/(?P<size>\d+)`, joinedMatchers))
 }
 
@@ -90,13 +94,24 @@ type ResourceName struct {
 	rn *rspb.ResourceName
 }
 
+func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
+	// TODO(tylerw): remove once digest function is explicit everywhere.
+	if in.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
+		in.DigestFunction = repb.DigestFunction_SHA256
+	}
+	return &ResourceName{
+		rn: in,
+	}
+}
+
 func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType) *ResourceName {
 	return &ResourceName{
 		rn: &rspb.ResourceName{
-			Digest:       d,
-			InstanceName: instanceName,
-			Compressor:   repb.Compressor_IDENTITY,
-			CacheType:    cacheType,
+			Digest:         d,
+			InstanceName:   instanceName,
+			Compressor:     repb.Compressor_IDENTITY,
+			CacheType:      cacheType,
+			DigestFunction: repb.DigestFunction_SHA256,
 		},
 	}
 }
@@ -110,7 +125,7 @@ func (r *ResourceName) GetDigest() *repb.Digest {
 }
 
 func (r *ResourceName) DigestType() repb.DigestFunction_Value {
-	return Type(r.rn.GetDigest())
+	return r.rn.GetDigestFunction()
 }
 
 func (r *ResourceName) GetInstanceName() string {
@@ -129,6 +144,45 @@ func (r *ResourceName) SetCompressor(compressor repb.Compressor_Value) {
 	r.rn.Compressor = compressor
 }
 
+func (r *ResourceName) IsEmpty() bool {
+	switch r.rn.GetDigestFunction() {
+	case repb.DigestFunction_SHA1:
+		return r.rn.GetDigest().GetHash() == "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+	case repb.DigestFunction_MD5:
+		return r.rn.GetDigest().GetHash() == "d41d8cd98f00b204e9800998ecf8427e"
+	case repb.DigestFunction_SHA256:
+		return r.rn.GetDigest().GetHash() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	case repb.DigestFunction_SHA384:
+		return r.rn.GetDigest().GetHash() == "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+	case repb.DigestFunction_SHA512:
+		return r.rn.GetDigest().GetHash() == "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
+	case repb.DigestFunction_BLAKE3:
+		return r.rn.GetDigest().GetHash() == "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+	default:
+		return false
+	}
+}
+
+func (r *ResourceName) Validate() error {
+	d := r.rn.GetDigest()
+	if d == nil {
+		return status.InvalidArgumentError("Invalid (nil) Digest")
+	}
+	if d.SizeBytes < 0 {
+		return status.InvalidArgumentErrorf("Invalid (negative) digest size")
+	}
+	if d.SizeBytes == int64(0) {
+		if r.IsEmpty() {
+			return nil
+		}
+		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+	}
+	if !hashKeyRegex.MatchString(d.Hash) {
+		return status.InvalidArgumentError("Malformed hash")
+	}
+	return nil
+}
+
 // DownloadString returns a string representing the resource name for download
 // purposes.
 func (r *ResourceName) DownloadString() (string, error) {
@@ -137,10 +191,18 @@ func (r *ResourceName) DownloadString() (string, error) {
 	}
 	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
 	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
-	return fmt.Sprintf(
-		"%s/%s/%s/%d",
-		instanceName, blobTypeSegment(r.GetCompressor()),
-		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+	if isOldStyleDigestFunction(r.rn.DigestFunction) {
+		return fmt.Sprintf(
+			"%s/%s/%s/%d",
+			instanceName, blobTypeSegment(r.GetCompressor()),
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+	} else {
+		return fmt.Sprintf(
+			"%s/%s/%s/%s/%d",
+			instanceName, blobTypeSegment(r.GetCompressor()),
+			strings.ToLower(r.rn.DigestFunction.String()),
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()), nil
+	}
 }
 
 // UploadString returns a string representing the resource name for upload
@@ -155,11 +217,20 @@ func (r *ResourceName) UploadString() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf(
-		"%s/uploads/%s/%s/%s/%d",
-		instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
-		r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
-	), nil
+	if isOldStyleDigestFunction(r.rn.DigestFunction) {
+		return fmt.Sprintf(
+			"%s/uploads/%s/%s/%s/%d",
+			instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
+		), nil
+	} else {
+		return fmt.Sprintf(
+			"%s/uploads/%s/%s/%s/%s/%d",
+			instanceName, u.String(), blobTypeSegment(r.GetCompressor()),
+			strings.ToLower(r.rn.DigestFunction.String()),
+			r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(),
+		), nil
+	}
 }
 
 func CacheTypeToPrefix(cacheType rspb.CacheType) string {
@@ -214,26 +285,6 @@ func (dk Key) ToDigest() *repb.Digest {
 	return &repb.Digest{Hash: dk.Hash, SizeBytes: dk.SizeBytes}
 }
 
-func Validate(d *repb.Digest) (string, error) {
-	if d == nil {
-		return "", status.InvalidArgumentError("Invalid (nil) Digest")
-	}
-	if d.SizeBytes < 0 {
-		return "", status.InvalidArgumentErrorf("Invalid (negative) digest size")
-	}
-	if d.SizeBytes == int64(0) {
-		if IsEmpty(d) {
-			return d.Hash, nil
-		}
-		return "", status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
-	}
-
-	if !hashKeyRegex.MatchString(d.Hash) {
-		return "", status.InvalidArgumentError("Malformed hash")
-	}
-	return d.Hash, nil
-}
-
 func ComputeForMessage(in proto.Message, digestType repb.DigestFunction_Value) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
@@ -248,13 +299,17 @@ func HashForDigestType(digestType repb.DigestFunction_Value) (hash.Hash, error) 
 		return sha1.New(), nil
 	case repb.DigestFunction_SHA256:
 		return sha256.New(), nil
+	case repb.DigestFunction_BLAKE3:
+		return blake3.New(), nil
+	case repb.DigestFunction_UNKNOWN:
+		// TODO(tylerw): make this a warning when clients support this.
+		return sha256.New(), nil
 	default:
 		return nil, status.UnimplementedErrorf("No support for digest type: %s", digestType)
 	}
 }
 
-func Type(d *repb.Digest) repb.DigestFunction_Value {
-	// TODO: determine this via enum in digest?
+func oldStyleDigestFunction(d *repb.Digest) repb.DigestFunction_Value {
 	switch len(d.GetHash()) {
 	case sha1.Size * 2:
 		return repb.DigestFunction_SHA1
@@ -271,19 +326,18 @@ func Type(d *repb.Digest) repb.DigestFunction_Value {
 	}
 }
 
-func IsEmpty(d *repb.Digest) bool {
-	digestType := Type(d)
-	switch digestType {
+func isOldStyleDigestFunction(digestFunction repb.DigestFunction_Value) bool {
+	switch digestFunction {
 	case repb.DigestFunction_SHA1:
-		return d.GetHash() == "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+		return true
 	case repb.DigestFunction_MD5:
-		return d.GetHash() == "d41d8cd98f00b204e9800998ecf8427e"
+		return true
 	case repb.DigestFunction_SHA256:
-		return d.GetHash() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		return true
 	case repb.DigestFunction_SHA384:
-		return d.GetHash() == "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+		return true
 	case repb.DigestFunction_SHA512:
-		return d.GetHash() == "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
+		return true
 	default:
 		return false
 	}
@@ -363,7 +417,20 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rs
 		compressor = repb.Compressor_ZSTD
 	}
 	d := &repb.Digest{Hash: hash, SizeBytes: sizeBytes}
+
+	// Determine the digest function by looking at the digest length.
+	// If a digest_function value was specified in the bytestream URL, this
+	// is a new style hash, so lookup the type based on that value.
+	digestFunction := oldStyleDigestFunction(d)
+	if dfString, ok := result["digest_function"]; ok && dfString != "" {
+		if df, ok := repb.DigestFunction_Value_value[strings.ToUpper(dfString)]; ok {
+			digestFunction = repb.DigestFunction_Value(df)
+		} else {
+			return nil, status.InvalidArgumentErrorf("Unknown digest function: %q", dfString)
+		}
+	}
 	r := NewResourceName(d, instanceName, cacheType)
+	r.rn.DigestFunction = digestFunction
 	r.SetCompressor(compressor)
 	return r, nil
 }

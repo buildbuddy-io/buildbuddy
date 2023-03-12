@@ -937,10 +937,12 @@ func (fk *fileKey) FullPath() string {
 }
 
 func (p *partition) key(ctx context.Context, cacheType rspb.CacheType, remoteInstanceName string, d *repb.Digest) (*fileKey, error) {
-	hash, err := digest.Validate(d)
-	if err != nil {
+	rn := digest.NewResourceName(d, remoteInstanceName, cacheType)
+	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
+	hash := rn.GetDigest().GetHash()
+
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
 		return nil, err

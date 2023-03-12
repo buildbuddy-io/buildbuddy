@@ -142,8 +142,8 @@ func (g *GCSCache) setBucketTTL(ctx context.Context, bucketName string, ageInDay
 }
 
 func (g *GCSCache) key(ctx context.Context, r *rspb.ResourceName) (string, error) {
-	hash, err := digest.Validate(r.GetDigest())
-	if err != nil {
+	rn := digest.ResourceNameFromProto(r)
+	if err := rn.Validate(); err != nil {
 		return "", err
 	}
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
@@ -154,7 +154,7 @@ func (g *GCSCache) key(ctx context.Context, r *rspb.ResourceName) (string, error
 	if len(isolationPrefix) > 0 && isolationPrefix[len(isolationPrefix)-1] != '/' {
 		isolationPrefix += "/"
 	}
-	return userPrefix + isolationPrefix + hash, nil
+	return userPrefix + isolationPrefix + rn.GetDigest().GetHash(), nil
 }
 
 func (g *GCSCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {

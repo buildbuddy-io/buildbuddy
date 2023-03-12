@@ -1283,15 +1283,6 @@ message Tree {
   repeated Directory children = 2;
 }
 
-message DirectoryWithDigest {
-  Directory directory = 1;
-  Digest digest = 2;
-}
-
-message TreeCache {
-  repeated DirectoryWithDigest children = 1;
-}
-
 // An `OutputDirectory` is the output in an `ActionResult` corresponding to a
 // directory's full contents rather than a single file.
 message OutputDirectory {

@@ -602,8 +602,9 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	for dk, filePointers := range filesToFetch {
 		d := dk.ToDigest()
 
+		rn := digest.NewResourceName(dk.ToDigest(), ff.instanceName, rspb.CacheType_CAS)
 		// Write empty files directly (skip checking cache and downloading).
-		if digest.IsEmpty(d) {
+		if rn.IsEmpty() {
 			for _, fp := range filePointers {
 				if err := writeFile(fp, []byte("")); err != nil {
 					return err
@@ -830,7 +831,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
 				return err
 			}
-			if digest.IsEmpty(child.GetDigest()) && child.GetDigest().SizeBytes == 0 {
+			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS)
+			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
 				continue
 			}
 			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]
