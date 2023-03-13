@@ -190,7 +190,12 @@ func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	r, err := cachetools.ComputeDigest(reader, instanceName)
+
+	d, err := digest.Compute(reader, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS)
 	if err != nil {
 		return nil, err
 	}

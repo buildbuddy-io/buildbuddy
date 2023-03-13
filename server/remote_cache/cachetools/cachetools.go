@@ -110,7 +110,7 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	return err
 }
 
-func ComputeDigest(in io.ReadSeeker, instanceName string) (*digest.ResourceName, error) {
+func computeDigest(in io.ReadSeeker, instanceName string) (*digest.ResourceName, error) {
 	d, err := digest.Compute(in, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
@@ -124,7 +124,7 @@ func ComputeFileDigest(fullFilePath, instanceName string) (*digest.ResourceName,
 		return nil, err
 	}
 	defer f.Close()
-	return ComputeDigest(f, instanceName)
+	return computeDigest(f, instanceName)
 }
 
 func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, in io.Reader) (*repb.Digest, error) {
@@ -226,7 +226,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	resourceName, err := ComputeDigest(reader, instanceName)
+	resourceName, err := computeDigest(reader, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 }
 
 func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	resourceName, err := ComputeDigest(in, instanceName)
+	resourceName, err := computeDigest(in, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 		return nil, err
 	}
 	defer f.Close()
-	resourceName, err := ComputeDigest(f, instanceName)
+	resourceName, err := computeDigest(f, instanceName)
 	if err != nil {
 		return nil, err
 	}
