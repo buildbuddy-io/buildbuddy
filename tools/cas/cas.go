@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -66,16 +67,20 @@ func main() {
 	if *blobDigest == "" {
 		log.Fatalf("Missing --digest")
 	}
-	var ind *digest.ResourceName
-	var err error
 
-	if *blobType == "ActionResult" {
-		ind, err = digest.ParseActionCacheResourceName(*blobDigest)
-	} else {
-		ind, err = digest.ParseDownloadResourceName(*blobDigest)
+	// For backwards compatibility, attempt to fixup old style digest
+	// strings that don't start with a '/blobs/' prefix.
+	digestString := *blobDigest
+	if !strings.HasPrefix(digestString, "/blobs") {
+		digestString = "/blobs/" + digestString
 	}
+
+	ind, err := digest.ParseDownloadResourceName(digestString)
 	if err != nil {
 		log.Fatalf(status.Message(err))
+	}
+	if *blobType == "ActionResult" {
+		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC)
 	}
 
 	// For backwards compatibility with the existing behavior of this code:
