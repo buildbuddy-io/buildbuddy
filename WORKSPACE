@@ -121,6 +121,29 @@ yarn_install(
     yarn_lock = "//:yarn.lock",
 )
 
+# Proto -- must be before container_repositories so we don't inherit their rules_pkg.
+
+# NB: The name must be "com_google_protobuf".
+
+# Required by com_google_protobuf
+http_archive(
+    name = "com_google_googletest",
+    sha256 = "ffa17fbc5953900994e2deec164bb8949879ea09b411e07f215bfbb1f87f4632",
+    strip_prefix = "googletest-1.13.0",
+    urls = ["https://github.com/google/googletest/archive/v1.13.0.zip"],
+)
+
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = "2118051b4fb3814d59d258533a4e35452934b1ddb41230261c9543384cbb4dfc",
+    strip_prefix = "protobuf-3.22.2",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.22.2.tar.gz"],
+)
+
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
+protobuf_deps()
+
 # Docker
 
 http_archive(
@@ -200,20 +223,6 @@ k8s_defaults(
     name = "k8s_deploy",
     kind = "deployment",
 )
-
-# Proto
-
-# NB: The name must be "com_google_protobuf".
-http_archive(
-    name = "com_google_protobuf",
-    sha256 = "7c9731ff49ebe1cc4a0650a21d40acc099043f4d584b24632bafc0f5328bc3ff",
-    strip_prefix = "protobuf-3.19.0",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v3.19.0/protobuf-all-3.19.0.zip"],
-)
-
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
-
-protobuf_deps()
 
 load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
 
