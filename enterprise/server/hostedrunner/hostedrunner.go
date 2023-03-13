@@ -161,7 +161,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		args = append(args, "--remote_instance_name="+req.GetInstanceName())
 	}
 	for _, patchURI := range patchURIs {
-		args = append(args, "--patch_digest="+patchURI)
+		args = append(args, "--patch_uri="+patchURI)
 	}
 
 	affinityKey := req.GetSessionAffinityKey()
