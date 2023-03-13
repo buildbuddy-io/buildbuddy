@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/prototext"
 
@@ -77,6 +78,18 @@ func parseSnapshotID(in string) *repb.Digest {
 		Hash:      parts[0],
 		SizeBytes: i,
 	}
+}
+
+func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.ResourceName) (*repb.Action, *repb.Command, error) {
+	action := &repb.Action{}
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, actionDigest, action); err != nil {
+		return nil, nil, status.WrapErrorf(err, "could not fetch action")
+	}
+	cmd := &repb.Command{}
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), rspb.CacheType_CAS), cmd); err != nil {
+		return nil, nil, status.WrapErrorf(err, "could not fetch command")
+	}
+	return action, cmd, nil
 }
 
 func main() {
@@ -168,7 +181,7 @@ func main() {
 			actionInstanceDigest = digest.NewResourceName(actionInstanceDigest.GetDigest(), *remoteInstanceName, actionInstanceDigest.GetCacheType())
 		}
 
-		action, cmd, err := cachetools.GetActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
+		action, cmd, err := getActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
 		if err != nil {
 			log.Fatal(err.Error())
 		}
