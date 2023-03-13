@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/url"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
@@ -43,6 +44,8 @@ type Uploader struct {
 	bytestreamURIPrefix string
 	// Remote instance name to be used for uploaded artifacts.
 	instanceName string
+
+	resultsMu sync.Mutex
 	// Array containing all upload results.
 	results []*Result
 }
@@ -131,21 +134,22 @@ func (u *Uploader) uploadDirectory(namedSetID, root string) error {
 // uploadFile starts a background file upload.
 func (u *Uploader) uploadFile(setID, path, name string) chan *Result {
 	ch := make(chan *Result, 1)
-	u.eg.Go(func() (err error) {
+	u.eg.Go(func() error {
 		start := time.Now()
-		result := &Result{NamedSetID: setID, Name: name, Path: path}
-		defer func() {
-			result.Err = err
-			result.Duration = time.Since(start)
-			u.results = append(u.results, result)
-			ch <- result
-		}()
-		d, err := cachetools.UploadFile(u.ctx, u.bsClient, u.instanceName, repb.DigestFunction_SHA256, path)
-		if err != nil {
-			return err
+		result := &Result{
+			NamedSetID: setID,
+			Name:       name,
+			Path:       path,
 		}
-		result.Digest = d
-		return nil
+		result.Digest, result.Err = cachetools.UploadFile(u.ctx, u.bsClient, u.instanceName, repb.DigestFunction_SHA256, path)
+		result.Duration = time.Since(start)
+		ch <- result
+
+		u.resultsMu.Lock()
+		u.results = append(u.results, result)
+		u.resultsMu.Unlock()
+
+		return result.Err
 	})
 	return ch
 }
