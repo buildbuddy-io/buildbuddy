@@ -325,7 +325,7 @@ func (d *UserDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 		return nil, err
 	}
 
-	if err := d.authorizeNewAPIKeyCapabilities(ctx, groupID, capabilities); err != nil {
+	if err := d.authorizeNewAPIKeyCapabilities(ctx, u.GetUserID(), groupID, capabilities); err != nil {
 		return nil, err
 	}
 
@@ -417,7 +417,7 @@ func (d *UserDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 		}
 		// When updating capabilities, make sure the user has the appropriate
 		// permissions to set them.
-		if err := d.authorizeNewAPIKeyCapabilities(ctx, existingKey.GroupID, capabilities.FromInt(key.Capabilities)); err != nil {
+		if err := d.authorizeNewAPIKeyCapabilities(ctx, existingKey.UserID, existingKey.GroupID, capabilities.FromInt(key.Capabilities)); err != nil {
 			return err
 		}
 		return tx.Exec(`
@@ -470,7 +470,13 @@ func (d *UserDB) authorizeAPIKeyWrite(ctx context.Context, tx *db.DB, apiKeyID s
 	return key, nil
 }
 
-func (d *UserDB) authorizeNewAPIKeyCapabilities(ctx context.Context, groupID string, caps []akpb.ApiKey_Capability) error {
+func (d *UserDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, groupID string, caps []akpb.ApiKey_Capability) error {
+	if userID != "" {
+		if capabilities.ToInt(caps)&int32(akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY) > 0 {
+			return status.PermissionDeniedError("user-owned API keys cannot be used to register executors")
+		}
+	}
+
 	if !hasAdminOnlyCapabilities(caps) {
 		return nil
 	}

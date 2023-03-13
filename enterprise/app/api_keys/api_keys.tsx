@@ -345,7 +345,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 </label>
               </div>
 
-              {capabilities.executorKeyCreation && (
+              {/* User-owned keys cannot be used to register executors. */}
+              {capabilities.executorKeyCreation && !this.props.userOwnedOnly && (
                 <div className="field-container">
                   <label className="checkbox-row">
                     <input
