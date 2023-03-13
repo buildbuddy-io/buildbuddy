@@ -1330,12 +1330,6 @@ func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamCli
 	if err != nil {
 		return err
 	}
-	// For backwards compatibility with the existing behavior of this code:
-	// If the parsed remote_instance_name is empty, and the flag instance
-	// name is set; override the instance name of `rn`.
-	if rn.GetInstanceName() == "" && *remoteInstanceName != "" {
-		rn = digest.NewResourceName(rn.GetDigest(), *remoteInstanceName, rn.GetCacheType())
-	}
 	patchFileName := rn.GetDigest().GetHash()
 	f, err := os.OpenFile(patchFileName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
