@@ -456,7 +456,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return nil, err
 		}
-		if _, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), tree, outDir, &dirtools.DownloadTreeOpts{}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, rn.GetInstanceName(), rn.GetDigestFunction(), tree, outDir, &dirtools.DownloadTreeOpts{}); err != nil {
 			return nil, err
 		}
 	}
