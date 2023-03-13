@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "proto/remote_execution.proto";
 
 package runner;
 
@@ -86,4 +87,18 @@ message RunResponse {
 
   // The invocation ID of the run.
   string invocation_id = 2;
+}
+
+// Properties that describe how a task should be matched to a warm runner
+// instance on an executor.
+message RunnerProperties {
+  // Authenticated group ID.
+  string group_id = 1;
+
+  // Remote instance name.
+  string instance_name = 2;
+
+  // The platform required by the worker (called "exec properties" in Bazel
+  // terminology).
+  build.bazel.remote.execution.v2.Platform platform = 3;
 }

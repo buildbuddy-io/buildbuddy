@@ -247,6 +247,7 @@ proto_library(
     ],
     deps = [
         ":context_proto",
+        ":remote_execution_proto",
     ],
 )
 
@@ -737,6 +738,7 @@ go_proto_library(
     proto = ":runner_proto",
     deps = [
         ":context_go_proto",
+        ":remote_execution_go_proto",
     ],
 )
 
