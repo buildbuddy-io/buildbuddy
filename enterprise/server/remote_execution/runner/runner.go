@@ -43,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
@@ -170,6 +171,31 @@ type WarmupConfig struct {
 // state indicates the current state of a commandRunner.
 type state int
 
+func (s state) String() string {
+	switch s {
+	case initial:
+		return "initial"
+	case paused:
+		return "paused"
+	case ready:
+		return "ready"
+	case removed:
+		return "removed"
+	default:
+		return "unknown"
+	}
+}
+
+type runnerSlice []*commandRunner
+
+func (rs runnerSlice) String() string {
+	descriptions := make([]string, 0, len(rs))
+	for _, r := range rs {
+		descriptions = append(descriptions, r.String())
+	}
+	return "[" + strings.Join(descriptions, ", ") + "]"
+}
+
 type commandRunner struct {
 	env            environment.Env
 	imageCacheAuth *container.ImageCacheAuthenticator
@@ -187,6 +213,9 @@ type commandRunner struct {
 	// runner. Only tasks with matching remote instance names can execute on this
 	// runner.
 	InstanceName string
+	// debugID is a short debug ID used to identify this runner.
+	// It is not necessarily globally unique.
+	debugID string
 
 	// Container is the handle on the container (possibly the bare /
 	// NOP container) that is used to execute commands.
@@ -202,6 +231,10 @@ type commandRunner struct {
 	task *repb.ExecutionTask
 	// taskSize is the size of the last task assigned to the runner.
 	taskSize *scpb.TaskSize
+	// taskNumber starts at 1 and is incremented each time the runner is
+	// assigned a new task. Note: this is not necessarily the same as the number
+	// of tasks that have actually been executed.
+	taskNumber int
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
@@ -232,6 +265,12 @@ type commandRunner struct {
 
 	memoryUsageBytes int64
 	diskUsageBytes   int64
+}
+
+func (r *commandRunner) String() string {
+	// TODO: instead of workflow ID, make a short hash of the runner match parameters
+	// and use that instead.
+	return fmt.Sprintf("%s:%s:%d:%s", r.debugID, r.state, r.taskNumber, r.PlatformProperties.WorkflowID)
 }
 
 func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
@@ -729,13 +768,12 @@ func (p *pool) add(ctx context.Context, r *commandRunner) *labeledError {
 			}
 		}
 
-		if p.pausedRunnerCount() >= p.maxRunnerCount {
-			log.Infof("Evicting runner (pool max count %d exceeded).", p.maxRunnerCount)
-		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
-			log.Infof("Evicting runner (max memory %d exceeded).", p.maxRunnerMemoryUsageBytes)
-		}
-
 		r := p.runners[evictIndex]
+		if p.pausedRunnerCount() >= p.maxRunnerCount {
+			log.Infof("Evicting runner %s (pool max count %d exceeded).", r, p.maxRunnerCount)
+		} else if p.pausedRunnerMemoryUsageBytes()+stats.MemoryBytes > p.maxRunnerMemoryUsageBytes {
+			log.Infof("Evicting runner %s (max memory %d exceeded).", r, p.maxRunnerMemoryUsageBytes)
+		}
 		p.runners = append(p.runners[:evictIndex], p.runners[evictIndex+1:]...)
 
 		metrics.RunnerPoolEvictions.Inc()
@@ -962,9 +1000,10 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			p.mu.Lock()
 			r.task = task
 			r.taskSize = st.GetSchedulingMetadata().GetTaskSize()
+			r.taskNumber += 1
 			r.PlatformProperties = props
 			p.mu.Unlock()
-			log.CtxInfof(ctx, "Reusing existing %s runner for task", props.WorkloadIsolationType)
+			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
 			return r, nil
 		}
 	}
@@ -1007,13 +1046,16 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			return nil, status.UnavailableErrorf("unable to mount VFS at %q: %s", vfsDir, err)
 		}
 	}
+	debugID, _ := random.RandomString(8)
 	r := &commandRunner{
 		env:                p.env,
 		p:                  p,
 		imageCacheAuth:     p.imageCacheAuth,
+		debugID:            debugID,
 		ACL:                ACLForUser(user),
 		task:               task,
 		taskSize:           st.GetSchedulingMetadata().GetTaskSize(),
+		taskNumber:         1,
 		PlatformProperties: props,
 		InstanceName:       instanceName,
 		WorkerKey:          workerKey,
@@ -1034,7 +1076,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			p.pendingRemovals.Done()
 		}
 	}
-	log.CtxInfof(ctx, "Created new %s runner for task", props.WorkloadIsolationType)
+	log.CtxInfof(ctx, "Created new %s runner %s for task", props.WorkloadIsolationType, r)
 	return r, nil
 }
 
@@ -1080,7 +1122,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			AllowSnapshotStart:     false,
 			DebugMode:              *firecrackerDebugMode,
 		}
-		c, err := firecracker.NewContainer(p.env, p.imageCacheAuth, opts)
+		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -1140,15 +1182,23 @@ type query struct {
 	TaskSize *scpb.TaskSize
 }
 
+func (p *pool) String() string {
+	return runnerSlice(p.runners).String()
+}
+
 // take finds the most recently used runner in the pool that matches the given
 // query. If one is found, it is unpaused and returned.
 func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	log.CtxInfof(ctx, "Looking for match in runner pool %s", p)
+
 	for i := len(p.runners) - 1; i >= 0; i-- {
 		r := p.runners[i]
-		if r.state != paused ||
+		authErr := perms.AuthorizeWrite(&q.User, r.ACL)
+		if authErr != nil ||
+			r.state != paused ||
 			r.PlatformProperties.ContainerImage != q.ContainerImage ||
 			r.PlatformProperties.DockerUser != q.CommandUser ||
 			platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != q.WorkloadIsolationType ||
@@ -1159,9 +1209,9 @@ func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 			r.WorkerKey != q.WorkerKey ||
 			r.InstanceName != q.InstanceName ||
 			*r.Workspace.Opts != *q.WorkspaceOptions {
-			continue
-		}
-		if authErr := perms.AuthorizeWrite(&q.User, r.ACL); authErr != nil {
+			// TODO(bduffany): log a hash of the runner key so that it's clear
+			// why the runner was skipped.
+			log.CtxInfof(ctx, "Skipping ineligible runner %s", r)
 			continue
 		}
 
@@ -1171,7 +1221,7 @@ func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 			// to fail, so remove the container from the pool.
 			p.remove(r)
 			r.RemoveInBackground()
-			return nil, err
+			return nil, status.WrapErrorf(err, "failed to unpause runner %s", r)
 		}
 		r.state = ready
 
@@ -1254,13 +1304,13 @@ func (p *pool) Shutdown(ctx context.Context) error {
 		runnersToRemove = pausedRunners
 		p.runners = activeRunners
 		if len(runnersToRemove) > 0 {
-			log.Infof("Runner pool: removing %d paused runners", len(runnersToRemove))
+			log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
 		}
 	} else {
 		runnersToRemove = p.runners
 		p.runners = nil
 		if len(runnersToRemove) > 0 {
-			log.Infof("Runner pool: removing %d runners", len(runnersToRemove))
+			log.Infof("Runner pool: removing %s", runnerSlice(runnersToRemove))
 		}
 	}
 	p.mu.Unlock()
@@ -1315,7 +1365,7 @@ func (p *pool) finalize(r *commandRunner) {
 // TryRecycle either adds r back to the pool if appropriate, or removes it,
 // freeing up any resources it holds.
 func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
-	ctx, cancel := context.WithTimeout(ctx, runnerRecycleTimeout)
+	ctx, cancel := background.ExtendContextForFinalization(ctx, runnerRecycleTimeout)
 	defer cancel()
 
 	cr, ok := r.(*commandRunner)
@@ -1331,26 +1381,31 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		}
 	}()
 
-	if !cr.PlatformProperties.RecycleRunner || !finishedCleanly || cr.doNotReuse {
+	if !cr.PlatformProperties.RecycleRunner {
+		return
+	}
+	if !finishedCleanly || cr.doNotReuse {
+		log.CtxWarningf(ctx, "Failed to recycle runner %s due to previous execution error", cr)
 		return
 	}
 	// Clean the workspace once before adding it to the pool (to save on disk
 	// space).
 	if err := cr.Workspace.Clean(); err != nil {
-		log.Errorf("Failed to clean workspace: %s", err)
+		log.CtxErrorf(ctx, "Failed to recycle runner %s: failed to clean workspace: %s", cr, err)
 		return
 	}
 	if err := p.Add(ctx, cr); err != nil {
 		if status.IsResourceExhaustedError(err) || status.IsUnavailableError(err) {
-			log.Infof("Failed to recycle runner: %s", err)
+			log.CtxWarningf(ctx, "Failed to recycle runner %s: %s", cr, err)
 		} else {
 			// If not a resource limit exceeded error, probably it was an error
 			// removing the directory contents or a docker daemon error.
-			log.Errorf("Failed to recycle runner: %s", err)
+			log.CtxErrorf(ctx, "Failed to recycle runner %s: %s", cr, err)
 		}
 		return
 	}
 
+	log.CtxInfof(ctx, "Successfully recycled runner %s", cr)
 	recycled = true
 }
 

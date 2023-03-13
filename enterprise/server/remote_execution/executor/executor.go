@@ -205,7 +205,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	finishedCleanly := false
 	defer func() {
-		ctx := context.Background()
 		go s.runnerPool.TryRecycle(ctx, r, finishedCleanly)
 	}()
 
