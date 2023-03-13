@@ -2210,3 +2210,63 @@ message StoredExecution {
 
   int32 invocation_link_type = 28;
 }
+
+message WorkspaceOptions {
+  // If set, ensure that non-root users can write to the workspace.
+  bool nonroot_writable = 1;
+  // If set, preserve all files in the workspace between actions, instead of
+  // wiping the workspace.
+  bool preserve = 2;
+  // A comma-separated glob pattern specifying input file patterns to be cleaned
+  // between actions. Example: "**/dir1/**,**/dir2/**"
+  string clean_inputs = 3;
+}
+
+// Properties that describe how a task should be matched with a remote
+// persistent worker, also called a "Runner" in BuildBuddy terminology.
+// Arbitrary tasks (even those not supporting the persistent worker protocol)
+// can opt in to runner recycling by setting "recycle-runner=true".
+//
+// These runner properties are mostly controlled by platform properties which
+// are set at the action level, but some of these properties may be derived from
+// other execution properties such as remote instance name, user authentication
+// info, and task sizing data.
+message WorkerProperties {
+  // Authenticated group ID.
+  string group_id = 1;
+
+  // Remote instance name.
+  string instance_name = 2;
+
+  // Arbitrary key used to specify affinity to a runner. Has a similar effect as
+  // remote instance name, but does not affect remote cache artifact retrieval.
+  string affinity_key = 3;
+
+  // Persistent worker key, in reference to Bazel's remote persistent workers
+  // feature. This serves effectively the same purpose as affinity key.
+  string persistent_worker_key = 4;
+
+  // Isolation type.
+  // Ex: "none", "docker", "podman", "firecracker"
+  string workload_isolation_type = 5;
+
+  // Container image spec, for isolation types that support running
+  // in container images.
+  string container_image = 6;
+
+  // Username or ID to run commands as.
+  string command_user = 7;
+
+  // BuildBuddy Workflows - workflow ID.
+  string workflow_id = 8;
+
+  // The workspace options used for the runner.
+  WorkspaceOptions workspace_options = 9;
+
+  // Any task sizing parameters that must be exactly matched by the runner.
+  scheduler.TaskSize task_size = 10;
+
+  // Whether dockerd is required by the action (applies only to firecracker,
+  // currently).
+  bool init_dockerd = 11;
+}
