@@ -442,27 +442,9 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	if auth == nil || userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	user, err := userDB.GetUser(ctx)
-	if err != nil {
+	if _, err := userDB.RequestToJoinGroup(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	group, err := userDB.GetGroupByID(ctx, req.GetId())
-	if err != nil {
-		return nil, err
-	}
-	// If the user's email matches the group's owned domain, they can be added
-	// as a member immediately.
-	if group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(user.Email) {
-		if err := userDB.AddUserToGroup(ctx, user.UserID, req.GetId()); err != nil {
-			return nil, err
-		}
-	} else {
-		// Otherwise submit a request to join the group.
-		if err := userDB.RequestToJoinGroup(ctx, user.UserID, req.GetId()); err != nil {
-			return nil, err
-		}
-	}
-
 	return &grpb.JoinGroupResponse{}, nil
 }
 
