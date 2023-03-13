@@ -220,7 +220,7 @@ func UploadActionResult(ctx context.Context, acClient repb.ActionCacheClient, r 
 	return err
 }
 
-func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in proto.Message) (*repb.Digest, error) {
+func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
@@ -237,7 +237,7 @@ func UploadProto(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNa
 	return UploadFromReader(ctx, bsClient, resourceName, reader)
 }
 
-func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
 	resourceName, err := computeDigest(in, instanceName)
 	if err != nil {
 		return nil, err
@@ -249,7 +249,7 @@ func UploadBlob(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	return UploadFromReader(ctx, bsClient, resourceName, in)
 }
 
-func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, fullFilePath string) (*repb.Digest, error) {
+func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, digestFunction repb.DigestFunction_Value, fullFilePath string) (*repb.Digest, error) {
 	f, err := os.Open(fullFilePath)
 	if err != nil {
 		return nil, err
@@ -660,9 +660,10 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 	nextPageToken := ""
 	for {
 		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-			RootDigest:   r.GetDigest(),
-			InstanceName: r.GetInstanceName(),
-			PageToken:    nextPageToken,
+			RootDigest:     r.GetDigest(),
+			InstanceName:   r.GetInstanceName(),
+			PageToken:      nextPageToken,
+			DigestFunction: r.GetDigestFunction(),
 		})
 		if err != nil {
 			return nil, err

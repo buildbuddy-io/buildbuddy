@@ -440,7 +440,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 			subdir := &repb.Directory{}
 			if d == depth {
 				d, buf := testdigest.NewRandomDigestBuf(t, 100)
-				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, bytes.NewReader(buf))
+				_, err := cachetools.UploadBlob(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf))
 				require.NoError(t, err)
 				fileName := fmt.Sprintf("leaf-file-%s-%d", d.GetHash(), n)
 				fileNames = append(fileNames, fileName)
@@ -454,7 +454,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 				subdir.Directories = append(subdir.Directories, leafNodes[start:end]...)
 			}
 
-			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, subdir)
+			subdirDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, subdir)
 			require.NoError(t, err)
 			dirName := fmt.Sprintf("node-%s-depth-%d-node-%d", subdirDigest.GetHash(), d, n)
 			fileNames = append(fileNames, dirName)
@@ -469,7 +469,7 @@ func makeTree(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient,
 	parentDir := &repb.Directory{
 		Directories: leafNodes,
 	}
-	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, parentDir)
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, parentDir)
 	require.NoError(t, err)
 	return rootDigest, fileNames
 }
@@ -539,7 +539,7 @@ func TestGetTree(t *testing.T) {
 			},
 		},
 	}
-	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir)
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
 	assert.Nil(t, err)
 
 	allFiles := append(child1Files, child2Files...)
@@ -582,7 +582,7 @@ func TestGetTreeCaching(t *testing.T) {
 			},
 		},
 	}
-	rootDigest1, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir1)
+	rootDigest1, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir1)
 	assert.Nil(t, err)
 
 	rootDir2 := &repb.Directory{
@@ -597,7 +597,7 @@ func TestGetTreeCaching(t *testing.T) {
 			},
 		},
 	}
-	rootDigest2, err := cachetools.UploadProto(ctx, bsClient, instanceName, rootDir2)
+	rootDigest2, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir2)
 	assert.Nil(t, err)
 
 	uploadedFiles1 := append(child1Files, child2Files...)

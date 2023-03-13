@@ -219,7 +219,7 @@ func addFileWithRandomContent(ctx context.Context, byteStreamClient bspb.ByteStr
 	var err error
 	for {
 		reader := bytes.NewReader(data)
-		d, err = cachetools.UploadBlob(ctx, byteStreamClient, *remoteInstanceName, reader)
+		d, err = cachetools.UploadBlob(ctx, byteStreamClient, *remoteInstanceName, repb.DigestFunction_SHA256, reader)
 		if err == nil {
 			break
 		}
@@ -262,7 +262,7 @@ func prepareCommand(ctx context.Context, rbeClient *rbeclient.Client, byteStream
 
 	log.Debugf("Uploading input root for %q.", name)
 
-	inputRootDigest, err := cachetools.UploadProto(ctx, byteStreamClient, *remoteInstanceName, dir)
+	inputRootDigest, err := cachetools.UploadProto(ctx, byteStreamClient, *remoteInstanceName, repb.DigestFunction_SHA256, dir)
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not upload directory descriptor: %s", err)
 	}

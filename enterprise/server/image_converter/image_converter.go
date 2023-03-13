@@ -252,7 +252,7 @@ func (c *imageConverter) convertImage(ctx context.Context, req *rgpb.ConvertImag
 	if err != nil {
 		return nil, status.UnknownErrorf("could not get new config file: %s", err)
 	}
-	configCASDigest, err := cachetools.UploadBlob(ctx, c.bsClient, registryInstanceName, bytes.NewReader(newConfigBytes))
+	configCASDigest, err := cachetools.UploadBlob(ctx, c.bsClient, registryInstanceName, repb.DigestFunction_SHA256, bytes.NewReader(newConfigBytes))
 	if err != nil {
 		return nil, status.UnknownErrorf("could not upload converted image config %s", err)
 	}

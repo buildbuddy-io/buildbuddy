@@ -245,7 +245,7 @@ func mirrorToCache(ctx context.Context, bsClient bspb.ByteStreamClient, remoteIn
 			log.Errorf("Failed to remove temp file: %s", err)
 		}
 	}()
-	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, tmpFilePath)
+	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, repb.DigestFunction_SHA256, tmpFilePath)
 	if err != nil {
 		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
 	}
