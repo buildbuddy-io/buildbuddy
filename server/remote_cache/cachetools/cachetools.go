@@ -277,18 +277,6 @@ func GetBlobAsProto(ctx context.Context, bsClient bspb.ByteStreamClient, r *dige
 	return proto.Unmarshal(buf.Bytes(), out)
 }
 
-func GetActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, actionDigest *digest.ResourceName) (*repb.Action, *repb.Command, error) {
-	action := &repb.Action{}
-	if err := GetBlobAsProto(ctx, bsClient, actionDigest, action); err != nil {
-		return nil, nil, status.WrapErrorf(err, "could not fetch action")
-	}
-	cmd := &repb.Command{}
-	if err := GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), rspb.CacheType_CAS), cmd); err != nil {
-		return nil, nil, status.WrapErrorf(err, "could not fetch command")
-	}
-	return action, cmd, nil
-}
-
 func readProtoFromCache(ctx context.Context, cache interfaces.Cache, r *digest.ResourceName, out proto.Message) error {
 	data, err := cache.Get(ctx, r.ToProto())
 	if err != nil {
