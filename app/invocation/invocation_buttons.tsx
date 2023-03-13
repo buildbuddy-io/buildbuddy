@@ -15,6 +15,10 @@ export interface InvocationButtonsProps {
 
 export default class InvocationButtons extends React.Component<InvocationButtonsProps> {
   private canRerunWorkflow() {
+    if (!this.props.user?.groups.some((group) => group.id === this.props.model.invocations[0]?.acl?.groupId)) {
+      return false;
+    }
+
     const repoUrl = this.props.model.getRepo();
     // This repo URL comes from the GitHub API, so no need to worry about
     // ssh or other URL formats.
