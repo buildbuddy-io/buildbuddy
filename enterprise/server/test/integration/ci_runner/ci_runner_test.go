@@ -690,7 +690,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 			"--target_repo_url=file://" + targetRepoPath,
 			"--target_branch=master",
 			"--cache_backend=" + app.GRPCAddress(),
-			"--patch_digest=" + fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()),
+			"--patch_uri=" + fmt.Sprintf("blobs/%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()),
 			"--bazel_sub_command", "test --test_output=streamed --nocache_test_results //...",
 			// Disable clean checkout fallback for this test since we expect to sync
 			// without errors.

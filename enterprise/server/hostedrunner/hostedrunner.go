@@ -2,7 +2,6 @@ package hostedrunner
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/fs"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -27,6 +27,7 @@ import (
 	"google.golang.org/genproto/googleapis/longrunning"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -119,13 +120,18 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, err
 	}
 
-	var patchDigests []string
+	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
 		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), patch)
 		if err != nil {
 			return nil, err
 		}
-		patchDigests = append(patchDigests, fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()))
+		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS)
+		uri, err := rn.DownloadString()
+		if err != nil {
+			return nil, err
+		}
+		patchURIs = append(patchURIs, uri)
 	}
 
 	// Use https for git operations.
@@ -154,8 +160,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if req.GetInstanceName() != "" {
 		args = append(args, "--remote_instance_name="+req.GetInstanceName())
 	}
-	for _, patchDigest := range patchDigests {
-		args = append(args, "--patch_digest="+patchDigest)
+	for _, patchURI := range patchURIs {
+		args = append(args, "--patch_uri="+patchURI)
 	}
 
 	affinityKey := req.GetSessionAffinityKey()

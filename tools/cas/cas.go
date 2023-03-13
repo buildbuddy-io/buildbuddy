@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -66,16 +67,29 @@ func main() {
 	if *blobDigest == "" {
 		log.Fatalf("Missing --digest")
 	}
-	d, err := digest.Parse(*blobDigest)
+
+	// For backwards compatibility, attempt to fixup old style digest
+	// strings that don't start with a '/blobs/' prefix.
+	digestString := *blobDigest
+	if !strings.HasPrefix(digestString, "/blobs") {
+		digestString = "/blobs/" + digestString
+	}
+
+	ind, err := digest.ParseDownloadResourceName(digestString)
 	if err != nil {
 		log.Fatalf(status.Message(err))
 	}
-
-	cacheType := rspb.CacheType_CAS
 	if *blobType == "ActionResult" {
-		cacheType = rspb.CacheType_AC
+		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC)
 	}
-	ind := digest.NewResourceName(d, *instanceName, cacheType)
+
+	// For backwards compatibility with the existing behavior of this code:
+	// If the parsed remote_instance_name is empty, and the flag instance
+	// name is set; override the instance name of `rn`.
+	if ind.GetInstanceName() == "" && *instanceName != "" {
+		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType())
+	}
+
 	conn, err := grpc_client.DialTarget(*target)
 	if err != nil {
 		log.Fatalf("Error dialing CAS target: %s", err)
