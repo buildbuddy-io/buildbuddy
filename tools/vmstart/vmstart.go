@@ -156,12 +156,17 @@ func main() {
 	}()
 
 	if *actionDigest != "" {
-		d, err := digest.Parse(*actionDigest)
+		actionInstanceDigest, err := digest.ParseDownloadResourceName(*actionDigest)
 		if err != nil {
 			log.Fatalf("Error parsing action digest %q: %s", *actionDigest, err)
 		}
 
-		actionInstanceDigest := digest.NewResourceName(d, *remoteInstanceName, rspb.CacheType_CAS)
+		// For backwards compatibility with the existing behavior of this code:
+		// If the parsed remote_instance_name is empty, and the flag instance
+		// name is set; override the instance name of `rn`.
+		if actionInstanceDigest.GetInstanceName() == "" && *remoteInstanceName != "" {
+			actionInstanceDigest = digest.NewResourceName(actionInstanceDigest.GetDigest(), *remoteInstanceName, actionInstanceDigest.GetCacheType())
+		}
 
 		action, cmd, err := cachetools.GetActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
 		if err != nil {

@@ -1325,22 +1325,28 @@ func (ws *workspace) setup(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamClient, digestString string) error {
-	d, err := digest.Parse(digestString)
+func (ws *workspace) applyPatch(ctx context.Context, bsClient bspb.ByteStreamClient, patchURI string) error {
+	rn, err := digest.ParseDownloadResourceName(patchURI)
 	if err != nil {
 		return err
 	}
-	patchFile := d.GetHash()
-	f, err := os.OpenFile(patchFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+	// For backwards compatibility with the existing behavior of this code:
+	// If the parsed remote_instance_name is empty, and the flag instance
+	// name is set; override the instance name of `rn`.
+	if rn.GetInstanceName() == "" && *remoteInstanceName != "" {
+		rn = digest.NewResourceName(rn.GetDigest(), *remoteInstanceName, rn.GetCacheType())
+	}
+	patchFileName := rn.GetDigest().GetHash()
+	f, err := os.OpenFile(patchFileName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	if err := cachetools.GetBlob(ctx, bsClient, digest.NewResourceName(d, *remoteInstanceName, rspb.CacheType_CAS), f); err != nil {
+	if err := cachetools.GetBlob(ctx, bsClient, rn, f); err != nil {
 		_ = f.Close()
 		return err
 	}
 	_ = f.Close()
-	if err := git(ctx, ws.log, "apply", "--verbose", patchFile); err != nil {
+	if err := git(ctx, ws.log, "apply", "--verbose", patchFileName); err != nil {
 		return err
 	}
 	return nil

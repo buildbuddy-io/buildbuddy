@@ -488,21 +488,6 @@ func MissingDigestError(d *repb.Digest) error {
 	}
 }
 
-func Parse(str string) (*repb.Digest, error) {
-	dParts := strings.SplitN(str, "/", 2)
-	if len(dParts) != 2 {
-		return nil, status.FailedPreconditionErrorf("Error parsing digest %q: should be of form 'f31e59431cdc5d631853e28151fb664f859b5f4c5dc94f0695408a6d31b84724/142'", str)
-	}
-	i, err := strconv.ParseInt(dParts[1], 10, 64)
-	if err != nil {
-		return nil, status.FailedPreconditionErrorf("Error parsing digest %q: %s", str, err)
-	}
-	return &repb.Digest{
-		Hash:      dParts[0],
-		SizeBytes: i,
-	}, nil
-}
-
 // String returns the digest formatted as "HASH/SIZE".
 func String(d *repb.Digest) string {
 	return fmt.Sprintf("%s/%d", d.Hash, d.SizeBytes)

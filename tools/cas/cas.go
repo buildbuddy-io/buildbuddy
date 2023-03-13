@@ -66,16 +66,25 @@ func main() {
 	if *blobDigest == "" {
 		log.Fatalf("Missing --digest")
 	}
-	d, err := digest.Parse(*blobDigest)
+	var ind *digest.ResourceName
+	var err error
+
+	if *blobType == "ActionResult" {
+		ind, err = digest.ParseActionCacheResourceName(*blobDigest)
+	} else {
+		ind, err = digest.ParseDownloadResourceName(*blobDigest)
+	}
 	if err != nil {
 		log.Fatalf(status.Message(err))
 	}
 
-	cacheType := rspb.CacheType_CAS
-	if *blobType == "ActionResult" {
-		cacheType = rspb.CacheType_AC
+	// For backwards compatibility with the existing behavior of this code:
+	// If the parsed remote_instance_name is empty, and the flag instance
+	// name is set; override the instance name of `rn`.
+	if ind.GetInstanceName() == "" && *instanceName != "" {
+		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType())
 	}
-	ind := digest.NewResourceName(d, *instanceName, cacheType)
+
 	conn, err := grpc_client.DialTarget(*target)
 	if err != nil {
 		log.Fatalf("Error dialing CAS target: %s", err)
