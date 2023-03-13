@@ -20,11 +20,12 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - |
+      - >-
         test --config=mac-workflows
-             --
-             //...
-             -//enterprise/server/test/integration/remote_execution/bazel_rbe:all
+        --
+        //...
+        -//enterprise/server/test/integration/ci_runner:all
+        -//enterprise/server/test/integration/remote_execution/bazel_rbe:all
   - name: Benchmark
     container_image: ubuntu-20.04
     triggers:
