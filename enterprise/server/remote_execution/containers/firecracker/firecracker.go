@@ -523,6 +523,13 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 			return nil, err
 		}
 		baseMemSnapshotPath = filepath.Join(baseDir, fullMemSnapshotName)
+
+		// The base snapshot is no longer useful since we're merging on top
+		// of it and replacing the paused VM snapshot with the new merged
+		// snapshot. Delete it to prevent unnecessary filecache evictions.
+		if err := loader.DeleteSnapshot(baseSnapshotDigest); err != nil {
+			log.Warningf("Failed to delete snapshot: %s", err)
+		}
 	}
 
 	if err := c.machine.PauseVM(ctx); err != nil {
