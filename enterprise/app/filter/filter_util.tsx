@@ -2,7 +2,7 @@ import capabilities from "../../../app/capabilities/capabilities";
 import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
-import { invocation } from "../../../proto/invocation_ts_proto";
+import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import moment from "moment";
 import {
@@ -44,7 +44,7 @@ export type SortOrder = "asc" | "desc";
 
 export interface ProtoFilterParams {
   role?: string[];
-  status?: invocation.OverallStatus[];
+  status?: invocation_status.OverallStatus[];
   updatedAfter?: google_timestamp.protobuf.Timestamp;
   updatedBefore?: google_timestamp.protobuf.Timestamp;
 
@@ -113,17 +113,17 @@ export function getEndDate(search: URLSearchParams): Date | undefined {
 }
 
 const STATUS_TO_STRING = Object.fromEntries(
-  Object.entries(invocation.OverallStatus).map(([k, v]) => [v, k.toLowerCase().replace(/_/g, "-")])
+  Object.entries(invocation_status.OverallStatus).map(([k, v]) => [v, k.toLowerCase().replace(/_/g, "-")])
 );
 
-export function statusToString(status: invocation.OverallStatus) {
+export function statusToString(status: invocation_status.OverallStatus) {
   return STATUS_TO_STRING[status];
 }
 
 export function statusFromString(value: string) {
-  return (invocation.OverallStatus[
+  return (invocation_status.OverallStatus[
     value.toUpperCase().replace(/-/g, "_") as any
-  ] as unknown) as invocation.OverallStatus;
+  ] as unknown) as invocation_status.OverallStatus;
 }
 
 export function parseRoleParam(paramValue: string | null): string[] {
@@ -138,12 +138,12 @@ export function toRoleParam(roles: Iterable<string>): string {
     .join(" ");
 }
 
-export function parseStatusParam(paramValue: string | null): invocation.OverallStatus[] {
+export function parseStatusParam(paramValue: string | null): invocation_status.OverallStatus[] {
   if (!paramValue) return [];
   return paramValue.split(" ").map((name) => statusFromString(name));
 }
 
-export function toStatusParam(statuses: Iterable<invocation.OverallStatus>): string {
+export function toStatusParam(statuses: Iterable<invocation_status.OverallStatus>): string {
   return [...statuses]
     .map(statusToString)
     .sort((a, b) => statusFromString(a) - statusFromString(b))

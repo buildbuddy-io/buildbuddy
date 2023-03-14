@@ -19,7 +19,7 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -61,7 +61,7 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
 				`+d.h.SelectForUpdateModifier(),
 			ti.InvocationID,
-			int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS),
+			int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 			time.Now().Add(time.Hour*-4).UnixMicro(),
 		).Take(ti).Error
 		if err != nil {

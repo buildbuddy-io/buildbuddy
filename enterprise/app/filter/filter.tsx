@@ -41,7 +41,7 @@ import router, {
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router";
-import { invocation } from "../../../proto/invocation_ts_proto";
+import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import {
   parseRoleParam,
   toRoleParam,
@@ -239,7 +239,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
-  private onStatusToggle(status: invocation.OverallStatus, selected: Set<invocation.OverallStatus>) {
+  private onStatusToggle(status: invocation_status.OverallStatus, selected: Set<invocation_status.OverallStatus>) {
     selected = new Set(selected); // clone
     if (selected.has(status)) {
       selected.delete(status);
@@ -277,8 +277,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
   private renderStatusCheckbox(
     label: string,
-    status: invocation.OverallStatus,
-    selected: Set<invocation.OverallStatus>
+    status: invocation_status.OverallStatus,
+    selected: Set<invocation_status.OverallStatus>
   ) {
     const name = statusToString(status);
     return (
@@ -396,12 +396,12 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             className={`filter-menu-button icon-text-button ${isFiltering ? "" : "square"}`}
             onClick={this.onOpenFilterMenu.bind(this)}>
             <Filter className="icon" />
-            {selectedStatuses.has(invocation.OverallStatus.SUCCESS) && <span className="status-block success" />}
-            {selectedStatuses.has(invocation.OverallStatus.FAILURE) && <span className="status-block failure" />}
-            {selectedStatuses.has(invocation.OverallStatus.IN_PROGRESS) && (
+            {selectedStatuses.has(invocation_status.OverallStatus.SUCCESS) && <span className="status-block success" />}
+            {selectedStatuses.has(invocation_status.OverallStatus.FAILURE) && <span className="status-block failure" />}
+            {selectedStatuses.has(invocation_status.OverallStatus.IN_PROGRESS) && (
               <span className="status-block in-progress" />
             )}
-            {selectedStatuses.has(invocation.OverallStatus.DISCONNECTED) && (
+            {selectedStatuses.has(invocation_status.OverallStatus.DISCONNECTED) && (
               <span className="status-block disconnected" />
             )}
             {selectedRoles.has("") && <span className="role-badge DEFAULT">Default</span>}
@@ -465,10 +465,18 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               <div className="option-group">
                 <div className="option-group-title">Status</div>
                 <div className="option-group-options">
-                  {this.renderStatusCheckbox("Succeeded", invocation.OverallStatus.SUCCESS, selectedStatuses)}
-                  {this.renderStatusCheckbox("Failed", invocation.OverallStatus.FAILURE, selectedStatuses)}
-                  {this.renderStatusCheckbox("In progress", invocation.OverallStatus.IN_PROGRESS, selectedStatuses)}
-                  {this.renderStatusCheckbox("Disconnected", invocation.OverallStatus.DISCONNECTED, selectedStatuses)}
+                  {this.renderStatusCheckbox("Succeeded", invocation_status.OverallStatus.SUCCESS, selectedStatuses)}
+                  {this.renderStatusCheckbox("Failed", invocation_status.OverallStatus.FAILURE, selectedStatuses)}
+                  {this.renderStatusCheckbox(
+                    "In progress",
+                    invocation_status.OverallStatus.IN_PROGRESS,
+                    selectedStatuses
+                  )}
+                  {this.renderStatusCheckbox(
+                    "Disconnected",
+                    invocation_status.OverallStatus.DISCONNECTED,
+                    selectedStatuses
+                  )}
                 </div>
               </div>
             </div>
