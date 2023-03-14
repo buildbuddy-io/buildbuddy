@@ -458,6 +458,13 @@ message StartClusterResponse {
   BatchCmdResponse batch = 1;
 }
 
+message CloneClusterRequest {
+  uint64 source_range_id = 1;
+  uint64 dest_range_id = 2;
+}
+
+message CloneClusterResponse {}
+
 message RemoveDataRequest {
   uint64 cluster_id = 1;
   uint64 node_id = 2;
@@ -585,3 +592,10 @@ message GetMultiResponse {
   }
   repeated Data data = 1;
 }
+
+message TransferLeadershipRequest {
+  uint64 cluster_id = 1;
+  uint64 target_node_id = 2;
+}
+
+message TransferLeadershipResponse {}
