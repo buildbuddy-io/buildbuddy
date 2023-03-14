@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -65,6 +66,7 @@ import (
 var (
 	rootDirectory           = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
 	hostRootDirectory       = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
+	dockerSocketWaitTimeout = flag.Duration("executor.docker_socket_wait_timeout", 0, "How long to wait for the docker socket to be created.")
 	dockerMountMode         = flag.String("executor.docker_mount_mode", "", "Sets the mount mode of volumes mounted to docker images. Useful if running on SELinux https://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/")
 	dockerNetHost           = flagutil.New("executor.docker_net_host", false, "Sets --net=host on the docker command. Intended for local development only.", flagutil.DeprecatedTag("Use --executor.docker_network=host instead."))
 	dockerNetwork           = flag.String("executor.docker_network", "", "If set, set docker/podman --network to this value by default. Can be overridden per-action with the `dockerNetwork` exec property, which accepts values 'off' (--network=none) or 'bridge' (--network=<default>).")
@@ -607,16 +609,21 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 
 	var dockerClient *dockerclient.Client
 	if platform.DockerSocket() != "" {
-		_, err := os.Stat(platform.DockerSocket())
-		if os.IsNotExist(err) {
-			return nil, status.FailedPreconditionErrorf("Docker socket %q not found", platform.DockerSocket())
-		}
-		dockerSocket := platform.DockerSocket()
-		if !strings.Contains(dockerSocket, "://") {
-			dockerSocket = fmt.Sprintf("unix://%s", dockerSocket)
+		socketPath := strings.TrimPrefix(platform.DockerSocket(), "unix://")
+		_, err := os.Stat(socketPath)
+		if err != nil {
+			if os.IsNotExist(err) && *dockerSocketWaitTimeout > 0 {
+				log.Infof("Waiting up to %s for docker socket %s to be created...", *dockerSocketWaitTimeout, socketPath)
+				opts := disk.WaitOpts{Timeout: *dockerSocketWaitTimeout}
+				if err := disk.WaitUntilExists(env.GetServerContext(), socketPath, opts); err != nil {
+					return nil, status.WrapErrorf(err, "docker socket %s wait failed", socketPath)
+				}
+			} else {
+				return nil, status.FailedPreconditionErrorf("Failed to stat docker socket %s: %s", socketPath, err)
+			}
 		}
 		dockerClient, err = dockerclient.NewClientWithOpts(
-			dockerclient.WithHost(dockerSocket),
+			dockerclient.WithHost("unix://"+socketPath),
 			dockerclient.WithAPIVersionNegotiation(),
 		)
 		if err != nil {
