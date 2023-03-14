@@ -43,6 +43,13 @@ const (
 	defaultDockerUlimit          = int64(65535)
 )
 
+func HealthChecker(client *dockerclient.Client) interfaces.Checker {
+	return interfaces.CheckerFunc(func(ctx context.Context) error {
+		_, err := client.Ping(ctx)
+		return err
+	})
+}
+
 type DockerOptions struct {
 	Socket                  string
 	EnableSiblingContainers bool

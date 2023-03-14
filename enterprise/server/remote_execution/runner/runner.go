@@ -622,6 +622,7 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("Failed to create docker client: %s", err)
 		}
+		hc.AddHealthCheck("dockerd", docker.HealthChecker(dockerClient))
 	}
 
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
