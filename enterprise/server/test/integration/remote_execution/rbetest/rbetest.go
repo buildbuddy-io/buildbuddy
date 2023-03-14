@@ -192,7 +192,7 @@ func (el *envLike) GetCapabilitiesClient() repb.CapabilitiesClient {
 }
 
 func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
-	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, &envLike{r.testEnv, r}, "" /*=instanceName*/, rootDir)
+	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, &envLike{r.testEnv, r}, "" /*=instanceName*/, repb.DigestFunction_SHA256, rootDir)
 	if err != nil {
 		assert.FailNow(r.t, err.Error())
 	}

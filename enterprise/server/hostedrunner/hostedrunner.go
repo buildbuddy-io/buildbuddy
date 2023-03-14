@@ -102,7 +102,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if err != nil {
 		return nil, err
 	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), binaryBlob)
+	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, binaryBlob)
 	if err != nil {
 		return nil, err
 	}
@@ -115,14 +115,14 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 			IsExecutable: true,
 		}},
 	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), dir)
+	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, dir)
 	if err != nil {
 		return nil, err
 	}
 
 	var patchURIs []string
 	for _, patch := range req.GetRepoState().GetPatch() {
-		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), patch)
+		patchDigest, err := cachetools.UploadBlobToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, patch)
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +206,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		})
 	}
 
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
 	}
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_SHA256, action)
 	return actionDigest, err
 }
 

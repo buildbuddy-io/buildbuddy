@@ -727,7 +727,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	for _, path := range workflowAction.GitCleanExclude {
 		cmd.Arguments = append(cmd.Arguments, "--git_clean_exclude="+path)
 	}
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -736,7 +736,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
 	}
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)
 	return actionDigest, err
 }
 
