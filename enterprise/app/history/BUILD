@@ -23,6 +23,7 @@ ts_library(
         "//enterprise/app/history:history_invocation_card",
         "//enterprise/app/history:history_invocation_stat_card",
         "//enterprise/app/org:org_join_requests",
+        "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/long",
         "@npm//@types/react",
@@ -40,6 +41,7 @@ ts_library(
     deps = [
         "//app/format",
         "//app/router",
+        "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",

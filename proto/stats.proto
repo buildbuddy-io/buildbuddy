@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 import "proto/context.proto";
-import "proto/invocation.proto";
+import "proto/invocation_status.proto";
 import "proto/stat_filter.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -48,7 +48,7 @@ message TrendQuery {
 
   // Status of the build. If multiple are specified, they are combined with
   // "OR".
-  repeated invocation.OverallStatus status = 9;
+  repeated invocation_status.OverallStatus status = 9;
 
   // The git branch used for the build.
   string branch_name = 10;

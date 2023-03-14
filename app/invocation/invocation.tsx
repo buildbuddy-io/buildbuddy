@@ -2,6 +2,7 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { User } from "../auth/auth_service";
 import faviconService from "../favicon/favicon";
 import rpcService from "../service/rpc_service";
@@ -99,7 +100,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         let showInProgressScreen = false;
         if (
           response.invocation.length &&
-          response.invocation[0].invocationStatus == invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS
+          response.invocation[0].invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS
         ) {
           showInProgressScreen = response.invocation[0].event.length == 0;
           this.fetchUpdatedProgress();

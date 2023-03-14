@@ -21,6 +21,7 @@ go_test(
         "//proto:context_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//proto:user_id_go_proto",
         "//proto:workflow_go_proto",
         "//server/backends/repo_downloader",

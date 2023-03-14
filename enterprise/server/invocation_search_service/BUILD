@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service",
     deps = [
         "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/environment",
         "//server/interfaces",

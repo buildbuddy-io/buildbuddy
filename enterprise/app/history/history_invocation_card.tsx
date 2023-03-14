@@ -16,6 +16,7 @@ import React from "react";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
 import { invocation } from "../../../proto/invocation_ts_proto";
+import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 
 const durationRefreshIntervalMillis = 3000;
 
@@ -95,13 +96,11 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
   }
 
   isInProgress() {
-    return this.props.invocation.invocationStatus == invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS;
+    return this.props.invocation.invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
   isDisconnected() {
-    return (
-      this.props.invocation.invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS
-    );
+    return this.props.invocation.invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS;
   }
 
   getStatusClass() {

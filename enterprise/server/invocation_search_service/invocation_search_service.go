@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 const (
@@ -156,15 +157,15 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	statusClauses := query_builder.OrClauses{}
 	for _, status := range req.GetQuery().GetStatus() {
 		switch status {
-		case inpb.OverallStatus_SUCCESS:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 1)
-		case inpb.OverallStatus_FAILURE:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 0)
-		case inpb.OverallStatus_IN_PROGRESS:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_PARTIAL_INVOCATION_STATUS))
-		case inpb.OverallStatus_DISCONNECTED:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS))
-		case inpb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+		case inspb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
+		case inspb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 0)
+		case inspb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS))
+		case inspb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS))
+		case inspb.OverallStatus_UNKNOWN_OVERALL_STATUS:
 			continue
 		default:
 			continue

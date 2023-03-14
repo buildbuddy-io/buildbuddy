@@ -10,6 +10,7 @@ import format from "../../../app/format/format";
 import router, { ROLE_PARAM_NAME } from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
+import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import FilterComponent from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import HistoryInvocationCardComponent from "./history_invocation_card";
@@ -324,10 +325,10 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   getInvocationStatusClass(selectedInvocation: invocation.IInvocation) {
-    if (selectedInvocation.invocationStatus == invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS) {
+    if (selectedInvocation.invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS) {
       return "grid-block-in-progress";
     }
-    if (selectedInvocation.invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+    if (selectedInvocation.invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return "grid-block-disconnected";
     }
     return selectedInvocation.success ? "grid-block-success" : "grid-block-failure";

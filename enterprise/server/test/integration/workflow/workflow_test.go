@@ -28,6 +28,7 @@ import (
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 )
@@ -165,7 +166,7 @@ func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb b
 	return ""
 }
 
-func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, expectedStatus inpb.Invocation_InvocationStatus) *inpb.Invocation {
+func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, expectedStatus inspb.InvocationStatus) *inpb.Invocation {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		invResp, err := bb.GetInvocation(ctx, &inpb.GetInvocationRequest{
 			RequestContext: reqCtx,
@@ -251,7 +252,7 @@ func TestCreateAndTriggerViaWebhook(t *testing.T) {
 	triggerWebhook(t, fakeGitProvider, workflowService, repoContentsMap, repoURL, commitSHA, createResp.GetWebhookUrl())
 
 	iid := waitForAnyWorkflowInvocationCreated(t, ctx, bb, reqCtx)
-	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_COMPLETE_INVOCATION_STATUS)
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)
 
 	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
 	require.Equal(t, repoURL, inv.GetRepoUrl())
@@ -299,7 +300,7 @@ func TestCreateAndExecute(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, execResp.GetInvocationId())
 
-	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, execResp.GetInvocationId(), inpb.Invocation_COMPLETE_INVOCATION_STATUS)
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, execResp.GetInvocationId(), inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)
 
 	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
 	require.Equal(t, repoURL, inv.GetRepoUrl())
@@ -314,7 +315,7 @@ func TestCreateAndExecute(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, execResp.GetInvocationId())
 
-	inv = waitForInvocationStatus(t, ctx, bb, reqCtx, execResp.GetInvocationId(), inpb.Invocation_COMPLETE_INVOCATION_STATUS)
+	inv = waitForInvocationStatus(t, ctx, bb, reqCtx, execResp.GetInvocationId(), inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS)
 
 	require.True(t, inv.GetSuccess(), "workflow invocation should succeed")
 	nActionsSecondRun := actionCount(t, inv)
@@ -356,7 +357,7 @@ func TestCancel(t *testing.T) {
 		InvocationId:   iid,
 	})
 
-	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS)
+	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
 	require.NoError(t, err)
 	require.NotNil(t, cancelResp)
 	require.NotNil(t, inv)

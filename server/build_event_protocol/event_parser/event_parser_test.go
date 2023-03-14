@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 func singleFile() *build_event_stream.File {
@@ -171,7 +172,7 @@ func TestFillInvocation(t *testing.T) {
 	})
 	invocation := &inpb.Invocation{
 		InvocationId:     "test-invocation",
-		InvocationStatus: inpb.Invocation_COMPLETE_INVOCATION_STATUS,
+		InvocationStatus: inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
 	}
 	parser := event_parser.NewStreamingEventParser(invocation)
 	for _, event := range events {
@@ -182,7 +183,7 @@ func TestFillInvocation(t *testing.T) {
 	assert.Empty(t, invocation.StructuredCommandLine, "parser should not keep the full events list in memory")
 
 	assert.Equal(t, "test-invocation", invocation.InvocationId, "parser should keep original invocation properties")
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus, "parser should keep original invocation properties")
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus, "parser should keep original invocation properties")
 
 	assert.Equal(t, "test", invocation.Command)
 	assert.Equal(t, int64(1000), invocation.DurationUsec)

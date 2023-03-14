@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/invocation_stat_service/config",
         "//proto:context_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//proto:stat_filter_go_proto",
         "//proto:stats_go_proto",
         "//server/environment",
