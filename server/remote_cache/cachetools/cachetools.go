@@ -298,7 +298,7 @@ func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.Reso
 	return readProtoFromCache(ctx, cache, acRN, out)
 }
 
-func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, in io.ReadSeeker) (*repb.Digest, error) {
+func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
 	d, err := digest.Compute(in, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
@@ -323,26 +323,22 @@ func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType r
 	return d, wc.Commit()
 }
 
-func UploadBytesToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in io.ReadSeeker) (*repb.Digest, error) {
-	return UploadBytesToCache(ctx, cache, rspb.CacheType_CAS, instanceName, in)
-}
-
-func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, instanceName string, in proto.Message) (*repb.Digest, error) {
+func uploadProtoToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
 	data, err := proto.Marshal(in)
 	if err != nil {
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	return UploadBytesToCache(ctx, cache, cacheType, instanceName, reader)
+	return UploadBytesToCache(ctx, cache, cacheType, instanceName, digestFunction, reader)
 }
 
-func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, blob []byte) (*repb.Digest, error) {
+func UploadBlobToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, blob []byte) (*repb.Digest, error) {
 	reader := bytes.NewReader(blob)
-	return UploadBytesToCache(ctx, cache, rspb.CacheType_CAS, instanceName, reader)
+	return UploadBytesToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, reader)
 }
 
-func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
-	return uploadProtoToCache(ctx, cache, rspb.CacheType_CAS, instanceName, in)
+func UploadProtoToCAS(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, in proto.Message) (*repb.Digest, error) {
+	return uploadProtoToCache(ctx, cache, rspb.CacheType_CAS, instanceName, digestFunction, in)
 }
 
 func SupportsCompression(ctx context.Context, capabilitiesClient repb.CapabilitiesClient) (bool, error) {
@@ -380,12 +376,13 @@ type BatchCASUploader struct {
 	unsentBatchReq  *repb.BatchUpdateBlobsRequest
 	uploads         map[digest.Key]struct{}
 	instanceName    string
+	digestFunction  repb.DigestFunction_Value
 	unsentBatchSize int64
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
 // context (it should not be used outside the lifecycle of the request).
-func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string) *BatchCASUploader {
+func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) *BatchCASUploader {
 	eg, ctx := errgroup.WithContext(ctx)
 	return &BatchCASUploader{
 		ctx:             ctx,
@@ -397,6 +394,7 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
 		unsentBatchSize: 0,
 		instanceName:    instanceName,
+		digestFunction:  digestFunction,
 		uploads:         make(map[digest.Key]struct{}),
 	}
 }
@@ -568,8 +566,8 @@ func (*bytesReadSeekCloser) Close() error { return nil }
 // UploadDirectoryToCAS uploads all the files in a given directory to the CAS
 // as well as the directory structure, and returns the digest of the root
 // Directory proto that can be used to fetch the uploaded contents.
-func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
-	ul := NewBatchCASUploader(ctx, env, instanceName)
+func UploadDirectoryToCAS(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, rootDirPath string) (*repb.Digest, *repb.Digest, error) {
+	ul := NewBatchCASUploader(ctx, env, instanceName, digestFunction)
 
 	// Recursively find and upload all descendant dirs.
 	visited, rootDirectoryDigest, err := uploadDir(ul, rootDirPath, nil /*=visited*/)
@@ -645,10 +643,6 @@ func uploadDir(ul *BatchCASUploader, dirPath string, visited []*repb.Directory) 
 		return nil, nil, err
 	}
 	return visited, digest, nil
-}
-
-func UploadProtoToAC(ctx context.Context, cache interfaces.Cache, instanceName string, in proto.Message) (*repb.Digest, error) {
-	return uploadProtoToCache(ctx, cache, rspb.CacheType_AC, instanceName, in)
 }
 
 func isExecutable(info os.FileInfo) bool {

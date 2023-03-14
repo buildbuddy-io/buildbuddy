@@ -264,8 +264,8 @@ func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	}
 }
 
-func uploadFiles(ctx context.Context, env environment.Env, instanceName string, filesToUpload []*fileToUpload) error {
-	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName)
+func uploadFiles(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, filesToUpload []*fileToUpload) error {
+	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
 	fc := env.GetFileCache()
 
 	for _, uploadableFile := range filesToUpload {
@@ -377,7 +377,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	if _, err := uploadDirFn(rootDir, ""); err != nil {
 		return nil, err
 	}
-	if err := uploadFiles(ctx, env, instanceName, filesToUpload); err != nil {
+	if err := uploadFiles(ctx, env, instanceName, digestFunction, filesToUpload); err != nil {
 		return nil, err
 	}
 
