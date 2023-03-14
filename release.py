@@ -91,10 +91,12 @@ def confirm_new_version(version):
         version = get_version_override()
     return version
 
-def gcr_tag_exists(project, tag):
-    query_url = f"https://gcr.io/v2/{project}/tags/list"
+def get_image(project, tag):
+    query_url = f"https://gcr.io/v2/{project}/manifests/{tag}"
     r = requests.get(query_url)
-    return tag in r.json()["tags"]
+    if r.status_code == 404:
+        return None
+    return r.json()
 
 def create_and_push_tag(old_version, new_version, release_notes=''):
     commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
@@ -111,6 +113,25 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
+def push_images_for_project(project, version_tag, target, skip_update_latest_tag):
+    version_image = get_image(project, version_tag)
+    if version_image is None:
+        push_image(target, version_tag)
+
+    if not skip_update_latest_tag:
+        version_image = version_image or get_image(project, version_tag)
+        if version_image is None:
+            die(f"Could not fetch image with tag {version_tag} from project {project}.")
+
+        latest_image = get_image(project, "latest")
+        if latest_image is None:
+            die(f"Could not fetch image with latest tag from project {project}.")
+
+        should_update_latest_tag = version_image["config"]["digest"] != latest_image["config"]["digest"]
+        if should_update_latest_tag:
+            add_tag_cmd = f"y | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
+            run_or_die(add_tag_cmd)
+
 def push_image(target, image_tag):
     print(f"Pushed docker image target {target} tag {image_tag}")
     command = (
@@ -121,40 +142,19 @@ def push_image(target, image_tag):
     ).format(image_tag=image_tag, target=target)
     run_or_die(command)
 
-def update_docker_images(version_tag, update_latest_tag):
+def update_docker_images(version_tag, skip_update_latest_tag):
     clean_cmd = 'bazel clean --expunge'
     run_or_die(clean_cmd)
 
-    # OSS app
     oss_tag = version_tag
     enterprise_tag = 'enterprise-'+version_tag
-    pushed_oss_image = False
-    pushed_enterprise_image = False
-    pushed_enterprise_exec_image = False
-    if not gcr_tag_exists("flame-public/buildbuddy-app-onprem", oss_tag):
-        push_image('//deployment:release_onprem', image_tag=oss_tag)
-        pushed_oss_image = True
+
+    # OSS app
+    push_images_for_project("flame-public/buildbuddy-app-onprem", oss_tag, '//deployment:release_onprem', skip_update_latest_tag)
     # Enterprise app
-    if not gcr_tag_exists("flame-public/buildbuddy-app-enterprise", enterprise_tag):
-        push_image('//enterprise/deployment:release_enterprise', image_tag=enterprise_tag)
-        pushed_enterprise_image = True
+    push_images_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
     # Enterprise executor
-    if not gcr_tag_exists("flame-public/buildbuddy-executor-enterprise", enterprise_tag):
-        push_image('//enterprise/deployment:release_executor_enterprise', image_tag=enterprise_tag)
-        pushed_enterprise_exec_image = True
-
-    # update "latest" tags
-    if update_latest_tag:
-        # OSS app
-        if pushed_oss_image:
-            push_image('//deployment:release_onprem', image_tag='latest')
-        # Enterprise app
-        if pushed_enterprise_image:
-            push_image('//enterprise/deployment:release_enterprise', image_tag='latest')
-        # Enterprise executor
-        if pushed_enterprise_exec_image:
-            push_image('//enterprise/deployment:release_executor_enterprise', image_tag='latest')
-
+    push_images_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
@@ -211,8 +211,7 @@ def main():
         create_and_push_tag(old_version, new_version, release_notes)
         print("Pushed tag for new version %s" % new_version)
 
-    update_latest_tag = not args.skip_latest_tag
-    update_docker_images(new_version, update_latest_tag)
+    update_docker_images(new_version, args.skip_latest_tag)
     print("Done -- proceed with the release guide!")
 
 if __name__ == "__main__":
