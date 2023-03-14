@@ -113,10 +113,10 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
-def push_images_for_project(project, version_tag, target, skip_update_latest_tag):
+def push_image_for_project(project, version_tag, bazel_target, skip_update_latest_tag):
     version_image = get_image(project, version_tag)
     if version_image is None:
-        push_image(target, version_tag)
+        push_image_with_bazel(bazel_target, version_tag)
 
     if not skip_update_latest_tag:
         version_image = version_image or get_image(project, version_tag)
@@ -132,14 +132,14 @@ def push_images_for_project(project, version_tag, target, skip_update_latest_tag
             add_tag_cmd = f"y | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
             run_or_die(add_tag_cmd)
 
-def push_image(target, image_tag):
-    print(f"Pushed docker image target {target} tag {image_tag}")
+def push_image_with_bazel(bazel_target, image_tag):
+    print(f"Pushed docker image target {bazel_target} tag {image_tag}")
     command = (
         'bazel run -c opt --stamp '+
         '--define=release=true '+
         '--//deployment:image_tag={image_tag} '+
         '{target}'
-    ).format(image_tag=image_tag, target=target)
+    ).format(image_tag=image_tag, target=bazel_target)
     run_or_die(command)
 
 def update_docker_images(version_tag, skip_update_latest_tag):
@@ -150,11 +150,11 @@ def update_docker_images(version_tag, skip_update_latest_tag):
     enterprise_tag = 'enterprise-'+version_tag
 
     # OSS app
-    push_images_for_project("flame-public/buildbuddy-app-onprem", oss_tag, '//deployment:release_onprem', skip_update_latest_tag)
+    push_image_for_project("flame-public/buildbuddy-app-onprem", oss_tag, '//deployment:release_onprem', skip_update_latest_tag)
     # Enterprise app
-    push_images_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
+    push_image_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
     # Enterprise executor
-    push_images_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
+    push_image_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
