@@ -7,6 +7,7 @@ import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
+import "proto/resource.proto";
 import "proto/scheduler.proto";
 import "proto/stat_filter.proto";
 
@@ -130,6 +131,7 @@ message GetExecutionResponse {
 }
 
 message ExecutionQuery {
+<<<<<<< HEAD
   // The unix-user who performed the build.
   string invocation_user = 1;
 
@@ -172,6 +174,61 @@ message ExecutionQuery {
 // Searches executions data for all matching executions.  This request is
 // automatically filtered to only return readable executions for the user's
 // currently selected group.
+=======
+  // The search parameters in this query will be ANDed when performing a
+  // search -- so if a client species both "user" and "host", all results
+  // returned must match both fields.
+
+  // The unix-user who performed the build.
+  string user = 1;
+
+  // The host this build was executed on.
+  string host = 2;
+
+  // The group to search. The user must be a member of all named groups or an
+  // error will be returned.
+  string group_id = 3;
+
+  // The git repo the build was for.
+  string repo_url = 4;
+
+  // The commit sha used for the build.
+  string commit_sha = 5;
+
+  // The ROLE metadata set on the build. If multiple filters are specified, they
+  // are combined with "OR".
+  repeated string role = 6;
+
+  // The timestamp on or after which the build was last updated (inclusive).
+  google.protobuf.Timestamp updated_after = 7;
+
+  // The timestamp up to which the build was last updated (exclusive).
+  google.protobuf.Timestamp updated_before = 8;
+
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
+  repeated invocation_status.OverallStatus status = 9;
+
+  // The git branch used for the build.
+  string branch_name = 10;
+
+  // The bazel command that was used. Ex: "build", "test", "run"
+  string command = 11;
+
+  // The minimum invocation duration.
+  google.protobuf.Duration minimum_duration = 12;
+
+  // The maximum invocation duration.
+  google.protobuf.Duration maximum_duration = 13;
+
+  // Stat filters (duration_usec, cas_cache_misses, etc.)
+  repeated stat_filter.StatFilter filter = 14;
+
+  // The pattern for the targets built (exact match). Ex: "//..."
+  string pattern = 15;
+}
+
+>>>>>>> 80329f741 (functioning but very-hacked executions fetching.)
 message SearchExecutionRequest {
   context.RequestContext request_context = 1;
 
@@ -179,6 +236,7 @@ message SearchExecutionRequest {
 
   // The number of results to return. Optional.
   // If unset, the server will pick a reasonable page size.
+<<<<<<< HEAD
   int32 count = 3;
 
   // The next_page_token value returned from a previous request, if any.
@@ -217,6 +275,25 @@ message InvocationMetadata {
   bool success = 10;
 
   // The current status of the invocation.
+=======
+  int32 count = 4;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 5;
+}
+
+message InvocationMetadata {
+  string id = 1;
+  string user = 2;
+  string host = 3;
+  string pattern = 4;
+  string role = 5;
+  string branch_name = 6;
+  string commit_sha = 7;
+  string repo_url = 8;
+  string command = 9;
+  bool success = 10;
+>>>>>>> 80329f741 (functioning but very-hacked executions fetching.)
   invocation_status.InvocationStatus invocation_status = 11;
 }
 
@@ -233,4 +310,8 @@ message SearchExecutionResponse {
   // Token to retrieve the next page of results, or empty if there are no
   // more results in the list.
   string next_page_token = 3;
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 80329f741 (functioning but very-hacked executions fetching.)

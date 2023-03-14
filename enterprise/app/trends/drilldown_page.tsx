@@ -8,7 +8,9 @@ import rpcService from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Spinner from "../../../app/components/spinner/spinner";
 import HistoryInvocationCardComponent from "../../app/history/history_invocation_card";
+import InvocationExecutionTable from "../../../app/invocation/invocation_execution_table";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
@@ -36,6 +38,7 @@ interface State {
   heatmapData?: stats.GetStatHeatmapResponse;
   drilldownData?: stats.GetStatDrilldownResponse;
   invocationsData?: invocation.Invocation[];
+  executionsData?: execution_stats.ExecutionWithInvocationMetadata[];
 }
 
 interface MetricOption {
@@ -221,14 +224,58 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   fetchInvocationList() {
     // TODO(jdhollen): Support fetching invocations based on executions data.
-    if (
-      !this.props.user?.selectedGroup ||
-      isExecutionMetric(this.selectedMetric.metric) ||
-      !this.currentHeatmapSelection
-    ) {
+    if (!this.props.user?.selectedGroup || !this.currentHeatmapSelection) {
       return;
     }
-    this.setState({ loadingInvocations: true, invocationsFailed: false, invocationsData: undefined });
+    if (isExecutionMetric(this.selectedMetric.metric)) {
+      this.setState({
+        loadingInvocations: true,
+        invocationsFailed: false,
+        invocationsData: undefined,
+        executionsData: undefined,
+      });
+      const filterParams = getProtoFilterParams(this.props.search);
+      let request = new execution_stats.SearchExecutionRequest({
+        query: new execution_stats.ExecutionQuery({
+          host: filterParams.host,
+          user: filterParams.user,
+          repoUrl: filterParams.repo,
+          branchName: filterParams.branch,
+          commitSha: filterParams.commit,
+          command: filterParams.command,
+          pattern: filterParams.pattern,
+          minimumDuration: filterParams.minimumDuration,
+          maximumDuration: filterParams.maximumDuration,
+          groupId: this.props.user.selectedGroup.id,
+          role: filterParams.role || [],
+          updatedAfter: filterParams.updatedAfter,
+          updatedBefore: filterParams.updatedBefore,
+          status: filterParams.status || [],
+          filter: this.toStatFilterList(this.currentHeatmapSelection),
+        }),
+        pageToken: "",
+        count: 25,
+      });
+      this.addZoomFiltersToQuery(request.query!);
+
+      rpcService.service
+        .searchExecution(request)
+        .then((response) => {
+          console.log(response);
+          this.setState({
+            executionsData: response.execution,
+          });
+        })
+        .catch(() => this.setState({ invocationsFailed: true, invocationsData: undefined }))
+        .finally(() => this.setState({ loadingInvocations: false }));
+      return;
+    }
+    this.setState({
+      loadingInvocations: true,
+      invocationsFailed: false,
+      invocationsData: undefined,
+      executionsData: undefined,
+    });
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
@@ -455,12 +502,15 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return "";
     } else if (this.state.invocationsData) {
       if (this.state.invocationsData.length < (this.currentHeatmapSelection?.invocationsSelected || 0)) {
-        if (isExecutionMetric(this.selectedMetric.metric)) {
-          return `Selected Invocations (showing ${this.state.invocationsData.length} from ${this.currentHeatmapSelection?.invocationsSelected} executions)`;
-        }
-        return `Selected Invocations (showing ${this.state.invocationsData.length} of ${this.currentHeatmapSelection?.invocationsSelected})`;
+        return `Selected invocations (showing ${this.state.invocationsData.length} of ${this.currentHeatmapSelection?.invocationsSelected})`;
       } else {
         return `Selected invocations (${this.state.invocationsData.length})`;
+      }
+    } else if (this.state.executionsData) {
+      if (this.state.executionsData.length < (this.currentHeatmapSelection?.invocationsSelected || 0)) {
+        return `Selected executions (showing ${this.state.executionsData.length} of ${this.currentHeatmapSelection?.invocationsSelected})`;
+      } else {
+        return `Selected executions (${this.state.executionsData.length})`;
       }
     } else if (this.state.invocationsFailed) {
       return "Failed to load invocations.";
@@ -534,6 +584,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         </FilledButton>
       </div>
     );
+  }
+
+  getInvocationIdForExecution(target: execution_stats.IExecution): string {
+    if (!this.state.executionsData) {
+      return "";
+    }
+    const found = this.state.executionsData.find((e) => e.execution === target);
+    return found?.invocationMetadata?.id || "";
   }
 
   render() {
@@ -631,6 +689,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                         ))}
                       </div>
                     </div>
+                  )}
+                  {this.state.executionsData && (
+                    <InvocationExecutionTable
+                      executions={this.state.executionsData.map((e) => e.execution as execution_stats.IExecution)}
+                      invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}></InvocationExecutionTable>
                   )}
                 </div>
               </>
