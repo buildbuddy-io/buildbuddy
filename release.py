@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import re
 import requests
 import subprocess
@@ -46,16 +47,19 @@ def workspace_is_clean():
                          stderr=subprocess.STDOUT)
     return len(p.stdout.readlines()) == 0
 
-def is_draft_release(github_token, version_tag):
-    query_url = f"https://api.github.com/repos/buildbuddy-io/buildbuddy/releases/tags/{version_tag}"
+def get_release(version_tag):
+    github_token = os.environ.get('GITHUB_TOKEN')
+    query_url = f"https://api.github.com/repos/buildbuddy-io/buildbuddy/releases?page=1"
     headers = {'Authorization': f'token {github_token}'}
     r = requests.get(query_url, headers=headers)
     if r.status_code == 401:
-        die("Invalid github credentials. Did you pass a valid github token?")
-    elif r.status_code == 404:
-        die(f"No release found for version tag {version_tag}.")
+        die("Invalid github credentials. Did you set the GITHUB_TOKEN environment variable?")
 
-    return r.json()["draft"]
+    for release in r.json():
+        if release["tag_name"] == version_tag:
+            return release
+
+    return None
 
 def bump_patch_version(version):
     parts = version.split(".")
@@ -155,7 +159,6 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--skip_version_bump', default=False, action='store_true')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
-    parser.add_argument('--github_token')
     args = parser.parse_args()
 
     if workspace_is_clean():
@@ -167,13 +170,21 @@ def main():
             'Please run this in a clean workspace!')
 
     old_version = get_latest_remote_version()
-    new_version = old_version
-    draft_release = is_draft_release(args.github_token, old_version)
-    if draft_release:
-        print(f"Version {old_version} already has a draft release. Skipping version bump.")
+    old_release = get_release(old_version)
 
-    bump_version = not(args.skip_version_bump or draft_release)
-    if bump_version:
+    skip_version_bump = args.skip_version_bump or old_release is None or old_release["draft"]
+    new_version = old_version
+    if skip_version_bump:
+        reason = ""
+        if args.skip_version_bump:
+            reason = "--skip_version_bump flag set."
+        elif old_release is None:
+            reason = f"Using existing tag {old_version} which does not have an associated release."
+        elif old_release["draft"]:
+            reason = f"Using existing tag {old_version} which already has a draft release."
+
+        print(f"Skipping version bump. {reason}")
+    else:
         new_version = bump_patch_version(old_version)
         release_notes = generate_release_notes(old_version)
         print("release notes:\n %s" % release_notes)
