@@ -288,7 +288,7 @@ func uploadFiles(ctx context.Context, env environment.Env, instanceName string, 
 	return uploader.Wait()
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName, rootDir string, actionResult *repb.ActionResult) (*TransferInfo, error) {
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, actionResult *repb.ActionResult) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 	treesToUpload := make([]string, 0)
@@ -404,7 +404,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	for fullFilePath, tree := range trees {
-		td, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, tree)
+		td, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, digestFunction, tree)
 		if err != nil {
 			return nil, err
 		}
@@ -780,7 +780,7 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 }
 
-func DownloadTree(ctx context.Context, env environment.Env, instanceName string, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
+func DownloadTree(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 

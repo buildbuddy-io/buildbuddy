@@ -26,6 +26,7 @@ import (
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -679,7 +680,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 
 	ctx := context.Background()
 	bsClient := app.ByteStreamClient(t)
-	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", bytes.NewReader([]byte(patch)))
+	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", repb.DigestFunction_SHA256, bytes.NewReader([]byte(patch)))
 	require.NoError(t, err)
 
 	// Execute a Bazel command with a patched `pass.sh` that should output 'EDIT'.

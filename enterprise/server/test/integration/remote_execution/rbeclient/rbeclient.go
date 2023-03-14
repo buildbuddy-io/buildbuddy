@@ -252,7 +252,7 @@ func (c *Command) processUpdatesAsync(stream repb.Execution_ExecuteClient, name 
 }
 
 func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command, timeout time.Duration) (*Command, error) {
-	commandDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, commandProto)
+	commandDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, commandProto)
 	if err != nil {
 		return nil, status.UnknownErrorf("unable to upload command %q to CAS: %s", name, err)
 	}
@@ -264,7 +264,7 @@ func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name s
 	if timeout != 0 {
 		action.Timeout = durationpb.New(timeout)
 	}
-	actionDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, action)
+	actionDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, action)
 	if err != nil {
 		return nil, status.UnknownErrorf("unable to upload action for command %q to CAS: %s", name, err)
 	}
@@ -305,7 +305,7 @@ func (c *Client) DownloadActionOutputs(ctx context.Context, env environment.Env,
 		if err := cachetools.GetBlobAsProto(ctx, c.gRPClientSource.GetByteStreamClient(), treeDigest, tree); err != nil {
 			return err
 		}
-		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, tree, path, &dirtools.DownloadTreeOpts{}); err != nil {
+		if _, err := dirtools.DownloadTree(ctx, env, res.InstanceName, repb.DigestFunction_SHA256, tree, path, &dirtools.DownloadTreeOpts{}); err != nil {
 			return err
 		}
 	}

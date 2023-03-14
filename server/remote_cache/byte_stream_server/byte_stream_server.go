@@ -291,7 +291,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	ws.cacheCommitter = committedWriteCloser
 	ws.cacheCloser = committedWriteCloser
 
-	hasher, err := digest.HashForDigestType(r.DigestType())
+	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
 	if err != nil {
 		return nil, err
 	}

@@ -124,7 +124,7 @@ func (r *ResourceName) GetDigest() *repb.Digest {
 	return r.rn.GetDigest()
 }
 
-func (r *ResourceName) DigestType() repb.DigestFunction_Value {
+func (r *ResourceName) GetDigestFunction() repb.DigestFunction_Value {
 	return r.rn.GetDigestFunction()
 }
 
