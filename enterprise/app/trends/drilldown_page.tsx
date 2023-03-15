@@ -237,20 +237,17 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       const filterParams = getProtoFilterParams(this.props.search);
       let request = new execution_stats.SearchExecutionRequest({
         query: new execution_stats.ExecutionQuery({
-          host: filterParams.host,
-          user: filterParams.user,
+          invocationHost: filterParams.host,
+          invocationUser: filterParams.user,
           repoUrl: filterParams.repo,
           branchName: filterParams.branch,
           commitSha: filterParams.commit,
           command: filterParams.command,
           pattern: filterParams.pattern,
-          minimumDuration: filterParams.minimumDuration,
-          maximumDuration: filterParams.maximumDuration,
-          groupId: this.props.user.selectedGroup.id,
           role: filterParams.role || [],
           updatedAfter: filterParams.updatedAfter,
           updatedBefore: filterParams.updatedBefore,
-          status: filterParams.status || [],
+          invocationStatus: filterParams.status || [],
           filter: this.toStatFilterList(this.currentHeatmapSelection),
         }),
         pageToken: "",
