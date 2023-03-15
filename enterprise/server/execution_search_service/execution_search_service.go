@@ -23,7 +23,6 @@ import (
 )
 
 const (
-	// See defaultSortParams() for sort defaults.
 	defaultLimitSize     = int64(15)
 	pageSizeOffsetPrefix = "offset_"
 )
@@ -65,7 +64,7 @@ type ExecutionWithInvocationId struct {
 }
 
 func (s *ExecutionSearchService) fetchExecutionData(ctx context.Context, groupId string, execIds []string) (map[string]*ExecutionWithInvocationId, error) {
-	qString := "SELECT * FROM Executions WHERE (execution_id in ?) AND (perms & ? != 0) AND (group_id = ?)"
+	qString := "SELECT * FROM Executions WHERE (execution_id IN ?) AND (perms & ? != 0) AND (group_id = ?)"
 	qArgs := []interface{}{execIds, perms.GROUP_READ, groupId}
 
 	rows, err := s.h.RawWithOptions(ctx, db.Opts().WithQueryName("fetch_executions"), qString, qArgs...).Rows()
