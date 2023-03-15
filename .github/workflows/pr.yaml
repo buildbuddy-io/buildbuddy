@@ -11,8 +11,20 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'ci skip')"
 
     steps:
-      - name: Checkout
+      - name: Checkout buildbuddy
         uses: actions/checkout@v3
+        with:
+          path: buildbuddy
+
+      - name: Checkout buildbuddy-internal
+        uses: actions/checkout@v3
+        with:
+          path: buildbuddy-internal
+          repository: 'buildbuddy-io/buildbuddy-internal'
+
+      - name: Configure buildbuddy-internal
+        run: |
+          echo "build --override_repository=com_github_buildbuddy_io_buildbuddy=${GITHUB_WORKSPACE}/buildbuddy" >> ${GITHUB_WORKSPACE}/buildbuddy-internal
 
       - name: Install bazelisk
         run: |
@@ -21,10 +33,14 @@ jobs:
           mv bazelisk-linux-amd64 "${GITHUB_WORKSPACE}/bin/bazel"
           chmod +x "${GITHUB_WORKSPACE}/bin/bazel"
 
-      - name: Build
+      - name: Build buildbuddy
         run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" build --config=untrusted-ci //...
+          "cd ${GITHUB_WORKSPACE}/buildbuddy && ${GITHUB_WORKSPACE}/bin/bazel" build --config=untrusted-ci //...
 
-      - name: Test
+      - name: Build buildbuddy-internal
         run: |
-          "${GITHUB_WORKSPACE}/bin/bazel" test --config=untrusted-ci //...
+          "cd ${GITHUB_WORKSPACE}/buildbuddy-internal && ${GITHUB_WORKSPACE}/bin/bazel" build --config=untrusted-ci //...
+
+      - name: Test buildbuddy
+        run: |
+          "cd ${GITHUB_WORKSPACE}/buildbuddy && ${GITHUB_WORKSPACE}/bin/bazel" test --config=untrusted-ci //...
