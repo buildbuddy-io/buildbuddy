@@ -76,6 +76,7 @@ container_layer(
     files = [
         "@com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64//:stargz-store",
         "@com_github_firecracker_microvm_firecracker-v1.1.1-x86_64//:firecracker-v1.1.1-x86_64",
+        "@com_github_firecracker_microvm_firecracker-v1.1.1-x86_64//:jailer-v1.1.1-x86_64",
     ],
     symlinks = {
         "/usr/bin/firecracker": "/usr/bin/firecracker-v1.1.1-x86_64",
