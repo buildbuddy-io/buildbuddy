@@ -504,6 +504,15 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 
 	targetImage := c.image
 	if c.imageStreamingEnabled {
+		// Ideally we would not have to do a "podman pull" when image streaming
+		// is enabled, but there's a concurrency bug in podman related to
+		// looking up additional layer information from providers like
+		// stargz-store. To work around this bug, we do a single synchronous
+		// pull (locked by caller) which causes the layer metadata to be
+		// pre-populated in podman storage.
+		// The pull can be removed once there's a new podman version that
+		// includes the fix for
+		// https://github.com/containers/storage/issues/1263
 		podmanArgs = append(podmanArgs, enableStreamingStoreArg)
 	}
 
