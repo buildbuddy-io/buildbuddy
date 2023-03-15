@@ -351,6 +351,7 @@ func (s *Secret) TableName() string {
 }
 
 type Execution struct {
+	TestNewField int64
 	// The subscriber ID, a concatenated string of the
 	// auth Issuer ID and the subcriber ID string.
 	ExecutionID string `gorm:"primaryKey"`
