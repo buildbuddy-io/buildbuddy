@@ -54,46 +54,36 @@ export function subtractTimestamp(
 }
 
 export function totalDuration(execution: execution_stats.IExecution) {
-  return this.subtractTimestamp(
+  return subtractTimestamp(
     execution?.executedActionMetadata?.workerCompletedTimestamp,
     execution?.executedActionMetadata?.queuedTimestamp
   );
 }
 
 export function queuedDuration(execution: execution_stats.IExecution) {
-  return this.subtractTimestamp(
+  return subtractTimestamp(
     execution?.executedActionMetadata?.workerStartTimestamp,
     execution?.executedActionMetadata?.queuedTimestamp
   );
 }
 
 export function downloadDuration(execution: execution_stats.IExecution) {
-  return this.subtractTimestamp(
+  return subtractTimestamp(
     execution?.executedActionMetadata?.inputFetchCompletedTimestamp,
     execution?.executedActionMetadata?.inputFetchStartTimestamp
   );
 }
 
 export function executionDuration(execution: execution_stats.IExecution) {
-  return this.subtractTimestamp(
+  return subtractTimestamp(
     execution?.executedActionMetadata?.executionCompletedTimestamp,
     execution?.executedActionMetadata?.executionStartTimestamp
   );
 }
 
 export function uploadDuration(execution: execution_stats.IExecution) {
-  return this.subtractTimestamp(
+  return subtractTimestamp(
     execution?.executedActionMetadata?.outputUploadCompletedTimestamp,
     execution?.executedActionMetadata?.outputUploadStartTimestamp
   );
-}
-
-export function getActionPageLink(execution: execution_stats.IExecution) {
-  const search = new URLSearchParams({
-    actionDigest: `${execution.actionDigest.hash}/${execution.actionDigest.sizeBytes}`,
-  });
-  if (execution.actionResultDigest) {
-    search.set("actionResultDigest", `${execution.actionResultDigest.hash}/${execution.actionResultDigest.sizeBytes}`);
-  }
-  return `/invocation/${this.props.invocationIdProvider(execution)}?${search}#action`;
 }

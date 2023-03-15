@@ -174,19 +174,6 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     });
   }
 
-  getActionPageLink(execution: execution_stats.IExecution) {
-    const search = new URLSearchParams({
-      actionDigest: `${execution.actionDigest.hash}/${execution.actionDigest.sizeBytes}`,
-    });
-    if (execution.actionResultDigest) {
-      search.set(
-        "actionResultDigest",
-        `${execution.actionResultDigest.hash}/${execution.actionResultDigest.sizeBytes}`
-      );
-    }
-    return `/invocation/${this.props.model.getId()}?${search}#action`;
-  }
-
   handleMoreClicked() {
     this.setState({ limit: this.state.limit + 100 });
   }

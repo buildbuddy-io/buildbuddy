@@ -2,7 +2,6 @@ import React from "react";
 import format from "../format/format";
 import {
   getExecutionStatus,
-  getActionPageLink,
   totalDuration,
   queuedDuration,
   downloadDuration,
@@ -19,13 +18,26 @@ interface Props {
 }
 
 export default class InvocationExecutionTable extends React.Component<Props> {
+  getActionPageLink(execution: execution_stats.IExecution) {
+    const search = new URLSearchParams({
+      actionDigest: `${execution.actionDigest.hash}/${execution.actionDigest.sizeBytes}`,
+    });
+    if (execution.actionResultDigest) {
+      search.set(
+        "actionResultDigest",
+        `${execution.actionResultDigest.hash}/${execution.actionResultDigest.sizeBytes}`
+      );
+    }
+    return `/invocation/${this.props.invocationIdProvider(execution)}?${search}#action`;
+  }
+
   render() {
     return (
       <div className="invocation-execution-table">
         {this.props.executions.map((execution, index) => {
           const status = getExecutionStatus(execution);
           return (
-            <Link key={index} className="invocation-execution-row" href={getActionPageLink(execution)}>
+            <Link key={index} className="invocation-execution-row" href={this.getActionPageLink(execution)}>
               <div className="invocation-execution-row-image">{status.icon}</div>
               <div>
                 <div className="invocation-execution-row-header">
