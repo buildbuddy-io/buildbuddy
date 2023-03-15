@@ -130,15 +130,11 @@ message GetExecutionResponse {
 }
 
 message ExecutionQuery {
-  // The search parameters in this query will be ANDed when performing a
-  // search -- so if a client species both "user" and "host", all results
-  // returned must match both fields.
-
   // The unix-user who performed the build.
-  string user = 1;
+  string invocation_user = 1;
 
   // The host this build was executed on.
-  string host = 2;
+  string invocation_host = 2;
 
   // The git repo the build was for.
   string repo_url = 3;
@@ -150,15 +146,15 @@ message ExecutionQuery {
   // are combined with "OR".
   repeated string role = 5;
 
-  // The timestamp on or after which the build was last updated (inclusive).
+  // The timestamp on or after which the execution was last updated (inclusive).
   google.protobuf.Timestamp updated_after = 6;
 
-  // The timestamp up to which the build was last updated (exclusive).
+  // The timestamp up to which the execution was last updated (exclusive).
   google.protobuf.Timestamp updated_before = 7;
 
   // Status of the build. If multiple are specified, they are combined with
   // "OR".
-  repeated invocation_status.OverallStatus status = 8;
+  repeated invocation_status.OverallStatus invocation_status = 8;
 
   // The git branch used for the build.
   string branch_name = 9;
@@ -166,17 +162,11 @@ message ExecutionQuery {
   // The bazel command that was used. Ex: "build", "test", "run"
   string command = 10;
 
-  // The minimum invocation duration.
-  google.protobuf.Duration minimum_duration = 11;
-
-  // The maximum invocation duration.
-  google.protobuf.Duration maximum_duration = 12;
-
-  // Stat filters (duration_usec, cas_cache_misses, etc.)
-  repeated stat_filter.StatFilter filter = 13;
-
   // The pattern for the targets built (exact match). Ex: "//..."
-  string pattern = 14;
+  string pattern = 11;
+
+  // Stat filters (duration_usec, queue_time_usec, etc.)
+  repeated stat_filter.StatFilter filter = 12;
 }
 
 // Searches executions data for all matching executions.  This request is
