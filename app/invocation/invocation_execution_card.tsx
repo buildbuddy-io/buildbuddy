@@ -1,15 +1,20 @@
 import React from "react";
-import format from "../format/format";
 import InvocationModel from "./invocation_model";
+import InvocationExecutionTable from "./invocation_execution_table";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
-import { google } from "../../proto/grpc_code_ts_proto";
 import rpcService from "../service/rpc_service";
-import { RotateCw, Package, Clock, AlertCircle, XCircle, CheckCircle } from "lucide-react";
-import DigestComponent from "../components/digest/digest";
-import Link from "../components/link/link";
 import { OutlinedButton } from "../components/button/button";
+import {
+  downloadDuration,
+  executionDuration,
+  getExecutionStatus,
+  queuedDuration,
+  subtractTimestamp,
+  totalDuration,
+  uploadDuration,
+} from "./invocation_execution_util";
 
 interface Props {
   model: InvocationModel;
@@ -28,44 +33,6 @@ interface State {
 }
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
-
-type ExecutionStatus = {
-  name: string;
-  icon: JSX.Element;
-  className?: string;
-};
-
-const STATUSES_BY_STAGE: Record<number, ExecutionStatus> = {
-  [ExecutionStage.Value.UNKNOWN]: { name: "Starting", icon: <RotateCw className="icon blue rotating" /> },
-  [ExecutionStage.Value.CACHE_CHECK]: { name: "Cache check", icon: <Package className="icon brown" /> },
-  [ExecutionStage.Value.QUEUED]: { name: "Queued", icon: <Clock className="icon" /> },
-  [ExecutionStage.Value.EXECUTING]: { name: "Executing", icon: <RotateCw className="icon blue rotating" /> },
-  // COMPLETED is not included here because it depends on the gRPC status and exit code.
-};
-
-const GRPC_STATUS_LABEL_BY_CODE: Record<number, string> = Object.fromEntries(
-  Object.entries(google.rpc.Code).map(([name, value]) => [value, name])
-);
-
-function getExecutionStatus(execution: execution_stats.IExecution): ExecutionStatus {
-  if (execution.stage === ExecutionStage.Value.COMPLETED) {
-    if (execution.status.code !== 0) {
-      return {
-        name: `Error (${GRPC_STATUS_LABEL_BY_CODE[execution.status.code] || "UNKNOWN"})`,
-        icon: <AlertCircle className="icon red" />,
-      };
-    }
-    if (execution.exitCode !== 0) {
-      return {
-        name: `Failed (exit code ${execution.exitCode})`,
-        icon: <XCircle className="icon red" />,
-      };
-    }
-    return { name: "Succeeded", icon: <CheckCircle className="icon green" /> };
-  }
-
-  return STATUSES_BY_STAGE[execution.stage];
-}
 
 export default class ExecutionCardComponent extends React.Component<Props, State> {
   state: State = {
@@ -118,65 +85,21 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     }, 3000);
   }
 
-  subtractTimestamp(
-    timestampA: { nanos?: number | Long; seconds?: number | Long },
-    timestampB: { nanos?: number | Long; seconds?: number | Long }
-  ) {
-    let microsA = +timestampA.seconds * 1000000 + +timestampA.nanos / 1000;
-    let microsB = +timestampB.seconds * 1000000 + +timestampB.nanos / 1000;
-    return microsA - microsB;
-  }
-
-  totalDuration(execution: execution_stats.IExecution) {
-    return this.subtractTimestamp(
-      execution?.executedActionMetadata?.workerCompletedTimestamp,
-      execution?.executedActionMetadata?.queuedTimestamp
-    );
-  }
-
-  queuedDuration(execution: execution_stats.IExecution) {
-    return this.subtractTimestamp(
-      execution?.executedActionMetadata?.workerStartTimestamp,
-      execution?.executedActionMetadata?.queuedTimestamp
-    );
-  }
-
-  downloadDuration(execution: execution_stats.IExecution) {
-    return this.subtractTimestamp(
-      execution?.executedActionMetadata?.inputFetchCompletedTimestamp,
-      execution?.executedActionMetadata?.inputFetchStartTimestamp
-    );
-  }
-
-  executionDuration(execution: execution_stats.IExecution) {
-    return this.subtractTimestamp(
-      execution?.executedActionMetadata?.executionCompletedTimestamp,
-      execution?.executedActionMetadata?.executionStartTimestamp
-    );
-  }
-
-  uploadDuration(execution: execution_stats.IExecution) {
-    return this.subtractTimestamp(
-      execution?.executedActionMetadata?.outputUploadCompletedTimestamp,
-      execution?.executedActionMetadata?.outputUploadStartTimestamp
-    );
-  }
-
   sort(a: execution_stats.IExecution, b: execution_stats.IExecution) {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
     switch (this.state.sort) {
       case "total-duration":
-        return this.totalDuration(first) - this.totalDuration(second);
+        return totalDuration(first) - totalDuration(second);
       case "queued-duration":
-        return this.queuedDuration(first) - this.queuedDuration(second);
+        return queuedDuration(first) - queuedDuration(second);
       case "download-duration":
-        return this.downloadDuration(first) - this.downloadDuration(second);
+        return downloadDuration(first) - downloadDuration(second);
       case "execution-duration":
-        return this.executionDuration(first) - this.executionDuration(second);
+        return executionDuration(first) - executionDuration(second);
       case "upload-duration":
-        return this.uploadDuration(first) - this.uploadDuration(second);
+        return uploadDuration(first) - uploadDuration(second);
       case "files-downloaded":
         return (
           +first?.executedActionMetadata?.ioStats?.fileDownloadCount -
@@ -198,17 +121,17 @@ export default class ExecutionCardComponent extends React.Component<Props, State
           +second?.executedActionMetadata?.ioStats?.fileUploadSizeBytes
         );
       case "queue-start":
-        return this.subtractTimestamp(
+        return subtractTimestamp(
           first?.executedActionMetadata?.queuedTimestamp,
           second?.executedActionMetadata?.queuedTimestamp
         );
       case "execution-start":
-        return this.subtractTimestamp(
+        return subtractTimestamp(
           first?.executedActionMetadata?.workerStartTimestamp,
           second?.executedActionMetadata?.workerStartTimestamp
         );
       case "execution-end":
-        return this.subtractTimestamp(
+        return subtractTimestamp(
           first?.executedActionMetadata?.workerCompletedTimestamp,
           second?.executedActionMetadata?.workerCompletedTimestamp
         );
@@ -249,19 +172,6 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     this.setState({
       statusFilter: event.target.value,
     });
-  }
-
-  getActionPageLink(execution: execution_stats.IExecution) {
-    const search = new URLSearchParams({
-      actionDigest: `${execution.actionDigest.hash}/${execution.actionDigest.sizeBytes}`,
-    });
-    if (execution.actionResultDigest) {
-      search.set(
-        "actionResultDigest",
-        `${execution.actionResultDigest.hash}/${execution.actionResultDigest.sizeBytes}`
-      );
-    }
-    return `/invocation/${this.props.model.getId()}?${search}#action`;
   }
 
   handleMoreClicked() {
@@ -379,42 +289,9 @@ export default class ExecutionCardComponent extends React.Component<Props, State
             </div>
             <div>
               {filteredActions.length ? (
-                <div className="invocation-execution-table">
-                  {filteredActions
-                    .sort(this.sort.bind(this))
-                    .slice(0, this.state.limit)
-                    .map((execution, index) => {
-                      const status = getExecutionStatus(execution);
-                      return (
-                        <Link key={index} className="invocation-execution-row" href={this.getActionPageLink(execution)}>
-                          <div className="invocation-execution-row-image">{status.icon}</div>
-                          <div>
-                            <div className="invocation-execution-row-header">
-                              <span className="invocation-execution-row-header-status">{status.name}</span>
-                              <DigestComponent digest={execution?.actionDigest} expanded={true} />
-                            </div>
-                            <div>{execution.commandSnippet}</div>
-                            <div className="invocation-execution-row-stats">
-                              <div>Executor Host ID: {execution?.executedActionMetadata?.worker}</div>
-                              <div>Total duration: {format.durationUsec(this.totalDuration(execution))}</div>
-                              <div>Queued duration: {format.durationUsec(this.queuedDuration(execution))}</div>
-                              <div>
-                                File download duration: {format.durationUsec(this.downloadDuration(execution))} (
-                                {format.bytes(execution?.executedActionMetadata?.ioStats?.fileDownloadSizeBytes)} across{" "}
-                                {execution?.executedActionMetadata?.ioStats?.fileDownloadCount} files)
-                              </div>
-                              <div>Execution duration: {format.durationUsec(this.executionDuration(execution))}</div>
-                              <div>
-                                File upload duration: {format.durationUsec(this.uploadDuration(execution))} (
-                                {format.bytes(execution?.executedActionMetadata?.ioStats?.fileUploadSizeBytes)} across{" "}
-                                {execution?.executedActionMetadata?.ioStats?.fileUploadCount} files)
-                              </div>
-                            </div>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                </div>
+                <InvocationExecutionTable
+                  executions={filteredActions.sort(this.sort.bind(this)).slice(0, this.state.limit)}
+                  invocationIdProvider={() => this.props.model.getId()}></InvocationExecutionTable>
               ) : (
                 <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}

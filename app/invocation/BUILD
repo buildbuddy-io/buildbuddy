@@ -265,10 +265,43 @@ ts_library(
     srcs = ["invocation_execution_card.tsx"],
     deps = [
         "//app/components/button",
+        "//app/components/select",
+        "//app/invocation:invocation_execution_table",
+        "//app/invocation:invocation_execution_util",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//proto:execution_stats_ts_proto",
+        "//proto:grpc_code_ts_proto",
+        "//proto:remote_execution_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "invocation_execution_table",
+    srcs = ["invocation_execution_table.tsx"],
+    deps = [
         "//app/components/digest",
         "//app/components/link",
-        "//app/components/select",
         "//app/format",
+        "//app/invocation:invocation_execution_util",
+        "//proto:execution_stats_ts_proto",
+        "//proto:grpc_code_ts_proto",
+        "//proto:remote_execution_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "invocation_execution_util",
+    srcs = ["invocation_execution_util.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/components/select",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
