@@ -7,7 +7,6 @@ import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
-import "proto/resource.proto";
 import "proto/scheduler.proto";
 import "proto/stat_filter.proto";
 
