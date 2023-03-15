@@ -97,19 +97,6 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 		if err := cmd.Start(); err != nil {
 			return nil, status.UnavailableErrorf("could not start soci store: %s", err)
 		}
-
-		// Configures podman to check soci store for image data.
-		// 		storageConf := `
-		// [storage]
-		// driver = "overlay"
-		// runroot = "/run/containers/storage"
-		// graphroot = "/var/lib/containers/storage"
-		// [storage.options]
-		// additionallayerstores=["/var/lib/soci-store/store:ref"]
-		// 		`
-		// 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
-		// 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
-		// 		}
 	}
 
 	return &Provider{
@@ -269,14 +256,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return result
 	}
 
-	// Use a different key for caching credential information for regular &
-	// optimized images so that they don't affect each other.
-	// TODO(iain): don't?
-	imgCacheKey := c.image
-	// if c.imageStreamingEnabled {
-	// 	imgCacheKey += "-streaming"
-	// }
-	if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, imgCacheKey); err != nil {
+	if err := container.PullImageIfNecessary(ctx, c.env, c.imageCacheAuth, c, creds, c.image); err != nil {
 		result.Error = status.UnavailableErrorf("failed to pull docker image: %s", err)
 		return result
 	}
@@ -284,17 +264,11 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	stopMonitoring, statsCh := c.monitor(ctx)
 	defer stopMonitoring()
 
-	image, err := c.targetImage(ctx)
-	if err != nil {
-		result.Error = err
-		return result
-	}
-
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
 	for _, envVar := range command.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	podmanRunArgs = append(podmanRunArgs, image)
+	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
 	result = runPodman(ctx, "run", &container.Stdio{}, podmanRunArgs...)
 
@@ -530,26 +504,6 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 
 	targetImage := c.image
 	if c.imageStreamingEnabled {
-		// TODO(iain): do this?
-		// Always re-resolve image when a pull is requested. This takes care of
-		// re-validating the passed credentials.
-		// img, err := c.resolveTargetImage(ctx, creds)
-		// if err != nil {
-		// 	return err
-		// }
-
-		// Ideally we would not have to do a "podman pull" when image streaming
-		// is enabled, but there's a concurrency bug in podman related to
-		// looking up additional layer information from providers like
-		// stargz-store. To work around this bug, we do a single synchronous
-		// pull (locked by caller) which causes the layer metadata to be
-		// pre-populated in podman storage.
-		// The pull can be removed once there's a new podman version that
-		// includes the fix for
-		// https://github.com/containers/storage/issues/1263
-		//
-		// TODO(iain): upgrade podman?
-		// targetImage = img
 		podmanArgs = append(podmanArgs, enableStreamingStoreArg)
 	}
 
