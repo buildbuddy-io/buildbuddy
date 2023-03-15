@@ -66,26 +66,6 @@ func (s *ExecutionSearchService) rawQueryExecutions(ctx context.Context, query s
 	return executions, nil
 }
 
-// TODO(tylerw): move this to a common place -- we'll use it a bunch.
-func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
-	o := query_builder.OrClauses{}
-	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
-	groupArgs := []interface{}{
-		perms.GROUP_READ,
-	}
-	groupParams := make([]string, 0)
-	for _, g := range u.GetGroupMemberships() {
-		groupArgs = append(groupArgs, g.GroupID)
-		groupParams = append(groupParams, "?")
-	}
-	groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
-	groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
-	o.AddOr(groupQueryStr, groupArgs...)
-	o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
-	orQuery, orArgs := o.Build()
-	q = q.AddWhereClause("("+orQuery+")", orArgs...)
-}
-
 func tableExecToProto(in tables.Execution) (*expb.Execution, error) {
 	r, err := digest.ParseDownloadResourceName(in.ExecutionID)
 	if err != nil {
@@ -241,9 +221,6 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
 		q.AddWhereClause("commit_sha = ?", sha)
-	}
-	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
-		q.AddWhereClause("group_id = ?", group_id)
 	}
 	roleClauses := query_builder.OrClauses{}
 	for _, role := range req.GetQuery().GetRole() {
