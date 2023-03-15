@@ -24,7 +24,6 @@ ts_library(
         "@npm//react",
         "@npm//react-virtualized-auto-sizer",
         "@npm//react-window",
-        "@npm//tslib",
     ],
 )
 

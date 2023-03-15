@@ -26,6 +26,5 @@ ts_library(
         "//app/components/spinner",
         "@npm//@types/react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )

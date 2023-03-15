@@ -74,7 +74,6 @@ ts_library(
         "@npm//moment",
         "@npm//react",
         "@npm//recharts",
-        "@npm//tslib",
     ],
 )
 
@@ -92,7 +91,6 @@ ts_library(
         "@npm//moment",
         "@npm//react",
         "@npm//react-resize-detector",
-        "@npm//tslib",
     ],
 )
 

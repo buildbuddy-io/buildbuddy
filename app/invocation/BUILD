@@ -46,7 +46,6 @@ ts_library(
         "@npm//moment",
         "@npm//react",
         "@npm//rxjs",
-        "@npm//tslib",
     ],
 )
 
@@ -230,7 +229,6 @@ ts_library(
         "@npm//@types/react",
         "@npm//react",
         "@npm//rxjs",
-        "@npm//tslib",
     ],
 )
 
@@ -300,7 +298,6 @@ ts_library(
         "//app/router",
         "@npm//@types/react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
 
@@ -310,7 +307,6 @@ ts_library(
     deps = [
         "@npm//@types/react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
 
@@ -468,7 +464,6 @@ ts_library(
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
 
@@ -529,7 +524,6 @@ ts_library(
         "@npm//lucide-react",
         "@npm//pako",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
 

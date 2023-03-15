@@ -15,6 +15,5 @@ ts_library(
         "//proto:group_ts_proto",
         "@npm//@types/react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
