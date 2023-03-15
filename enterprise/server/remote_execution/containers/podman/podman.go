@@ -24,9 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -73,41 +71,9 @@ const (
 	// a container's resource usage.
 	statsPollInterval = 50 * time.Millisecond
 
-	// optImageRefCacheSize is the size of the cache used to store mappings from
-	// the original image name to the optimized image name.
-	optImageRefCacheSize = 1000
-
 	// argument to podman to enable the use of the soci store for streaming
 	enableStreamingStoreArg = "--storage-opt=additionallayerstore=/var/lib/soci-store/store:ref"
 )
-
-type optImageCache struct {
-	cache interfaces.LRU
-}
-
-func (c *optImageCache) get(key string) (string, error) {
-	if v, ok := c.cache.Get(key); ok {
-		return v.(string), nil
-	}
-	return "", nil
-}
-
-func (c *optImageCache) put(key string, optImage string) {
-	c.cache.Add(key, optImage)
-}
-
-func newOptImageCache() (*optImageCache, error) {
-	l, err := lru.NewLRU(&lru.Config{
-		SizeFn: func(value interface{}) int64 {
-			return 1
-		},
-		MaxSize: optImageRefCacheSize,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &optImageCache{cache: l}, nil
-}
 
 type pullStatus struct {
 	mu     *sync.RWMutex
@@ -119,15 +85,9 @@ type Provider struct {
 	imageCacheAuth        *container.ImageCacheAuthenticator
 	buildRoot             string
 	imageStreamingEnabled bool
-	optImageCache         *optImageCache
 }
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
-	c, err := newOptImageCache()
-	if err != nil {
-		return nil, err
-	}
-
 	if *imageStreamingEnabled {
 		log.Infof("Starting soci store")
 		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", "/var/lib/soci-store/store")
@@ -157,7 +117,6 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 		imageCacheAuth:        imageCacheAuthenticator,
 		imageStreamingEnabled: *imageStreamingEnabled,
 		buildRoot:             buildRoot,
-		optImageCache:         c,
 	}, nil
 }
 
@@ -167,7 +126,6 @@ func (p *Provider) NewContainer(image string, options *PodmanOptions) container.
 		imageCacheAuth:        p.imageCacheAuth,
 		image:                 image,
 		imageStreamingEnabled: p.imageStreamingEnabled,
-		optImageCache:         p.optImageCache,
 		buildRoot:             p.buildRoot,
 		options:               options,
 	}
@@ -199,7 +157,6 @@ type podmanCommandContainer struct {
 	workDir   string
 
 	imageStreamingEnabled bool
-	optImageCache         *optImageCache
 	registryClient        regpb.RegistryClient
 
 	options *PodmanOptions
@@ -356,85 +313,6 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	return result
 }
 
-func (c *podmanCommandContainer) optImageRefKey(ctx context.Context) (string, error) {
-	groupID := ""
-	u, err := perms.AuthenticatedUser(ctx, c.env)
-	if err != nil {
-		if !authutil.IsAnonymousUserError(err) {
-			return "", err
-		}
-	} else {
-		groupID = u.GetGroupID()
-	}
-
-	return fmt.Sprintf("%s-%s", groupID, c.image), nil
-}
-
-func (c *podmanCommandContainer) targetImage(ctx context.Context) (string, error) {
-	// TODO(iain): no need to rewrite images for new-and-improved streaming, right?
-	return c.image, nil
-	// if !c.imageStreamingEnabled {
-	// 	return c.image, nil
-	// }
-
-	// key, err := c.optImageRefKey(ctx)
-	// if err != nil {
-	// 	return "", err
-	// }
-	// log.CtxDebugf(ctx, "Looking up optimized image name for %q", key)
-	// optImage, err := c.optImageCache.get(key)
-	// if err != nil {
-	// 	return "", err
-	// }
-	// log.CtxDebugf(ctx, "Found optimized image name %q for key %q", optImage, key)
-	// if optImage == "" {
-	// 	return "", status.FailedPreconditionErrorf("optimized image not yet resolved")
-	// }
-	// return optImage, nil
-}
-
-// func (c *podmanCommandContainer) resolveTargetImage(ctx context.Context, credentials container.PullCredentials) (string, error) {
-// 	if !c.imageStreamingEnabled {
-// 		return c.image, nil
-// 	}
-
-// 	if c.registryClient == nil {
-// 		return "", status.FailedPreconditionErrorf("streaming enabled, but registry client or http target are not set")
-// 	}
-
-// 	log.CtxInfof(ctx, "Resolving optimized image for %q", c.image)
-// 	req := &regpb.GetOptimizedImageRequest{
-// 		Image: c.image,
-// 		Platform: &regpb.Platform{
-// 			Arch: runtime.GOARCH,
-// 			Os:   runtime.GOOS,
-// 		},
-// 	}
-// 	if !credentials.IsEmpty() {
-// 		req.ImageCredentials = &regpb.Credentials{
-// 			Username: credentials.Username,
-// 			Password: credentials.Password,
-// 		}
-// 	}
-
-// 	// Clear the JWT from the RPC so that the blobs are stored as anonymous data
-// 	// until we implement CAS auth for image streaming.
-// 	rpcCtx := context.WithValue(ctx, "x-buildbuddy-jwt", nil)
-// 	rsp, err := c.registryClient.GetOptimizedImage(rpcCtx, req)
-// 	if err != nil {
-// 		return "", status.UnavailableErrorf("could not resolve optimized image for %q: %s", c.image, err)
-// 	}
-// 	optImage := fmt.Sprintf("%s/%s", *imageStreamingRegistryHTTPTarget, rsp.GetOptimizedImage())
-// 	log.CtxInfof(ctx, "Resolved optimized image %q for %q", optImage, c.image)
-// 	key, err := c.optImageRefKey(ctx)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	log.CtxDebugf(ctx, "Caching optimized image name %q for key %q", optImage, key)
-// 	c.optImageCache.put(key, optImage)
-// 	return optImage, nil
-// }
-
 func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) error {
 	containerName, err := generateContainerName()
 	if err != nil {
@@ -444,11 +322,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	c.workDir = workDir
 
 	podmanRunArgs := c.getPodmanRunArgs(workDir)
-	image, err := c.targetImage(ctx)
-	if err != nil {
-		return err
-	}
-	podmanRunArgs = append(podmanRunArgs, image)
+	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
 	createResult := runPodman(ctx, "create", &container.Stdio{}, podmanRunArgs...)
 	if err := c.maybeCleanupCorruptedImages(ctx, createResult); err != nil {
