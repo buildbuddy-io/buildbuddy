@@ -1,6 +1,6 @@
 # BuildBuddy Example Deployment on AWS with Terraform
 
-This is **Experimental**, DO NOT USE!
+This is **Experimental**, please report any bugs to our Project issue board.
 
 ## Getting Started
 
