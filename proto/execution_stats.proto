@@ -7,7 +7,6 @@ import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
-import "proto/resource.proto";
 import "proto/scheduler.proto";
 import "proto/stat_filter.proto";
 
@@ -234,8 +233,4 @@ message SearchExecutionResponse {
   // Token to retrieve the next page of results, or empty if there are no
   // more results in the list.
   string next_page_token = 3;
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 80329f741 (functioning but very-hacked executions fetching.)
