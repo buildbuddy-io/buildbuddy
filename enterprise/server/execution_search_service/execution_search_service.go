@@ -206,10 +206,10 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 
-	if user := req.GetQuery().GetUser(); user != "" {
+	if user := req.GetQuery().GetInvocationUser(); user != "" {
 		q.AddWhereClause("user = ?", user)
 	}
-	if host := req.GetQuery().GetHost(); host != "" {
+	if host := req.GetQuery().GetInvocationHost(); host != "" {
 		q.AddWhereClause("host = ?", host)
 	}
 	if url := req.GetQuery().GetRepoUrl(); url != "" {
@@ -242,7 +242,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	}
 
 	statusClauses := query_builder.OrClauses{}
-	for _, status := range req.GetQuery().GetStatus() {
+	for _, status := range req.GetQuery().GetInvocationStatus() {
 		switch status {
 		case ispb.OverallStatus_SUCCESS:
 			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
@@ -261,18 +261,6 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	statusQuery, statusArgs := statusClauses.Build()
 	if statusQuery != "" {
 		q.AddWhereClause(fmt.Sprintf("(%s)", statusQuery), statusArgs...)
-	}
-
-	// The underlying data is not precise enough to accurately support nanoseconds and there's no use case for it yet.
-	if req.GetQuery().GetMinimumDuration().GetNanos() != 0 || req.GetQuery().GetMaximumDuration().GetNanos() != 0 {
-		return nil, status.InvalidArgumentError("ExecutionSearchService does not support nanoseconds in duration queries")
-	}
-
-	if req.GetQuery().GetMinimumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec >= ?`, req.GetQuery().GetMinimumDuration().GetSeconds()*1000*1000)
-	}
-	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
-		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
 	}
 
 	for _, f := range req.GetQuery().GetFilter() {
