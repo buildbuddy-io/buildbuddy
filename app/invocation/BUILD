@@ -20,7 +20,6 @@ ts_library(
         "//app/invocation:invocation_details_card",
         "//app/invocation:invocation_error_card",
         "//app/invocation:invocation_execution_card",
-        "//app/invocation:invocation_execution_table",
         "//app/invocation:invocation_fetch_card",
         "//app/invocation:invocation_filter",
         "//app/invocation:invocation_in_progress",
