@@ -13,3 +13,5 @@ go_web_test_suite(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
