@@ -1,6 +1,6 @@
 # BuildBuddy Example Deployment on AWS with Terraform
 
-This is **Experimental**, please report any bugs to our Project issue board.
+This is **Experimental**, please report any bugs or submit feedback [here](https://github.com/buildbuddy-io/buildbuddy/issues).
 
 ## Getting Started
 
