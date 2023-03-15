@@ -60,7 +60,6 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/hashicorp/memberlist v0.3.1
 	github.com/hashicorp/serf v0.9.6
-    github.com/iain-macdonald/soci-snapshotter v0.2.1
 	github.com/jhump/protoreflect v1.9.0
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
 	github.com/klauspost/compress v1.15.12
