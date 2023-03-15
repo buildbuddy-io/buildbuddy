@@ -193,16 +193,37 @@ message SearchExecutionRequest {
 }
 
 message InvocationMetadata {
+  // The invocation identifier itself.
   string id = 1;
+
+  // The unix-user who performed this invocation.
   string user = 2;
+
+  // The host this invocation was executed on.
   string host = 3;
+
+  // The build patterns specified for this invocation.
   string pattern = 4;
+
+  // The role played by this invocation. Ex: "CI"
   string role = 5;
+
+  // The name of the git branch for this invocation, if any
   string branch_name = 6;
+
+  // The commit SHA that this invocation was for.
   string commit_sha = 7;
+
+  // A URL to the git repo this invocation was for.
   string repo_url = 8;
+
+  // The command performed (usually "build" or "test").
   string command = 9;
+
+  // Whether or not the invocation was successful
   bool success = 10;
+
+  // The current status of the invocation.
   invocation_status.InvocationStatus invocation_status = 11;
 }
 
