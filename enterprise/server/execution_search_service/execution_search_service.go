@@ -187,18 +187,23 @@ func validateAccessForStats(ctx context.Context, env environment.Env, groupID st
 }
 
 func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb.SearchExecutionRequest) (*expb.SearchExecutionResponse, error) {
+	if s.oh == nil {
+		return nil, status.UnavailableError("An OLAP DB is required to search executions.")
+	}
 	u, err := perms.AuthenticatedUser(ctx, s.env)
 	if err != nil {
 		return nil, err
 	}
 	if u.GetGroupID() == "" {
-		return nil, status.InvalidArgumentError("An implicit group ID is required to search executions")
+		return nil, status.InvalidArgumentError("Failed to find user's group when searching executions.")
 	}
 	if err := validateAccessForStats(ctx, s.env, u.GetGroupID()); err != nil {
 		return nil, err
 	}
 
 	q := query_builder.NewQuery(`SELECT * FROM Executions`)
+
+	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 
 	if user := req.GetQuery().GetUser(); user != "" {
