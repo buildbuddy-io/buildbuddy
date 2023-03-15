@@ -24,7 +24,7 @@ jobs:
 
       - name: Configure buildbuddy-internal
         run: |
-          echo "build --override_repository=com_github_buildbuddy_io_buildbuddy=${GITHUB_WORKSPACE}/buildbuddy" >> ${GITHUB_WORKSPACE}/buildbuddy-internal
+          echo "build --override_repository=com_github_buildbuddy_io_buildbuddy=${GITHUB_WORKSPACE}/buildbuddy" >> ${GITHUB_WORKSPACE}/buildbuddy-internal/user.bazelrc
 
       - name: Install bazelisk
         run: |
