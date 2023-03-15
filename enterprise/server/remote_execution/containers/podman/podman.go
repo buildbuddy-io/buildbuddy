@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -96,6 +95,21 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 		cmd.Stdout = logWriter
 		if err := cmd.Start(); err != nil {
 			return nil, status.UnavailableErrorf("could not start soci store: %s", err)
+		}
+
+		if *imageStreamingEnabled {
+			// Configures podman to check soci store for image data.
+			storageConf := `
+[storage]
+driver = "overlay"
+runroot = "/run/containers/storage"
+graphroot = "/var/lib/containers/storage"
+[storage.options]
+additionallayerstores=["/var/lib/soci-store/store:ref"]
+`
+			if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
+				return nil, status.UnavailableErrorf("could not write storage config: %s", err)
+			}
 		}
 	}
 
@@ -507,7 +521,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.
 		// Ideally we would not have to do a "podman pull" when image streaming
 		// is enabled, but there's a concurrency bug in podman related to
 		// looking up additional layer information from providers like
-		// stargz-store. To work around this bug, we do a single synchronous
+		// soci-store. To work around this bug, we do a single synchronous
 		// pull (locked by caller) which causes the layer metadata to be
 		// pre-populated in podman storage.
 		// The pull can be removed once there's a new podman version that
