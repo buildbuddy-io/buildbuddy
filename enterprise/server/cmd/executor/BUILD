@@ -8,7 +8,7 @@ go_library(
     name = "executor_lib",
     srcs = ["executor.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/executor",
-    visibility = ["//enterprise/server/cmd/executor/yaml_doc:__pkg__"],
+    visibility = ["//visibility:public"],
     deps = [
         "//enterprise:bundle",
         "//enterprise/server/auth",
