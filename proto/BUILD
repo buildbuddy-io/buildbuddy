@@ -105,9 +105,12 @@ proto_library(
     deps = [
         ":acl_proto",
         ":context_proto",
+        ":invocation_status_proto",
         ":remote_execution_proto",
         ":scheduler_proto",
+        ":stat_filter_proto",
         "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
 )
@@ -571,8 +574,10 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
+        ":invocation_status_go_proto",
         ":remote_execution_go_proto",
         ":scheduler_go_proto",
+        ":stat_filter_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
