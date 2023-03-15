@@ -3,6 +3,7 @@ package runner
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"flag"
@@ -203,12 +204,12 @@ type commandRunner struct {
 
 	// ACL controls who can use this runner.
 	ACL *aclpb.ACL
-	// PlatformProperties holds the platform properties for the last
-	// task executed by this runner.
+	// PlatformProperties holds the parsed platform properties for the last task
+	// executed by this runner.
 	PlatformProperties *platform.Properties
-	// WorkerKey is the peristent worker key. Only tasks with matching
-	// worker key can execute on this runner.
-	WorkerKey string
+	// Platform is the raw (unparsed) platform of this runner. Only tasks with
+	// an exact platform match can execute on this runner.
+	Platform *repb.Platform
 	// InstanceName is the remote instance name specified when creating this
 	// runner. Only tasks with matching remote instance names can execute on this
 	// runner.
@@ -229,8 +230,6 @@ type commandRunner struct {
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
-	// taskSize is the size of the last task assigned to the runner.
-	taskSize *scpb.TaskSize
 	// taskNumber starts at 1 and is incremented each time the runner is
 	// assigned a new task. Note: this is not necessarily the same as the number
 	// of tasks that have actually been executed.
@@ -268,9 +267,15 @@ type commandRunner struct {
 }
 
 func (r *commandRunner) String() string {
-	// TODO: instead of workflow ID, make a short hash of the runner match parameters
-	// and use that instead.
-	return fmt.Sprintf("%s:%s:%d:%s", r.debugID, r.state, r.taskNumber, r.PlatformProperties.WorkflowID)
+	ph, err := platformHash(r.Platform)
+	if err != nil {
+		ph = "<ERR!>"
+	}
+	return fmt.Sprintf(
+		"%s:%s:%d:%s:%s:%s:%s",
+		r.debugID, r.state, r.taskNumber, r.ACL.GetGroupId(),
+		truncate(r.InstanceName, 8, "..."), r.PlatformProperties.WorkflowID,
+		truncate(ph, 8, ""))
 }
 
 func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
@@ -952,6 +957,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if err := platform.ApplyOverrides(p.env, executorProps, props, task.GetCommand()); err != nil {
 		return nil, err
 	}
+	rawPlatform := task.GetCommand().GetPlatform()
 
 	user, err := auth.UserFromTrustedJWT(ctx)
 	if err != nil && !authutil.IsAnonymousUserError(err) {
@@ -981,17 +987,9 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	}
 	if props.RecycleRunner {
 		r, err := p.take(ctx, &query{
-			User:                   user,
-			ContainerImage:         props.ContainerImage,
-			CommandUser:            props.DockerUser,
-			WorkflowID:             props.WorkflowID,
-			WorkloadIsolationType:  platform.ContainerType(props.WorkloadIsolationType),
-			InitDockerd:            props.InitDockerd,
-			HostedBazelAffinityKey: props.HostedBazelAffinityKey,
-			InstanceName:           instanceName,
-			WorkerKey:              workerKey,
-			WorkspaceOptions:       wsOpts,
-			TaskSize:               st.GetSchedulingMetadata().GetTaskSize(),
+			User:         user,
+			InstanceName: instanceName,
+			Platform:     rawPlatform,
 		})
 		if err != nil {
 			return nil, err
@@ -999,7 +997,6 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
-			r.taskSize = st.GetSchedulingMetadata().GetTaskSize()
 			r.taskNumber += 1
 			r.PlatformProperties = props
 			p.mu.Unlock()
@@ -1054,11 +1051,10 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		debugID:            debugID,
 		ACL:                ACLForUser(user),
 		task:               task,
-		taskSize:           st.GetSchedulingMetadata().GetTaskSize(),
 		taskNumber:         1,
+		Platform:           rawPlatform,
 		PlatformProperties: props,
 		InstanceName:       instanceName,
-		WorkerKey:          workerKey,
 		Container:          ctr,
 		Workspace:          ws,
 		VFS:                fs,
@@ -1148,38 +1144,21 @@ type query struct {
 	// that this user can access.
 	// Required.
 	User interfaces.UserInfo
-	// ContainerImage is the image that must have been used to create the
-	// container.
-	// Required; the zero-value "" matches bare runners.
-	ContainerImage string
-	// CommandUser is the username or ID to run commands as.
-	CommandUser string
-	// WorkflowID is the BuildBuddy workflow ID, if applicable.
-	// Required; the zero-value "" matches non-workflow runners.
-	WorkflowID string
-	// WorkloadIsolationType specifies the isolation type.
-	// Required.
-	WorkloadIsolationType platform.ContainerType
-	// InitDockerd specifies whether dockerd should be initialized.
-	InitDockerd bool
-	// WorkerKey is the key used to tell if a persistent worker can be reused.
-	// Required; the zero-value "" matches non-persistent-worker runners.
-	WorkerKey string
-	// HostedBazelAffinityKey is used to route hosted Bazel requests to different
-	// bazel instances.
-	HostedBazelAffinityKey string
 	// InstanceName is the remote instance name that must have been used when
 	// creating the runner.
 	// Required; the zero-value "" corresponds to the default instance name.
 	InstanceName string
-	// The workspace options for the desired runner. This query will only match
-	// runners with matching workspace options.
-	WorkspaceOptions *workspace.Opts
-	// TaskSize is the estimated size of the task. The query will only match
-	// runners with the exact estimated task size. Currently only respected
-	// for workflows, since other types of tasks may have variable task size
-	// estimates due to task size measuring.
-	TaskSize *scpb.TaskSize
+	// Platform is the platform requested for the runner.
+	// Required.
+	Platform *repb.Platform
+}
+
+func (q *query) String() string {
+	ph, err := platformHash(q.Platform)
+	if err != nil {
+		ph = "<ERR!>"
+	}
+	return fmt.Sprintf("%s:%s:%s", q.User.GetGroupID(), q.InstanceName, ph)
 }
 
 func (p *pool) String() string {
@@ -1192,26 +1171,27 @@ func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	log.CtxInfof(ctx, "Looking for match in runner pool %s", p)
+	log.CtxInfof(ctx, "Looking for match for %q in runner pool %s", q, p)
+	qPlatform, err := platformHash(q.Platform)
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to compute platform hash: %s", err)
+	}
 
 	for i := len(p.runners) - 1; i >= 0; i-- {
 		r := p.runners[i]
+
+		rPlatform, err := platformHash(r.Platform)
+		if err != nil {
+			log.Warningf("Failed to compute platform hash for %s: %s", r, err)
+			continue
+		}
+
 		authErr := perms.AuthorizeWrite(&q.User, r.ACL)
 		if authErr != nil ||
 			r.state != paused ||
-			r.PlatformProperties.ContainerImage != q.ContainerImage ||
-			r.PlatformProperties.DockerUser != q.CommandUser ||
-			platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != q.WorkloadIsolationType ||
-			r.PlatformProperties.InitDockerd != q.InitDockerd ||
-			r.PlatformProperties.WorkflowID != q.WorkflowID ||
-			(q.WorkflowID != "" && !taskSizesEqual(r.taskSize, q.TaskSize)) ||
-			r.PlatformProperties.HostedBazelAffinityKey != q.HostedBazelAffinityKey ||
-			r.WorkerKey != q.WorkerKey ||
 			r.InstanceName != q.InstanceName ||
-			*r.Workspace.Opts != *q.WorkspaceOptions {
-			// TODO(bduffany): log a hash of the runner key so that it's clear
-			// why the runner was skipped.
-			log.CtxInfof(ctx, "Skipping ineligible runner %s", r)
+			rPlatform != qPlatform {
+			log.CtxInfof(ctx, "Skipping ineligible runner %s for query %s", r, q)
 			continue
 		}
 
@@ -1447,10 +1427,16 @@ func (p *pool) setLimits() {
 		p.maxRunnerCount, p.maxRunnerMemoryUsageBytes, p.maxRunnerDiskUsageBytes)
 }
 
-func taskSizesEqual(a, b *scpb.TaskSize) bool {
-	return a.GetEstimatedFreeDiskBytes() == b.GetEstimatedFreeDiskBytes() &&
-		a.GetEstimatedMilliCpu() == b.GetEstimatedMilliCpu() &&
-		a.GetEstimatedMemoryBytes() == b.GetEstimatedMemoryBytes()
+func platformHash(p *repb.Platform) (string, error) {
+	// Note: we don't do any sort of canonicalization of the platform properties
+	// (i.e. sorting by key), since in practice, bazel always sends us platform
+	// properties sorted by key, and other clients are expected to send sorted
+	// (or at least stable) platform properties as well.
+	b, err := proto.Marshal(p)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
 }
 
 type labeledError struct {
@@ -1705,4 +1691,11 @@ func (r *commandRunner) expandArguments(args []string) ([]string, error) {
 	}
 
 	return expandedArgs, nil
+}
+
+func truncate(text string, n int, truncateWith string) string {
+	if len(text) > n {
+		return text[:n] + truncateWith
+	}
+	return text
 }
