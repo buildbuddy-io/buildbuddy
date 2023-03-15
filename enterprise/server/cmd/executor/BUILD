@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -70,9 +70,23 @@ go_binary(
     embed = [":executor_lib"],
 )
 
+container_layer(
+    name = "executor_tools",
+    directory = "/usr/bin",
+    files = [
+        "@com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64//:stargz-store",
+        "@com_github_firecracker_microvm_firecracker-v1.1.1-x86_64//:firecracker-v1.1.1-x86_64",
+    ],
+    symlinks = {
+        "/usr/bin/firecracker": "/usr/bin/firecracker-v1.1.1-x86_64",
+        "/usr/bin/jailer": "/usr/bin/jailer-v1.1.1-x86_64",
+    },
+)
+
 container_image(
     name = "base_image",
     base = "@executor_image//image:dockerfile_image.tar",
+    layers = [":executor_tools"],
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",
     },

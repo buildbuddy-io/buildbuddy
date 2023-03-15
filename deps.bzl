@@ -6067,6 +6067,20 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:4AuOwCGf4lLR9u3YOe2awrHygurzhO/HeQ6laiA6Sx0=",
         version = "v3.0.3",
     )
+
+    http_archive(
+        name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
+        sha256 = "56933aa04a64d3bf6991f9b1be127ac9896fe597d2fba194c67c2dd4368bbae3",
+        urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
+        build_file_content = 'exports_files(["stargz-store"])',
+    )
+    http_archive(
+        name = "com_github_firecracker_microvm_firecracker-v1.1.1-x86_64",
+        sha256 = "29194e13888358c6332995199ee288c081a8a23e68f0046944e4bb7f6548af57",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.1.1/firecracker-v1.1.1-x86_64.tgz"],
+        strip_prefix = "release-v1.1.1-x86_64",
+        build_file_content = 'exports_files(["firecracker-v1.1.1-x86_64", "jailer-v1.1.1-x86_64"])',
+    )
     http_file(
         name = "io_bazel_bazel-3.7-darwin-x86_64",
         sha256 = "80c82e93a12ba30021692b11c78007807e82383a673be1602573b944beb359ab",
