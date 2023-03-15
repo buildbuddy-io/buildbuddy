@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
@@ -345,18 +344,8 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	return res, nil
 }
 
-func validateAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
-	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
-		return err
-	}
-	if blocklist.IsBlockedForStatsQuery(groupID) {
-		return status.ResourceExhaustedError("Too many rows.")
-	}
-	return nil
-}
-
 func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrendRequest) (*stpb.GetTrendResponse, error) {
-	if err := validateAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+	if err := perms.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 
@@ -650,7 +639,7 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 	if !i.isOLAPDBEnabled() {
 		return nil, status.UnimplementedError("Time series charts require using an OLAP DB, but none is configured.")
 	}
-	if err := validateAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+	if err := perms.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 
@@ -699,11 +688,8 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	groupID := req.GetRequestContext().GetGroupId()
-	if err := perms.AuthorizeGroupAccess(ctx, i.env, groupID); err != nil {
+	if err := perms.AuthorizeGroupAccessForStats(ctx, i.env, groupID); err != nil {
 		return nil, err
-	}
-	if blocklist.IsBlockedForStatsQuery(groupID) {
-		return nil, status.ResourceExhaustedErrorf("Too many rows.")
 	}
 
 	limit := int32(100)
@@ -946,7 +932,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	if !i.isOLAPDBEnabled() {
 		return nil, status.UnimplementedError("Time series charts require using an OLAP DB, but none is configured.")
 	}
-	if err := validateAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
+	if err := perms.AuthorizeGroupAccessForStats(ctx, i.env, req.GetRequestContext().GetGroupId()); err != nil {
 		return nil, err
 	}
 

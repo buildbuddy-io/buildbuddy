@@ -15,7 +15,6 @@ go_library(
         "//proto:stats_go_proto",
         "//server/environment",
         "//server/interfaces",
-        "//server/util/blocklist",
         "//server/util/clickhouse",
         "//server/util/db",
         "//server/util/filter",

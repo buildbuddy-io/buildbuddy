@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
-	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -19,14 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
 const (
@@ -66,64 +59,6 @@ func (s *ExecutionSearchService) rawQueryExecutions(ctx context.Context, query s
 	return executions, nil
 }
 
-func tableExecToProto(in tables.Execution) (*expb.Execution, error) {
-	r, err := digest.ParseDownloadResourceName(in.ExecutionID)
-	if err != nil {
-		return nil, err
-	}
-
-	var actionResultDigest *repb.Digest
-	if in.StatusCode == int32(codes.OK) && in.ExitCode == 0 && !in.DoNotCache {
-		// Action Result with unmodified action digest is only uploaded when
-		// there is no error from the CommandResult(i.e. status code is OK) and
-		// the exit code is zero and the action was not marked with DoNotCache.
-		actionResultDigest = proto.Clone(r.GetDigest()).(*repb.Digest)
-	} else {
-		actionResultDigest, err = digest.AddInvocationIDToDigest(r.GetDigest(), in.InvocationID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	out := &expb.Execution{
-		ActionDigest:       r.GetDigest(),
-		ActionResultDigest: actionResultDigest,
-		Status: &statuspb.Status{
-			Code:    in.StatusCode,
-			Message: in.StatusMessage,
-		},
-		ExitCode: in.ExitCode,
-		Stage:    repb.ExecutionStage_Value(in.Stage),
-		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
-			Worker:                         in.Worker,
-			QueuedTimestamp:                timestamppb.New(time.UnixMicro(in.QueuedTimestampUsec)),
-			WorkerStartTimestamp:           timestamppb.New(time.UnixMicro(in.WorkerStartTimestampUsec)),
-			WorkerCompletedTimestamp:       timestamppb.New(time.UnixMicro(in.WorkerCompletedTimestampUsec)),
-			InputFetchStartTimestamp:       timestamppb.New(time.UnixMicro(in.InputFetchStartTimestampUsec)),
-			InputFetchCompletedTimestamp:   timestamppb.New(time.UnixMicro(in.InputFetchCompletedTimestampUsec)),
-			ExecutionStartTimestamp:        timestamppb.New(time.UnixMicro(in.ExecutionStartTimestampUsec)),
-			ExecutionCompletedTimestamp:    timestamppb.New(time.UnixMicro(in.ExecutionCompletedTimestampUsec)),
-			OutputUploadStartTimestamp:     timestamppb.New(time.UnixMicro(in.OutputUploadStartTimestampUsec)),
-			OutputUploadCompletedTimestamp: timestamppb.New(time.UnixMicro(in.OutputUploadCompletedTimestampUsec)),
-			IoStats: &repb.IOStats{
-				FileDownloadCount:        in.FileDownloadCount,
-				FileDownloadSizeBytes:    in.FileDownloadSizeBytes,
-				FileDownloadDurationUsec: in.FileDownloadDurationUsec,
-				FileUploadCount:          in.FileUploadCount,
-				FileUploadSizeBytes:      in.FileUploadSizeBytes,
-				FileUploadDurationUsec:   in.FileUploadDurationUsec,
-			},
-			UsageStats: &repb.UsageStats{
-				CpuNanos:        in.CPUNanos,
-				PeakMemoryBytes: in.PeakMemoryBytes,
-			},
-		},
-		CommandSnippet: in.CommandSnippet,
-	}
-
-	return out, nil
-}
-
 type ExecutionWithInvocationId struct {
 	execution    *expb.Execution
 	invocationID string
@@ -144,7 +79,7 @@ func (s *ExecutionSearchService) fetchExecutionData(ctx context.Context, groupId
 		if err := s.h.DB(ctx).ScanRows(rows, &r); err != nil {
 			return nil, err
 		}
-		exec, err := tableExecToProto(r)
+		exec, err := execution.TableExecToClientProto(&r)
 		if err != nil {
 			return nil, err
 		}
@@ -175,17 +110,6 @@ func clickhouseExecutionToProto(in *schema.Execution, ex *ExecutionWithInvocatio
 	}, nil
 }
 
-// XXX: share
-func validateAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
-	if err := perms.AuthorizeGroupAccess(ctx, env, groupID); err != nil {
-		return err
-	}
-	if blocklist.IsBlockedForStatsQuery(groupID) {
-		return status.ResourceExhaustedError("Too many rows.")
-	}
-	return nil
-}
-
 func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb.SearchExecutionRequest) (*expb.SearchExecutionResponse, error) {
 	if s.oh == nil {
 		return nil, status.UnavailableError("An OLAP DB is required to search executions.")
@@ -197,7 +121,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	if u.GetGroupID() == "" {
 		return nil, status.InvalidArgumentError("Failed to find user's group when searching executions.")
 	}
-	if err := validateAccessForStats(ctx, s.env, u.GetGroupID()); err != nil {
+	if err := perms.AuthorizeGroupAccessForStats(ctx, s.env, u.GetGroupID()); err != nil {
 		return nil, err
 	}
 

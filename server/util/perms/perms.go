@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -246,6 +247,16 @@ func AuthorizeGroupAccess(ctx context.Context, env environment.Env, groupID stri
 		}
 	}
 	return status.PermissionDeniedError("You do not have access to the requested group")
+}
+
+func AuthorizeGroupAccessForStats(ctx context.Context, env environment.Env, groupID string) error {
+	if err := AuthorizeGroupAccess(ctx, env, groupID); err != nil {
+		return err
+	}
+	if blocklist.IsBlockedForStatsQuery(groupID) {
+		return status.ResourceExhaustedError("Too many rows.")
+	}
+	return nil
 }
 
 // AuthenticateSelectedGroupID returns the group ID selected by the user in the

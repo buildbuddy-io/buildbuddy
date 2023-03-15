@@ -3,21 +3,15 @@ package execution_service
 import (
 	"context"
 	"sort"
-	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
 
 type ExecutionService struct {
@@ -81,64 +75,6 @@ func (es *ExecutionService) getInvocationExecutions(ctx context.Context, invocat
 	return es.queryExecutions(ctx, q)
 }
 
-func tableExecToProto(in tables.Execution) (*espb.Execution, error) {
-	r, err := digest.ParseDownloadResourceName(in.ExecutionID)
-	if err != nil {
-		return nil, err
-	}
-
-	var actionResultDigest *repb.Digest
-	if in.StatusCode == int32(codes.OK) && in.ExitCode == 0 && !in.DoNotCache {
-		// Action Result with unmodified action digest is only uploaded when
-		// there is no error from the CommandResult(i.e. status code is OK) and
-		// the exit code is zero and the action was not marked with DoNotCache.
-		actionResultDigest = proto.Clone(r.GetDigest()).(*repb.Digest)
-	} else {
-		actionResultDigest, err = digest.AddInvocationIDToDigest(r.GetDigest(), in.InvocationID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	out := &espb.Execution{
-		ActionDigest:       r.GetDigest(),
-		ActionResultDigest: actionResultDigest,
-		Status: &statuspb.Status{
-			Code:    in.StatusCode,
-			Message: in.StatusMessage,
-		},
-		ExitCode: in.ExitCode,
-		Stage:    repb.ExecutionStage_Value(in.Stage),
-		ExecutedActionMetadata: &repb.ExecutedActionMetadata{
-			Worker:                         in.Worker,
-			QueuedTimestamp:                timestamppb.New(time.UnixMicro(in.QueuedTimestampUsec)),
-			WorkerStartTimestamp:           timestamppb.New(time.UnixMicro(in.WorkerStartTimestampUsec)),
-			WorkerCompletedTimestamp:       timestamppb.New(time.UnixMicro(in.WorkerCompletedTimestampUsec)),
-			InputFetchStartTimestamp:       timestamppb.New(time.UnixMicro(in.InputFetchStartTimestampUsec)),
-			InputFetchCompletedTimestamp:   timestamppb.New(time.UnixMicro(in.InputFetchCompletedTimestampUsec)),
-			ExecutionStartTimestamp:        timestamppb.New(time.UnixMicro(in.ExecutionStartTimestampUsec)),
-			ExecutionCompletedTimestamp:    timestamppb.New(time.UnixMicro(in.ExecutionCompletedTimestampUsec)),
-			OutputUploadStartTimestamp:     timestamppb.New(time.UnixMicro(in.OutputUploadStartTimestampUsec)),
-			OutputUploadCompletedTimestamp: timestamppb.New(time.UnixMicro(in.OutputUploadCompletedTimestampUsec)),
-			IoStats: &repb.IOStats{
-				FileDownloadCount:        in.FileDownloadCount,
-				FileDownloadSizeBytes:    in.FileDownloadSizeBytes,
-				FileDownloadDurationUsec: in.FileDownloadDurationUsec,
-				FileUploadCount:          in.FileUploadCount,
-				FileUploadSizeBytes:      in.FileUploadSizeBytes,
-				FileUploadDurationUsec:   in.FileUploadDurationUsec,
-			},
-			UsageStats: &repb.UsageStats{
-				CpuNanos:        in.CPUNanos,
-				PeakMemoryBytes: in.PeakMemoryBytes,
-			},
-		},
-		CommandSnippet: in.CommandSnippet,
-	}
-
-	return out, nil
-}
-
 func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
 	if es.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
@@ -155,8 +91,8 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 		return executions[i].Model.CreatedAtUsec < executions[j].Model.CreatedAtUsec
 	})
 	rsp := &espb.GetExecutionResponse{}
-	for _, execution := range executions {
-		protoExec, err := tableExecToProto(execution)
+	for _, ex := range executions {
+		protoExec, err := execution.TableExecToClientProto(&ex)
 		if err != nil {
 			return nil, err
 		}
