@@ -179,6 +179,9 @@ message ExecutionQuery {
   string pattern = 14;
 }
 
+// Searches executions data for all matching executions.  This request is
+// automatically filtered to only return readable executions for the user's
+// currently selected group.
 message SearchExecutionRequest {
   context.RequestContext request_context = 1;
 
