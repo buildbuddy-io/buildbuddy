@@ -1584,6 +1584,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 }
 
 func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	log.Fatalf("Maggie test change to test release rollback flow.")
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
