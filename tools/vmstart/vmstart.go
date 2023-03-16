@@ -86,7 +86,7 @@ func getActionAndCommand(ctx context.Context, bsClient bspb.ByteStreamClient, ac
 		return nil, nil, status.WrapErrorf(err, "could not fetch action")
 	}
 	cmd := &repb.Command{}
-	if err := cachetools.GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), rspb.CacheType_CAS), cmd); err != nil {
+	if err := cachetools.GetBlobAsProto(ctx, bsClient, digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_SHA256), cmd); err != nil {
 		return nil, nil, status.WrapErrorf(err, "could not fetch command")
 	}
 	return action, cmd, nil
@@ -178,7 +178,7 @@ func main() {
 		// If the parsed remote_instance_name is empty, and the flag instance
 		// name is set; override the instance name of `rn`.
 		if actionInstanceDigest.GetInstanceName() == "" && *remoteInstanceName != "" {
-			actionInstanceDigest = digest.NewResourceName(actionInstanceDigest.GetDigest(), *remoteInstanceName, actionInstanceDigest.GetCacheType())
+			actionInstanceDigest = digest.NewResourceName(actionInstanceDigest.GetDigest(), *remoteInstanceName, actionInstanceDigest.GetCacheType(), actionInstanceDigest.GetDigestFunction())
 		}
 
 		action, cmd, err := getActionAndCommand(ctx, env.GetByteStreamClient(), actionInstanceDigest)
@@ -190,7 +190,7 @@ func main() {
 		out, _ = prototext.Marshal(cmd)
 		log.Infof("Command:\n%s", string(out))
 
-		tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewResourceName(action.GetInputRootDigest(), *remoteInstanceName, rspb.CacheType_CAS))
+		tree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), digest.NewResourceName(action.GetInputRootDigest(), *remoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction()))
 		if err != nil {
 			log.Fatalf("Could not fetch input root structure: %s", err)
 		}

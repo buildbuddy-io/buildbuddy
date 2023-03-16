@@ -787,7 +787,7 @@ func TestZeroLengthFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Ensure that the goodDigest exists and the zero length one does not.
-	exists, err := dc.Contains(ctx, digest.NewResourceName(badDigest, "", rspb.CacheType_CAS).ToProto())
+	exists, err := dc.Contains(ctx, digest.NewResourceName(badDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,7 +795,7 @@ func TestZeroLengthFiles(t *testing.T) {
 		t.Fatalf("%q (empty file) should not be mapped in cache.", badDigest.GetHash())
 	}
 
-	exists, err = dc.Contains(ctx, digest.NewResourceName(goodDigest, "", rspb.CacheType_CAS).ToProto())
+	exists, err = dc.Contains(ctx, digest.NewResourceName(goodDigest, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto())
 	if err != nil {
 		t.Fatal(err)
 	}

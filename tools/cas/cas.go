@@ -80,14 +80,14 @@ func main() {
 		log.Fatalf(status.Message(err))
 	}
 	if *blobType == "ActionResult" {
-		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC)
+		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC, repb.DigestFunction_SHA256)
 	}
 
 	// For backwards compatibility with the existing behavior of this code:
 	// If the parsed remote_instance_name is empty, and the flag instance
 	// name is set; override the instance name of `rn`.
 	if ind.GetInstanceName() == "" && *instanceName != "" {
-		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType())
+		ind = digest.NewResourceName(ind.GetDigest(), *instanceName, ind.GetCacheType(), repb.DigestFunction_SHA256)
 	}
 
 	conn, err := grpc_client.DialTarget(*target)
@@ -148,7 +148,7 @@ func main() {
 			if err != nil {
 				log.Fatalf(err.Error())
 			}
-			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName(), rspb.CacheType_CAS)
+			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 			ar, err = cachetools.GetActionResult(ctx, acClient, ind)
 			if err != nil {
 				log.Fatal(err.Error())

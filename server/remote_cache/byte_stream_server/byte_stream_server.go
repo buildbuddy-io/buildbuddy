@@ -112,7 +112,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	cacheRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS)
+	cacheRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
 	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
@@ -258,7 +258,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		resourceNameString: req.ResourceName,
 	}
 
-	casRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS)
+	casRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}

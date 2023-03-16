@@ -61,13 +61,13 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, digests []*rsp
 	return nil
 }
 
-func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, r *repb.ActionResult) error {
+func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, r *repb.ActionResult) error {
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
 		if d != nil && d.GetSizeBytes() > 0 {
 			mu.Lock()
-			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS).ToProto()
+			rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, digestFunction).ToProto()
 			outputFileDigests = append(outputFileDigests, rn)
 			mu.Unlock()
 		}
@@ -80,7 +80,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			rn := digest.NewResourceName(dc.GetTreeDigest(), remoteInstanceName, rspb.CacheType_CAS).ToProto()
+			rn := digest.NewResourceName(dc.GetTreeDigest(), remoteInstanceName, rspb.CacheType_CAS, digestFunction).ToProto()
 			blob, err := cache.Get(gCtx, rn)
 			if err != nil {
 				return err
@@ -137,7 +137,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if req.ActionDigest == nil {
 		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
-	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC)
+	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
 	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
-	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), rsp); err != nil {
+	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
 	return rsp, nil
@@ -194,7 +194,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if req.ActionResult == nil {
 		return nil, status.InvalidArgumentError("ActionResult is a required field")
 	}
-	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC)
+	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
 	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	d := req.GetActionDigest()
-	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC)
+	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
 	uploadTracker := ht.TrackUpload(d)
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131

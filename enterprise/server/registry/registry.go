@@ -200,7 +200,7 @@ func blobResourceName(h v1.Hash) *rspb.ResourceName {
 		// to be large. The server uses this to determine the buffer size.
 		SizeBytes: 1024 * 1024 * 4,
 	}
-	rn := digest.NewResourceName(d, registryInstanceName, rspb.CacheType_CAS).ToProto()
+	rn := digest.NewResourceName(d, registryInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).ToProto()
 	return rn
 }
 

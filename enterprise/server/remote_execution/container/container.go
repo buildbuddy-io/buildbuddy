@@ -145,6 +145,7 @@ func (m *ContainerMetrics) Unregister(c CommandContainer) {
 
 type FileSystemLayout struct {
 	RemoteInstanceName string
+	DigestFunction     repb.DigestFunction_Value
 	Inputs             *repb.Tree
 	OutputDirs         []string
 	OutputFiles        []string

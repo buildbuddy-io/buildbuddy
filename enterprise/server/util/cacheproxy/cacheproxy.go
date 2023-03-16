@@ -197,12 +197,13 @@ func getResources(resources []*rspb.ResourceName, isolation *dcpb.Isolation, dig
 		return resources
 	}
 
+	log.Warningf("cacheproxy: falling back to digest keys; this should not happen")
 	instanceName := isolation.GetRemoteInstanceName()
 	cacheType := isolation.GetCacheType()
 	rns := make([]*rspb.ResourceName, 0)
 	for _, k := range digestKeys {
 		d := digestFromKey(k)
-		rn := digest.NewResourceName(d, instanceName, cacheType).ToProto()
+		rn := digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_SHA256).ToProto()
 		rns = append(rns, rn)
 	}
 
