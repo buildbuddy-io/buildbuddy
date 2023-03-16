@@ -6081,6 +6081,7 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         strip_prefix = "release-v1.1.1-x86_64",
         build_file_content = 'exports_files(["firecracker-v1.1.1-x86_64", "jailer-v1.1.1-x86_64"])',
     )
+
     http_file(
         name = "io_bazel_bazel-3.7-darwin-x86_64",
         sha256 = "80c82e93a12ba30021692b11c78007807e82383a673be1602573b944beb359ab",
@@ -6145,5 +6146,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "io_bazel_bazelisk-1.10.1-linux-amd64",
         sha256 = "4cb534c52cdd47a6223d4596d530e7c9c785438ab3b0a49ff347e991c210b2cd",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-linux-amd64"],
+        executable = True,
+    )
+    http_file(
+        name = "org_kernel_git_linux_kernel-vmlinux-5.4.0",
+        sha256 = "fc81fa0933db7977b5e1d4b9ff3a757914b579c7812b63f9cdcabc035c7057e0",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-5.4.0"],
         executable = True,
     )
