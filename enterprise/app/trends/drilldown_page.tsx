@@ -512,15 +512,15 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return "";
     } else if (this.state.eventData?.invocations) {
       const invocationCount = this.state.eventData.invocations.length;
-      if (invocationCount < (this.currentHeatmapSelection?.invocationsSelected || 0)) {
-        return `Selected invocations (showing ${invocationCount} of ${this.currentHeatmapSelection?.invocationsSelected})`;
+      if (invocationCount < (this.currentHeatmapSelection?.eventsSelected || 0)) {
+        return `Selected invocations (showing ${invocationCount} of ${this.currentHeatmapSelection?.eventsSelected})`;
       } else {
         return `Selected invocations (${invocationCount})`;
       }
     } else if (this.state.eventData?.executions) {
       const executionCount = this.state.eventData.executions.length;
-      if (executionCount < (this.currentHeatmapSelection?.invocationsSelected || 0)) {
-        return `Selected executions (showing ${executionCount} of ${this.currentHeatmapSelection?.invocationsSelected})`;
+      if (executionCount < (this.currentHeatmapSelection?.eventsSelected || 0)) {
+        return `Selected executions (showing ${executionCount} of ${this.currentHeatmapSelection?.eventsSelected})`;
       } else {
         return `Selected executions (${executionCount})`;
       }
@@ -547,7 +547,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   renderZoomChip(): React.ReactElement | null {
-    const zoomEligible = this.currentHeatmapSelection && this.currentHeatmapSelection.invocationsSelected > 1;
+    const zoomEligible = this.currentHeatmapSelection && this.currentHeatmapSelection.eventsSelected > 1;
     const zoomToSummarize = zoomEligible ? this.currentHeatmapSelection : this.currentZoomFilters;
     if (!zoomToSummarize) {
       return null;
