@@ -118,22 +118,24 @@ def push_image_for_project(project, version_tag, bazel_target, skip_update_lates
     if version_image is None:
         push_image_with_bazel(bazel_target, version_tag)
 
-    if not skip_update_latest_tag:
-        version_image = version_image or get_image(project, version_tag)
-        if version_image is None:
-            die(f"Could not fetch image with tag {version_tag} from project {project}.")
+    if skip_update_latest_tag:
+        return
 
-        latest_image = get_image(project, "latest")
-        if latest_image is None:
-            die(f"Could not fetch image with latest tag from project {project}.")
+    version_image = version_image or get_image(project, version_tag)
+    if version_image is None:
+        die(f"Could not fetch image with tag {version_tag} from project {project}.")
 
-        should_update_latest_tag = version_image["config"]["digest"] != latest_image["config"]["digest"]
-        if should_update_latest_tag:
-            add_tag_cmd = f"y | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
-            run_or_die(add_tag_cmd)
+    latest_image = get_image(project, "latest")
+    if latest_image is None:
+        die(f"Could not fetch image with latest tag from project {project}.")
+
+    should_update_latest_tag = version_image["config"]["digest"] != latest_image["config"]["digest"]
+    if should_update_latest_tag:
+        add_tag_cmd = f"y | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
+        run_or_die(add_tag_cmd)
 
 def push_image_with_bazel(bazel_target, image_tag):
-    print(f"Pushed docker image target {bazel_target} tag {image_tag}")
+    print(f"Pushing docker image target {bazel_target} tag {image_tag}")
     command = (
         'bazel run -c opt --stamp '+
         '--define=release=true '+
