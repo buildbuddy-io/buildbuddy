@@ -502,49 +502,34 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration, timez
 
 	endSec := time.Now().Unix()
 	if highTime != nil {
-		// Drop a second from the end date (which is normally a round hour) so that
-		// we don't include the next day as a bucket.  This value isn't actually
-		// used for filtering, so this hack is fine, provided that nobody starts
-		// using this code with (midnight + 1s).  That wouldn't make much sense,
-		// since the feature only shows day-based buckets.
-		endSec = highTime.GetSeconds() - 1
+		endSec = highTime.GetSeconds()
 	}
+	var loc *time.Location
+	if !(*useTimezoneInHeatmapQueries) || timezone == "" {
+		loc = time.FixedZone("Fixed Offset", -int(timezoneOffset.Seconds()))
+	} else {
+		loadedLoc, tzErr := time.LoadLocation(timezone)
+		if tzErr != nil {
+			loc = time.FixedZone("Fixed Offset", -int(timezoneOffset.Seconds()))
+		} else {
+			loc = loadedLoc
+		}
+	}
+
+	start := time.Unix(startSec, 0).In(loc)
+	end := time.Unix(endSec, 0).In(loc)
+
+	// Each subsequent bucket will start at midnight on the following day.
+	midnightOnStartDate := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
+	current := midnightOnStartDate.AddDate(0, 0, 1)
 
 	var timestampBuckets []int64
-	if *useTimezoneInHeatmapQueries {
-		// empty string defaults to UTC
-		loc, err := time.LoadLocation(timezone)
-		if err != nil {
-			return nil, "", err
-		}
-		start := time.Unix(startSec, 0).In(loc)
-		end := time.Unix(endSec, 0).In(loc)
-
-		// Each subsequent bucket will start at midnight on the following day.
-		midnightOnStartDate := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
-		current := midnightOnStartDate.AddDate(0, 0, 1)
-
-		timestampBuckets = append(timestampBuckets, start.UnixMicro())
-		for current.Before(end) {
-			timestampBuckets = append(timestampBuckets, current.UnixMicro())
-			current = current.AddDate(0, 0, 1)
-		}
-		timestampBuckets = append(timestampBuckets, end.UnixMicro())
-	} else {
-		offsetSec := int64(timezoneOffset.Seconds())
-		s := time.Unix(startSec, 0).UTC().Add(-timezoneOffset)
-		localStart := time.Date(s.Year(), s.Month(), s.Day(), 0, 0, 0, 0, s.Location())
-		currentDateBracket := localStart.Add(timezoneOffset)
-
-		currentString := currentDateBracket.Format("2006-01-02")
-		endString := time.Unix(endSec-offsetSec, 0).UTC().AddDate(0, 0, 2).Format("2006-01-02")
-
-		for currentString != endString {
-			timestampBuckets = append(timestampBuckets, currentDateBracket.UnixMicro())
-			currentDateBracket = currentDateBracket.AddDate(0, 0, 1)
-			currentString = currentDateBracket.Format("2006-01-02")
-		}
+	timestampBuckets = append(timestampBuckets, start.UnixMicro())
+	for current.Before(end) {
+		timestampBuckets = append(timestampBuckets, current.UnixMicro())
+		current = current.AddDate(0, 0, 1)
 	}
+	timestampBuckets = append(timestampBuckets, end.UnixMicro())
 
 	numDateBuckets := len(timestampBuckets) - 1
 

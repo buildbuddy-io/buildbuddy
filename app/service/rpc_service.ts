@@ -36,8 +36,6 @@ class RpcService {
 
     if (Intl?.DateTimeFormat && Intl.DateTimeFormat().resolvedOptions) {
       this.requestContext.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } else {
-      this.requestContext.timezone = "UTC";
     }
 
     (window as any)._rpcService = this;

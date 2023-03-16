@@ -35,9 +35,8 @@ message RequestContext {
   // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset
   int32 timezone_offset_minutes = 3;
 
-  // The timezone from the user's browser (if supported). Empty is treated as
-  // 'UTC'. Getting the user time zone has wide support in modern browsers. See
-  // https://caniuse.com/mdn-javascript_builtins_intl_datetimeformat_resolvedoptions
+  // The timezone from the user's browser (if supported). If empty, we will fall
+  // back to timezone_offset_mintues. If that is unset, we default to UTC.
   string timezone = 5;
 }
 
