@@ -24,13 +24,21 @@ export type BuildBuddyServiceRpcName = RpcMethodNames<buildbuddy.service.BuildBu
 class RpcService {
   service: ExtendedBuildBuddyService;
   events: Subject<string>;
-  requestContext = new context.RequestContext({
-    timezoneOffsetMinutes: new Date().getTimezoneOffset(),
-  });
+  requestContext: context.RequestContext;
 
   constructor() {
     this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this)));
     this.events = new Subject();
+
+    this.requestContext = new context.RequestContext({
+      timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+    });
+
+    if (Intl?.DateTimeFormat && Intl.DateTimeFormat().resolvedOptions) {
+      this.requestContext.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } else {
+      this.requestContext.timezone = "UTC";
+    }
 
     (window as any)._rpcService = this;
   }
