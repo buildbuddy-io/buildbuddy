@@ -1,10 +1,14 @@
 syntax = "proto3";
 
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
+import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
 import "proto/scheduler.proto";
+import "proto/stat_filter.proto";
 
 package execution_stats;
 
@@ -123,4 +127,110 @@ message GetExecutionResponse {
   context.ResponseContext response_context = 1;
 
   repeated Execution execution = 2;
+}
+
+message ExecutionQuery {
+  // The unix-user who performed the build.
+  string invocation_user = 1;
+
+  // The host this build was executed on.
+  string invocation_host = 2;
+
+  // The git repo the build was for.
+  string repo_url = 3;
+
+  // The commit sha used for the build.
+  string commit_sha = 4;
+
+  // The ROLE metadata set on the build. If multiple filters are specified, they
+  // are combined with "OR".
+  repeated string role = 5;
+
+  // The timestamp on or after which the execution was last updated (inclusive).
+  google.protobuf.Timestamp updated_after = 6;
+
+  // The timestamp up to which the execution was last updated (exclusive).
+  google.protobuf.Timestamp updated_before = 7;
+
+  // Status of the build. If multiple are specified, they are combined with
+  // "OR".
+  repeated invocation_status.OverallStatus invocation_status = 8;
+
+  // The git branch used for the build.
+  string branch_name = 9;
+
+  // The bazel command that was used. Ex: "build", "test", "run"
+  string command = 10;
+
+  // The pattern for the targets built (exact match). Ex: "//..."
+  string pattern = 11;
+
+  // Stat filters (duration_usec, queue_time_usec, etc.)
+  repeated stat_filter.StatFilter filter = 12;
+}
+
+// Searches executions data for all matching executions.  This request is
+// automatically filtered to only return readable executions for the user's
+// currently selected group.
+message SearchExecutionRequest {
+  context.RequestContext request_context = 1;
+
+  ExecutionQuery query = 2;
+
+  // The number of results to return. Optional.
+  // If unset, the server will pick a reasonable page size.
+  int32 count = 3;
+
+  // The next_page_token value returned from a previous request, if any.
+  string page_token = 4;
+}
+
+message InvocationMetadata {
+  // The invocation identifier itself.
+  string id = 1;
+
+  // The unix-user who performed this invocation.
+  string user = 2;
+
+  // The host this invocation was executed on.
+  string host = 3;
+
+  // The build patterns specified for this invocation.
+  string pattern = 4;
+
+  // The role played by this invocation. Ex: "CI"
+  string role = 5;
+
+  // The name of the git branch for this invocation, if any
+  string branch_name = 6;
+
+  // The commit SHA that this invocation was for.
+  string commit_sha = 7;
+
+  // A URL to the git repo this invocation was for.
+  string repo_url = 8;
+
+  // The command performed (usually "build" or "test").
+  string command = 9;
+
+  // Whether or not the invocation was successful
+  bool success = 10;
+
+  // The current status of the invocation.
+  invocation_status.InvocationStatus invocation_status = 11;
+}
+
+message ExecutionWithInvocationMetadata {
+  Execution execution = 1;
+  InvocationMetadata invocation_metadata = 2;
+}
+
+message SearchExecutionResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated ExecutionWithInvocationMetadata execution = 2;
+
+  // Token to retrieve the next page of results, or empty if there are no
+  // more results in the list.
+  string next_page_token = 3;
 }
