@@ -95,7 +95,6 @@ container_layer(
     files = [
         ":firecracker",
         ":jailer",
-        "@com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64//:stargz-store",
         "@com_github_iain_macdonald_soci_snapshotter-soci-store-v0.1-linux-amd64//file:soci-store-v0.1-linux-amd64",
     ],
     symlinks = {
