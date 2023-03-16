@@ -41,6 +41,7 @@ var (
 	enableExecutorKeyCreation  = flag.Bool("remote_execution.enable_executor_key_creation", false, "If enabled, UI will allow executor keys to be created.")
 	testOutputManifestsEnabled = flag.Bool("app.test_output_manifests_enabled", true, "If set, the target page will render the contents of test output zips.")
 	patternFilterEnabled       = flag.Bool("app.pattern_filter_enabled", false, "If set, allow filtering by pattern in the client.")
+	executionSearchEnabled     = flag.Bool("app.execution_search_enabled", false, "If set, fetch lists of executions from the OLAP DB in the trends UI.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -158,6 +159,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		TrendsHeatmapEnabled:          iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:          *patternFilterEnabled,
 		BotSuggestionsEnabled:         env.GetSuggestionService() != nil,
+		ExecutionSearchEnabled:        *executionSearchEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)
