@@ -1579,6 +1579,7 @@ func writeBazelrc(path, invocationID string) error {
 	}...)
 	if *cacheBackend != "" {
 		lines = append(lines, "build:buildbuddy_remote_cache --remote_cache="+*cacheBackend)
+		lines = append(lines, "build:buildbuddy_experimental_remote_downloader --experimental_remote_downloader="+*cacheBackend)
 	}
 	if *rbeBackend != "" {
 		lines = append(lines, "build:buildbuddy_remote_executor --remote_executor="+*rbeBackend)

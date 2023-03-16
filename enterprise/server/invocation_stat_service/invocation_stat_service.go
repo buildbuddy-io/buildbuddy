@@ -25,6 +25,7 @@ import (
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 )
@@ -1020,19 +1021,19 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	return rsp, nil
 }
 
-func toStatusClauses(statuses []inpb.OverallStatus) *query_builder.OrClauses {
+func toStatusClauses(statuses []inspb.OverallStatus) *query_builder.OrClauses {
 	statusClauses := &query_builder.OrClauses{}
 	for _, status := range statuses {
 		switch status {
-		case inpb.OverallStatus_SUCCESS:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 1)
-		case inpb.OverallStatus_FAILURE:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 0)
-		case inpb.OverallStatus_IN_PROGRESS:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_PARTIAL_INVOCATION_STATUS))
-		case inpb.OverallStatus_DISCONNECTED:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS))
-		case inpb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+		case inspb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
+		case inspb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 0)
+		case inspb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS))
+		case inspb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS))
+		case inspb.OverallStatus_UNKNOWN_OVERALL_STATUS:
 			continue
 		default:
 			continue

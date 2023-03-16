@@ -132,6 +132,9 @@ build --experimental_inprocess_symlink_creation
 test --test_tag_filters=-docker
 build --build_tag_filters=-docker
 
+# Use C++17 standard for all C++ compilation
+build --host_cxxopt=-std=c++17
+
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
 test:webdriver-debug --test_arg=-webdriver_debug

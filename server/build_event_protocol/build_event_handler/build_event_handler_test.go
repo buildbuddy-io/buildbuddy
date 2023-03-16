@@ -26,6 +26,7 @@ import (
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
@@ -441,7 +442,7 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -451,7 +452,7 @@ func TestHandleEventWithWorkspaceStatusBeforeStarted(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 }
 
 func TestHandleEventWithEnvAndMetadataRedaction(t *testing.T) {
@@ -578,7 +579,7 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Cancel the context
 	cancel()
@@ -591,7 +592,7 @@ func TestFinishedFinalizeWithCanceledContext(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(context.Background(), "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 }
 
 func TestFinishedFinalize(t *testing.T) {
@@ -626,7 +627,7 @@ func TestFinishedFinalize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -637,7 +638,7 @@ func TestFinishedFinalize(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(context.Background(), "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 }
 
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
@@ -667,7 +668,7 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Cancel the context
 	cancel()
@@ -680,7 +681,7 @@ func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(context.Background(), "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 }
 
 func TestUnfinishedFinalize(t *testing.T) {
@@ -710,7 +711,7 @@ func TestUnfinishedFinalize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -721,7 +722,7 @@ func TestUnfinishedFinalize(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(context.Background(), "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 }
 
 func TestRetryOnComplete(t *testing.T) {
@@ -763,7 +764,7 @@ func TestRetryOnComplete(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -773,7 +774,7 @@ func TestRetryOnComplete(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
@@ -832,7 +833,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -842,7 +843,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
@@ -882,7 +883,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "def456", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -892,7 +893,7 @@ func TestRetryOnDisconnect(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "def456", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Make sure the new protofile exists
 	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 2), 0))
@@ -939,7 +940,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -949,7 +950,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)
@@ -989,7 +990,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "def456", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -999,7 +1000,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "def456", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 2), 0))
 	assert.NoError(t, err)
@@ -1044,7 +1045,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "000789", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -1054,7 +1055,7 @@ func TestRetryTwiceOnDisconnect(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "000789", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Make sure all protofiles exist
 	exists, err = te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
@@ -1120,7 +1121,7 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_GROUP, invocation.ReadPermission)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	// Finalize the invocation
 	err = channel.FinalizeInvocation(testInvocationID)
@@ -1130,7 +1131,7 @@ func TestRetryOnOldDisconnect(t *testing.T) {
 	invocation, err = build_event_handler.LookupInvocation(te, auth.AuthContextFromAPIKey(ctx, "USER1"), testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, "abc123", invocation.CommitSha)
-	assert.Equal(t, inpb.Invocation_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
+	assert.Equal(t, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS, invocation.InvocationStatus)
 
 	exists, err := te.GetBlobstore().BlobExists(ctx, protofile.ChunkName(build_event_handler.GetStreamIdFromInvocationIdAndAttempt(testInvocationID, 1), 0))
 	assert.NoError(t, err)

@@ -47,6 +47,7 @@ import (
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -190,7 +191,7 @@ type recordStatsTask struct {
 	// files contains a mapping of file digests to file name metadata for files
 	// referenced in the BEP.
 	files            map[string]*build_event_stream.File
-	invocationStatus inpb.Invocation_InvocationStatus
+	invocationStatus inspb.InvocationStatus
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -375,7 +376,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		log.CtxErrorf(ctx, "Failed to write cache stats to primaryDB: %s", err)
 	}
 
-	if task.invocationStatus == inpb.Invocation_COMPLETE_INVOCATION_STATUS {
+	if task.invocationStatus == inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
 		err = r.flushInvocationStatsToOLAPDB(ctx, task.invocationJWT)
 		if err != nil {
@@ -522,7 +523,7 @@ func (w *webhookNotifier) lookupAndCreateTask(ctx context.Context, ij *invocatio
 	}
 
 	// Don't call webhooks for disconnected invocations.
-	if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+	if invocation.GetInvocationStatus() == inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS {
 		return nil
 	}
 
@@ -715,7 +716,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	// Report a disconnect only if we successfully updated the invocation.
 	// This reduces the likelihood that the disconnected invocation's status
 	// will overwrite any statuses written by a more recent attempt.
-	if invocation.GetInvocationStatus() == inpb.Invocation_DISCONNECTED_INVOCATION_STATUS {
+	if invocation.GetInvocationStatus() == inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS {
 		log.CtxWarning(ctx, "Reporting disconnected status for invocation")
 		e.statusReporter.ReportDisconnect(ctx)
 	}
@@ -744,13 +745,13 @@ func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invoca
 }
 
 func invocationStatusLabel(ti *tables.Invocation) string {
-	if ti.InvocationStatus == int64(inpb.Invocation_COMPLETE_INVOCATION_STATUS) {
+	if ti.InvocationStatus == int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS) {
 		if ti.Success {
 			return "success"
 		}
 		return "failure"
 	}
-	if ti.InvocationStatus == int64(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS) {
+	if ti.InvocationStatus == int64(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS) {
 		return "disconnected"
 	}
 	return "unknown"
@@ -875,7 +876,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		ti := &tables.Invocation{
 			InvocationID:     iid,
 			InvocationUUID:   invocationUUID,
-			InvocationStatus: int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS),
+			InvocationStatus: int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS),
 			RedactionFlags:   redact.RedactionFlagStandardRedactions,
 			Attempt:          e.attempt,
 		}
@@ -1170,7 +1171,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 	// If this is an incomplete invocation, attempt to fill cache stats
 	// from counters rather than trying to read them from invocation b/c
 	// they won't be set yet.
-	if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+	if ti.InvocationStatus == int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS) {
 		if cacheStats := hit_tracker.CollectCacheStats(ctx, env, iid); cacheStats != nil {
 			fillInvocationFromCacheStats(cacheStats, ti)
 		}
@@ -1187,7 +1188,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		if !hit_tracker.DetailedStatsEnabled() {
 			// The cache ScoreCard is not stored in the table invocation, so we do this lookup
 			// after converting the table invocation to a proto invocation.
-			if ti.InvocationStatus == int64(inpb.Invocation_PARTIAL_INVOCATION_STATUS) {
+			if ti.InvocationStatus == int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS) {
 				scoreCard = hit_tracker.ScoreCard(ctx, env, iid)
 			} else {
 				sc, err := scorecard.Read(ctx, env, iid, ti.Attempt)
@@ -1327,7 +1328,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	}
 	out.ActionCount = i.ActionCount
 	// BlobID is not present in output client proto.
-	out.InvocationStatus = inpb.Invocation_InvocationStatus(i.InvocationStatus)
+	out.InvocationStatus = inspb.InvocationStatus(i.InvocationStatus)
 	out.CreatedAtUsec = i.Model.CreatedAtUsec
 	out.UpdatedAtUsec = i.Model.UpdatedAtUsec
 	if i.Perms&perms.OTHERS_READ > 0 {

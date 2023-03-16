@@ -1,9 +1,5 @@
 package(default_visibility = ["//enterprise:__subpackages__"])
 
-exports_files([
-    "vmlinux",
-])
-
 genrule(
     name = "mkinitrd",
     srcs = [
@@ -23,4 +19,11 @@ genrule(
         "mkinitrd.sh",
         "//enterprise/tools/cpio",
     ],
+)
+
+genrule(
+    name = "vmlinux_copy",
+    srcs = ["@org_kernel_git_linux_kernel-vmlinux-5.4.0//file:downloaded"],
+    outs = ["vmlinux"],
+    cmd = "cp $(SRCS) $@",
 )

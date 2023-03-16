@@ -1247,7 +1247,6 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 		return false
 	}
 	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil {
-		log.Warningf("Handling metadata mismatch for %q: %+v", key.String(), fileMetadata)
 		err := p.deleteMetadataOnly(ctx, key)
 		if err != nil && status.IsNotFoundError(err) {
 			return false

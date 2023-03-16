@@ -9,6 +9,7 @@ go_test(
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//proto:publish_build_event_go_proto",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",

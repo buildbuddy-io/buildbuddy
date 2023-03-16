@@ -20,3 +20,5 @@ go_test(
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

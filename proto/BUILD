@@ -105,9 +105,12 @@ proto_library(
     deps = [
         ":acl_proto",
         ":context_proto",
+        ":invocation_status_proto",
         ":remote_execution_proto",
         ":scheduler_proto",
+        ":stat_filter_proto",
         "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
         "@go_googleapis//google/rpc:status_proto",
     ],
 )
@@ -185,7 +188,7 @@ proto_library(
     srcs = ["stats.proto"],
     deps = [
         ":context_proto",
-        ":invocation_proto",
+        ":invocation_status_proto",
         ":stat_filter_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -311,10 +314,16 @@ proto_library(
         ":cache_proto",
         ":command_line_proto",
         ":context_proto",
+        ":invocation_status_proto",
         ":stat_filter_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
+)
+
+proto_library(
+    name = "invocation_status_proto",
+    srcs = ["invocation_status.proto"],
 )
 
 proto_library(
@@ -565,8 +574,10 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
+        ":invocation_status_go_proto",
         ":remote_execution_go_proto",
         ":scheduler_go_proto",
+        ":stat_filter_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
@@ -653,7 +664,7 @@ go_proto_library(
     proto = ":stats_proto",
     deps = [
         ":context_go_proto",
-        ":invocation_go_proto",
+        ":invocation_status_go_proto",
         ":stat_filter_go_proto",
     ],
 )
@@ -781,8 +792,15 @@ go_proto_library(
         ":cache_go_proto",
         ":command_line_go_proto",
         ":context_go_proto",
+        ":invocation_status_go_proto",
         ":stat_filter_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "invocation_status_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/invocation_status",
+    proto = ":invocation_status_proto",
 )
 
 go_proto_library(
@@ -1103,6 +1121,11 @@ ts_proto_library(
 ts_proto_library(
     name = "context_ts_proto",
     proto = ":context_proto",
+)
+
+ts_proto_library(
+    name = "invocation_status_ts_proto",
+    proto = ":invocation_status_proto",
 )
 
 ts_proto_library(
