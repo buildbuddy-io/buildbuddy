@@ -80,4 +80,7 @@ message FrontendConfig {
 
   // Whether to allow filtering invocations, trends, etc. by pattern.
   bool pattern_filter_enabled = 26;
+
+  // Enable searching for executions in the OLAP DB.
+  bool execution_search_enabled = 27;
 }
