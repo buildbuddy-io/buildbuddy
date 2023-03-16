@@ -35,7 +35,7 @@ type SelectedCellData = {
 export type HeatmapSelection = {
   dateRangeMicros: { startInclusive: number; endExclusive: number };
   bucketRange: { startInclusive: number; endExclusive: number };
-  invocationsSelected: number;
+  eventsSelected: number;
 };
 
 const CHART_MARGINS = {
@@ -210,14 +210,14 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
       ),
     };
 
-    let invocationsSelected = 0;
+    let eventsSelected = 0;
     for (let i = Math.min(t1Index, t2Index); i <= Math.max(t1Index, t2Index); i++) {
       for (let j = Math.min(m1Index, m2Index); j <= Math.max(m1Index, m2Index); j++) {
-        invocationsSelected += +this.props.heatmapData.column[i].value[j];
+        eventsSelected += +this.props.heatmapData.column[i].value[j];
       }
     }
 
-    return { dateRangeMicros, bucketRange, invocationsSelected };
+    return { dateRangeMicros, bucketRange, eventsSelected };
   }
 
   maybeFireSelectionCallback() {
