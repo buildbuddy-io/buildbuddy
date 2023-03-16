@@ -459,13 +459,13 @@ func (c *CacheLog) TableName() string {
 type Target struct {
 	RuleType string
 	UserID   string `gorm:"index:target_user_id"`
-	GroupID  string `gorm:"index:target_group_id;uniqueIndex:target_target_id_group_id_idx,priority:2"`
+	GroupID  string `gorm:"not null;index:target_group_id;uniqueIndex:target_target_id_group_id_idx,priority:2"`
 	RepoURL  string
 	Label    string
 	Model
 	Perms int `gorm:"index:target_perms;type:int(11);default:NULL"`
 	// TargetID is made up of repoURL + label.
-	TargetID int64 `gorm:"uniqueIndex:target_target_id_group_id_idx,priority:1"`
+	TargetID int64 `gorm:"not null;uniqueIndex:target_target_id_group_id_idx,priority:1"`
 }
 
 func (t *Target) TableName() string {
@@ -533,13 +533,13 @@ type UsageCounts struct {
 type Usage struct {
 	Model
 
-	GroupID string `gorm:"uniqueIndex:group_period_region_index,priority:1"`
+	GroupID string `gorm:"not null;uniqueIndex:group_period_region_index,priority:1"`
 
 	// PeriodStartUsec is the time at which the usage period started, in
 	// microseconds since the Unix epoch. The usage period duration is 1 hour.
 	// Only usage data occurring in collection periods inside this 1 hour period
 	// is included in this usage row.
-	PeriodStartUsec int64 `gorm:"uniqueIndex:group_period_region_index,priority:2"`
+	PeriodStartUsec int64 `gorm:"not null;uniqueIndex:group_period_region_index,priority:2"`
 
 	// FinalBeforeUsec is the time before which all collection period data in this
 	// usage period is finalized. This is used to guarantee that collection period
@@ -566,7 +566,7 @@ type Usage struct {
 	// Since we have a global DB deployment but usage data is collected
 	// per-region, this effectively partitions the usage table by region, allowing
 	// the FinalBeforeUsec logic to work independently in each region.
-	Region string `gorm:"uniqueIndex:group_period_region_index,priority:3"`
+	Region string `gorm:"not null;uniqueIndex:group_period_region_index,priority:3"`
 
 	UsageCounts
 }
