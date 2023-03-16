@@ -485,7 +485,7 @@ func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table stri
 
 const ONE_WEEK = 7 * 24 * time.Hour
 
-func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration, timezone string) ([]int64, string, error) {
+func getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContext) ([]int64, string, error) {
 	lowTime := q.GetUpdatedAfter()
 	highTime := q.GetUpdatedBefore()
 	if lowTime != nil && !lowTime.IsValid() {
@@ -506,6 +506,8 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration, timez
 	}
 
 	var loc *time.Location
+	timezoneOffset := time.Duration(requestContext.GetTimezoneOffsetMinutes()) * time.Minute
+	timezone := requestContext.GetTimezone()
 	// Find the user's timezone. time.LoadLocation defaults the empty string to
 	// UTC, but we want to fall back to an offset, so we need to do that first.
 	if !(*useTimezoneInHeatmapQueries) || timezone == "" {
@@ -553,8 +555,8 @@ type HeatmapQueryInputs = struct {
 	MetricArrayStr         string
 }
 
-func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, timezoneOffsetMinutes int32, timezone string) (*HeatmapQueryInputs, error) {
-	timestampBuckets, timestampArrayStr, err := getTimestampBuckets(q, time.Duration(timezoneOffsetMinutes)*time.Minute, timezone)
+func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, requestContext *ctxpb.RequestContext) (*HeatmapQueryInputs, error) {
+	timestampBuckets, timestampArrayStr, err := getTimestampBuckets(q, requestContext)
 	if err != nil {
 		return nil, err
 	}
@@ -603,7 +605,7 @@ type QueryAndBuckets = struct {
 // event that no events are found at all, it will instead return (nil, nil) to
 // indicate a no-error state with no results--in this case we should return an
 // empty response.
-func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest, timezoneOffsetMinutes int32, timezone string) (*QueryAndBuckets, error) {
+func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*QueryAndBuckets, error) {
 	table := getTableForMetric(req.GetMetric())
 	metric, err := filter.MetricToDbField(req.GetMetric(), "")
 	if err != nil {
@@ -614,7 +616,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 		return nil, err
 	}
 
-	qi, err := i.generateQueryInputs(ctx, table, metric, req.GetQuery(), whereClauseStr, whereClauseArgs, timezoneOffsetMinutes, timezone)
+	qi, err := i.generateQueryInputs(ctx, table, metric, req.GetQuery(), whereClauseStr, whereClauseArgs, req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
@@ -655,7 +657,7 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 		return nil, err
 	}
 
-	qAndBuckets, err := i.getHeatmapQueryAndBuckets(ctx, req, req.GetRequestContext().GetTimezoneOffsetMinutes(), req.GetRequestContext().GetTimezone())
+	qAndBuckets, err := i.getHeatmapQueryAndBuckets(ctx, req)
 	if err != nil {
 		return nil, err
 	}
