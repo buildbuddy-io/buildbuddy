@@ -504,12 +504,15 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration, timez
 	if highTime != nil {
 		endSec = highTime.GetSeconds()
 	}
+
 	var loc *time.Location
+	// Find the user's timezone. time.LoadLocation defaults the empty string to
+	// UTC, but we want to fall back to an offset, so we need to do that first.
 	if !(*useTimezoneInHeatmapQueries) || timezone == "" {
 		loc = time.FixedZone("Fixed Offset", -int(timezoneOffset.Seconds()))
 	} else {
-		loadedLoc, tzErr := time.LoadLocation(timezone)
-		if tzErr != nil {
+		loadedLoc, err := time.LoadLocation(timezone)
+		if err != nil {
 			loc = time.FixedZone("Fixed Offset", -int(timezoneOffset.Seconds()))
 		} else {
 			loc = loadedLoc
