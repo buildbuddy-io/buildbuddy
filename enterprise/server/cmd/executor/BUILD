@@ -97,6 +97,8 @@ container_image(
 
 # Build a docker image similar to the go_binary above, but use the "go_image"
 # rule from @io_bazel_rules_docker instead, which creates a docker image.
+#
+# This target can be run locally with enterprise/tools/run_executor_image.sh
 go_image(
     name = "executor_image",
     base = ":base_image",
