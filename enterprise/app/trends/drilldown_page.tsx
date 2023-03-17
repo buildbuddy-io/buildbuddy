@@ -7,6 +7,7 @@ import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Spinner from "../../../app/components/spinner/spinner";
+import errorService from "../../../app/errors/error_service";
 import HistoryInvocationCardComponent from "../../app/history/history_invocation_card";
 import InvocationExecutionTable from "../../../app/invocation/invocation_execution_table";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
@@ -264,7 +265,10 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           eventData: { executions: response.execution },
         });
       })
-      .catch(() => this.setState({ eventsFailed: true, eventData: undefined }))
+      .catch((e) => {
+        errorService.handleError(e);
+        this.setState({ eventsFailed: true, eventData: undefined });
+      })
       .finally(() => this.setState({ loadingEvents: false }));
   }
 

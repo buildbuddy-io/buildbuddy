@@ -55,6 +55,7 @@ ts_library(
         "//app/components/button",
         "//app/components/select",
         "//app/components/spinner",
+        "//app/errors:error_service",
         "//app/invocation:invocation_execution_table",
         "//app/router",
         "//app/service:rpc_service",
