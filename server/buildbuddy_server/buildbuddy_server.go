@@ -842,6 +842,17 @@ func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *scpb.GetE
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentErrorf("SearchExecutionRequest cannot be empty")
+	}
+	searcher := s.env.GetExecutionSearchService()
+	if searcher == nil {
+		return nil, fmt.Errorf("No searcher was configured")
+	}
+	return searcher.SearchExecutions(ctx, req)
+}
+
 func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
 	return target.GetTarget(ctx, s.env, req)
 }
