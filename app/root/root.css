@@ -477,12 +477,12 @@ svg.icon.orange {
   border-left: 6px solid transparent;
 }
 
-.card-suggestion {
+.card-suggestion.card-suggestion-bot {
   background: #2196f3;
   color: #fff;
 }
 
-.card-suggestion svg {
+.card-suggestion.card-suggestion-bot svg {
   stroke: white;
 }
 
