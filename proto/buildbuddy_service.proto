@@ -17,6 +17,7 @@ import "proto/usage.proto";
 import "proto/github.proto";
 import "proto/quota.proto";
 import "proto/secrets.proto";
+import "proto/suggestion.proto";
 import "proto/zip.proto";
 
 package buildbuddy.service;
@@ -152,4 +153,8 @@ service BuildBuddyService {
       returns (secrets.UpdateSecretResponse);
   rpc DeleteSecret(secrets.DeleteSecretRequest)
       returns (secrets.DeleteSecretResponse);
+
+  // Suggestion API
+  rpc GetSuggestion(suggestion.GetSuggestionRequest)
+      returns (suggestion.GetSuggestionResponse);
 }

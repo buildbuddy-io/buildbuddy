@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package suggestion;
+
+import "proto/context.proto";
+
+message GetSuggestionRequest {
+  // Request context.
+  context.RequestContext request_context = 1;
+
+  SuggestionType type = 2;
+
+  string invocation_id = 3;
+}
+
+enum SuggestionType {
+  UNKNOWN_SUGGESTION_TYPE = 0;
+  FIX_ERROR = 1;
+}
+
+message GetSuggestionResponse {
+  // Response context.
+  context.ResponseContext response_context = 1;
+
+  repeated string suggestion = 2;
+}
