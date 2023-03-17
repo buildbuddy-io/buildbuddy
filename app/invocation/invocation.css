@@ -632,11 +632,16 @@
   flex-grow: 10;
 }
 
-.invocation-share-button svg {
+.invocation-share-button svg,
+.invocation-ask-button svg {
   margin-right: 12px;
   margin-left: -4px;
   width: 16px;
   height: 16px;
+}
+
+.invocation-ask-button {
+  background-color: #2196f3 !important;
 }
 
 .invocation-share-dialog .row {
