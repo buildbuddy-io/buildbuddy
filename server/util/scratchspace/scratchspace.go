@@ -13,7 +13,7 @@ var (
 	// We intentionally write to a subdirectory under this dir to avoid blowing
 	// away existing files in the configured directory, in case of accidental
 	// misconfiguration.
-	tempDir_doNotUseDirectly = flag.String("storage.tempdir", os.TempDir(), "Root directory for temporary files. Defaults to the OS-specific temp dir.")
+	tempDir_doNotUseDirectly = flag.String("storage.tempdir", defaultTempDir(), "Root directory for temporary files. Defaults to the OS-specific temp dir.")
 )
 
 const (
@@ -34,6 +34,13 @@ func Init() error {
 		return status.InvalidArgumentErrorf("failed to create scratch directory: %s", err)
 	}
 	return nil
+}
+
+func defaultTempDir() string {
+	if d := os.Getenv("TEST_TMPDIR"); d != "" {
+		return d
+	}
+	return os.TempDir()
 }
 
 // tempDir returns the directory where scratch files are written.

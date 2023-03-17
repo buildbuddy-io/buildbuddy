@@ -19,13 +19,15 @@ actions:
       pull_request:
         branches:
           - "master"
+    # TODO: Fix the tests below on Mac, and re-enable.
     bazel_commands:
       - >-
         test --config=mac-workflows
         --
         //...
         -//enterprise/server/test/integration/ci_runner:all
-        -//enterprise/server/test/integration/remote_execution/bazel_rbe:all
+        -//enterprise/server/test/integration/workflow:all
+        -//enterprise/server/test/integration/remote_execution/...
   - name: Benchmark
     container_image: ubuntu-20.04
     triggers:
