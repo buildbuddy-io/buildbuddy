@@ -3,11 +3,11 @@ import router from "../router/router";
 import InvocationModel from "./invocation_model";
 import { X, ArrowUp, ArrowDown, ArrowLeftRight, ChevronRight, Check, SortAsc, SortDesc } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
-import { invocation } from "../../proto/invocation_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
 import rpc_service from "../service/rpc_service";
 import DigestComponent from "../components/digest/digest";
-import Link, { TextLink } from "../components/link/link";
+import { TextLink } from "../components/link/link";
 import { durationToMillis, timestampToDate } from "../util/proto";
 import error_service from "../errors/error_service";
 import Button, { OutlinedButton } from "../components/button/button";
@@ -604,7 +604,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
 function areResultsAvailable(model: InvocationModel): boolean {
   return Boolean(
     model.invocations[0] &&
-      model.invocations[0].invocationStatus !== invocation.Invocation.InvocationStatus.PARTIAL_INVOCATION_STATUS
+      model.invocations[0].invocationStatus !== invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS
   );
 }
 

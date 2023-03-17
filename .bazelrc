@@ -123,10 +123,17 @@ build --incompatible_strict_action_env
 # rules_nodejs needs runfiles to be explicitly enabled.
 build --enable_runfiles
 
+# Use syscall to create symlink in-process.
+# Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
+build --experimental_inprocess_symlink_creation
+
 # Don't build or run Docker tests by default, to avoid a hard dependency
 # on Docker for development.
 test --test_tag_filters=-docker
 build --build_tag_filters=-docker
+
+# Use C++17 standard for all C++ compilation
+build --host_cxxopt=-std=c++17
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.

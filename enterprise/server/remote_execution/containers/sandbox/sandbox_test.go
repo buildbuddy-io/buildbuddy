@@ -2,7 +2,6 @@ package sandbox_test
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"testing"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
-	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 
@@ -18,10 +16,6 @@ import (
 )
 
 func makeTempDirWithWorldTxt(t *testing.T) string {
-	rootDirFlag := flag.Lookup("executor.root_directory")
-	if rootDirFlag == nil {
-		t.Fatal("Missing --executor.root_directory flag.")
-	}
 	dir := testfs.MakeTempDir(t)
 
 	f, err := os.Create(fmt.Sprintf("%s/world.txt", dir))
@@ -38,16 +32,15 @@ func makeTempDirWithWorldTxt(t *testing.T) string {
 
 func TestSandboxedHelloWorld(t *testing.T) {
 	ctx := context.Background()
-	config.RegisterAndParseFlags()
 	tempDir := makeTempDirWithWorldTxt(t)
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			&repb.Command_EnvironmentVariable{Name: "GREETING", Value: "Hello"},
+			{Name: "GREETING", Value: "Hello"},
 		},
 		Arguments: []string{"sh", "-c", fmt.Sprintf("printf \"$GREETING $(cat %s/world.txt)!\"", tempDir)},
 		Platform: &repb.Platform{
 			Properties: []*repb.Platform_Property{
-				&repb.Platform_Property{
+				{
 					Name:  "container-image",
 					Value: "none",
 				},
@@ -74,7 +67,6 @@ func TestSandboxedHelloWorld(t *testing.T) {
 
 func TestCrossContainerReads(t *testing.T) {
 	ctx := context.Background()
-	config.RegisterAndParseFlags()
 	tempDir1 := makeTempDirWithWorldTxt(t)
 	goodCmd := &repb.Command{
 		Arguments: []string{"ls", tempDir1},

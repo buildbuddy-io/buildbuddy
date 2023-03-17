@@ -73,8 +73,9 @@ var (
 	logQueries             = flag.Bool("database.log_queries", false, "If true, log all queries")
 	slowQueryThreshold     = flag.Duration("database.slow_query_threshold", 500*time.Millisecond, "Queries longer than this duration will be logged with a 'Slow SQL' warning.")
 
-	autoMigrateDB        = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
-	autoMigrateDBAndExit = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	autoMigrateDB             = flag.Bool("auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDBAndExit      = flag.Bool("auto_migrate_db_and_exit", false, "If true, attempt to automigrate the db when connecting, then exit the program.")
+	printSchemaChangesAndExit = flag.Bool("database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
 )
 
 type AdvancedConfig struct {
@@ -650,16 +651,37 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	}
 	go statsRecorder.poll()
 
-	if *autoMigrateDBAndExit {
-		if err := runMigrations(driverName, primaryDB); err != nil {
-			log.Fatalf("Database auto-migration failed: %s", err)
+	if *autoMigrateDB || *autoMigrateDBAndExit || *printSchemaChangesAndExit {
+		sqlStrings := make([]string, 0)
+		if *printSchemaChangesAndExit {
+			// Replace every gorm raw SQL command with a function that appends the SQL string to a slice
+			if err := primaryDB.Callback().Raw().Replace("gorm:raw", func(db *gorm.DB) {
+				sqlToExecute := db.Statement.SQL.String()
+				if !strings.HasPrefix(sqlToExecute, "SELECT") {
+					sqlStrings = append(sqlStrings, sqlToExecute)
+				}
+			}); err != nil {
+				return nil, err
+			}
 		}
-		log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit.")
-		os.Exit(0)
-	}
-	if *autoMigrateDB {
+
 		if err := runMigrations(driverName, primaryDB); err != nil {
 			return nil, err
+		}
+
+		if *printSchemaChangesAndExit {
+			// Print schema changes to stdout
+			// Logs go to stderr, so this output will be easy to isolate and parse
+			if len(sqlStrings) > 0 {
+				for _, sqlStr := range sqlStrings {
+					fmt.Printf("%s\n", sqlStr)
+				}
+			}
+		}
+
+		if *autoMigrateDBAndExit || *printSchemaChangesAndExit {
+			log.Infof("Database migration completed. Exiting due to --auto_migrate_db_and_exit or --database.print_schema_changes_and_exit.")
+			os.Exit(0)
 		}
 	}
 

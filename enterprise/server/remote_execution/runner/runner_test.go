@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -30,7 +31,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
@@ -396,6 +396,12 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 }
 
 func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		// TODO(bduffany): Set macos memory limit to match total system
+		// memory instead of free memory, then re-enable.
+		t.SkipNow()
+	}
+
 	env := newTestEnv(t)
 	pool := newRunnerPool(t, env, defaultCfg)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
@@ -552,16 +558,16 @@ func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 }
 
 func TestRunnerPool_TaskSize(t *testing.T) {
-	oneGB := &scpb.TaskSize{EstimatedMemoryBytes: 1e9}
-	twoGB := &scpb.TaskSize{EstimatedMemoryBytes: 2e9}
+	oneGB := "1000000000"
+	twoGB := "2000000000"
 
 	for _, test := range []struct {
 		Name          string
-		Size1, Size2  *scpb.TaskSize
+		Size1, Size2  string
 		WFID1, WFID2  string
 		ShouldRecycle bool
 	}{
-		{Name: "DifferentSize_NonWorkflow_ShouldRecycle", Size1: oneGB, Size2: twoGB, WFID1: "", WFID2: "", ShouldRecycle: true},
+		{Name: "DifferentSize_NonWorkflow_ShouldNotRecycle", Size1: oneGB, Size2: twoGB, WFID1: "", WFID2: "", ShouldRecycle: false},
 		{Name: "SameSize_Workflow_ShouldRecycle", Size1: oneGB, Size2: oneGB, WFID1: "WF1", WFID2: "WF1", ShouldRecycle: true},
 		{Name: "DifferentSize_Workflow_ShouldNotRecycle", Size1: oneGB, Size2: twoGB, WFID1: "WF1", WFID2: "WF1", ShouldRecycle: false},
 		{Name: "SameSize_DifferentWorkflowIDs_ShouldNotRecycle", Size1: oneGB, Size2: oneGB, WFID1: "WF1", WFID2: "WF2", ShouldRecycle: false},
@@ -571,12 +577,12 @@ func TestRunnerPool_TaskSize(t *testing.T) {
 			pool := newRunnerPool(t, env, noLimitsCfg)
 			ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
 			t1 := newTask()
-			t1.SchedulingMetadata = &scpb.SchedulingMetadata{TaskSize: test.Size1}
 			p1 := t1.ExecutionTask.Command.Platform
+			p1.Properties = append(p1.Properties, &repb.Platform_Property{Name: platform.EstimatedMemoryPropertyName, Value: test.Size1})
 			p1.Properties = append(p1.Properties, &repb.Platform_Property{Name: platform.WorkflowIDPropertyName, Value: test.WFID1})
 			t2 := newTask()
-			t2.SchedulingMetadata = &scpb.SchedulingMetadata{TaskSize: test.Size2}
 			p2 := t2.ExecutionTask.Command.Platform
+			p2.Properties = append(p2.Properties, &repb.Platform_Property{Name: platform.EstimatedMemoryPropertyName, Value: test.Size2})
 			p2.Properties = append(p2.Properties, &repb.Platform_Property{Name: platform.WorkflowIDPropertyName, Value: test.WFID2})
 
 			r1 := mustGetNewRunner(t, ctxUser1, pool, t1)

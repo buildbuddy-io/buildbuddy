@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 func TestKeyVersionCrossCompatibility(t *testing.T) {
@@ -24,7 +24,7 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 		d, _ := testdigest.NewRandomDigestBuf(t, 100)
 		fr := &rfpb.FileRecord{
 			Isolation: &rfpb.Isolation{
-				CacheType:          resource.CacheType_AC,
+				CacheType:          rspb.CacheType_AC,
 				RemoteInstanceName: "remote_instance_name",
 				PartitionId:        partitionID,
 				GroupId:            testGroupID,
@@ -32,7 +32,7 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 			Digest: d,
 		}
 		if i%2 == 0 {
-			fr.Isolation.CacheType = resource.CacheType_CAS
+			fr.Isolation.CacheType = rspb.CacheType_CAS
 		}
 		sourceKey, err := fs.PebbleKey(fr)
 		require.NoError(t, err)

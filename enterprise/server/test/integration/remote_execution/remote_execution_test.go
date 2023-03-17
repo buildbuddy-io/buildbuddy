@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -138,6 +139,10 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 }
 
 func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
+	// TODO(sluongng): investigate and fix test for darwin
+	if runtime.GOOS != "linux" {
+		t.Skip("Working with linux only")
+	}
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
@@ -207,7 +212,7 @@ func TestSimpleCommand_Abort_ReturnsExecutionError(t *testing.T) {
 
 	// TODO(bduffany): Aborted probably makes a bit more sense here
 	assert.True(t, status.IsResourceExhaustedError(err), "expecting ResourceExhausted error but got: %s", err)
-	assert.Contains(t, err.Error(), "signal: aborted")
+	assert.Contains(t, err.Error(), fmt.Sprintf("signal: %s", syscall.SIGABRT))
 	assert.Equal(t, "Debug message to help diagnose abort()\n", res.Stderr)
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	// The executor thinks this is a Bazel task, so will let bazel retry.
@@ -254,6 +259,10 @@ func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
 }
 
 func TestTimeoutAlwaysReturnsDeadlineExceeded(t *testing.T) {
+	// TODO(sluongng): investigate and fix test for darwin
+	if runtime.GOOS != "linux" {
+		t.Skip("Working with linux only")
+	}
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
@@ -1511,6 +1520,10 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 }
 
 func TestRedisRestart(t *testing.T) {
+	// TODO(sluongng): investigate and fix test for darwin
+	if runtime.GOOS != "linux" {
+		t.Skip("Working with linux only")
+	}
 	workspaceContents := map[string]string{
 		"WORKSPACE": `workspace(name = "integration_test")`,
 		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "sleep 5 && echo 'Hello world' > $@")`,
@@ -1626,6 +1639,10 @@ func TestInvocationCancellation(t *testing.T) {
 }
 
 func TestActionMerging(t *testing.T) {
+	// TODO(sluongng): investigate and fix test for darwin
+	if runtime.GOOS != "linux" {
+		t.Skip("Working with linux only")
+	}
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()

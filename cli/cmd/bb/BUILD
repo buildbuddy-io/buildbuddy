@@ -19,6 +19,7 @@ go_library(
         "//cli/login",
         "//cli/metadata",
         "//cli/parser",
+        "//cli/picker",
         "//cli/plugin",
         "//cli/printlog",
         "//cli/remotebazel",

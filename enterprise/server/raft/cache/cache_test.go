@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -23,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
@@ -41,7 +41,7 @@ func getEnvAuthAndCtx(t *testing.T) (*testenv.TestEnv, *testauth.TestAuthenticat
 	return te, ta, ctx
 }
 
-func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *resource.ResourceName) {
+func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *rspb.ResourceName) {
 	reader, err := c.Reader(ctx, d, 0, 0)
 	if err != nil {
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
@@ -50,7 +50,7 @@ func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache,
 	require.Equal(t, d.GetDigest().GetHash(), d1.GetHash())
 }
 
-func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *resource.ResourceName, buf []byte) {
+func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *rspb.ResourceName, buf []byte) {
 	writeCloser, err := c.Writer(ctx, d)
 	if err != nil {
 		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
@@ -209,9 +209,9 @@ func TestReaderAndWriter(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: "remote/instance/name",
 		}
 		writeDigest(t, ctx, rc1, r, buf)
@@ -256,12 +256,12 @@ func TestCacheShutdown(t *testing.T) {
 	waitForHealthy(t, rc1, rc2, rc3)
 
 	cacheRPCTimeout := 5 * time.Second
-	digestsWritten := make([]*resource.ResourceName, 0)
+	digestsWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := digest.NewCASResourceName(d, "remote/instance/name").ToProto()
+		rn := digest.NewResourceName(d, "remote/instance/name", rspb.CacheType_CAS).ToProto()
 		writeDigest(t, ctx, rc1, rn, buf)
 		digestsWritten = append(digestsWritten, rn)
 	}
@@ -273,7 +273,7 @@ func TestCacheShutdown(t *testing.T) {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		rn := digest.NewCASResourceName(d, "remote/instance/name").ToProto()
+		rn := digest.NewResourceName(d, "remote/instance/name", rspb.CacheType_CAS).ToProto()
 		writeDigest(t, ctx, rc1, rn, buf)
 		digestsWritten = append(digestsWritten, rn)
 	}
@@ -323,16 +323,16 @@ func TestDistributedRanges(t *testing.T) {
 	}
 	waitForHealthy(t, raftCaches...)
 
-	digests := make([]*resource.ResourceName, 0)
+	digests := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 10; i++ {
 		rc := raftCaches[rand.Intn(len(raftCaches))]
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: "remote/instance/name",
 		}
 		writeDigest(t, ctx, rc, r, buf)
@@ -380,27 +380,27 @@ func TestFindMissingBlobs(t *testing.T) {
 	// wait for them all to become healthy
 	waitForHealthy(t, rc1, rc2, rc3)
 
-	digestsWritten := make([]*resource.ResourceName, 0)
+	digestsWritten := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		d, buf := testdigest.NewRandomDigestBuf(t, 100)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: "remote/instance/name",
 		}
 		digestsWritten = append(digestsWritten, r)
 		writeDigest(t, ctx, rc1, r, buf)
 	}
 
-	missingDigests := make([]*resource.ResourceName, 0)
+	missingDigests := make([]*rspb.ResourceName, 0)
 	expectedMissingHashes := make([]string, 0)
 	for i := 0; i < 10; i++ {
 		d, _ := testdigest.NewRandomDigestBuf(t, 100)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:       d,
-			CacheType:    resource.CacheType_CAS,
+			CacheType:    rspb.CacheType_CAS,
 			InstanceName: "remote/instance/name",
 		}
 

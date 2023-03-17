@@ -3,6 +3,7 @@ package authdb
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -13,11 +14,12 @@ import (
 )
 
 type AuthDB struct {
-	h interfaces.DBHandle
+	env environment.Env
+	h   interfaces.DBHandle
 }
 
-func NewAuthDB(h interfaces.DBHandle) *AuthDB {
-	return &AuthDB{h: h}
+func NewAuthDB(env environment.Env, h interfaces.DBHandle) *AuthDB {
+	return &AuthDB{env: env, h: h}
 }
 
 type apiKeyGroup struct {
@@ -77,7 +79,7 @@ func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		qb := newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
+		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
 		qb.AddWhereClause(`ak.value = ?`, apiKey)
 		q, args := qb.Build()
 		existingRow := tx.Raw(q, args...)
@@ -95,7 +97,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
 	akg := &apiKeyGroup{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		qb := newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
+		qb := d.newAPIKeyGroupQuery(true /*=allowUserOwnedKeys*/)
 		qb.AddWhereClause(`ak.api_key_id = ?`, apiKeyID)
 		q, args := qb.Build()
 		existingRow := tx.Raw(q, args...)
@@ -115,7 +117,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
 		// User-owned keys are disallowed here, since the group-level write
 		// token should not grant access to user-level keys.
-		qb := newAPIKeyGroupQuery(false /*=allowUserOwnedKeys*/)
+		qb := d.newAPIKeyGroupQuery(false /*=allowUserOwnedKeys*/)
 		qb.AddWhereClause(`g.group_id = ?`, login)
 		qb.AddWhereClause(`g.write_token = ?`, pass)
 		q, args := qb.Build()
@@ -189,7 +191,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 	return user, nil
 }
 
-func newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Query {
+func (d *AuthDB) newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Query {
 	qb := query_builder.NewQuery(`
 		SELECT
 			ak.capabilities,
@@ -200,7 +202,9 @@ func newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Query {
 		APIKeys AS ak
 	`)
 	qb.AddWhereClause(`ak.group_id = g.group_id`)
-	if allowUserOwnedKeys {
+
+	udb := d.env.GetUserDB()
+	if udb != nil && udb.GetUserOwnedKeysEnabled() && allowUserOwnedKeys {
 		// Note: the org can disable user-owned keys at any time, and the
 		// predicate here ensures that existing keys are effectively deactivated
 		// (but not deleted).

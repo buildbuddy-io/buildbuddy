@@ -509,6 +509,10 @@ export default class TapComponent extends React.Component<Props, State> {
       </>
     );
 
+    const filteredTargets = this.state.targetHistory
+      .filter((targetHistory) => (filter ? targetHistory.target.label.includes(filter) : true))
+      .sort(this.sort.bind(this));
+
     return (
       <div className={`tap ${this.isV2 ? "v2" : ""}`}>
         <div className="tap-top-bar">
@@ -561,79 +565,75 @@ export default class TapComponent extends React.Component<Props, State> {
               moreInvocationsButton={moreInvocationsButton}
             />
           )}
-          {this.state.targetHistory
-            .filter((targetHistory) => (filter ? targetHistory.target.label.includes(filter) : true))
-            .sort(this.sort.bind(this))
-            .slice(0, this.state.targetLimit)
-            .map((targetHistory) => {
-              let targetParts = targetHistory.target.label.split(":");
-              let targetPath = targetParts.length > 0 ? targetParts[0] : "";
-              let targetName = targetParts.length > 1 ? targetParts[1] : "";
-              let stats = this.state.stats.get(targetHistory.target.label);
-              return (
-                <React.Fragment key={targetHistory.target.label}>
-                  <div title={targetHistory.target.ruleType} className="tap-target-label">
-                    <span className="tap-target-path">{targetPath}</span>:
-                    <span className="tap-target-name">{targetName}</span>
-                    <span className="tap-target-stats">
-                      ({format.formatWithCommas(stats.count)} invocations, {format.percent(stats.pass / stats.count)}%
-                      pass, {format.durationSec(stats.avgDuration)} avg, {format.durationSec(stats.maxDuration)} max)
-                    </span>
-                  </div>
-                  <div className="tap-row">
-                    {this.getTargetStatuses(targetHistory)
-                      .slice(0, this.state.invocationLimit)
-                      .map((commitStatus: CommitStatus) => {
-                        const { commitSha, status } = commitStatus;
-                        if (status === null) {
-                          // For V2, null means the target was not run for this commit.
-                          return (
-                            <div
-                              className="tap-block no-status"
-                              title={
-                                commitSha ? `Target status not reported at commit ${commitSha}` : "No status reported"
-                              }
-                            />
-                          );
-                        }
-
-                        let destinationUrl = `/invocation/${status.invocationId}?target=${encodeURIComponent(
-                          targetHistory.target.label
-                        )}`;
-                        let title =
-                          this.getColorMode() == "timing"
-                            ? `${this.durationToNum(status.timing.duration).toFixed(2)}s`
-                            : this.statusToString(status.status);
-                        if (this.isV2 && commitSha) {
-                          title += ` at commit ${commitSha}`;
-                        }
+          {filteredTargets.slice(0, this.state.targetLimit).map((targetHistory) => {
+            let targetParts = targetHistory.target.label.split(":");
+            let targetPath = targetParts.length > 0 ? targetParts[0] : "";
+            let targetName = targetParts.length > 1 ? targetParts[1] : "";
+            let stats = this.state.stats.get(targetHistory.target.label);
+            return (
+              <React.Fragment key={targetHistory.target.label}>
+                <div title={targetHistory.target.ruleType} className="tap-target-label">
+                  <span className="tap-target-path">{targetPath}</span>:
+                  <span className="tap-target-name">{targetName}</span>
+                  <span className="tap-target-stats">
+                    ({format.formatWithCommas(stats.count)} invocations, {format.percent(stats.pass / stats.count)}%
+                    pass, {format.durationSec(stats.avgDuration)} avg, {format.durationSec(stats.maxDuration)} max)
+                  </span>
+                </div>
+                <div className="tap-row">
+                  {this.getTargetStatuses(targetHistory)
+                    .slice(0, this.state.invocationLimit)
+                    .map((commitStatus: CommitStatus) => {
+                      const { commitSha, status } = commitStatus;
+                      if (status === null) {
+                        // For V2, null means the target was not run for this commit.
                         return (
-                          <a
-                            key={targetHistory.target.label + status.invocationId}
-                            href={destinationUrl}
-                            onClick={this.navigateTo.bind(this, destinationUrl)}
-                            title={title}
-                            style={{
-                              opacity:
-                                this.getColorMode() == "timing"
-                                  ? Math.max(
-                                      MIN_OPACITY,
-                                      (1.0 * this.durationToNum(status.timing.duration)) / stats.maxDuration
-                                    )
-                                  : undefined,
-                            }}
-                            className={`tap-block ${
-                              this.getColorMode() == "status" ? `status-${status.status}` : "timing"
-                            } clickable`}>
-                            {this.statusToIcon(status.status)}
-                          </a>
+                          <div
+                            className="tap-block no-status"
+                            title={
+                              commitSha ? `Target status not reported at commit ${commitSha}` : "No status reported"
+                            }
+                          />
                         );
-                      })}
-                  </div>
-                </React.Fragment>
-              );
-            })}
-          {this.state.targetHistory.length > this.state.targetLimit && (
+                      }
+
+                      let destinationUrl = `/invocation/${status.invocationId}?target=${encodeURIComponent(
+                        targetHistory.target.label
+                      )}`;
+                      let title =
+                        this.getColorMode() == "timing"
+                          ? `${this.durationToNum(status.timing.duration).toFixed(2)}s`
+                          : this.statusToString(status.status);
+                      if (this.isV2 && commitSha) {
+                        title += ` at commit ${commitSha}`;
+                      }
+                      return (
+                        <a
+                          key={targetHistory.target.label + status.invocationId}
+                          href={destinationUrl}
+                          onClick={this.navigateTo.bind(this, destinationUrl)}
+                          title={title}
+                          style={{
+                            opacity:
+                              this.getColorMode() == "timing"
+                                ? Math.max(
+                                    MIN_OPACITY,
+                                    (1.0 * this.durationToNum(status.timing.duration)) / stats.maxDuration
+                                  )
+                                : undefined,
+                          }}
+                          className={`tap-block ${
+                            this.getColorMode() == "status" ? `status-${status.status}` : "timing"
+                          } clickable`}>
+                          {this.statusToIcon(status.status)}
+                        </a>
+                      );
+                    })}
+                </div>
+              </React.Fragment>
+            );
+          })}
+          {filteredTargets.length > this.state.targetLimit && (
             <FilledButton className="more-targets-button" onClick={this.loadMoreTargets.bind(this)}>
               Load more targets
             </FilledButton>

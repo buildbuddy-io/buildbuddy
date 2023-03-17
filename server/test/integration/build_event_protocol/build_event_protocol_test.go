@@ -21,6 +21,7 @@ import (
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 )
 
@@ -81,7 +82,7 @@ func testInjectFailureAfterBazelEvent(t *testing.T, payloadMsg interface{}) {
 		&inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: result.InvocationID}})
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(res.Invocation), 0)
-	assert.Equal(t, inpb.Invocation_COMPLETE_INVOCATION_STATUS, res.Invocation[0].GetInvocationStatus())
+	assert.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, res.Invocation[0].GetInvocationStatus())
 	assert.Equal(t, true, res.Invocation[0].Success)
 }
 

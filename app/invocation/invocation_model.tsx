@@ -7,6 +7,7 @@ import { cache } from "../../proto/cache_ts_proto";
 import { command_line } from "../../proto/command_line_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 import { formatDate } from "../format/format";
@@ -15,7 +16,7 @@ import { durationToMillisWithFallback, timestampToDateWithFallback } from "../ut
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
 
-export const InvocationStatus = invocation.Invocation.InvocationStatus;
+export const InvocationStatus = invocation_status.InvocationStatus;
 
 export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
@@ -460,7 +461,7 @@ export default class InvocationModel {
 
   getTiming() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+    if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return "disconnected";
     }
     if (!this.finished && this.started) {
@@ -511,7 +512,7 @@ export default class InvocationModel {
 
   getFaviconType() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+    if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return IconType.Unknown;
     }
     if (!this.started) {
@@ -525,7 +526,7 @@ export default class InvocationModel {
 
   getStatusIcon() {
     let invocationStatus = this.invocations.find(() => true)?.invocationStatus;
-    if (invocationStatus == invocation.Invocation.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
+    if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
       return <HelpCircle className="icon" />;
     }
     if (!this.started) {

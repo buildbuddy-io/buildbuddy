@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -30,6 +29,7 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 var (
@@ -407,19 +407,19 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 	}
 	urlStr := strings.TrimPrefix(parsedURL.RequestURI(), "/")
 
-	var resourceName *resource.ResourceName
+	var resourceName *rspb.ResourceName
 	if digest.IsActionCacheResourceName(urlStr) {
 		parsedRN, err := digest.ParseActionCacheResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected actioncache URI pattern: %s", err)
 		}
-		resourceName = digest.NewACResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName()).ToProto()
+		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_AC).ToProto()
 	} else if digest.IsDownloadResourceName(urlStr) {
 		parsedRN, err := digest.ParseDownloadResourceName(urlStr)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("Invalid URL. Does not match expected CAS URI pattern: %s", err)
 		}
-		resourceName = digest.NewCASResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName()).ToProto()
+		resourceName = digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_CAS).ToProto()
 	} else {
 		return nil, status.InvalidArgumentErrorf("Invalid URL. Only actioncache and CAS URIs supported.")
 	}

@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:eventlog_go_proto",
-        "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//server/backends/chunkstore",
         "//server/environment",
         "//server/interfaces",

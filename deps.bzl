@@ -2894,6 +2894,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:vJi+O/nMdFt0vqm8NZBI6wzALWdA2X+egi0ogNyrC/w=",
         version = "v1.2.1",
     )
+    go_repository(
+        name = "com_github_klauspost_cpuid_v2",
+        importpath = "github.com/klauspost/cpuid/v2",
+        sum = "h1:p9dKCg8i4gmOxtv35DvrYoWqYzQrvEVdjQ762Y0OqZE=",
+        version = "v2.0.12",
+    )
 
     go_repository(
         name = "com_github_konsorten_go_windows_terminal_sequences",
@@ -3108,6 +3114,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/mailru/easyjson",
         sum = "h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=",
         version = "v0.7.7",
+    )
+    go_repository(
+        name = "com_github_manifoldco_promptui",
+        importpath = "github.com/manifoldco/promptui",
+        sum = "h1:3V4HzJk1TtXW1MTZMP7mdlwbBpIinw3HztaIlYthEiA=",
+        version = "v0.9.0",
     )
 
     go_repository(
@@ -4125,6 +4137,12 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:wxW0mFpKI6DIb3s6m1jCDYvkWXCskrimXMuGd0K/kSQ=",
         version = "v1.5.0",
     )
+    go_repository(
+        name = "com_github_smacker_go_tree_sitter",
+        importpath = "github.com/smacker/go-tree-sitter",
+        sum = "h1:hd1+Vqu6uQZlNG0hGncjAvqENdxfAd0X4MKR2Tjclt8=",
+        version = "v0.0.0-20230226123037-c459dbde1464",
+    )
 
     go_repository(
         name = "com_github_smartystreets_assertions",
@@ -4636,6 +4654,24 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/yvasiyarov/newrelic_platform_go",
         sum = "h1:ERexzlUfuTvpE74urLSbIQW0Z/6hF9t8U4NsJLaioAY=",
         version = "v0.0.0-20140908184405-b21fdbd4370f",
+    )
+    go_repository(
+        name = "com_github_zeebo_assert",
+        importpath = "github.com/zeebo/assert",
+        sum = "h1:hU1L1vLTHsnO8x8c9KAR5GmM5QscxHg5RNU5z5qbUWY=",
+        version = "v1.1.0",
+    )
+    go_repository(
+        name = "com_github_zeebo_blake3",
+        importpath = "github.com/zeebo/blake3",
+        sum = "h1:TFoLXsjeXqRNFxSbk35Dk4YtszE/MQQGK10BH4ptoTg=",
+        version = "v0.2.3",
+    )
+    go_repository(
+        name = "com_github_zeebo_pcg",
+        importpath = "github.com/zeebo/pcg",
+        sum = "h1:lyqfGeWiv4ahac6ttHs+I5hwtH/+1mrhlCtVNQM2kHo=",
+        version = "v1.0.1",
     )
 
     go_repository(
@@ -6031,6 +6067,28 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:4AuOwCGf4lLR9u3YOe2awrHygurzhO/HeQ6laiA6Sx0=",
         version = "v3.0.3",
     )
+
+    http_archive(
+        name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
+        sha256 = "56933aa04a64d3bf6991f9b1be127ac9896fe597d2fba194c67c2dd4368bbae3",
+        urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
+        build_file_content = 'exports_files(["stargz-store"])',
+    )
+    http_archive(
+        name = "com_github_firecracker_microvm_firecracker-v1.1.1-x86_64",
+        sha256 = "29194e13888358c6332995199ee288c081a8a23e68f0046944e4bb7f6548af57",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.1.1/firecracker-v1.1.1-x86_64.tgz"],
+        strip_prefix = "release-v1.1.1-x86_64",
+        build_file_content = 'exports_files(["firecracker-v1.1.1-x86_64", "jailer-v1.1.1-x86_64"])',
+    )
+    http_file(
+        name = "com_github_iain_macdonald_soci_snapshotter-soci-store-v0.1-linux-amd64",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.1-linux-amd64"],
+        sha256 = "6eff9a2095258d123cf5292d30a4e71445677b0affdafc3ec69d8b5a8821dcde",
+        executable = True,
+        downloaded_file_path = "soci-store-v0.1-linux-amd64",
+    )
+
     http_file(
         name = "io_bazel_bazel-3.7-darwin-x86_64",
         sha256 = "80c82e93a12ba30021692b11c78007807e82383a673be1602573b944beb359ab",
@@ -6095,5 +6153,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         name = "io_bazel_bazelisk-1.10.1-linux-amd64",
         sha256 = "4cb534c52cdd47a6223d4596d530e7c9c785438ab3b0a49ff347e991c210b2cd",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-linux-amd64"],
+        executable = True,
+    )
+    http_file(
+        name = "org_kernel_git_linux_kernel-vmlinux-5.4.0",
+        sha256 = "fc81fa0933db7977b5e1d4b9ff3a757914b579c7812b63f9cdcabc035c7057e0",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-5.4.0"],
         executable = True,
     )

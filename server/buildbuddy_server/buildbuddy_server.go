@@ -443,27 +443,9 @@ func (s *BuildBuddyServer) JoinGroup(ctx context.Context, req *grpb.JoinGroupReq
 	if auth == nil || userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	user, err := userDB.GetUser(ctx)
-	if err != nil {
+	if _, err := userDB.RequestToJoinGroup(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	group, err := userDB.GetGroupByID(ctx, req.GetId())
-	if err != nil {
-		return nil, err
-	}
-	// If the user's email matches the group's owned domain, they can be added
-	// as a member immediately.
-	if group.OwnedDomain != "" && group.OwnedDomain == getEmailDomain(user.Email) {
-		if err := userDB.AddUserToGroup(ctx, user.UserID, req.GetId()); err != nil {
-			return nil, err
-		}
-	} else {
-		// Otherwise submit a request to join the group.
-		if err := userDB.RequestToJoinGroup(ctx, user.UserID, req.GetId()); err != nil {
-			return nil, err
-		}
-	}
-
 	return &grpb.JoinGroupResponse{}, nil
 }
 
@@ -562,7 +544,7 @@ func (s *BuildBuddyServer) DeleteApiKey(ctx context.Context, req *akpb.DeleteApi
 
 func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	if userDB == nil || !userDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	groupID := req.GetGroupId()
@@ -587,7 +569,7 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 
 func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
 	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	if userDB == nil || !userDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	k, err := userDB.CreateUserAPIKey(ctx, req.GetGroupId(), req.GetLabel(), req.GetCapability())
@@ -608,7 +590,7 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 
 func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.UpdateApiKeyRequest) (*akpb.UpdateApiKeyResponse, error) {
 	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	if userDB == nil || !userDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	updates := &tables.APIKey{
@@ -625,7 +607,7 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 
 func (s *BuildBuddyServer) DeleteUserApiKey(ctx context.Context, req *akpb.DeleteApiKeyRequest) (*akpb.DeleteApiKeyResponse, error) {
 	userDB := s.env.GetUserDB()
-	if userDB == nil {
+	if userDB == nil || !userDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	if err := userDB.DeleteAPIKey(ctx, req.GetId()); err != nil {
@@ -723,11 +705,15 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	}
 
 	// List user-owned keys first.
-	userKeys, err := userDB.GetUserAPIKeys(ctx, groupID)
-	// PermissionDenied means the Group doesn't have user-owned API keys
-	// enabled; ignore.
-	if err != nil && !status.IsPermissionDeniedError(err) {
-		return nil, err
+	var userKeys []*tables.APIKey
+	if userDB.GetUserOwnedKeysEnabled() {
+		keys, err := userDB.GetUserAPIKeys(ctx, groupID)
+		// PermissionDenied means the Group doesn't have user-owned API keys
+		// enabled; ignore.
+		if err != nil && !status.IsPermissionDeniedError(err) {
+			return nil, err
+		}
+		userKeys = keys
 	}
 	// Then list group-owned keys
 	groupKeys, err := userDB.GetAPIKeys(ctx, groupID)
@@ -1095,6 +1081,9 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	// If we couldn't find any group-level keys, look up user-level keys for
 	// the authenticated user. This handles the edge case where an org
 	// *only* has user-level keys.
+	if !userDB.GetUserOwnedKeysEnabled() {
+		return nil, status.NotFoundErrorf("the organization does not have any API keys configured")
+	}
 	apiKeys, err := userDB.GetUserAPIKeys(ctx, in.GroupID)
 	if err != nil {
 		return nil, err

@@ -231,6 +231,12 @@ func (c *fileCache) AddFile(node *repb.FileNode, existingFilePath string) {
 	c.l.Add(key(node), e)
 }
 
+func (c *fileCache) DeleteFile(node *repb.FileNode) bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.l.Remove(key(node))
+}
+
 func (c *fileCache) WaitForDirectoryScanToComplete() {
 	<-c.dirScanDone
 }

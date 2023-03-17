@@ -25,6 +25,7 @@ import (
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 )
@@ -161,6 +162,10 @@ func addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, reqCtx *ctxpb.
 
 	if command := tq.GetCommand(); command != "" {
 		q.AddWhereClause("command = ?", command)
+	}
+
+	if pattern := tq.GetPattern(); pattern != "" {
+		q.AddWhereClause("pattern = ?", pattern)
 	}
 
 	if commitSHA := tq.GetCommitSha(); commitSHA != "" {
@@ -497,7 +502,12 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration) ([]in
 
 	endSec := time.Now().Unix()
 	if highTime != nil {
-		endSec = highTime.GetSeconds()
+		// Drop a second from the end date (which is normally a round hour) so that
+		// we don't include the next day as a bucket.  This value isn't actually
+		// used for filtering, so this hack is fine, provided that nobody starts
+		// using this code with (midnight + 1s).  That wouldn't make much sense,
+		// since the feature only shows day-based buckets.
+		endSec = highTime.GetSeconds() - 1
 	}
 
 	// TODO(jdhollen): Bucket at true midnight in user timezone instead of fudging
@@ -648,7 +658,7 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 	}
 
 	var rows *sql.Rows
-	rows, err = i.olapdbh.DB(ctx).Raw(qAndBuckets.Query, qAndBuckets.QueryArgs...).Rows()
+	rows, err = i.olapdbh.RawWithOptions(ctx, clickhouse.Opts().WithQueryName("query_stat_heatmap"), qAndBuckets.Query, qAndBuckets.QueryArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -723,6 +733,10 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 
 	if command := req.GetQuery().GetCommand(); command != "" {
 		q.AddWhereClause("command = ?", command)
+	}
+
+	if pattern := req.GetQuery().GetPattern(); pattern != "" {
+		q.AddWhereClause("pattern = ?", pattern)
 	}
 
 	if commitSHA := req.GetQuery().GetCommitSha(); commitSHA != "" {
@@ -857,6 +871,9 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // from Altinity is supposed to be 2023-02-15.
 func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
 	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
+	if req.GetDrilldownMetric().Execution != nil {
+		drilldownFields = append(drilldownFields, "worker")
+	}
 	placeholderQuery := query_builder.NewQuery("")
 
 	if err := addWhereClauses(placeholderQuery, req.GetQuery(), req.GetRequestContext(), 0); err != nil {
@@ -884,21 +901,21 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	return fmt.Sprintf("SELECT * FROM (%s) ORDER BY totals_first", strings.Join(queries, " UNION ALL ")), args, nil
 }
 
-func addOutputChartEntry(m map[inpb.AggType]*stpb.DrilldownChart, dm map[inpb.AggType]float64, aggType inpb.AggType, label *string, inverse int64, selection int64, totalInBase int64, totalInSelection int64) {
-	chart, exists := m[aggType]
+func addOutputChartEntry(m map[stpb.DrilldownType]*stpb.DrilldownChart, dm map[stpb.DrilldownType]float64, ddType stpb.DrilldownType, label *string, inverse int64, selection int64, totalInBase int64, totalInSelection int64) {
+	chart, exists := m[ddType]
 	if !exists {
 		chart = &stpb.DrilldownChart{}
-		chart.DrilldownDimension = aggType
-		m[aggType] = chart
-		dm[aggType] = -math.MaxFloat64
+		chart.DrilldownType = ddType
+		m[ddType] = chart
+		dm[ddType] = -math.MaxFloat64
 	}
-	dm[aggType] = math.Max(dm[aggType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
+	dm[ddType] = math.Max(dm[ddType], math.Abs(float64(selection)/float64(totalInSelection)-float64(inverse)/float64(totalInBase)))
 	chart.Entry = append(chart.Entry, &stpb.DrilldownEntry{Label: *label, BaseValue: inverse, SelectionValue: selection})
 }
 
-func sortDrilldownChartKeys(dm map[inpb.AggType]float64) *[]inpb.AggType {
+func sortDrilldownChartKeys(dm map[stpb.DrilldownType]float64) *[]stpb.DrilldownType {
 	type pair struct {
-		a inpb.AggType
+		a stpb.DrilldownType
 		v float64
 	}
 	slice := make([]pair, 0)
@@ -909,7 +926,7 @@ func sortDrilldownChartKeys(dm map[inpb.AggType]float64) *[]inpb.AggType {
 		return slice[a].v >= slice[b].v
 	})
 
-	result := make([]inpb.AggType, len(slice))
+	result := make([]stpb.DrilldownType, len(slice))
 	for v, i := range slice {
 		result[v] = i.a
 	}
@@ -942,8 +959,8 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	rsp := &stpb.GetStatDrilldownResponse{}
 
 	rsp.Chart = make([]*stpb.DrilldownChart, 0)
-	m := make(map[inpb.AggType]*stpb.DrilldownChart)
-	dm := make(map[inpb.AggType]float64)
+	m := make(map[stpb.DrilldownType]*stpb.DrilldownChart)
+	dm := make(map[stpb.DrilldownType]float64)
 	type queryOut struct {
 		GormUser       *string
 		GormHost       *string
@@ -951,6 +968,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		GormBranchName *string
 		GormCommitSHA  *string
 		GormPattern    *string
+		GormWorker     *string
 		Selection      int64
 		Inverse        int64
 	}
@@ -974,17 +992,19 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		}
 
 		if stat.GormBranchName != nil {
-			addOutputChartEntry(m, dm, inpb.AggType_BRANCH_AGGREGATION_TYPE, stat.GormBranchName, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, stpb.DrilldownType_BRANCH_DRILLDOWN_TYPE, stat.GormBranchName, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormHost != nil {
-			addOutputChartEntry(m, dm, inpb.AggType_HOSTNAME_AGGREGATION_TYPE, stat.GormHost, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, stpb.DrilldownType_HOSTNAME_DRILLDOWN_TYPE, stat.GormHost, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormRepoURL != nil {
-			addOutputChartEntry(m, dm, inpb.AggType_REPO_URL_AGGREGATION_TYPE, stat.GormRepoURL, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, stpb.DrilldownType_REPO_URL_DRILLDOWN_TYPE, stat.GormRepoURL, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormUser != nil {
-			addOutputChartEntry(m, dm, inpb.AggType_USER_AGGREGATION_TYPE, stat.GormUser, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, stpb.DrilldownType_USER_DRILLDOWN_TYPE, stat.GormUser, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormCommitSHA != nil {
-			addOutputChartEntry(m, dm, inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE, stat.GormCommitSHA, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, stpb.DrilldownType_COMMIT_SHA_DRILLDOWN_TYPE, stat.GormCommitSHA, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormPattern != nil {
-			addOutputChartEntry(m, dm, inpb.AggType_PATTERN_AGGREGATION_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+			addOutputChartEntry(m, dm, stpb.DrilldownType_PATTERN_DRILLDOWN_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormWorker != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_WORKER_DRILLDOWN_TYPE, stat.GormWorker, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
 			// The above clauses represent all of the GROUP BY options we have in our
 			// query, and we deliberately constructed the query so that the total row
@@ -995,25 +1015,25 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 
 	order := sortDrilldownChartKeys(dm)
 
-	for _, aggType := range *order {
-		rsp.Chart = append(rsp.Chart, m[aggType])
+	for _, ddType := range *order {
+		rsp.Chart = append(rsp.Chart, m[ddType])
 	}
 	return rsp, nil
 }
 
-func toStatusClauses(statuses []inpb.OverallStatus) *query_builder.OrClauses {
+func toStatusClauses(statuses []inspb.OverallStatus) *query_builder.OrClauses {
 	statusClauses := &query_builder.OrClauses{}
 	for _, status := range statuses {
 		switch status {
-		case inpb.OverallStatus_SUCCESS:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 1)
-		case inpb.OverallStatus_FAILURE:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 0)
-		case inpb.OverallStatus_IN_PROGRESS:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_PARTIAL_INVOCATION_STATUS))
-		case inpb.OverallStatus_DISCONNECTED:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS))
-		case inpb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+		case inspb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
+		case inspb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 0)
+		case inspb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS))
+		case inspb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS))
+		case inspb.OverallStatus_UNKNOWN_OVERALL_STATUS:
 			continue
 		default:
 			continue

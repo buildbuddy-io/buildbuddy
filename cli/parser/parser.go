@@ -21,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/google/shlex"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -418,7 +420,7 @@ func runBazelHelpWithCache(topic string) (string, error) {
 			return "", err
 		}
 		defer f.Close()
-		d, err := digest.Compute(f)
+		d, err := digest.Compute(f, repb.DigestFunction_SHA256)
 		if err != nil {
 			return "", err
 		}

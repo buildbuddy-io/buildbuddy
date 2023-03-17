@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -20,6 +19,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -52,7 +53,7 @@ func getAnonContext(t testing.TB, te *testenv.TestEnv) context.Context {
 }
 
 type digestBuf struct {
-	d   *resource.ResourceName
+	d   *rspb.ResourceName
 	buf []byte
 }
 
@@ -60,9 +61,9 @@ func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64) []*digestB
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
 		d, buf := testdigest.NewRandomDigestBuf(t, digestSizeBytes)
-		r := &resource.ResourceName{
+		r := &rspb.ResourceName{
 			Digest:    d,
-			CacheType: resource.CacheType_CAS,
+			CacheType: rspb.CacheType_CAS,
 		}
 		digestBufs = append(digestBufs, &digestBuf{
 			d:   r,
@@ -149,7 +150,7 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
-	digests := make([]*resource.ResourceName, 0, len(digestBufs))
+	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	var sumBytes int64
 	for _, dbuf := range digestBufs {
 		digests = append(digests, dbuf.d)
@@ -170,7 +171,7 @@ func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes 
 func benchmarkFindMissing(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
 	digestBufs := makeDigests(b, numDigests, digestSizeBytes)
 	setDigestsInCache(b, ctx, c, digestBufs)
-	digests := make([]*resource.ResourceName, 0, len(digestBufs))
+	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	for _, dbuf := range digestBufs {
 		digests = append(digests, dbuf.d)
 	}

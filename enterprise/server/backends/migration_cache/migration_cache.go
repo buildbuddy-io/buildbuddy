@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -23,6 +22,7 @@ import (
 	"golang.org/x/time/rate"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
@@ -157,7 +157,7 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	return c, nil
 }
 
-func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcContains, dstContains bool
@@ -193,7 +193,7 @@ func (mc *MigrationCache) Contains(ctx context.Context, r *resource.ResourceName
 	return srcContains, srcErr
 }
 
-func (mc *MigrationCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMetadata *interfaces.CacheMetadata
@@ -231,7 +231,7 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *resource.ResourceName
 	return srcMetadata, srcErr
 }
 
-func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMissing, dstMissing []*repb.Digest
@@ -239,13 +239,13 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 
 	// Some implementations of FindMissing sort the resources slice, which can cause a race condition if both
 	// the src and dest cache try to sort at the same time. Copy the slice to prevent this
-	var resourcesCopy []*resource.ResourceName
-	var hashToResource map[string]*resource.ResourceName
+	var resourcesCopy []*rspb.ResourceName
+	var hashToResource map[string]*rspb.ResourceName
 	if doubleRead {
-		resourcesCopy = make([]*resource.ResourceName, len(resources))
+		resourcesCopy = make([]*rspb.ResourceName, len(resources))
 		copy(resourcesCopy, resources)
 
-		hashToResource = make(map[string]*resource.ResourceName)
+		hashToResource = make(map[string]*rspb.ResourceName)
 		for _, r := range resources {
 			hashToResource[r.GetDigest().GetHash()] = r
 		}
@@ -291,7 +291,7 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*resource
 	return srcMissing, srcErr
 }
 
-func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcData map[*repb.Digest][]byte
@@ -334,7 +334,7 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*resource.Re
 	return srcData, srcErr
 }
 
-func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -364,7 +364,7 @@ func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*resource.Resour
 	return srcErr
 }
 
-func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) {
+func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) {
 	eg, gctx := errgroup.WithContext(ctx)
 	for r, _ := range kvs {
 		r := r
@@ -379,7 +379,7 @@ func (mc *MigrationCache) deleteMulti(ctx context.Context, kvs map[*resource.Res
 	eg.Wait()
 }
 
-func (mc *MigrationCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (mc *MigrationCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -408,7 +408,7 @@ type doubleReader struct {
 	src  io.ReadCloser
 	dest io.ReadCloser
 
-	r             *resource.ResourceName
+	r             *rspb.ResourceName
 	doubleReadBuf []byte
 	bytesReadSrc  int
 	bytesReadDest int
@@ -448,7 +448,7 @@ func (d *doubleReader) Close() error {
 	eg := &errgroup.Group{}
 	if d.dest != nil {
 		// Don't log on byte differences for AC records, because there could be minor differences in metadata like timestamps
-		if d.r.GetCacheType() == resource.CacheType_CAS && d.bytesReadDest != d.bytesReadSrc {
+		if d.r.GetCacheType() == rspb.CacheType_CAS && d.bytesReadDest != d.bytesReadSrc {
 			log.Warningf("Migration %v read err, src read %d bytes, dest read %d bytes", d.r, d.bytesReadSrc, d.bytesReadDest)
 		}
 
@@ -467,7 +467,7 @@ func (d *doubleReader) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
@@ -582,7 +582,7 @@ func (d *doubleWriter) Close() error {
 	return srcErr
 }
 
-func (mc *MigrationCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destWriter interfaces.CommittedWriteCloser
@@ -621,7 +621,7 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *resource.ResourceName) 
 	return dw, nil
 }
 
-func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcBuf []byte
@@ -663,7 +663,7 @@ func (mc *MigrationCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 	return srcBuf, srcErr
 }
 
-func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.ResourceName, onlyCopyMissing bool) {
+func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.ResourceName, onlyCopyMissing bool) {
 	if onlyCopyMissing {
 		alreadyCopied, err := mc.dest.Contains(ctx, r)
 		if err != nil {
@@ -692,7 +692,7 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *resource.R
 	}
 }
 
-func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (mc *MigrationCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -726,7 +726,7 @@ func (mc *MigrationCache) Set(ctx context.Context, r *resource.ResourceName, dat
 }
 
 type copyData struct {
-	d         *resource.ResourceName
+	d         *rspb.ResourceName
 	ctx       context.Context
 	ctxCancel context.CancelFunc
 }
@@ -826,9 +826,9 @@ func (mc *MigrationCache) copy(c *copyData) {
 	log.Debugf("Migration successfully copied to dest cache: digest %v", c.d)
 }
 
-func cacheTypeLabel(ct resource.CacheType) string {
+func cacheTypeLabel(ct rspb.CacheType) string {
 	switch ct {
-	case resource.CacheType_AC:
+	case rspb.CacheType_AC:
 		return "action"
 	default:
 		return "cas"

@@ -1,6 +1,7 @@
 import moment from "moment";
 import React from "react";
 import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
+import capabilities from "../../../app/capabilities/capabilities";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Popup from "../../../app/components/popup/popup";
 import Slider from "../../../app/components/slider/slider";
@@ -14,6 +15,7 @@ import {
   GitBranch,
   GitCommit,
   HardDrive,
+  LayoutGrid,
   Wrench,
   SortAsc,
   SortDesc,
@@ -33,12 +35,13 @@ import router, {
   COMMIT_PARAM_NAME,
   HOST_PARAM_NAME,
   COMMAND_PARAM_NAME,
+  PATTERN_PARAM_NAME,
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router";
-import { invocation } from "../../../proto/invocation_ts_proto";
+import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import {
   parseRoleParam,
   toRoleParam,
@@ -75,6 +78,7 @@ interface State {
   commit?: string;
   host?: string;
   command?: string;
+  pattern?: string;
   minimumDuration?: number;
   maximumDuration?: number;
 
@@ -122,6 +126,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(COMMIT_PARAM_NAME) ||
           search.get(HOST_PARAM_NAME) ||
           search.get(COMMAND_PARAM_NAME) ||
+          (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
@@ -131,6 +136,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       commit: search.get(COMMIT_PARAM_NAME) || undefined,
       host: search.get(HOST_PARAM_NAME) || undefined,
       command: search.get(COMMAND_PARAM_NAME) || undefined,
+      pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
       minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
@@ -147,6 +153,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(COMMIT_PARAM_NAME) ||
           search.get(HOST_PARAM_NAME) ||
           search.get(COMMAND_PARAM_NAME) ||
+          (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
       ),
@@ -156,6 +163,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       commit: search.get(COMMIT_PARAM_NAME) || undefined,
       host: search.get(HOST_PARAM_NAME) || undefined,
       command: search.get(COMMAND_PARAM_NAME) || undefined,
+      pattern: (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) || undefined,
       minimumDuration: Number(search.get(MINIMUM_DURATION_PARAM_NAME)) || undefined,
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
@@ -205,6 +213,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMIT_PARAM_NAME]: "",
       [HOST_PARAM_NAME]: "",
       [COMMAND_PARAM_NAME]: "",
+      [PATTERN_PARAM_NAME]: "",
       [MINIMUM_DURATION_PARAM_NAME]: "",
       [MAXIMUM_DURATION_PARAM_NAME]: "",
     });
@@ -230,7 +239,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     });
   }
 
-  private onStatusToggle(status: invocation.OverallStatus, selected: Set<invocation.OverallStatus>) {
+  private onStatusToggle(status: invocation_status.OverallStatus, selected: Set<invocation_status.OverallStatus>) {
     selected = new Set(selected); // clone
     if (selected.has(status)) {
       selected.delete(status);
@@ -268,8 +277,8 @@ export default class FilterComponent extends React.Component<FilterProps, State>
 
   private renderStatusCheckbox(
     label: string,
-    status: invocation.OverallStatus,
-    selected: Set<invocation.OverallStatus>
+    status: invocation_status.OverallStatus,
+    selected: Set<invocation_status.OverallStatus>
   ) {
     const name = statusToString(status);
     return (
@@ -289,6 +298,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMIT_PARAM_NAME]: this.state.commit || "",
       [HOST_PARAM_NAME]: this.state.host || "",
       [COMMAND_PARAM_NAME]: this.state.command || "",
+      [PATTERN_PARAM_NAME]: this.state.pattern || "",
       [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration?.toString() || "",
       [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration?.toString() || "",
     });
@@ -330,6 +340,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const commitValue = this.props.search.get(COMMIT_PARAM_NAME) || "";
     const hostValue = this.props.search.get(HOST_PARAM_NAME) || "";
     const commandValue = this.props.search.get(COMMAND_PARAM_NAME) || "";
+    const patternValue = (capabilities.config.patternFilterEnabled && this.props.search.get(PATTERN_PARAM_NAME)) || "";
     const minimumDurationValue = this.props.search.get(MINIMUM_DURATION_PARAM_NAME) || "";
     const maximumDurationValue = this.props.search.get(MAXIMUM_DURATION_PARAM_NAME) || "";
     const isFiltering = Boolean(
@@ -341,6 +352,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         commitValue ||
         hostValue ||
         commandValue ||
+        patternValue ||
         minimumDurationValue ||
         maximumDurationValue
     );
@@ -384,12 +396,12 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             className={`filter-menu-button icon-text-button ${isFiltering ? "" : "square"}`}
             onClick={this.onOpenFilterMenu.bind(this)}>
             <Filter className="icon" />
-            {selectedStatuses.has(invocation.OverallStatus.SUCCESS) && <span className="status-block success" />}
-            {selectedStatuses.has(invocation.OverallStatus.FAILURE) && <span className="status-block failure" />}
-            {selectedStatuses.has(invocation.OverallStatus.IN_PROGRESS) && (
+            {selectedStatuses.has(invocation_status.OverallStatus.SUCCESS) && <span className="status-block success" />}
+            {selectedStatuses.has(invocation_status.OverallStatus.FAILURE) && <span className="status-block failure" />}
+            {selectedStatuses.has(invocation_status.OverallStatus.IN_PROGRESS) && (
               <span className="status-block in-progress" />
             )}
-            {selectedStatuses.has(invocation.OverallStatus.DISCONNECTED) && (
+            {selectedStatuses.has(invocation_status.OverallStatus.DISCONNECTED) && (
               <span className="status-block disconnected" />
             )}
             {selectedRoles.has("") && <span className="role-badge DEFAULT">Default</span>}
@@ -425,6 +437,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                 <Wrench /> {commandValue}
               </span>
             )}
+            {capabilities.config.patternFilterEnabled && patternValue && (
+              <span className="advanced-badge">
+                <LayoutGrid /> {patternValue}
+              </span>
+            )}
             {(minimumDurationValue || maximumDurationValue) && (
               <span className="advanced-badge">
                 <Clock /> {compactDurationSec(Number(minimumDurationValue))} -{" "}
@@ -448,10 +465,18 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               <div className="option-group">
                 <div className="option-group-title">Status</div>
                 <div className="option-group-options">
-                  {this.renderStatusCheckbox("Succeeded", invocation.OverallStatus.SUCCESS, selectedStatuses)}
-                  {this.renderStatusCheckbox("Failed", invocation.OverallStatus.FAILURE, selectedStatuses)}
-                  {this.renderStatusCheckbox("In progress", invocation.OverallStatus.IN_PROGRESS, selectedStatuses)}
-                  {this.renderStatusCheckbox("Disconnected", invocation.OverallStatus.DISCONNECTED, selectedStatuses)}
+                  {this.renderStatusCheckbox("Succeeded", invocation_status.OverallStatus.SUCCESS, selectedStatuses)}
+                  {this.renderStatusCheckbox("Failed", invocation_status.OverallStatus.FAILURE, selectedStatuses)}
+                  {this.renderStatusCheckbox(
+                    "In progress",
+                    invocation_status.OverallStatus.IN_PROGRESS,
+                    selectedStatuses
+                  )}
+                  {this.renderStatusCheckbox(
+                    "Disconnected",
+                    invocation_status.OverallStatus.DISCONNECTED,
+                    selectedStatuses
+                  )}
                 </div>
               </div>
             </div>
@@ -511,6 +536,19 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                       onChange={(e) => this.setState({ command: e.target.value })}
                     />
                   </div>
+
+                  {capabilities.config.patternFilterEnabled && (
+                    <>
+                      <div className="option-group-title">Pattern</div>
+                      <div className="option-group-input">
+                        <TextInput
+                          placeholder={"e.g. //foo/..."}
+                          value={this.state.pattern}
+                          onChange={(e) => this.setState({ pattern: e.target.value })}
+                        />
+                      </div>
+                    </>
+                  )}
                   <div className="option-group-title">Duration</div>
                   <div className="option-group-input">
                     <Slider

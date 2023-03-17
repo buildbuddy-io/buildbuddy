@@ -42,6 +42,7 @@ import (
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -251,7 +252,7 @@ func (c *imageConverter) convertImage(ctx context.Context, req *rgpb.ConvertImag
 	if err != nil {
 		return nil, status.UnknownErrorf("could not get new config file: %s", err)
 	}
-	configCASDigest, err := cachetools.UploadBlob(ctx, c.bsClient, registryInstanceName, bytes.NewReader(newConfigBytes))
+	configCASDigest, err := cachetools.UploadBlob(ctx, c.bsClient, registryInstanceName, repb.DigestFunction_SHA256, bytes.NewReader(newConfigBytes))
 	if err != nil {
 		return nil, status.UnknownErrorf("could not upload converted image config %s", err)
 	}
@@ -389,12 +390,12 @@ func (c *imageConverter) convertLayer(ctx context.Context, req *rgpb.ConvertLaye
 	if err := newLayer.Close(); err != nil {
 		return nil, status.UnknownErrorf("could not close new layer reader: %s", err)
 	}
-	newLayerDigest, err := digest.Compute(bytes.NewReader(newLayerData))
+	newLayerDigest, err := digest.Compute(bytes.NewReader(newLayerData), repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, status.UnknownErrorf("could not compute digest of new layer: %s", err)
 	}
 
-	rn := digest.NewResourceName(newLayerDigest, registryInstanceName)
+	rn := digest.NewResourceName(newLayerDigest, registryInstanceName, rspb.CacheType_CAS)
 	casDigest, err := cachetools.UploadFromReader(ctx, c.bsClient, rn, bytes.NewReader(newLayerData))
 	if err != nil {
 		return nil, status.UnknownErrorf("could not upload converted layer %q: %s", newLayerDigest, err)

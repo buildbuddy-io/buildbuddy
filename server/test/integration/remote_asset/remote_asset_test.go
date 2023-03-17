@@ -87,7 +87,7 @@ func serveArchive(t *testing.T, contents map[string]string) (*repb.Digest, *url.
 	testshell.Run(t, ws, "tar czf archive.tar.gz $(find . -type f)")
 	b, err := os.ReadFile(filepath.Join(ws, "archive.tar.gz"))
 	require.NoError(t, err)
-	d, err := digest.Compute(bytes.NewReader(b))
+	d, err := digest.Compute(bytes.NewReader(b), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	u := testhttp.StartServer(t, http.FileServer(http.Dir(ws)))
 	u.Path = "/archive.tar.gz"
@@ -97,7 +97,7 @@ func serveArchive(t *testing.T, contents map[string]string) (*repb.Digest, *url.
 func serveFile(t *testing.T, content string) (*repb.Digest, *url.URL) {
 	ws := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{"file.txt": content})
-	d, err := digest.Compute(strings.NewReader(content))
+	d, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	u := testhttp.StartServer(t, http.FileServer(http.Dir(ws)))
 	u.Path = "/file.txt"

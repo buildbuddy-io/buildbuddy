@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import re
+import requests
 import subprocess
 import sys
 import tempfile
@@ -45,6 +47,19 @@ def workspace_is_clean():
                          stderr=subprocess.STDOUT)
     return len(p.stdout.readlines()) == 0
 
+def is_published_release(version_tag):
+    github_token = os.environ.get('GITHUB_TOKEN')
+    # This API does not return draft releases
+    query_url = f"https://api.github.com/repos/buildbuddy-io/buildbuddy/releases/tags/{version_tag}"
+    headers = {'Authorization': f'token {github_token}'}
+    r = requests.get(query_url, headers=headers)
+    if r.status_code == 401:
+        die("Invalid github credentials. Did you set the GITHUB_TOKEN environment variable?")
+    elif r.status_code == 200:
+        return True
+    else:
+        return False
+
 def bump_patch_version(version):
     parts = version.split(".")
     patch_int = int(parts[-1])
@@ -76,6 +91,13 @@ def confirm_new_version(version):
         version = get_version_override()
     return version
 
+def get_image(project, tag):
+    query_url = f"https://gcr.io/v2/{project}/manifests/{tag}"
+    r = requests.get(query_url)
+    if r.status_code == 404:
+        return None
+    return r.json()
+
 def create_and_push_tag(old_version, new_version, release_notes=''):
     commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
     if len(release_notes) > 0:
@@ -91,35 +113,50 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
-def push_image(target, image_tag):
+def push_image_for_project(project, version_tag, bazel_target, skip_update_latest_tag):
+    version_image = get_image(project, version_tag)
+    if version_image is None:
+        push_image_with_bazel(bazel_target, version_tag)
+
+    if skip_update_latest_tag:
+        return
+
+    version_image = version_image or get_image(project, version_tag)
+    if version_image is None:
+        die(f"Could not fetch image with tag {version_tag} from project {project}.")
+
+    latest_image = get_image(project, "latest")
+    if latest_image is None:
+        die(f"Could not fetch image with latest tag from project {project}.")
+
+    should_update_latest_tag = version_image["config"]["digest"] != latest_image["config"]["digest"]
+    if should_update_latest_tag:
+        add_tag_cmd = f"y | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
+        run_or_die(add_tag_cmd)
+
+def push_image_with_bazel(bazel_target, image_tag):
+    print(f"Pushing docker image target {bazel_target} tag {image_tag}")
     command = (
         'bazel run -c opt --stamp '+
         '--define=release=true '+
         '--//deployment:image_tag={image_tag} '+
         '{target}'
-    ).format(image_tag=image_tag, target=target)
+    ).format(image_tag=image_tag, target=bazel_target)
     run_or_die(command)
 
-def update_docker_images(version_tag, update_latest_tag):
+def update_docker_images(version_tag, skip_update_latest_tag):
     clean_cmd = 'bazel clean --expunge'
     run_or_die(clean_cmd)
 
+    oss_tag = version_tag
+    enterprise_tag = 'enterprise-'+version_tag
+
     # OSS app
-    push_image('//deployment:release_onprem', image_tag=version_tag)
+    push_image_for_project("flame-public/buildbuddy-app-onprem", oss_tag, '//deployment:release_onprem', skip_update_latest_tag)
     # Enterprise app
-    push_image('//enterprise/deployment:release_enterprise', image_tag='enterprise-'+version_tag)
+    push_image_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
     # Enterprise executor
-    push_image('//enterprise/deployment:release_executor_enterprise', image_tag='enterprise-'+version_tag)
-
-    # update "latest" tags
-    if update_latest_tag:
-        # OSS app
-        push_image('//deployment:release_onprem', image_tag='latest')
-        # Enterprise app
-        push_image('//enterprise/deployment:release_enterprise', image_tag='latest')
-        # Enterprise executor
-        push_image('//enterprise/deployment:release_executor_enterprise', image_tag='latest')
-
+    push_image_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
@@ -143,10 +180,8 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--skip_version_bump', default=False, action='store_true')
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
+    parser.add_argument('--force', default=False, action='store_true')
     args = parser.parse_args()
-
-    bump_version = not args.skip_version_bump
-    update_latest_tag = not args.skip_latest_tag
 
     if workspace_is_clean():
         print("Workspace is clean!")
@@ -157,8 +192,15 @@ def main():
             'Please run this in a clean workspace!')
 
     old_version = get_latest_remote_version()
+    is_old_version_published = is_published_release(old_version)
+
+    if not is_old_version_published and not args.force:
+        die(f"The latest tag {old_version} does not correspond to a published github release." +
+        " It may be a draft release or it may have never been created. Are you sure you want to upload new release artifacts?" +
+        " If so, rerun the script with --force.")
+
     new_version = old_version
-    if bump_version:
+    if not args.skip_version_bump:
         new_version = bump_patch_version(old_version)
         release_notes = generate_release_notes(old_version)
         print("release notes:\n %s" % release_notes)
@@ -171,8 +213,7 @@ def main():
         create_and_push_tag(old_version, new_version, release_notes)
         print("Pushed tag for new version %s" % new_version)
 
-    update_docker_images(new_version, update_latest_tag)
-    print("Pushed docker images for new version %s" % new_version)
+    update_docker_images(new_version, args.skip_latest_tag)
     print("Done -- proceed with the release guide!")
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ import (
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 var (
@@ -679,7 +680,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 
 	ctx := context.Background()
 	bsClient := app.ByteStreamClient(t)
-	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", bytes.NewReader([]byte(patch)))
+	patchDigest, err := cachetools.UploadBlob(ctx, bsClient, "", repb.DigestFunction_SHA256, bytes.NewReader([]byte(patch)))
 	require.NoError(t, err)
 
 	// Execute a Bazel command with a patched `pass.sh` that should output 'EDIT'.
@@ -690,7 +691,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 			"--target_repo_url=file://" + targetRepoPath,
 			"--target_branch=master",
 			"--cache_backend=" + app.GRPCAddress(),
-			"--patch_digest=" + fmt.Sprintf("%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()),
+			"--patch_uri=" + fmt.Sprintf("blobs/%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()),
 			"--bazel_sub_command", "test --test_output=streamed --nocache_test_results //...",
 			// Disable clean checkout fallback for this test since we expect to sync
 			// without errors.

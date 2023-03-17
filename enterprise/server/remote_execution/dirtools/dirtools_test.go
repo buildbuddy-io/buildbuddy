@@ -9,7 +9,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -19,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -44,7 +44,7 @@ func TestDownloadTree(t *testing.T) {
 		},
 	}
 
-	childDigest, err := digest.ComputeForMessage(childDir)
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestDownloadTree(t *testing.T) {
 			childDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env, "", directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 		},
 	}
 
-	childDigest, err := digest.ComputeForMessage(childDir)
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestDownloadTreeWithFileCache(t *testing.T) {
 			childDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env, "", directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 		},
 	}
 
-	childDigest, err := digest.ComputeForMessage(childDir)
+	childDigest, err := digest.ComputeForMessage(childDir, repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestDownloadTreeEmptyDigest(t *testing.T) {
 			childDir,
 		},
 	}
-	info, err := dirtools.DownloadTree(ctx, env, "foo", directory, tmpDir, &dirtools.DownloadTreeOpts{})
+	info, err := dirtools.DownloadTree(ctx, env, "foo", repb.DigestFunction_SHA256, directory, tmpDir, &dirtools.DownloadTreeOpts{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,9 +245,9 @@ func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceNa
 		Hash:      hashString,
 		SizeBytes: int64(len(dataBytes)),
 	}
-	r := &resource.ResourceName{
+	r := &rspb.ResourceName{
 		Digest:       d,
-		CacheType:    resource.CacheType_CAS,
+		CacheType:    rspb.CacheType_CAS,
 		InstanceName: instanceName,
 	}
 	env.GetCache().Set(ctx, r, dataBytes)
@@ -265,7 +265,7 @@ func addToFileCache(t *testing.T, env *testenv.TestEnv, tempDir, data string) {
 	if _, err := f.Write([]byte(data)); err != nil {
 		t.Fatal(err)
 	}
-	d, err := digest.Compute(strings.NewReader(data))
+	d, err := digest.Compute(strings.NewReader(data), repb.DigestFunction_SHA256)
 	if err != nil {
 		t.Fatal(err)
 	}

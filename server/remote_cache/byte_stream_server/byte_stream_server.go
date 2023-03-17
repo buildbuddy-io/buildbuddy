@@ -2,7 +2,6 @@ package byte_stream_server
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"hash"
 	"io"
@@ -22,6 +21,7 @@ import (
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -106,13 +106,13 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false /*=ac*/)
-	if r.GetDigest().GetHash() == digest.EmptySha256 {
+	if r.IsEmpty() {
 		ht.TrackEmptyHit()
 		return nil
 	}
 	downloadTracker := ht.TrackDownload(r.GetDigest())
 
-	cacheRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
+	cacheRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS)
 	passthroughCompressionEnabled := s.cache.SupportsCompressor(r.GetCompressor()) && req.ReadOffset == 0 && req.ReadLimit == 0
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
@@ -258,7 +258,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 		resourceNameString: req.ResourceName,
 	}
 
-	casRN := digest.NewCASResourceName(r.GetDigest(), r.GetInstanceName())
+	casRN := digest.NewResourceName(r.GetDigest(), r.GetInstanceName(), rspb.CacheType_CAS)
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
@@ -279,18 +279,23 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	}
 
 	var committedWriteCloser interfaces.CommittedWriteCloser
-	if r.GetDigest().GetHash() != digest.EmptySha256 && !exists {
+	if r.IsEmpty() {
+		committedWriteCloser = ioutil.DiscardWriteCloser()
+	} else {
 		cacheWriter, err := s.cache.Writer(ctx, casRN.ToProto())
 		if err != nil {
 			return nil, err
 		}
 		committedWriteCloser = cacheWriter
-	} else {
-		committedWriteCloser = ioutil.DiscardWriteCloser()
 	}
 	ws.cacheCommitter = committedWriteCloser
 	ws.cacheCloser = committedWriteCloser
-	ws.checksum = NewChecksum()
+
+	hasher, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+	ws.checksum = NewChecksum(hasher)
 	ws.writer = io.MultiWriter(ws.checksum, committedWriteCloser)
 
 	if r.GetCompressor() == repb.Compressor_ZSTD {
@@ -516,9 +521,9 @@ type Checksum struct {
 	bytesWritten int64
 }
 
-func NewChecksum() *Checksum {
+func NewChecksum(h hash.Hash) *Checksum {
 	return &Checksum{
-		hash:         sha256.New(),
+		hash:         h,
 		bytesWritten: 0,
 	}
 }

@@ -51,7 +51,7 @@ func (o *LoadSnapshotOptions) Digest() *repb.Digest {
 	}
 
 	h := sha256.New()
-	for _, f := range extractFiles(o) {
+	for _, f := range enumerateFiles(o) {
 		h.Write([]byte(f))
 	}
 	h.Write(o.ConfigurationData)
@@ -61,24 +61,7 @@ func (o *LoadSnapshotOptions) Digest() *repb.Digest {
 	}
 }
 
-func hardlinkFilesIntoDirectory(targetDir string, files ...string) error {
-	for _, f := range files {
-		fileName := filepath.Base(f)
-		stat, err := os.Stat(f)
-		if err != nil {
-			return err
-		}
-		if stat.IsDir() {
-			return status.FailedPreconditionErrorf("%q was dir, not file", f)
-		}
-		if err := os.Link(f, filepath.Join(targetDir, fileName)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func extractFiles(snapOpts *LoadSnapshotOptions) []string {
+func enumerateFiles(snapOpts *LoadSnapshotOptions) []string {
 	files := []string{
 		snapOpts.MemSnapshotPath,
 		snapOpts.VMStateSnapshotPath,
@@ -95,10 +78,17 @@ func extractFiles(snapOpts *LoadSnapshotOptions) []string {
 	return files
 }
 
-type Loader struct {
+type Loader interface {
+	CacheSnapshot(snapOpts *LoadSnapshotOptions) (*repb.Digest, error)
+	UnpackSnapshot(snapshotDigest *repb.Digest, outputDirectory string) error
+	DeleteSnapshot(snapshotDigest *repb.Digest) error
+	GetConfigurationData(snapshotDigest *repb.Digest) ([]byte, error)
+}
+
+type FileCacheLoader struct {
 	ctx              context.Context
 	env              environment.Env
-	instanceName     string
+	instanceName     string // TODO: remove (this is unused)
 	workingDirectory string
 	snapshotDigest   *repb.Digest
 	manifest         *manifestData
@@ -106,25 +96,22 @@ type Loader struct {
 
 // New returns a new snapshot.Loader that can be used to download the specified
 // snapshot into the target chroot.
-func New(ctx context.Context, env environment.Env, workingDirectory, instanceName string, snapshotDigest *repb.Digest) (*Loader, error) {
-	l := &Loader{
+func New(ctx context.Context, env environment.Env, workingDirectory, instanceName string) (Loader, error) {
+	l := &FileCacheLoader{
 		ctx:              ctx,
 		env:              env,
 		workingDirectory: workingDirectory,
 		instanceName:     instanceName,
-		snapshotDigest:   snapshotDigest,
 	}
 	return l, nil
 }
 
-func (l *Loader) unpackManifest() error {
+func (l *FileCacheLoader) unpackManifest(snapshotDigest *repb.Digest) error {
 	if l.env.GetFileCache() == nil {
 		return status.FailedPreconditionErrorf("Unable to load snapshot: FileCache not enabled")
 	}
-	manifestDigest := &repb.Digest{
-		Hash:      hash.String(l.snapshotDigest.GetHash() + ManifestFileName),
-		SizeBytes: int64(101),
-	}
+	l.snapshotDigest = snapshotDigest
+	manifestDigest := manifestDigest(l.snapshotDigest)
 	tmpDir, err := os.MkdirTemp(l.workingDirectory, "manifest-dir-*")
 	if err != nil {
 		return err
@@ -145,8 +132,8 @@ func (l *Loader) unpackManifest() error {
 
 // GetConfigurationData returns the configuration data associated with a
 // snapshot.
-func (l *Loader) GetConfigurationData() ([]byte, error) {
-	if err := l.unpackManifest(); err != nil {
+func (l *FileCacheLoader) GetConfigurationData(snapshotDigest *repb.Digest) ([]byte, error) {
+	if err := l.unpackManifest(snapshotDigest); err != nil {
 		return nil, err
 	}
 	return l.manifest.ConfigurationData, nil
@@ -154,9 +141,13 @@ func (l *Loader) GetConfigurationData() ([]byte, error) {
 
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
 // directory.
-func (l *Loader) UnpackSnapshot(outputDirectory string) error {
+func (l *FileCacheLoader) UnpackSnapshot(snapshotDigest *repb.Digest, outputDirectory string) error {
+	if l.snapshotDigest != nil && l.snapshotDigest != snapshotDigest {
+		return status.InvalidArgumentErrorf("Snapshot configuration already fetched with different digest %q", digest.String(l.snapshotDigest))
+	}
+
 	if l.manifest == nil {
-		if err := l.unpackManifest(); err != nil {
+		if err := l.unpackManifest(snapshotDigest); err != nil {
 			return err
 		}
 	}
@@ -166,6 +157,30 @@ func (l *Loader) UnpackSnapshot(outputDirectory string) error {
 		}
 	}
 	return nil
+}
+
+func (l *FileCacheLoader) DeleteSnapshot(snapshotDigest *repb.Digest) error {
+	if l.snapshotDigest != nil && l.snapshotDigest != snapshotDigest {
+		return status.InvalidArgumentErrorf("Snapshot configuration already fetched with different digest %q", digest.String(l.snapshotDigest))
+	}
+	if l.manifest == nil {
+		if err := l.unpackManifest(snapshotDigest); err != nil {
+			return err
+		}
+	}
+	// Manually evict the manifest as well as all referenced files.
+	l.env.GetFileCache().DeleteFile(fileNodeFromDigest(manifestDigest(snapshotDigest)))
+	for _, dk := range l.manifest.CachedFiles {
+		l.env.GetFileCache().DeleteFile(fileNodeFromDigest(dk.ToDigest()))
+	}
+	return nil
+}
+
+func manifestDigest(snapshotDigest *repb.Digest) *repb.Digest {
+	return &repb.Digest{
+		Hash:      hash.String(snapshotDigest.GetHash() + ManifestFileName),
+		SizeBytes: int64(101),
+	}
 }
 
 type manifestData struct {
@@ -186,13 +201,19 @@ func (m *manifestData) String() string {
 // the snapshot ID and the file name. A manifest file that
 // that lists all files. Finally, an action result is cached that describes all
 // files -- this allows for fast existence checking and easy download.
-func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, workingDirectory string, snapOpts *LoadSnapshotOptions) (*repb.Digest, error) {
-	if env.GetFileCache() == nil {
+func (l *FileCacheLoader) CacheSnapshot(snapOpts *LoadSnapshotOptions) (*repb.Digest, error) {
+	if l.env.GetFileCache() == nil {
 		return nil, status.FailedPreconditionErrorf("Unable to cache snapshot: FileCache not enabled")
 	}
 	ad := snapOpts.Digest()
-	snapDir := filepath.Dir(snapOpts.MemSnapshotPath)
-	manifestPath := filepath.Join(snapDir, ManifestFileName)
+
+	tmpDir, err := os.MkdirTemp(filepath.Dir(snapOpts.MemSnapshotPath), "manifest-dir-*")
+	if err != nil {
+		return nil, status.InternalErrorf("failed to create manifest dir: %s", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	manifestPath := filepath.Join(tmpDir, ManifestFileName)
+
 	manifest := &manifestData{
 		ConfigurationData: snapOpts.ConfigurationData,
 		CachedFiles:       make(map[string]digest.Key, 0),
@@ -200,7 +221,7 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 
 	// Put the files from the snapshot into the filecache and record their
 	// names and digests in the manifest so they can be unpacked later.
-	for _, f := range extractFiles(snapOpts) {
+	for _, f := range enumerateFiles(snapOpts) {
 		info, err := os.Stat(f)
 		if err != nil {
 			return nil, err
@@ -210,7 +231,7 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 			Hash:      hash.String(ad.GetHash() + filename),
 			SizeBytes: int64(info.Size()),
 		}
-		env.GetFileCache().AddFile(fileNodeFromDigest(fileNameDigest), f)
+		l.env.GetFileCache().AddFile(fileNodeFromDigest(fileNameDigest), f)
 		manifest.CachedFiles[filename] = digest.NewKey(fileNameDigest)
 	}
 
@@ -223,11 +244,8 @@ func CacheSnapshot(ctx context.Context, env environment.Env, instanceName, worki
 	if err := os.WriteFile(manifestPath, b, 0644); err != nil {
 		return nil, err
 	}
-	manifestDigest := &repb.Digest{
-		Hash:      hash.String(ad.GetHash() + ManifestFileName),
-		SizeBytes: int64(101),
-	}
-	env.GetFileCache().AddFile(fileNodeFromDigest(manifestDigest), manifestPath)
+	manifestDigest := manifestDigest(ad)
+	l.env.GetFileCache().AddFile(fileNodeFromDigest(manifestDigest), manifestPath)
 	return ad, nil
 }
 

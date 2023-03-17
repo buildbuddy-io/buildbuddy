@@ -4,11 +4,11 @@ import (
 	"context"
 	"io"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 type CacheMode uint32
@@ -32,7 +32,7 @@ func NewComposableCache(outer, inner interfaces.Cache, mode CacheMode) interface
 	}
 }
 
-func (c *ComposableCache) Contains(ctx context.Context, r *resource.ResourceName) (bool, error) {
+func (c *ComposableCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	outerExists, err := c.outer.Contains(ctx, r)
 	if err == nil && outerExists {
 		return outerExists, nil
@@ -41,7 +41,7 @@ func (c *ComposableCache) Contains(ctx context.Context, r *resource.ResourceName
 	return c.inner.Contains(ctx, r)
 }
 
-func (c *ComposableCache) Metadata(ctx context.Context, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (c *ComposableCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	md, err := c.outer.Metadata(ctx, r)
 	if err == nil {
 		return md, nil
@@ -49,7 +49,7 @@ func (c *ComposableCache) Metadata(ctx context.Context, r *resource.ResourceName
 	return c.inner.Metadata(ctx, r)
 }
 
-func (c *ComposableCache) FindMissing(ctx context.Context, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (c *ComposableCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}
@@ -67,7 +67,7 @@ func (c *ComposableCache) FindMissing(ctx context.Context, resources []*resource
 	return c.inner.FindMissing(ctx, missingResources)
 }
 
-func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]byte, error) {
+func (c *ComposableCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	outerRsp, err := c.outer.Get(ctx, r)
 	if err == nil {
 		return outerRsp, nil
@@ -84,7 +84,7 @@ func (c *ComposableCache) Get(ctx context.Context, r *resource.ResourceName) ([]
 	return innerRsp, nil
 }
 
-func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *ComposableCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	if len(resources) == 0 {
 		return nil, nil
 	}
@@ -97,11 +97,11 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.Re
 			foundMap[d] = data
 		}
 	}
-	stillMissing := make([]*resource.ResourceName, 0)
+	stillMissing := make([]*rspb.ResourceName, 0)
 	for _, r := range resources {
 		d := r.GetDigest()
 		if _, ok := foundMap[d]; !ok {
-			stillMissing = append(stillMissing, &resource.ResourceName{
+			stillMissing = append(stillMissing, &rspb.ResourceName{
 				Digest:       d,
 				InstanceName: instanceName,
 				CacheType:    cacheType,
@@ -122,7 +122,7 @@ func (c *ComposableCache) GetMulti(ctx context.Context, resources []*resource.Re
 	return foundMap, nil
 }
 
-func (c *ComposableCache) Set(ctx context.Context, r *resource.ResourceName, data []byte) error {
+func (c *ComposableCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
 	// Special case -- we call set on the inner cache first (in case of
 	// error) and then if no error we'll maybe set on the outer.
 	if err := c.inner.Set(ctx, r, data); err != nil {
@@ -134,7 +134,7 @@ func (c *ComposableCache) Set(ctx context.Context, r *resource.ResourceName, dat
 	return nil
 }
 
-func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*resource.ResourceName][]byte) error {
+func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
 	if err := c.inner.SetMulti(ctx, kvs); err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func (c *ComposableCache) SetMulti(ctx context.Context, kvs map[*resource.Resour
 	return nil
 }
 
-func (c *ComposableCache) Delete(ctx context.Context, r *resource.ResourceName) error {
+func (c *ComposableCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	// Special case -- we call delete on the inner cache first (in case of
 	// error) and then if no error we'll maybe delete from the outer.
 	if err := c.inner.Delete(ctx, r); err != nil {
@@ -181,7 +181,7 @@ func (m *MultiCloser) Close() error {
 	return nil
 }
 
-func (c *ComposableCache) Reader(ctx context.Context, r *resource.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+func (c *ComposableCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
 	if outerReader, err := c.outer.Reader(ctx, r, uncompressedOffset, limit); err == nil {
 		return outerReader, nil
 	}
@@ -250,7 +250,7 @@ func (d *doubleWriter) Close() error {
 	return err
 }
 
-func (c *ComposableCache) Writer(ctx context.Context, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *ComposableCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	innerWriter, err := c.inner.Writer(ctx, r)
 	if err != nil {
 		return nil, err

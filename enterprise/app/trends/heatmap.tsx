@@ -14,6 +14,7 @@ interface HeatmapProps {
   metricBucketName: string;
   metricBucketFormatter: (value: number) => string;
   selectionCallback?: (s?: HeatmapSelection) => void;
+  zoomCallback?: (s?: HeatmapSelection) => void;
 }
 
 interface State {
@@ -113,7 +114,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
 
     const timestamp = this.props.heatmapData.timestampBracket[stepX];
     const metric = this.props.heatmapData.bucketBracket[stepY];
-    if (!timestamp || !metric) {
+    if (timestamp === undefined || metric === undefined) {
       return undefined;
     }
     const column = this.props.heatmapData.column[stepX];
@@ -220,9 +221,16 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 
   maybeFireSelectionCallback() {
-    const s = this.computeHeatmapSelection();
-    if (s && this.props.selectionCallback) {
-      this.props.selectionCallback(s);
+    const selection = this.computeHeatmapSelection();
+    if (selection && this.props.selectionCallback) {
+      this.props.selectionCallback(selection);
+    }
+  }
+
+  maybeFireZoomCallback() {
+    const selection = this.computeHeatmapSelection();
+    if (selection && this.props.zoomCallback) {
+      this.props.zoomCallback(selection);
     }
   }
 
@@ -254,7 +262,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return;
   }
 
-  maybeRenderSelection(): SelectionData | undefined {
+  computeSelectionData(): SelectionData | undefined {
     const selectionToDraw = this.pendingClick || this.selectedData;
     if (!selectionToDraw) {
       return;
@@ -375,7 +383,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
       });
     });
 
-    const selection = this.maybeRenderSelection();
+    const selection = this.computeSelectionData();
     const interpolator = (v: number) =>
       heatmapColorScale[Math.floor(((heatmapColorScale.length - 1) * (v - min)) / (max - min))];
 

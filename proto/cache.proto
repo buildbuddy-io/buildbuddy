@@ -230,3 +230,15 @@ message GetCacheMetadataResponse {
   int64 last_modify_usec = 4;
   int64 digest_size_bytes = 5;
 }
+
+// Used to cache GetTree responses.
+message DirectoryWithDigest {
+  reserved 2;
+
+  build.bazel.remote.execution.v2.Directory directory = 1;
+  resource.ResourceName resource_name = 3;
+}
+
+message TreeCache {
+  repeated DirectoryWithDigest children = 1;
+}

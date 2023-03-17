@@ -10,6 +10,13 @@ export function dateToTimestamp(date: Date): google_timestamp.protobuf.Timestamp
   });
 }
 
+export function usecToTimestamp(usec: number): google_timestamp.protobuf.Timestamp {
+  return new google_timestamp.protobuf.Timestamp({
+    seconds: Math.floor(usec / 1e6) as any,
+    nanos: Math.floor(usec % 1e6) * 1e3,
+  });
+}
+
 /** Converts a proto timestamp to a local date. */
 export function timestampToDate(timestamp: google_timestamp.protobuf.ITimestamp): Date {
   const timestampMillis = Math.floor((Number(timestamp.seconds) + Number(timestamp.nanos) / 1e9) * 1e3);

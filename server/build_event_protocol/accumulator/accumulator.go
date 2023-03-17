@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
@@ -114,9 +115,9 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) {
 }
 func (v *BEValues) Finalize(ctx context.Context) {
 	invocation := v.Invocation()
-	invocation.InvocationStatus = inpb.Invocation_DISCONNECTED_INVOCATION_STATUS
+	invocation.InvocationStatus = inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS
 	if v.BuildFinished() {
-		invocation.InvocationStatus = inpb.Invocation_COMPLETE_INVOCATION_STATUS
+		invocation.InvocationStatus = inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS
 	}
 
 	// Do some logging so that we can understand whether the invocation fields

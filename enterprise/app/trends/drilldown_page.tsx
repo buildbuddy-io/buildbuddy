@@ -1,13 +1,19 @@
 import React from "react";
 import Long from "long";
+import moment from "moment";
+import { X, ZoomIn } from "lucide-react";
 
+import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Spinner from "../../../app/components/spinner/spinner";
 import HistoryInvocationCardComponent from "../../app/history/history_invocation_card";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { stats } from "../../../proto/stats_ts_proto";
+import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
+import { usecToTimestamp } from "../../../app/util/proto";
 import { getProtoFilterParams, isExecutionMetric } from "../filter/filter_util";
 import { HeatmapComponent, HeatmapSelection } from "./heatmap";
 import { BarChart, Bar, XAxis, Tooltip, CartesianGrid, TooltipProps } from "recharts";
@@ -37,10 +43,41 @@ interface MetricOption {
   metric: stat_filter.Metric;
 }
 
+// A little bit of structural typing for TrendQuery and InvocationQuery
+type CommonQueryFields = {
+  updatedBefore?: google_timestamp.protobuf.Timestamp | null;
+  updatedAfter?: google_timestamp.protobuf.Timestamp | null;
+  filter?: stat_filter.StatFilter[];
+};
+
 const METRIC_OPTIONS: MetricOption[] = [
   {
     name: "Build duration",
     metric: stat_filter.Metric.create({ invocation: stat_filter.InvocationMetricType.DURATION_USEC_INVOCATION_METRIC }),
+  },
+  {
+    name: "Cache download size",
+    metric: stat_filter.Metric.create({
+      invocation: stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SIZE_INVOCATION_METRIC,
+    }),
+  },
+  {
+    name: "Cache download speed",
+    metric: stat_filter.Metric.create({
+      invocation: stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SPEED_INVOCATION_METRIC,
+    }),
+  },
+  {
+    name: "Cache upload size",
+    metric: stat_filter.Metric.create({
+      invocation: stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC,
+    }),
+  },
+  {
+    name: "Cache upload speed",
+    metric: stat_filter.Metric.create({
+      invocation: stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SPEED_INVOCATION_METRIC,
+    }),
   },
   {
     name: "CAS cache misses",
@@ -49,8 +86,30 @@ const METRIC_OPTIONS: MetricOption[] = [
     }),
   },
   {
-    name: "Queue time",
+    name: "Execution queue time",
     metric: stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC }),
+  },
+  {
+    name: "Execution input download time",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_TIME_EXECUTION_METRIC,
+    }),
+  },
+  {
+    name: "Execution action execution time",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC,
+    }),
+  },
+  {
+    name: "Execution output upload time",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC,
+    }),
+  },
+  {
+    name: "Executor peak memory usage",
+    metric: stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC }),
   },
 ];
 
@@ -69,6 +128,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   selectedMetric: MetricOption = METRIC_OPTIONS[0];
 
   currentHeatmapSelection?: HeatmapSelection;
+  currentZoomFilters?: HeatmapSelection;
 
   renderBucketValue(v: number) {
     if (isExecutionMetric(this.selectedMetric.metric)) {
@@ -82,7 +142,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     if (isExecutionMetric(this.selectedMetric.metric)) {
       switch (this.selectedMetric.metric.execution) {
         case stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC:
+        case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
+        case stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC:
+        case stat_filter.ExecutionMetricType.OUTPUT_UPLOAD_TIME_EXECUTION_METRIC:
           return (v / 1000000).toFixed(2) + "s";
+        case stat_filter.ExecutionMetricType.PEAK_MEMORY_EXECUTION_METRIC:
+          return format.bytes(v);
         default:
           return v.toString();
       }
@@ -90,6 +155,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       switch (this.selectedMetric.metric.invocation) {
         case stat_filter.InvocationMetricType.DURATION_USEC_INVOCATION_METRIC:
           return (v / 1000000).toFixed(2) + "s";
+        case stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SPEED_INVOCATION_METRIC:
+        case stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SPEED_INVOCATION_METRIC:
+          return format.bitsPerSecond(8 * v);
+        case stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SIZE_INVOCATION_METRIC:
+        case stat_filter.InvocationMetricType.CAS_CACHE_UPLOAD_SIZE_INVOCATION_METRIC:
+          return format.bytes(v);
         case stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC:
         default:
           return v.toString();
@@ -130,12 +201,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       branchName: filterParams.branch,
       commitSha: filterParams.commit,
       command: filterParams.command,
-
+      pattern: filterParams.pattern,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
     });
+    this.addZoomFiltersToQuery(drilldownRequest.query);
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
     rpcService.service
@@ -149,10 +221,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   fetchInvocationList() {
     // TODO(jdhollen): Support fetching invocations based on executions data.
-    if (!this.props.user?.selectedGroup || isExecutionMetric(this.selectedMetric.metric)) {
+    if (
+      !this.props.user?.selectedGroup ||
+      isExecutionMetric(this.selectedMetric.metric) ||
+      !this.currentHeatmapSelection
+    ) {
       return;
     }
-    this.setState({ loadingInvocations: true, invocationsFailed: false });
+    this.setState({ loadingInvocations: true, invocationsFailed: false, invocationsData: undefined });
     const filterParams = getProtoFilterParams(this.props.search);
     let request = new invocation.SearchInvocationRequest({
       query: new invocation.InvocationQuery({
@@ -162,20 +238,20 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         branchName: filterParams.branch,
         commitSha: filterParams.commit,
         command: filterParams.command,
+        pattern: filterParams.pattern,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
         groupId: this.props.user.selectedGroup.id,
+        role: filterParams.role || [],
+        updatedAfter: filterParams.updatedAfter,
+        updatedBefore: filterParams.updatedBefore,
+        status: filterParams.status || [],
+        filter: this.toStatFilterList(this.currentHeatmapSelection),
       }),
       pageToken: "",
       count: 25,
     });
-    request.query!.role = filterParams.role || [];
-    request.query!.updatedAfter = filterParams.updatedAfter;
-    request.query!.updatedBefore = filterParams.updatedBefore;
-    request.query!.status = filterParams.status || [];
-    if (this.currentHeatmapSelection) {
-      request.query!.filter = this.toStatFilterList(this.currentHeatmapSelection);
-    }
+    this.addZoomFiltersToQuery(request.query!);
 
     rpcService.service
       .searchInvocation(request)
@@ -203,6 +279,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       branchName: filterParams.branch,
       commitSha: filterParams.commit,
       command: filterParams.command,
+      pattern: filterParams.pattern,
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
@@ -210,6 +287,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       maximumDuration: filterParams.maximumDuration,
       status: filterParams.status,
     });
+    this.addZoomFiltersToQuery(heatmapRequest.query);
 
     rpcService.service
       .getStatHeatmap(heatmapRequest)
@@ -238,6 +316,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return;
     }
     this.selectedMetric = METRIC_OPTIONS.find((v) => v.name === newMetric) || METRIC_OPTIONS[0];
+    this.currentHeatmapSelection = undefined;
+    this.currentZoomFilters = undefined;
     this.fetch();
   }
 
@@ -247,55 +327,93 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     this.fetchInvocationList();
   }
 
-  handleBarClick(a: invocation.AggType, e?: CategoricalChartState) {
+  handleHeatmapZoom(s?: HeatmapSelection) {
+    this.currentHeatmapSelection = undefined;
+    this.currentZoomFilters = s;
+    this.fetch();
+  }
+
+  handleClearZoom() {
+    this.currentHeatmapSelection = undefined;
+    this.currentZoomFilters = undefined;
+    this.fetch();
+  }
+
+  addZoomFiltersToQuery(query: CommonQueryFields) {
+    if (!this.currentZoomFilters) {
+      return;
+    }
+
+    query.updatedAfter = usecToTimestamp(this.currentZoomFilters.dateRangeMicros.startInclusive);
+    query.updatedBefore = usecToTimestamp(this.currentZoomFilters.dateRangeMicros.endExclusive);
+    if (!query.filter) {
+      query.filter = [];
+    }
+    query.filter.push(
+      stat_filter.StatFilter.create({
+        metric: this.selectedMetric.metric,
+        min: Long.fromNumber(this.currentZoomFilters.bucketRange.startInclusive),
+        max: Long.fromNumber(this.currentZoomFilters.bucketRange.endExclusive - 1),
+      })
+    );
+  }
+
+  handleBarClick(d: stats.DrilldownType, e?: CategoricalChartState) {
     if (!e || !e.activeLabel) {
       return;
     }
-    switch (a) {
-      case invocation.AggType.USER_AGGREGATION_TYPE:
+    switch (d) {
+      case stats.DrilldownType.USER_DRILLDOWN_TYPE:
         router.setQueryParam("user", e.activeLabel);
         return;
-      case invocation.AggType.HOSTNAME_AGGREGATION_TYPE:
+      case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
         router.setQueryParam("host", e.activeLabel);
         return;
-      case invocation.AggType.REPO_URL_AGGREGATION_TYPE:
+      case stats.DrilldownType.REPO_URL_DRILLDOWN_TYPE:
         router.setQueryParam("repo", e.activeLabel);
         return;
-      case invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE:
+      case stats.DrilldownType.COMMIT_SHA_DRILLDOWN_TYPE:
         router.setQueryParam("commit", e.activeLabel);
         return;
-      case invocation.AggType.BRANCH_AGGREGATION_TYPE:
+      case stats.DrilldownType.BRANCH_DRILLDOWN_TYPE:
         router.setQueryParam("branch", e.activeLabel);
         return;
-      case invocation.AggType.GROUP_ID_AGGREGATION_TYPE:
-      case invocation.AggType.DATE_AGGREGATION_TYPE:
+      case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
+        if (capabilities.config.patternFilterEnabled) {
+          router.setQueryParam("pattern", e.activeLabel);
+        }
+        return;
+      case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
+      case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
         return;
     }
   }
 
-  formatAggType(a: invocation.AggType) {
-    switch (a) {
-      case invocation.AggType.USER_AGGREGATION_TYPE:
+  formatDrilldownType(d: stats.DrilldownType) {
+    switch (d) {
+      case stats.DrilldownType.USER_DRILLDOWN_TYPE:
         return "user";
-      case invocation.AggType.HOSTNAME_AGGREGATION_TYPE:
+      case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
         return "host";
-      case invocation.AggType.GROUP_ID_AGGREGATION_TYPE:
+      case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
         return "group_id";
-      case invocation.AggType.REPO_URL_AGGREGATION_TYPE:
+      case stats.DrilldownType.REPO_URL_DRILLDOWN_TYPE:
         return "repo_url";
-      case invocation.AggType.COMMIT_SHA_AGGREGATION_TYPE:
+      case stats.DrilldownType.COMMIT_SHA_DRILLDOWN_TYPE:
         return "commit_sha";
-      case invocation.AggType.BRANCH_AGGREGATION_TYPE:
+      case stats.DrilldownType.BRANCH_DRILLDOWN_TYPE:
         return "branch_name";
-      case invocation.AggType.PATTERN_AGGREGATION_TYPE:
+      case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         return "pattern";
+      case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
+        return "worker (execution)";
       default:
         return "???";
     }
   }
 
-  renderCustomTooltip(aggType: string, p: TooltipProps<any, any>) {
+  renderCustomTooltip(drilldownType: string, p: TooltipProps<any, any>) {
     if (!this.state.drilldownData) {
       return null;
     }
@@ -303,7 +421,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       return (
         <div className="trend-chart-hover">
           <div>
-            {aggType}: {p.label}
+            {drilldownType}: {p.label}
           </div>
           <div>
             Base:{" "}
@@ -366,6 +484,58 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return "To see drilldown charts and invocations, click and drag to select a region in the chart above";
   }
 
+  renderZoomChip(): React.ReactElement | null {
+    const zoomEligible = this.currentHeatmapSelection && this.currentHeatmapSelection.invocationsSelected > 1;
+    const zoomToSummarize = zoomEligible ? this.currentHeatmapSelection : this.currentZoomFilters;
+    if (!zoomToSummarize) {
+      return null;
+    }
+
+    const startDate = moment(zoomToSummarize.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
+    const endDate = moment((zoomToSummarize.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
+    const startValue = this.renderYBucketValue(zoomToSummarize.bucketRange.startInclusive);
+    const endValue = this.renderYBucketValue(zoomToSummarize.bucketRange.endExclusive);
+
+    return zoomEligible ? (
+      <div className="drilldown-page-zoom-summary">
+        <OutlinedButton
+          title="Zoom in on this selection"
+          className="drilldown-page-zoom-button"
+          onClick={() => this.handleHeatmapZoom(this.currentHeatmapSelection)}>
+          <ZoomIn className="icon"></ZoomIn>
+          <div className="drilldown-page-zoom-filters">
+            <div className="drilldown-page-zoom-filter-attr">
+              Date: {startDate} - {endDate}
+            </div>
+            <div className="drilldown-page-zoom-filter-attr">
+              Value: {startValue} - {endValue}
+            </div>
+          </div>
+        </OutlinedButton>
+      </div>
+    ) : (
+      <div className="drilldown-page-zoom-summary zoomed">
+        <ZoomIn className="icon"></ZoomIn>
+        {this.currentZoomFilters && (
+          <div className="drilldown-page-zoom-filters">
+            <div className="drilldown-page-zoom-filter-attr">
+              Date: {startDate} - {endDate}
+            </div>
+            <div className="drilldown-page-zoom-filter-attr">
+              Value: {startValue} - {endValue}
+            </div>
+          </div>
+        )}
+        <FilledButton
+          className="square drilldown-page-zoom-button"
+          title={"Clear zoom"}
+          onClick={() => this.handleClearZoom()}>
+          <X className="icon white" />
+        </FilledButton>
+      </div>
+    );
+  }
+
   render() {
     return (
       <div className="trend-chart">
@@ -384,6 +554,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                 )
             )}
           </Select>
+          {this.renderZoomChip()}
         </div>
         {this.state.loading && <div className="loading"></div>}
         {!this.state.loading && (
@@ -395,7 +566,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   metricBucketFormatter={(v) => this.renderYBucketValue(v)}
                   metricBucketName={this.selectedMetric.name}
                   valueFormatter={(v) => this.renderBucketValue(v)}
-                  selectionCallback={(s) => this.handleHeatmapSelection(s)}></HeatmapComponent>
+                  selectionCallback={(s) => this.handleHeatmapSelection(s)}
+                  zoomCallback={(s) => this.handleHeatmapZoom(s)}></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
                   {this.state.loadingDrilldowns && <div className="loading"></div>}
@@ -403,39 +575,47 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                     <div className="container nopadding-dense">
                       {!this.state.loadingDrilldowns &&
                         this.state.drilldownData &&
-                        this.state.drilldownData.chart.map((chart) => (
-                          <div className="drilldown-page-dd-chart">
-                            <div className="drilldown-page-dd-chart-title">
-                              {this.formatAggType(chart.drilldownDimension)}
-                            </div>
-                            <BarChart
-                              width={300}
-                              height={200}
-                              data={chart.entry}
-                              onClick={this.handleBarClick.bind(this, chart.drilldownDimension)}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis interval="preserveStart" dataKey={(entry: stats.DrilldownEntry) => entry.label} />
-                              <Tooltip
-                                content={this.renderCustomTooltip.bind(
-                                  this,
-                                  this.formatAggType(chart.drilldownDimension)
-                                )}
-                              />
-                              <Bar
-                                dataKey={(entry: stats.DrilldownEntry) =>
-                                  +entry.baseValue / +(this.state.drilldownData?.totalInBase || 1)
-                                }
-                                fill="#8884d8"
-                              />
-                              <Bar
-                                dataKey={(entry: stats.DrilldownEntry) =>
-                                  +entry.selectionValue / +(this.state.drilldownData?.totalInSelection || 1)
-                                }
-                                fill="#82ca9d"
-                              />
-                            </BarChart>
-                          </div>
-                        ))}
+                        this.state.drilldownData.chart.map(
+                          (chart) =>
+                            chart.entry.length > 1 && (
+                              <div className="drilldown-page-dd-chart">
+                                <div className="drilldown-page-dd-chart-title">
+                                  {this.formatDrilldownType(chart.drilldownType)}
+                                </div>
+                                <BarChart
+                                  width={300}
+                                  height={200}
+                                  data={chart.entry}
+                                  onClick={this.handleBarClick.bind(this, chart.drilldownType)}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis
+                                    interval="preserveStart"
+                                    dataKey={(entry: stats.DrilldownEntry) => entry.label}
+                                  />
+                                  <Tooltip
+                                    content={this.renderCustomTooltip.bind(
+                                      this,
+                                      this.formatDrilldownType(chart.drilldownType)
+                                    )}
+                                  />
+                                  <Bar
+                                    cursor="pointer"
+                                    dataKey={(entry: stats.DrilldownEntry) =>
+                                      +entry.baseValue / +(this.state.drilldownData?.totalInBase || 1)
+                                    }
+                                    fill="#8884d8"
+                                  />
+                                  <Bar
+                                    cursor="pointer"
+                                    dataKey={(entry: stats.DrilldownEntry) =>
+                                      +entry.selectionValue / +(this.state.drilldownData?.totalInSelection || 1)
+                                    }
+                                    fill="#82ca9d"
+                                  />
+                                </BarChart>
+                              </div>
+                            )
+                        )}
                     </div>
                   )}
                 </div>

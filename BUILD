@@ -1,4 +1,4 @@
-load("@bazel_gazelle//:def.bzl", "gazelle")
+load("@bazel_gazelle//:def.bzl", "DEFAULT_LANGUAGES", "gazelle", "gazelle_binary")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "nogo")
 load("@npm//@bazel/typescript:index.bzl", "ts_config")
 load("//rules/go:index.bzl", "go_sdk_tool")
@@ -42,6 +42,11 @@ nogo(
     ],
 )
 
+gazelle_binary(
+    name = "bb_gazelle_binary",
+    languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility:go_default_library"],
+)
+
 # Ignore the node_modules dir
 # gazelle:exclude node_modules
 # Ignore generated proto files
@@ -56,7 +61,10 @@ nogo(
 # gazelle:exclude **/node_modules/**
 # TODO(siggisim): remove once we support .css imports properly
 # gazelle:exclude website/**
-gazelle(name = "gazelle")
+gazelle(
+    name = "gazelle",
+    gazelle = ":bb_gazelle_binary",
+)
 
 # Example usage: "bazel run //:gofmt -- -w ."
 go_sdk_tool(

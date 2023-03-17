@@ -13,11 +13,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 const (
@@ -129,6 +131,9 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	if command := req.GetQuery().GetCommand(); command != "" {
 		q.AddWhereClause("i.command = ?", command)
 	}
+	if pattern := req.GetQuery().GetPattern(); pattern != "" {
+		q.AddWhereClause("i.pattern = ?", pattern)
+	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
 		q.AddWhereClause("i.commit_sha = ?", sha)
 	}
@@ -152,15 +157,15 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	statusClauses := query_builder.OrClauses{}
 	for _, status := range req.GetQuery().GetStatus() {
 		switch status {
-		case inpb.OverallStatus_SUCCESS:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 1)
-		case inpb.OverallStatus_FAILURE:
-			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inpb.Invocation_COMPLETE_INVOCATION_STATUS), 0)
-		case inpb.OverallStatus_IN_PROGRESS:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_PARTIAL_INVOCATION_STATUS))
-		case inpb.OverallStatus_DISCONNECTED:
-			statusClauses.AddOr(`invocation_status = ?`, int(inpb.Invocation_DISCONNECTED_INVOCATION_STATUS))
-		case inpb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+		case inspb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
+		case inspb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 0)
+		case inspb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS))
+		case inspb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS))
+		case inspb.OverallStatus_UNKNOWN_OVERALL_STATUS:
 			continue
 		default:
 			continue
@@ -181,6 +186,17 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 	}
 	if req.GetQuery().GetMaximumDuration().GetSeconds() != 0 {
 		q.AddWhereClause(`duration_usec <= ?`, req.GetQuery().GetMaximumDuration().GetSeconds()*1000*1000)
+	}
+
+	for _, f := range req.GetQuery().GetFilter() {
+		if f.GetMetric().Invocation == nil {
+			continue
+		}
+		str, args, err := filter.GenerateFilterStringAndArgs(f, "i.")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(str, args...)
 	}
 
 	// Always add permissions check.

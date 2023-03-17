@@ -25,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -189,7 +190,12 @@ func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
-	r, err := cachetools.ComputeDigest(reader, instanceName)
+
+	d, err := digest.Compute(reader, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, err
+	}
+	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS)
 	if err != nil {
 		return nil, err
 	}
@@ -258,8 +264,8 @@ func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	}
 }
 
-func uploadFiles(ctx context.Context, env environment.Env, instanceName string, filesToUpload []*fileToUpload) error {
-	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName)
+func uploadFiles(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, filesToUpload []*fileToUpload) error {
+	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
 	fc := env.GetFileCache()
 
 	for _, uploadableFile := range filesToUpload {
@@ -282,7 +288,7 @@ func uploadFiles(ctx context.Context, env environment.Env, instanceName string, 
 	return uploader.Wait()
 }
 
-func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName, rootDir string, actionResult *repb.ActionResult) (*TransferInfo, error) {
+func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, actionResult *repb.ActionResult) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 	treesToUpload := make([]string, 0)
@@ -371,7 +377,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	if _, err := uploadDirFn(rootDir, ""); err != nil {
 		return nil, err
 	}
-	if err := uploadFiles(ctx, env, instanceName, filesToUpload); err != nil {
+	if err := uploadFiles(ctx, env, instanceName, digestFunction, filesToUpload); err != nil {
 		return nil, err
 	}
 
@@ -398,7 +404,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	for fullFilePath, tree := range trees {
-		td, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, tree)
+		td, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, digestFunction, tree)
 		if err != nil {
 			return nil, err
 		}
@@ -601,8 +607,9 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	for dk, filePointers := range filesToFetch {
 		d := dk.ToDigest()
 
+		rn := digest.NewResourceName(dk.ToDigest(), ff.instanceName, rspb.CacheType_CAS)
 		// Write empty files directly (skip checking cache and downloading).
-		if d.GetHash() == digest.EmptySha256 {
+		if rn.IsEmpty() {
 			for _, fp := range filePointers {
 				if err := writeFile(fp, []byte("")); err != nil {
 					return err
@@ -701,7 +708,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if err != nil {
 		return err
 	}
-	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName)
+	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName, rspb.CacheType_CAS)
 	if ff.supportsCompression() {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
@@ -743,14 +750,14 @@ func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *di
 func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
-	rootDigest, err = digest.ComputeForMessage(tree.Root)
+	rootDigest, err = digest.ComputeForMessage(tree.Root, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, nil, err
 	}
 	dirMap[digest.NewKey(rootDigest)] = tree.Root
 
 	for _, child := range tree.Children {
-		d, err := digest.ComputeForMessage(child)
+		d, err := digest.ComputeForMessage(child, repb.DigestFunction_SHA256)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -773,7 +780,7 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 }
 
-func DownloadTree(ctx context.Context, env environment.Env, instanceName string, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
+func DownloadTree(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
@@ -829,7 +836,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
 				return err
 			}
-			if child.GetDigest().Hash == digest.EmptySha256 && child.GetDigest().SizeBytes == 0 {
+			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS)
+			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
 				continue
 			}
 			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]

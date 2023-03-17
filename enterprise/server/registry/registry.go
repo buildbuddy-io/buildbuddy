@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -34,6 +33,7 @@ import (
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 )
 
@@ -104,7 +104,7 @@ func (r *registry) getCachedManifest(ctx context.Context, d string) (*rgpb.Manif
 		return nil, status.UnknownErrorf("could not unmarshal manifest proto %s: %s", d, err)
 	}
 
-	cacheResources := digest.ResourceNames(resource.CacheType_CAS, registryInstanceName, mfProto.CasDependencies)
+	cacheResources := digest.ResourceNames(rspb.CacheType_CAS, registryInstanceName, mfProto.CasDependencies)
 	missing, err := r.cache.FindMissing(ctx, cacheResources)
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not check blob existence in CAS: %s", err)
@@ -192,7 +192,7 @@ func parseRangeHeader(val string) ([]byteRange, error) {
 	return parsedRanges, nil
 }
 
-func blobResourceName(h v1.Hash) *resource.ResourceName {
+func blobResourceName(h v1.Hash) *rspb.ResourceName {
 	d := &repb.Digest{
 		Hash: h.Hex,
 		// We don't actually know the blob size.
@@ -200,7 +200,7 @@ func blobResourceName(h v1.Hash) *resource.ResourceName {
 		// to be large. The server uses this to determine the buffer size.
 		SizeBytes: 1024 * 1024 * 4,
 	}
-	rn := digest.NewCASResourceName(d, registryInstanceName).ToProto()
+	rn := digest.NewResourceName(d, registryInstanceName, rspb.CacheType_CAS).ToProto()
 	return rn
 }
 

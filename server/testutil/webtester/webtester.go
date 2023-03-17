@@ -25,8 +25,9 @@ var (
 	//    end-of-test wait duration, and set --test_filter=NameOfTest to debug
 	//    a specific failing test.
 
-	debug          = flag.Bool("webdriver_debug", false, "Enable debug mode for webdriver tests.")
-	endOfTestDelay = flag.Duration("webdriver_end_of_test_delay", 3*time.Second, "How long to wait at the end of failed webdriver tests. Has no effect if --webdriver_debug is not set.")
+	debug               = flag.Bool("webdriver_debug", false, "Enable debug mode for webdriver tests.")
+	endOfTestDelay      = flag.Duration("webdriver_end_of_test_delay", 3*time.Second, "How long to wait at the end of failed webdriver tests. Has no effect if --webdriver_debug is not set.")
+	implicitWaitTimeout = flag.Duration("webdriver_implicit_wait_timeout", 1*time.Second, "Max time webtester should wait to find an element.")
 )
 
 // WebTester wraps selenium.WebDriver, failing the test instead of returning
@@ -76,7 +77,7 @@ func New(t *testing.T) *WebTester {
 	// never be located.
 	//
 	// See also https://stackoverflow.com/q/11001030
-	driver.SetImplicitWaitTimeout(1 * time.Second)
+	driver.SetImplicitWaitTimeout(*implicitWaitTimeout)
 	wt := &WebTester{t, driver}
 	t.Cleanup(func() {
 		err := wt.screenshot("END_OF_TEST")
@@ -197,6 +198,28 @@ func (el *Element) SendKeys(keys string) {
 	require.NoError(el.t, err)
 }
 
+// Find returns the child element matching the given CSS selector. Exactly one
+// element must be matched, otherwise the test fails.
+func (el *Element) Find(cssSelector string) *Element {
+	child, err := el.webElement.FindElement(selenium.ByCSSSelector, cssSelector)
+	require.NoError(el.t, err)
+	return &Element{t: el.t, webElement: child}
+}
+
+func (el *Element) FirstSelectedOption() *Element {
+	options, err := el.webElement.FindElements(selenium.ByCSSSelector, "option")
+	require.NoError(el.t, err)
+	for _, option := range options {
+		selected, err := option.IsSelected()
+		require.NoError(el.t, err)
+		if selected {
+			return &Element{t: el.t, webElement: option}
+		}
+	}
+	require.FailNow(el.t, "no options were selected")
+	return nil
+}
+
 // ===
 // Utility functions that don't directly correspond with WebElement APIs
 // ===
@@ -290,6 +313,17 @@ var (
 		}
 	}
 )
+
+// WithAPIKeySelection returns a setup page option that selects a given API key
+// from the dropdown.
+func WithAPIKeySelection(label string) SetupPageOption {
+	return func(wt *WebTester) {
+		picker := wt.Find(`.credential-picker`)
+		picker.SendKeys(label)
+		selectedOption := picker.FirstSelectedOption()
+		require.Equal(wt.t, label, selectedOption.Text())
+	}
+}
 
 // GetBazelBuildFlags uses the Web app to navigate to the setup page and get the
 // Bazel config flags recommended by BuildBuddy. Options can be passed to select

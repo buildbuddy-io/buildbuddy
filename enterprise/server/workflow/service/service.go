@@ -631,7 +631,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{})
+	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
 	}
@@ -644,7 +644,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if os == "" || os == platform.LinuxOperatingSystemName {
 		computeUnits = *workflowsLinuxComputeUnits
 		containerImage = ws.containerImage(workflowAction)
-		if *enableFirecracker {
+		if *enableFirecracker && !workflowAction.SelfHosted {
 			isolationType = string(platform.FirecrackerContainerType)
 			// When using Firecracker, write all outputs to the scratch disk, which
 			// has more space than the workspace disk and doesn't need to be extracted
@@ -669,6 +669,10 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	estimatedDisk := workflowAction.ResourceRequests.GetEstimatedDisk()
 	if estimatedDisk == "" {
 		estimatedDisk = fmt.Sprintf("%d", 20_000_000_000) // 20 GB
+	}
+	useSelfHostedExecutors := "false"
+	if workflowAction.SelfHosted {
+		useSelfHostedExecutors = "true"
 	}
 	cmd := &repb.Command{
 		EnvironmentVariables: envVars,
@@ -708,6 +712,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				// re-cloned each time.
 				{Name: "recycle-runner", Value: "true"},
 				{Name: "preserve-workspace", Value: "true"},
+				{Name: "use-self-hosted-executors", Value: useSelfHostedExecutors},
 				// Pass the workflow ID to the executor so that it can try to assign
 				// this task to a runner which has previously executed the workflow.
 				{Name: "workflow-id", Value: wf.WorkflowID},
@@ -722,7 +727,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	for _, path := range workflowAction.GitCleanExclude {
 		cmd.Arguments = append(cmd.Arguments, "--git_clean_exclude="+path)
 	}
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -731,7 +736,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		InputRootDigest: inputRootDigest,
 		DoNotCache:      true,
 	}
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)
 	return actionDigest, err
 }
 

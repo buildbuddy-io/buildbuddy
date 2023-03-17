@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -29,6 +28,7 @@ import (
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -52,7 +52,7 @@ type CacheProxy struct {
 	server                *grpc.Server
 	clients               map[string]*dcClient
 	heartbeatCallback     func(ctx context.Context, peer string)
-	hintedHandoffCallback func(ctx context.Context, peer string, r *resource.ResourceName)
+	hintedHandoffCallback func(ctx context.Context, peer string, r *rspb.ResourceName)
 	listenAddr            string
 	zone                  string
 }
@@ -118,7 +118,7 @@ func (c *CacheProxy) SetHeartbeatCallbackFunc(fn func(ctx context.Context, peer 
 	c.heartbeatCallback = fn
 }
 
-func (c *CacheProxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *resource.ResourceName)) {
+func (c *CacheProxy) SetHintedHandoffCallbackFunc(fn func(ctx context.Context, peer string, r *rspb.ResourceName)) {
 	c.hintedHandoffCallback = fn
 }
 
@@ -178,13 +178,13 @@ func (c *CacheProxy) readWriteContext(ctx context.Context) (context.Context, err
 // Distributed cache requests now contain resource.ResourceName structs, replacing usage of the dcpb.Isolation and
 // dcpb.Key structs. However during a rollout, the new resource fields may not be set, and may require fallback to the
 // older deprecated fields
-func getResource(r *resource.ResourceName, isolation *dcpb.Isolation, digestKey *dcpb.Key) *resource.ResourceName {
+func getResource(r *rspb.ResourceName, isolation *dcpb.Isolation, digestKey *dcpb.Key) *rspb.ResourceName {
 	if r != nil {
 		return r
 	}
 
 	d := digestFromKey(digestKey)
-	return &resource.ResourceName{
+	return &rspb.ResourceName{
 		Digest:       d,
 		CacheType:    isolation.GetCacheType(),
 		InstanceName: isolation.GetRemoteInstanceName(),
@@ -192,17 +192,17 @@ func getResource(r *resource.ResourceName, isolation *dcpb.Isolation, digestKey 
 	}
 }
 
-func getResources(resources []*resource.ResourceName, isolation *dcpb.Isolation, digestKeys []*dcpb.Key) []*resource.ResourceName {
+func getResources(resources []*rspb.ResourceName, isolation *dcpb.Isolation, digestKeys []*dcpb.Key) []*rspb.ResourceName {
 	if resources != nil {
 		return resources
 	}
 
 	instanceName := isolation.GetRemoteInstanceName()
 	cacheType := isolation.GetCacheType()
-	rns := make([]*resource.ResourceName, 0)
+	rns := make([]*rspb.ResourceName, 0)
 	for _, k := range digestKeys {
 		d := digestFromKey(k)
-		rn := digest.NewCacheResourceName(d, instanceName, cacheType).ToProto()
+		rn := digest.NewResourceName(d, instanceName, cacheType).ToProto()
 		rns = append(rns, rn)
 	}
 
@@ -246,7 +246,7 @@ func (c *CacheProxy) Metadata(ctx context.Context, req *dcpb.MetadataRequest) (*
 }
 
 // ResourceIsolationString returns a compact representation of a resource's isolation that is suitable for logging.
-func ResourceIsolationString(r *resource.ResourceName) string {
+func ResourceIsolationString(r *rspb.ResourceName) string {
 	rep := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()), r.GetDigest().GetHash())
 	if !strings.HasSuffix(rep, "/") {
 		rep += "/"
@@ -280,7 +280,7 @@ func (c *CacheProxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*
 	rsp := &dcpb.GetMultiResponse{}
 	for d, buf := range found {
 		if len(buf) == 0 {
-			rn := &resource.ResourceName{
+			rn := &rspb.ResourceName{
 				Digest:       d,
 				InstanceName: req.GetIsolation().GetRemoteInstanceName(),
 				CacheType:    req.GetIsolation().GetCacheType(),
@@ -338,7 +338,7 @@ func (c *CacheProxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_Re
 	return err
 }
 
-func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer string, r *resource.ResourceName) {
+func (c *CacheProxy) callHintedHandoffCB(ctx context.Context, peer string, r *rspb.ResourceName) {
 	if c.hintedHandoffCallback != nil {
 		c.hintedHandoffCallback(ctx, peer, r)
 	}
@@ -405,19 +405,19 @@ func (c *CacheProxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) 
 	return &dcpb.HeartbeatResponse{}, nil
 }
 
-func (c *CacheProxy) RemoteContains(ctx context.Context, peer string, r *resource.ResourceName) (bool, error) {
+func (c *CacheProxy) RemoteContains(ctx context.Context, peer string, r *rspb.ResourceName) (bool, error) {
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
 	}
-	missing, err := c.RemoteFindMissing(ctx, peer, isolation, []*resource.ResourceName{r})
+	missing, err := c.RemoteFindMissing(ctx, peer, isolation, []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
 	return len(missing) == 0, nil
 }
 
-func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, r *resource.ResourceName) (*interfaces.CacheMetadata, error) {
+func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
@@ -444,7 +444,7 @@ func (c *CacheProxy) RemoteMetadata(ctx context.Context, peer string, r *resourc
 	}, nil
 }
 
-func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*resource.ResourceName) ([]*repb.Digest, error) {
+func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
 	req := &dcpb.FindMissingRequest{
 		Isolation: isolation,
 	}
@@ -471,7 +471,7 @@ func (c *CacheProxy) RemoteFindMissing(ctx context.Context, peer string, isolati
 	return missing, nil
 }
 
-func (c *CacheProxy) RemoteDelete(ctx context.Context, peer string, r *resource.ResourceName) error {
+func (c *CacheProxy) RemoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
@@ -493,7 +493,7 @@ func (c *CacheProxy) RemoteDelete(ctx context.Context, peer string, r *resource.
 	return nil
 }
 
-func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*resource.ResourceName) (map[*repb.Digest][]byte, error) {
+func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation *dcpb.Isolation, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	req := &dcpb.GetMultiRequest{
 		Isolation: isolation,
 	}
@@ -522,7 +522,7 @@ func (c *CacheProxy) RemoteGetMulti(ctx context.Context, peer string, isolation 
 	return resultMap, nil
 }
 
-func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *resource.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	isolation := &dcpb.Isolation{
 		CacheType:          r.GetCacheType(),
 		RemoteInstanceName: r.GetInstanceName(),
@@ -583,7 +583,7 @@ func (c *CacheProxy) RemoteReader(ctx context.Context, peer string, r *resource.
 type streamWriteCloser struct {
 	cancelFunc    context.CancelFunc
 	stream        dcpb.DistributedCache_WriteClient
-	r             *resource.ResourceName
+	r             *rspb.ResourceName
 	key           *dcpb.Key
 	isolation     *dcpb.Isolation
 	handoffPeer   string
@@ -646,14 +646,14 @@ func newBufferedStreadWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCl
 	}
 }
 
-func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *resource.ResourceName) (interfaces.CommittedWriteCloser, error) {
+func (c *CacheProxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	// Stopping a write mid-stream is difficult because Write streams are
 	// unidirectional. The server can close the stream early, but this does
 	// not necessarily save the client any work. So, to attempt to reduce
 	// duplicate writes, we call Contains before writing a new digest, and
 	// if it already exists, we'll return a devnull writecloser so no bytes
 	// are transmitted over the network.
-	if r.GetCacheType() == resource.CacheType_CAS {
+	if r.GetCacheType() == rspb.CacheType_CAS {
 		if alreadyExists, err := c.RemoteContains(ctx, peer, r); err == nil && alreadyExists {
 			log.Debugf("Skipping duplicate CAS write of %q", r.GetDigest().GetHash())
 			return ioutil.DiscardWriteCloser(), nil
