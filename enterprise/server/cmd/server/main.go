@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
@@ -258,6 +259,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := secrets.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := suggestion.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

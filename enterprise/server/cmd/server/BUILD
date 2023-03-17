@@ -41,6 +41,7 @@ go_library(
         "//enterprise/server/secrets",
         "//enterprise/server/selfauth",
         "//enterprise/server/splash",
+        "//enterprise/server/suggestion",
         "//enterprise/server/tasksize",
         "//enterprise/server/telemetry",
         "//enterprise/server/usage",
