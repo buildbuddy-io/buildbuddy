@@ -17,7 +17,7 @@ Today we released [version 1.3.2][version-1.3] of rules_xcodeproj!
 This is a pretty exciting release, as it adds support for multiple Xcode
 configurations (e.g. Debug and Release). Since early in rules_xcodeproj’s
 development, being able to have more than the default Debug configuration has
-been highly requested. We would have implemented support much sooner, bu
+been highly requested. We would have implemented support much sooner, but
 because rules_xcodeproj accounts for every file path and compiler/linker flag,
 in order to have rock solid indexing and debugging support, it wasn’t an easy
 task.
