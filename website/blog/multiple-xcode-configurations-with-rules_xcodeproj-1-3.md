@@ -1,7 +1,8 @@
 ---
 slug: multiple-xcode-configurations-with-rules_xcodeproj-1-3
 title: "Multiple Xcode Configurations with rules_xcodeproj 1.3"
-description:
+description: The one where we added a much requested, but surprisingly difficult
+  to implement, feature.
 author: Brentley Jones
 author_title: Developer Evangelist @ BuildBuddy
 date: 2023-03-17:12:00:00
