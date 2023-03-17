@@ -45,6 +45,12 @@ const CHART_MARGINS = {
   left: 89,
 };
 
+const ZOOM_BUTTON_ATTRIBUTES = {
+  width: 24,
+  height: 24,
+  sideMargin: 12,
+};
+
 // This is a magic number that states there will only be one axis label for
 // every N pixels of rendered axis length (currently 100).
 const TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
@@ -361,6 +367,31 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     );
   }
 
+  maybeRenderZoomButton(positioningData: SelectionData): JSX.Element | null {
+    const selection = this.computeHeatmapSelection();
+    if (selection == null) {
+      return null;
+    }
+
+    const selectionRightEdge = positioningData.x + positioningData.width;
+    let zoomLeftEdge = selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.sideMargin;
+    let zoomTopEdge = positioningData.y;
+
+    if (selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.width + 2 * ZOOM_BUTTON_ATTRIBUTES.sideMargin > this.props.width) {
+      zoomLeftEdge = positioningData.x - ZOOM_BUTTON_ATTRIBUTES.width - ZOOM_BUTTON_ATTRIBUTES.sideMargin;
+    }
+
+    return (
+      <rect
+        x={zoomLeftEdge}
+        y={zoomTopEdge}
+        width={ZOOM_BUTTON_ATTRIBUTES.width}
+        height={ZOOM_BUTTON_ATTRIBUTES.height}
+        fillOpacity="0"
+        stroke="#0f0"></rect>
+    );
+  }
+
   render() {
     const width = this.props.width - CHART_MARGINS.left - CHART_MARGINS.right;
     const height = this.props.height - CHART_MARGINS.top - CHART_MARGINS.bottom;
@@ -417,13 +448,16 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
               {this.renderXAxis(width)}
               {this.renderYAxis(height)}
               {selection && (
-                <rect
-                  x={selection.x}
-                  y={selection.y}
-                  width={selection.width}
-                  height={selection.height}
-                  fillOpacity="0"
-                  stroke="#f00"></rect>
+                <>
+                  <rect
+                    x={selection.x}
+                    y={selection.y}
+                    width={selection.width}
+                    height={selection.height}
+                    fillOpacity="0"
+                    stroke="#f00"></rect>
+                  {this.maybeRenderZoomButton(selection)}
+                </>
               )}
             </svg>
           </Tooltip>
