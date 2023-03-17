@@ -268,6 +268,9 @@ func main() {
 	executionService := execution_service.NewExecutionService(realEnv)
 	realEnv.SetExecutionService(executionService)
 
+	executionSearchService := execution_search_service.NewExecutionSearchService(realEnv, realEnv.GetDBHandle(), realEnv.GetOLAPDBHandle())
+	realEnv.SetExecutionSearchService(executionSearchService)
+
 	telemetryServer := telserver.NewTelemetryServer(realEnv, realEnv.GetDBHandle())
 	telemetryServer.StartOrDieIfEnabled()
 

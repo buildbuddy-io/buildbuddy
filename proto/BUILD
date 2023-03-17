@@ -585,6 +585,7 @@ go_proto_library(
         ":context_go_proto",
         ":invocation_status_go_proto",
         ":remote_execution_go_proto",
+        ":resource_go_proto",
         ":scheduler_go_proto",
         ":stat_filter_go_proto",
         "@go_googleapis//google/rpc:status_go_proto",
