@@ -19,11 +19,16 @@ import (
 )
 
 var apiKey = flag.String("openai.api_key", "", "OpenAI API key")
-var model = flag.String("openai.model", "gpt-3.5-turbo", "OpenAI model name to use, if not set 'gpt-3.5-turbo' is used.")
+var model = flag.String("openai.model", "gpt-3.5-turbo", "OpenAI model name to use. Find them here: https://platform.openai.com/docs/models")
 
 const (
+	// The minimum number of build log lines to fetch. Set this high enough to make sure we get the error logs.
 	minLines = 1000
+	// GPT 3.5 is limited to 4,096 tokens and each token is roughly 4 english characters.
+	// We limit our log inputs to roughly half that to avoid going over any input limits.
 	maxChars = 8000
+	// The endpoint to hit for completions calls: https://platform.openai.com/docs/guides/chat
+	chatCompletionsEndpoint = "https://api.openai.com/v1/chat/completions"
 )
 
 type suggestionService struct {
@@ -93,13 +98,12 @@ func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSugg
 
 // TODO(siggisim): Pull this into its own backend if we want to use this in other places.
 func getCompletions(data *completionRequest) (*completionResponse, error) {
-	url := "https://api.openai.com/v1/chat/completions"
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
 	}
 
-	postRequest, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	postRequest, err := http.NewRequest("POST", chatCompletionsEndpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +124,7 @@ func getCompletions(data *completionRequest) (*completionResponse, error) {
 	}
 
 	if postResp.StatusCode != http.StatusOK {
-		log.Printf("%+v %+v", postResp.StatusCode, string(body))
+		log.Debugf("%+v %+v", postResp.StatusCode, string(body))
 		return nil, status.UnavailableError("Unable to contact suggestion provider.") // todo
 	}
 
