@@ -640,8 +640,8 @@
   height: 16px;
 }
 
-.invocation-ask-button {
-  background-color: #2196f3 !important;
+.filled-button.invocation-ask-button {
+  background-color: #2196f3;
 }
 
 .invocation-share-dialog .row {

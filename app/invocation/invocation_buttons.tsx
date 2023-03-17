@@ -32,10 +32,9 @@ export default class InvocationButtons extends React.Component<InvocationButtons
     return repoUrl.startsWith("https://github.com/");
   }
 
-  private async onAskClicked() {
+  private onAskClicked() {
     this.setState({ askLoading: true });
-    await this.props.model.fetchSuggestions();
-    this.setState({ askLoading: false });
+    return this.props.model.fetchSuggestions().finally(() => this.setState({ askLoading: false }));
   }
 
   render() {

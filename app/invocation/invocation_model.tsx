@@ -26,7 +26,7 @@ export default class InvocationModel {
   cacheStats: cache.CacheStats[] = [];
   scoreCard: cache.IScoreCard;
   botSuggestions: string[] = [];
-  onChange: Subject<string> = new Subject();
+  onChange: Subject<void> = new Subject();
 
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
@@ -632,12 +632,12 @@ export default class InvocationModel {
       .getSuggestion(req)
       .then((res) => {
         this.botSuggestions = res.suggestion;
-        this.onChange.next("");
+        this.onChange.next();
       })
       .catch((err) => {
         console.error(err);
         this.botSuggestions = ["Error getting a fix suggestion :("];
-        this.onChange.next("");
+        this.onChange.next();
       });
   }
 }
