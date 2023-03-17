@@ -4,9 +4,75 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Mon, 06 Feb 2023 09:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Fri, 17 Mar 2023 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
+        <item>
+            <title><![CDATA[Multiple Xcode Configurations with rules_xcodeproj 1.3]]></title>
+            <link>https://www.buildbuddy.io/blog/multiple-xcode-configurations-with-rules_xcodeproj-1-3</link>
+            <guid>multiple-xcode-configurations-with-rules_xcodeproj-1-3</guid>
+            <pubDate>Fri, 17 Mar 2023 12:00:00 GMT</pubDate>
+            <description><![CDATA[The one where we added a much requested, but surprisingly difficult to implement, feature.]]></description>
+            <content:encoded><![CDATA[<p>Today we released <a href="https://github.com/buildbuddy-io/rules_xcodeproj/releases/tag/1.3.2">version 1.3.2</a> of rules_xcodeproj!</p><p>This is a pretty exciting release, as it adds support for multiple Xcode
+configurations (e.g. Debug and Release). Since early in rules_xcodeproj’s
+development, being able to have more than the default Debug configuration has
+been highly requested. We would have implemented support much sooner, but
+because rules_xcodeproj accounts for every file path and compiler/linker flag,
+in order to have rock solid indexing and debugging support, it wasn’t an easy
+task.</p><h1>The challenge</h1><p>rules_xcodeproj uses a Bazel aspect to collect all of the information about your
+build graph. It also uses Bazel split transitions in order to apply variations
+of certain flags in order to support simulator and device builds in a single
+project. It seems that it should have been pretty easy to extend this method to
+apply to Xcode configurations as well, right? There were two problems to being
+able to do that nicely, and we only really solved one of them at this time.</p><p>The common way that Bazel developers express various configurations is by
+defining various configs in <code>.bazelrc</code> files, and then using the <code>--config</code>
+stanza to select them. So, that brings us to our first problem: Bazel
+transitions can’t transition on <code>--config</code>. Because of our nested invocation
+architecture, we are able to apply a single <code>--config</code> to the inner invocation,
+and we’ve had support for this for a while. Being able to transition on
+<code>--config</code> would have allowed us to support multiple Xcode configurations a lot
+sooner. Of note, in the solution we’ve implemented, you still can’t use
+<code>--config</code>, and need to list out all the flags you want for each configuration.
+This is because of this limitation of transitions.</p><p>For now we’ve decided to continue to use transitions, and wanted to extend our
+approach to cover multiple configurations as well. That brought us to our second
+problem: transitions are specified as part of a rule definition, and Bazel
+macros can’t create anonymous rule. The easy approach to this would have been to
+require users to define transitions in <code>.bzl</code> files (with the help of some
+macros), and then reference them in their <code>xcodeproj</code> targets (which are
+actually macros, not rules). This would go against one of our driving principles
+of only needing a single <code>xcodeproj</code> target for all but the most complicated
+setups, as we believe Xcode configurations are a fundamental aspect of projects
+that everyone should be able to easily specify.</p><h1>The solution</h1><p>The solution we implemented allows you to specify a dictionary of transition
+settings in the <code>xcodeproj.xcode_configurations</code> attribute. Given the
+previously mentioned limitations, you may be wondering how we were able to
+accomplish this. Earlier I mentioned our nested invocation architecture, which
+calls <code>bazel run</code> in <code>runner.sh</code> (the script that is invoked when you call
+<code>bazel run //:xcodeproj</code>). We leverage this architecture to generate a Bazel
+package in an external repository. This package contains a <code>BUILD</code> file with a
+target using the actual <code>xcodeproj</code> rule, along with a <code>.bzl</code> file that defines
+a custom transition containing information from
+<code>xcodeproj.xcode_configurations</code>. And just like how a solution for a previous
+feature was built upon to enable another feature (i.e. nested invocations which
+enabled isolated build configurations, was built on for generated packages to
+enable multiple Xcode configurations), we should be able to build on this
+solution the same way (e.g. to enable automatic target discovery).</p><p>Here is an example of how you could specify Debug and Release configurations:</p><pre><code class="language-python">xcodeproj(
+    ...
+    xcode_configurations = {
+        &quot;Debug&quot;: {
+            &quot;//command_line_option:compilation_mode&quot;: &quot;dbg&quot;,
+        },
+        &quot;Release&quot;: {
+            &quot;//command_line_option:compilation_mode&quot;: &quot;opt&quot;,
+        },
+    },
+    ...
+)
+</code></pre><p>We think the end result is a good starting point, but can be refined futher in
+future releases. Please give it a try, and if you run into any problems
+<a href="https://github.com/buildbuddy-io/rules_xcodeproj/issues/new/choose">file an issue</a>! You can also join us in the <code>#rules_xcodeproj</code>
+channel in the <a href="https://slack.bazel.build/">Bazel Slack workspace</a>, and you can email us at
+<a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> with any questions, comments, or thoughts.</p>]]></content:encoded>
+        </item>
         <item>
             <title><![CDATA[Introducing rules_xcodeproj 1.0]]></title>
             <link>https://www.buildbuddy.io/blog/introducing-rules_xcodeproj-1-0</link>
