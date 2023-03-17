@@ -157,6 +157,7 @@ func serveIndexTemplate(env environment.Env, tpl *template.Template, version, js
 		UserOwnedKeysEnabled:          env.GetUserDB() != nil && env.GetUserDB().GetUserOwnedKeysEnabled(),
 		TrendsHeatmapEnabled:          iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:          *patternFilterEnabled,
+		BotSuggestionsEnabled:         env.GetSuggestionService() != nil,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

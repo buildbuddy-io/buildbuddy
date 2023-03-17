@@ -62,6 +62,7 @@ var (
 		"GetTrend",
 		"GetStatHeatmap",
 		"GetStatDrilldown",
+		"GetSuggestion",
 		// Per-invocation actions
 		"UpdateInvocation",
 		"DeleteInvocation",

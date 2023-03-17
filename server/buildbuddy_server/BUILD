@@ -20,6 +20,7 @@ go_library(
         "//proto:scheduler_go_proto",
         "//proto:secrets_go_proto",
         "//proto:stats_go_proto",
+        "//proto:suggestion_go_proto",
         "//proto:target_go_proto",
         "//proto:usage_go_proto",
         "//proto:user_go_proto",

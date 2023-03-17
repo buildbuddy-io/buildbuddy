@@ -149,4 +149,6 @@ type Env interface {
 	SetSecretService(s interfaces.SecretService)
 	GetExecutionCollector() interfaces.ExecutionCollector
 	SetExecutionCollector(c interfaces.ExecutionCollector)
+	GetSuggestionService() interfaces.SuggestionService
+	SetSuggestionService(s interfaces.SuggestionService)
 }

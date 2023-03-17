@@ -392,6 +392,7 @@ proto_library(
         ":scheduler_proto",
         ":secrets_proto",
         ":stats_proto",
+        ":suggestion_proto",
         ":target_proto",
         ":usage_proto",
         ":user_proto",
@@ -486,6 +487,14 @@ proto_library(
         ":trace_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@go_googleapis//google/rpc:status_proto",
+    ],
+)
+
+proto_library(
+    name = "suggestion_proto",
+    srcs = ["suggestion.proto"],
+    deps = [
+        ":context_proto",
     ],
 )
 
@@ -840,6 +849,7 @@ go_proto_library(
         ":scheduler_go_proto",
         ":secrets_go_proto",
         ":stats_go_proto",
+        ":suggestion_go_proto",
         ":target_go_proto",
         ":usage_go_proto",
         ":user_go_proto",
@@ -1002,6 +1012,16 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "suggestion_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/suggestion",
+    proto = ":suggestion_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "trace_go_proto",
     compilers = ["@io_bazel_rules_go//proto:go_grpc"],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/trace",
@@ -1091,6 +1111,11 @@ ts_proto_library(
 ts_proto_library(
     name = "scheduler_ts_proto",
     proto = ":scheduler_proto",
+)
+
+ts_proto_library(
+    name = "suggestion_ts_proto",
+    proto = ":suggestion_proto",
 )
 
 ts_proto_library(
