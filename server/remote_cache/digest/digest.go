@@ -96,12 +96,13 @@ type ResourceName struct {
 }
 
 func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
+	rn := proto.Clone(in).(*rspb.ResourceName)
 	// TODO(tylerw): remove once digest function is explicit everywhere.
-	if in.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
-		in.DigestFunction = repb.DigestFunction_SHA256
+	if rn.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
+		rn.DigestFunction = repb.DigestFunction_SHA256
 	}
 	return &ResourceName{
-		rn: in,
+		rn: rn,
 	}
 }
 
