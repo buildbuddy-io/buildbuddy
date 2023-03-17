@@ -46,8 +46,8 @@ const CHART_MARGINS = {
 };
 
 const ZOOM_BUTTON_ATTRIBUTES = {
-  width: 24,
-  height: 24,
+  width: 26,
+  height: 26,
   sideMargin: 12,
 };
 
@@ -137,12 +137,27 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     };
   }
 
+  overlapsWithZoomButton(c: MouseCoords): boolean {
+    if (!this.svgRef.current) {
+      return false;
+    }
+    const el = this.svgRef.current.querySelector(".heatmap-zoom");
+    if (!el) {
+      return false;
+    }
+    const r = el.getBoundingClientRect();
+    return c.clientX >= r.x && c.clientX <= r.x + r.width && c.clientY >= r.y && c.clientY <= r.y + r.height;
+  }
+
   renderTooltip(c: MouseCoords) {
     if (this.pendingClick) {
       return null;
     }
     const data = this.computeBucket(c.clientX, c.clientY);
     if (!data) {
+      return null;
+    }
+    if (this.overlapsWithZoomButton(c)) {
       return null;
     }
     const metricBucket =
@@ -162,6 +177,10 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 
   onMouseDown(e: React.MouseEvent<SVGSVGElement, MouseEvent>) {
+    if (e.target instanceof SVGElement && e.target.closest(".heatmap-zoom")) {
+      this.maybeFireZoomCallback();
+      return;
+    }
     const data = this.computeBucket(e.clientX, e.clientY);
     if (!data) {
       return;
@@ -368,8 +387,11 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 
   maybeRenderZoomButton(positioningData: SelectionData): JSX.Element | null {
+    if (!this.props.zoomCallback || this.pendingClick) {
+      return null;
+    }
     const selection = this.computeHeatmapSelection();
-    if (selection == null) {
+    if (selection == null || selection.eventsSelected < 2) {
       return null;
     }
 
@@ -382,13 +404,16 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     }
 
     return (
-      <rect
-        x={zoomLeftEdge}
-        y={zoomTopEdge}
-        width={ZOOM_BUTTON_ATTRIBUTES.width}
-        height={ZOOM_BUTTON_ATTRIBUTES.height}
-        fillOpacity="0"
-        stroke="#0f0"></rect>
+      <g className="heatmap-zoom" transform={`translate(${zoomLeftEdge},${zoomTopEdge})`}>
+        <title>Zoom in on this selection</title>
+        <rect x="0" y="0" width="26" height="26" rx="4"></rect>
+        <g transform="translate(1.5,1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8" fillOpacity="0"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          <line x1="11" y1="8" x2="11" y2="14"></line>
+          <line x1="8" y1="11" x2="14" y2="11"></line>
+        </g>
+      </g>
     );
   }
 
