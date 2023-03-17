@@ -34,6 +34,7 @@ var (
 	readFromOLAPDBEnabled        = flag.Bool("app.enable_read_from_olap_db", false, "If enabled, read from OLAP DB")
 	executionTrendsEnabled       = flag.Bool("app.enable_execution_trends", false, "If enabled, fill execution trend stats in GetTrendResponse")
 	invocationPercentilesEnabled = flag.Bool("app.enable_invocation_stat_percentiles", false, "If enabled, provide percentile breakdowns for invocation stats in GetTrendResponse")
+	useTimezoneInHeatmapQueries  = flag.Bool("app.use_timezone_in_heatmap_queries", false, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
 )
 
 type InvocationStatService struct {
@@ -63,6 +64,7 @@ func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggTy
 	case inpb.AggType_COMMIT_SHA_AGGREGATION_TYPE:
 		return "commit_sha"
 	case inpb.AggType_DATE_AGGREGATION_TYPE:
+		// TODO(jdhollen): Nobody is using this and we should probably just remove it.
 		return i.dbh.DateFromUsecTimestamp("updated_at_usec", reqCtx.GetTimezoneOffsetMinutes())
 	case inpb.AggType_BRANCH_AGGREGATION_TYPE:
 		return "branch_name"
@@ -483,7 +485,7 @@ func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table stri
 
 const ONE_WEEK = 7 * 24 * time.Hour
 
-func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration) ([]int64, string, error) {
+func getTimestampBuckets(q *stpb.TrendQuery, requestContext *ctxpb.RequestContext) ([]int64, string, error) {
 	lowTime := q.GetUpdatedAfter()
 	highTime := q.GetUpdatedBefore()
 	if lowTime != nil && !lowTime.IsValid() {
@@ -493,8 +495,6 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration) ([]in
 		return nil, "", status.InvalidArgumentError(fmt.Sprintf("Invalid high timestamp: %v", highTime))
 	}
 
-	offsetSec := int64(timezoneOffset.Seconds())
-
 	startSec := time.Now().Unix() - int64(ONE_WEEK.Seconds())
 	if lowTime != nil {
 		startSec = lowTime.GetSeconds()
@@ -502,30 +502,36 @@ func getTimestampBuckets(q *stpb.TrendQuery, timezoneOffset time.Duration) ([]in
 
 	endSec := time.Now().Unix()
 	if highTime != nil {
-		// Drop a second from the end date (which is normally a round hour) so that
-		// we don't include the next day as a bucket.  This value isn't actually
-		// used for filtering, so this hack is fine, provided that nobody starts
-		// using this code with (midnight + 1s).  That wouldn't make much sense,
-		// since the feature only shows day-based buckets.
-		endSec = highTime.GetSeconds() - 1
+		endSec = highTime.GetSeconds()
 	}
 
-	// TODO(jdhollen): Bucket at true midnight in user timezone instead of fudging
-	// it, this gets hosed around daylight savings transitions.  This matters way
-	// less for hourly buckets (where we can easily let the client format).
-	s := time.Unix(startSec, 0).UTC().Add(-timezoneOffset)
-	localStart := time.Date(s.Year(), s.Month(), s.Day(), 0, 0, 0, 0, s.Location())
-	currentDateBracket := localStart.Add(timezoneOffset)
+	timezoneOffset := time.Duration(requestContext.GetTimezoneOffsetMinutes()) * time.Minute
+	timezone := requestContext.GetTimezone()
 
-	currentString := currentDateBracket.Format("2006-01-02")
-	endString := time.Unix(endSec-offsetSec, 0).UTC().AddDate(0, 0, 2).Format("2006-01-02")
+	loc := time.FixedZone("Fixed Offset", -int(timezoneOffset.Seconds()))
+	// Find the user's timezone. time.LoadLocation defaults the empty string to
+	// UTC, so we need a special case to ignore it.
+	if *useTimezoneInHeatmapQueries && timezone != "" {
+		// If you don't like this variable name, message tylerwilliams
+		if locedAndLoaded, err := time.LoadLocation(timezone); err == nil {
+			loc = locedAndLoaded
+		}
+	}
+
+	start := time.Unix(startSec, 0).In(loc)
+	end := time.Unix(endSec, 0).In(loc)
+
+	// Each subsequent bucket will start at midnight on the following day.
+	midnightOnStartDate := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
+	current := midnightOnStartDate.AddDate(0, 0, 1)
 
 	var timestampBuckets []int64
-	for currentString != endString {
-		timestampBuckets = append(timestampBuckets, currentDateBracket.UnixMicro())
-		currentDateBracket = currentDateBracket.AddDate(0, 0, 1)
-		currentString = currentDateBracket.Format("2006-01-02")
+	timestampBuckets = append(timestampBuckets, start.UnixMicro())
+	for current.Before(end) {
+		timestampBuckets = append(timestampBuckets, current.UnixMicro())
+		current = current.AddDate(0, 0, 1)
 	}
+	timestampBuckets = append(timestampBuckets, end.UnixMicro())
 
 	numDateBuckets := len(timestampBuckets) - 1
 
@@ -546,8 +552,8 @@ type HeatmapQueryInputs = struct {
 	MetricArrayStr         string
 }
 
-func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, timezoneOffsetMinutes int32) (*HeatmapQueryInputs, error) {
-	timestampBuckets, timestampArrayStr, err := getTimestampBuckets(q, time.Duration(timezoneOffsetMinutes)*time.Minute)
+func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, requestContext *ctxpb.RequestContext) (*HeatmapQueryInputs, error) {
+	timestampBuckets, timestampArrayStr, err := getTimestampBuckets(q, requestContext)
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +602,7 @@ type QueryAndBuckets = struct {
 // event that no events are found at all, it will instead return (nil, nil) to
 // indicate a no-error state with no results--in this case we should return an
 // empty response.
-func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest, timezoneOffsetMinutes int32) (*QueryAndBuckets, error) {
+func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*QueryAndBuckets, error) {
 	table := getTableForMetric(req.GetMetric())
 	metric, err := filter.MetricToDbField(req.GetMetric(), "")
 	if err != nil {
@@ -607,7 +613,7 @@ func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, r
 		return nil, err
 	}
 
-	qi, err := i.generateQueryInputs(ctx, table, metric, req.GetQuery(), whereClauseStr, whereClauseArgs, timezoneOffsetMinutes)
+	qi, err := i.generateQueryInputs(ctx, table, metric, req.GetQuery(), whereClauseStr, whereClauseArgs, req.GetRequestContext())
 	if err != nil {
 		return nil, err
 	}
@@ -648,7 +654,7 @@ func (i *InvocationStatService) GetStatHeatmap(ctx context.Context, req *stpb.Ge
 		return nil, err
 	}
 
-	qAndBuckets, err := i.getHeatmapQueryAndBuckets(ctx, req, req.GetRequestContext().GetTimezoneOffsetMinutes())
+	qAndBuckets, err := i.getHeatmapQueryAndBuckets(ctx, req)
 	if err != nil {
 		return nil, err
 	}
