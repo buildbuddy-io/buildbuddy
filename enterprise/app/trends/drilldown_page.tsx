@@ -271,6 +271,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     // Build request...
     const heatmapRequest = stats.GetStatHeatmapRequest.create({});
     heatmapRequest.metric = this.selectedMetric.metric;
+    const isExecution = isExecutionMetric(heatmapRequest.metric);
 
     heatmapRequest.query = new stats.TrendQuery({
       host: filterParams.host,
@@ -283,8 +284,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       role: filterParams.role,
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
-      minimumDuration: filterParams.minimumDuration,
-      maximumDuration: filterParams.maximumDuration,
+      minimumDuration: isExecution ? undefined : filterParams.minimumDuration,
+      maximumDuration: isExecution ? undefined : filterParams.maximumDuration,
       status: filterParams.status,
     });
     this.addZoomFiltersToQuery(heatmapRequest.query);
