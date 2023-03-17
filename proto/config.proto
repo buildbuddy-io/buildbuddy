@@ -83,4 +83,7 @@ message FrontendConfig {
 
   // Whether or not bot suggestions are enabled.
   bool bot_suggestions_enabled = 27;
+
+  // Enable searching for executions in the OLAP DB.
+  bool execution_search_enabled = 28;
 }
