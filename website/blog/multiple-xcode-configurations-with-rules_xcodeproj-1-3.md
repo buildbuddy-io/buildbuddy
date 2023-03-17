@@ -74,6 +74,23 @@ enabled isolated build configurations, was built on for generated packages to
 enable multiple Xcode configurations), we should be able to build on this
 solution the same way (e.g. to enable automatic target discovery).
 
+Here is an example of how you could specify Debug and Release configurations:
+
+```python
+xcodeproj(
+    ...
+    xcode_configurations = {
+        "Debug": {
+            "//command_line_option:compilation_mode": "dbg",
+        },
+        "Release": {
+            "//command_line_option:compilation_mode": "opt",
+        },
+    },
+    ...
+)
+```
+
 We think the end result is a good starting point, but can be refined futher in
 future releases. Please give it a try, and if you run into any problems
 [file an issue][file-an-issue]! You can also join us in the `#rules_xcodeproj`
