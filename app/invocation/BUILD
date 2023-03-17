@@ -15,6 +15,7 @@ ts_library(
         "//app/invocation:child_invocations",
         "//app/invocation:invocation_action_card",
         "//app/invocation:invocation_artifacts_card",
+        "//app/invocation:invocation_bot_card",
         "//app/invocation:invocation_build_logs_card",
         "//app/invocation:invocation_cache_card",
         "//app/invocation:invocation_details_card",
@@ -178,6 +179,7 @@ ts_library(
     srcs = ["invocation_buttons.tsx"],
     deps = [
         "//app/auth:auth_service",
+        "//app/components/button",
         "//app/invocation:invocation_cancel_button",
         "//app/invocation:invocation_compare_button",
         "//app/invocation:invocation_menu",
@@ -185,7 +187,9 @@ ts_library(
         "//app/invocation:invocation_share_button",
         "//app/invocation:workflow_rerun_button",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
+        "@npm//tslib",
     ],
 )
 
@@ -387,6 +391,7 @@ ts_library(
     deps = [
         "//app/favicon",
         "//app/format",
+        "//app/invocation:invocation_logs_model",
         "//app/util:proto",
         "//proto:api_key_ts_proto",
         "//proto:build_event_stream_ts_proto",
@@ -395,11 +400,13 @@ ts_library(
         "//proto:group_ts_proto",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
+        "//proto:suggestion_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//moment",
         "@npm//react",
+        "@npm//rxjs",
         "@npm//tslib",
     ],
 )
@@ -595,6 +602,16 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:workflow_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "invocation_bot_card",
+    srcs = ["invocation_bot_card.tsx"],
+    deps = [
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
