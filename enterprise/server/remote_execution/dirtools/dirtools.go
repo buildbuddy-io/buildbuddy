@@ -480,12 +480,12 @@ func linkFileFromFileCache(d *repb.Digest, fp *FilePointer, fc interfaces.FileCa
 type FileMap map[digest.Key][]*FilePointer
 
 type BatchFileFetcher struct {
-	ctx          context.Context
-	env          environment.Env
-	instanceName string
+	ctx            context.Context
+	env            environment.Env
+	instanceName   string
 	digestFunction repb.DigestFunction_Value
-	once         *sync.Once
-	compress     bool
+	once           *sync.Once
+	compress       bool
 
 	statsMu sync.Mutex
 	stats   repb.IOStats
@@ -496,12 +496,12 @@ type BatchFileFetcher struct {
 // `casClient` is optional. If not specified, all requests will use the ByteStream API.
 func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) *BatchFileFetcher {
 	return &BatchFileFetcher{
-		ctx:          ctx,
-		env:          env,
-		instanceName: instanceName,
+		ctx:            ctx,
+		env:            env,
+		instanceName:   instanceName,
 		digestFunction: digestFunction,
-		once:         &sync.Once{},
-		compress:     false,
+		once:           &sync.Once{},
+		compress:       false,
 	}
 }
 
@@ -591,7 +591,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
 	newRequest := func() *repb.BatchReadBlobsRequest {
 		r := &repb.BatchReadBlobsRequest{
-			InstanceName: ff.instanceName,
+			InstanceName:   ff.instanceName,
 			DigestFunction: ff.digestFunction,
 		}
 		if ff.supportsCompression() {
