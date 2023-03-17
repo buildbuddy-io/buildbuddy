@@ -71,7 +71,7 @@ ts_library(
         "//app/util:proto",
         "//proto:cache_ts_proto",
         "//proto:field_mask_ts_proto",
-        "//proto:invocation_ts_proto",
+        "//proto:invocation_status_ts_proto",
         "//proto:resource_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
