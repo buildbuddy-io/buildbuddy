@@ -551,35 +551,16 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   renderZoomChip(): React.ReactElement | null {
-    const zoomEligible = this.currentHeatmapSelection && this.currentHeatmapSelection.eventsSelected > 1;
-    const zoomToSummarize = zoomEligible ? this.currentHeatmapSelection : this.currentZoomFilters;
-    if (!zoomToSummarize) {
+    if (!this.currentZoomFilters) {
       return null;
     }
 
-    const startDate = moment(zoomToSummarize.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
-    const endDate = moment((zoomToSummarize.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
-    const startValue = this.renderYBucketValue(zoomToSummarize.bucketRange.startInclusive);
-    const endValue = this.renderYBucketValue(zoomToSummarize.bucketRange.endExclusive);
+    const startDate = moment(this.currentZoomFilters.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
+    const endDate = moment((this.currentZoomFilters.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
+    const startValue = this.renderYBucketValue(this.currentZoomFilters.bucketRange.startInclusive);
+    const endValue = this.renderYBucketValue(this.currentZoomFilters.bucketRange.endExclusive);
 
-    return zoomEligible ? (
-      <div className="drilldown-page-zoom-summary">
-        <OutlinedButton
-          title="Zoom in on this selection"
-          className="drilldown-page-zoom-button"
-          onClick={() => this.handleHeatmapZoom(this.currentHeatmapSelection)}>
-          <ZoomIn className="icon"></ZoomIn>
-          <div className="drilldown-page-zoom-filters">
-            <div className="drilldown-page-zoom-filter-attr">
-              Date: {startDate} - {endDate}
-            </div>
-            <div className="drilldown-page-zoom-filter-attr">
-              Value: {startValue} - {endValue}
-            </div>
-          </div>
-        </OutlinedButton>
-      </div>
-    ) : (
+    return (
       <div className="drilldown-page-zoom-summary zoomed">
         <ZoomIn className="icon"></ZoomIn>
         {this.currentZoomFilters && (
