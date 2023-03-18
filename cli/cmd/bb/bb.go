@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -81,6 +82,10 @@ func run() (exitCode int, err error) {
 		return exitCode, err
 	}
 	exitCode, err = fix.HandleFix(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = download.HandleDownload(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
