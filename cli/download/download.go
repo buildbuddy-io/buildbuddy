@@ -45,8 +45,8 @@ Example of downloading a blob and piping it to another command:
 Example of displaying an Action with a remote instance name to stdout:
   $ bb download /foo/blobs/b8907c47a5c0954a440c673832f6e219e33311f577a59ea7c9de4686900140ac/234 --type=Action
 
-Example of printing a Command to stdout:
-  $ bb download 0e83f9edaff969afa4d16de9f8f5c1de2778148a982e1c19c744fc11a4f96811/1321 --type=Command
+Example of dumping a Command to a file:
+  $ bb download 0e83f9edaff969afa4d16de9f8f5c1de2778148a982e1c19c744fc11a4f96811/1321 --type=Command --output_file=cmd.pb.txt
 `
 )
 
