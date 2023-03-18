@@ -31,7 +31,7 @@ var (
 	outputFile = flags.String("output_file", "", "A destination file where the output should be written; stdout will be used if not set")
 
 	usage = `
-usage: bb ` + flags.Name() + ` 762670a6d50679e5495d3a489290bf2b3845172de3c048476668e91f6fc42b8e/18544
+usage: bb ` + flags.Name() + ` {digest}/{size}
 
 Downloads the blob identified by digest from the CAS and outputs its contents.
 
