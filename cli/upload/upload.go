@@ -35,11 +35,11 @@ usage: bb ` + flags.Name() + ` filename
 
 Uploads the file specified by filename to the CAS and outputs the digest.
 
-If an input file is specified, that file will be uploaded. Otherwise input
-is read from stdin and uploaded.
+If an input file is specified, that file will be uploaded. To upload from
+stdin, set the --stdin flag.
 
-Example of upload a blob:
-  $ echo "buildbuddy" | bb upload
+Example of uploading a blob from stdin:
+  $ echo "buildbuddy" | bb upload --stdin
 
 Example of uploading a file with a remote instance name:
   $ echo -n "buildbuddy" > input_file.txt
