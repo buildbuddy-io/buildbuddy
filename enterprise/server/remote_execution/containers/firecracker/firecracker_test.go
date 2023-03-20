@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -70,6 +71,8 @@ func init() {
 func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	env := testenv.GetTestEnv(t)
 
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
 	b, err := bundle.Get()
 	require.NoError(t, err)
 	env.SetFileResolver(fileresolver.New(b, "enterprise"))
@@ -113,6 +116,12 @@ func getTestEnv(ctx context.Context, t *testing.T) *testenv.TestEnv {
 	return env
 }
 
+func authCtx(t *testing.T, ctx context.Context, env environment.Env, userID string) context.Context {
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	return ctx
+}
+
 func tempJailerRoot(t *testing.T) string {
 	if *testJailerRoot != "" {
 		return *testJailerRoot
@@ -126,6 +135,7 @@ func tempJailerRoot(t *testing.T) string {
 func TestFirecrackerRunSimple(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -155,7 +165,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,6 +181,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 func TestFirecrackerLifecycle(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -200,7 +211,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,12 +238,14 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
+	res.UsageStats = nil
 	assert.Equal(t, expectedResult, res)
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -251,7 +264,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		ScratchDiskSizeMB:      100,
 		JailerRoot:             tempJailerRoot(t),
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, cacheAuth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,6 +307,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		if res.Error != nil {
 			t.Fatalf("error: %s", res.Error)
 		}
+		res.UsageStats = nil
 		assert.Equal(t, expectedResult, res)
 	}
 }
@@ -304,6 +318,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	scratchTestFileSizeBytes := int64(50_000_000)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 
 	rootDir := testfs.MakeTempDir(t)
 	subDirs := []string{"a", "b", "c", "d", "e"}
@@ -351,7 +366,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,6 +443,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work1")
 
@@ -458,7 +474,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +510,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 	}
 
 	// This should resume the previous snapshot.
-	c, err = firecracker.NewContainer(env, auth, opts)
+	c, err = firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,6 +533,7 @@ func TestFirecrackerRunStartFromSnapshot(t *testing.T) {
 func TestFirecrackerRunWithNetwork(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -535,7 +552,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,6 +570,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	// Write a helper script that prints process info for a pid.
@@ -603,7 +621,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,6 +660,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 func TestFirecrackerNonRoot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	ws, err := workspace.New(env, rootDir, &workspace.Opts{NonrootWritable: true})
 	require.NoError(t, err)
@@ -673,7 +692,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -690,6 +709,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{Arguments: []string{"pwd"}}
@@ -706,7 +726,7 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 		ScratchDiskSizeMB: 0,
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	require.NoError(t, err)
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
@@ -724,6 +744,7 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
@@ -754,7 +775,7 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -773,6 +794,7 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
@@ -791,7 +813,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 		ScratchDiskSizeMB:      2000,
 		JailerRoot:             tempJailerRoot(t),
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, cacheAuth, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
@@ -857,6 +879,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
@@ -877,7 +900,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		EnableNetworking:       true,
 		InitDockerd:            true,
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, cacheAuth, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, cacheAuth, c, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
@@ -956,6 +979,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	cacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -971,7 +995,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 		ScratchDiskSizeMB:      1000,
 		JailerRoot:             tempJailerRoot(t),
 	}
-	c, err := firecracker.NewContainer(env, cacheAuth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, cacheAuth, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1036,6 +1060,7 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
@@ -1048,7 +1073,7 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	require.NoError(t, err)
 
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
@@ -1079,6 +1104,7 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
@@ -1091,7 +1117,7 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, auth, c, container.PullCredentials{}, opts.ContainerImage)
 	require.NoError(t, err)
@@ -1130,6 +1156,7 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 func TestFirecrackerLargeResult(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t)
+	ctx = authCtx(t, context.Background(), env, "US1")
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	opts := firecracker.ContainerOpts{
@@ -1142,7 +1169,7 @@ func TestFirecrackerLargeResult(t *testing.T) {
 		JailerRoot:             tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
-	c, err := firecracker.NewContainer(env, auth, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, auth, opts)
 	require.NoError(t, err)
 	const stdoutSize = 10_000_000
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf(`yes | head -c %d`, stdoutSize)}}

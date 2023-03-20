@@ -8,9 +8,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader",
     deps = [
         "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/remote_cache/digest",
         "//server/util/hash",
+        "//server/util/log",
+        "//server/util/perms",
         "//server/util/status",
     ],
 )
@@ -23,9 +26,9 @@ go_test(
         "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
-        "//server/util/hash",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -1120,7 +1120,7 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			AllowSnapshotStart:     false,
 			DebugMode:              *firecrackerDebugMode,
 		}
-		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, opts)
+		c, err := firecracker.NewContainer(ctx, p.env, task.GetExecutionTask(), p.imageCacheAuth, opts)
 		if err != nil {
 			return nil, err
 		}
