@@ -8,9 +8,12 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -32,7 +35,7 @@ func writeFile(t *testing.T, base string, path string, executable bool) {
 	}
 }
 
-func Test_Filecache(t *testing.T) {
+func TestFilecache(t *testing.T) {
 	fcDir := testfs.MakeTempDir(t)
 	// Create filecache
 	fc, err := filecache.NewFileCache(fcDir, 100000)
@@ -80,6 +83,34 @@ func Test_Filecache(t *testing.T) {
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
+}
+
+func TestFilecache_Overwrite(t *testing.T) {
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100000)
+	require.NoError(t, err)
+
+	tmpDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, tmpDir, map[string]string{
+		"file1.txt": "1",
+		"file2.txt": "2",
+	})
+
+	key := &repb.FileNode{Digest: &repb.Digest{Hash: hash.String("foo"), SizeBytes: 100}}
+	fc.AddFile(key, filepath.Join(tmpDir, "file1.txt"))
+	link1 := fc.FastLinkFile(key, filepath.Join(tmpDir, "link1.txt"))
+	assertFileContents(t, filepath.Join(tmpDir, "link1.txt"), "1")
+	require.True(t, link1, "expected link to be successful")
+
+	// Overwrite the entry with the same key
+	fc.AddFile(key, filepath.Join(tmpDir, "file2.txt"))
+	link2 := fc.FastLinkFile(key, filepath.Join(tmpDir, "link2.txt"))
+	require.True(t, link2, "expected link to be successful")
+	assertFileContents(t, filepath.Join(tmpDir, "link1.txt"), "1")
+	assertFileContents(t, filepath.Join(tmpDir, "link2.txt"), "2")
+	// The overwrite should not count as an eviction
+	lastEvictionAge := testmetrics.GaugeValue(t, metrics.FileCacheLastEvictionAgeUsec)
+	require.Equal(t, float64(0), lastEvictionAge, "last eviction age should still be 0")
 }
 
 func assertFileContents(t *testing.T, path, contents string) {
