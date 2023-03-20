@@ -3,7 +3,6 @@ package content_addressable_storage_server
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -191,7 +190,10 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 			})
 			continue
 		}
-		checksum := sha256.New()
+		checksum, err := digest.HashForDigestType(rn.GetDigestFunction())
+		if err != nil {
+			return nil, err
+		}
 		decompressedData := uploadRequest.GetData()
 		if uploadRequest.Compressor == repb.Compressor_ZSTD {
 			decompressedData, err = zstdDecompress(uploadRequest.GetData(), uploadRequest.GetDigest().GetSizeBytes())

@@ -61,7 +61,7 @@ type CASLazyFileProvider struct {
 }
 
 func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInstanceName string, digestFunction repb.DigestFunction_Value, inputTree *repb.Tree) (*CASLazyFileProvider, error) {
-	_, dirMap, err := dirtools.DirMapFromTree(inputTree)
+	_, dirMap, err := dirtools.DirMapFromTree(inputTree, digestFunction)
 	if err != nil {
 		return nil, err
 	}

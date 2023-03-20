@@ -299,7 +299,7 @@ func ReadProtoFromAC(ctx context.Context, cache interfaces.Cache, d *digest.Reso
 }
 
 func UploadBytesToCache(ctx context.Context, cache interfaces.Cache, cacheType rspb.CacheType, remoteInstanceName string, digestFunction repb.DigestFunction_Value, in io.ReadSeeker) (*repb.Digest, error) {
-	d, err := digest.Compute(in, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(in, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +391,7 @@ func NewBatchCASUploader(ctx context.Context, env environment.Env, instanceName 
 		compress:        false,
 		eg:              eg,
 		bufferPool:      bytebufferpool.New(uploadBufSizeBytes),
-		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName},
+		unsentBatchReq:  &repb.BatchUpdateBlobsRequest{InstanceName: instanceName, DigestFunction: digestFunction},
 		unsentBatchSize: 0,
 		instanceName:    instanceName,
 		digestFunction:  digestFunction,
@@ -485,7 +485,7 @@ func (ul *BatchCASUploader) UploadProto(in proto.Message) (*repb.Digest, error) 
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+	d, err := digest.Compute(bytes.NewReader(data), ul.digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +500,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := digest.Compute(f, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(f, ul.digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -528,7 +528,10 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 	}
 
 	req := ul.unsentBatchReq
-	ul.unsentBatchReq = &repb.BatchUpdateBlobsRequest{InstanceName: ul.instanceName}
+	ul.unsentBatchReq = &repb.BatchUpdateBlobsRequest{
+		InstanceName:   ul.instanceName,
+		DigestFunction: ul.digestFunction,
+	}
 	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
 		rsp, err := casClient.BatchUpdateBlobs(ul.ctx, req)
