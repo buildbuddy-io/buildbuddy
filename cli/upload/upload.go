@@ -102,7 +102,7 @@ func uploadFile(args []string) error {
 	if err != nil {
 		return err
 	}
-	ind := digest.NewResourceName(d, *remoteInstanceName, rspb.CacheType_CAS)
+	ind := digest.NewResourceName(d, *remoteInstanceName, rspb.CacheType_CAS, digestFunction)
 	if *compress {
 		ind.SetCompressor(repb.Compressor_ZSTD)
 	}
