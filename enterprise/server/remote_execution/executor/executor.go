@@ -159,7 +159,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
-
+	digestFunction := adInstanceDigest.GetDigestFunction()
+	task.ExecuteRequest.DigestFunction = digestFunction
 	acClient := s.env.GetActionCacheClient()
 
 	stateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
@@ -307,7 +308,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		if err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}
-		adInstanceDigest = digest.NewResourceName(resultDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
+		adInstanceDigest = digest.NewResourceName(resultDigest, req.GetInstanceName(), rspb.CacheType_AC, digestFunction)
 	}
 	if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))

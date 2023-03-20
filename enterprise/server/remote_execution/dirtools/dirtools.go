@@ -750,17 +750,17 @@ func fetchDir(ctx context.Context, bsClient bspb.ByteStreamClient, reqDigest *di
 	return dir, nil
 }
 
-func DirMapFromTree(tree *repb.Tree) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
+func DirMapFromTree(tree *repb.Tree, digestFunction repb.DigestFunction_Value) (rootDigest *repb.Digest, dirMap map[digest.Key]*repb.Directory, err error) {
 	dirMap = make(map[digest.Key]*repb.Directory, 1+len(tree.Children))
 
-	rootDigest, err = digest.ComputeForMessage(tree.Root, repb.DigestFunction_SHA256)
+	rootDigest, err = digest.ComputeForMessage(tree.Root, digestFunction)
 	if err != nil {
 		return nil, nil, err
 	}
 	dirMap[digest.NewKey(rootDigest)] = tree.Root
 
 	for _, child := range tree.Children {
-		d, err := digest.ComputeForMessage(child, repb.DigestFunction_SHA256)
+		d, err := digest.ComputeForMessage(child, digestFunction)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -787,7 +787,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
-	rootDirectoryDigest, dirMap, err := DirMapFromTree(tree)
+	rootDirectoryDigest, dirMap, err := DirMapFromTree(tree, digestFunction)
 	if err != nil {
 		return nil, err
 	}

@@ -318,7 +318,6 @@ func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStat
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 		rspb.CacheType_CAS, r.task.GetExecuteRequest().GetDigestFunction())
-
 	inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
 		return err
