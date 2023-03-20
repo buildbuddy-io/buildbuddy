@@ -27,6 +27,7 @@ go_library(
         "//cli/sidecar",
         "//cli/tooltag",
         "//cli/update",
+        "//cli/upload",
         "//cli/version",
         "//cli/watcher",
         "//server/util/status",
