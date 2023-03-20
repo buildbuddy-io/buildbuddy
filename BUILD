@@ -44,7 +44,8 @@ nogo(
 
 gazelle_binary(
     name = "bb_gazelle_binary",
-    languages = DEFAULT_LANGUAGES + ["@bazel_gazelle//language/bazel/visibility:go_default_library"],
+    # TODO: Fix enterprise visibility and re-enable.
+    languages = DEFAULT_LANGUAGES,  # + ["@bazel_gazelle//language/bazel/visibility:go_default_library"],
 )
 
 # Ignore the node_modules dir
