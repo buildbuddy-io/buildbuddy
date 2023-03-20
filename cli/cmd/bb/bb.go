@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
+	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/cli/watcher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -86,6 +87,10 @@ func run() (exitCode int, err error) {
 		return exitCode, err
 	}
 	exitCode, err = download.HandleDownload(args)
+	if err != nil || exitCode >= 0 {
+		return exitCode, err
+	}
+	exitCode, err = upload.HandleUpload(args)
 	if err != nil || exitCode >= 0 {
 		return exitCode, err
 	}
