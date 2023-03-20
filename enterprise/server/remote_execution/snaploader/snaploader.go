@@ -94,7 +94,7 @@ type FileCacheLoader struct {
 
 // New returns a new snapshot.Loader that can be used to download the specified
 // snapshot into the target chroot.
-func New(ctx context.Context, env environment.Env, workingDirectory string) (Loader, error) {
+func New(env environment.Env, workingDirectory string) (Loader, error) {
 	l := &FileCacheLoader{
 		env:              env,
 		workingDirectory: workingDirectory,

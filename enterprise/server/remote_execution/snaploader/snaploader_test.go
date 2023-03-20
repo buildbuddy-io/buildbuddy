@@ -34,14 +34,14 @@ func TestPackAndUnpack(t *testing.T) {
 	// and add them to the cache. Note, the snapshot digests don't actually
 	// correspond to any real content; they just need to be unique cache
 	// keys.
-	la, err := snaploader.New(ctx, env, workDir)
+	la, err := snaploader.New(env, workDir)
 	require.NoError(t, err)
 	da := &repb.Digest{Hash: hash.String("manifest-A"), SizeBytes: 1}
 	sa := makeFakeSnapshot(t, workDir, da)
 	da, err = la.CacheSnapshot(ctx, sa)
 	require.NoError(t, err)
 
-	lb, err := snaploader.New(ctx, env, workDir)
+	lb, err := snaploader.New(env, workDir)
 	require.NoError(t, err)
 	db := &repb.Digest{Hash: hash.String("manifest-B"), SizeBytes: 1}
 	sb := makeFakeSnapshot(t, workDir, db)
@@ -58,7 +58,7 @@ func TestPackAndUnpack(t *testing.T) {
 		// Delete, since it's no longer needed.
 		// Note: we construct a new loader here to ensure the current
 		// snapshot manifest gets loaded.
-		loader, err := snaploader.New(ctx, env, workDir)
+		loader, err := snaploader.New(env, workDir)
 		require.NoError(t, err)
 		err = loader.DeleteSnapshot(ctx, da)
 		require.NoError(t, err)
@@ -94,7 +94,7 @@ func makeRandomFile(t *testing.T, rootDir, prefix string, size int) string {
 // Unpacks a snapshot to outDir and asserts that the contents match the
 // originally cached contents.
 func mustUnpack(t *testing.T, ctx context.Context, env environment.Env, d *repb.Digest, workDir, outDir string, originalSnapshot *snaploader.LoadSnapshotOptions) {
-	loader, err := snaploader.New(ctx, env, workDir)
+	loader, err := snaploader.New(env, workDir)
 	require.NoError(t, err)
 	err = loader.UnpackSnapshot(ctx, d, outDir)
 	require.NoError(t, err)

@@ -511,7 +511,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	// merge the modified pages on top of the existing memory snapshot.
 	baseMemSnapshotPath := ""
 	if baseSnapshotDigest != nil {
-		loader, err := snaploader.New(ctx, c.env, c.jailerRoot)
+		loader, err := snaploader.New(c.env, c.jailerRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -587,7 +587,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	}
 
 	snaploaderStart := time.Now()
-	loader, err := snaploader.New(ctx, c.env, c.jailerRoot)
+	loader, err := snaploader.New(c.env, c.jailerRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -671,7 +671,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		ForwardSignals: make([]os.Signal, 0),
 	}
 
-	loader, err := snaploader.New(ctx, c.env, c.jailerRoot)
+	loader, err := snaploader.New(c.env, c.jailerRoot)
 	if err != nil {
 		return err
 	}
