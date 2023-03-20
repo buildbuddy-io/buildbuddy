@@ -43,7 +43,7 @@ Example of uploading a blob from stdin:
 
 Example of uploading a file with a remote instance name:
   $ echo -n "buildbuddy" > input_file.txt
-  $ bb upload input_file.txt
+  $ bb upload input_file.txt --remote_instance_name=foo
 `
 )
 
