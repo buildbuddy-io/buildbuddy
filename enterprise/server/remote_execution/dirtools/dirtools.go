@@ -264,10 +264,7 @@ func (f *fileToUpload) DirNode() *repb.DirectoryNode {
 	}
 }
 
-func uploadFiles(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, filesToUpload []*fileToUpload) error {
-	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
-	fc := env.GetFileCache()
-
+func uploadFiles(uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
 		if fc != nil && uploadableFile.dir == nil {
@@ -285,7 +282,7 @@ func uploadFiles(ctx context.Context, env environment.Env, instanceName string, 
 		}
 	}
 
-	return uploader.Wait()
+	return nil
 }
 
 func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, instanceName string, digestFunction repb.DigestFunction_Value, rootDir string, actionResult *repb.ActionResult) (*TransferInfo, error) {
@@ -377,7 +374,9 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	if _, err := uploadDirFn(rootDir, ""); err != nil {
 		return nil, err
 	}
-	if err := uploadFiles(ctx, env, instanceName, digestFunction, filesToUpload); err != nil {
+
+	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
+	if err := uploadFiles(uploader, env.GetFileCache(), filesToUpload); err != nil {
 		return nil, err
 	}
 
@@ -404,7 +403,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	}
 
 	for fullFilePath, tree := range trees {
-		td, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, digestFunction, tree)
+		td, err := uploader.UploadProto(tree)
 		if err != nil {
 			return nil, err
 		}
@@ -414,6 +413,9 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 		})
 	}
 
+	if err := uploader.Wait(); err != nil {
+		return nil, err
+	}
 	endTime := time.Now()
 	txInfo.TransferDuration = endTime.Sub(startTime)
 	return txInfo, nil
