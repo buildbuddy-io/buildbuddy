@@ -511,7 +511,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	// merge the modified pages on top of the existing memory snapshot.
 	baseMemSnapshotPath := ""
 	if baseSnapshotDigest != nil {
-		loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName)
+		loader, err := snaploader.New(c.env, c.jailerRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -519,7 +519,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		if err := disk.EnsureDirectoryExists(baseDir); err != nil {
 			return nil, err
 		}
-		if err := loader.UnpackSnapshot(baseSnapshotDigest, baseDir); err != nil {
+		if err := loader.UnpackSnapshot(ctx, baseSnapshotDigest, baseDir); err != nil {
 			return nil, err
 		}
 		baseMemSnapshotPath = filepath.Join(baseDir, fullMemSnapshotName)
@@ -527,7 +527,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		// The base snapshot is no longer useful since we're merging on top
 		// of it and replacing the paused VM snapshot with the new merged
 		// snapshot. Delete it to prevent unnecessary filecache evictions.
-		if err := loader.DeleteSnapshot(baseSnapshotDigest); err != nil {
+		if err := loader.DeleteSnapshot(ctx, baseSnapshotDigest); err != nil {
 			log.Warningf("Failed to delete snapshot: %s", err)
 		}
 	}
@@ -587,11 +587,11 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	}
 
 	snaploaderStart := time.Now()
-	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName)
+	loader, err := snaploader.New(c.env, c.jailerRoot)
 	if err != nil {
 		return nil, err
 	}
-	snapshotDigest, err := loader.CacheSnapshot(opts)
+	snapshotDigest, err := loader.CacheSnapshot(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -671,12 +671,12 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		ForwardSignals: make([]os.Signal, 0),
 	}
 
-	loader, err := snaploader.New(ctx, c.env, c.jailerRoot, instanceName)
+	loader, err := snaploader.New(c.env, c.jailerRoot)
 	if err != nil {
 		return err
 	}
 
-	configurationData, err := loader.GetConfigurationData(snapshotDigest)
+	configurationData, err := loader.GetConfigurationData(ctx, snapshotDigest)
 	if err != nil {
 		return err
 	}
@@ -706,7 +706,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	if err := loader.UnpackSnapshot(snapshotDigest, c.getChroot()); err != nil {
+	if err := loader.UnpackSnapshot(ctx, snapshotDigest, c.getChroot()); err != nil {
 		return err
 	}
 

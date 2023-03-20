@@ -79,16 +79,14 @@ func enumerateFiles(snapOpts *LoadSnapshotOptions) []string {
 }
 
 type Loader interface {
-	CacheSnapshot(snapOpts *LoadSnapshotOptions) (*repb.Digest, error)
-	UnpackSnapshot(snapshotDigest *repb.Digest, outputDirectory string) error
-	DeleteSnapshot(snapshotDigest *repb.Digest) error
-	GetConfigurationData(snapshotDigest *repb.Digest) ([]byte, error)
+	CacheSnapshot(ctx context.Context, snapOpts *LoadSnapshotOptions) (*repb.Digest, error)
+	UnpackSnapshot(ctx context.Context, snapshotDigest *repb.Digest, outputDirectory string) error
+	DeleteSnapshot(ctx context.Context, snapshotDigest *repb.Digest) error
+	GetConfigurationData(ctx context.Context, snapshotDigest *repb.Digest) ([]byte, error)
 }
 
 type FileCacheLoader struct {
-	ctx              context.Context
 	env              environment.Env
-	instanceName     string // TODO: remove (this is unused)
 	workingDirectory string
 	snapshotDigest   *repb.Digest
 	manifest         *manifestData
@@ -96,12 +94,10 @@ type FileCacheLoader struct {
 
 // New returns a new snapshot.Loader that can be used to download the specified
 // snapshot into the target chroot.
-func New(ctx context.Context, env environment.Env, workingDirectory, instanceName string) (Loader, error) {
+func New(env environment.Env, workingDirectory string) (Loader, error) {
 	l := &FileCacheLoader{
-		ctx:              ctx,
 		env:              env,
 		workingDirectory: workingDirectory,
-		instanceName:     instanceName,
 	}
 	return l, nil
 }
@@ -132,7 +128,7 @@ func (l *FileCacheLoader) unpackManifest(snapshotDigest *repb.Digest) error {
 
 // GetConfigurationData returns the configuration data associated with a
 // snapshot.
-func (l *FileCacheLoader) GetConfigurationData(snapshotDigest *repb.Digest) ([]byte, error) {
+func (l *FileCacheLoader) GetConfigurationData(ctx context.Context, snapshotDigest *repb.Digest) ([]byte, error) {
 	if err := l.unpackManifest(snapshotDigest); err != nil {
 		return nil, err
 	}
@@ -141,7 +137,7 @@ func (l *FileCacheLoader) GetConfigurationData(snapshotDigest *repb.Digest) ([]b
 
 // UnpackSnapshot unpacks all of the files in a snapshot to the specified output
 // directory.
-func (l *FileCacheLoader) UnpackSnapshot(snapshotDigest *repb.Digest, outputDirectory string) error {
+func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshotDigest *repb.Digest, outputDirectory string) error {
 	if l.snapshotDigest != nil && l.snapshotDigest != snapshotDigest {
 		return status.InvalidArgumentErrorf("Snapshot configuration already fetched with different digest %q", digest.String(l.snapshotDigest))
 	}
@@ -159,7 +155,7 @@ func (l *FileCacheLoader) UnpackSnapshot(snapshotDigest *repb.Digest, outputDire
 	return nil
 }
 
-func (l *FileCacheLoader) DeleteSnapshot(snapshotDigest *repb.Digest) error {
+func (l *FileCacheLoader) DeleteSnapshot(ctx context.Context, snapshotDigest *repb.Digest) error {
 	if l.snapshotDigest != nil && l.snapshotDigest != snapshotDigest {
 		return status.InvalidArgumentErrorf("Snapshot configuration already fetched with different digest %q", digest.String(l.snapshotDigest))
 	}
@@ -201,7 +197,7 @@ func (m *manifestData) String() string {
 // the snapshot ID and the file name. A manifest file that
 // that lists all files. Finally, an action result is cached that describes all
 // files -- this allows for fast existence checking and easy download.
-func (l *FileCacheLoader) CacheSnapshot(snapOpts *LoadSnapshotOptions) (*repb.Digest, error) {
+func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapOpts *LoadSnapshotOptions) (*repb.Digest, error) {
 	if l.env.GetFileCache() == nil {
 		return nil, status.FailedPreconditionErrorf("Unable to cache snapshot: FileCache not enabled")
 	}
