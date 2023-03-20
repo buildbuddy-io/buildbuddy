@@ -48,6 +48,7 @@ import (
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
+	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
@@ -841,6 +842,17 @@ func (s *BuildBuddyServer) GetExecutionNodes(ctx context.Context, req *scpb.GetE
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) SearchExecution(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentErrorf("SearchExecutionRequest cannot be empty")
+	}
+	searcher := s.env.GetExecutionSearchService()
+	if searcher == nil {
+		return nil, fmt.Errorf("No searcher was configured")
+	}
+	return searcher.SearchExecutions(ctx, req)
+}
+
 func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
 	return target.GetTarget(ctx, s.env, req)
 }
@@ -938,6 +950,13 @@ func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb
 func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error) {
 	if us := s.env.GetUsageService(); us != nil {
 		return us.GetUsage(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
+	if us := s.env.GetSuggestionService(); us != nil {
+		return us.GetSuggestion(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

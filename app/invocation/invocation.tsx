@@ -35,6 +35,7 @@ import UserPreferences from "../preferences/preferences";
 import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "./cache_requests_card";
 import rpc_service from "../service/rpc_service";
+import { InvocationBotCard } from "./invocation_bot_card";
 
 interface State {
   loading: boolean;
@@ -55,6 +56,7 @@ interface Props {
 const largePageSize = 100;
 const smallPageSize = 10;
 
+let modelChangedSubscription: Subscription = undefined;
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
     loading: true,
@@ -105,9 +107,16 @@ export default class InvocationComponent extends React.Component<Props, State> {
           showInProgressScreen = response.invocation[0].event.length == 0;
           this.fetchUpdatedProgress();
         }
+        if (modelChangedSubscription) {
+          modelChangedSubscription.unsubscribe();
+        }
+        let model = InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]);
+        modelChangedSubscription = model.onChange.subscribe(() => {
+          this.setState({ model: this.state.model });
+        });
         this.setState({
           inProgress: showInProgressScreen,
-          model: InvocationModel.modelFromInvocations(response.invocation as invocation.Invocation[]),
+          model: model,
           loading: false,
         });
         document.title = `${this.state.model.getUser(
@@ -254,6 +263,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "all" || activeTab == "log") && this.state.model.aborted?.aborted.description && (
             <ErrorCardComponent model={this.state.model} />
+          )}
+
+          {(activeTab === "all" || activeTab == "log") && this.state.model.botSuggestions.length > 0 && (
+            <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
           {(this.state.model.workflowConfigured || this.state.model.childInvocationsConfigured) &&

@@ -26,6 +26,7 @@ class RpcService {
   events: Subject<string>;
   requestContext = new context.RequestContext({
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 
   constructor() {

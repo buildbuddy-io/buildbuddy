@@ -49,6 +49,7 @@ type RealEnv struct {
 	authenticator                    interfaces.Authenticator
 	repoDownloader                   interfaces.RepoDownloader
 	executionService                 interfaces.ExecutionService
+	executionSearchService           interfaces.ExecutionSearchService
 	cache                            interfaces.Cache
 	userDB                           interfaces.UserDB
 	authDB                           interfaces.AuthDB
@@ -101,6 +102,7 @@ type RealEnv struct {
 	kms                              interfaces.KMS
 	secretService                    interfaces.SecretService
 	executionCollector               interfaces.ExecutionCollector
+	suggestionService                interfaces.SuggestionService
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -173,6 +175,7 @@ func (r *RealEnv) SetBuildEventHandler(b interfaces.BuildEventHandler) {
 func (r *RealEnv) GetInvocationSearchService() interfaces.InvocationSearchService {
 	return r.invocationSearchService
 }
+
 func (r *RealEnv) SetInvocationSearchService(s interfaces.InvocationSearchService) {
 	r.invocationSearchService = s
 }
@@ -334,6 +337,12 @@ func (r *RealEnv) SetExecutionService(e interfaces.ExecutionService) {
 }
 func (r *RealEnv) GetExecutionService() interfaces.ExecutionService {
 	return r.executionService
+}
+func (r *RealEnv) SetExecutionSearchService(e interfaces.ExecutionSearchService) {
+	r.executionSearchService = e
+}
+func (r *RealEnv) GetExecutionSearchService() interfaces.ExecutionSearchService {
+	return r.executionSearchService
 }
 func (r *RealEnv) GetRepoDownloader() interfaces.RepoDownloader {
 	return r.repoDownloader
@@ -571,4 +580,11 @@ func (r *RealEnv) GetExecutionCollector() interfaces.ExecutionCollector {
 
 func (r *RealEnv) SetExecutionCollector(c interfaces.ExecutionCollector) {
 	r.executionCollector = c
+}
+
+func (r *RealEnv) GetSuggestionService() interfaces.SuggestionService {
+	return r.suggestionService
+}
+func (r *RealEnv) SetSuggestionService(s interfaces.SuggestionService) {
+	r.suggestionService = s
 }

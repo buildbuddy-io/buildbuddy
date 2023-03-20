@@ -1,6 +1,7 @@
 import { HelpCircle, PlayCircle, XCircle, CheckCircle } from "lucide-react";
 import moment from "moment";
 import React from "react";
+import { Subject } from "rxjs";
 import { api_key } from "../../proto/api_key_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
@@ -8,10 +9,12 @@ import { command_line } from "../../proto/command_line_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
+import { suggestion } from "../../proto/suggestion_ts_proto";
 import { IconType } from "../favicon/favicon";
 import format from "../format/format";
 import { formatDate } from "../format/format";
 import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
+import rpcService from "../service/rpc_service";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
@@ -22,6 +25,8 @@ export default class InvocationModel {
   invocations: invocation.Invocation[] = [];
   cacheStats: cache.CacheStats[] = [];
   scoreCard: cache.IScoreCard;
+  botSuggestions: string[] = [];
+  onChange: Subject<void> = new Subject();
 
   targets: build_event_stream.BuildEvent[] = [];
   succeeded: build_event_stream.BuildEvent[] = [];
@@ -618,5 +623,21 @@ export default class InvocationModel {
 
   hasChunkedEventLogs(): boolean {
     return this.invocations[0]?.hasChunkedEventLogs || false;
+  }
+
+  async fetchSuggestions() {
+    let req = new suggestion.GetSuggestionRequest();
+    req.invocationId = this.getId();
+    await rpcService.service
+      .getSuggestion(req)
+      .then((res) => {
+        this.botSuggestions = res.suggestion;
+        this.onChange.next();
+      })
+      .catch((err) => {
+        console.error(err);
+        this.botSuggestions = ["Error getting a fix suggestion :("];
+        this.onChange.next();
+      });
   }
 }

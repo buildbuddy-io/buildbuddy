@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
@@ -34,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/selfauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/splash"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
@@ -260,9 +262,15 @@ func main() {
 	if err := secrets.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	if err := suggestion.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	executionService := execution_service.NewExecutionService(realEnv)
 	realEnv.SetExecutionService(executionService)
+
+	executionSearchService := execution_search_service.NewExecutionSearchService(realEnv, realEnv.GetDBHandle(), realEnv.GetOLAPDBHandle())
+	realEnv.SetExecutionSearchService(executionSearchService)
 
 	telemetryServer := telserver.NewTelemetryServer(realEnv, realEnv.GetDBHandle())
 	telemetryServer.StartOrDieIfEnabled()

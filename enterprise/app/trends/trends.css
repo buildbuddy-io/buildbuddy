@@ -60,6 +60,17 @@
   user-select: none;
 }
 
+.heatmap-zoom {
+  cursor: pointer;
+  stroke: #616161;
+  fill: #eee;
+}
+
+.heatmap-zoom:hover {
+  stroke: #414141;
+  fill: #ddd;
+}
+
 .drilldown-page-dd-chart {
   display: inline-block;
 }

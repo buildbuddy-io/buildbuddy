@@ -59,6 +59,7 @@ type Env interface {
 	GetAuthDB() interfaces.AuthDB
 	GetInvocationStatService() interfaces.InvocationStatService
 	GetExecutionService() interfaces.ExecutionService
+	GetExecutionSearchService() interfaces.ExecutionSearchService
 	GetInvocationSearchService() interfaces.InvocationSearchService
 	GetSplashPrinter() interfaces.SplashPrinter
 	GetActionCacheClient() repb.ActionCacheClient
@@ -149,4 +150,6 @@ type Env interface {
 	SetSecretService(s interfaces.SecretService)
 	GetExecutionCollector() interfaces.ExecutionCollector
 	SetExecutionCollector(c interfaces.ExecutionCollector)
+	GetSuggestionService() interfaces.SuggestionService
+	SetSuggestionService(s interfaces.SuggestionService)
 }

@@ -33,6 +33,7 @@ import (
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -601,6 +602,10 @@ type ExecutionNode interface {
 	GetExecutorID() string
 }
 
+type ExecutionSearchService interface {
+	SearchExecutions(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error)
+}
+
 // TaskRouter decides which execution nodes should execute a task.
 //
 // Routing is namespaced by group ID (extracted from context) and remote instance
@@ -1017,4 +1022,9 @@ type ExecutionCollector interface {
 	AddInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink) error
 	GetInvocationLinks(ctx context.Context, execution_id string) ([]*sipb.StoredInvocationLink, error)
 	DeleteInvocationLinks(ctx context.Context, execution_id string) error
+}
+
+// SuggestionService enables fetching of suggestions.
+type SuggestionService interface {
+	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
 }

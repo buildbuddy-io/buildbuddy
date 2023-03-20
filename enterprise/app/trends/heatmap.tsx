@@ -35,7 +35,7 @@ type SelectedCellData = {
 export type HeatmapSelection = {
   dateRangeMicros: { startInclusive: number; endExclusive: number };
   bucketRange: { startInclusive: number; endExclusive: number };
-  invocationsSelected: number;
+  eventsSelected: number;
 };
 
 const CHART_MARGINS = {
@@ -43,6 +43,12 @@ const CHART_MARGINS = {
   right: 1,
   bottom: 39,
   left: 89,
+};
+
+const ZOOM_BUTTON_ATTRIBUTES = {
+  width: 26,
+  height: 26,
+  sideMargin: 12,
 };
 
 // This is a magic number that states there will only be one axis label for
@@ -131,12 +137,27 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     };
   }
 
+  overlapsWithZoomButton(c: MouseCoords): boolean {
+    if (!this.svgRef.current) {
+      return false;
+    }
+    const el = this.svgRef.current.querySelector(".heatmap-zoom");
+    if (!el) {
+      return false;
+    }
+    const r = el.getBoundingClientRect();
+    return c.clientX >= r.x && c.clientX <= r.x + r.width && c.clientY >= r.y && c.clientY <= r.y + r.height;
+  }
+
   renderTooltip(c: MouseCoords) {
     if (this.pendingClick) {
       return null;
     }
     const data = this.computeBucket(c.clientX, c.clientY);
     if (!data) {
+      return null;
+    }
+    if (this.overlapsWithZoomButton(c)) {
       return null;
     }
     const metricBucket =
@@ -156,6 +177,10 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 
   onMouseDown(e: React.MouseEvent<SVGSVGElement, MouseEvent>) {
+    if (e.target instanceof SVGElement && e.target.closest(".heatmap-zoom")) {
+      this.maybeFireZoomCallback();
+      return;
+    }
     const data = this.computeBucket(e.clientX, e.clientY);
     if (!data) {
       return;
@@ -210,14 +235,14 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
       ),
     };
 
-    let invocationsSelected = 0;
+    let eventsSelected = 0;
     for (let i = Math.min(t1Index, t2Index); i <= Math.max(t1Index, t2Index); i++) {
       for (let j = Math.min(m1Index, m2Index); j <= Math.max(m1Index, m2Index); j++) {
-        invocationsSelected += +this.props.heatmapData.column[i].value[j];
+        eventsSelected += +this.props.heatmapData.column[i].value[j];
       }
     }
 
-    return { dateRangeMicros, bucketRange, invocationsSelected };
+    return { dateRangeMicros, bucketRange, eventsSelected };
   }
 
   maybeFireSelectionCallback() {
@@ -361,6 +386,37 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     );
   }
 
+  maybeRenderZoomButton(positioningData: SelectionData): JSX.Element | null {
+    if (!this.props.zoomCallback || this.pendingClick) {
+      return null;
+    }
+    const selection = this.computeHeatmapSelection();
+    if (selection == null || selection.eventsSelected < 2) {
+      return null;
+    }
+
+    const selectionRightEdge = positioningData.x + positioningData.width;
+    let zoomLeftEdge = selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.sideMargin;
+    let zoomTopEdge = positioningData.y;
+
+    if (selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.width + 2 * ZOOM_BUTTON_ATTRIBUTES.sideMargin > this.props.width) {
+      zoomLeftEdge = positioningData.x - ZOOM_BUTTON_ATTRIBUTES.width - ZOOM_BUTTON_ATTRIBUTES.sideMargin;
+    }
+
+    return (
+      <g className="heatmap-zoom" transform={`translate(${zoomLeftEdge},${zoomTopEdge})`}>
+        <title>Zoom in on this selection</title>
+        <rect x="0" y="0" width="26" height="26" rx="4"></rect>
+        <g transform="translate(1.5,1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8" fillOpacity="0"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          <line x1="11" y1="8" x2="11" y2="14"></line>
+          <line x1="8" y1="11" x2="14" y2="11"></line>
+        </g>
+      </g>
+    );
+  }
+
   render() {
     const width = this.props.width - CHART_MARGINS.left - CHART_MARGINS.right;
     const height = this.props.height - CHART_MARGINS.top - CHART_MARGINS.bottom;
@@ -417,13 +473,16 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
               {this.renderXAxis(width)}
               {this.renderYAxis(height)}
               {selection && (
-                <rect
-                  x={selection.x}
-                  y={selection.y}
-                  width={selection.width}
-                  height={selection.height}
-                  fillOpacity="0"
-                  stroke="#f00"></rect>
+                <>
+                  <rect
+                    x={selection.x}
+                    y={selection.y}
+                    width={selection.width}
+                    height={selection.height}
+                    fillOpacity="0"
+                    stroke="#f00"></rect>
+                  {this.maybeRenderZoomButton(selection)}
+                </>
               )}
             </svg>
           </Tooltip>
