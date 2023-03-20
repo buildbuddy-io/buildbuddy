@@ -316,7 +316,8 @@ func (r *commandRunner) PrepareForTask(ctx context.Context) error {
 func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
 	rootInstanceDigest := digest.NewResourceName(
 		r.task.GetAction().GetInputRootDigest(),
-		r.task.GetExecuteRequest().GetInstanceName(), rspb.CacheType_CAS)
+		r.task.GetExecuteRequest().GetInstanceName(),
+		rspb.CacheType_CAS, r.task.GetExecuteRequest().GetDigestFunction())
 
 	inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest)
 	if err != nil {
@@ -325,6 +326,7 @@ func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStat
 
 	layout := &container.FileSystemLayout{
 		RemoteInstanceName: r.task.GetExecuteRequest().GetInstanceName(),
+		DigestFunction:     r.task.GetExecuteRequest().GetDigestFunction(),
 		Inputs:             inputTree,
 		OutputDirs:         r.task.GetCommand().GetOutputDirectories(),
 		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
@@ -339,7 +341,7 @@ func (r *commandRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStat
 	}
 
 	if r.VFSServer != nil {
-		p, err := vfs_server.NewCASLazyFileProvider(r.env, ctx, layout.RemoteInstanceName, layout.Inputs)
+		p, err := vfs_server.NewCASLazyFileProvider(r.env, ctx, layout.RemoteInstanceName, layout.DigestFunction, layout.Inputs)
 		if err != nil {
 			return err
 		}

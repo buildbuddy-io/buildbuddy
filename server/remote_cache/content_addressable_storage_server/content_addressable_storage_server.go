@@ -94,7 +94,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	}
 	digestsToLookup := make([]*rspb.ResourceName, 0, len(req.GetBlobDigests()))
 	for _, d := range req.GetBlobDigests() {
-		rn := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_CAS)
+		rn := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 		if rn.IsEmpty() {
 			continue
 		}
@@ -161,7 +161,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	kvs := make(map[*rspb.ResourceName][]byte, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
-		rn := digest.NewResourceName(uploadRequest.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS)
+		rn := digest.NewResourceName(uploadRequest.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 		if err := rn.Validate(); err != nil {
 			return nil, err
 		}
@@ -290,7 +290,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
 	for _, readDigest := range req.GetDigests() {
-		rn := digest.NewResourceName(readDigest, req.GetInstanceName(), rspb.CacheType_CAS)
+		rn := digest.NewResourceName(readDigest, req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 		if err := rn.Validate(); err != nil {
 			return nil, err
 		}
@@ -495,14 +495,14 @@ func makeTreeCacheDigest(rn *rspb.ResourceName, digestFunction repb.DigestFuncti
 	return digest.Compute(buf, digestFunction)
 }
 
-func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, remoteInstanceName string, dd *capb.DirectoryWithDigest) ([]*capb.DirectoryWithDigest, error) {
+func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, remoteInstanceName string, digestFunction repb.DigestFunction_Value, dd *capb.DirectoryWithDigest) ([]*capb.DirectoryWithDigest, error) {
 	dir := dd.Directory
 	if len(dir.Directories) == 0 {
 		return nil, nil
 	}
 	subdirDigests := make([]*rspb.ResourceName, 0, len(dir.Directories))
 	for _, dirNode := range dir.Directories {
-		rn := digest.NewResourceName(dirNode.GetDigest(), remoteInstanceName, rspb.CacheType_CAS)
+		rn := digest.NewResourceName(dirNode.GetDigest(), remoteInstanceName, rspb.CacheType_CAS, digestFunction)
 		if rn.IsEmpty() {
 			continue
 		}
@@ -564,7 +564,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if req.RootDigest == nil {
 		return status.InvalidArgumentError("RootDigest is required to GetTree")
 	}
-	rootDirRN := digest.NewResourceName(req.GetRootDigest(), req.GetInstanceName(), rspb.CacheType_CAS)
+	rootDirRN := digest.NewResourceName(req.GetRootDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 	if rootDirRN.IsEmpty() {
 		return nil
 	}
@@ -617,7 +617,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 		if *enableTreeCaching {
-			treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC).ToProto()
+			treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
 			if blob, err := s.cache.Get(ctx, treeCacheRN); err == nil {
 				treeCache := &capb.TreeCache{}
 				if err := proto.Unmarshal(blob, treeCache); err == nil {
@@ -631,7 +631,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}
 
 		start := time.Now()
-		children, err := s.fetchDirectory(ctx, req.GetInstanceName(), dirWithDigest)
+		children, err := s.fetchDirectory(ctx, req.GetInstanceName(), req.GetDigestFunction(), dirWithDigest)
 		if err != nil {
 			return nil, err
 		}
@@ -671,7 +671,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				if err != nil {
 					return nil, err
 				}
-				treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC).ToProto()
+				treeCacheRN := digest.NewResourceName(treeCacheDigest, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction()).ToProto()
 				if err := s.cache.Set(ctx, treeCacheRN, buf); err != nil {
 					log.Warningf("Error setting treeCache blob: %s", err)
 				}

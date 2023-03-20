@@ -944,7 +944,7 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]stri
 				return nil
 			}
 		}
-		rn, err := cachetools.ComputeFileDigest(path, *remoteInstanceName)
+		rn, err := cachetools.ComputeFileDigest(path, *remoteInstanceName, repb.DigestFunction_SHA256)
 		if err != nil {
 			return err
 		}
@@ -987,7 +987,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 		if err != nil {
 			return nil, nil, err
 		}
-		downloadString, err := digest.NewResourceName(d.ToDigest(), *remoteInstanceName, rspb.CacheType_CAS).DownloadString()
+		downloadString, err := digest.NewResourceName(d.ToDigest(), *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1046,7 +1046,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 			if err != nil {
 				return err
 			}
-			downloadString, err := digest.NewResourceName(td, *remoteInstanceName, rspb.CacheType_CAS).DownloadString()
+			downloadString, err := digest.NewResourceName(td, *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
 			if err != nil {
 				return err
 			}

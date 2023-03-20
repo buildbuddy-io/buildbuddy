@@ -126,7 +126,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		if err != nil {
 			return nil, err
 		}
-		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS)
+		rn := digest.NewResourceName(patchDigest, req.GetInstanceName(), rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 		uri, err := rn.DownloadString()
 		if err != nil {
 			return nil, err

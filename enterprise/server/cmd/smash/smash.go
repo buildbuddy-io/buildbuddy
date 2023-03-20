@@ -138,7 +138,7 @@ func newRandomDigestBuf(sizeBytes int64) (*repb.Digest, []byte) {
 
 func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	d, buf := newRandomDigestBuf(randomBlobSize())
-	resourceName, err := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS).UploadString()
+	resourceName, err := digest.NewResourceName(d, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).UploadString()
 	if err != nil {
 		log.Fatalf("Error computing upload resource name: %s", err)
 	}
@@ -158,7 +158,7 @@ func writeDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 func readDataFunc(mtd *desc.MethodDescriptor, cd *runner.CallData) []byte {
 	randomDigest := preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 
-	downloadString, err := digest.NewResourceName(randomDigest, *instanceName, rspb.CacheType_CAS).DownloadString()
+	downloadString, err := digest.NewResourceName(randomDigest, *instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256).DownloadString()
 	if err != nil {
 		log.Fatalf("Error computing download string: %s", err)
 	}

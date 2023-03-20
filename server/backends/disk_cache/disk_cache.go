@@ -339,7 +339,7 @@ func (c *DiskCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, e
 		return false, err
 	}
 
-	record, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+	record, err := p.lruGet(ctx, r)
 	contains := record != nil
 	return contains, err
 }
@@ -351,7 +351,7 @@ func (c *DiskCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interf
 	}
 
 	d := r.GetDigest()
-	lruRecord, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), d)
+	lruRecord, err := p.lruGet(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +400,7 @@ func (c *DiskCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	return p.get(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+	return p.get(ctx, r)
 }
 
 func (c *DiskCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -936,8 +936,8 @@ func (fk *fileKey) FullPath() string {
 	return filepath.Join(fk.part.rootDir, fk.userPrefix, fk.remoteInstanceName, digest.CacheTypeToPrefix(fk.cacheType), hashPrefixDir+digestHash)
 }
 
-func (p *partition) key(ctx context.Context, cacheType rspb.CacheType, remoteInstanceName string, d *repb.Digest) (*fileKey, error) {
-	rn := digest.NewResourceName(d, remoteInstanceName, cacheType)
+func (p *partition) key(ctx context.Context, pbRN *rspb.ResourceName) (*fileKey, error) {
+	rn := digest.ResourceNameFromProto(pbRN)
 	if err := rn.Validate(); err != nil {
 		return nil, err
 	}
@@ -959,9 +959,9 @@ func (p *partition) key(ctx context.Context, cacheType rspb.CacheType, remoteIns
 	}
 	return &fileKey{
 		part:               p,
-		cacheType:          cacheType,
+		cacheType:          rn.GetCacheType(),
 		userPrefix:         p.internString(userPrefix),
-		remoteInstanceName: p.internString(remoteInstanceName),
+		remoteInstanceName: p.internString(rn.GetInstanceName()),
 		digestBytes:        digestBytes,
 	}, nil
 }
@@ -990,8 +990,8 @@ func (p *partition) addFileToLRUIfExists(key *fileKey) *fileRecord {
 	return nil
 }
 
-func (p *partition) lruGet(ctx context.Context, cacheType rspb.CacheType, remoteInstanceName string, d *repb.Digest) (*fileRecord, error) {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) lruGet(ctx context.Context, rn *rspb.ResourceName) (*fileRecord, error) {
+	k, err := p.key(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -1036,7 +1036,7 @@ func (p *partition) findMissing(ctx context.Context, resources []*rspb.ResourceN
 	for _, r := range resources {
 		fetchFn := func(r *rspb.ResourceName) {
 			eg.Go(func() error {
-				record, err := p.lruGet(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+				record, err := p.lruGet(ctx, r)
 				// NotFoundError is never returned from lruGet above, so
 				// we don't check for it.
 				if err != nil {
@@ -1060,8 +1060,8 @@ func (p *partition) findMissing(ctx context.Context, resources []*rspb.ResourceN
 	return missing, nil
 }
 
-func (p *partition) get(ctx context.Context, cacheType rspb.CacheType, remoteInstanceName string, d *repb.Digest) ([]byte, error) {
-	k, err := p.key(ctx, cacheType, remoteInstanceName, d)
+func (p *partition) get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	k, err := p.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -1090,7 +1090,7 @@ func (p *partition) getMulti(ctx context.Context, resources []*rspb.ResourceName
 		fetchFn := func(r *rspb.ResourceName) {
 			eg.Go(func() error {
 				d := r.GetDigest()
-				data, err := p.get(ctx, r.GetCacheType(), r.GetInstanceName(), d)
+				data, err := p.get(ctx, r)
 				if status.IsNotFoundError(err) {
 					return nil
 				}
@@ -1114,7 +1114,7 @@ func (p *partition) getMulti(ctx context.Context, resources []*rspb.ResourceName
 }
 
 func (p *partition) set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
-	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+	k, err := p.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -1145,7 +1145,7 @@ func (p *partition) setMulti(ctx context.Context, kvs map[*rspb.ResourceName][]b
 }
 
 func (p *partition) delete(ctx context.Context, r *rspb.ResourceName) error {
-	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+	k, err := p.key(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -1160,7 +1160,7 @@ func (p *partition) delete(ctx context.Context, r *rspb.ResourceName) error {
 }
 
 func (p *partition) reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	k, err := p.key(ctx, rn.GetCacheType(), rn.GetInstanceName(), rn.GetDigest())
+	k, err := p.key(ctx, rn)
 	if err != nil {
 		return nil, err
 	}
@@ -1199,7 +1199,7 @@ func (d *dbWriteOnClose) Close() error {
 }
 
 func (p *partition) writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	k, err := p.key(ctx, r.GetCacheType(), r.GetInstanceName(), r.GetDigest())
+	k, err := p.key(ctx, r)
 	if err != nil {
 		return nil, err
 	}

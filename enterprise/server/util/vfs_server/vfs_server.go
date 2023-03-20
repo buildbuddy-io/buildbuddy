@@ -56,10 +56,11 @@ type CASLazyFileProvider struct {
 	env                environment.Env
 	ctx                context.Context
 	remoteInstanceName string
+	digestFunction     repb.DigestFunction_Value
 	inputFiles         map[string]*repb.FileNode
 }
 
-func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInstanceName string, inputTree *repb.Tree) (*CASLazyFileProvider, error) {
+func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInstanceName string, digestFunction repb.DigestFunction_Value, inputTree *repb.Tree) (*CASLazyFileProvider, error) {
 	_, dirMap, err := dirtools.DirMapFromTree(inputTree)
 	if err != nil {
 		return nil, err
@@ -92,6 +93,7 @@ func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInst
 		env:                env,
 		ctx:                ctx,
 		remoteInstanceName: remoteInstanceName,
+		digestFunction:     digestFunction,
 		inputFiles:         inputFiles,
 	}, nil
 }
@@ -101,7 +103,7 @@ func (p *CASLazyFileProvider) Place(relPath, fullPath string) error {
 	if !ok {
 		return status.NotFoundErrorf("unknown file %q", relPath)
 	}
-	ff := dirtools.NewBatchFileFetcher(p.ctx, p.env, p.remoteInstanceName)
+	ff := dirtools.NewBatchFileFetcher(p.ctx, p.env, p.remoteInstanceName, p.digestFunction)
 	fileMap := dirtools.FileMap{
 		digest.NewKey(fileNode.GetDigest()): {&dirtools.FilePointer{
 			FullPath:     fullPath,

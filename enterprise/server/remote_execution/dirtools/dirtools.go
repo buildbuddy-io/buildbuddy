@@ -184,18 +184,18 @@ type fileToUpload struct {
 	dir  *repb.Directory
 }
 
-func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.Directory) (*fileToUpload, error) {
+func newDirToUpload(instanceName string, digestFunction repb.DigestFunction_Value, parentDir string, info os.FileInfo, dir *repb.Directory) (*fileToUpload, error) {
 	data, err := proto.Marshal(dir)
 	if err != nil {
 		return nil, err
 	}
 	reader := bytes.NewReader(data)
 
-	d, err := digest.Compute(reader, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(reader, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS)
+	r := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -209,9 +209,9 @@ func newDirToUpload(instanceName, parentDir string, info os.FileInfo, dir *repb.
 	}, nil
 }
 
-func newFileToUpload(instanceName, parentDir string, info os.FileInfo) (*fileToUpload, error) {
+func newFileToUpload(instanceName string, digestFunction repb.DigestFunction_Value, parentDir string, info os.FileInfo) (*fileToUpload, error) {
 	fullFilePath := filepath.Join(parentDir, info.Name())
-	ad, err := cachetools.ComputeFileDigest(fullFilePath, instanceName)
+	ad, err := cachetools.ComputeFileDigest(fullFilePath, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +294,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	treesToUpload := make([]string, 0)
 	filesToUpload := make([]*fileToUpload, 0)
 	uploadFileFn := func(parentDir string, info os.FileInfo) (*repb.FileNode, error) {
-		uploadableFile, err := newFileToUpload(instanceName, parentDir, info)
+		uploadableFile, err := newFileToUpload(instanceName, digestFunction, parentDir, info)
 		if err != nil {
 			return nil, err
 		}
@@ -367,7 +367,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 			}
 		}
 
-		uploadableDir, err := newDirToUpload(instanceName, parentDir, dirInfo, directory)
+		uploadableDir, err := newDirToUpload(instanceName, digestFunction, parentDir, dirInfo, directory)
 		if err != nil {
 			return nil, err
 		}
@@ -480,11 +480,12 @@ func linkFileFromFileCache(d *repb.Digest, fp *FilePointer, fc interfaces.FileCa
 type FileMap map[digest.Key][]*FilePointer
 
 type BatchFileFetcher struct {
-	ctx          context.Context
-	env          environment.Env
-	instanceName string
-	once         *sync.Once
-	compress     bool
+	ctx            context.Context
+	env            environment.Env
+	instanceName   string
+	digestFunction repb.DigestFunction_Value
+	once           *sync.Once
+	compress       bool
 
 	statsMu sync.Mutex
 	stats   repb.IOStats
@@ -493,13 +494,14 @@ type BatchFileFetcher struct {
 // NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
 // `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
 // `casClient` is optional. If not specified, all requests will use the ByteStream API.
-func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string) *BatchFileFetcher {
+func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) *BatchFileFetcher {
 	return &BatchFileFetcher{
-		ctx:          ctx,
-		env:          env,
-		instanceName: instanceName,
-		once:         &sync.Once{},
-		compress:     false,
+		ctx:            ctx,
+		env:            env,
+		instanceName:   instanceName,
+		digestFunction: digestFunction,
+		once:           &sync.Once{},
+		compress:       false,
 	}
 }
 
@@ -589,7 +591,8 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
 	newRequest := func() *repb.BatchReadBlobsRequest {
 		r := &repb.BatchReadBlobsRequest{
-			InstanceName: ff.instanceName,
+			InstanceName:   ff.instanceName,
+			DigestFunction: ff.digestFunction,
 		}
 		if ff.supportsCompression() {
 			r.AcceptableCompressors = append(r.AcceptableCompressors, repb.Compressor_ZSTD)
@@ -607,7 +610,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	for dk, filePointers := range filesToFetch {
 		d := dk.ToDigest()
 
-		rn := digest.NewResourceName(dk.ToDigest(), ff.instanceName, rspb.CacheType_CAS)
+		rn := digest.NewResourceName(dk.ToDigest(), ff.instanceName, rspb.CacheType_CAS, ff.digestFunction)
 		// Write empty files directly (skip checking cache and downloading).
 		if rn.IsEmpty() {
 			for _, fp := range filePointers {
@@ -708,7 +711,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	if err != nil {
 		return err
 	}
-	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName, rspb.CacheType_CAS)
+	resourceName := digest.NewResourceName(fp.FileNode.Digest, instanceName, rspb.CacheType_CAS, ff.digestFunction)
 	if ff.supportsCompression() {
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
@@ -836,7 +839,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
 				return err
 			}
-			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS)
+			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
 			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
 				continue
 			}
@@ -861,7 +864,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		return nil, err
 	}
 
-	ff := NewBatchFileFetcher(ctx, env, instanceName)
+	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
 
 	// Download any files into the directory structure.
 	if err := ff.FetchFiles(filesToFetch, opts); err != nil {

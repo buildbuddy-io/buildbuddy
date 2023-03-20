@@ -126,12 +126,12 @@ type execution struct {
 // getExecution fetches digest contents of an ExecuteRequest.
 func getExecution(t *testing.T, ctx context.Context, te *testenv.TestEnv, executeRequest *repb.ExecuteRequest) *execution {
 	instanceName := executeRequest.GetInstanceName()
-	ar := digest.NewResourceName(executeRequest.GetActionDigest(), instanceName, rspb.CacheType_CAS)
+	ar := digest.NewResourceName(executeRequest.GetActionDigest(), instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	action := &repb.Action{}
 	err := cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), ar, action)
 	require.NoError(t, err)
 	command := &repb.Command{}
-	cr := digest.NewResourceName(action.GetCommandDigest(), instanceName, rspb.CacheType_CAS)
+	cr := digest.NewResourceName(action.GetCommandDigest(), instanceName, rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	err = cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), cr, command)
 	require.NoError(t, err)
 	return &execution{

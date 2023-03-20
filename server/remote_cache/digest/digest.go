@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/zeebo/blake3"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -95,23 +96,27 @@ type ResourceName struct {
 }
 
 func ResourceNameFromProto(in *rspb.ResourceName) *ResourceName {
+	rn := proto.Clone(in).(*rspb.ResourceName)
 	// TODO(tylerw): remove once digest function is explicit everywhere.
-	if in.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
-		in.DigestFunction = repb.DigestFunction_SHA256
+	if rn.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
+		rn.DigestFunction = repb.DigestFunction_SHA256
 	}
 	return &ResourceName{
-		rn: in,
+		rn: rn,
 	}
 }
 
-func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType) *ResourceName {
+func NewResourceName(d *repb.Digest, instanceName string, cacheType rspb.CacheType, digestFunction repb.DigestFunction_Value) *ResourceName {
+	if digestFunction == repb.DigestFunction_UNKNOWN {
+		digestFunction = oldStyleDigestFunction(d)
+	}
 	return &ResourceName{
 		rn: &rspb.ResourceName{
 			Digest:         d,
 			InstanceName:   instanceName,
 			Compressor:     repb.Compressor_IDENTITY,
 			CacheType:      cacheType,
-			DigestFunction: repb.DigestFunction_SHA256,
+			DigestFunction: digestFunction,
 		},
 	}
 }
@@ -168,14 +173,16 @@ func (r *ResourceName) Validate() error {
 	if d == nil {
 		return status.InvalidArgumentError("Invalid (nil) Digest")
 	}
-	if d.SizeBytes < 0 {
+	if d.GetSizeBytes() < 0 {
 		return status.InvalidArgumentErrorf("Invalid (negative) digest size")
 	}
-	if d.SizeBytes == int64(0) {
+	if d.GetSizeBytes() == int64(0) {
 		if r.IsEmpty() {
 			return nil
 		}
-		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		log.Errorf("Invalid (zero-length) SHA256 hash: %+v, SIZE IS %d", r.rn, d.GetSizeBytes())
+		panic("shitttttt")
+		//return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
 	}
 	if !hashKeyRegex.MatchString(d.Hash) {
 		return status.InvalidArgumentError("Malformed hash")
@@ -429,8 +436,7 @@ func parseResourceName(resourceName string, matcher *regexp.Regexp, cacheType rs
 			return nil, status.InvalidArgumentErrorf("Unknown digest function: %q", dfString)
 		}
 	}
-	r := NewResourceName(d, instanceName, cacheType)
-	r.rn.DigestFunction = digestFunction
+	r := NewResourceName(d, instanceName, cacheType, digestFunction)
 	r.SetCompressor(compressor)
 	return r, nil
 }
