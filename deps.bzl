@@ -5593,6 +5593,9 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_gorm_driver_clickhouse",
         importpath = "gorm.io/driver/clickhouse",
+        patch_args = ["-p1"],
+        patch_tool = "patch",
+        patches = ["//buildpatches:gorm_clickhouse.patch"],
         sum = "h1:vt7WkXX0u5SeCDyR4w/Jz0ce25/tYqgoP3UUERgMZmY=",
         version = "v0.4.2",
     )

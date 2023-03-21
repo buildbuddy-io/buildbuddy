@@ -654,13 +654,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	if *autoMigrateDB || *autoMigrateDBAndExit || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
 		if *printSchemaChangesAndExit {
-			// Replace every gorm raw SQL command with a function that appends the SQL string to a slice
-			if err := primaryDB.Callback().Raw().Replace("gorm:raw", func(db *gorm.DB) {
-				sqlToExecute := db.Statement.SQL.String()
-				if !strings.HasPrefix(sqlToExecute, "SELECT") {
-					sqlStrings = append(sqlStrings, sqlToExecute)
-				}
-			}); err != nil {
+			if err := gormutil.RegisterLogSQLCallback(primaryDB, &sqlStrings); err != nil {
 				return nil, err
 			}
 		}
@@ -670,13 +664,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 		}
 
 		if *printSchemaChangesAndExit {
-			// Print schema changes to stdout
-			// Logs go to stderr, so this output will be easy to isolate and parse
-			if len(sqlStrings) > 0 {
-				for _, sqlStr := range sqlStrings {
-					fmt.Printf("%s\n", sqlStr)
-				}
-			}
+			gormutil.PrintMigrationSchemaChanges(sqlStrings)
 		}
 
 		if *autoMigrateDBAndExit || *printSchemaChangesAndExit {
