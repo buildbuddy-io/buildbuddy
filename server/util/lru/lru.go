@@ -106,11 +106,9 @@ func (c *LRU) Add(key, value interface{}) bool {
 	if !ok {
 		return false
 	}
-	// Check for existing item
+	// Remove any existing item.
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.evictList.MoveToFront(ent)
-		ent.Value.(*Entry).value = value
-		return true
+		c.removeElement(ent)
 	}
 
 	// Add new item
@@ -125,6 +123,8 @@ func (c *LRU) Add(key, value interface{}) bool {
 // PushBack adds a value to the back of the cache, but only if there is
 // sufficient capacity.
 //
+// If the item already exists, it is first removed.
+//
 // This is useful for populating the cache initially, by iterating over existing
 // items in MRU to LRU order and repeatedly calling PushBack on each item.
 //
@@ -134,10 +134,9 @@ func (c *LRU) PushBack(key, value interface{}) bool {
 	if !ok {
 		return false
 	}
-	// Check for existing item
+	// Remove any existing item.
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		ent.Value.(*Entry).value = value
-		return true
+		c.removeElement(ent)
 	}
 
 	size := c.sizeFn(value)
