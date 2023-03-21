@@ -600,7 +600,7 @@ func makeRecordFromInfo(key *fileKey, info fs.FileInfo) *fileRecord {
 	}
 }
 
-func (p *partition) evictFn(value interface{}) {
+func (p *partition) evictFn(value interface{}, removed bool) {
 	if v, ok := value.(*fileRecord); ok {
 		i, err := os.Stat(v.FullPath())
 		if err == nil {

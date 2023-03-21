@@ -12,8 +12,13 @@ import (
 	xxhash "github.com/cespare/xxhash/v2"
 )
 
-// EvictedCallback is used to get a callback when a cache Entry is evicted
-type EvictedCallback func(value interface{})
+// EvictedCallback is a function invoked whenever an LRU entry is evicted or
+// removed.
+//
+// It is passed the value which was removed or evicted, as well as a boolean
+// that is set to true if the value was removed or false if it was evicted. Note
+// that RemoveOldest is counted as an eviction, not a removal.
+type EvictedCallback func(value interface{}, removed bool)
 type SizeFn func(value interface{}) int64
 
 // Config specifies how the LRU cache is to be constructed.
@@ -92,7 +97,7 @@ func (c *LRU) Purge() {
 	for k, vals := range c.items {
 		for _, v := range vals {
 			if c.onEvict != nil {
-				c.onEvict(v.Value.(*Entry).value)
+				c.onEvict(v.Value.(*Entry).value, true /*=removed*/)
 			}
 		}
 		delete(c.items, k)
@@ -198,17 +203,18 @@ func (c *LRU) Remove(key interface{}) (present bool) {
 		return false
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.removeElement(ent)
+		c.removeElement(ent, true /*=removed*/)
 		return true
 	}
 	return false
 }
 
 // RemoveOldest removes the oldest item from the cache.
+// The OnEvict callback treats this as an eviction, not a removal.
 func (c *LRU) RemoveOldest() (interface{}, bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
-		c.removeElement(ent)
+		c.removeElement(ent, false /*=removed*/)
 		kv := ent.Value.(*Entry)
 		return kv.value, true
 	}
@@ -232,7 +238,7 @@ func (c *LRU) MaxSize() int64 {
 func (c *LRU) removeOldest() {
 	ent := c.evictList.Back()
 	if ent != nil {
-		c.removeElement(ent)
+		c.removeElement(ent, false /*=removed*/)
 	}
 }
 
@@ -288,12 +294,12 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 }
 
 // removeElement is used to remove a given list element from the cache
-func (c *LRU) removeElement(e *list.Element) {
+func (c *LRU) removeElement(e *list.Element, removed bool) {
 	c.evictList.Remove(e)
 	kv := e.Value.(*Entry)
 	c.removeItem(kv.key, kv.conflictKey)
 	c.currentSize -= c.sizeFn(kv.value)
 	if c.onEvict != nil {
-		c.onEvict(kv.value)
+		c.onEvict(kv.value, removed)
 	}
 }
