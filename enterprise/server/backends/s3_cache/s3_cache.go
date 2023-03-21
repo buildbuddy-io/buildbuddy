@@ -37,6 +37,7 @@ import (
 var (
 	region                   = flag.String("cache.s3.region", "", "The AWS region.")
 	bucket                   = flag.String("cache.s3.bucket", "", "The AWS S3 bucket to store files in.")
+	pathPrefix               = flag.String("cache.s3.path_prefix", "", "Prefix inside the AWS S3 bucket to store files")
 	credentialsProfile       = flag.String("cache.s3.credentials_profile", "", "A custom credentials profile to use.")
 	ttlDays                  = flag.Int64("cache.s3.ttl_days", 0, "The period after which cache files should be TTLd. Disabled if 0.")
 	webIdentityTokenFilePath = flag.String("cache.s3.web_identity_token_file", "", "The file path to the web identity token file.")
@@ -62,6 +63,7 @@ var (
 type S3Cache struct {
 	s3         *s3.S3
 	bucket     *string
+	pathPrefix string
 	downloader *s3manager.Downloader
 	uploader   *s3manager.Uploader
 	ttlInDays  int64
@@ -118,6 +120,7 @@ func NewS3Cache() (*S3Cache, error) {
 	s3c := &S3Cache{
 		s3:         svc,
 		bucket:     aws.String(*bucket),
+		pathPrefix: *pathPrefix,
 		downloader: s3manager.NewDownloader(sess),
 		uploader:   s3manager.NewUploader(sess),
 		ttlInDays:  *ttlDays,
@@ -235,7 +238,7 @@ func (s3c *S3Cache) key(ctx context.Context, r *rspb.ResourceName) (string, erro
 		return "", err
 	}
 	isolationPrefix := filepath.Join(r.GetInstanceName(), digest.CacheTypeToPrefix(r.GetCacheType()))
-	k := filepath.Join(userPrefix, isolationPrefix, hash, hash)
+	k := filepath.Join(s3c.pathPrefix, userPrefix, isolationPrefix, hash, hash)
 	return k, nil
 }
 
