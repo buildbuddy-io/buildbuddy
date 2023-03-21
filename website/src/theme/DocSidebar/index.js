@@ -18,8 +18,8 @@ import Logo from "@theme/Logo";
 import IconArrow from "@theme/IconArrow";
 import { translate } from "@docusaurus/Translate";
 import { DocSidebarItems } from "@theme/DocSidebarItem";
-import { macos } from "platform-detect/os.mjs";
 import styles from "./styles.module.css";
+import useIsBrowser from '@docusaurus/useIsBrowser';
 
 function useShowAnnouncementBar() {
   const { isActive } = useAnnouncementBar();
@@ -72,7 +72,7 @@ function DocSidebarDesktop({ path, sidebar, onCollapse, isHidden }) {
       <nav
         className={clsx("menu", styles.menu, {
           [styles.menuWithAnnouncementBar]: showAnnouncementBar,
-          "thin-scrollbar": !macos,
+          "thin-scrollbar": useIsBrowser() ? !/(Mac|iPhone|iPod|iPad)/i.test(navigator.platform) : false,
         })}>
         <ul className={clsx(ThemeClassNames.docs.docSidebarMenu, "menu__list")}>
           <DocSidebarItems items={sidebar} activePath={path} level={1} />
