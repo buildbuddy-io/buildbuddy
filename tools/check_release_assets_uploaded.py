@@ -5,9 +5,33 @@ import requests
 import sys
 import time
 
+EXPECTED_ASSETS = [
+    "executor-enterprise-darwin-arm64",
+    "buildbuddy-enterprise-linux-amd64",
+    "buildbuddy-linux-amd64",
+    "executor-enterprise-linux-amd64",
+    "buildbuddy-enterprise-darwin-amd64",
+    "executor-enterprise-darwin-amd64",
+    "buildbuddy-darwin-amd64"
+]
+
 def die(message):
     print(message)
     sys.exit(1)
+
+def get_release(version_tag):
+    github_token = os.environ.get('GITHUB_TOKEN')
+    query_url = f"https://api.github.com/repos/buildbuddy-io/buildbuddy/releases?page=1"
+    headers = {'Authorization': f'token {github_token}'}
+    r = requests.get(query_url, headers=headers)
+    if r.status_code == 401:
+        die("Invalid github credentials. Did you pass a valid github token?")
+
+    for release in r.json():
+        if release["tag_name"] == version_tag:
+            return release
+
+    return None
 
 # get_assets_for_release returns a list of URL strings representing the assets uploaded to the release with the given
 # version tag
@@ -15,41 +39,26 @@ def die(message):
 # ['https://github.com/buildbuddy-io/buildbuddy/releases/download/v2.0.0/executor-enterprise-darwin-arm64',
 # 'https://github.com/buildbuddy-io/buildbuddy/releases/download/v2.0.0/buildbuddy-enterprise-linux-amd64']
 def get_assets_for_release(version_tag):
-    github_token = os.environ.get('GITHUB_TOKEN')
-    query_url = "https://api.github.com/graphql"
-    json = {"query": "query {repository(owner: \"buildbuddy-io\", name: \"buildbuddy\") { release(tagName:\"" + version_tag+ "\"){ releaseAssets(last:10) { edges {node {downloadUrl}}}}}}"}
-    headers = {'Authorization': f'token {github_token}'}
-    r = requests.post(query_url, json=json, headers=headers)
-    if r.status_code == 401:
-        die("Invalid github credentials. Did you set the GITHUB_TOKEN environment variable?")
-
-    release = r.json()["data"]["repository"]["release"]
+    release = get_release(version_tag)
     if release is None:
         die(f"Release with tag {version_tag} not found.")
 
-    asset_objs = release["releaseAssets"]["edges"]
-    asset_urls = [o["node"]["downloadUrl"] for o in asset_objs]
+    asset_objs = release["assets"]
+    asset_urls = [o["name"] for o in asset_objs]
     return asset_urls
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--polling_interval_sec', type=int, default=60)
-    parser.add_argument('--max_timeout_sec', type=int, default=600)
+    parser.add_argument('--timeout_sec', type=int, default=600)
     parser.add_argument('--release_version_tag', required=True)
     args = parser.parse_args()
 
-    expected_assets = [
-        "executor-enterprise-darwin-arm64",
-        "buildbuddy-enterprise-linux-amd64",
-        "buildbuddy-linux-amd64",
-        "executor-enterprise-linux-amd64",
-        "buildbuddy-enterprise-darwin-amd64",
-        "executor-enterprise-darwin-amd64",
-        "buildbuddy-darwin-amd64"
-    ]
-
-    time_passed = 0
-    while time_passed < args.max_timeout_sec:
+    expected_assets = EXPECTED_ASSETS
+    start_time_sec = time.time()
+    elapsed_time_sec = 0
+    while elapsed_time_sec < args.timeout_sec:
+        print(f"Polling for release assets {expected_assets}.")
         asset_urls = get_assets_for_release(args.release_version_tag)
         missing_assets = []
         for expected_asset in expected_assets:
@@ -67,8 +76,7 @@ def main():
             break
 
         time.sleep(args.polling_interval_sec)
-        time_passed += args.polling_interval_sec
-        print(f"Still missing release assets {expected_assets}. {time_passed}s have passed...")
+        elapsed_time_sec = time.time() - start_time_sec
 
     if len(expected_assets) > 0:
         print(f"Missing assets {expected_assets}", file=sys.stderr)
