@@ -36,7 +36,6 @@ func TestPushBack(t *testing.T) {
 
 	require.True(t, l.PushBack("a", 5))
 	require.True(t, l.PushBack("b", 4))
-	require.False(t, l.PushBack("c", 3))
-	require.Equal(t, 1, len(evictions))
-	require.Equal(t, 3, evictions[0])
+	require.False(t, l.PushBack("c", 3), "c should not be added since there isn't enough capacity")
+	require.Empty(t, evictions)
 }
