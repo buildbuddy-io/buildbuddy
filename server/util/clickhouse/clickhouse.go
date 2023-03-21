@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -24,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 
+	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gormclickhouse "gorm.io/driver/clickhouse"
@@ -259,7 +259,8 @@ func Register(env environment.Env) error {
 	}
 
 	db, err := gorm.Open(gormclickhouse.New(gormclickhouse.Config{
-		Conn: sqlDB,
+		Conn:                         sqlDB,
+		DontSupportEmptyDefaultValue: true,
 	}))
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
