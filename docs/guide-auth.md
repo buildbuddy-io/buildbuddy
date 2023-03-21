@@ -54,11 +54,14 @@ You can create multiple API keys on your [organization settings page](https://ap
 
 When creating multiple keys, we recommending labeling your API keys with descriptive names to describe how they will be used.
 
-## Read only keys
+When keys are deleted, it can take up to 5 minutes for the change to take
+effect.
+
+### Read only keys
 
 When creating new API keys, you can check the box that says **Read-only key (disable remote cache uploads)**. This will allow users of these keys to download from the remote cache, but not upload artifacts into the cache.
 
-## Executor keys
+### Executor keys
 
 When creating API keys to link your self-hosted executors to your organization (if using **Bring Your Own Runners**), you'll need to check the box that says **Executor key (for self-hosted executors)**.
 
@@ -77,10 +80,13 @@ as organization-level keys, with the following differences:
   content-addressable store (CAS), and read-only permissions for the
   action cache (AC).
 - User-level keys are deleted automatically when a user is removed from
-  the organization.
+  the organization. It may take up to 5 minutes for the API key deletion
+  to take effect.
 - User-owned keys can be enabled by an org Admin under "Settings > Org
-  details > Enable user-owned API keys". If this setting is later disabled,
-  any user-owned keys will be disabled (but not deleted).
+  details > Enable user-owned API keys". If this setting is later
+  disabled, any user-owned keys will be disabled (but not deleted). Once
+  the setting is disabled, it may take up to 5 minutes for all user-owned
+  keys to become disabled.
 
 ### Authenticating with user-owned keys
 
