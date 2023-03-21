@@ -194,6 +194,10 @@ func (t *TargetTracker) invocationID() string {
 }
 
 func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms.UserGroupPerm) error {
+	if t.writeToOLAPDBEnabled() {
+		// Stop write test targets to MySQL when writes to OLAP DB is enabled
+		return nil
+	}
 	repoURL := t.buildEventAccumulator.RepoURL()
 	knownTargets, err := readRepoTargets(ctx, t.env, repoURL)
 	if err != nil {
@@ -244,6 +248,10 @@ func (t *TargetTracker) writeTestTargets(ctx context.Context, permissions *perms
 }
 
 func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions *perms.UserGroupPerm) error {
+	if t.writeToOLAPDBEnabled() {
+		// Stop write test targets to MySQL when writes to OLAP DB is enabled
+		return nil
+	}
 	repoURL := t.buildEventAccumulator.RepoURL()
 	invocationUUID, err := uuid.StringToBytes(t.invocationID())
 	if err != nil {
@@ -272,7 +280,7 @@ func (t *TargetTracker) writeTestTargetStatuses(ctx context.Context, permissions
 }
 
 func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, permissions *perms.UserGroupPerm) error {
-	if !*writeTestTargetStatusesToOLAPDBEnabled || t.env.GetOLAPDBHandle() == nil {
+	if !t.writeToOLAPDBEnabled() {
 		return nil
 	}
 	ctx, cancel := background.ExtendContextForFinalization(ctx, writeTestTargetStatusesTimeout)
@@ -588,6 +596,10 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 		}
 	}
 	return nil
+}
+
+func (t *TargetTracker) writeToOLAPDBEnabled() bool {
+	return *writeTestTargetStatusesToOLAPDBEnabled && t.env.GetOLAPDBHandle() != nil
 }
 
 func TargetTrackingEnabled() bool {
