@@ -29,11 +29,11 @@ func InstrumentMetrics(gdb *gorm.DB, beforeKey string, beforeFn func(*gorm.DB), 
 }
 
 // RegisterLogSQLCallback adds a callback to the db that appends all SQL executed to a slice of strings
-func RegisterLogSQLCallback(db *gorm.DB, s *[]string, excludeQueries bool) error {
+func RegisterLogSQLCallback(db *gorm.DB, s *[]string) error {
 	// Replace every gorm raw SQL command with a function that appends the SQL string to a slice
 	if err := db.Callback().Raw().Replace("gorm:raw", func(db *gorm.DB) {
 		sqlToExecute := db.Statement.SQL.String()
-		if excludeQueries && strings.HasPrefix(sqlToExecute, "SELECT") {
+		if strings.HasPrefix(sqlToExecute, "SELECT") {
 			return
 		}
 		*s = append(*s, sqlToExecute)
@@ -48,7 +48,7 @@ func PrintMigrationSchemaChanges(sqlStrings []string) {
 	// Logs go to stderr, so this output will be easy to isolate and parse
 	if len(sqlStrings) > 0 {
 		for _, sqlStr := range sqlStrings {
-			fmt.Printf("%s\n", sqlStr)
+			fmt.Println(sqlStr)
 		}
 	}
 }

@@ -654,7 +654,7 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 	if *autoMigrateDB || *autoMigrateDBAndExit || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
 		if *printSchemaChangesAndExit {
-			if err := gormutil.RegisterLogSQLCallback(primaryDB, &sqlStrings, true); err != nil {
+			if err := gormutil.RegisterLogSQLCallback(primaryDB, &sqlStrings); err != nil {
 				return nil, err
 			}
 		}
