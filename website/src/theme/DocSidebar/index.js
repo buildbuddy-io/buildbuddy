@@ -19,7 +19,7 @@ import IconArrow from "@theme/IconArrow";
 import { translate } from "@docusaurus/Translate";
 import { DocSidebarItems } from "@theme/DocSidebarItem";
 import styles from "./styles.module.css";
-import useIsBrowser from '@docusaurus/useIsBrowser';
+import useIsBrowser from "@docusaurus/useIsBrowser";
 
 function useShowAnnouncementBar() {
   const { isActive } = useAnnouncementBar();
