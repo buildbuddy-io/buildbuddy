@@ -180,9 +180,7 @@ func (r *ResourceName) Validate() error {
 		if r.IsEmpty() {
 			return nil
 		}
-		log.Errorf("Invalid (zero-length) SHA256 hash: %+v, SIZE IS %d", r.rn, d.GetSizeBytes())
-		panic("shitttttt")
-		//return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
 	}
 	if !hashKeyRegex.MatchString(d.Hash) {
 		return status.InvalidArgumentError("Malformed hash")
