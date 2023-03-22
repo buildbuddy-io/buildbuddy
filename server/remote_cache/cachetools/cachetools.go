@@ -182,10 +182,27 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 
 	}
-	_, err = stream.CloseAndRecv()
+	rsp, err := stream.CloseAndRecv()
 	if err != nil {
 		return nil, err
 	}
+
+	remoteSize := rsp.GetCommittedSize()
+	if r.GetCompressor() == repb.Compressor_IDENTITY {
+		// Either the write succeeded or was short-circuited, but in
+		// either case, the remoteSize for uncompressed uploads should
+		// match the file size.
+		if remoteSize != r.GetDigest().GetSizeBytes() {
+			return nil, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+		}
+	} else {
+		// -1 is returned if the blob already exists, otherwise the
+		// remoteSize should agree with what we uploaded.
+		if remoteSize != bytesUploaded && remoteSize != -1 {
+			return nil, status.DataLossErrorf("Remote size (%d) != uploaded size: (%d)", remoteSize, r.GetDigest().GetSizeBytes())
+		}
+	}
+
 	return r.GetDigest(), nil
 }
 
