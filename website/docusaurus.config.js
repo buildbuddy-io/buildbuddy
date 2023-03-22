@@ -269,6 +269,13 @@ module.exports = {
       },
     ],
   ],
+  scripts: [
+    {
+      id: "warmly-script-loader",
+      src: "https://opps-widget.getwarmly.com/warmly.js?clientId=ff4d871d33dc25dad62ee98e60065bc0",
+      defer: true,
+    },
+  ],
   plugins: [
     [
       "@docusaurus/plugin-ideal-image",
