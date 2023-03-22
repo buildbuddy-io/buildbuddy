@@ -242,6 +242,8 @@ func Register(env environment.Env) error {
 	if *dataSource == "" {
 		return nil
 	}
+
+	log.Warningf("Maggie - datasource is %s", *dataSource)
 	options, err := clickhouse.ParseDSN(*dataSource)
 	if err != nil {
 		return status.InternalErrorf("failed to parse clickhouse data source (%q): %s", *dataSource, err)
