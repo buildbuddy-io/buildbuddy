@@ -511,7 +511,15 @@ func newPartition(id string, rootDir string, maxSizeBytes int64, useV2Layout boo
 		internedStrings:  make(map[string]string, 0),
 		doneAsyncLoading: make(chan struct{}),
 	}
-	l, err := lru.NewLRU(&lru.Config{MaxSize: maxSizeBytes, OnEvict: p.evictFn, SizeFn: sizeFn})
+	config := &lru.Config{
+		MaxSize: maxSizeBytes,
+		OnEvict: p.evictFn,
+		SizeFn:  sizeFn,
+		// Update LRU entries in place to prevent overwrites from deleting the
+		// file (via evictFn).
+		UpdateInPlace: true,
+	}
+	l, err := lru.NewLRU(config)
 	if err != nil {
 		return nil, err
 	}
