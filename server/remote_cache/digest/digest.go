@@ -18,7 +18,6 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/zeebo/blake3"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
