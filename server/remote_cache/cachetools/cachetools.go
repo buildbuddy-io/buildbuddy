@@ -73,10 +73,15 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 		}
 		return 0, err
 	}
+	checksum, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return 0, err
+	}
+	w := io.MultiWriter(checksum, out)
 
-	var wc io.WriteCloser = nopCloser{out}
+	var wc io.WriteCloser = nopCloser{w}
 	if r.GetCompressor() == repb.Compressor_ZSTD {
-		decompressor, err := compression.NewZstdDecompressor(out)
+		decompressor, err := compression.NewZstdDecompressor(w)
 		if err != nil {
 			return 0, err
 		}
@@ -100,6 +105,10 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 			return 0, err
 		}
 		written += int64(n)
+	}
+	computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
+	if computedDigest != r.GetDigest().GetHash() {
+		return 0, status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
 	}
 	return written, nil
 }
