@@ -290,6 +290,7 @@ dockerfile_image(
 )
 
 # BuildBuddy Toolchain
+# Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",

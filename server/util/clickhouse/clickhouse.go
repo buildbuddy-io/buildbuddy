@@ -5,11 +5,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 
+	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gormclickhouse "gorm.io/driver/clickhouse"
@@ -41,7 +42,8 @@ var (
 	maxIdleConns    = flag.Int("olap_database.max_idle_conns", 0, "The maximum number of idle connections to maintain to the db")
 	connMaxLifetime = flag.Duration("olap_database.conn_max_lifetime", 0, "The maximum lifetime of a connection to clickhouse")
 
-	autoMigrateDB = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	autoMigrateDB             = flag.Bool("olap_database.auto_migrate_db", true, "If true, attempt to automigrate the db when connecting")
+	printSchemaChangesAndExit = flag.Bool("olap_database.print_schema_changes_and_exit", false, "If set, print schema changes from auto-migration, then exit the program.")
 )
 
 type DBHandle struct {
@@ -257,15 +259,29 @@ func Register(env environment.Env) error {
 	}
 
 	db, err := gorm.Open(gormclickhouse.New(gormclickhouse.Config{
-		Conn: sqlDB,
+		Conn:                         sqlDB,
+		DontSupportEmptyDefaultValue: true,
 	}))
 	if err != nil {
 		return status.InternalErrorf("failed to open gorm clickhouse db: %s", err)
 	}
 	gormutil.InstrumentMetrics(db, gormRecordOpStartTimeCallbackKey, recordMetricsBeforeFn, gormRecordMetricsCallbackKey, recordMetricsAfterFn)
-	if *autoMigrateDB {
+	if *autoMigrateDB || *printSchemaChangesAndExit {
+		sqlStrings := make([]string, 0)
+		if *printSchemaChangesAndExit {
+			if err := gormutil.RegisterLogSQLCallback(db, &sqlStrings); err != nil {
+				return err
+			}
+		}
+
 		if err := schema.RunMigrations(db); err != nil {
 			return err
+		}
+
+		if *printSchemaChangesAndExit {
+			gormutil.PrintMigrationSchemaChanges(sqlStrings)
+			log.Info("Clickhouse migration completed. Exiting due to --clickhouse.print_schema_changes_and_exit.")
+			os.Exit(0)
 		}
 	}
 

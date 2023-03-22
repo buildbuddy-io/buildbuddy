@@ -114,7 +114,7 @@ func (c *LRU) Add(key, value interface{}) bool {
 	}
 
 	// Add new item
-	c.addItem(pk, ck, value, true /*=front*/)
+	c.addItem(pk, ck, value, c.sizeFn(value), true /*=front*/)
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -122,7 +122,13 @@ func (c *LRU) Add(key, value interface{}) bool {
 	return true
 }
 
-// PushBack adds a value to the back of the cache. Returns true if the key was added.
+// PushBack adds a value to the back of the cache, but only if there is
+// sufficient capacity.
+//
+// This is useful for populating the cache initially, by iterating over existing
+// items in MRU to LRU order and repeatedly calling PushBack on each item.
+//
+// Returns true if the key was added.
 func (c *LRU) PushBack(key, value interface{}) bool {
 	pk, ck, ok := c.keyHash(key)
 	if !ok {
@@ -134,13 +140,13 @@ func (c *LRU) PushBack(key, value interface{}) bool {
 		return true
 	}
 
-	// Add new item
-	c.addItem(pk, ck, value, false /*=front*/)
-
-	for c.currentSize > c.maxSize {
-		c.removeOldest()
+	size := c.sizeFn(value)
+	if c.currentSize+size > c.maxSize {
 		return false
 	}
+
+	// Add new item
+	c.addItem(pk, ck, value, size, false /*=front*/)
 	return true
 }
 
@@ -251,7 +257,7 @@ func (c *LRU) lookupItem(key, conflictKey uint64) (*list.Element, bool) {
 
 // addElement adds a new item to the cache. It does not perform any
 // size checks.
-func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool) {
+func (c *LRU) addItem(key, conflictKey uint64, value interface{}, size int64, front bool) {
 	// Add new item
 	kv := &Entry{key, conflictKey, value}
 	var element *list.Element
@@ -261,7 +267,7 @@ func (c *LRU) addItem(key, conflictKey uint64, value interface{}, front bool) {
 		element = c.evictList.PushBack(kv)
 	}
 	c.items[key] = append(c.items[key], element)
-	c.currentSize += c.sizeFn(value)
+	c.currentSize += size
 }
 
 func (c *LRU) removeItem(key, conflictKey uint64) {

@@ -25,6 +25,87 @@ import Select, { Option } from "../../../app/components/select/select";
 import router from "../../../app/router/router";
 import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
 
+const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
+const DD_ZOOM_URL_PARAM: string = "ddZoom";
+
+function encodeMetricUrlParam(metric: stat_filter.Metric): string {
+  if (metric.execution) {
+    return "e" + metric.execution;
+  } else {
+    return "i" + metric.invocation;
+  }
+}
+
+function decodeMetricUrlParam(param: string): MetricOption | undefined {
+  let decoded;
+  if (param.length < 2) {
+    return undefined;
+  } else if (param[0] === "e") {
+    const metric = Number.parseInt(param.substring(1));
+    if (!metric || !stat_filter.ExecutionMetricType[metric]) {
+      return undefined;
+    }
+    return METRIC_OPTIONS.find((v) => metric === v.metric.execution) || undefined;
+  } else if (param[0] === "i") {
+    const metric = Number.parseInt(param.substring(1));
+    if (!metric || !stat_filter.InvocationMetricType[metric]) {
+      return undefined;
+    }
+    return METRIC_OPTIONS.find((v) => metric === v.metric.invocation) || undefined;
+  } else {
+    return undefined;
+  }
+}
+
+function encodeHeatmapSelection(selection?: HeatmapSelection): string {
+  if (!selection) {
+    return "";
+  }
+  const values = [
+    selection.dateRangeMicros.startInclusive,
+    selection.dateRangeMicros.endExclusive,
+    selection.bucketRange.startInclusive,
+    selection.bucketRange.endExclusive,
+    selection.eventsSelected,
+  ];
+  return values.join("|");
+}
+
+function decodeHeatmapSelection(param: string): HeatmapSelection | undefined {
+  const values = param.split("|");
+  if (values.length !== 5) {
+    return undefined;
+  }
+
+  const dateStart = Number.parseInt(values[0]);
+  const dateEnd = Number.parseInt(values[1]);
+  const bucketStart = Number.parseInt(values[2]);
+  const bucketEnd = Number.parseInt(values[3]);
+  const events = Number.parseInt(values[4]);
+
+  if (
+    !Number.isInteger(dateStart) ||
+    !Number.isInteger(dateEnd) ||
+    !Number.isInteger(bucketStart) ||
+    !Number.isInteger(bucketEnd) ||
+    !Number.isInteger(events)
+  ) {
+    return undefined;
+  }
+
+  return {
+    dateRangeMicros: {
+      startInclusive: dateStart,
+      endExclusive: dateEnd,
+    },
+    bucketRange: {
+      startInclusive: bucketStart,
+      endExclusive: bucketEnd,
+    },
+    eventsSelected: events,
+  };
+}
+
 interface Props {
   user?: User;
   search: URLSearchParams;
@@ -360,13 +441,23 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       .finally(() => this.setState({ loading: false }));
   }
 
-  componentWillMount() {
+  componentDidMount() {
+    this.selectedMetric =
+      decodeMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+    this.currentZoomFilters = decodeHeatmapSelection(this.props.search.get(DD_ZOOM_URL_PARAM) || "");
     this.fetch();
+    this.fetchDrilldowns();
+    this.fetchEventList();
   }
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.search != prevProps.search) {
+      this.selectedMetric =
+        decodeMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+      this.currentZoomFilters = decodeHeatmapSelection(this.props.search.get(DD_ZOOM_URL_PARAM) || "");
       this.fetch();
+      this.fetchDrilldowns();
+      this.fetchEventList();
     }
   }
 
@@ -376,10 +467,12 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     if (!newMetric || this.selectedMetric.name === newMetric) {
       return;
     }
-    this.selectedMetric = METRIC_OPTIONS.find((v) => v.name === newMetric) || METRIC_OPTIONS[0];
-    this.currentHeatmapSelection = undefined;
-    this.currentZoomFilters = undefined;
-    this.fetch();
+    const option = METRIC_OPTIONS.find((v) => v.name === newMetric) || METRIC_OPTIONS[0];
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [DD_SELECTED_METRIC_URL_PARAM]: encodeMetricUrlParam(option.metric),
+      [DD_ZOOM_URL_PARAM]: "",
+    });
   }
 
   handleHeatmapSelection(s?: HeatmapSelection) {
@@ -389,15 +482,17 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   handleHeatmapZoom(s?: HeatmapSelection) {
-    this.currentHeatmapSelection = undefined;
-    this.currentZoomFilters = s;
-    this.fetch();
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [DD_ZOOM_URL_PARAM]: s ? encodeHeatmapSelection(s) : "",
+    });
   }
 
   handleClearZoom() {
-    this.currentHeatmapSelection = undefined;
-    this.currentZoomFilters = undefined;
-    this.fetch();
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [DD_ZOOM_URL_PARAM]: "",
+    });
   }
 
   addZoomFiltersToQuery(query: CommonQueryFields) {

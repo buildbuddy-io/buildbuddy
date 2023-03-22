@@ -54,10 +54,63 @@ You can create multiple API keys on your [organization settings page](https://ap
 
 When creating multiple keys, we recommending labeling your API keys with descriptive names to describe how they will be used.
 
-## Read only keys
+When keys are deleted, it can take up to 5 minutes for the change to take
+effect.
+
+### Read only keys
 
 When creating new API keys, you can check the box that says **Read-only key (disable remote cache uploads)**. This will allow users of these keys to download from the remote cache, but not upload artifacts into the cache.
 
-## Executor keys
+### Executor keys
 
 When creating API keys to link your self-hosted executors to your organization (if using **Bring Your Own Runners**), you'll need to check the box that says **Executor key (for self-hosted executors)**.
+
+## User-owned keys
+
+In addition to organization-level API keys, BuildBuddy also supports
+user-owned API keys, which associate builds with both the user that owns
+the key, as well as the organization in which the key was created.
+
+Authentication and authorization for user-owned keys works mostly the same
+as organization-level keys, with the following differences:
+
+- Users with Developer role within the organization cannot customize API
+  key permissions on any user-owned keys that they create. Keys created by
+  Developer users are granted permissions to read and write to the
+  content-addressable store (CAS), and read-only permissions for the
+  action cache (AC).
+- User-level keys are deleted automatically when a user is removed from
+  the organization. It may take up to 5 minutes for the API key deletion
+  to take effect.
+- User-owned keys can be enabled by an org Admin under "Settings > Org
+  details > Enable user-owned API keys". If this setting is later
+  disabled, any user-owned keys will be disabled (but not deleted). Once
+  the setting is disabled, it may take up to 5 minutes for all user-owned
+  keys to become disabled.
+
+### Authenticating with user-owned keys
+
+If using the [BuildBuddy CLI](/docs/cli), you can use the `login` command
+within a Bazel repository to associate a user-owned API key with your git
+repository. The CLI will then authorize all Bazel builds within the
+repository using that API key. The API key is stored in `.git/config`, and
+you can retrieve its current value using the command `git config --local buildbuddy.api-key`
+and delete it using `git config --local --unset buildbuddy.api-key`.
+
+Otherwise, users within the organization can add their API key to a
+user-specific `.bazelrc` within the workspace:
+
+```
+# file: .bazelrc
+try-import %workspace%/user.bazelrc
+```
+
+```
+# file: .gitignore
+/user.bazelrc # ignore user-specific bazel settings
+```
+
+```
+# file: user.bazelrc
+build --remote_header=x-buildbuddy-api-key=<USER_API_KEY>
+```

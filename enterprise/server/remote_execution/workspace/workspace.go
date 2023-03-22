@@ -80,7 +80,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		dirPerms = 0777
 	}
 	if err := os.MkdirAll(rootDir, dirPerms); err != nil {
-		return nil, status.UnavailableErrorf("failed to create workspace at %q", rootDir)
+		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
 	}
 
 	return &Workspace{
