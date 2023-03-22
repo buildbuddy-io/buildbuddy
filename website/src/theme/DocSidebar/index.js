@@ -57,6 +57,7 @@ function HideableSidebarButton({ onClick }) {
 }
 
 function DocSidebarDesktop({ path, sidebar, onCollapse, isHidden }) {
+  const shouldShowScrollbar = useIsBrowser() ? !/(Mac|iPhone|iPod|iPad)/i.test(navigator.platform) : false;
   const showAnnouncementBar = useShowAnnouncementBar();
   const {
     navbar: { hideOnScroll },
@@ -72,7 +73,7 @@ function DocSidebarDesktop({ path, sidebar, onCollapse, isHidden }) {
       <nav
         className={clsx("menu", styles.menu, {
           [styles.menuWithAnnouncementBar]: showAnnouncementBar,
-          "thin-scrollbar": useIsBrowser() ? !/(Mac|iPhone|iPod|iPad)/i.test(navigator.platform) : false,
+          "thin-scrollbar": shouldShowScrollbar,
         })}>
         <ul className={clsx(ThemeClassNames.docs.docSidebarMenu, "menu__list")}>
           <DocSidebarItems items={sidebar} activePath={path} level={1} />
