@@ -49,7 +49,7 @@ type nopCloser struct {
 
 func (nopCloser) Close() error { return nil }
 
-func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, opts *StreamBlobOpts, out io.Writer) (int64, error) {
+func getBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, opts *StreamBlobOpts, out io.Writer) (int64, error) {
 	if bsClient == nil {
 		return 0, status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -107,15 +107,15 @@ func GetBlobChunk(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest
 		written += int64(n)
 	}
 	computedDigest := fmt.Sprintf("%x", checksum.Sum(nil))
-	if computedDigest != r.GetDigest().GetHash() {
+	if opts.Offset == 0 && opts.Limit == 0 && computedDigest != r.GetDigest().GetHash() {
 		return 0, status.DataLossErrorf("Downloaded content (hash %q) did not match expected (hash %q)", computedDigest, r.GetDigest().GetHash())
 	}
 	return written, nil
 }
 
-// TODO(vadim): return # of bytes written for consistency with GetBlobChunk
+// TODO(vadim): return # of bytes written for consistency with getBlobChunk
 func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
-	_, err := GetBlobChunk(ctx, bsClient, r, &StreamBlobOpts{Offset: 0, Limit: 0}, out)
+	_, err := getBlobChunk(ctx, bsClient, r, &StreamBlobOpts{Offset: 0, Limit: 0}, out)
 	return err
 }
 
