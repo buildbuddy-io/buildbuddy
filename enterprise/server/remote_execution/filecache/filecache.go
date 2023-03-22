@@ -86,10 +86,10 @@ func sizeFn(value interface{}) int64 {
 	return 0
 }
 
-func evictFn(value interface{}, removed bool) {
+func evictFn(value interface{}, reason lru.EvictionReason) {
 	if v, ok := value.(*entry); ok {
 		syscall.Unlink(v.value)
-		if !removed {
+		if reason == lru.SizeEviction {
 			age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
 			metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
 		}

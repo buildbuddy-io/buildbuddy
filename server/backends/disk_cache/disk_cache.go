@@ -600,14 +600,18 @@ func makeRecordFromInfo(key *fileKey, info fs.FileInfo) *fileRecord {
 	}
 }
 
-func (p *partition) evictFn(value interface{}, removed bool) {
+func (p *partition) evictFn(value interface{}, reason lru.EvictionReason) {
 	if v, ok := value.(*fileRecord); ok {
 		i, err := os.Stat(v.FullPath())
 		if err == nil {
 			lastUse := time.Unix(0, getLastUseNanos(i))
 			age := time.Now().Sub(lastUse)
 			lbls := prometheus.Labels{metrics.PartitionID: p.id, metrics.CacheNameLabel: cacheName}
-			metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+			// Last eviction age is a measure of cache health, so only update it
+			// when elements are evicted because of capacity constraints.
+			if reason == lru.SizeEviction {
+				metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+			}
 			metrics.DiskCacheNumEvictions.With(lbls).Inc()
 			metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
 		}

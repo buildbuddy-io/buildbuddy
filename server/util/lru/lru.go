@@ -12,13 +12,24 @@ import (
 	xxhash "github.com/cespare/xxhash/v2"
 )
 
+// EvictionReason describes the reason for an entry being evicted from LRU.
+type EvictionReason int
+
+const (
+	// SizeEviction means this was the least recently used entry which had to
+	// be evicted to make room for newer entries.
+	SizeEviction EvictionReason = iota
+
+	// ManualRemoval means this entry was evicted via a call to Remove.
+	ManualRemoval
+)
+
 // EvictedCallback is a function invoked whenever an LRU entry is evicted or
 // removed.
 //
-// It is passed the value which was removed or evicted, as well as a boolean
-// that is set to true if the value was removed or false if it was evicted. Note
-// that RemoveOldest is counted as an eviction, not a removal.
-type EvictedCallback func(value interface{}, removed bool)
+// It is passed the value which was removed or evicted, as well the reason for
+// eviction.
+type EvictedCallback func(value interface{}, reason EvictionReason)
 type SizeFn func(value interface{}) int64
 
 // Config specifies how the LRU cache is to be constructed.
@@ -97,7 +108,7 @@ func (c *LRU) Purge() {
 	for k, vals := range c.items {
 		for _, v := range vals {
 			if c.onEvict != nil {
-				c.onEvict(v.Value.(*Entry).value, true /*=removed*/)
+				c.onEvict(v.Value.(*Entry).value, SizeEviction)
 			}
 		}
 		delete(c.items, k)
@@ -203,18 +214,18 @@ func (c *LRU) Remove(key interface{}) (present bool) {
 		return false
 	}
 	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.removeElement(ent, true /*=removed*/)
+		c.removeElement(ent, ManualRemoval)
 		return true
 	}
 	return false
 }
 
 // RemoveOldest removes the oldest item from the cache.
-// The OnEvict callback treats this as an eviction, not a removal.
+// The OnEvict callback treats this as an SizeEviction.
 func (c *LRU) RemoveOldest() (interface{}, bool) {
 	ent := c.evictList.Back()
 	if ent != nil {
-		c.removeElement(ent, false /*=removed*/)
+		c.removeElement(ent, SizeEviction)
 		kv := ent.Value.(*Entry)
 		return kv.value, true
 	}
@@ -238,7 +249,7 @@ func (c *LRU) MaxSize() int64 {
 func (c *LRU) removeOldest() {
 	ent := c.evictList.Back()
 	if ent != nil {
-		c.removeElement(ent, false /*=removed*/)
+		c.removeElement(ent, SizeEviction)
 	}
 }
 
@@ -294,12 +305,12 @@ func (c *LRU) removeItem(key, conflictKey uint64) {
 }
 
 // removeElement is used to remove a given list element from the cache
-func (c *LRU) removeElement(e *list.Element, removed bool) {
+func (c *LRU) removeElement(e *list.Element, reason EvictionReason) {
 	c.evictList.Remove(e)
 	kv := e.Value.(*Entry)
 	c.removeItem(kv.key, kv.conflictKey)
 	c.currentSize -= c.sizeFn(kv.value)
 	if c.onEvict != nil {
-		c.onEvict(kv.value, removed)
+		c.onEvict(kv.value, reason)
 	}
 }
