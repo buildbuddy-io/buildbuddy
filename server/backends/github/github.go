@@ -68,9 +68,21 @@ func NewGithubStatusPayload(context, URL, description string, state State) *Gith
 }
 
 type GithubAccessTokenResponse struct {
-	AccessToken string `json:"access_token"`
-	Scope       string `json:"scope"`
-	TokenType   string `json:"token_type"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
+	TokenType    string `json:"token_type"`
+
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+	ErrorURI         string `json:"error_uri"`
+}
+
+func (r *GithubAccessTokenResponse) Err() error {
+	if r.Error == "" {
+		return nil
+	}
+	return fmt.Errorf("%s", r.ErrorDescription)
 }
 
 type GithubClient struct {
@@ -136,9 +148,14 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
 			*clientID,
 			state,
-			build_buddy_url.WithPath("/auth/github/link/"),
+			url.QueryEscape(build_buddy_url.WithPath("/auth/github/link/").String()),
 			"repo")
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		return
+	}
+
+	if errDesc := r.FormValue("error_description"); errDesc != "" {
+		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub redirected back with error: %s", errDesc))
 		return
 	}
 
@@ -162,7 +179,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		ClientSecret(),
 		code,
 		state,
-		redirectURL)
+		url.QueryEscape(redirectURL))
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -184,13 +201,30 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 		redirectWithError(w, r, status.PermissionDeniedErrorf("Error reading GitHub response: %s", err.Error()))
 		return
 	}
+	if resp.StatusCode != 200 {
+		redirectWithError(w, r, status.UnknownErrorf("Error getting access token: HTTP %d: %s", resp.StatusCode, string(body)))
+		return
+	}
 
 	var accessTokenResponse GithubAccessTokenResponse
-	json.Unmarshal(body, &accessTokenResponse)
+	if err := json.Unmarshal(body, &accessTokenResponse); err != nil {
+		redirectWithError(w, r, status.WrapError(err, "Failed to unmarshal GitHub access token response"))
+		return
+	}
+	if err := accessTokenResponse.Err(); err != nil {
+		redirectWithError(w, r, status.PermissionDeniedErrorf("OAuth token exchange failed: %s", err))
+		return
+	}
+	if accessTokenResponse.RefreshToken != "" {
+		// TODO: Support refresh token.
+		log.Warningf("GitHub refresh tokens are currently unsupported. To fix this error, opt out of user-to-server token expiration in GitHub app settings.")
+		redirectWithError(w, r, status.PermissionDeniedErrorf("OAuth token exchange failed: response included unsupported refresh token"))
+		return
+	}
 
 	u, err := perms.AuthenticatedUser(r.Context(), c.env)
 	if err != nil {
-		redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account"))
+		redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account: could not authenticate user"))
 		return
 	}
 
@@ -204,7 +238,7 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	groupID := getCookie(r, groupIDCookieName)
 	if groupID != "" {
 		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
-			redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account"))
+			redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account: role not authorized"))
 			return
 		}
 		err = dbHandle.DB(r.Context()).Exec(
@@ -221,7 +255,9 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	if userID != "" {
 		if userID != u.GetUserID() {
 			redirectWithError(w, r, status.PermissionDeniedErrorf("Invalid user: %v", userID))
+			return
 		}
+		log.Infof("Linking GitHub account for user %s", userID)
 		err = dbHandle.DB(r.Context()).Exec(
 			`UPDATE `+"`Users`"+` SET github_token = ? WHERE user_id = ?`,
 			accessTokenResponse.AccessToken, userID).Error
@@ -338,5 +374,14 @@ func getCookie(r *http.Request, name string) string {
 
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 	log.Warning(err.Error())
-	http.Redirect(w, r, "/?error="+url.QueryEscape(err.Error()), http.StatusTemporaryRedirect)
+	errorParam := err.Error()
+	redirectUrl := getCookie(r, redirectCookieName)
+	u, err := url.Parse(redirectUrl)
+	if err != nil || redirectUrl == "" {
+		u = &url.URL{Path: "/"}
+	}
+	q := u.Query()
+	q.Set("error", errorParam)
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
 }
