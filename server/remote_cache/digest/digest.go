@@ -18,7 +18,6 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/zeebo/blake3"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -180,9 +179,7 @@ func (r *ResourceName) Validate() error {
 		if r.IsEmpty() {
 			return nil
 		}
-		log.Errorf("Invalid (zero-length) SHA256 hash: %+v, SIZE IS %d", r.rn, d.GetSizeBytes())
-		panic("shitttttt")
-		//return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
 	}
 	if !hashKeyRegex.MatchString(d.Hash) {
 		return status.InvalidArgumentError("Malformed hash")
