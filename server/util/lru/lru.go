@@ -26,16 +26,21 @@ type Config struct {
 	// Maximum amount of data to store in the cache.
 	// The size of each entry is determined by SizeFn.
 	MaxSize int64
+	// Whether adding an item with a key that already exists should update the
+	// existing entry's size and value, instead of evicting the old entry and
+	// invoking the OnEvict callback.
+	UpdateInPlace bool
 }
 
 // LRU implements a non-thread safe fixed size LRU cache
 type LRU struct {
-	sizeFn      SizeFn
-	evictList   *list.List
-	items       map[uint64][]*list.Element
-	onEvict     EvictedCallback
-	maxSize     int64
-	currentSize int64
+	sizeFn        SizeFn
+	evictList     *list.List
+	items         map[uint64][]*list.Element
+	onEvict       EvictedCallback
+	maxSize       int64
+	currentSize   int64
+	updateInPlace bool
 }
 
 // Entry is used to hold a value in the evictList
@@ -54,12 +59,13 @@ func NewLRU(config *Config) (interfaces.LRU, error) {
 		return nil, status.InvalidArgumentError("SizeFn is required")
 	}
 	c := &LRU{
-		currentSize: 0,
-		maxSize:     config.MaxSize,
-		evictList:   list.New(),
-		items:       make(map[uint64][]*list.Element),
-		onEvict:     config.OnEvict,
-		sizeFn:      config.SizeFn,
+		currentSize:   0,
+		maxSize:       config.MaxSize,
+		evictList:     list.New(),
+		items:         make(map[uint64][]*list.Element),
+		onEvict:       config.OnEvict,
+		sizeFn:        config.SizeFn,
+		updateInPlace: config.UpdateInPlace,
 	}
 	return c, nil
 }
@@ -106,13 +112,24 @@ func (c *LRU) Add(key, value interface{}) bool {
 	if !ok {
 		return false
 	}
-	// Remove any existing item.
-	if ent, ok := c.lookupItem(pk, ck); ok {
-		c.removeElement(ent)
-	}
 
-	// Add new item
-	c.addItem(pk, ck, value, c.sizeFn(value), true /*=front*/)
+	if ent, ok := c.lookupItem(pk, ck); ok {
+		if c.updateInPlace {
+			// Replace the existing item, moving it to the front.
+			oldSize := c.sizeFn(ent.Value.(*Entry).value)
+			newSize := c.sizeFn(value)
+			c.currentSize += (newSize - oldSize)
+			c.evictList.MoveToFront(ent)
+			ent.Value.(*Entry).value = value
+		} else {
+			// Remove the existing item and re-insert
+			c.removeElement(ent)
+			c.addItem(pk, ck, value, c.sizeFn(value), true /*=front*/)
+		}
+	} else {
+		// Add new item
+		c.addItem(pk, ck, value, c.sizeFn(value), true /*=front*/)
+	}
 
 	for c.currentSize > c.maxSize {
 		c.removeOldest()
@@ -123,8 +140,6 @@ func (c *LRU) Add(key, value interface{}) bool {
 // PushBack adds a value to the back of the cache, but only if there is
 // sufficient capacity.
 //
-// If the item already exists, it is first removed.
-//
 // This is useful for populating the cache initially, by iterating over existing
 // items in MRU to LRU order and repeatedly calling PushBack on each item.
 //
@@ -134,12 +149,23 @@ func (c *LRU) PushBack(key, value interface{}) bool {
 	if !ok {
 		return false
 	}
-	// Remove any existing item.
+
+	size := c.sizeFn(value)
 	if ent, ok := c.lookupItem(pk, ck); ok {
+		// Update or replace the existing item if there is capacity.
+		sizeDelta := size - c.sizeFn(ent.Value.(*Entry).value)
+		if c.currentSize+sizeDelta > c.maxSize {
+			return false
+		}
+		if c.updateInPlace {
+			ent.Value.(*Entry).value = value
+			c.currentSize += sizeDelta
+			return true
+		}
+		// Remove the existing item.
 		c.removeElement(ent)
 	}
 
-	size := c.sizeFn(value)
 	if c.currentSize+size > c.maxSize {
 		return false
 	}

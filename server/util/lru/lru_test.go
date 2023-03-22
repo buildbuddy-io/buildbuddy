@@ -29,6 +29,33 @@ func TestAdd(t *testing.T) {
 	require.Equal(t, []int{5, 3, 4}, evictions)
 }
 
+func TestAdd_UpdateInPlace(t *testing.T) {
+	evictions := make([]int, 0)
+
+	l, err := lru.NewLRU(&lru.Config{
+		MaxSize:       10,
+		OnEvict:       func(value interface{}) { evictions = append(evictions, value.(int)) },
+		SizeFn:        func(value interface{}) int64 { return int64(value.(int)) },
+		UpdateInPlace: true,
+	})
+	require.NoError(t, err)
+
+	require.True(t, l.Add("a", 5))
+	require.True(t, l.Add("b", 4))
+	require.True(t, l.Add("c", 3))
+	require.Equal(t, []int{5}, evictions)
+
+	require.True(t, l.Add("c", 6))
+	require.Equal(
+		t, []int{5}, evictions,
+		"c entry should be updated in place without causing any evictions")
+
+	require.True(t, l.Add("c", 7))
+	require.Equal(
+		t, []int{5, 4}, evictions,
+		"c entry should be updated in place but evict b to make room")
+}
+
 func TestPushBack(t *testing.T) {
 	evictions := make([]int, 0)
 
@@ -47,7 +74,5 @@ func TestPushBack(t *testing.T) {
 	// Now attempt to overwrite "b" with a size that would exceed the cache
 	// capacity; this should fail.
 	require.False(t, l.PushBack("b", 10))
-	// Note: we technically didn't need to evict the old "b" in this case,
-	// but the current impl does so for simplicity.
-	require.Equal(t, []int{4}, evictions)
+	require.Empty(t, evictions)
 }
