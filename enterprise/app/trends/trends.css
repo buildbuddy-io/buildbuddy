@@ -58,6 +58,7 @@
 
 .heatmap-svg {
   user-select: none;
+  cursor: pointer;
 }
 
 .heatmap-zoom {

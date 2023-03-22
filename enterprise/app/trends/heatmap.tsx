@@ -455,6 +455,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
               height={275}
               ref={this.svgRef}>
               <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`}>
+                <rect fill="#f3f3f3" x="0" y="0" width={width} height={height}></rect>
                 {this.props.heatmapData.column.map((column, xIndex) => (
                   <>
                     {column.value.map((value, yIndex) =>
