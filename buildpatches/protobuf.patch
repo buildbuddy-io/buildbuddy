@@ -1,0 +1,16 @@
+--- a/build_defs/cpp_opts.bzl
++++ b/build_defs/cpp_opts.bzl
+@@ -36,6 +36,11 @@
+         # Suppress linker warnings about files with no symbols defined.
+         "-ignore:4221",
+     ],
++    "@platforms//os:macos": [
++        "-lpthread",
++        "-lm",
++        "-framework CoreFoundation",
++    ],
+     "//conditions:default": [
+         "-lpthread",
+         "-lm",
+exit 1
+
