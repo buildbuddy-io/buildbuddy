@@ -51,14 +51,18 @@ func findGroupUser(t *testing.T, userID string, groupUsers []*grpb.GetGroupUsers
 	return nil
 }
 
-func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, domain string) {
-	err := env.GetUserDB().InsertUser(ctx, &tables.User{
+func newFakeUser(userID, domain string) *tables.User {
+	return &tables.User{
 		UserID:    userID,
 		SubID:     userID + "-SubID",
 		FirstName: userID + "-FirstName",
 		LastName:  userID + "-LastName",
 		Email:     userID + "@" + domain,
-	})
+	}
+}
+
+func createUser(t *testing.T, ctx context.Context, env environment.Env, userID, domain string) {
+	err := env.GetUserDB().InsertUser(ctx, newFakeUser(userID, domain))
 	require.NoError(t, err)
 }
 
@@ -181,6 +185,37 @@ func TestInsertUser(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestDeleteUserGitHubToken(t *testing.T) {
+	env := newTestEnv(t)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	// Create several users with unique GH tokens
+	for i := 0; i < 10; i++ {
+		tu := newFakeUser(fmt.Sprintf("US%d", i), "org.io")
+		tu.GithubToken = fmt.Sprintf("test-github-token-%d", i)
+		err := env.GetUserDB().InsertUser(ctx, tu)
+		require.NoError(t, err)
+	}
+
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	tu, err := udb.GetUser(ctx1)
+	require.NoError(t, err)
+	require.Equal(t, "test-github-token-1", tu.GithubToken)
+
+	err = udb.DeleteUserGitHubToken(ctx1)
+	require.NoError(t, err)
+	tu, err = udb.GetUser(ctx1)
+	require.NoError(t, err)
+	require.Equal(t, "", tu.GithubToken)
+
+	// Other users should still have their token set
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	tu, err = udb.GetUser(ctx2)
+	require.NoError(t, err)
+	require.Equal(t, "test-github-token-2", tu.GithubToken)
 }
 
 func TestGetImpersonatedUser_UserWithoutImpersonationPerms_PermissionDenied(t *testing.T) {
