@@ -138,7 +138,7 @@ and this is what they had to say:
 > project, but also provide the benefits of rules_xcodeproj to everyone
 > involved.
 
-&ndash; Yongjin Cho, Software Engineer @ Snap
+&ndash; Yongjin Cho, Engineer @ Snap
 
 ### Spotify
 
