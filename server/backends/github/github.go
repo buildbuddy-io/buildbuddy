@@ -375,13 +375,16 @@ func getCookie(r *http.Request, name string) string {
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 	log.Warning(err.Error())
 	errorParam := err.Error()
-	redirectUrl := getCookie(r, redirectCookieName)
-	u, err := url.Parse(redirectUrl)
-	if err != nil || redirectUrl == "" {
-		u = &url.URL{Path: "/"}
+	redirectURL := &url.URL{Path: "/"}
+	// Respect the original redirect_url parameter that was set when initiating
+	// the flow.
+	if r.FormValue("state") == getCookie(r, stateCookieName) {
+		if u, err := url.Parse(getCookie(r, redirectCookieName)); err == nil {
+			redirectURL = u
+		}
 	}
-	q := u.Query()
+	q := redirectURL.Query()
 	q.Set("error", errorParam)
-	u.RawQuery = q.Encode()
-	http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
+	redirectURL.RawQuery = q.Encode()
+	http.Redirect(w, r, redirectURL.String(), http.StatusTemporaryRedirect)
 }
