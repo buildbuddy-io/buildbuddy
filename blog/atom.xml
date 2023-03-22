@@ -72,7 +72,7 @@ solution. With rules_xcodeproj, iOS development will be as smooth as “native�
 Xcode projects, even at scale.</p><p>Snap is thrilled to see that rules_xcodeproj is now part of the Mobile Native
 Foundation. This will not only bring more community contributions to the
 project, but also provide the benefits of rules_xcodeproj to everyone
-involved.</p></blockquote><p>–<!-- --> Yongjin Cho, Software Engineer @ Snap</p><h3>Spotify</h3><blockquote><p>We are proud to have been involved in rules_xcodeproj since the early days. It
+involved.</p></blockquote><p>–<!-- --> Yongjin Cho, Engineer @ Snap</p><h3>Spotify</h3><blockquote><p>We are proud to have been involved in rules_xcodeproj since the early days. It
 has significantly lowered the entry-barrier to Bazel for the Apple ecosystem
 and allowed our iOS engineers at Spotify to start using Bazel with Xcode
 faster than we could ever have imagined. We are looking forward to continuing
