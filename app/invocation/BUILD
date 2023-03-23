@@ -179,6 +179,7 @@ ts_library(
     srcs = ["invocation_buttons.tsx"],
     deps = [
         "//app/auth:auth_service",
+        "//app/capabilities",
         "//app/components/button",
         "//app/invocation:invocation_cancel_button",
         "//app/invocation:invocation_compare_button",
@@ -275,10 +276,8 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
-        "//proto:grpc_code_ts_proto",
         "//proto:remote_execution_ts_proto",
         "@npm//@types/react",
-        "@npm//lucide-react",
         "@npm//react",
     ],
 )
@@ -292,10 +291,7 @@ ts_library(
         "//app/format",
         "//app/invocation:invocation_execution_util",
         "//proto:execution_stats_ts_proto",
-        "//proto:grpc_code_ts_proto",
-        "//proto:remote_execution_ts_proto",
         "@npm//@types/react",
-        "@npm//lucide-react",
         "@npm//react",
     ],
 )
@@ -304,10 +300,6 @@ ts_library(
     name = "invocation_execution_util",
     srcs = ["invocation_execution_util.tsx"],
     deps = [
-        "//app/components/button",
-        "//app/components/select",
-        "//app/invocation:invocation_model",
-        "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:remote_execution_ts_proto",
@@ -391,7 +383,7 @@ ts_library(
     deps = [
         "//app/favicon",
         "//app/format",
-        "//app/invocation:invocation_logs_model",
+        "//app/service:rpc_service",
         "//app/util:proto",
         "//proto:api_key_ts_proto",
         "//proto:build_event_stream_ts_proto",
