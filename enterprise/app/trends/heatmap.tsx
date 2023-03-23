@@ -350,7 +350,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     s?: SelectionData
   ) {
     const selected =
-      s && x >= s.selectionXStart && x <= s.selectionXEnd && y >= s.selectionYStart && y <= s.selectionYEnd;
+      !!s && x >= s.selectionXStart && x <= s.selectionXEnd && y >= s.selectionYStart && y <= s.selectionYEnd;
     return interpolator(value, selected);
   }
 
