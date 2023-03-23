@@ -7,6 +7,7 @@ ts_library(
     srcs = ["filter.tsx"],
     strict = True,
     deps = [
+        "//app/capabilities",
         "//app/components/button",
         "//app/components/checkbox",
         "//app/components/input",
@@ -41,6 +42,7 @@ ts_library(
     name = "filter_util",
     srcs = ["filter_util.tsx"],
     deps = [
+        "//app/capabilities",
         "//app/router",
         "//app/util:proto",
         "//proto:duration_ts_proto",
