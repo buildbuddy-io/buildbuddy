@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -36,16 +35,16 @@ func TestPackAndUnpack(t *testing.T) {
 	// keys.
 	la, err := snaploader.New(env, workDir)
 	require.NoError(t, err)
-	da := &repb.Digest{Hash: hash.String("manifest-A"), SizeBytes: 1}
-	sa := makeFakeSnapshot(t, workDir, da)
-	da, err = la.CacheSnapshot(ctx, sa)
+	da := snaploader.NewKey("vm-config-hash-A", "runner-A")
+	sa := makeFakeSnapshot(t, workDir)
+	err = la.CacheSnapshot(ctx, da, sa)
 	require.NoError(t, err)
 
 	lb, err := snaploader.New(env, workDir)
 	require.NoError(t, err)
-	db := &repb.Digest{Hash: hash.String("manifest-B"), SizeBytes: 1}
-	sb := makeFakeSnapshot(t, workDir, db)
-	db, err = lb.CacheSnapshot(ctx, sb)
+	db := snaploader.NewKey("vm-config-hash-B", "runner-B")
+	sb := makeFakeSnapshot(t, workDir)
+	err = lb.CacheSnapshot(ctx, db, sb)
 	require.NoError(t, err)
 
 	// We should be able to unpack snapshot A, delete it, and then replace it
@@ -64,8 +63,8 @@ func TestPackAndUnpack(t *testing.T) {
 		require.NoError(t, err)
 
 		// Re-add to cache with the same key, but with new contents.
-		sa = makeFakeSnapshot(t, workDir, da)
-		da, err = la.CacheSnapshot(ctx, sa)
+		sa = makeFakeSnapshot(t, workDir)
+		err = la.CacheSnapshot(ctx, da, sa)
 		require.NoError(t, err)
 	}
 
@@ -74,9 +73,8 @@ func TestPackAndUnpack(t *testing.T) {
 	mustUnpack(t, ctx, env, db, workDir, outDir, sb)
 }
 
-func makeFakeSnapshot(t *testing.T, workDir string, d *repb.Digest) *snaploader.LoadSnapshotOptions {
+func makeFakeSnapshot(t *testing.T, workDir string) *snaploader.LoadSnapshotOptions {
 	return &snaploader.LoadSnapshotOptions{
-		ForceSnapshotDigest: d,
 		MemSnapshotPath:     makeRandomFile(t, workDir, "mem", 100_000),
 		VMStateSnapshotPath: makeRandomFile(t, workDir, "vmstate", 1_000),
 		KernelImagePath:     makeRandomFile(t, workDir, "kernel", 1_000),

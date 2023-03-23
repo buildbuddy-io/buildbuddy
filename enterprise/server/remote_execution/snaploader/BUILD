@@ -25,7 +25,6 @@ go_test(
         "//server/environment",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
-        "//server/util/hash",
         "@com_github_stretchr_testify//require",
     ],
 )

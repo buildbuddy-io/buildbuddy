@@ -293,8 +293,9 @@ type Constants struct {
 
 // FirecrackerContainer executes commands inside of a firecracker VM.
 type FirecrackerContainer struct {
-	id    string // a random GUID, unique per-run of firecracker
-	vmIdx int    // the index of this vm on the host machine
+	id          string // a random GUID, unique per-run of firecracker
+	vmIdx       int    // the index of this vm on the host machine
+	snapshotKey *repb.Digest
 
 	constants           Constants
 	containerImage      string // the OCI container image. ex "alpine:latest"
@@ -318,14 +319,13 @@ type FirecrackerContainer struct {
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
 
-	jailerRoot           string            // the root dir the jailer will work in
-	machine              *fcclient.Machine // the firecracker machine object.
-	vmLog                *VMLog
-	env                  environment.Env
-	imageCacheAuth       *container.ImageCacheAuthenticator
-	pausedSnapshotDigest *repb.Digest
-	allowSnapshotStart   bool
-	mountWorkspaceFile   bool
+	jailerRoot         string            // the root dir the jailer will work in
+	machine            *fcclient.Machine // the firecracker machine object.
+	vmLog              *VMLog
+	env                environment.Env
+	imageCacheAuth     *container.ImageCacheAuthenticator
+	allowSnapshotStart bool
+	mountWorkspaceFile bool
 
 	// If a container is resumed from a snapshot, the jailer
 	// is started first using an external command and then the snapshot
@@ -415,6 +415,8 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	if opts.ForceVMIdx != 0 {
 		c.vmIdx = opts.ForceVMIdx
 	}
+	c.snapshotKey = snaploader.NewKey(c.ConfigurationHash().GetHash(), c.id)
+
 	return c, nil
 }
 
@@ -498,7 +500,30 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 	return eg.Wait()
 }
 
-func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName string, d *repb.Digest, baseSnapshotDigest *repb.Digest) (*repb.Digest, error) {
+func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, error) {
+	loader, err := snaploader.New(c.env, c.jailerRoot)
+	if err != nil {
+		return "", err
+	}
+	baseDir := filepath.Join(c.getChroot(), "base")
+	if err := disk.EnsureDirectoryExists(baseDir); err != nil {
+		return "", err
+	}
+	if err := loader.UnpackSnapshot(ctx, c.snapshotKey, baseDir); err != nil {
+		return "", err
+	}
+
+	// The base snapshot is no longer useful since we're merging on top
+	// of it and replacing the paused VM snapshot with the new merged
+	// snapshot. Delete it to prevent unnecessary filecache evictions.
+	if err := loader.DeleteSnapshot(ctx, c.snapshotKey); err != nil {
+		log.Warningf("Failed to delete snapshot: %s", err)
+	}
+
+	return baseDir, nil
+}
+
+func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -507,41 +532,36 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		log.CtxDebugf(ctx, "SaveSnapshot took %s", time.Since(start))
 	}()
 
-	// If a snapshot already exists, get a reference to the memory snapshot so that we can perform a diff snapshot and
-	// merge the modified pages on top of the existing memory snapshot.
+	snapshotType := fullSnapshotType
+	memSnapshotFile := fullMemSnapshotName
 	baseMemSnapshotPath := ""
-	if baseSnapshotDigest != nil {
-		loader, err := snaploader.New(c.env, c.jailerRoot)
-		if err != nil {
-			return nil, err
-		}
-		baseDir := filepath.Join(c.getChroot(), "base")
-		if err := disk.EnsureDirectoryExists(baseDir); err != nil {
-			return nil, err
-		}
-		if err := loader.UnpackSnapshot(ctx, baseSnapshotDigest, baseDir); err != nil {
-			return nil, err
-		}
-		baseMemSnapshotPath = filepath.Join(baseDir, fullMemSnapshotName)
 
-		// The base snapshot is no longer useful since we're merging on top
-		// of it and replacing the paused VM snapshot with the new merged
-		// snapshot. Delete it to prevent unnecessary filecache evictions.
-		if err := loader.DeleteSnapshot(ctx, baseSnapshotDigest); err != nil {
-			log.Warningf("Failed to delete snapshot: %s", err)
+	// If a snapshot already exists, get a reference to the memory snapshot so
+	// that we can perform a diff snapshot and merge the modified pages on top
+	// of the existing memory snapshot.
+	baseSnapshotUnpackDir, err := c.unpackBaseSnapshot(ctx)
+	if err != nil {
+		// Ignore Unavailable errors since it just means there's no base
+		// snapshot yet (which will happen on the first task executed), or the
+		// snapshot was evicted from cache. When this happens, just fall back to
+		// taking a full snapshot.
+		if !status.IsUnavailableError(err) {
+			return err
 		}
+	} else {
+		// Once we've merged the base snapshot and linked it to filecache, we
+		// don't need the unpack dir anymore and can unlink.
+		defer os.RemoveAll(baseSnapshotUnpackDir)
+		baseMemSnapshotPath = filepath.Join(baseSnapshotUnpackDir, fullMemSnapshotName)
+		snapshotType = diffSnapshotType
+		memSnapshotFile = diffMemSnapshotName
 	}
 
 	if err := c.machine.PauseVM(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
-		return nil, err
+		return err
 	}
 
-	snapshotType := diffSnapshotType
-	memSnapshotFile := fullMemSnapshotName
-	if baseSnapshotDigest != nil {
-		memSnapshotFile = diffMemSnapshotName
-	}
 	memSnapshotPath := filepath.Join(c.getChroot(), memSnapshotFile)
 	vmStateSnapshotPath := filepath.Join(c.getChroot(), vmStateSnapshotName)
 
@@ -555,7 +575,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	}
 	if err := c.machine.CreateSnapshot(ctx, memSnapshotFile, vmStateSnapshotName, snapshotTypeOpt); err != nil {
 		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
-		return nil, err
+		return err
 	}
 
 	log.CtxDebugf(ctx, "VMM CreateSnapshot %s took %s", snapshotType, time.Since(machineStart))
@@ -563,7 +583,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 	if baseMemSnapshotPath != "" {
 		mergeStart := time.Now()
 		if err := mergeDiffSnapshot(ctx, baseMemSnapshotPath, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
-			return nil, status.UnknownErrorf("merge diff snapshot failed: %s", err)
+			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
 		// Use the merged memory snapshot.
@@ -572,7 +592,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 
 	configJson, err := json.Marshal(c.constants)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	opts := &snaploader.LoadSnapshotOptions{
 		ConfigurationData:   configJson,
@@ -583,39 +603,37 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context, instanceName st
 		ContainerFSPath:     filepath.Join(c.getChroot(), containerFSName),
 		ScratchFSPath:       filepath.Join(c.getChroot(), scratchFSName),
 		WorkspaceFSPath:     c.workspaceFSPath(),
-		ForceSnapshotDigest: d,
 	}
 
 	snaploaderStart := time.Now()
 	loader, err := snaploader.New(c.env, c.jailerRoot)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	snapshotDigest, err := loader.CacheSnapshot(ctx, opts)
-	if err != nil {
-		return nil, err
+	if err := loader.CacheSnapshot(ctx, c.snapshotKey, opts); err != nil {
+		return err
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
 
 	resumeStart := time.Now()
 	if err := c.machine.ResumeVM(ctx); err != nil {
-		return nil, err
+		return err
 	}
 	log.CtxDebugf(ctx, "VMM ResumeVM took %s", time.Since(resumeStart))
 
-	return snapshotDigest, nil
+	return nil
 }
 
 // LoadSnapshot loads a VM snapshot from the given snapshot digest and resumes
 // the VM. If workspaceDirOverride is set, it will also hot-swap the workspace
 // drive; otherwise, the workspace will be loaded as-is from the snapshot.
-func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride string, instanceName string, snapshotDigest *repb.Digest) error {
+func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOverride string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "LoadSnapshot %s took %s", snapshotDigest.GetHash(), time.Since(start))
+		log.CtxDebugf(ctx, "LoadSnapshot %s took %s", c.snapshotKey.GetHash(), time.Since(start))
 	}()
 
 	c.rmOnce = &sync.Once{}
@@ -676,7 +694,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	configurationData, err := loader.GetConfigurationData(ctx, snapshotDigest)
+	configurationData, err := loader.GetConfigurationData(ctx, c.snapshotKey)
 	if err != nil {
 		return err
 	}
@@ -706,7 +724,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	if err := loader.UnpackSnapshot(ctx, snapshotDigest, c.getChroot()); err != nil {
+	if err := loader.UnpackSnapshot(ctx, c.snapshotKey, c.getChroot()); err != nil {
 		return err
 	}
 
@@ -1222,17 +1240,15 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		log.CtxInfof(ctx, "Run took %s", time.Since(start))
 	}()
 
-	snapDigest := c.ConfigurationHash()
-
 	// See if we can lookup a cached snapshot to run from; if not, it's not
 	// a huge deal, we can start a new VM and create one.
 	if c.allowSnapshotStart {
 		// TODO: When loading the snapshot here, need to copy from filecache, not
 		// hard link. Otherwise, this is not safe for concurrent use.
-		if err := c.LoadSnapshot(ctx, actionWorkingDir, "" /*=instanceName*/, snapDigest); err != nil {
+		if err := c.LoadSnapshot(ctx, actionWorkingDir); err != nil {
 			log.CtxDebugf(ctx, "LoadSnapshot failed; will start a VM from scratch: %s", err)
 		} else {
-			log.CtxDebugf(ctx, "Started from snapshot %s/%d!", snapDigest.GetHash(), snapDigest.GetSizeBytes())
+			log.CtxDebugf(ctx, "Started from snapshot %s/%d!", c.snapshotKey.GetHash(), c.snapshotKey.GetSizeBytes())
 		}
 	}
 
@@ -1256,10 +1272,10 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 			// cache.
 			// TODO: Wait until the VM exec server is ready before saving the initial
 			// snapshot, so the init binary can skip the startup sequence
-			if _, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, snapDigest, nil /*=baseSnapshotDigest*/); err != nil {
+			if err := c.SaveSnapshot(ctx); err != nil {
 				return nonCmdExit(ctx, err)
 			}
-			log.CtxDebugf(ctx, "Saved snapshot %s/%d for next run", snapDigest.GetHash(), snapDigest.GetSizeBytes())
+			log.CtxDebugf(ctx, "Saved snapshot %s/%d for next run", c.snapshotKey.GetHash(), c.snapshotKey.GetSizeBytes())
 		}
 	}
 
@@ -1620,12 +1636,10 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	defer func() {
 		log.CtxDebugf(ctx, "Pause took %s", time.Since(start))
 	}()
-	snapshotDigest, err := c.SaveSnapshot(ctx, "" /*=instanceName*/, nil /*=digest*/, c.pausedSnapshotDigest)
-	if err != nil {
+	if err := c.SaveSnapshot(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error saving snapshot: %s", err)
 		return err
 	}
-	c.pausedSnapshotDigest = snapshotDigest
 
 	if err := c.Remove(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error cleaning up after pause: %s", err)
@@ -1645,7 +1659,7 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	}()
 
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
-	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/, "" /*=instanceName*/, c.pausedSnapshotDigest)
+	return c.LoadSnapshot(ctx, "" /*=workspaceOverride*/)
 }
 
 // syncWorkspace creates a new disk image from the given working directory
