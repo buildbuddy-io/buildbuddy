@@ -370,7 +370,7 @@ func (d *UserDB) DeleteUserGitHubToken(ctx context.Context) error {
 		return status.FailedPreconditionError("user ID must not be empty")
 	}
 	return d.h.DB(ctx).Exec(
-		`UPDATE Users SET github_token = "" WHERE user_id = ?`,
+		`UPDATE Users SET github_token = '' WHERE user_id = ?`,
 		u.GetUserID(),
 	).Error
 }
