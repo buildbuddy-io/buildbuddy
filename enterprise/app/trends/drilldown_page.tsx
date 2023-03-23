@@ -537,6 +537,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       [DD_SELECTED_AREA_URL_PARAM]: "",
       [DD_ZOOM_URL_PARAM]: "",
     });
+    window.scrollTo({ top: 0 });
   }
 
   handleBarClick(d: stats.DrilldownType, e?: CategoricalChartState) {
