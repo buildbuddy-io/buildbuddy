@@ -506,6 +506,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   handleClearZoom() {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
+      [DD_SELECTED_AREA_URL_PARAM]: "",
       [DD_ZOOM_URL_PARAM]: "",
     });
   }
@@ -529,29 +530,38 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     );
   }
 
+  navigateForBarClick(paramName: string, paramValue: string) {
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [paramName]: paramValue,
+      [DD_SELECTED_AREA_URL_PARAM]: "",
+      [DD_ZOOM_URL_PARAM]: "",
+    });
+  }
+
   handleBarClick(d: stats.DrilldownType, e?: CategoricalChartState) {
     if (!e || !e.activeLabel) {
       return;
     }
     switch (d) {
       case stats.DrilldownType.USER_DRILLDOWN_TYPE:
-        router.setQueryParam("user", e.activeLabel);
+        this.navigateForBarClick("user", e.activeLabel);
         return;
       case stats.DrilldownType.HOSTNAME_DRILLDOWN_TYPE:
-        router.setQueryParam("host", e.activeLabel);
+        this.navigateForBarClick("host", e.activeLabel);
         return;
       case stats.DrilldownType.REPO_URL_DRILLDOWN_TYPE:
-        router.setQueryParam("repo", e.activeLabel);
+        this.navigateForBarClick("repo", e.activeLabel);
         return;
       case stats.DrilldownType.COMMIT_SHA_DRILLDOWN_TYPE:
-        router.setQueryParam("commit", e.activeLabel);
+        this.navigateForBarClick("commit", e.activeLabel);
         return;
       case stats.DrilldownType.BRANCH_DRILLDOWN_TYPE:
-        router.setQueryParam("branch", e.activeLabel);
+        this.navigateForBarClick("branch", e.activeLabel);
         return;
       case stats.DrilldownType.PATTERN_DRILLDOWN_TYPE:
         if (capabilities.config.patternFilterEnabled) {
-          router.setQueryParam("pattern", e.activeLabel);
+          this.navigateForBarClick("pattern", e.activeLabel);
         }
         return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
