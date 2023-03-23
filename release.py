@@ -202,6 +202,7 @@ def main():
     new_version = old_version
     if not args.skip_version_bump:
         new_version = bump_patch_version(old_version)
+        new_version = "test-maggie"
         release_notes = generate_release_notes(old_version)
         print("release notes:\n %s" % release_notes)
         print('I found existing version: %s' % old_version)
@@ -213,7 +214,7 @@ def main():
         create_and_push_tag(old_version, new_version, release_notes)
         print("Pushed tag for new version %s" % new_version)
 
-    update_docker_images(new_version, args.skip_latest_tag)
+    # update_docker_images(new_version, args.skip_latest_tag)
     print("Done -- proceed with the release guide!")
 
 if __name__ == "__main__":
