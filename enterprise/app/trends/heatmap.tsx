@@ -318,14 +318,11 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     if (!this.pendingClick) {
       return;
     }
-    const data = this.computeBucket(e.clientX, e.clientY);
-    if (!data) {
-      this.pendingClick = undefined;
-      this.setState({ selectionToRender: undefined });
-      return;
-    }
 
-    if (this.pendingClick[0].metric == data.metric && this.pendingClick[0].timestamp == data.timestamp) {
+    const data = this.computeBucket(e.clientX, e.clientY);
+    // If the user has dragged the mouse of the heatmap or only clicked one
+    // cell, then we just use the already-pending click.
+    if (!data || (this.pendingClick[0].metric == data.metric && this.pendingClick[0].timestamp == data.timestamp)) {
       const selectedData = this.pendingClick;
       this.pendingClick = undefined;
       this.maybeFireSelectionCallback(selectedData);
