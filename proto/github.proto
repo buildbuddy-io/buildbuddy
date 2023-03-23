@@ -10,7 +10,7 @@ message UnlinkGitHubAccountRequest {
   context.RequestContext request_context = 1;
 
   // Whether to unlink the user-level account.
-  bool user = 2;
+  bool unlink_user_account = 2;
 }
 
 message UnlinkGitHubAccountResponse {
