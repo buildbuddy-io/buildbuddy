@@ -717,7 +717,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   metricBucketName={this.selectedMetric.name}
                   valueFormatter={(v) => this.renderBucketValue(v)}
                   selectionCallback={(s) => this.handleHeatmapSelection(s)}
-                  zoomCallback={(s) => this.handleHeatmapZoom(s)}></HeatmapComponent>
+                  zoomCallback={(s) => this.handleHeatmapZoom(s)}
+                  selectedData={this.currentHeatmapSelection}></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
                   {this.state.loadingDrilldowns && <div className="loading"></div>}

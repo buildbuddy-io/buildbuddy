@@ -15,6 +15,7 @@ interface HeatmapProps {
   metricBucketFormatter: (value: number) => string;
   selectionCallback?: (s?: HeatmapSelection) => void;
   zoomCallback?: (s?: HeatmapSelection) => void;
+  selectedData?: HeatmapSelection;
 }
 
 interface State {
@@ -97,7 +98,6 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   // By keeping them in order, we ensure that as the user moves their mouse, the
   // selection will "pivot" around that cell.
   pendingClick?: [SelectedCellData, SelectedCellData];
-  selectedData?: [SelectedCellData, SelectedCellData];
 
   renderYBucketValue(v: number) {
     return this.props.metricBucketFormatter(v);
@@ -202,15 +202,48 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     this.setState({ selectionToRender: this.pendingClick });
   }
 
-  computeHeatmapSelection(): HeatmapSelection | null {
-    if (!this.selectedData || !this.props.selectionCallback) {
+  convertSelectionToCells(selection: HeatmapSelection): [SelectedCellData, SelectedCellData] | null {
+    if (!this.props.heatmapData.timestampBracket || !this.props.heatmapData.bucketBracket) {
+      return null;
+    }
+    const lowDate = selection.dateRangeMicros.startInclusive;
+    const lowDateIndex = this.props.heatmapData.timestampBracket.indexOf(lowDate);
+    const highDateIndex = this.props.heatmapData.timestampBracket.indexOf(selection.dateRangeMicros.endExclusive) - 1;
+
+    const lowMetric = selection.bucketRange.startInclusive;
+    const lowMetricIndex = this.props.heatmapData.bucketBracket.indexOf(lowMetric);
+    const highMetricIndex = this.props.heatmapData.bucketBracket.indexOf(selection.bucketRange.endExclusive) - 1;
+
+    if (lowDateIndex < 0 || highDateIndex < 0 || lowMetricIndex < 0 || highMetricIndex < 0) {
       return null;
     }
 
+    const highDate = this.props.heatmapData.timestampBracket[highDateIndex];
+    const highMetric = this.props.heatmapData.bucketBracket[highMetricIndex];
+
+    return [
+      {
+        timestamp: lowDate,
+        timestampBucketIndex: lowDateIndex,
+        metric: lowMetric,
+        metricBucketIndex: lowMetricIndex,
+        value: 0 /* XXX */,
+      },
+      {
+        timestamp: highDate,
+        timestampBucketIndex: highDateIndex,
+        metric: highMetric,
+        metricBucketIndex: highMetricIndex,
+        value: 0 /* XXX */,
+      },
+    ];
+  }
+
+  convertCellsToSelection(selectedCells: [SelectedCellData, SelectedCellData]): HeatmapSelection {
     const xDomain = this.xScaleBand.domain();
 
-    const t1Index = this.selectedData[0].timestampBucketIndex;
-    const t2Index = this.selectedData[1].timestampBucketIndex;
+    const t1Index = selectedCells[0].timestampBucketIndex;
+    const t2Index = selectedCells[1].timestampBucketIndex;
 
     const dateRangeMicros = {
       startInclusive: Math.min(
@@ -222,8 +255,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
         +this.props.heatmapData.timestampBracket[t2Index + 1]
       ),
     };
-    const m1Index = this.selectedData[0].metricBucketIndex;
-    const m2Index = this.selectedData[1].metricBucketIndex;
+    const m1Index = selectedCells[0].metricBucketIndex;
+    const m2Index = selectedCells[1].metricBucketIndex;
     const bucketRange = {
       startInclusive: Math.min(
         +this.props.heatmapData.bucketBracket[m1Index],
@@ -245,52 +278,52 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return { dateRangeMicros, bucketRange, eventsSelected };
   }
 
-  maybeFireSelectionCallback() {
-    const selection = this.computeHeatmapSelection();
+  maybeFireSelectionCallback(selectedCells?: [SelectedCellData, SelectedCellData]) {
+    if (!selectedCells) {
+      return;
+    }
+    const selection = this.convertCellsToSelection(selectedCells);
     if (selection && this.props.selectionCallback) {
       this.props.selectionCallback(selection);
     }
   }
 
   maybeFireZoomCallback() {
-    const selection = this.computeHeatmapSelection();
-    if (selection && this.props.zoomCallback) {
-      this.props.zoomCallback(selection);
+    if (this.props.selectedData && this.props.zoomCallback) {
+      this.props.zoomCallback(this.props.selectedData);
     }
   }
 
   onMouseUp(e: MouseEvent) {
     if (!this.pendingClick) {
-      this.selectedData = undefined;
+      this.maybeFireSelectionCallback();
       return;
     }
     const data = this.computeBucket(e.clientX, e.clientY);
     if (!data) {
       this.pendingClick = undefined;
-      this.selectedData = undefined;
       this.setState({ selectionToRender: undefined });
       this.maybeFireSelectionCallback();
       return;
     }
 
     if (this.pendingClick[0].metric == data.metric && this.pendingClick[0].timestamp == data.timestamp) {
-      this.selectedData = this.pendingClick;
+      const selectedData = this.pendingClick;
       this.pendingClick = undefined;
-      this.setState({ selectionToRender: this.selectedData });
-      this.maybeFireSelectionCallback();
+      this.maybeFireSelectionCallback(selectedData);
     } else {
-      this.selectedData = [this.pendingClick[0], data];
+      const selectedData: [SelectedCellData, SelectedCellData] = [this.pendingClick[0], data];
       this.pendingClick = undefined;
-      this.setState({ selectionToRender: this.selectedData });
-      this.maybeFireSelectionCallback();
+      this.maybeFireSelectionCallback(selectedData);
     }
     return;
   }
 
   computeSelectionData(): SelectionData | undefined {
-    const selectionToDraw = this.pendingClick || this.selectedData;
+    const selectionToDraw =
+      this.pendingClick || (this.props.selectedData && this.convertSelectionToCells(this.props.selectedData));
     if (!selectionToDraw) {
-      return;
+      return undefined;
     }
 
     const aScreenX = this.xScaleBand(+selectionToDraw[0].timestamp);
@@ -299,7 +332,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     const bScreenY = this.yScaleBand(+selectionToDraw[1].metric);
 
     if (aScreenX === undefined || aScreenY === undefined || bScreenX === undefined || bScreenY === undefined) {
-      return;
+      return undefined;
     }
 
     const top = Math.min(aScreenY, bScreenY) + CHART_MARGINS.top;
@@ -390,8 +423,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     if (!this.props.zoomCallback || this.pendingClick) {
       return null;
     }
-    const selection = this.computeHeatmapSelection();
-    if (selection == null || selection.eventsSelected < 2) {
+    if (!this.props.selectedData || this.props.selectedData.eventsSelected < 2) {
       return null;
     }
 
