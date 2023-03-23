@@ -42,6 +42,7 @@ type RealEnv struct {
 	workflowService                  interfaces.WorkflowService
 	runnerService                    interfaces.RunnerService
 	gitProviders                     interfaces.GitProviders
+	gitHubApp                        interfaces.GitHubApp
 	staticFilesystem                 fs.FS
 	appFilesystem                    fs.FS
 	blobstore                        interfaces.Blobstore
@@ -367,6 +368,12 @@ func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 }
 func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
 	r.gitProviders = gp
+}
+func (r *RealEnv) SetGitHubApp(val interfaces.GitHubApp) {
+	r.gitHubApp = val
+}
+func (r *RealEnv) GetGitHubApp() interfaces.GitHubApp {
+	return r.gitHubApp
 }
 func (r *RealEnv) GetXcodeLocator() interfaces.XcodeLocator {
 	return r.xcodeLocator

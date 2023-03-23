@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
@@ -149,6 +150,9 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 		github.NewProvider(),
 		bitbucket.NewProvider(),
 	})
+	if err := githubapp.Register(env); err != nil {
+		log.Fatalf("Failed to register GitHub app: %s", err)
+	}
 
 	runnerService, err := hostedrunner.New(env)
 	if err != nil {
