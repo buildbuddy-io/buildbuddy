@@ -506,10 +506,10 @@ type GitHubAppInstallation struct {
 
 	// GroupID is the group linked to the GitHub app installation.
 	GroupID string `gorm:"primaryKey"`
-	Perms   int    `gorm:"not null"`
+	Perms   int    `gorm:"not null;default:0"`
 
 	// InstallationID is the GitHub app installation ID.
-	InstallationID int64 `gorm:"not null"`
+	InstallationID int64 `gorm:"not null;default:0"`
 
 	// Owner is the GitHub login of the installation (either a user or
 	// organization name). This can be computed from the installation ID, but we
@@ -528,9 +528,9 @@ type GitRepository struct {
 
 	// RepoURL is the normalized repo URL.
 	RepoURL string `gorm:"primaryKey;unique"`
-	UserID  string `gorm:"not null"`
+	UserID  string `gorm:"not null;default:''"`
 	GroupID string `gorm:"primaryKey"`
-	Perms   int    `gorm:"not null"`
+	Perms   int    `gorm:"not null;default:0"`
 
 	// InstanceNameSuffix is the remote instance name suffix to apply to any
 	// BuildBuddy-initiated invocations within this repo, such as workflows or
