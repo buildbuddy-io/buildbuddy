@@ -909,6 +909,13 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 		return nil, status.InternalErrorf("authenticated user's group ID is empty")
 	}
 
+	if req.UnlinkUserAccount {
+		if err := udb.DeleteUserGitHubToken(ctx); err != nil {
+			return nil, err
+		}
+		return &ghpb.UnlinkGitHubAccountResponse{}, nil
+	}
+
 	// Lookup linked token
 	g, err := udb.GetGroupByID(ctx, u.GetGroupID())
 	if err != nil {

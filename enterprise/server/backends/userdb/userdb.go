@@ -361,6 +361,20 @@ func (d *UserDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 	return createdKey, nil
 }
 
+func (d *UserDB) DeleteUserGitHubToken(ctx context.Context) error {
+	u, err := perms.AuthenticatedUser(ctx, d.env)
+	if err != nil {
+		return err
+	}
+	if u.GetUserID() == "" {
+		return status.FailedPreconditionError("user ID must not be empty")
+	}
+	return d.h.DB(ctx).Exec(
+		`UPDATE Users SET github_token = '' WHERE user_id = ?`,
+		u.GetUserID(),
+	).Error
+}
+
 func createAPIKey(db *db.DB, userID, groupID, value, label string, caps []akpb.ApiKey_Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
 	pk, err := tables.PrimaryKeyForTable("APIKeys")
 	if err != nil {
