@@ -319,13 +319,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
       return;
     }
     const data = this.computeBucket(e.clientX, e.clientY);
-    if (!data) {
-      this.pendingClick = undefined;
-      this.setState({ selectionToRender: undefined });
-      return;
-    }
 
-    if (this.pendingClick[0].metric == data.metric && this.pendingClick[0].timestamp == data.timestamp) {
+    if (!data || (this.pendingClick[0].metric == data.metric && this.pendingClick[0].timestamp == data.timestamp)) {
       const selectedData = this.pendingClick;
       this.pendingClick = undefined;
       this.maybeFireSelectionCallback(selectedData);
