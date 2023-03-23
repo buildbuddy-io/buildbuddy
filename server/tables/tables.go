@@ -489,8 +489,65 @@ func (ts *TargetStatus) TableName() string {
 	return "TargetStatuses"
 }
 
+// GitHubAppInstallation represents a BuildBuddy GitHub App installation linked
+// to an organization.
+//
+// We'll listen to app uninstallation webhook events to proactively remove these
+// from the DB, but this is not 100% reliable, so GitHub is ultimately the
+// source of truth for whether an installation is valid or not. Typically, the
+// app can optimistically try to create a token for the installation ID, and
+// GitHub will return an error due to the installation no longer existing or no
+// longer being enabled for a particular repo.
+type GitHubAppInstallation struct {
+	Model
+
+	// UserID is the user that registered this installation to BuildBuddy.
+	UserID string `gorm:"not null"`
+
+	// GroupID is the group linked to the GitHub app installation.
+	GroupID string `gorm:"primaryKey"`
+	Perms   int    `gorm:"not null"`
+
+	// InstallationID is the GitHub app installation ID.
+	InstallationID int64 `gorm:"not null"`
+
+	// Owner is the GitHub login of the installation (either a user or
+	// organization name). This can be computed from the installation ID, but we
+	// store it here so that we can run queries to associate repos with
+	// installations.
+	Owner string `gorm:"primaryKey"`
+}
+
+func (gh *GitHubAppInstallation) TableName() string {
+	return "GitHubAppInstallations"
+}
+
+// GitRepository represents a Git repository linked to a BB organization.
+type GitRepository struct {
+	Model
+
+	// RepoURL is the normalized repo URL.
+	RepoURL string `gorm:"primaryKey;unique"`
+	UserID  string `gorm:"not null"`
+	GroupID string `gorm:"primaryKey"`
+	Perms   int    `gorm:"not null"`
+
+	// InstanceNameSuffix is the remote instance name suffix to apply to any
+	// BuildBuddy-initiated invocations within this repo, such as workflows or
+	// remote Bazel.
+	InstanceNameSuffix string `gorm:"not null;default:''"`
+}
+
+func (g *GitRepository) TableName() string {
+	return "GitRepositories"
+}
+
 // Workflow represents a set of BuildBuddy actions to be run in response to
 // events published to a Git webhook.
+//
+// TODO(bduffany): figure out a migration path from Workflows (which are created
+// via the legacy OAuth app integration) to GitRepositories (created using the
+// new GitHub App integration).
 type Workflow struct {
 	RepoURL     string
 	WorkflowID  string `gorm:"primaryKey"`
@@ -1003,11 +1060,13 @@ func init() {
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
 	registerTable("EX", &Execution{})
+	registerTable("GH", &GitHubAppInstallation{})
 	registerTable("GR", &Group{})
 	registerTable("IE", &InvocationExecution{})
 	registerTable("IN", &Invocation{})
 	registerTable("QB", &QuotaBucket{})
 	registerTable("QG", &QuotaGroup{})
+	registerTable("RE", &GitRepository{})
 	registerTable("SE", &Session{})
 	registerTable("SK", &Secret{})
 	registerTable("TA", &Target{})
