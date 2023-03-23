@@ -56,13 +56,14 @@ const ZOOM_BUTTON_ATTRIBUTES = {
 // This is a magic number that states there will only be one axis label for
 // every N pixels of rendered axis length (currently 100).
 const TICK_LABEL_SPACING_MAGIC_NUMBER = 100;
-// This is a discretized dump of the 'Purples' scale from d3-scale-chromatic,
-// starting arbitrarily from .3 because it looked nice.  The scale is great but
-// the package itself is heavy.  The d3-scale-chromatic scale is interpolated
-// from https://colorbrewer2.org/#type=sequential&scheme=Purples&n=3
-const heatmapColorScale = [
-  "#d9d8ea", // .30
-  "#cecee5", // .35
+// This is a discretized dump of the 'Purples' and 'Greens' scales
+// from d3-scale-chromatic, starting arbitrarily from .25 because it looked
+// nice.  The scale is great but the package itself is heavy.  The
+// d3-scale-chromatic scale is interpolated from
+// https://colorbrewer2.org/#type=sequential&scheme=Purples&n=3
+const heatmapPurples = [
+  "#d9d8ea", // .25
+  "#cecee5", // .30
   "#c2c2df", // ...
   "#b6b5d8",
   "#aaa8d0",
@@ -75,7 +76,25 @@ const heatmapColorScale = [
   "#61409b",
   "#583093",
   "#501f8c",
-  "#471084", // 1
+  "#471084", // .95
+];
+
+const heatmapGreens = [
+  "#86cc85", // .45
+  "#7bc77d", // .48
+  "#6fc176", // ...
+  "#63bc6f",
+  "#58b668",
+  "#4daf62",
+  "#43a95c",
+  "#3aa256",
+  "#329a51",
+  "#2a934b",
+  "#228b45",
+  "#1a843f",
+  "#137c39",
+  "#0c7533",
+  "#076d2e", // .87
 ];
 
 type SelectionData = {
@@ -355,11 +374,16 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     };
   }
 
-  getCellColor(x: number, y: number, v: number, interpolator: (v: number) => string, s?: SelectionData) {
-    if (s && x >= s.selectionXStart && x <= s.selectionXEnd && y >= s.selectionYStart && y <= s.selectionYEnd) {
-      return "#82ca9d";
-    }
-    return interpolator(v);
+  getCellColor(
+    x: number,
+    y: number,
+    value: number,
+    interpolator: (v: number, selected: boolean) => string,
+    s?: SelectionData
+  ) {
+    const selected =
+      !!s && x >= s.selectionXStart && x <= s.selectionXEnd && y >= s.selectionYStart && y <= s.selectionYEnd;
+    return interpolator(value, selected);
   }
 
   renderXAxis(width: number): JSX.Element | null {
@@ -471,8 +495,10 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     });
 
     const selection = this.computeSelectionData();
-    const interpolator = (v: number) =>
-      heatmapColorScale[Math.floor(((heatmapColorScale.length - 1) * (v - min)) / (max - min))];
+    const interpolator = (v: number, selected: boolean) =>
+      selected
+        ? heatmapGreens[Math.floor(((heatmapGreens.length - 1) * (v - min)) / (max - min))]
+        : heatmapPurples[Math.floor(((heatmapPurples.length - 1) * (v - min)) / (max - min))];
 
     return (
       <div>
