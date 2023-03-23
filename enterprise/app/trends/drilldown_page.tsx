@@ -26,6 +26,7 @@ import router from "../../../app/router/router";
 import { CategoricalChartState } from "recharts/types/chart/generateCategoricalChart";
 
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
+const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
 const DD_ZOOM_URL_PARAM: string = "ddZoom";
 
 function encodeMetricUrlParam(metric: stat_filter.Metric): string {
@@ -444,6 +445,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   componentDidMount() {
     this.selectedMetric =
       decodeMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+    this.currentHeatmapSelection = decodeHeatmapSelection(this.props.search.get(DD_SELECTED_AREA_URL_PARAM) || "");
     this.currentZoomFilters = decodeHeatmapSelection(this.props.search.get(DD_ZOOM_URL_PARAM) || "");
     this.fetch();
     this.fetchDrilldowns();
@@ -452,10 +454,20 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.search != prevProps.search) {
+      const prevSearchWithoutSelection = new URLSearchParams(prevProps.search);
+      prevSearchWithoutSelection.delete(DD_SELECTED_AREA_URL_PARAM);
+      prevSearchWithoutSelection.sort();
+
+      const newSearchWithoutSelection = new URLSearchParams(this.props.search);
+      newSearchWithoutSelection.delete(DD_SELECTED_AREA_URL_PARAM);
+      newSearchWithoutSelection.sort();
       this.selectedMetric =
         decodeMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
+      this.currentHeatmapSelection = decodeHeatmapSelection(this.props.search.get(DD_SELECTED_AREA_URL_PARAM) || "");
       this.currentZoomFilters = decodeHeatmapSelection(this.props.search.get(DD_ZOOM_URL_PARAM) || "");
-      this.fetch();
+      if (prevSearchWithoutSelection.toString() != newSearchWithoutSelection.toString()) {
+        this.fetch();
+      }
       this.fetchDrilldowns();
       this.fetchEventList();
     }
@@ -471,19 +483,22 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [DD_SELECTED_METRIC_URL_PARAM]: encodeMetricUrlParam(option.metric),
+      [DD_SELECTED_AREA_URL_PARAM]: "",
       [DD_ZOOM_URL_PARAM]: "",
     });
   }
 
   handleHeatmapSelection(s?: HeatmapSelection) {
-    this.currentHeatmapSelection = s;
-    this.fetchDrilldowns();
-    this.fetchEventList();
+    router.setQuery({
+      ...Object.fromEntries(this.props.search.entries()),
+      [DD_SELECTED_AREA_URL_PARAM]: s ? encodeHeatmapSelection(s) : "",
+    });
   }
 
   handleHeatmapZoom(s?: HeatmapSelection) {
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
+      [DD_SELECTED_AREA_URL_PARAM]: "",
       [DD_ZOOM_URL_PARAM]: s ? encodeHeatmapSelection(s) : "",
     });
   }
@@ -717,7 +732,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   metricBucketName={this.selectedMetric.name}
                   valueFormatter={(v) => this.renderBucketValue(v)}
                   selectionCallback={(s) => this.handleHeatmapSelection(s)}
-                  zoomCallback={(s) => this.handleHeatmapZoom(s)}></HeatmapComponent>
+                  zoomCallback={(s) => this.handleHeatmapZoom(s)}
+                  selectedData={this.currentHeatmapSelection}></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
                   {this.state.loadingDrilldowns && <div className="loading"></div>}
