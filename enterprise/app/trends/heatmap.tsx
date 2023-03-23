@@ -1,11 +1,11 @@
 import React from "react";
 import moment from "moment";
+import Long from "long";
 
 import { stats } from "../../../proto/stats_ts_proto";
 import { ScaleBand, scaleBand } from "d3-scale";
 import { withResizeDetector } from "react-resize-detector";
 import { pinBottomLeftOffsetFromMouse, MouseCoords, Tooltip } from "../../../app/components/tooltip/tooltip";
-import Long from "long";
 
 interface HeatmapProps {
   heatmapData: stats.GetStatHeatmapResponse;
@@ -207,15 +207,16 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     if (!this.props.heatmapData.timestampBracket || !this.props.heatmapData.bucketBracket) {
       return null;
     }
+    const longNumberCompare = (n: number) => (l: Long) => +l === n;
     const lowDate = selection.dateRangeMicros.startInclusive;
-    const lowDateIndex = this.props.heatmapData.timestampBracket.indexOf(new Long(lowDate));
+    const lowDateIndex = this.props.heatmapData.timestampBracket.findIndex(longNumberCompare(lowDate));
     const highDateIndex =
-      this.props.heatmapData.timestampBracket.indexOf(new Long(selection.dateRangeMicros.endExclusive)) - 1;
+      this.props.heatmapData.timestampBracket.findIndex(longNumberCompare(selection.dateRangeMicros.endExclusive)) - 1;
 
     const lowMetric = selection.bucketRange.startInclusive;
-    const lowMetricIndex = this.props.heatmapData.bucketBracket.indexOf(new Long(lowMetric));
+    const lowMetricIndex = this.props.heatmapData.bucketBracket.findIndex(longNumberCompare(lowMetric));
     const highMetricIndex =
-      this.props.heatmapData.bucketBracket.indexOf(new Long(selection.bucketRange.endExclusive)) - 1;
+      this.props.heatmapData.bucketBracket.findIndex(longNumberCompare(selection.bucketRange.endExclusive)) - 1;
 
     if (lowDateIndex < 0 || highDateIndex < 0 || lowMetricIndex < 0 || highMetricIndex < 0) {
       return null;
