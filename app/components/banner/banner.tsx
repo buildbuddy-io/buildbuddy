@@ -24,7 +24,7 @@ export const Banner = React.forwardRef((props: BannerProps, ref: React.Ref<HTMLD
   return (
     <div className={`banner banner-${type} ${className || ""}`} {...rest} ref={ref}>
       {ICONS[type]}
-      <div>{children}</div>
+      <div className="banner-content">{children}</div>
     </div>
   );
 });

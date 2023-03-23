@@ -1,4 +1,5 @@
 import React from "react";
+import { AlertCircle } from "lucide-react";
 import { User } from "../../../app/auth/auth_service";
 import rpc_service from "../../../app/service/rpc_service";
 import capabilities from "../../../app/capabilities/capabilities";
@@ -11,6 +12,7 @@ import router from "../../../app/router/router";
 import UserPreferences from "../../../app/preferences/preferences";
 import GitHubLink from "./github_link";
 import QuotaComponent from "../quota/quota";
+import UserGitHubLink from "./user_github_link";
 import Banner from "../../../app/components/banner/banner";
 
 export interface SettingsProps {
@@ -26,8 +28,11 @@ enum TabId {
   OrgGitHub = "org/github",
   OrgApiKeys = "org/api-keys",
   OrgSecrets = "org/secrets",
+
   PersonalPreferences = "personal/preferences",
   PersonalApiKeys = "personal/api-keys",
+  PersonalGitHubLink = "personal/github",
+
   ServerQuota = "server/quota",
 }
 
@@ -118,9 +123,14 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     Members
                   </SettingsTab>
                 )}
-                {router.canAccessOrgGitHubLinkPage(this.props.user) && (
+                {router.canAccessOrgGitHubLinkPage(this.props.user) && capabilities.github && (
                   <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
-                    GitHub link
+                    <span>GitHub link</span>
+                    {/* If the user has a group-level GitHub link and the new GitHub App is
+                        enabled, show a deprecation alert. */}
+                    {capabilities.config.githubAppEnabled && this.props.user.selectedGroup.githubLinked && (
+                      <AlertCircle className="icon orange" />
+                    )}
                   </SettingsTab>
                 )}
                 <SettingsTab id={TabId.OrgApiKeys} activeTabId={activeTabId}>
@@ -143,6 +153,11 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 {this.props.user?.selectedGroup?.userOwnedKeysEnabled && (
                   <SettingsTab id={TabId.PersonalApiKeys} activeTabId={activeTabId}>
                     Personal API keys
+                  </SettingsTab>
+                )}
+                {capabilities.config.githubAppEnabled && (
+                  <SettingsTab id={TabId.PersonalGitHubLink} activeTabId={activeTabId}>
+                    GitHub link
                   </SettingsTab>
                 )}
               </div>
@@ -201,6 +216,9 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     </>
                   )}
                   {activeTabId === TabId.OrgGitHub && capabilities.github && <GitHubLink user={this.props.user} />}
+                  {activeTabId === TabId.PersonalGitHubLink && capabilities.config.githubAppEnabled && (
+                    <UserGitHubLink user={this.props.user} />
+                  )}
                   {activeTabId === TabId.OrgApiKeys && capabilities.manageApiKeys && (
                     <>
                       <div className="settings-option-title">Org API keys</div>
