@@ -22,6 +22,11 @@ resource "helm_release" "buildbuddy" {
     file("${path.module}/buildbuddy-values.yaml")
   ]
 
+  // set {
+  //   name = "config.app.build_buddy_url"
+  //   value = "<YOUR DOMAIN HERE>"
+  // }
+
   depends_on = [
     null_resource.update-kubeconfig
   ]

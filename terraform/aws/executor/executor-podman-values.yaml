@@ -1,0 +1,31 @@
+replicas: 1
+
+config:
+  executor:
+    ## Set via terraform
+    # api_key: "<API_KEY>"
+    # app_target: "grpcs://remote.buildbuddy.io:443"
+
+    ## Each executor maintains a local LRU cache
+    ## that helps speed up inputs download.
+    ## Therefore it's good to use larger executor pod to
+    ## improve local cache hit rates.
+    local_cache_size_bytes: 5_000_000_000 # 5GB
+
+    ## Use podman to spin up 'runner' child containers inside
+    ## executor container.
+    enable_podman: true
+    default_isolation_type: podman
+
+    ## Default image for runner
+    ## Should contains appropriate local toolchains (i.e. gcc) if needed.
+    ## 'ubuntu' image is only suitable for execute genrule actions.
+    default_image: ubuntu
+
+    ## Registry specific authentication
+    ## If not provided, falls back to credential helper available on executor's container
+    # container_registries:
+    #   - hostnames:
+    #       - gcr.io
+    #     username: "anonymous"
+    #     password: ""
