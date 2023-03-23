@@ -5,6 +5,7 @@ import { stats } from "../../../proto/stats_ts_proto";
 import { ScaleBand, scaleBand } from "d3-scale";
 import { withResizeDetector } from "react-resize-detector";
 import { pinBottomLeftOffsetFromMouse, MouseCoords, Tooltip } from "../../../app/components/tooltip/tooltip";
+import Long from "long";
 
 interface HeatmapProps {
   heatmapData: stats.GetStatHeatmapResponse;
@@ -207,19 +208,21 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
       return null;
     }
     const lowDate = selection.dateRangeMicros.startInclusive;
-    const lowDateIndex = this.props.heatmapData.timestampBracket.indexOf(lowDate);
-    const highDateIndex = this.props.heatmapData.timestampBracket.indexOf(selection.dateRangeMicros.endExclusive) - 1;
+    const lowDateIndex = this.props.heatmapData.timestampBracket.indexOf(new Long(lowDate));
+    const highDateIndex =
+      this.props.heatmapData.timestampBracket.indexOf(new Long(selection.dateRangeMicros.endExclusive)) - 1;
 
     const lowMetric = selection.bucketRange.startInclusive;
-    const lowMetricIndex = this.props.heatmapData.bucketBracket.indexOf(lowMetric);
-    const highMetricIndex = this.props.heatmapData.bucketBracket.indexOf(selection.bucketRange.endExclusive) - 1;
+    const lowMetricIndex = this.props.heatmapData.bucketBracket.indexOf(new Long(lowMetric));
+    const highMetricIndex =
+      this.props.heatmapData.bucketBracket.indexOf(new Long(selection.bucketRange.endExclusive)) - 1;
 
     if (lowDateIndex < 0 || highDateIndex < 0 || lowMetricIndex < 0 || highMetricIndex < 0) {
       return null;
     }
 
-    const highDate = this.props.heatmapData.timestampBracket[highDateIndex];
-    const highMetric = this.props.heatmapData.bucketBracket[highMetricIndex];
+    const highDate = +this.props.heatmapData.timestampBracket[highDateIndex];
+    const highMetric = +this.props.heatmapData.bucketBracket[highMetricIndex];
 
     return [
       {
@@ -227,14 +230,14 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
         timestampBucketIndex: lowDateIndex,
         metric: lowMetric,
         metricBucketIndex: lowMetricIndex,
-        value: 0 /* XXX */,
+        value: +this.props.heatmapData.column[lowDateIndex].value[lowMetricIndex],
       },
       {
         timestamp: highDate,
         timestampBucketIndex: highDateIndex,
         metric: highMetric,
         metricBucketIndex: highMetricIndex,
-        value: 0 /* XXX */,
+        value: +this.props.heatmapData.column[highDateIndex].value[highMetricIndex],
       },
     ];
   }
@@ -278,10 +281,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return { dateRangeMicros, bucketRange, eventsSelected };
   }
 
-  maybeFireSelectionCallback(selectedCells?: [SelectedCellData, SelectedCellData]) {
-    if (!selectedCells) {
-      return;
-    }
+  maybeFireSelectionCallback(selectedCells: [SelectedCellData, SelectedCellData]) {
     const selection = this.convertCellsToSelection(selectedCells);
     if (selection && this.props.selectionCallback) {
       this.props.selectionCallback(selection);
@@ -296,14 +296,12 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
 
   onMouseUp(e: MouseEvent) {
     if (!this.pendingClick) {
-      this.maybeFireSelectionCallback();
       return;
     }
     const data = this.computeBucket(e.clientX, e.clientY);
     if (!data) {
       this.pendingClick = undefined;
       this.setState({ selectionToRender: undefined });
-      this.maybeFireSelectionCallback();
       return;
     }
 
