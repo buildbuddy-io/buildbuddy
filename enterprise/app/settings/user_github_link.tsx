@@ -1,12 +1,9 @@
 import React from "react";
-import { CheckCircle, User as UserIcon, ExternalLink } from "lucide-react";
+import { User as UserIcon } from "lucide-react";
 import { Octokit } from "@octokit/rest";
 import alertService from "../../../app/alert/alert_service";
 import { User } from "../../../app/auth/user";
-import capabilities from "../../../app/capabilities/capabilities";
-import Banner from "../../../app/components/banner/banner";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
-import { OutlinedLinkButton } from "../../../app/components/button/link_button";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -26,13 +23,13 @@ export interface Props {
   user: User;
 }
 
-export interface State {
-  deleteModalVisible?: boolean;
-  isDeleting?: boolean;
-  isRefreshingUser?: boolean;
+interface State {
+  deleteModalVisible: boolean;
+  isDeleting: boolean;
+  isRefreshingUser: boolean;
 
-  account?: GitHubAccount;
-  accountLoading?: boolean;
+  account: GitHubAccount | null;
+  accountLoading: boolean;
 }
 
 type GitHubAccount = {
@@ -42,7 +39,14 @@ type GitHubAccount = {
 };
 
 export default class UserGitHubLink extends React.Component<Props, State> {
-  state: State = {};
+  state: State = {
+    deleteModalVisible: false,
+    isDeleting: false,
+    isRefreshingUser: false,
+
+    account: null,
+    accountLoading: false,
+  };
 
   private accountFetch?: CancelablePromise;
 
@@ -61,7 +65,7 @@ export default class UserGitHubLink extends React.Component<Props, State> {
     this.accountFetch?.cancel();
 
     if (!this.props.user.githubToken) {
-      this.setState({ accountLoading: false, account: undefined });
+      this.setState({ accountLoading: false, account: null });
       return;
     }
 
@@ -78,6 +82,7 @@ export default class UserGitHubLink extends React.Component<Props, State> {
             },
           });
         })
+        .catch((e) => errorService.handleError(e))
         .finally(() => this.setState({ accountLoading: false }))
     );
   }

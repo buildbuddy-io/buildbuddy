@@ -163,10 +163,6 @@
   transition: box-shadow 100ms ease-out;
 }
 
-.settings .settings-tab > * {
-  pointer-events: none;
-}
-
 .settings .settings-tab .icon {
   width: 20px;
   height: 20px;
@@ -219,6 +215,10 @@
   border-bottom-right-radius: var(--border-radius);
 }
 
-.settings .settings-option-title:not(:first-child) {
-  margin-top: 32px;
+.settings .banner-content > p:first-child {
+  margin-top: 0;
+}
+
+.settings .banner-content > p:last-child {
+  margin-bottom: 0;
 }

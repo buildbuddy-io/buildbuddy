@@ -14,6 +14,7 @@ import GitHubLink from "./github_link";
 import QuotaComponent from "../quota/quota";
 import UserGitHubLink from "./user_github_link";
 import Banner from "../../../app/components/banner/banner";
+import Link from "../../../app/components/link/link";
 
 export interface SettingsProps {
   user: User;
@@ -298,27 +299,13 @@ type SettingsTabProps = {
 };
 
 class SettingsTab extends React.Component<SettingsTabProps> {
-  private handleClick(e: React.MouseEvent) {
-    e.preventDefault();
-    if (this.props.activeTabId === this.props.id && window.location.pathname === this.props.id) {
-      return;
-    }
-    const linkTarget = (e.target as HTMLAnchorElement).getAttribute("href");
-    // If this isn't really a link, probably better to go nowhere.
-    if (linkTarget === null) {
-      return;
-    }
-    router.navigateTo(linkTarget);
-  }
-
   render() {
     return (
-      <a
+      <Link
         className={`settings-tab ${this.props.activeTabId === this.props.id ? "active-tab" : ""}`}
-        href={`/settings/${this.props.id}`}
-        onClick={this.handleClick.bind(this)}>
+        href={`/settings/${this.props.id}`}>
         {this.props.children}
-      </a>
+      </Link>
     );
   }
 }
