@@ -62,7 +62,11 @@ fi
 
 if ((GAZELLE)); then
   echo "Fixing BUILD deps with gazelle..."
-  bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gazelle
+  CLI_LATEST_VERSION=$(
+    curl -fsSL https://api.github.com/repos/buildbuddy-io/bazel/releases/latest |
+      perl -nle 'if (/"tag_name": "(.*?)"/){ print $1 }'
+  )
+  USE_BAZEL_VERSION="buildbuddy-io/$CLI_LATEST_VERSION" bazel fix
 fi
 
 echo 'All done!'
