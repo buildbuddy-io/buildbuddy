@@ -9,7 +9,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows --test_tag_filters=-performance,-webdriver,-docker
+      - test //... --config=linux-workflows --test_tag_filters=-performance,-webdriver,-docker
   - name: Test (darwin_amd64)
     os: "darwin"
     triggers:
@@ -22,7 +22,7 @@ actions:
     # TODO: Fix the tests below on Mac, and re-enable.
     bazel_commands:
       - >-
-        test --config=mac-workflows
+        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker
         --
         //...
         -//enterprise/server/test/integration/ci_runner:all
@@ -35,7 +35,7 @@ actions:
         branches:
           - "master"
     bazel_commands:
-      - test //... --config=workflows --test_tag_filters=+performance
+      - test //... --config=linux-workflows --test_tag_filters=+performance
   - name: Browser tests
     container_image: ubuntu-20.04
     triggers:
@@ -47,7 +47,7 @@ actions:
           - "master"
     bazel_commands:
       # TODO(http://go/b/958): See if we can remove --remote_download_outputs=toplevel
-      - test //... --config=workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
+      - test //... --config=linux-workflows --remote_download_outputs=toplevel --test_tag_filters=+webdriver
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
   - name: Docker tests
     container_image: ubuntu-20.04
@@ -61,7 +61,7 @@ actions:
     bazel_commands:
       # TODO(http://go/b/1249): Increase reliability of runner recycling when
       # executing with high concurrency, and remove `--jobs=3`
-      - test //... --config=workflows --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
+      - test //... --config=linux-workflows --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
 
 plugins:
   - path: cli/plugins/go-deps

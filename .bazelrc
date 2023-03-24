@@ -62,8 +62,7 @@ build:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
 build:untrusted-ci --disk_cache=
 build:untrusted-ci --flaky_test_attempts=2
 
-# Configuration used for BuildBuddy workflows
-build:workflows --config=remote-shared
+# Configuration used for all BuildBuddy workflows
 build:workflows --build_metadata=ROLE=CI
 build:workflows --build_metadata=VISIBILITY=PUBLIC
 build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
@@ -77,18 +76,18 @@ build:workflows --flaky_test_attempts=//enterprise/server/test/webdriver/invocat
 build:workflows --config=buildbuddy_bes_backend
 build:workflows --config=buildbuddy_bes_results_url
 build:workflows --config=buildbuddy_remote_cache
-build:workflows --config=buildbuddy_remote_executor
 build:workflows --config=buildbuddy_experimental_remote_downloader
 build:workflows --@io_bazel_rules_go//go/config:race
 
+# Configuration used for Linux workflows
+build:linux-workflows --config=remote-shared
+build:linux-workflows --config=workflows
+build:linux-workflows --config=buildbuddy_remote_executor
+
+# Configuration used for Mac workflows
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
 build:mac-workflows --config=cache
-build:mac-workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
-build:mac-workflows --experimental_remote_cache_compression
-build:mac-workflows --color=yes
-build:mac-workflows --config=buildbuddy_bes_backend
-build:mac-workflows --config=buildbuddy_bes_results_url
-build:mac-workflows --config=buildbuddy_remote_cache
+build:mac-workflows --config=workflows
 
 # Configuration used for BuildBuddy release workflow
 build:release --config=remote
