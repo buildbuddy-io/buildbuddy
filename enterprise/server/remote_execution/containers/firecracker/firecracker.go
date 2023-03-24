@@ -501,7 +501,7 @@ func mergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, diffSnapsho
 }
 
 func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, error) {
-	loader, err := snaploader.New(c.env, c.jailerRoot)
+	loader, err := snaploader.New(c.env)
 	if err != nil {
 		return "", err
 	}
@@ -606,7 +606,7 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	}
 
 	snaploaderStart := time.Now()
-	loader, err := snaploader.New(c.env, c.jailerRoot)
+	loader, err := snaploader.New(c.env)
 	if err != nil {
 		return err
 	}
@@ -689,7 +689,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		ForwardSignals: make([]os.Signal, 0),
 	}
 
-	loader, err := snaploader.New(c.env, c.jailerRoot)
+	loader, err := snaploader.New(c.env)
 	if err != nil {
 		return err
 	}

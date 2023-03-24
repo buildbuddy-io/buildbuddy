@@ -33,6 +33,9 @@ const (
 	hitMetricLabel = "hit"
 	// missMetricLabel is the prometheus metric label applied to filecache misses.
 	missMetricLabel = "miss"
+
+	// Temporary directory under the filecache root.
+	tmpDir = "_tmp"
 )
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
@@ -118,8 +121,18 @@ func NewFileCache(rootDir string, maxSizeBytes int64) (*fileCache, error) {
 		l:           l,
 		dirScanDone: make(chan struct{}),
 	}
+	if err := os.RemoveAll(c.TempDir()); err != nil {
+		return nil, status.WrapErrorf(err, "failed to clear filecache temp dir")
+	}
+	if err := os.MkdirAll(c.TempDir(), 0755); err != nil {
+		return nil, status.WrapErrorf(err, "failed to create filecache temp dir")
+	}
 	go c.scanDir()
 	return c, nil
+}
+
+func (c *fileCache) TempDir() string {
+	return filepath.Join(c.rootDir, tmpDir)
 }
 
 func (c *fileCache) filecachePath(node *repb.FileNode) string {
