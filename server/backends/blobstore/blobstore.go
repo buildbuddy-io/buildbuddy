@@ -226,7 +226,7 @@ func (d *DiskBlobStore) blobPath(blobName string) (string, error) {
 	if strings.Contains(blobName, "..") {
 		return "", fmt.Errorf("blobName (%s) must not contain ../", blobName)
 	}
-	return filepath.Join(*pathPrefix, d.rootDir, blobName), nil
+	return filepath.Join(d.rootDir, blobPath(blobName)), nil
 }
 
 func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
@@ -268,7 +268,7 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
 
-	fileInfo, err := os.Stat(blobName)
+	fileInfo, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -511,7 +511,7 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 
 func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	start := time.Now()
-	b, err := a.download(ctx, blobPath(blobName))
+	b, err := a.download(ctx, blobName)
 	recordReadMetrics(awsS3Label, start, b, err)
 	return decompress(b, err)
 }
@@ -522,7 +522,7 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    aws.String(blobPath(blobName)),
 	})
 	spn.End()
 
@@ -543,7 +543,7 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 		return 0, err
 	}
 	start := time.Now()
-	n, err := a.upload(ctx, blobPath(blobName), compressedData)
+	n, err := a.upload(ctx, blobName, compressedData)
 	recordWriteMetrics(awsS3Label, start, n, err)
 	return n, err
 }
@@ -564,7 +564,7 @@ func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressed
 
 func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
-	err := a.delete(ctx, blobPath(blobName))
+	err := a.delete(ctx, blobName)
 	recordDeleteMetrics(awsS3Label, start, err)
 	return err
 }
@@ -572,7 +572,7 @@ func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    aws.String(blobPath(blobName)),
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
