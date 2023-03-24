@@ -86,4 +86,7 @@ message FrontendConfig {
 
   // Enable searching for executions in the OLAP DB.
   bool execution_search_enabled = 28;
+
+  // Whether the GitHub app is enabled.
+  bool github_app_enabled = 29;
 }

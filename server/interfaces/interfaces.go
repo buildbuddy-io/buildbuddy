@@ -461,6 +461,14 @@ type WorkflowService interface {
 	WorkflowsPoolName() string
 }
 
+type GitHubApp interface {
+	// TODO(bduffany): Add webhook handler, install handler, repo management
+	// API, installation management API.
+
+	// OAuthHandler returns the OAuth flow HTTP handler.
+	OAuthHandler() http.Handler
+}
+
 type RunnerService interface {
 	Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error)
 }

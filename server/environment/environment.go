@@ -93,6 +93,8 @@ type Env interface {
 	SetKeyValStore(interfaces.KeyValStore)
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
+	GetGitHubApp() interfaces.GitHubApp
+	SetGitHubApp(interfaces.GitHubApp)
 	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService

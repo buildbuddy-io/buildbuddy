@@ -122,9 +122,8 @@ func getLegacyOAuthHandler(env environment.Env) *OAuthHandler {
 	}
 	a := NewOAuthHandler(env, *clientID, legacyClientSecret(), legacyOAuthAppPath)
 	a.GroupLinkEnabled = true
-	// TODO: If the new GitHub App is enabled, disable user-level token linking
-	// for the legacy OAuth app (since the new GitHub App will handle user-level
-	// linking).
+	// Only enable user-level linking if the new GitHub App is not yet enabled.
+	a.UserLinkEnabled = env.GetGitHubApp() == nil
 	return a
 }
 
