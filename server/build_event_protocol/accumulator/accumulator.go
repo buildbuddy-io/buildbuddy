@@ -264,6 +264,9 @@ func (v *BEValues) populateWorkspaceInfoFromWorkspaceStatus(workspace *build_eve
 		if item.Key == "COMMIT_SHA" {
 			v.setStringValue(commitSHAFieldName, item.Value)
 		}
+		if item.Key == "ROLE" {
+			v.setStringValue(roleFieldName, item.Value)
+		}
 	}
 }
 
