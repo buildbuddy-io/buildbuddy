@@ -2,7 +2,6 @@ package snaploader
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,6 +21,22 @@ const (
 	ManifestFileName = "manifest.json"
 )
 
+// NewKey returns the cache key that can be used to look up the snapshot
+// manifest.
+// TODO(bduffany): once runners are capable of sharing snapshots, remove
+// runnerID from the digest hash.
+// TODO(bduffany): use ResourceName instead of digest and incorporate
+// remote_instance_name. The instance name is currently implicit in the runnerID
+// since we only match tasks to runners if their instance name matches the
+// runner's instance name. But once we have snapshot sharing, runnerID will no
+// longer be part of the snapshot key.
+func NewKey(configurationHash, runnerID string) *repb.Digest {
+	return &repb.Digest{
+		Hash:      hash.String(hash.String(configurationHash) + hash.String(runnerID)),
+		SizeBytes: 101, // arbitrary
+	}
+}
+
 type LoadSnapshotOptions struct {
 	// The following fields are all required.
 	ConfigurationData   []byte
@@ -38,27 +53,6 @@ type LoadSnapshotOptions struct {
 	// This field is optional -- a snapshot may have a filesystem
 	// stored with it or it may have one attached at runtime.
 	WorkspaceFSPath string
-
-	// Callers may specify a snapshot ID; if set, the snapshot
-	// will be stored in an action with this ID
-	ForceSnapshotDigest *repb.Digest
-}
-
-// Digest computes the repb.Digest of a LoadSnapshotOptions struct.
-func (o *LoadSnapshotOptions) Digest() *repb.Digest {
-	if o.ForceSnapshotDigest != nil {
-		return o.ForceSnapshotDigest
-	}
-
-	h := sha256.New()
-	for _, f := range enumerateFiles(o) {
-		h.Write([]byte(f))
-	}
-	h.Write(o.ConfigurationData)
-	return &repb.Digest{
-		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
-		SizeBytes: int64(101),
-	}
 }
 
 func enumerateFiles(snapOpts *LoadSnapshotOptions) []string {
@@ -79,7 +73,7 @@ func enumerateFiles(snapOpts *LoadSnapshotOptions) []string {
 }
 
 type Loader interface {
-	CacheSnapshot(ctx context.Context, snapOpts *LoadSnapshotOptions) (*repb.Digest, error)
+	CacheSnapshot(ctx context.Context, snapshotDigest *repb.Digest, snapOpts *LoadSnapshotOptions) error
 	UnpackSnapshot(ctx context.Context, snapshotDigest *repb.Digest, outputDirectory string) error
 	DeleteSnapshot(ctx context.Context, snapshotDigest *repb.Digest) error
 	GetConfigurationData(ctx context.Context, snapshotDigest *repb.Digest) ([]byte, error)
@@ -197,15 +191,14 @@ func (m *manifestData) String() string {
 // the snapshot ID and the file name. A manifest file that
 // that lists all files. Finally, an action result is cached that describes all
 // files -- this allows for fast existence checking and easy download.
-func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapOpts *LoadSnapshotOptions) (*repb.Digest, error) {
+func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapshotDigest *repb.Digest, snapOpts *LoadSnapshotOptions) error {
 	if l.env.GetFileCache() == nil {
-		return nil, status.FailedPreconditionErrorf("Unable to cache snapshot: FileCache not enabled")
+		return status.FailedPreconditionErrorf("Unable to cache snapshot: FileCache not enabled")
 	}
-	ad := snapOpts.Digest()
 
 	tmpDir, err := os.MkdirTemp(filepath.Dir(snapOpts.MemSnapshotPath), "manifest-dir-*")
 	if err != nil {
-		return nil, status.InternalErrorf("failed to create manifest dir: %s", err)
+		return status.InternalErrorf("failed to create manifest dir: %s", err)
 	}
 	defer os.RemoveAll(tmpDir)
 	manifestPath := filepath.Join(tmpDir, ManifestFileName)
@@ -220,11 +213,11 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapOpts *LoadSnaps
 	for _, f := range enumerateFiles(snapOpts) {
 		info, err := os.Stat(f)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		filename := filepath.Base(f)
 		fileNameDigest := &repb.Digest{
-			Hash:      hash.String(ad.GetHash() + filename),
+			Hash:      hash.String(snapshotDigest.GetHash() + filename),
 			SizeBytes: int64(info.Size()),
 		}
 		l.env.GetFileCache().AddFile(fileNodeFromDigest(fileNameDigest), f)
@@ -235,14 +228,14 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapOpts *LoadSnaps
 	// retrieve this later in order to unpack the snapshot.
 	b, err := json.Marshal(manifest)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if err := os.WriteFile(manifestPath, b, 0644); err != nil {
-		return nil, err
+		return err
 	}
-	manifestDigest := manifestDigest(ad)
+	manifestDigest := manifestDigest(snapshotDigest)
 	l.env.GetFileCache().AddFile(fileNodeFromDigest(manifestDigest), manifestPath)
-	return ad, nil
+	return nil
 }
 
 func fileNodeFromDigest(d *repb.Digest) *repb.FileNode {

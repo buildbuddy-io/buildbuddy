@@ -132,12 +132,13 @@ func main() {
 
 	var c *firecracker.FirecrackerContainer
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
+	// TODO: make snapshotID work again.
 	if *snapshotID != "" {
 		c, err = firecracker.NewContainer(ctx, env, auth, opts)
 		if err != nil {
 			log.Fatalf("Error creating container: %s", err)
 		}
-		if err := c.LoadSnapshot(ctx, "" /*workspaceFS*/, *remoteInstanceName, parseSnapshotID(*snapshotID)); err != nil {
+		if err := c.LoadSnapshot(ctx, "" /*workspaceFS*/); err != nil {
 			log.Fatalf("Error loading snapshot: %s", err)
 		}
 	} else {
@@ -160,11 +161,10 @@ func main() {
 		for {
 			<-sigc
 			log.Errorf("Capturing snapshot...")
-			snapshotDigest, err := c.SaveSnapshot(ctx, *remoteInstanceName, nil, nil /*=baseSnapshotDigest*/)
-			if err != nil {
+			if err := c.SaveSnapshot(ctx); err != nil {
 				log.Fatalf("Error dumping snapshot: %s", err)
 			}
-			log.Printf("Created snapshot with ID %s/%d", snapshotDigest.GetHash(), snapshotDigest.GetSizeBytes())
+			log.Printf("Saved snapshot")
 		}
 	}()
 
