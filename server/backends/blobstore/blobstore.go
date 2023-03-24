@@ -38,6 +38,8 @@ import (
 )
 
 var (
+	pathPrefix = flag.String("storage.path_prefix", "", "The prefix directory to store all blobs in")
+
 	// Disk flags
 	rootDirectory = flag.String("storage.disk.root_directory", "/tmp/buildbuddy", "The root directory to store all blobs in, if using disk based storage.")
 	useV2Layout   = flag.Bool("storage.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
@@ -224,7 +226,7 @@ func (d *DiskBlobStore) blobPath(blobName string) (string, error) {
 	if strings.Contains(blobName, "..") {
 		return "", fmt.Errorf("blobName (%s) must not contain ../", blobName)
 	}
-	return filepath.Join(d.rootDir, blobName), nil
+	return filepath.Join(d.rootDir, blobPath(blobName)), nil
 }
 
 func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
@@ -266,7 +268,7 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
 
-	fileInfo, err := os.Stat(blobName)
+	fileInfo, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -292,6 +294,10 @@ func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, 
 		return false, err
 	}
 	return disk.FileExists(ctx, fullPath)
+}
+
+func blobPath(blobName string) string {
+	return filepath.Join(*pathPrefix, blobName)
 }
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
@@ -338,7 +344,7 @@ func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName s
 }
 
 func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
+	reader, err := g.bucketHandle.Object(blobPath(blobName)).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			return nil, status.NotFoundError(err.Error())
@@ -354,7 +360,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
+	writer := g.bucketHandle.Object(blobPath(blobName)).NewWriter(ctx)
 	defer writer.Close()
 	compressedData, err := compress(data)
 	if err != nil {
@@ -371,7 +377,7 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
-	err := g.bucketHandle.Object(blobName).Delete(ctx)
+	err := g.bucketHandle.Object(blobPath(blobName)).Delete(ctx)
 	spn.End()
 	recordDeleteMetrics(gcsLabel, start, err)
 	if err == storage.ErrObjectNotExist {
@@ -382,7 +388,7 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 
 func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err := g.bucketHandle.Object(blobName).Attrs(ctx)
+	_, err := g.bucketHandle.Object(blobPath(blobName)).Attrs(ctx)
 	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false, nil
@@ -516,7 +522,7 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    aws.String(blobPath(blobName)),
 	})
 	spn.End()
 
@@ -545,7 +551,7 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressedData []byte) (int, error) {
 	uploadParams := &s3manager.UploadInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    aws.String(blobPath(blobName)),
 		Body:   bytes.NewReader(compressedData),
 	}
 	ctx, spn := tracing.StartSpan(ctx)
@@ -566,7 +572,7 @@ func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    aws.String(blobPath(blobName)),
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
@@ -582,10 +588,9 @@ func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 }
 
 func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
-
 	params := &s3.HeadObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobName),
+		Key:    aws.String(blobPath(blobName)),
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
@@ -670,7 +675,7 @@ func (z *AzureBlobStore) createContainerIfNotExists(ctx context.Context) error {
 }
 
 func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	blobURL := z.containerURL.NewBlockBlobURL(blobName)
+	blobURL := z.containerURL.NewBlockBlobURL(blobPath(blobName))
 	response, err := blobURL.Download(ctx, 0 /*=offset*/, azblob.CountToEnd, azblob.BlobAccessConditions{}, false /*=rangeGetContentMD5*/, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		if z.isAzureError(err, azblob.ServiceCodeBlobNotFound) {
@@ -699,7 +704,7 @@ func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []
 	}
 	n := len(compressedData)
 	start := time.Now()
-	blobURL := z.containerURL.NewBlockBlobURL(blobName)
+	blobURL := z.containerURL.NewBlockBlobURL(blobPath(blobName))
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err = azblob.UploadBufferToBlockBlob(ctx, compressedData, blobURL, azblob.UploadToBlockBlobOptions{})
 	spn.End()
@@ -709,7 +714,7 @@ func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []
 
 func (z *AzureBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
-	blobURL := z.containerURL.NewBlockBlobURL(blobName)
+	blobURL := z.containerURL.NewBlockBlobURL(blobPath(blobName))
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 	spn.End()
@@ -718,7 +723,7 @@ func (z *AzureBlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 }
 
 func (z *AzureBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
-	blobURL := z.containerURL.NewBlockBlobURL(blobName)
+	blobURL := z.containerURL.NewBlockBlobURL(blobPath(blobName))
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if _, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}); err != nil {
