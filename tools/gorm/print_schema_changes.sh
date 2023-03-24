@@ -17,14 +17,14 @@
 git_branch=$1
 db_conn_string=$2
 
-git checkout "$git_branch" >/dev/null 2>&1
+git checkout "$git_branch" 1>/dev/null
 
 # Parse db connection string
 db_driver=$(echo "$db_conn_string" | sed -n "s/\(\S*\):\/\/.*$/\1/p")
 if [[ "$db_driver" == "clickhouse" ]]; then
-  schema_changes=$(bazel run //enterprise/server -- --olap_database.data_source="$db_conn_string" --olap_database.print_schema_changes_and_exit=true 2>/dev/null)
+  schema_changes=$(bazel run //enterprise/server -- --olap_database.data_source="$db_conn_string" --olap_database.print_schema_changes_and_exit=true)
 else
-  schema_changes=$(bazel run //enterprise/server -- --database.data_source="$db_conn_string" --database.print_schema_changes_and_exit=true 2>/dev/null)
+  schema_changes=$(bazel run //enterprise/server -- --database.data_source="$db_conn_string" --database.print_schema_changes_and_exit=true)
 fi
 
 if [[ "$schema_changes" != "" ]]; then
