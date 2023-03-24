@@ -13,6 +13,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/banner",
         "//app/components/button",
+        "//app/components/link",
         "//app/preferences",
         "//app/router",
         "//app/service:rpc_service",
@@ -22,7 +23,9 @@ ts_library(
         "//enterprise/app/quota",
         "//enterprise/app/secrets",
         "//enterprise/app/settings:github_link",
+        "//enterprise/app/settings:user_github_link",
         "@npm//@types/react",
+        "@npm//lucide-react",
         "@npm//react",
     ],
 )
@@ -30,6 +33,30 @@ ts_library(
 ts_library(
     name = "github_link",
     srcs = ["github_link.tsx"],
+    strict = True,
+    deps = [
+        "//app/alert:alert_service",
+        "//app/auth:auth_service",
+        "//app/auth:user",
+        "//app/capabilities",
+        "//app/components/banner",
+        "//app/components/button",
+        "//app/components/dialog",
+        "//app/components/link",
+        "//app/components/modal",
+        "//app/components/spinner",
+        "//app/errors:error_service",
+        "//app/service:rpc_service",
+        "//proto:github_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "user_github_link",
+    srcs = ["user_github_link.tsx"],
     strict = True,
     deps = [
         "//app/alert:alert_service",
@@ -43,8 +70,10 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//proto:github_ts_proto",
+        "@npm//@octokit/rest",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
+        "@npm//tslib",
     ],
 )

@@ -54,6 +54,10 @@
   padding: 32px 0;
 }
 
+.github-account-link .deprecation-notice {
+  margin: 16px 0;
+}
+
 .github-account-link {
   max-width: 600px;
 }
@@ -61,9 +65,9 @@
 .github-account-link .linked-github-account-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
   border: 1px solid #eee;
-  padding: 8px 16px;
+  padding: 16px;
   border-radius: 8px;
 }
 
@@ -73,6 +77,12 @@
 
 .github-account-link-delete-modal .checkbox-input {
   margin-top: 3px;
+}
+
+.github-account-link .avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
 }
 
 /* Large screen */
@@ -144,10 +154,18 @@
 }
 
 .settings .settings-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 16px;
   position: relative;
   overflow: hidden;
   transition: box-shadow 100ms ease-out;
+}
+
+.settings .settings-tab .icon {
+  width: 20px;
+  height: 20px;
 }
 
 .settings .settings-tab:hover {
@@ -195,4 +213,12 @@
 .settings .settings-tab:last-child {
   border-bottom-left-radius: var(--border-radius);
   border-bottom-right-radius: var(--border-radius);
+}
+
+.settings .banner-content > p:first-child {
+  margin-top: 0;
+}
+
+.settings .banner-content > p:last-child {
+  margin-bottom: 0;
 }
