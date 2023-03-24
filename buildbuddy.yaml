@@ -25,6 +25,8 @@ actions:
         test --config=mac-workflows
         --
         //...
+        -//enterprise/server/raft/store:all
+        -//enterprise/server/remote_execution/commandutil:all
         -//enterprise/server/test/integration/ci_runner:all
         -//enterprise/server/test/integration/workflow:all
         -//enterprise/server/test/integration/remote_execution/...
