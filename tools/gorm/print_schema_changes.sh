@@ -17,7 +17,7 @@
 git_branch=$1
 db_conn_string=$2
 
-git checkout "$git_branch"
+git checkout "$git_branch" 1>/dev/null
 
 # Parse db connection string
 db_driver=$(echo "$db_conn_string" | sed -n "s/\(\S*\):\/\/.*$/\1/p")
