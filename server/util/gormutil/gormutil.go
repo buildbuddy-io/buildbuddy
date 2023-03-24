@@ -48,6 +48,11 @@ func PrintMigrationSchemaChanges(sqlStrings []string) {
 	// Logs go to stderr, so this output will be easy to isolate and parse
 	if len(sqlStrings) > 0 {
 		for _, sqlStr := range sqlStrings {
+			// Filter out `CREATE TABLE` operations because they are fast, backwards-compatible schema changes that are
+			// always safe for Gorm to auto-apply
+			if strings.HasPrefix(sqlStr, "CREATE TABLE") {
+				continue
+			}
 			fmt.Println(sqlStr)
 		}
 	}
