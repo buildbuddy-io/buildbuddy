@@ -63,10 +63,10 @@ jobs:
           cat go-deps-diff.txt
 
       - name: gazelle
-        # Keep Gazelle version in sync with WORKSPACE
         run: |
-          go install github.com/bazelbuild/bazel-gazelle/cmd/gazelle@v0.29.0
-          "$(go env GOPATH)/bin/gazelle" -mode diff > gazelle-diff.txt || true
+          # Invoke gazelle via bb fix for TypeScript support
+          cli/install.sh
+          bb fix -mode diff > gazelle-diff.txt || true
           echo "gazelle diff:"
           cat gazelle-diff.txt
 
