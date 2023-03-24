@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "invocationdb",
@@ -22,5 +22,17 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "@io_gorm_gorm//:gorm",
+    ],
+)
+
+go_test(
+    name = "invocationdb_test",
+    srcs = ["invocationdb_test.go"],
+    deps = [
+        ":invocationdb",
+        "//server/tables",
+        "//server/testutil/testenv",
+        "//server/util/db",
+        "@com_github_stretchr_testify//require",
     ],
 )

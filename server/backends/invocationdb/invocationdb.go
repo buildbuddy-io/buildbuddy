@@ -243,8 +243,7 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 }
 
 func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
-	ti := &tables.Invocation{InvocationID: invocationID}
-	return d.h.DB(ctx).Delete(ti).Error
+	return d.deleteInvocation(d.h.DB(ctx), invocationID)
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
@@ -257,14 +256,21 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 		if err := perms.AuthorizeWrite(authenticatedUser, acl); err != nil {
 			return err
 		}
-		if err := tx.Exec(`DELETE FROM Invocations WHERE invocation_id = ?`, invocationID).Error; err != nil {
-			return err
-		}
-		if err := tx.Exec(`DELETE FROM Executions WHERE invocation_id = ?`, invocationID).Error; err != nil {
-			return err
-		}
-		return nil
+		return d.deleteInvocation(tx, invocationID)
 	})
+}
+
+func (d *InvocationDB) deleteInvocation(tx *db.DB, invocationID string) error {
+	if err := tx.Exec(`DELETE FROM Invocations WHERE invocation_id = ?`, invocationID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`DELETE FROM Executions WHERE invocation_id = ?`, invocationID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`DELETE FROM InvocationExecutions WHERE invocation_id = ?`, invocationID).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (d *InvocationDB) SetNowFunc(now func() time.Time) {
