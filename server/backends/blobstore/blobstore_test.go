@@ -15,13 +15,13 @@ func TestDiskBlobStore(t *testing.T) {
 		blob             []byte
 	}{
 		{
-			"without_prefix",
+			"WithoutPrefix",
 			"",
 			"test_blob",
 			[]byte("test"),
 		},
 		{
-			"with_prefix",
+			"WithPrefix",
 			"my_prefix",
 			"test_blob",
 			[]byte("test"),
