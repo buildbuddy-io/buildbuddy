@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 
-package(default_visibility = ["//visibility:public"])  # keep
+# gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    "@buildbuddy_internal//:__subpackages__",
+])
 
 go_library(
     name = "server_lib",
