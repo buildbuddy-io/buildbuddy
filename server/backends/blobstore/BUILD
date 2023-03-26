@@ -2,7 +2,13 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "blobstore",
-    srcs = ["blobstore.go"],
+    srcs = [
+        "aws.go",
+        "azure.go",
+        "blobstore.go",
+        "disk.go",
+        "gcp.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/blobstore",
     visibility = ["//visibility:public"],
     deps = [
@@ -32,7 +38,7 @@ go_library(
 
 go_test(
     name = "blobstore_test",
-    srcs = ["blobstore_test.go"],
+    srcs = ["disk_test.go"],
     embed = [":blobstore"],
     deps = ["@com_github_stretchr_testify//require"],
 )
