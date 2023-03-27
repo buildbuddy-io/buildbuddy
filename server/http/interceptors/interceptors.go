@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https")
+	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
 
 	uuidV4Regexp = regexp.MustCompile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 )
