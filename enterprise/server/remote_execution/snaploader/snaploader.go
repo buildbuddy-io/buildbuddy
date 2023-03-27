@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/filecacheutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -80,18 +81,16 @@ type Loader interface {
 }
 
 type FileCacheLoader struct {
-	env              environment.Env
-	workingDirectory string
-	snapshotDigest   *repb.Digest
-	manifest         *manifestData
+	env            environment.Env
+	snapshotDigest *repb.Digest
+	manifest       *manifestData
 }
 
 // New returns a new snapshot.Loader that can be used to download the specified
 // snapshot into the target chroot.
-func New(env environment.Env, workingDirectory string) (Loader, error) {
+func New(env environment.Env) (Loader, error) {
 	l := &FileCacheLoader{
-		env:              env,
-		workingDirectory: workingDirectory,
+		env: env,
 	}
 	return l, nil
 }
@@ -101,22 +100,11 @@ func (l *FileCacheLoader) unpackManifest(snapshotDigest *repb.Digest) error {
 		return status.FailedPreconditionErrorf("Unable to load snapshot: FileCache not enabled")
 	}
 	l.snapshotDigest = snapshotDigest
-	manifestDigest := manifestDigest(l.snapshotDigest)
-	tmpDir, err := os.MkdirTemp(l.workingDirectory, "manifest-dir-*")
+	manifestNode := fileNodeFromDigest(manifestDigest(l.snapshotDigest))
+	buf, err := filecacheutil.Read(l.env.GetFileCache(), manifestNode)
 	if err != nil {
-		return err
+		return status.UnavailableErrorf("failed to read snapshot manifest: %s", status.Message(err))
 	}
-	defer os.RemoveAll(tmpDir)
-
-	manifestPath := filepath.Join(tmpDir, ManifestFileName)
-	if !l.env.GetFileCache().FastLinkFile(fileNodeFromDigest(manifestDigest), manifestPath) {
-		return status.UnavailableErrorf("snapshot manifest not found in local cache (digest: %s/%d)", l.snapshotDigest.GetHash(), l.snapshotDigest.GetSizeBytes())
-	}
-	buf, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return err
-	}
-
 	return json.Unmarshal(buf, &l.manifest)
 }
 
@@ -196,13 +184,6 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapshotDigest *rep
 		return status.FailedPreconditionErrorf("Unable to cache snapshot: FileCache not enabled")
 	}
 
-	tmpDir, err := os.MkdirTemp(filepath.Dir(snapOpts.MemSnapshotPath), "manifest-dir-*")
-	if err != nil {
-		return status.InternalErrorf("failed to create manifest dir: %s", err)
-	}
-	defer os.RemoveAll(tmpDir)
-	manifestPath := filepath.Join(tmpDir, ManifestFileName)
-
 	manifest := &manifestData{
 		ConfigurationData: snapOpts.ConfigurationData,
 		CachedFiles:       make(map[string]digest.Key, 0),
@@ -230,11 +211,10 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, snapshotDigest *rep
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(manifestPath, b, 0644); err != nil {
+	manifestNode := fileNodeFromDigest(manifestDigest(snapshotDigest))
+	if _, err := filecacheutil.Write(l.env.GetFileCache(), manifestNode, b); err != nil {
 		return err
 	}
-	manifestDigest := manifestDigest(snapshotDigest)
-	l.env.GetFileCache().AddFile(fileNodeFromDigest(manifestDigest), manifestPath)
 	return nil
 }
 

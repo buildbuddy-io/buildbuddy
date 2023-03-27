@@ -7,6 +7,7 @@ go_library(
     srcs = ["snaploader.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader",
     deps = [
+        "//enterprise/server/util/filecacheutil",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/remote_cache/digest",
