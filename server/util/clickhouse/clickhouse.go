@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -269,6 +270,7 @@ func Register(env environment.Env) error {
 	if *autoMigrateDB || *printSchemaChangesAndExit {
 		sqlStrings := make([]string, 0)
 		if *printSchemaChangesAndExit {
+			db.Logger = logger.Default.LogMode(logger.Silent)
 			if err := gormutil.RegisterLogSQLCallback(db, &sqlStrings); err != nil {
 				return err
 			}
