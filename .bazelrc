@@ -114,9 +114,10 @@ build --noremote_upload_local_results # Uploads logs & artifacts without writing
 # Populate workspace info like commit sha and repo name to your invocation.
 build --workspace_status_command=$(pwd)/workspace_status.sh
 
-# Misc remote cache optimizations
+# Misc remote cache/BES optimizations
 build --experimental_remote_cache_async
 build --experimental_remote_build_event_upload=minimal
+build --nolegacy_important_outputs
 
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 build --incompatible_strict_action_env
