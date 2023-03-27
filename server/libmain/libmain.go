@@ -434,7 +434,7 @@ func StartAndRunServices(env environment.Env) {
 			sslServer.ListenAndServeTLS("", "")
 		}()
 		go func() {
-			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), interceptors.RedirectIfNotForwardedHTTPS(env, sslHandler))
+			http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), interceptors.RedirectIfNotForwardedHTTPS(sslHandler))
 		}()
 	} else {
 		// If no SSL is enabled, we'll just serve things as-is.

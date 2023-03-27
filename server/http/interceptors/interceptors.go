@@ -43,7 +43,7 @@ func SetSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func RedirectIfNotForwardedHTTPS(env environment.Env, next http.Handler) http.Handler {
+func RedirectIfNotForwardedHTTPS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		protocol := r.Header.Get("X-Forwarded-Proto") // Set by load balancer
 		// Our k8s healthchecks set "server-type" header, but Google LB healthchecks don't support them so we check the UA.
