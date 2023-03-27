@@ -75,7 +75,7 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 			}
 
 			rr := httptest.NewRecorder()
-			RedirectIfNotForwardedHTTPS(nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			RedirectIfNotForwardedHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprint(w, r.Header)
 			})).ServeHTTP(rr, req)
 
