@@ -607,9 +607,6 @@ export default class InvocationModel {
     if (!event?.completed) {
       return [];
     }
-    if (event.completed.directoryOutput?.length) {
-      return event.completed.directoryOutput || [];
-    }
     return (
       event.completed.outputGroup
         ?.flatMap((group) => group.fileSets)
