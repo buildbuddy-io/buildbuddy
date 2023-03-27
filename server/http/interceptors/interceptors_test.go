@@ -22,6 +22,7 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 		route           string
 		expectedCode    int
 		expectedHeaders http.Header
+		sslServerAddr   string
 		setup           func(*http.Request)
 	}{
 		{
@@ -29,6 +30,7 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 			"/foo",
 			http.StatusOK,
 			http.Header{},
+			"example.com",
 			func(req *http.Request) {
 				req.Header.Set("X-Forwarded-Proto", "https")
 			},
@@ -40,6 +42,7 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 			http.Header{
 				"Location": []string{"https://example.com/foo"},
 			},
+			"example.com",
 			func(req *http.Request) {
 				req.Header.Set("X-Forwarded-Proto", "http")
 			},
@@ -51,6 +54,7 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 			http.Header{
 				"Location": []string{"https://example.com/foo"},
 			},
+			"example.com",
 			func(req *http.Request) {
 				req.Header.Del("X-Forwarded-Proto")
 			},
@@ -60,9 +64,22 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 			"/health",
 			http.StatusOK,
 			http.Header{},
+			"example.com",
 			func(req *http.Request) {
 				req.Header.Del("X-Forwarded-Proto")
 				req.Header.Set("User-Agent", "GoogleHC/1.0")
+			},
+		},
+		{
+			"custom ssl address",
+			"/foo",
+			http.StatusMovedPermanently,
+			http.Header{
+				"Location": []string{"https://0.0.0.0:8081/foo"},
+			},
+			"0.0.0.0:8081",
+			func(req *http.Request) {
+				req.Header.Set("X-Forwarded-Proto", "http")
 			},
 		},
 	}
@@ -75,9 +92,10 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 			}
 
 			rr := httptest.NewRecorder()
-			RedirectIfNotForwardedHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprint(w, r.Header)
-			})).ServeHTTP(rr, req)
+			})
+			RedirectIfNotForwardedHTTPS(handler, tt.sslServerAddr).ServeHTTP(rr, req)
 
 			require.Equal(t, tt.expectedCode, rr.Code)
 
