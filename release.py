@@ -194,13 +194,15 @@ def main():
     old_version = get_latest_remote_version()
     is_old_version_published = is_published_release(old_version)
 
+    skip_version_bump = args.skip_version_bump
     if not is_old_version_published and not args.force:
-        die(f"The latest tag {old_version} does not correspond to a published github release." +
-        " It may be a draft release or it may have never been created. Are you sure you want to upload new release artifacts?" +
-        " If so, rerun the script with --force.")
+        print(f"Skipping version bump.\nThe latest tag {old_version} does not correspond to a published github release." +
+        " It may be a draft release or it may have never been created." +
+        " If you still want to upgrade the version, rerun the script with --force.")
+        skip_version_bump = True
 
     new_version = old_version
-    if not args.skip_version_bump:
+    if not skip_version_bump:
         new_version = bump_patch_version(old_version)
         release_notes = generate_release_notes(old_version)
         print("release notes:\n %s" % release_notes)
