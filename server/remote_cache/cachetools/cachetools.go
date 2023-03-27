@@ -35,7 +35,7 @@ const (
 )
 
 var (
-	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", false, "If true, enable compression of uploads to remote caches")
+	enableUploadCompresssion = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
 )
 
 type StreamBlobOpts struct {
