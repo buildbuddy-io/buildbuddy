@@ -332,6 +332,27 @@ const matchers: SuggestionMatcher[] = [
       ),
     };
   },
+  // Suggest --nolegacy_important_outputs
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (model.optionsMap.get("legacy_important_outputs")) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding the Bazel flag <BazelFlag>--nolegacy_important_outputs</BazelFlag>, which can significantly
+          reduce the payload size of the uploaded build event stream by eliminating duplicate file references.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because
+          <span className="inline-code">--legacy_important_outputs</span> is not explicitly set.
+        </>
+      ),
+    };
+  },
   // Suggest modify_execution_info for iOS builds
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
