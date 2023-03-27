@@ -24,7 +24,7 @@ func RunfilePath(t testing.TB, path string) string {
 // MakeTempDir creates and returns an empty directory that exists for the scope
 // of a test.
 func MakeTempDir(t testing.TB) string {
-	tmpDir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-*")
+	tmpDir, err := os.MkdirTemp(os.Getenv("TEST_TMPDIR"), "buildbuddy-test-*****")
 	if err != nil {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
@@ -45,7 +45,7 @@ func MakeDirAll(t testing.TB, rootDir, childPath string) string {
 }
 
 func MakeSocket(t testing.TB, socketName string) string {
-	socketDir, err := os.MkdirTemp("/tmp", "buildbuddy-test-*")
+	socketDir, err := os.MkdirTemp("/tmp", "buildbuddy-test-*****")
 	if err != nil {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
@@ -62,7 +62,7 @@ func MakeTempFile(t testing.TB, rootDir, pattern string) string {
 		rootDir = os.Getenv("TEST_TMPDIR")
 	}
 	if pattern == "" {
-		pattern = "buildbuddy-test-*"
+		pattern = "buildbuddy-test-*****"
 	}
 	tmpFile, err := os.CreateTemp(rootDir, pattern)
 	if err != nil {
