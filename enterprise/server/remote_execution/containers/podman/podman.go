@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -42,7 +43,7 @@ var (
 	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
 	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
 	// TODO(iain): switch to boolean flag once image streaming supports all container images.
-	streamableImages = flag.String("executor.podman.streamable_images", "", "Comma-separated list of images that can be streamed by podman. Image names must not contain commas!")
+	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of images that can be streamed by podman.")
 	pullTimeout      = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
@@ -88,7 +89,7 @@ type Provider struct {
 }
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
-	if *streamableImages != "" {
+	if len(*streamableImages) > 0 {
 		log.Infof("Starting soci store")
 		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", "/var/lib/soci-store/store")
 		logWriter := log.Writer("[socistore] ")
@@ -115,7 +116,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 	return &Provider{
 		env:              env,
 		imageCacheAuth:   imageCacheAuthenticator,
-		streamableImages: strings.Split(*streamableImages, ","),
+		streamableImages: *streamableImages,
 		buildRoot:        buildRoot,
 	}, nil
 }
