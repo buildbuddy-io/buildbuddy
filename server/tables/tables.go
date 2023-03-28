@@ -930,7 +930,7 @@ func dropIndexIfExists(m gorm.Migrator, table, indexName string) {
 
 // Manual migration called after auto-migration.
 func PostAutoMigrate(db *gorm.DB) error {
-	indexes := map[string]string{
+	invocationIndices := map[string]string{
 		"invocations_trends_query_index":      "(`group_id`, `updated_at_usec`)",
 		"invocations_trends_query_role_index": "(`group_id`, `role`, `updated_at_usec`)",
 		"invocations_stats_group_id_index":    "(`group_id`, `action_count`, `duration_usec`, `updated_at_usec`, `success`, `invocation_status`)",
@@ -952,32 +952,37 @@ func PostAutoMigrate(db *gorm.DB) error {
 	prefixIndexes, ok := prefixIndicesByDialect[db.Dialector.Name()]
 	if ok {
 		for name, cols := range prefixIndexes {
-			indexes[name] = cols
+			invocationIndices[name] = cols
 		}
 	}
 
-	m := db.Migrator()
-	if m.HasTable("Invocations") {
-		for indexName, cols := range indexes {
-			if m.HasIndex("Invocations", indexName) {
-				continue
-			}
-			err := db.Exec(fmt.Sprintf("CREATE INDEX `%s` ON `Invocations`%s", indexName, cols)).Error
-			if err != nil {
-				log.Errorf("Error creating %s: %s", indexName, err)
-			}
-		}
+	executionIndices := map[string]string{
+		"executions_created_at_usec_index": "(`created_at_usec`)",
+	}
 
-		// Drop deprecated invocation indexes
-		if db.Migrator().HasIndex("Invocations", "invocations_test_grid_query_index") {
-			if err := db.Migrator().DropIndex("Invocations", "invocations_test_grid_query_index"); err != nil {
-				log.Errorf("Error dropping deprecated index: %s", err)
+	indicesByTable := map[string]map[string]string{
+		"Invocations": invocationIndices,
+		"Executions":  executionIndices,
+	}
+
+	m := db.Migrator()
+	for tableName, indexes := range indicesByTable {
+		if m.HasTable(tableName) {
+			for indexName, cols := range indexes {
+				if m.HasIndex(tableName, indexName) {
+					continue
+				}
+				err := db.Exec(fmt.Sprintf("CREATE INDEX `%s` ON `%s`%s", indexName, tableName, cols)).Error
+				if err != nil {
+					log.Errorf("Error creating %s on table %q: %s", indexName, tableName, err)
+				}
 			}
 		}
 	}
 
 	dropIndexIfExists(m, "Executions", "execution_invocation_id")
 	dropIndexIfExists(m, "Targets", "target_target_id")
+	dropIndexIfExists(m, "Invocations", "invocations_test_grid_query_index")
 
 	type ColRef struct {
 		table  Table
