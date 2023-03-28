@@ -25,6 +25,7 @@ go_test(
     srcs = ["interceptors_test.go"],
     embed = [":interceptors"],
     deps = [
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
