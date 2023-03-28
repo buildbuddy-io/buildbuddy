@@ -25,42 +25,42 @@ func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
 		setup           func(*http.Request)
 	}{
 		{
-			"https request",
-			"/foo",
-			http.StatusOK,
-			http.Header{},
-			func(req *http.Request) {
+			name:            "https request",
+			route:           "/foo",
+			expectedCode:    http.StatusOK,
+			expectedHeaders: http.Header{},
+			setup: func(req *http.Request) {
 				req.Header.Set("X-Forwarded-Proto", "https")
 			},
 		},
 		{
-			"http request with X-Forwarded-Proto header",
-			"/foo",
-			http.StatusMovedPermanently,
-			http.Header{
+			name:         "http request with X-Forwarded-Proto header",
+			route:        "/foo",
+			expectedCode: http.StatusMovedPermanently,
+			expectedHeaders: http.Header{
 				"Location": []string{"https://example.com/foo"},
 			},
-			func(req *http.Request) {
+			setup: func(req *http.Request) {
 				req.Header.Set("X-Forwarded-Proto", "http")
 			},
 		},
 		{
-			"http request without X-Forwarded-Proto header",
-			"/foo",
-			http.StatusMovedPermanently,
-			http.Header{
+			name:         "http request without X-Forwarded-Proto header",
+			route:        "/foo",
+			expectedCode: http.StatusMovedPermanently,
+			expectedHeaders: http.Header{
 				"Location": []string{"https://example.com/foo"},
 			},
-			func(req *http.Request) {
+			setup: func(req *http.Request) {
 				req.Header.Del("X-Forwarded-Proto")
 			},
 		},
 		{
-			"healthcheck request without X-Forwarded-Proto header",
-			"/health",
-			http.StatusOK,
-			http.Header{},
-			func(req *http.Request) {
+			name:            "healthcheck request without X-Forwarded-Proto header",
+			route:           "/health",
+			expectedCode:    http.StatusOK,
+			expectedHeaders: http.Header{},
+			setup: func(req *http.Request) {
 				req.Header.Del("X-Forwarded-Proto")
 				req.Header.Set("User-Agent", "GoogleHC/1.0")
 			},
