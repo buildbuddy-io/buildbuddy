@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -39,10 +40,11 @@ var (
 	// then look at the output of
 	//     find /sys/fs/cgroup | grep libpod-$(podman container inspect sleepy | jq -r '.[0].Id')
 
-	memUsagePathTemplate  = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
-	cpuUsagePathTemplate  = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
-	imageStreamingEnabled = flag.Bool("executor.podman.image_streaming.enabled", false, "Whether container image streaming is enabled by default")
-	pullTimeout           = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
+	memUsagePathTemplate = flag.String("executor.podman.memory_usage_path_template", "/sys/fs/cgroup/memory/libpod_parent/libpod-{{.ContainerID}}/memory.usage_in_bytes", "Go template specifying a path pointing to a container's current memory usage, in bytes. Templated with `ContainerID`.")
+	cpuUsagePathTemplate = flag.String("executor.podman.cpu_usage_path_template", "/sys/fs/cgroup/cpuacct/libpod_parent/libpod-{{.ContainerID}}/cpuacct.usage", "Go template specifying a path pointing to a container's total CPU usage, in CPU nanoseconds. Templated with `ContainerID`.")
+	// TODO(iain): switch to boolean flag once image streaming supports all container images.
+	streamableImages = flagutil.New("executor.podman.streamable_images", []string{}, "List of images that can be streamed by podman.")
+	pullTimeout      = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -80,14 +82,14 @@ type pullStatus struct {
 }
 
 type Provider struct {
-	env                   environment.Env
-	imageCacheAuth        *container.ImageCacheAuthenticator
-	buildRoot             string
-	imageStreamingEnabled bool
+	env              environment.Env
+	imageCacheAuth   *container.ImageCacheAuthenticator
+	buildRoot        string
+	streamableImages []string
 }
 
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
-	if *imageStreamingEnabled {
+	if len(*streamableImages) > 0 {
 		log.Infof("Starting soci store")
 		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", "/var/lib/soci-store/store")
 		logWriter := log.Writer("[socistore] ")
@@ -97,9 +99,8 @@ func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCa
 			return nil, status.UnavailableErrorf("could not start soci store: %s", err)
 		}
 
-		if *imageStreamingEnabled {
-			// Configures podman to check soci store for image data.
-			storageConf := `
+		// Configures podman to check soci store for image data.
+		storageConf := `
 [storage]
 driver = "overlay"
 runroot = "/run/containers/storage"
@@ -107,26 +108,32 @@ graphroot = "/var/lib/containers/storage"
 [storage.options]
 additionallayerstores=["/var/lib/soci-store/store:ref"]
 `
-			if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
-				return nil, status.UnavailableErrorf("could not write storage config: %s", err)
-			}
+		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
+			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
 		}
 	}
 
 	return &Provider{
-		env:                   env,
-		imageCacheAuth:        imageCacheAuthenticator,
-		imageStreamingEnabled: *imageStreamingEnabled,
-		buildRoot:             buildRoot,
+		env:              env,
+		imageCacheAuth:   imageCacheAuthenticator,
+		streamableImages: *streamableImages,
+		buildRoot:        buildRoot,
 	}, nil
 }
 
 func (p *Provider) NewContainer(image string, options *PodmanOptions) container.CommandContainer {
+	imageIsStreamable := false
+	for _, streamableImage := range p.streamableImages {
+		if image == streamableImage {
+			imageIsStreamable = true
+			break
+		}
+	}
 	return &podmanCommandContainer{
 		env:                   p.env,
 		imageCacheAuth:        p.imageCacheAuth,
 		image:                 image,
-		imageStreamingEnabled: p.imageStreamingEnabled,
+		imageStreamingEnabled: imageIsStreamable,
 		buildRoot:             p.buildRoot,
 		options:               options,
 	}
@@ -147,8 +154,7 @@ type PodmanOptions struct {
 	EnableImageStreaming bool
 }
 
-// podmanCommandContainer containerizes a command's execution using a Podman container.
-// between containers.
+// podmanCommandContainer containerizes a single command's execution using a Podman container.
 type podmanCommandContainer struct {
 	env            environment.Env
 	imageCacheAuth *container.ImageCacheAuthenticator

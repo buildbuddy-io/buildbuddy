@@ -16,6 +16,7 @@ go_library(
         "//server/util/alert",
         "//server/util/background",
         "//server/util/disk",
+        "//server/util/flagutil",
         "//server/util/log",
         "//server/util/networking",
         "//server/util/random",
