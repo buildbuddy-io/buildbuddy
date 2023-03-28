@@ -115,11 +115,16 @@ message GetReposRequest {
 
   // The GitHub username or organization name to search within. The
   // authenticated user must have access to a GitHub App installation associated
-  // with the repo
+  // with the repo.
+  // Required.
   string owner = 2;
 
-  // The search query (optional). If no query is specified, list all
-  // repositories.
+  // The plain text search query attempting to match all or part of the repo
+  // name. This is interpreted according to GitHub's repository search syntax:
+  // https://docs.github.com/en/rest/search?apiVersion=2022-11-28#search-repositories
+  //
+  // Note that an additional filter is applied to the query to restrict the
+  // search to repos owned by the specified owner.
   string query = 3;
 }
 
