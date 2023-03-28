@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/metric"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -118,7 +117,7 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	metric.RecordReadMetrics(azureLabel, start, b, err)
+	util.RecordReadMetrics(azureLabel, start, b, err)
 	return util.Decompress(b, err)
 }
 
@@ -133,7 +132,7 @@ func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err = azblob.UploadBufferToBlockBlob(ctx, compressedData, blobURL, azblob.UploadToBlockBlobOptions{})
 	spn.End()
-	metric.RecordWriteMetrics(azureLabel, start, n, err)
+	util.RecordWriteMetrics(azureLabel, start, n, err)
 	return n, err
 }
 
@@ -143,7 +142,7 @@ func (z *AzureBlobStore) DeleteBlob(ctx context.Context, blobName string) error 
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 	spn.End()
-	metric.RecordDeleteMetrics(azureLabel, start, err)
+	util.RecordDeleteMetrics(azureLabel, start, err)
 	return err
 }
 

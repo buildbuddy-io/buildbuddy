@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/metric"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -92,7 +91,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	ctx, spn := tracing.StartSpan(ctx)
 	b, err := io.ReadAll(reader)
 	spn.End()
-	metric.RecordReadMetrics(gcsLabel, start, b, err)
+	util.RecordReadMetrics(gcsLabel, start, b, err)
 	return util.Decompress(b, err)
 }
 
@@ -107,7 +106,7 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	ctx, spn := tracing.StartSpan(ctx)
 	n, err := writer.Write(compressedData)
 	spn.End()
-	metric.RecordWriteMetrics(gcsLabel, start, n, err)
+	util.RecordWriteMetrics(gcsLabel, start, n, err)
 	return n, err
 }
 
@@ -116,7 +115,7 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	ctx, spn := tracing.StartSpan(ctx)
 	err := g.bucketHandle.Object(util.BlobPath(blobName)).Delete(ctx)
 	spn.End()
-	metric.RecordDeleteMetrics(gcsLabel, start, err)
+	util.RecordDeleteMetrics(gcsLabel, start, err)
 	if err == storage.ErrObjectNotExist {
 		return nil
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/metric"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -162,7 +161,7 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	start := time.Now()
 	b, err := a.download(ctx, blobName)
-	metric.RecordReadMetrics(awsS3Label, start, b, err)
+	util.RecordReadMetrics(awsS3Label, start, b, err)
 	return util.Decompress(b, err)
 }
 
@@ -194,7 +193,7 @@ func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []
 	}
 	start := time.Now()
 	n, err := a.upload(ctx, blobName, compressedData)
-	metric.RecordWriteMetrics(awsS3Label, start, n, err)
+	util.RecordWriteMetrics(awsS3Label, start, n, err)
 	return n, err
 }
 
@@ -215,7 +214,7 @@ func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressed
 func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	err := a.delete(ctx, blobName)
-	metric.RecordDeleteMetrics(awsS3Label, start, err)
+	util.RecordDeleteMetrics(awsS3Label, start, err)
 	return err
 }
 

@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/disk",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/backends/blobstore/metric",
         "//server/backends/blobstore/util",
         "//server/util/disk",
         "//server/util/tracing",

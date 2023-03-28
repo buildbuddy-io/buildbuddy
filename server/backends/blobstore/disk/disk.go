@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/metric"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -68,7 +67,7 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 	ctx, spn := tracing.StartSpan(ctx)
 	n, err := disk.WriteFile(ctx, fullPath, compressedData)
 	spn.End()
-	metric.RecordWriteMetrics(diskLabel, start, n, err)
+	util.RecordWriteMetrics(diskLabel, start, n, err)
 	return n, err
 }
 
@@ -81,7 +80,7 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 	ctx, spn := tracing.StartSpan(ctx)
 	b, err := disk.ReadFile(ctx, fullPath)
 	spn.End()
-	metric.RecordReadMetrics(diskLabel, start, b, err)
+	util.RecordReadMetrics(diskLabel, start, b, err)
 	return util.Decompress(b, err)
 }
 
@@ -106,7 +105,7 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 		err = disk.DeleteFile(ctx, fullPath)
 	}
 	spn.End()
-	metric.RecordDeleteMetrics(diskLabel, start, err)
+	util.RecordDeleteMetrics(diskLabel, start, err)
 	if os.IsNotExist(err) {
 		return nil
 	}
