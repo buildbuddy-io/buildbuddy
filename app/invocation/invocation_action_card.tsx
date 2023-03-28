@@ -180,7 +180,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       const option = this.props.model.optionsMap.get(optionName);
       if (!option) continue;
 
-      address = address.replace("grpc://", "").replace("grpcs://", "");
+      address = option.replace("grpc://", "").replace("grpcs://", "");
       break;
     }
     if (this.props.model.optionsMap.get("remote_instance_name")) {
