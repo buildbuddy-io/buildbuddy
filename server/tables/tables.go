@@ -967,7 +967,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 
 	m := db.Migrator()
 	for tableName, indexes := range indicesByTable {
-		if m.HasTable("Invocations") {
+		if m.HasTable(tableName) {
 			for indexName, cols := range indexes {
 				if m.HasIndex(tableName, indexName) {
 					continue
