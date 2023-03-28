@@ -6,16 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRedirectIfNotForwardedHTTPS(t *testing.T) {
-	originalVal := *upgradeInsecure
-	t.Cleanup(func() {
-		*upgradeInsecure = originalVal
-	})
-	*upgradeInsecure = true
+	flags.Set(t, "ssl.upgrade_insecure", true)
 
 	tests := []struct {
 		name            string
