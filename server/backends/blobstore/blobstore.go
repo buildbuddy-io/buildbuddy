@@ -6,7 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/aws"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/azure"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcp"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -16,9 +16,9 @@ import (
 func GetConfiguredBlobstore(env environment.Env) (interfaces.Blobstore, error) {
 	log.Debug("Configuring blobstore")
 	ctx := env.GetServerContext()
-	if gcp.UseGCSBlobStore() {
+	if gcs.UseGCSBlobStore() {
 		log.Debug("Configuring GCS blobstore")
-		return gcp.NewGCSBlobStore(ctx)
+		return gcs.NewGCSBlobStore(ctx)
 	}
 	if aws.UseAwsS3BlobStore() {
 		log.Debug("Configuring AWS blobstore")
