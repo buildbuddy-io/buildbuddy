@@ -1,9 +1,9 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
-    name = "gcp",
-    srcs = ["gcp.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcp",
+    name = "gcs",
+    srcs = ["gcs.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs",
     visibility = ["//visibility:public"],
     deps = [
         "//server/backends/blobstore/util",

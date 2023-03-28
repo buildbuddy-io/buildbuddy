@@ -9,7 +9,7 @@ go_library(
         "//server/backends/blobstore/aws",
         "//server/backends/blobstore/azure",
         "//server/backends/blobstore/disk",
-        "//server/backends/blobstore/gcp",
+        "//server/backends/blobstore/gcs",
         "//server/environment",
         "//server/interfaces",
         "//server/util/log",
