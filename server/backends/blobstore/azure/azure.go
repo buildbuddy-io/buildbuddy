@@ -1,4 +1,4 @@
-package blobstore
+package azure
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/metric"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -22,6 +24,11 @@ var (
 	azureContainerName = flag.String("storage.azure.container_name", "", "The name of the Azure storage container")
 )
 
+const (
+	// Prometheus BlobstoreTypeLabel values
+	azureLabel = "azure"
+)
+
 const azureURLTemplate = "https://%s.blob.core.windows.net/%s"
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
@@ -31,26 +38,30 @@ type AzureBlobStore struct {
 	containerURL  *azblob.ContainerURL
 }
 
-func NewAzureBlobStore(ctx context.Context, containerName, accountName, accountKey string) (*AzureBlobStore, error) {
-	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+func UseAzureBlobStore() bool {
+	return *azureAccountName != ""
+}
+
+func NewAzureBlobStore(ctx context.Context) (*AzureBlobStore, error) {
+	credential, err := azblob.NewSharedKeyCredential(*azureAccountName, *azureAccountKey)
 	if err != nil {
 		return nil, err
 	}
 	pipeline := azblob.NewPipeline(credential, azblob.PipelineOptions{})
-	portalURL, err := url.Parse(fmt.Sprintf(azureURLTemplate, accountName, containerName))
+	portalURL, err := url.Parse(fmt.Sprintf(azureURLTemplate, *azureAccountName, *azureContainerName))
 	if err != nil {
 		return nil, err
 	}
 	containerURL := azblob.NewContainerURL(*portalURL, pipeline)
 	z := &AzureBlobStore{
 		credential:    credential,
-		containerName: containerName,
+		containerName: *azureContainerName,
 		containerURL:  &containerURL,
 	}
 	if err := z.createContainerIfNotExists(ctx); err != nil {
 		return nil, err
 	}
-	log.Debugf("Azure blobstore configured (container: %q)", containerName)
+	log.Debugf("Azure blobstore configured (container: %q)", *azureContainerName)
 	return z, nil
 }
 
@@ -89,7 +100,7 @@ func (z *AzureBlobStore) createContainerIfNotExists(ctx context.Context) error {
 }
 
 func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	blobURL := z.containerURL.NewBlockBlobURL(blobPath(blobName))
+	blobURL := z.containerURL.NewBlockBlobURL(util.BlobPath(blobName))
 	response, err := blobURL.Download(ctx, 0 /*=offset*/, azblob.CountToEnd, azblob.BlobAccessConditions{}, false /*=rangeGetContentMD5*/, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		if z.isAzureError(err, azblob.ServiceCodeBlobNotFound) {
@@ -107,37 +118,37 @@ func (z *AzureBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	recordReadMetrics(azureLabel, start, b, err)
-	return decompress(b, err)
+	metric.RecordReadMetrics(azureLabel, start, b, err)
+	return util.Decompress(b, err)
 }
 
 func (z *AzureBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	compressedData, err := compress(data)
+	compressedData, err := util.Compress(data)
 	if err != nil {
 		return 0, err
 	}
 	n := len(compressedData)
 	start := time.Now()
-	blobURL := z.containerURL.NewBlockBlobURL(blobPath(blobName))
+	blobURL := z.containerURL.NewBlockBlobURL(util.BlobPath(blobName))
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err = azblob.UploadBufferToBlockBlob(ctx, compressedData, blobURL, azblob.UploadToBlockBlobOptions{})
 	spn.End()
-	recordWriteMetrics(azureLabel, start, n, err)
+	metric.RecordWriteMetrics(azureLabel, start, n, err)
 	return n, err
 }
 
 func (z *AzureBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
-	blobURL := z.containerURL.NewBlockBlobURL(blobPath(blobName))
+	blobURL := z.containerURL.NewBlockBlobURL(util.BlobPath(blobName))
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := blobURL.Delete(ctx, azblob.DeleteSnapshotsOptionNone, azblob.BlobAccessConditions{})
 	spn.End()
-	recordDeleteMetrics(azureLabel, start, err)
+	metric.RecordDeleteMetrics(azureLabel, start, err)
 	return err
 }
 
 func (z *AzureBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
-	blobURL := z.containerURL.NewBlockBlobURL(blobPath(blobName))
+	blobURL := z.containerURL.NewBlockBlobURL(util.BlobPath(blobName))
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 	if _, err := blobURL.GetProperties(ctx, azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}); err != nil {

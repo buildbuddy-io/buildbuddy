@@ -1,4 +1,4 @@
-package blobstore
+package gcp
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/metric"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -20,6 +22,11 @@ var (
 	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 )
 
+const (
+	// Prometheus BlobstoreTypeLabel values
+	gcsLabel = "gcs"
+)
+
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
 type GCSBlobStore struct {
 	gcsClient    *storage.Client
@@ -27,16 +34,26 @@ type GCSBlobStore struct {
 	projectID    string
 }
 
-func NewGCSBlobStore(ctx context.Context, bucketName, projectID string, opts ...option.ClientOption) (*GCSBlobStore, error) {
+func UseGCSBlobStore() bool {
+	return *gcsBucket != ""
+}
+
+func NewGCSBlobStore(ctx context.Context) (*GCSBlobStore, error) {
+	opts := make([]option.ClientOption, 0)
+	if *gcsCredentialsFile != "" {
+		log.Debugf("Found GCS credentials file: %q", *gcsCredentialsFile)
+		opts = append(opts, option.WithCredentialsFile(*gcsCredentialsFile))
+	}
+
 	gcsClient, err := storage.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
 	g := &GCSBlobStore{
 		gcsClient: gcsClient,
-		projectID: projectID,
+		projectID: *gcsProjectID,
 	}
-	err = g.createBucketIfNotExists(ctx, bucketName)
+	err = g.createBucketIfNotExists(ctx, *gcsBucket)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +81,7 @@ func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName s
 }
 
 func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	reader, err := g.bucketHandle.Object(blobPath(blobName)).NewReader(ctx)
+	reader, err := g.bucketHandle.Object(util.BlobPath(blobName)).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			return nil, status.NotFoundError(err.Error())
@@ -75,14 +92,14 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	ctx, spn := tracing.StartSpan(ctx)
 	b, err := io.ReadAll(reader)
 	spn.End()
-	recordReadMetrics(gcsLabel, start, b, err)
-	return decompress(b, err)
+	metric.RecordReadMetrics(gcsLabel, start, b, err)
+	return util.Decompress(b, err)
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	writer := g.bucketHandle.Object(blobPath(blobName)).NewWriter(ctx)
+	writer := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
 	defer writer.Close()
-	compressedData, err := compress(data)
+	compressedData, err := util.Compress(data)
 	if err != nil {
 		return 0, err
 	}
@@ -90,16 +107,16 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 	ctx, spn := tracing.StartSpan(ctx)
 	n, err := writer.Write(compressedData)
 	spn.End()
-	recordWriteMetrics(gcsLabel, start, n, err)
+	metric.RecordWriteMetrics(gcsLabel, start, n, err)
 	return n, err
 }
 
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
-	err := g.bucketHandle.Object(blobPath(blobName)).Delete(ctx)
+	err := g.bucketHandle.Object(util.BlobPath(blobName)).Delete(ctx)
 	spn.End()
-	recordDeleteMetrics(gcsLabel, start, err)
+	metric.RecordDeleteMetrics(gcsLabel, start, err)
 	if err == storage.ErrObjectNotExist {
 		return nil
 	}
@@ -108,7 +125,7 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 
 func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err := g.bucketHandle.Object(blobPath(blobName)).Attrs(ctx)
+	_, err := g.bucketHandle.Object(util.BlobPath(blobName)).Attrs(ctx)
 	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false, nil

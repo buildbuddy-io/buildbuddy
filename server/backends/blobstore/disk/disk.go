@@ -1,4 +1,4 @@
-package blobstore
+package disk
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/metric"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
@@ -19,18 +21,27 @@ var (
 	useV2Layout   = flag.Bool("storage.disk.use_v2_layout", false, "If enabled, files will be stored using the v2 layout. See disk_cache.MigrateToV2Layout for a description.")
 )
 
+const (
+	// Prometheus BlobstoreTypeLabel values
+	diskLabel = "disk"
+)
+
 // A Disk-based blob storage implementation that reads and writes blobs to/from
 // files.
 type DiskBlobStore struct {
 	rootDir string
 }
 
-func NewDiskBlobStore(rootDir string) (*DiskBlobStore, error) {
-	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
+func UseDiskBlobStore() bool {
+	return *rootDirectory != ""
+}
+
+func NewDiskBlobStore() (*DiskBlobStore, error) {
+	if err := disk.EnsureDirectoryExists(*rootDirectory); err != nil {
 		return nil, err
 	}
 	return &DiskBlobStore{
-		rootDir: rootDir,
+		rootDir: *rootDirectory,
 	}, nil
 }
 
@@ -40,7 +51,7 @@ func (d *DiskBlobStore) blobPath(blobName string) (string, error) {
 	if strings.Contains(blobName, "..") {
 		return "", fmt.Errorf("blobName (%s) must not contain ../", blobName)
 	}
-	return filepath.Join(d.rootDir, blobPath(blobName)), nil
+	return filepath.Join(d.rootDir, util.BlobPath(blobName)), nil
 }
 
 func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
@@ -49,7 +60,7 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 		return 0, err
 	}
 
-	compressedData, err := compress(data)
+	compressedData, err := util.Compress(data)
 	if err != nil {
 		return 0, err
 	}
@@ -57,7 +68,7 @@ func (d *DiskBlobStore) WriteBlob(ctx context.Context, blobName string, data []b
 	ctx, spn := tracing.StartSpan(ctx)
 	n, err := disk.WriteFile(ctx, fullPath, compressedData)
 	spn.End()
-	recordWriteMetrics(diskLabel, start, n, err)
+	metric.RecordWriteMetrics(diskLabel, start, n, err)
 	return n, err
 }
 
@@ -70,8 +81,8 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 	ctx, spn := tracing.StartSpan(ctx)
 	b, err := disk.ReadFile(ctx, fullPath)
 	spn.End()
-	recordReadMetrics(diskLabel, start, b, err)
-	return decompress(b, err)
+	metric.RecordReadMetrics(diskLabel, start, b, err)
+	return util.Decompress(b, err)
 }
 
 func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
@@ -95,7 +106,7 @@ func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 		err = disk.DeleteFile(ctx, fullPath)
 	}
 	spn.End()
-	recordDeleteMetrics(diskLabel, start, err)
+	metric.RecordDeleteMetrics(diskLabel, start, err)
 	if os.IsNotExist(err) {
 		return nil
 	}

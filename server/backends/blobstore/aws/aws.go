@@ -1,4 +1,4 @@
-package blobstore
+package aws
 
 import (
 	"bytes"
@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/metric"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -37,12 +39,22 @@ var (
 	awsS3ForcePathStyle           = flag.Bool("storage.aws_s3.s3_force_path_style", false, "Force path style urls for objects, useful for configuring the use of MinIO.")
 )
 
+const (
+	// Prometheus BlobstoreTypeLabel values
+	awsS3Label        = "aws_s3"
+	bucketWaitTimeout = 10 * time.Second
+)
+
 // AWS stuff
 type AwsS3BlobStore struct {
 	s3         *s3.S3
 	bucket     *string
 	downloader *s3manager.Downloader
 	uploader   *s3manager.Uploader
+}
+
+func UseAwsS3BlobStore() bool {
+	return *awsS3Bucket != ""
 }
 
 func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
@@ -150,8 +162,8 @@ func (a *AwsS3BlobStore) createBucketIfNotExists(ctx context.Context, bucketName
 func (a *AwsS3BlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
 	start := time.Now()
 	b, err := a.download(ctx, blobName)
-	recordReadMetrics(awsS3Label, start, b, err)
-	return decompress(b, err)
+	metric.RecordReadMetrics(awsS3Label, start, b, err)
+	return util.Decompress(b, err)
 }
 
 func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte, error) {
@@ -160,7 +172,7 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := a.downloader.DownloadWithContext(ctx, buff, &s3.GetObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobPath(blobName)),
+		Key:    aws.String(util.BlobPath(blobName)),
 	})
 	spn.End()
 
@@ -176,20 +188,20 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 }
 
 func (a *AwsS3BlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	compressedData, err := compress(data)
+	compressedData, err := util.Compress(data)
 	if err != nil {
 		return 0, err
 	}
 	start := time.Now()
 	n, err := a.upload(ctx, blobName, compressedData)
-	recordWriteMetrics(awsS3Label, start, n, err)
+	metric.RecordWriteMetrics(awsS3Label, start, n, err)
 	return n, err
 }
 
 func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressedData []byte) (int, error) {
 	uploadParams := &s3manager.UploadInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobPath(blobName)),
+		Key:    aws.String(util.BlobPath(blobName)),
 		Body:   bytes.NewReader(compressedData),
 	}
 	ctx, spn := tracing.StartSpan(ctx)
@@ -203,14 +215,14 @@ func (a *AwsS3BlobStore) upload(ctx context.Context, blobName string, compressed
 func (a *AwsS3BlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	err := a.delete(ctx, blobName)
-	recordDeleteMetrics(awsS3Label, start, err)
+	metric.RecordDeleteMetrics(awsS3Label, start, err)
 	return err
 }
 
 func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 	deleteParams := &s3.DeleteObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobPath(blobName)),
+		Key:    aws.String(util.BlobPath(blobName)),
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
@@ -228,7 +240,7 @@ func (a *AwsS3BlobStore) delete(ctx context.Context, blobName string) error {
 func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	params := &s3.HeadObjectInput{
 		Bucket: a.bucket,
-		Key:    aws.String(blobPath(blobName)),
+		Key:    aws.String(util.BlobPath(blobName)),
 	}
 
 	ctx, spn := tracing.StartSpan(ctx)
