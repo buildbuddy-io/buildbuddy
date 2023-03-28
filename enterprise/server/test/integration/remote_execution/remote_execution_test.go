@@ -45,6 +45,8 @@ const (
 	maxSchedulerAttempts = 5
 )
 
+// test
+
 func TestSimpleCommandWithNonZeroExitCode(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
