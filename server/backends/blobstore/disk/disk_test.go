@@ -1,10 +1,11 @@
-package blobstore
+package disk
 
 import (
 	"context"
 	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,10 +29,17 @@ func TestDiskBlobStore(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			*pathPrefix = tc.prefix
+			util.BlobPath = func(blobName string) string {
+				return filepath.Join(tc.prefix, blobName)
+			}
 
-			tmpDir := t.TempDir()
-			dbs, err := NewDiskBlobStore(tmpDir)
+			originalRootDir := *rootDirectory
+			*rootDirectory = t.TempDir()
+			t.Cleanup(func() {
+				*rootDirectory = originalRootDir
+			})
+
+			dbs, err := NewDiskBlobStore()
 			require.NoError(t, err)
 
 			ctx := context.Background()
@@ -39,7 +47,7 @@ func TestDiskBlobStore(t *testing.T) {
 			require.NoError(t, err)
 			require.Greater(t, n, 0)
 
-			path := filepath.Join(tmpDir, tc.prefix, tc.blobName)
+			path := filepath.Join(*rootDirectory, tc.prefix, tc.blobName)
 			require.FileExists(t, path)
 
 			exist, err := dbs.BlobExists(ctx, tc.blobName)
