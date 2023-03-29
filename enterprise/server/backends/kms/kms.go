@@ -27,6 +27,7 @@ const (
 
 var (
 	masterKeyURI              = flag.String("keystore.master_key_uri", "", "The master key URI (see tink docs for example)")
+	enableGCPClient           = flag.Bool("keystore.gcp.enabled", false, "Whether GCP KMS support should be enabled. Implicitly enabled if the master key URI references a GCP KMS URI.")
 	gcpCredentialsFile        = flag.String("keystore.gcp.credentials_file", "", "A path to a gcp JSON credentials file that will be used to authenticate.")
 	localInsecureKMSDirectory = flag.String("keystore.local_insecure_kms_directory", "", "For development only. If set, keys in format local-insecure-kms://[id] are read from this directory.")
 )
@@ -64,6 +65,10 @@ func Register(env environment.Env) error {
 }
 
 func (k *KMS) initGCPClient(ctx context.Context) error {
+	if !*enableGCPClient && !strings.HasPrefix(*masterKeyURI, gcpKMSPrefix) {
+		return nil
+	}
+
 	opts := make([]option.ClientOption, 0)
 	if *gcpCredentialsFile != "" {
 		log.Debugf("KMS: using credentials file: %q", *gcpCredentialsFile)
@@ -87,7 +92,7 @@ func (k *KMS) initLocalInsecureKMSClient(ctx context.Context) error {
 }
 
 func (k *KMS) clientForURI(uri string) (registry.KMSClient, error) {
-	if strings.HasPrefix(uri, gcpKMSPrefix) {
+	if strings.HasPrefix(uri, gcpKMSPrefix) && k.gcpClient != nil {
 		return k.gcpClient, nil
 	} else if strings.HasPrefix(uri, localInsecureKMSPrefix) && k.localInsecureKMSClient != nil {
 		return k.localInsecureKMSClient, nil
