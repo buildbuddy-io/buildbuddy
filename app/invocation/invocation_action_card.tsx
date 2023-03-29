@@ -237,23 +237,23 @@ export default class InvocationActionCardComponent extends React.Component<Props
       },
     ];
 
-    // Make sure that we've actually received the metadata. This will not be sent
-    // until the action is completed.
-    // The metadata should include all timestamps, so either all timestamps should
-    // be null or none of them should be null, but check all of them for good measure.
-    for (const event of events) {
-      if (!event.timestamp) return null;
+    const filteredEvents = events.filter((event) => event && event.timestamp);
+    if (filteredEvents.length == 0) {
+      return null;
     }
 
-    const totalDuration = durationSeconds(events[0].timestamp, events[events.length - 1].timestamp);
+    const totalDuration = durationSeconds(
+      filteredEvents[0].timestamp,
+      filteredEvents[filteredEvents.length - 1].timestamp
+    );
 
     return (
       <div>
-        {events.map((event, i) => {
+        {filteredEvents.map((event, i) => {
           // Don't render the end marker.
-          if (!event.color) return null;
+          if (i == filteredEvents.length - 1) return null;
 
-          const next = events[i + 1];
+          const next = filteredEvents[i + 1];
           const duration = durationSeconds(event.timestamp, next.timestamp);
           const weight = duration / totalDuration;
           return (
