@@ -43,14 +43,14 @@ func writeInRandomChunks(t *testing.T, w io.Writer, data []byte) {
 	}
 }
 
-func createKeyVersion(t *testing.T, env environment.Env, customerKeyURI string) *tables.EncryptionKeyVersion {
+func createKeyVersion(t *testing.T, env environment.Env, groupKeyURI string) *tables.EncryptionKeyVersion {
 	kmsClient := env.GetKMS()
 
 	masterKeyPart := make([]byte, 32)
 	_, err := rand.Read(masterKeyPart)
 	require.NoError(t, err)
-	customerKeyPart := make([]byte, 32)
-	_, err = rand.Read(customerKeyPart)
+	groupKeyPart := make([]byte, 32)
+	_, err = rand.Read(groupKeyPart)
 	require.NoError(t, err)
 
 	masterAEAD, err := kmsClient.FetchMasterKey()
@@ -58,16 +58,16 @@ func createKeyVersion(t *testing.T, env environment.Env, customerKeyURI string) 
 	encMasterKeyPart, err := masterAEAD.Encrypt(masterKeyPart, nil)
 	require.NoError(t, err)
 
-	customerAEAD, err := kmsClient.FetchKey(customerKeyURI)
+	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
 	require.NoError(t, err)
-	encCustomerKeyPart, err := customerAEAD.Encrypt(customerKeyPart, nil)
+	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, nil)
 
 	return &tables.EncryptionKeyVersion{
-		EncryptionKeyID:      "EK123",
-		Version:              1,
-		MasterEncryptedKey:   encMasterKeyPart,
-		GroupKeyURI:          customerKeyURI,
-		CustomerEncryptedKey: encCustomerKeyPart,
+		EncryptionKeyID:    "EK123",
+		Version:            1,
+		MasterEncryptedKey: encMasterKeyPart,
+		GroupKeyURI:        groupKeyURI,
+		GroupEncryptedKey:  encGroupKeyPart,
 	}
 }
 

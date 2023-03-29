@@ -202,7 +202,7 @@ func (c *Crypter) getCipher(key *tables.EncryptionKeyVersion) (cipher.AEAD, erro
 		return nil, err
 	}
 
-	cmk, err := c.kms.FetchKey(key.GroupKeyURI)
+	gmk, err := c.kms.FetchKey(key.GroupKeyURI)
 	if err != nil {
 		return nil, err
 	}
@@ -211,14 +211,14 @@ func (c *Crypter) getCipher(key *tables.EncryptionKeyVersion) (cipher.AEAD, erro
 	if err != nil {
 		return nil, err
 	}
-	customerKeyPortion, err := cmk.Decrypt(key.CustomerEncryptedKey, nil)
+	groupKeyPortion, err := gmk.Decrypt(key.GroupEncryptedKey, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	ckSrc := make([]byte, len(masterKeyPortion)+len(customerKeyPortion))
+	ckSrc := make([]byte, len(masterKeyPortion)+len(groupKeyPortion))
 	ckSrc = append(ckSrc, masterKeyPortion...)
-	ckSrc = append(ckSrc, customerKeyPortion...)
+	ckSrc = append(ckSrc, groupKeyPortion...)
 
 	compositeKey := make([]byte, 32)
 	r := hkdf.Expand(sha256.New, ckSrc, nil)
