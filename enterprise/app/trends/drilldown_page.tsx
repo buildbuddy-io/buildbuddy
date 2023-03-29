@@ -297,7 +297,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
     });
-    this.addZoomFiltersToQuery(drilldownRequest.query);
+    this.roundDateRangesAndAddZoomFiltersToQuery(drilldownRequest.query);
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
     drilldownRequest.drilldownMetric = this.selectedMetric.metric;
     rpcService.service
@@ -337,7 +337,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       pageToken: "",
       count: 25,
     });
-    this.addZoomFiltersToQuery(request.query!);
+    this.roundDateRangesAndAddZoomFiltersToQuery(request.query!);
 
     rpcService.service
       .searchExecution(request)
@@ -382,7 +382,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       pageToken: "",
       count: 25,
     });
-    this.addZoomFiltersToQuery(request.query!);
+    this.roundDateRangesAndAddZoomFiltersToQuery(request.query!);
 
     rpcService.service
       .searchInvocation(request)
@@ -430,7 +430,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       maximumDuration: isExecution ? undefined : filterParams.maximumDuration,
       status: filterParams.status,
     });
-    this.addZoomFiltersToQuery(heatmapRequest.query);
+    this.roundDateRangesAndAddZoomFiltersToQuery(heatmapRequest.query);
 
     rpcService.service
       .getStatHeatmap(heatmapRequest)
@@ -511,7 +511,24 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     });
   }
 
-  addZoomFiltersToQuery(query: CommonQueryFields) {
+  roundDateRangesAndAddZoomFiltersToQuery(query: CommonQueryFields) {
+    // updatedAfter should always be set, but typescript can't know that.
+    if (query.updatedAfter) {
+      query.updatedAfter = usecToTimestamp(
+        moment(+query.updatedAfter.seconds * 1000)
+          .startOf("day")
+          .unix() * 1e6
+      );
+    }
+    if (!query.updatedBefore) {
+      query.updatedBefore = usecToTimestamp(Date.now() * 1000);
+    }
+    query.updatedBefore = usecToTimestamp(
+      moment(+query.updatedBefore.seconds * 1000)
+        .endOf("day")
+        .unix() * 1e6
+    );
+
     if (!this.currentZoomFilters) {
       return;
     }
