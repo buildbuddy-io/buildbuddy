@@ -32,15 +32,14 @@ func generateKMSKey(t *testing.T, kmsDir string, id string) string {
 }
 
 func writeInRandomChunks(t *testing.T, w io.Writer, data []byte) {
-	idx := 0
-	for idx < len(data) {
+	for len(data) > 0 {
 		n := mrand.Intn(2048)
-		if idx+n > len(data) {
-			n = len(data) - idx
+		if n > len(data) {
+			n = len(data)
 		}
-		_, err := w.Write(data[idx : idx+n])
+		_, err := w.Write(data[:n])
 		require.NoError(t, err)
-		idx += n
+		data = data[n:]
 	}
 }
 
@@ -64,10 +63,10 @@ func createKeyVersion(t *testing.T, env environment.Env, customerKeyURI string) 
 	encCustomerKeyPart, err := customerAEAD.Encrypt(customerKeyPart, nil)
 
 	return &tables.EncryptionKeyVersion{
-		KeyID:                "EK123",
+		EncryptionKeyID:      "EK123",
 		Version:              1,
 		MasterEncryptedKey:   encMasterKeyPart,
-		CustomerKeyURI:       customerKeyURI,
+		GroupKeyURI:          customerKeyURI,
 		CustomerEncryptedKey: encCustomerKeyPart,
 	}
 }
@@ -115,7 +114,9 @@ func TestEncryptDecrypt(t *testing.T) {
 			decrypted, err := io.ReadAll(d)
 			require.NoError(t, err)
 
-			require.Equal(t, decrypted, testData)
+			if !bytes.Equal(decrypted, testData) {
+				require.FailNow(t, "original plaintext and decrypted plaintext do not match")
+			}
 		})
 	}
 }

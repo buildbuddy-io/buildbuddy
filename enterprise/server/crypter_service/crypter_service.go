@@ -5,9 +5,9 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -22,8 +22,6 @@ const (
 	gcmStandardNonceSizeBytes    = 12
 	gcmTagSize                   = 16
 	plainTextChunkSize           = 1024 * 1024 // 1 MiB
-	// 4 byte chunk counter, 24 bytes group ID
-	encryptedChunkAuthHeaderSize = 28
 	encryptedChunkOverhead       = gcmStandardNonceSizeBytes + gcmTagSize
 )
 
@@ -44,13 +42,13 @@ func New(env environment.Env) *Crypter {
 }
 
 type Encryptor struct {
-	key           *tables.EncryptionKeyVersion
-	ciph          cipher.AEAD
-	groupIDHeader []byte
-	w             interfaces.CommittedWriteCloser
-	wroteHeader   bool
-	chunkCounter  uint32
-	nonceBuf      []byte
+	key          *tables.EncryptionKeyVersion
+	ciph         cipher.AEAD
+	groupID      string
+	w            interfaces.CommittedWriteCloser
+	wroteHeader  bool
+	chunkCounter uint32
+	nonceBuf     []byte
 
 	// buf collects the plaintext until there's enough for a full chunk or the
 	// is no more data left to encrypt.
@@ -62,19 +60,8 @@ type Encryptor struct {
 	bufCap int
 }
 
-func fixedWidthGroupID(groupID string) []byte {
-	return []byte(fmt.Sprintf("%24s", groupID))
-}
-
-func makeChunkAuthHeader(chunkIndex uint32, groupIDHeader []byte) ([]byte, error) {
-	if 4+len(groupIDHeader) != encryptedChunkAuthHeaderSize {
-		return nil, status.FailedPreconditionError("invalid header size")
-	}
-
-	chunkHeader := make([]byte, encryptedChunkAuthHeaderSize)
-	binary.LittleEndian.PutUint32(chunkHeader, chunkIndex)
-	copy(chunkHeader[4:], groupIDHeader)
-	return chunkHeader, nil
+func makeChunkAuthHeader(chunkIndex uint32, groupID string) []byte {
+	return []byte(strings.Join([]string{fmt.Sprint(chunkIndex), groupID}, ","))
 }
 
 func (e *Encryptor) flushBlock() error {
@@ -90,10 +77,7 @@ func (e *Encryptor) flushBlock() error {
 	}
 
 	e.chunkCounter++
-	chunkAuth, err := makeChunkAuthHeader(e.chunkCounter, e.groupIDHeader)
-	if err != nil {
-		return err
-	}
+	chunkAuth := makeChunkAuthHeader(e.chunkCounter, e.groupID)
 	ct := e.ciph.Seal(e.buf[:0], e.nonceBuf, e.buf[:e.bufIdx], chunkAuth)
 	if _, err := e.w.Write(ct); err != nil {
 		return err
@@ -145,7 +129,7 @@ func (e *Encryptor) Close() error {
 
 type Decryptor struct {
 	ciph            cipher.AEAD
-	groupIDHeader   []byte
+	groupID         string
 	r               io.ReadCloser
 	headerValidated bool
 	chunkCounter    uint32
@@ -176,7 +160,9 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 	// No plaintext available, need to decrypt another chunk.
 	if d.bufIdx >= d.bufLen {
 		n, err := io.ReadFull(d.r, d.buf)
-		// We expect a short read on the last chunk.
+		// ErrUnexpectedEOF indicates that the underlying reader returned EOF
+		// before the buffer could be filled, which is expected on the last
+		// chunk.
 		if err != nil && err != io.ErrUnexpectedEOF {
 			return 0, err
 		}
@@ -186,14 +172,11 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		}
 
 		d.chunkCounter++
-		chunkAuth, err := makeChunkAuthHeader(d.chunkCounter, d.groupIDHeader)
-		if err != nil {
-			return 0, err
-		}
+		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.groupID)
 		nonce := d.buf[:gcmStandardNonceSizeBytes]
-		ciphhertext := d.buf[gcmStandardNonceSizeBytes:n]
+		ciphertext := d.buf[gcmStandardNonceSizeBytes:n]
 
-		pt, err := d.ciph.Open(ciphhertext[:0], nonce, ciphhertext, chunkAuth)
+		pt, err := d.ciph.Open(ciphertext[:0], nonce, ciphertext, chunkAuth)
 		if err != nil {
 			return 0, err
 		}
@@ -219,7 +202,7 @@ func (c *Crypter) getCipher(key *tables.EncryptionKeyVersion) (cipher.AEAD, erro
 		return nil, err
 	}
 
-	cmk, err := c.kms.FetchKey(key.CustomerKeyURI)
+	cmk, err := c.kms.FetchKey(key.GroupKeyURI)
 	if err != nil {
 		return nil, err
 	}
@@ -265,11 +248,11 @@ func (c *Crypter) newEncryptorWithKey(w interfaces.CommittedWriteCloser, groupID
 		return nil, err
 	}
 	return &Encryptor{
-		key:           key,
-		ciph:          ciph,
-		groupIDHeader: fixedWidthGroupID(groupID),
-		w:             w,
-		nonceBuf:      make([]byte, gcmStandardNonceSizeBytes),
+		key:      key,
+		ciph:     ciph,
+		groupID:  groupID,
+		w:        w,
+		nonceBuf: make([]byte, gcmStandardNonceSizeBytes),
 		// We allocate enough space to store an encrypted chunk so that we can
 		// do the encryption in place.
 		buf:    make([]byte, chunkSize+encryptedChunkOverhead),
@@ -283,9 +266,9 @@ func (c *Crypter) newDecryptorWithKey(r io.ReadCloser, groupID string, key *tabl
 		return nil, err
 	}
 	return &Decryptor{
-		ciph:          ciph,
-		groupIDHeader: fixedWidthGroupID(groupID),
-		r:             r,
-		buf:           make([]byte, chunkSize+encryptedChunkOverhead),
+		ciph:    ciph,
+		groupID: groupID,
+		r:       r,
+		buf:     make([]byte, chunkSize+encryptedChunkOverhead),
 	}, nil
 }

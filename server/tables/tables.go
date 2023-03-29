@@ -672,8 +672,8 @@ func (*QuotaGroup) TableName() string {
 
 type EncryptionKey struct {
 	Model
-	KeyID   string `gorm:"primaryKey"`
-	GroupID string
+	EncryptionKeyID string `gorm:"primaryKey"`
+	GroupID         string
 }
 
 func (*EncryptionKey) TableName() string {
@@ -682,16 +682,15 @@ func (*EncryptionKey) TableName() string {
 
 type EncryptionKeyVersion struct {
 	Model
-	KeyID   string `gorm:"primaryKey"`
-	Version int    `gorm:"primaryKey"`
+	EncryptionKeyID string `gorm:"primaryKey"`
+	Version         int    `gorm:"primaryKey"`
 
 	// BuildBuddy portion of the composite key encrypted using the master key.
 	MasterEncryptedKey []byte
-	// URI of the customer key in the external Key Management Service.
-	CustomerKeyURI string
-	// Customer portion of the composite key encrypted using the above customer
-	// key.
-	CustomerEncryptedKey []byte
+	// URI of the group key in the external Key Management Service.
+	GroupKeyURI string
+	// Group portion of the composite key encrypted using the above group key.
+	GroupEncryptedKey []byte
 }
 
 func (*EncryptionKeyVersion) TableName() string {
