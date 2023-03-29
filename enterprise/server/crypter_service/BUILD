@@ -20,6 +20,7 @@ go_test(
     embed = [":crypter_service"],
     deps = [
         "//enterprise/server/backends/kms",
+        "//server/environment",
         "//server/tables",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
