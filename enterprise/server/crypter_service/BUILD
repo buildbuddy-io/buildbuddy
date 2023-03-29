@@ -10,6 +10,7 @@ go_library(
         "//server/interfaces",
         "//server/tables",
         "//server/util/status",
+        "@org_golang_x_crypto//chacha20poly1305",
         "@org_golang_x_crypto//hkdf",
     ],
 )
