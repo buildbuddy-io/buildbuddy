@@ -21,3 +21,160 @@ message UnlinkGitHubAccountResponse {
   // the GitHub UI.
   repeated string warning = 2;
 }
+
+// GitHub App installations API.
+//
+// Users can use GitHub to install and uninstall the BuildBuddy GitHub App,
+// without using the BuildBuddy UI as an entrypoint. After installing the app on
+// GitHub, the user is redirected by GitHub back to the app, which uses these
+// APIs to "link" the new installation to the currently selected organization.
+//
+// A linked installation allows any build within the org to get installation
+// access tokens. For example, when running an authenticated build with ROLE=CI,
+// the commit status reporter will attempt to authorize via an app installation
+// token associated with the repository, by parsing the repo URL owner (username
+// or org name) and looking for a BuildBuddy-linked installation matching that
+// owner.
+//
+// An app installation can only be linked to one BuildBuddy org. These APIs can
+// be used to re-assign the org that an installation is linked to, or to unlink
+// an installation from an org (note that unlinking is not the same as
+// uninstalling).
+
+// A request to link a GitHub App installation to the user's currently selected
+// BuildBuddy organization.
+//
+// The user must have a personal GitHub account linked to BuildBuddy, and that
+// account must have access to the installation ID.
+message LinkAppInstallationRequest {
+  context.RequestContext request_context = 1;
+
+  // The installation ID to link.
+  // Required.
+  int64 installation_id = 2;
+}
+
+message LinkAppInstallationResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message AppInstallation {
+  // The GitHub App installation ID.
+  int64 installation_id = 1;
+
+  // The GitHub username or organization where the app is installed.
+  // This will be unique for each installation.
+  string owner = 2;
+
+  // The group ID to which the installation is linked.
+  string group_id = 3;
+}
+
+// A request to list GitHub App installations accessible to user as well as
+// installations linked to the org (which may or may not be directly accessible
+// to the user).
+//
+// Installations are returned for all groups that are accessible to the user, so
+// that the user can get a clear view of which installations are linked to which
+// orgs, without needing to switch orgs.
+message GetAppInstallationsRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetAppInstallationsResponse {
+  context.ResponseContext response_context = 1;
+
+  // The installations available to the user.
+  repeated AppInstallation installations = 2;
+}
+
+// A request to unlink a GitHub App installation from the authenticated org.
+//
+// The authenticated user must have access to the org that the installation is
+// linked to. If the authenticated user has access to the installation but not
+// the org, they can instead uninstall the app via GitHub.
+//
+// Unlinking an installation does not automatically unlink all repositories
+// associated with the installation. However, members of the organization will
+// no longer be able to get repository access tokens (unless the installation is
+// re-linked).
+message UnlinkAppInstallationRequest {
+  context.RequestContext request_context = 1;
+
+  // The installation ID to unlink.
+  int64 installation_id = 2;
+}
+
+message UnlinkAppInstallationResponse {
+  context.ResponseContext response_context = 1;
+}
+
+// A request to list repos available to a particular installation.
+message GetReposRequest {
+  context.RequestContext request_context = 1;
+
+  // The GitHub username or organization name to search within. The
+  // authenticated user must have access to a GitHub App installation associated
+  // with the repo.
+  // Required.
+  string owner = 2;
+
+  // The plain text search query attempting to match all or part of the repo
+  // name. This is interpreted according to GitHub's repository search syntax:
+  // https://docs.github.com/en/rest/search?apiVersion=2022-11-28#search-repositories
+  //
+  // Note that an additional filter is applied to the query to restrict the
+  // search to repos owned by the specified owner.
+  string query = 3;
+}
+
+message GetReposResponse {
+  context.ResponseContext response_context = 1;
+
+  message Repo {
+    // The repo URL.
+    // Example: "https://github.com/buildbuddy-io/buildbuddy"
+    string repo_url = 1;
+
+    // Whether the repository is linked to the authenticated organization.
+    bool linked = 2;
+  }
+
+  // The repos matching the request criteria.
+  repeated Repo repos = 2;
+}
+
+// Git repositories API.
+//
+// For now, Git repositories have to be explicitly configured in order to enable
+// BuildBuddy workflows.
+
+// A request to link a repo to the authenticated org.
+//
+// Linking a repo effectively enables workflows for the repository. Once a repo
+// is linked, we start listening to webhook events which might trigger the
+// workflow (such as push and pull_request), and then fetch the buildbuddy.yaml
+// file using a linked installation access token.
+message LinkRepoRequest {
+  context.RequestContext request_context = 1;
+
+  // The repo URL to link. A GitHub App installation with access to the repo
+  // must be linked to the organization, otherwise an error is returned.
+  string repo_url = 2;
+}
+
+message LinkRepoResponse {
+  context.ResponseContext response_context = 1;
+}
+
+// A request to unlink a repo from the authenticated org.
+message UnlinkRepoRequest {
+  context.RequestContext request_context = 1;
+
+  // The URL of the repo to unlink.
+  string repo_url = 2;
+}
+
+message UnlinkRepoResponse {
+  context.ResponseContext response_context = 1;
+}
