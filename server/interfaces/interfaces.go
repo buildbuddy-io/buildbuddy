@@ -1044,3 +1044,17 @@ type ExecutionCollector interface {
 type SuggestionService interface {
 	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
 }
+
+type Encryptor interface {
+	CommittedWriteCloser
+	Metadata() *rfpb.EncryptionMetadata
+}
+
+type Decryptor interface {
+	io.ReadCloser
+}
+
+type Crypter interface {
+	NewEncryptor(ctx context.Context, w CommittedWriteCloser) (Encryptor, error)
+	NewDecryptor(ctx context.Context, r io.ReadCloser, em *rfpb.EncryptionMetadata) (Decryptor, error)
+}

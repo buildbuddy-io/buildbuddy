@@ -75,6 +75,11 @@ message FileMetadata {
   int64 last_modify_usec = 5;
 }
 
+message EncryptionMetadata {
+  string encryption_key_id = 1;
+  int64 version = 2;
+}
+
 message PartitionMetadata {
   int64 size_bytes = 1;
   // CAS count and AC count are not populated by Raft cache.

@@ -154,4 +154,6 @@ type Env interface {
 	SetExecutionCollector(c interfaces.ExecutionCollector)
 	GetSuggestionService() interfaces.SuggestionService
 	SetSuggestionService(s interfaces.SuggestionService)
+	GetCrypter() interfaces.Crypter
+	SetCrypter(crypter interfaces.Crypter)
 }

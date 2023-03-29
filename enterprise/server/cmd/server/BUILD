@@ -30,6 +30,7 @@ go_library(
         "//enterprise/server/backends/redis_metrics_collector",
         "//enterprise/server/backends/s3_cache",
         "//enterprise/server/backends/userdb",
+        "//enterprise/server/crypter_service",
         "//enterprise/server/execution_search_service",
         "//enterprise/server/execution_service",
         "//enterprise/server/githubapp",
