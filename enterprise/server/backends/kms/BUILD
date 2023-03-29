@@ -13,6 +13,7 @@ go_library(
         "//server/util/status",
         "@com_github_google_tink_go//core/registry",
         "@com_github_google_tink_go//integration/gcpkms",
+        "@com_github_google_tink_go//tink",
         "@org_golang_google_api//option",
     ],
 )

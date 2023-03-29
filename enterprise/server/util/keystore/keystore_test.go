@@ -1,51 +1,44 @@
 package keystore_test
 
 import (
+	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 
 	"github.com/stretchr/testify/require"
 )
 
-// This is just a xor function; shift allows us to pass different values and
-// simulate using different keys.
-func xorBytes(text, xorKey []byte, shift int) []byte {
-	rv := make([]byte, len(text))
-	for i := range text {
-		rv[i] = text[i] ^ xorKey[(i+shift)%len(xorKey)]
-	}
-	return rv
-}
-
-type xorAEAD struct {
-	shift int
-}
-
-func (p *xorAEAD) Encrypt(plaintext, associatedData []byte) ([]byte, error) {
-	return xorBytes(plaintext, associatedData, p.shift), nil
-}
-func (p *xorAEAD) Decrypt(ciphertext, associatedData []byte) ([]byte, error) {
-	return xorBytes(ciphertext, associatedData, p.shift), nil
-}
-
-type testKMS struct {
-	shift int
-}
-
-func (k *testKMS) FetchMasterKey() (interfaces.AEAD, error) {
-	return &xorAEAD{k.shift}, nil
+func generateKMSKey(t *testing.T, kmsDir string, id string) string {
+	key := make([]byte, 32)
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+	keyFile := filepath.Join(kmsDir, id)
+	err = os.WriteFile(keyFile, key, 0644)
+	require.NoError(t, err)
+	return "local-insecure-kms://" + id
 }
 
 func TestTestKMS(t *testing.T) {
-	kms := &testKMS{}
+	kmsDir := testfs.MakeTempDir(t)
+	masterKeyURI := generateKMSKey(t, kmsDir, "masterKey")
+	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
+	flags.Set(t, "keystore.master_key_uri", masterKeyURI)
+
+	kmsClient, err := kms.New(context.Background())
+	require.NoError(t, err)
 	plaintext := []byte("woo boy wouldn't want this to get out")
 	associatedData := []byte("big_secret")
 
-	masterKey, err := kms.FetchMasterKey()
+	masterKey, err := kmsClient.FetchMasterKey()
 	require.NoError(t, err)
 
 	ciphertext, err := masterKey.Encrypt(plaintext, associatedData)
@@ -58,8 +51,14 @@ func TestTestKMS(t *testing.T) {
 }
 
 func TestGenerateKey(t *testing.T) {
+	kmsDir := testfs.MakeTempDir(t)
+	masterKeyURI := generateKMSKey(t, kmsDir, "masterKey")
+	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
+	flags.Set(t, "keystore.master_key_uri", masterKeyURI)
+
 	te := testenv.GetTestEnv(t)
-	te.SetKMS(&testKMS{})
+	err := kms.Register(te)
+	require.NoError(t, err)
 
 	pubKey64, encPrivKey64, err := keystore.GenerateSealedBoxKeys(te)
 	require.NoError(t, err)
@@ -72,12 +71,18 @@ func TestGenerateKey(t *testing.T) {
 
 	encPrivKeySlice, err := base64.StdEncoding.DecodeString(encPrivKey64)
 	require.NoError(t, err)
-	require.Equal(t, 32, len(encPrivKeySlice))
+	require.Equal(t, 60, len(encPrivKeySlice))
 }
 
 func TestBoxSealAndOpen(t *testing.T) {
+	kmsDir := testfs.MakeTempDir(t)
+	masterKeyURI := generateKMSKey(t, kmsDir, "masterKey")
+	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
+	flags.Set(t, "keystore.master_key_uri", masterKeyURI)
+
 	te := testenv.GetTestEnv(t)
-	te.SetKMS(&testKMS{})
+	err := kms.Register(te)
+	require.NoError(t, err)
 
 	pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(te)
 	require.NoError(t, err)
@@ -111,9 +116,8 @@ func TestBoxSealAndOpen(t *testing.T) {
 		require.NotNil(t, anonSealedBox)
 
 		// Using a different master key to open this box should fail.
-		te2 := testenv.GetTestEnv(t)
-		te2.SetKMS(&testKMS{1}) // different offset to simulate different master key
-		plainText, err := keystore.OpenAnonymousSealedBox(te2, pubKey, encPrivKey, anonSealedBox)
+		generateKMSKey(t, kmsDir, "masterKey")
+		plainText, err := keystore.OpenAnonymousSealedBox(te, pubKey, encPrivKey, anonSealedBox)
 		require.Error(t, err)
 		require.NotEqual(t, "sEcRet", plainText)
 	}

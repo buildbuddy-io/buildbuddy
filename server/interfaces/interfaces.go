@@ -1010,6 +1010,7 @@ type AEAD interface {
 // data.
 type KMS interface {
 	FetchMasterKey() (AEAD, error)
+	FetchKey(uri string) (AEAD, error)
 }
 
 // SecretService manages secrets for an org.
