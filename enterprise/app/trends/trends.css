@@ -133,3 +133,27 @@
   font-size: 16px;
   margin: 0 16px;
 }
+
+.drilldown-selection-summary {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.selection-summary-indicator {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+}
+
+.selection-summary-indicator.selection {
+  background-color: #4daf62;
+}
+
+.selection-summary-indicator.baseline {
+  background-color: #8782bc;
+}
+
+.selection-summary-text {
+  vertical-align: top;
+}

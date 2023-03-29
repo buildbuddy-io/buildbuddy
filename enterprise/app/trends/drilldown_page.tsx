@@ -729,6 +729,23 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return found?.invocationMetadata?.id || "";
   }
 
+  summarizeSelection(): React.ReactElement | null {
+    if (!this.currentHeatmapSelection) {
+      return null;
+    }
+
+    const startDate = moment(this.currentHeatmapSelection.dateRangeMicros.startInclusive / 1000).format("YYYY-MM-DD");
+    const endDate = moment((this.currentHeatmapSelection.dateRangeMicros.endExclusive - 1) / 1000).format("YYYY-MM-DD");
+    const startValue = this.renderYBucketValue(this.currentHeatmapSelection.bucketRange.startInclusive);
+    const endValue = this.renderYBucketValue(this.currentHeatmapSelection.bucketRange.endExclusive);
+    return (
+      <span className="selection-summary-text">
+        <strong>Selection</strong> contains events between {startDate} and {endDate} with values {startValue} -{" "}
+        {endValue}
+      </span>
+    );
+  }
+
   render() {
     return (
       <div className="trend-chart">
@@ -766,10 +783,21 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
                   {this.state.loadingDrilldowns && <div className="loading"></div>}
                   {!this.state.loadingDrilldowns && this.state.drilldownData && (
-                    <div className="container nopadding-dense">
-                      {!this.state.loadingDrilldowns &&
-                        this.state.drilldownData &&
-                        this.state.drilldownData.chart.map(
+                    <>
+                      <div>
+                        <div className="drilldown-selection-summary">
+                          <div className="selection-summary-indicator selection"></div>
+                          {this.summarizeSelection()}
+                        </div>
+                        <div className="drilldown-selection-summary">
+                          <div className="selection-summary-indicator baseline"></div>
+                          <span className="selection-summary-text">
+                            <strong>Base</strong> includes all other events from the heatmap above.
+                          </span>
+                        </div>
+                      </div>
+                      <div className="container nopadding-dense">
+                        {this.state.drilldownData.chart.map(
                           (chart) =>
                             chart.entry.length > 1 && (
                               <div className="drilldown-page-dd-chart">
@@ -810,7 +838,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                               </div>
                             )
                         )}
-                    </div>
+                      </div>
+                    </>
                   )}
                 </div>
                 <div className="trend-chart">
