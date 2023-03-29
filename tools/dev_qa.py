@@ -164,7 +164,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(usage=USAGE)
     parser.add_argument(
         "--repos",
-        default="buildbuddy,gazelle,abseil,bazel,rules_python",
+        default="buildbuddy,bazel-gazelle,abseil-cpp,bazel,rules_python",
         help="Which repos to test.",
     )
     parser.add_argument(
