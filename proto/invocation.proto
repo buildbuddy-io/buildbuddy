@@ -100,6 +100,11 @@ message Invocation {
 
   // The capabilities of the user who created the invocation
   repeated api_key.ApiKey.Capability created_with_capabilities = 27;
+
+  message Tag {
+    string name = 1;
+  }
+  repeated Tag tag = 28;
 }
 
 message InvocationEvent {

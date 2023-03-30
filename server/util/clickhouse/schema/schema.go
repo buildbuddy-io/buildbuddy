@@ -3,6 +3,7 @@ package schema
 import (
 	"bufio"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -108,6 +110,7 @@ type Invocation struct {
 	TotalUncachedActionExecUsec       int64
 	DownloadThroughputBytesPerSecond  int64
 	UploadThroughputBytesPerSecond    int64
+	Tags                              pq.StringArray `gorm:"type:Array(String);"`
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -375,6 +378,9 @@ func RunMigrations(gdb *gorm.DB) error {
 }
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
+	tags := make([]string, 0)
+	json.Unmarshal(ti.JsonTags, &tags)
+	log.Warningf("Tags to flush: %v", tags)
 	return &Invocation{
 		GroupID:                           ti.GroupID,
 		UpdatedAtUsec:                     ti.UpdatedAtUsec,
@@ -411,5 +417,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		TotalUncachedActionExecUsec:       ti.TotalUncachedActionExecUsec,
 		DownloadThroughputBytesPerSecond:  ti.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:    ti.UploadThroughputBytesPerSecond,
+		Tags:                              tags,
 	}
 }

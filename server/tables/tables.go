@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -159,6 +160,7 @@ type Invocation struct {
 	Success                          bool   `gorm:"type:tinyint(1)"`
 	Attempt                          uint64 `gorm:"not null;default:0"`
 	BazelExitCode                    string
+	JsonTags                         datatypes.JSON
 }
 
 func (i *Invocation) TableName() string {
@@ -982,6 +984,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 	prefixIndicesByDialect := map[string]map[string]string{
 		mysqlDialect: map[string]string{
 			"invocations_test_grid_query_command_index": "(`group_id` (25), `role` (10), `repo_url`, `command` (10), `created_at_usec` DESC)",
+			"invocations_tag_index":                     "(`group_id`, CAST(`json_tags` -> '$' AS VARCHAR(36) ARRAY), `updated_at_usec`, `success`, `invocation_status`)",
 		},
 		sqliteDialect: map[string]string{
 			"invocations_test_grid_query_command_index": "(`group_id`, `role`, `repo_url`, `command` , `created_at_usec` DESC)",
