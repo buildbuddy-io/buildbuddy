@@ -101,7 +101,8 @@ type fieldPriorities struct {
 	BranchName,
 	CommitSha,
 	Command,
-	Pattern int
+	Pattern,
+	Tags int
 }
 
 func NewStreamingEventParser(invocation *inpb.Invocation) *StreamingEventParser {
@@ -382,6 +383,9 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 	if visibility, ok := metadata["VISIBILITY"]; ok && visibility == "PUBLIC" {
 		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
+	if tags, ok := metadata["TAGS"]; ok && tags != "" {
+		sep.setTags(tags, priority)
+	}
 }
 
 func (sep *StreamingEventParser) fillInvocationFromWorkflowConfigured(workflowConfigured *build_event_stream.WorkflowConfigured) {
@@ -448,5 +452,20 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 	if sep.priority.Pattern <= priority {
 		sep.priority.Pattern = priority
 		sep.invocation.Pattern = value
+	}
+}
+func (sep *StreamingEventParser) setTags(value string, priority int) {
+	values := strings.Split(value, ",")
+	if sep.priority.Tags <= priority {
+		sep.priority.Tags = priority
+		var tags = make([]*inpb.Invocation_Tag, 0)
+		for _, tag := range values {
+			trimmed := strings.TrimSpace(tag)
+			if trimmed == "" {
+				continue
+			}
+			tags = append(tags, &inpb.Invocation_Tag{Name: trimmed})
+		}
+		sep.invocation.Tags = tags
 	}
 }

@@ -388,7 +388,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	} else {
 		tags = []string{}
 	}
-
 	return &Invocation{
 		GroupID:                           ti.GroupID,
 		UpdatedAtUsec:                     ti.UpdatedAtUsec,
