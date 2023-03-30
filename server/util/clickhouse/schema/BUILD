@@ -9,6 +9,7 @@ go_library(
         "//server/tables",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_lib_pq//:pq",
         "@io_gorm_gorm//:gorm",
     ],
 )

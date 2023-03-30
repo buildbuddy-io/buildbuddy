@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
@@ -1339,6 +1341,13 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
 
+	tags := make([]string, 0)
+	for _, x := range p.Tag {
+		tags = append(tags, fmt.Sprintf("\"%s\"", x.Name))
+	}
+	i.JsonTags = []byte(fmt.Sprintf("[%s]", strings.Join(tags, ",")))
+	log.Warningf(fmt.Sprintf("[%s]", strings.Join(tags, ",")))
+
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
 		return nil, err
@@ -1407,6 +1416,18 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
 	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
 	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
+
+	var m []string
+	err := json.Unmarshal(i.JsonTags, &m)
+	if err != nil {
+		log.Warningf("It me")
+		// XXX handle missing.
+		log.Warningf(err.Error())
+	} else {
+		for _, name := range m {
+			out.Tag = append(out.Tag, &invocation.Invocation_Tag{Name: name})
+		}
+	}
 	return out
 }
 

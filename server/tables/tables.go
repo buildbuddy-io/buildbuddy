@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
@@ -170,6 +171,8 @@ type Invocation struct {
 
 	// The user's setting of whether remote execution is enabled.
 	RemoteExecutionEnabled bool `gorm:"type:tinyint(1)"`
+
+	JsonTags datatypes.JSON
 }
 
 func (i *Invocation) TableName() string {

@@ -3,6 +3,7 @@ package schema
 import (
 	"bufio"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -111,6 +113,7 @@ type Invocation struct {
 	DownloadOutputsOption             int64
 	UploadLocalResultsEnabled         bool
 	RemoteExecutionEnabled            bool
+	Tags                              pq.StringArray `gorm:"type:Array(String);"`
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -378,6 +381,9 @@ func RunMigrations(gdb *gorm.DB) error {
 }
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
+	tags := make([]string, 0)
+	json.Unmarshal(ti.JsonTags, &tags)
+	log.Warningf("Tags to flush: %v", tags)
 	return &Invocation{
 		GroupID:                           ti.GroupID,
 		UpdatedAtUsec:                     ti.UpdatedAtUsec,
@@ -417,5 +423,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		DownloadOutputsOption:             ti.DownloadOutputsOption,
 		UploadLocalResultsEnabled:         ti.UploadLocalResultsEnabled,
 		RemoteExecutionEnabled:            ti.RemoteExecutionEnabled,
+		Tags:                              tags,
 	}
 }
