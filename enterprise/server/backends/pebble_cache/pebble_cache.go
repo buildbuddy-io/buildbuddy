@@ -749,28 +749,23 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 }
 
 func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
-	exitMu := sync.Mutex{}
-	exiting := false
-	go func() {
-		<-quitChan
-		exitMu.Lock()
-		exiting = true
-		exitMu.Unlock()
-	}()
-
 	for {
 		select {
 		case accessTimeUpdate := <-p.accesses:
 			if err := p.updateAtime(accessTimeUpdate.key); err != nil {
 				log.Warningf("Error updating atime: %s", err)
 			}
-		default:
-			exitMu.Lock()
-			done := exiting
-			exitMu.Unlock()
-
-			if done {
-				return nil
+		case <-quitChan:
+			// Drain any updates in the queue before exiting.
+			for {
+				select {
+				case u := <-p.accesses:
+					if err := p.updateAtime(u.key); err != nil {
+						log.Warningf("Error updating atime: %s", err)
+					}
+				default:
+					return nil
+				}
 			}
 		}
 	}
