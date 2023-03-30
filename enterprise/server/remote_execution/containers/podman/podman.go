@@ -520,11 +520,21 @@ func (c *podmanCommandContainer) getCID(ctx context.Context) (string, error) {
 }
 
 func (c *podmanCommandContainer) pullImage(ctx context.Context, creds container.PullCredentials) error {
+	podmanArgs := make([]string, 0, 2)
+
 	if c.imageStreamingEnabled {
-		return nil
+		// Ideally we would not have to do a "podman pull" when image streaming
+		// is enabled, but we suspect there's a concurrency bug in podman
+		// related to looking up additional layer information from providers
+		// like soci-store. To work around this bug, we do a single synchronous
+		// pull (locked by caller) which causes the layer metadata to be
+		// pre-populated in podman storage.
+		// The pull can be removed once there's a new podman version that
+		// includes the fix for this bug.
+		// TODO(iain): diagnose and report the bug.
+		podmanArgs = append(podmanArgs, enableStreamingStoreArg)
 	}
 
-	podmanArgs := make([]string, 0, 2)
 	if !creds.IsEmpty() {
 		podmanArgs = append(podmanArgs, fmt.Sprintf(
 			"--creds=%s:%s",
