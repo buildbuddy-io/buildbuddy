@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 # This script can be used to determine whether there will be any gorm db schema changes from a git branch
 #
