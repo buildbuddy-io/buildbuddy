@@ -131,7 +131,7 @@ def push_image_for_project(project, version_tag, bazel_target, skip_update_lates
 
     should_update_latest_tag = version_image["config"]["digest"] != latest_image["config"]["digest"]
     if should_update_latest_tag:
-        add_tag_cmd = f"y | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
+        add_tag_cmd = f"Y | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
         run_or_die(add_tag_cmd)
 
 def push_image_with_bazel(bazel_target, image_tag):
@@ -204,7 +204,7 @@ def main():
     new_version = old_version
 
     skip_version_bump = True
-    new_version = "test"
+    new_version = "testmaggie"
     if not skip_version_bump:
         new_version = bump_patch_version(old_version)
         release_notes = generate_release_notes(old_version)
