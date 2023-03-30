@@ -1,7 +1,6 @@
 package crypter_service
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
@@ -13,16 +12,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 )
 
 const (
 	encryptedDataHeaderSignature = "BB"
 	encryptedDataHeaderVersion   = 1
-	gcmStandardNonceSizeBytes    = 12
-	gcmTagSize                   = 16
 	plainTextChunkSize           = 1024 * 1024 // 1 MiB
-	encryptedChunkOverhead       = gcmStandardNonceSizeBytes + gcmTagSize
+	nonceSize                    = chacha20poly1305.NonceSizeX
+	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead
 )
 
 // TODO(vadim): pool buffers to reduce allocations
@@ -167,14 +166,14 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 			return 0, err
 		}
 
-		if n < gcmStandardNonceSizeBytes {
+		if n < nonceSize {
 			return 0, status.InternalError("could not read nonce for chunk")
 		}
 
 		d.chunkCounter++
 		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.groupID)
-		nonce := d.buf[:gcmStandardNonceSizeBytes]
-		ciphertext := d.buf[gcmStandardNonceSizeBytes:n]
+		nonce := d.buf[:nonceSize]
+		ciphertext := d.buf[nonceSize:n]
 
 		pt, err := d.ciph.Open(ciphertext[:0], nonce, ciphertext, chunkAuth)
 		if err != nil {
@@ -183,8 +182,8 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 
 		// We decrypted in place so the plaintext will start where the
 		// ciphertext was, past the nonce.
-		d.bufIdx = gcmStandardNonceSizeBytes
-		d.bufLen = len(pt) + gcmStandardNonceSizeBytes
+		d.bufIdx = nonceSize
+		d.bufLen = len(pt) + nonceSize
 	}
 
 	n = copy(p, d.buf[d.bufIdx:d.bufLen])
@@ -230,16 +229,12 @@ func (c *Crypter) getCipher(key *tables.EncryptionKeyVersion) (cipher.AEAD, erro
 		return nil, status.InternalError("invalid key length")
 	}
 
-	b, err := aes.NewCipher(compositeKey)
+	e, err := chacha20poly1305.NewX(compositeKey)
 	if err != nil {
 		return nil, err
 	}
 
-	g, err := cipher.NewGCMWithNonceSize(b, gcmStandardNonceSizeBytes)
-	if err != nil {
-		return nil, err
-	}
-	return g, nil
+	return e, nil
 }
 
 func (c *Crypter) newEncryptorWithKey(w interfaces.CommittedWriteCloser, groupID string, key *tables.EncryptionKeyVersion, chunkSize int) (*Encryptor, error) {
@@ -252,7 +247,7 @@ func (c *Crypter) newEncryptorWithKey(w interfaces.CommittedWriteCloser, groupID
 		ciph:     ciph,
 		groupID:  groupID,
 		w:        w,
-		nonceBuf: make([]byte, gcmStandardNonceSizeBytes),
+		nonceBuf: make([]byte, nonceSize),
 		// We allocate enough space to store an encrypted chunk so that we can
 		// do the encryption in place.
 		buf:    make([]byte, chunkSize+encryptedChunkOverhead),
