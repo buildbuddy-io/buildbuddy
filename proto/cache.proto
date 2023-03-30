@@ -206,6 +206,9 @@ message ScoreCard {
 
     // The type of cache relevant to this result.
     resource.CacheType cache_type = 14;
+
+    // The details of the execution that originally produced this result.
+    build.bazel.remote.execution.v2.ExecutedActionMetadata execution_metadata = 15;
   }
 
   // In the interest of saving space, we only show cache misses.
