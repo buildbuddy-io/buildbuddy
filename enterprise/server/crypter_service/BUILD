@@ -7,8 +7,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:raft_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/status",
         "@io_gorm_gorm//:gorm",
@@ -24,6 +26,7 @@ go_test(
     deps = [
         "//enterprise/server/backends/kms",
         "//proto:raft_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",

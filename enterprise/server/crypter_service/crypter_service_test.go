@@ -26,6 +26,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+)
+
+var (
+	// The digest contents is not important as long as the same value is passed
+	// to the encrypt and decrypt functions.
+	dummyDigest = &repb.Digest{Hash: "foo", SizeBytes: 123}
 )
 
 func generateKMSKey(t *testing.T, kmsDir string, id string) string {
@@ -109,7 +116,7 @@ func TestEncryptDecrypt(t *testing.T) {
 	out := bytes.NewBuffer(nil)
 	for _, size := range []int64{1, 10, 100, 1000, 1000 * 1000} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
-			e, err := crypter.newEncryptorWithKey(ioutil.NewCustomCommitWriteCloser(out), groupID, keyVersion, 1024)
+			e, err := crypter.newEncryptorWithKey(dummyDigest, ioutil.NewCustomCommitWriteCloser(out), groupID, keyVersion, 1024)
 			require.NoError(t, err)
 
 			testData := make([]byte, size)
@@ -120,7 +127,7 @@ func TestEncryptDecrypt(t *testing.T) {
 			// not affect the final result.
 			writeInRandomChunks(t, e, testData)
 
-			d, err := crypter.newDecryptorWithKey(io.NopCloser(out), groupID, keyVersion, 1024)
+			d, err := crypter.newDecryptorWithKey(dummyDigest, io.NopCloser(out), groupID, keyVersion, 1024)
 			require.NoError(t, err)
 			decrypted, err := io.ReadAll(d)
 			require.NoError(t, err)
@@ -142,7 +149,7 @@ func TestDecryptWrongGroup(t *testing.T) {
 	crypter := New(env)
 	out := bytes.NewBuffer(nil)
 
-	e, err := crypter.newEncryptorWithKey(ioutil.NewCustomCommitWriteCloser(out), groupID, keyVersion, 1024)
+	e, err := crypter.newEncryptorWithKey(dummyDigest, ioutil.NewCustomCommitWriteCloser(out), groupID, keyVersion, 1024)
 	require.NoError(t, err)
 
 	testData := make([]byte, 1000)
@@ -152,14 +159,52 @@ func TestDecryptWrongGroup(t *testing.T) {
 	writeInRandomChunks(t, e, testData)
 
 	// Reading with the correct groupID should be OK.
-	d, err := crypter.newDecryptorWithKey(io.NopCloser(bytes.NewReader(out.Bytes())), groupID, keyVersion, 1024)
+	d, err := crypter.newDecryptorWithKey(dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), groupID, keyVersion, 1024)
 	require.NoError(t, err)
 	decrypted, err := io.ReadAll(d)
 	require.NoError(t, err)
 	require.Equal(t, decrypted, testData)
 
 	// If group ID doesn't match, authentication should fail.
-	d, err = crypter.newDecryptorWithKey(io.NopCloser(bytes.NewReader(out.Bytes())), "GRBAD", keyVersion, 1024)
+	d, err = crypter.newDecryptorWithKey(dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), "GRBAD", keyVersion, 1024)
+	require.NoError(t, err)
+	decrypted, err = io.ReadAll(d)
+	require.ErrorContains(t, err, "authentication failed")
+}
+
+func TestDecryptWrongDigest(t *testing.T) {
+	env, kmsDir := getEnv(t)
+	customerKeyURI := generateKMSKey(t, kmsDir, "customerKey")
+
+	groupID := "GR123"
+	_, keyVersion := createKey(t, env, "EK123", groupID, customerKeyURI)
+
+	crypter := New(env)
+	out := bytes.NewBuffer(nil)
+
+	e, err := crypter.newEncryptorWithKey(dummyDigest, ioutil.NewCustomCommitWriteCloser(out), groupID, keyVersion, 1024)
+	require.NoError(t, err)
+
+	testData := make([]byte, 1000)
+	_, err = rand.Read(testData)
+	require.NoError(t, err)
+
+	writeInRandomChunks(t, e, testData)
+
+	d, err := crypter.newDecryptorWithKey(dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), groupID, keyVersion, 1024)
+	require.NoError(t, err)
+	decrypted, err := io.ReadAll(d)
+	require.NoError(t, err)
+	require.Equal(t, decrypted, testData)
+
+	wrongHashDigest := &repb.Digest{Hash: "badhash", SizeBytes: dummyDigest.SizeBytes}
+	d, err = crypter.newDecryptorWithKey(wrongHashDigest, io.NopCloser(bytes.NewReader(out.Bytes())), groupID, keyVersion, 1024)
+	require.NoError(t, err)
+	decrypted, err = io.ReadAll(d)
+	require.ErrorContains(t, err, "authentication failed")
+
+	wrongSizeDigest := &repb.Digest{Hash: dummyDigest.Hash, SizeBytes: 9999999999999999}
+	d, err = crypter.newDecryptorWithKey(wrongSizeDigest, io.NopCloser(bytes.NewReader(out.Bytes())), groupID, keyVersion, 1024)
 	require.NoError(t, err)
 	decrypted, err = io.ReadAll(d)
 	require.ErrorContains(t, err, "authentication failed")
@@ -212,14 +257,14 @@ func TestKeyLookup(t *testing.T) {
 		out := bytes.NewBuffer(nil)
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID1)
 		require.NoError(t, err)
-		c, err := crypter.NewEncryptor(ctx, ioutil.NewCustomCommitWriteCloser(out))
+		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
 		require.NoError(t, err)
 		require.Equal(t, c.Metadata().GetEncryptionKeyId(), group1KeyID)
 		require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
 		input := []byte("hello world")
 		writeInRandomChunks(t, c, input)
-		d, err := crypter.NewDecryptor(ctx, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
+		d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
 		require.NoError(t, err)
 		decrypted := make([]byte, len(input))
 		_, err = d.Read(decrypted)
@@ -232,14 +277,14 @@ func TestKeyLookup(t *testing.T) {
 		out := bytes.NewBuffer(nil)
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID2)
 		require.NoError(t, err)
-		c, err := crypter.NewEncryptor(ctx, ioutil.NewCustomCommitWriteCloser(out))
+		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(out))
 		require.NoError(t, err)
 		require.Equal(t, c.Metadata().GetEncryptionKeyId(), group2KeyID)
 		require.EqualValues(t, c.Metadata().GetVersion(), 1)
 
 		input := []byte("hello universe")
 		writeInRandomChunks(t, c, input)
-		d, err := crypter.NewDecryptor(ctx, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
+		d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), c.Metadata())
 		require.NoError(t, err)
 		decrypted := make([]byte, len(input))
 		_, err = d.Read(decrypted)
@@ -252,11 +297,11 @@ func TestKeyLookup(t *testing.T) {
 	{
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID1)
 		require.NoError(t, err)
-		c, err := crypter.NewEncryptor(ctx, ioutil.NewCustomCommitWriteCloser(bytes.NewBuffer(nil)))
+		c, err := crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(bytes.NewBuffer(nil)))
 		user1MD := c.Metadata()
 
 		ctx, err = auther.WithAuthenticatedUser(ctx, userID2)
-		_, err = crypter.NewDecryptor(ctx, io.NopCloser(bytes.NewReader(nil)), user1MD)
+		_, err = crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(nil)), user1MD)
 		require.True(t, status.IsNotFoundError(err))
 	}
 
@@ -264,11 +309,11 @@ func TestKeyLookup(t *testing.T) {
 	{
 		ctx, err := auther.WithAuthenticatedUser(ctx, userID3)
 		require.NoError(t, err)
-		_, err = crypter.NewEncryptor(ctx, ioutil.NewCustomCommitWriteCloser(bytes.NewBuffer(nil)))
+		_, err = crypter.NewEncryptor(ctx, dummyDigest, ioutil.NewCustomCommitWriteCloser(bytes.NewBuffer(nil)))
 		require.True(t, status.IsNotFoundError(err))
 
 		ctx, err = auther.WithAuthenticatedUser(ctx, userID2)
-		_, err = crypter.NewDecryptor(ctx, io.NopCloser(bytes.NewReader(nil)), &rfpb.EncryptionMetadata{EncryptionKeyId: group1KeyID, Version: 1})
+		_, err = crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(nil)), &rfpb.EncryptionMetadata{EncryptionKeyId: group1KeyID, Version: 1})
 		require.True(t, status.IsNotFoundError(err))
 	}
 }
