@@ -1094,7 +1094,6 @@ func RegisterTables() {
 	registerTable("AK", &APIKey{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
-	log.Warningf("enable: %t", *enableEncryptionSchema)
 	if *enableEncryptionSchema {
 		registerTable("EK", &EncryptionKey{})
 		registerTable("EV", &EncryptionKeyVersion{})
