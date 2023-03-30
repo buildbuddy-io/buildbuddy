@@ -670,6 +670,33 @@ func (*QuotaGroup) TableName() string {
 	return "QuotaGroups"
 }
 
+type EncryptionKey struct {
+	Model
+	EncryptionKeyID string `gorm:"primaryKey"`
+	GroupID         string
+}
+
+func (*EncryptionKey) TableName() string {
+	return "EncryptionKeys"
+}
+
+type EncryptionKeyVersion struct {
+	Model
+	EncryptionKeyID string `gorm:"primaryKey"`
+	Version         int    `gorm:"primaryKey"`
+
+	// BuildBuddy portion of the composite key encrypted using the master key.
+	MasterEncryptedKey []byte
+	// URI of the group key in the external Key Management Service.
+	GroupKeyURI string
+	// Group portion of the composite key encrypted using the above group key.
+	GroupEncryptedKey []byte
+}
+
+func (*EncryptionKeyVersion) TableName() string {
+	return "EncryptionKeyVersions"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
