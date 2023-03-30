@@ -3,8 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "dsingleflight",
     srcs = ["dsingleflight.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/util/dsingleflight",
-    visibility = ["//visibility:public"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight",
     deps = [
         "//server/util/log",
         "//server/util/status",
@@ -27,3 +26,5 @@ go_test(
         "@org_golang_x_sync//errgroup",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

@@ -14,6 +14,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/image_converter",
     deps = [
         "//enterprise/server/backends/redis_client",
+        "//enterprise/server/util/dsingleflight",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -24,7 +25,6 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/ssl",
-        "//server/util/dsingleflight",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
