@@ -131,7 +131,7 @@ def push_image_for_project(project, version_tag, bazel_target, skip_update_lates
 
     should_update_latest_tag = version_image["config"]["digest"] != latest_image["config"]["digest"]
     if should_update_latest_tag:
-        add_tag_cmd = f"Y | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
+        add_tag_cmd = f"echo 'Y' | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
         run_or_die(add_tag_cmd)
 
 def push_image_with_bazel(bazel_target, image_tag):
@@ -154,9 +154,9 @@ def update_docker_images(version_tag, skip_update_latest_tag):
     # OSS app
     push_image_for_project("flame-public/buildbuddy-app-onprem", oss_tag, '//deployment:release_onprem', skip_update_latest_tag)
     # Enterprise app
-    # push_image_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
+    push_image_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
     # # Enterprise executor
-    # push_image_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
+    push_image_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
