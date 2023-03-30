@@ -154,9 +154,9 @@ def update_docker_images(version_tag, skip_update_latest_tag):
     # OSS app
     push_image_for_project("flame-public/buildbuddy-app-onprem", oss_tag, '//deployment:release_onprem', skip_update_latest_tag)
     # Enterprise app
-    push_image_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
-    # Enterprise executor
-    push_image_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
+    # push_image_for_project("flame-public/buildbuddy-app-enterprise", enterprise_tag, '//enterprise/deployment:release_enterprise', skip_update_latest_tag)
+    # # Enterprise executor
+    # push_image_for_project("flame-public/buildbuddy-executor-enterprise", enterprise_tag, '//enterprise/deployment:release_executor_enterprise', skip_update_latest_tag)
 
 def generate_release_notes(old_version):
     release_notes_cmd = 'git log --max-count=50 --pretty=format:"%ci %cn: %s"' + ' %s...HEAD' % old_version
@@ -202,6 +202,9 @@ def main():
         skip_version_bump = True
 
     new_version = old_version
+
+    skip_version_bump = True
+    new_version = "test"
     if not skip_version_bump:
         new_version = bump_patch_version(old_version)
         release_notes = generate_release_notes(old_version)
