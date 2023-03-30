@@ -757,10 +757,13 @@ func (p *PebbleCache) processAccessTimeUpdates(quitChan chan struct{}) error {
 			}
 		case <-quitChan:
 			// Drain any updates in the queue before exiting.
-			for u := range p.accesses {
+			select {
+			case u := <-p.accesses:
 				if err := p.updateAtime(u.key); err != nil {
 					log.Warningf("Error updating atime: %s", err)
 				}
+			default:
+				break
 			}
 			return nil
 		}
