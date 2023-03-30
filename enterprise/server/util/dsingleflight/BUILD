@@ -4,7 +4,6 @@ go_library(
     name = "dsingleflight",
     srcs = ["dsingleflight.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight",
-    visibility = ["//visibility:public"],
     deps = [
         "//server/util/log",
         "//server/util/status",
