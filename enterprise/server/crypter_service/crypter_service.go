@@ -10,7 +10,6 @@ import (
 	"io"
 	"strings"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -18,6 +17,8 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 	"gorm.io/gorm"
+
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 const (
