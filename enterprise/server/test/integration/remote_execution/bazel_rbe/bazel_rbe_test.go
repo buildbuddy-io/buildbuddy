@@ -5,6 +5,7 @@ package bazel_rbe_test
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -424,10 +425,16 @@ def _exec_impl(ctx):
 
 exec = rule(implementation = _exec_impl, attrs = {"command": attr.string()})
 `,
-		"BUILD": `
-load(":defs.bzl", "exec")
-exec(name = "exec", command = """` + shCommand + `""")
-`,
+		"BUILD": fmt.Sprintf(`load(":defs.bzl", "exec")
+
+exec(
+  name = "exec",
+  command = """%s""",
+  exec_properties = {
+    "OSFamily": "%s",
+    "Arch": "%s",
+  },
+)`, shCommand, runtime.GOOS, runtime.GOARCH),
 	})
 	// Execute just the test action remotely.
 	buildArgs := []string{

@@ -139,10 +139,6 @@ func TestSimpleCommandWithZeroExitCode(t *testing.T) {
 }
 
 func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
-	// TODO(sluongng): investigate and fix test for darwin
-	if runtime.GOOS != "linux" {
-		t.Skip("Working with linux only")
-	}
 	ctx := context.Background()
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
@@ -150,13 +146,21 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	initialTaskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	invocationID := "testabc123"
 
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
 	cmd := rbe.Execute(
 		&repb.Command{Arguments: []string{"sh", "-c", `
 			echo >&1 ExampleStdout
 			echo >&2 ExampleStderr
       # Wait for context to be canceled
 			sleep 100
-		`}},
+		`},
+			Platform: platform,
+		},
 		&rbetest.ExecuteOpts{
 			ActionTimeout: 750 * time.Millisecond,
 			InvocationID:  invocationID,
@@ -259,10 +263,6 @@ func TestWorkflowCommand_ExecutorShutdown_RetriedByScheduler(t *testing.T) {
 }
 
 func TestTimeoutAlwaysReturnsDeadlineExceeded(t *testing.T) {
-	// TODO(sluongng): investigate and fix test for darwin
-	if runtime.GOOS != "linux" {
-		t.Skip("Working with linux only")
-	}
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
@@ -280,7 +280,18 @@ func TestTimeoutAlwaysReturnsDeadlineExceeded(t *testing.T) {
 
 	opts := &rbetest.ExecuteOpts{ActionTimeout: 1 * time.Millisecond}
 	// Note: The actual command here doesn't matter since we override the response.
-	cmd := rbe.Execute(&repb.Command{Arguments: []string{"sh", "-c", "exit 0"}}, opts)
+	cmd := rbe.Execute(
+		&repb.Command{
+			Arguments: []string{"sh", "-c", "exit 0"},
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "OSFamily", Value: runtime.GOOS},
+					{Name: "Arch", Value: runtime.GOARCH},
+				},
+			},
+		},
+		opts,
+	)
 	res := cmd.MustTerminateAbnormally()
 
 	assert.True(t, status.IsDeadlineExceededError(res.Err), "expected DeadlineExceeded, got: %s", res.Err)
@@ -924,7 +935,7 @@ func TestComplexActionIO(t *testing.T) {
 	missing := []string{}
 	for parent, nSkippedBytes := range skippedBytes {
 		for dir, sizes := range dirLayout {
-			for i, _ := range sizes {
+			for i := range sizes {
 				inputRelPath := filepath.Join(dir, fmt.Sprintf("file_%d.input", i))
 				outputRelPath := filepath.Join(parent, dir, fmt.Sprintf("file_%d.output", i))
 				if testfs.Exists(t, outDir, outputRelPath) {
@@ -1228,7 +1239,7 @@ func TestComplexActionIOWithCompression(t *testing.T) {
 	missing := []string{}
 	for parent, nSkippedBytes := range skippedBytes {
 		for dir, sizes := range dirLayout {
-			for i, _ := range sizes {
+			for i := range sizes {
 				inputRelPath := filepath.Join(dir, fmt.Sprintf("file_%d.input", i))
 				outputRelPath := filepath.Join(parent, dir, fmt.Sprintf("file_%d.output", i))
 				if testfs.Exists(t, outDir, outputRelPath) {
@@ -1520,13 +1531,17 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 }
 
 func TestRedisRestart(t *testing.T) {
-	// TODO(sluongng): investigate and fix test for darwin
-	if runtime.GOOS != "linux" {
-		t.Skip("Working with linux only")
-	}
 	workspaceContents := map[string]string{
 		"WORKSPACE": `workspace(name = "integration_test")`,
-		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "sleep 5 && echo 'Hello world' > $@")`,
+		"BUILD": fmt.Sprintf(`genrule(
+  name = "hello_txt",
+  outs = ["hello.txt"],
+  cmd_bash = "sleep 5 && echo 'Hello world' > $@",
+  exec_properties = {
+    "OSFamily": "%s",
+    "Arch": "%s",
+  },
+)`, runtime.GOOS, runtime.GOARCH),
 	}
 
 	var redisShards []*testredis.Handle
@@ -1639,16 +1654,21 @@ func TestInvocationCancellation(t *testing.T) {
 }
 
 func TestActionMerging(t *testing.T) {
-	// TODO(sluongng): investigate and fix test for darwin
-	if runtime.GOOS != "linux" {
-		t.Skip("Working with linux only")
-	}
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
-	cmd := &repb.Command{Arguments: []string{"sh", "-c", "sleep 10"}}
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "sleep 10"},
+		Platform:  platform,
+	}
 	cmd1 := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
 	op1 := cmd1.WaitAccepted()
 
