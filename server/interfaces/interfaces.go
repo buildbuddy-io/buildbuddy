@@ -463,8 +463,7 @@ type WorkflowService interface {
 }
 
 type GitHubApp interface {
-	// TODO(bduffany): Add webhook handler, install handler, repo management
-	// API, installation management API.
+	// TODO(bduffany): Add webhook handler and repo management API
 
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
 	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)

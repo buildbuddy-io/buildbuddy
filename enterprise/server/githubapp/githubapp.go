@@ -110,8 +110,37 @@ func New(env environment.Env) (*GitHubApp, error) {
 }
 
 func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error) {
-	// TODO: implement
-	return &ghpb.GetAppInstallationsResponse{}, nil
+	u, err := perms.AuthenticatedUser(ctx, a.env)
+	if err != nil {
+		return nil, err
+	}
+	// List installations linked to the org.
+	db := a.env.GetDBHandle().DB(ctx)
+	rows, err := db.Raw(`
+		SELECT *
+		FROM GitHubAppInstallations
+		WHERE group_id = ?
+		ORDER BY owner ASC
+	`, u.GetGroupID()).Rows()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get installations: %s", err)
+	}
+	res := &ghpb.GetAppInstallationsResponse{}
+	for rows.Next() {
+		var row tables.GitHubAppInstallation
+		if err := db.ScanRows(rows, &row); err != nil {
+			return nil, status.InternalErrorf("failed to scan installation row: %s", err)
+		}
+		res.Installations = append(res.Installations, &ghpb.AppInstallation{
+			GroupId:        row.GroupID,
+			InstallationId: row.InstallationID,
+			Owner:          row.Owner,
+		})
+	}
+	if rows.Err() != nil {
+		return nil, status.InternalErrorf("failed to scan all installation rows: %s", err)
+	}
+	return res, nil
 }
 
 func (a *GitHubApp) LinkGitHubAppInstallation(ctx context.Context, req *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error) {
@@ -184,7 +213,36 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 }
 
 func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error) {
-	return nil, status.UnimplementedError("Not yet implemented")
+	u, err := perms.AuthenticatedUser(ctx, a.env)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetInstallationId() == 0 {
+		return nil, status.FailedPreconditionError("missing installation_id")
+	}
+	dbh := a.env.GetDBHandle()
+	err = dbh.DB(ctx).Transaction(func(tx *db.DB) error {
+		var ti tables.GitHubAppInstallation
+		err := tx.Raw(`
+			SELECT `+dbh.SelectForUpdateModifier()+` *
+			FROM GitHubAppInstallations
+			WHERE installation_id = ?
+		`, req.GetInstallationId()).Take(&ti).Error
+		if err != nil {
+			return err
+		}
+		if err := authutil.AuthorizeGroupRole(u, ti.GroupID, role.Admin); err != nil {
+			return err
+		}
+		return tx.Exec(`
+			DELETE FROM GitHubAppInstallations
+			WHERE installation_id = ?
+		`, req.GetInstallationId()).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.UnlinkAppInstallationResponse{}, nil
 }
 
 func (a *GitHubApp) getInstallation(ctx context.Context, id int64) (*github.Installation, error) {

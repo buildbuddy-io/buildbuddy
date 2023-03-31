@@ -44,6 +44,7 @@ ts_library(
         "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/dialog",
+        "//app/components/dialog:simple_modal_dialog",
         "//app/components/link",
         "//app/components/modal",
         "//app/components/spinner",
@@ -83,6 +84,7 @@ ts_library(
 ts_library(
     name = "github_complete_installation",
     srcs = ["github_complete_installation.tsx"],
+    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",

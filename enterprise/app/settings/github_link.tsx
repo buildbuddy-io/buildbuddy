@@ -1,4 +1,4 @@
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, AlertCircle } from "lucide-react";
 import React from "react";
 import { github } from "../../../proto/github_ts_proto";
 import alertService from "../../../app/alert/alert_service";
@@ -20,19 +20,42 @@ import { TextLink } from "../../../app/components/link/link";
 import capabilities from "../../../app/capabilities/capabilities";
 import Banner from "../../../app/components/banner/banner";
 import LinkButton from "../../../app/components/button/link_button";
+import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
 
 export interface Props {
   user: User;
 }
 
 export interface State {
-  deleteModalVisible?: boolean;
-  isDeleting?: boolean;
-  isRefreshingUser?: boolean;
+  deleteModalVisible: boolean;
+  isDeleting: boolean;
+  isRefreshingUser: boolean;
+
+  installationsLoading: boolean;
+  installationsResponse: github.GetAppInstallationsResponse | null;
+
+  installationToUnlink: github.AppInstallation | null;
+  unlinkInstallationLoading: boolean;
 }
 
 export default class GitHubLink extends React.Component<Props, State> {
-  state: State = {};
+  state: State = {
+    deleteModalVisible: false,
+    isDeleting: false,
+    isRefreshingUser: false,
+
+    installationsResponse: null,
+    installationsLoading: false,
+
+    installationToUnlink: null,
+    unlinkInstallationLoading: false,
+  };
+
+  componentDidMount() {
+    if (capabilities.config.githubAppEnabled) {
+      this.fetchInstallations();
+    }
+  }
 
   private gitHubLinkUrl(): string {
     const params = new URLSearchParams({
@@ -42,6 +65,15 @@ export default class GitHubLink extends React.Component<Props, State> {
     });
     return `/auth/github/link/?${params}`;
   }
+
+  private fetchInstallations() {
+    this.setState({ installationsLoading: true, installationsResponse: null });
+    rpcService.service
+      .getGitHubAppInstallations(github.GetAppInstallationsRequest.create({}))
+      .then((response) => this.setState({ installationsResponse: response }))
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ installationsLoading: false }));
+  }
   private getInstallURL() {
     const params = new URLSearchParams({
       group_id: this.props.user.selectedGroup.id,
@@ -50,6 +82,22 @@ export default class GitHubLink extends React.Component<Props, State> {
       install: "true",
     });
     return `/auth/github/app/link/?${params}`;
+  }
+  private unlinkInstallation(installation: github.AppInstallation) {
+    this.setState({ unlinkInstallationLoading: true });
+    rpcService.service
+      .unlinkGitHubAppInstallation(
+        github.UnlinkAppInstallationRequest.create({
+          installationId: installation.installationId,
+        })
+      )
+      .then(() => {
+        this.setState({ installationToUnlink: null });
+        alertService.success(`Successfully unlinked "github.com/${installation.owner}"`);
+        this.fetchInstallations();
+      })
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ unlinkInstallationLoading: false }));
   }
 
   private onRequestCloseDeleteModal() {
@@ -81,6 +129,13 @@ export default class GitHubLink extends React.Component<Props, State> {
       .refreshUser()
       .catch((e: any) => errorService.handleError(e))
       .finally(() => this.setState({ isRefreshingUser: false }));
+  }
+
+  private showUnlinkDialog(installation: github.AppInstallation) {
+    this.setState({ installationToUnlink: installation });
+  }
+  private closeUnlinkDialog() {
+    this.setState({ installationToUnlink: null });
   }
 
   render() {
@@ -129,12 +184,32 @@ export default class GitHubLink extends React.Component<Props, State> {
           <>
             <div className="settings-option-title">GitHub app link</div>
             <div className="settings-option-description">
-              After installing the BuildBuddy app on GitHub, you'll need to link the app installation to a BuildBuddy
-              organization. All installations that you have access to are shown below.
+              The BuildBuddy GitHub app must be linked to a BuildBuddy organization before it can be used. All app
+              installations that you have access to are shown below.
             </div>
             <LinkButton className="big-button" href={this.getInstallURL()}>
               Setup
             </LinkButton>
+            {this.state.installationsLoading && <div className="loading loading-slim" />}
+            {Boolean(this.state.installationsResponse?.installations?.length) && (
+              <div className="github-app-installations">
+                {this.state.installationsResponse?.installations.map(
+                  (installation) => (
+                    console.log(installation),
+                    (
+                      <div className="github-app-installation">
+                        <div className="installation-owner">
+                          <TextLink href={`https://github.com/${installation.owner}`}>{installation.owner}</TextLink>
+                        </div>
+                        <OutlinedButton className="destructive" onClick={() => this.showUnlinkDialog(installation)}>
+                          Unlink
+                        </OutlinedButton>
+                      </div>
+                    )
+                  )
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -172,6 +247,18 @@ export default class GitHubLink extends React.Component<Props, State> {
             </Dialog>
           </Modal>
         )}
+
+        {/* Unlink installation dialog */}
+        <SimpleModalDialog
+          isOpen={this.state.installationToUnlink !== null}
+          onRequestClose={() => this.closeUnlinkDialog()}
+          title="Unlink GitHub app installation"
+          submitLabel="Unlink"
+          destructive
+          onSubmit={() => this.unlinkInstallation(this.state.installationToUnlink!)}
+          loading={this.state.unlinkInstallationLoading}>
+          Unlink <b>github.com/{this.state.installationToUnlink?.owner}</b> from BuildBuddy?
+        </SimpleModalDialog>
       </div>
     );
   }
