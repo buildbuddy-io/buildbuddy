@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 
@@ -115,36 +114,14 @@ func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.Get
 	if err != nil {
 		return nil, err
 	}
-	// List installations accessible to the GitHub user
-	tu, err := a.env.GetUserDB().GetUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	unlinkedInstallations := map[int64]*github.Installation{}
-	if tu.GithubToken != "" {
-		client, err := a.newAuthenticatedClient(ctx, tu.GithubToken)
-		if err != nil {
-			return nil, err
-		}
-		// TODO: paging
-		installations, res, err := client.Apps.ListUserInstallations(ctx, nil)
-		if err := checkResponse(res, err); err != nil {
-			return nil, err
-		}
-		for _, in := range installations {
-			unlinkedInstallations[in.GetID()] = in
-		}
-	}
-	// List installations linked to the org, and remove these from the
-	// "unlinked" set.
+	// List installations linked to the org.
 	db := a.env.GetDBHandle().DB(ctx)
 	rows, err := db.Raw(`
 		SELECT *
 		FROM GitHubAppInstallations
 		WHERE group_id = ?
-		OR installation_id IN ?
 		ORDER BY owner ASC
-	`, u.GetGroupID(), mapKeys(unlinkedInstallations)).Rows()
+	`, u.GetGroupID()).Rows()
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get installations: %s", err)
 	}
@@ -159,26 +136,10 @@ func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.Get
 			InstallationId: row.InstallationID,
 			Owner:          row.Owner,
 		})
-		delete(unlinkedInstallations, row.InstallationID)
 	}
 	if rows.Err() != nil {
 		return nil, status.InternalErrorf("failed to scan all installation rows: %s", err)
 	}
-
-	// Append the remaining unlinked installations
-	unlinked := make([]*ghpb.AppInstallation, 0, len(unlinkedInstallations))
-	for _, in := range unlinkedInstallations {
-		unlinked = append(unlinked, &ghpb.AppInstallation{
-			InstallationId: in.GetID(),
-			Owner:          in.GetAccount().GetLogin(),
-		})
-	}
-	res.Installations = append(res.Installations, unlinked...)
-
-	// Sort by owner
-	sort.Slice(res.Installations, func(i, j int) bool {
-		return res.Installations[i].GetOwner() < res.Installations[j].GetOwner()
-	})
 	return res, nil
 }
 
@@ -456,12 +417,4 @@ func checkResponse(res *github.Response, err error) error {
 		return status.UnknownErrorf("GitHub API request failed: unexpected HTTP status %s", res.Status)
 	}
 	return nil
-}
-
-func mapKeys[K comparable, V any](m map[K]V) []K {
-	keys := make([]K, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }

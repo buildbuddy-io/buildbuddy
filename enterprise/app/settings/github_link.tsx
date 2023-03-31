@@ -34,9 +34,6 @@ export interface State {
   installationsLoading: boolean;
   installationsResponse: github.GetAppInstallationsResponse | null;
 
-  installationToLink: github.AppInstallation | null;
-  linkInstallationLoading: boolean;
-
   installationToUnlink: github.AppInstallation | null;
   unlinkInstallationLoading: boolean;
 }
@@ -49,9 +46,6 @@ export default class GitHubLink extends React.Component<Props, State> {
 
     installationsResponse: null,
     installationsLoading: false,
-
-    installationToLink: null,
-    linkInstallationLoading: false,
 
     installationToUnlink: null,
     unlinkInstallationLoading: false,
@@ -88,22 +82,6 @@ export default class GitHubLink extends React.Component<Props, State> {
       install: "true",
     });
     return `/auth/github/app/link/?${params}`;
-  }
-  private linkInstallation(installation: github.AppInstallation) {
-    this.setState({ linkInstallationLoading: true });
-    rpcService.service
-      .linkGitHubAppInstallation(
-        github.LinkAppInstallationRequest.create({
-          installationId: installation.installationId,
-        })
-      )
-      .then(() => {
-        this.setState({ installationToLink: null });
-        alertService.success(`Successfully linked "github.com/${installation.owner}"`);
-        this.fetchInstallations();
-      })
-      .catch((e) => errorService.handleError(e))
-      .finally(() => this.setState({ linkInstallationLoading: false }));
   }
   private unlinkInstallation(installation: github.AppInstallation) {
     this.setState({ unlinkInstallationLoading: true });
@@ -151,13 +129,6 @@ export default class GitHubLink extends React.Component<Props, State> {
       .refreshUser()
       .catch((e: any) => errorService.handleError(e))
       .finally(() => this.setState({ isRefreshingUser: false }));
-  }
-
-  private showLinkDialog(installation: github.AppInstallation) {
-    this.setState({ installationToLink: installation });
-  }
-  private closeLinkDialog() {
-    this.setState({ installationToLink: null });
   }
 
   private showUnlinkDialog(installation: github.AppInstallation) {
@@ -220,9 +191,9 @@ export default class GitHubLink extends React.Component<Props, State> {
               Setup
             </LinkButton>
             {this.state.installationsLoading && <div className="loading loading-slim" />}
-            {this.state.installationsResponse && (
+            {Boolean(this.state.installationsResponse?.installations?.length) && (
               <div className="github-app-installations">
-                {this.state.installationsResponse.installations.map(
+                {this.state.installationsResponse?.installations.map(
                   (installation) => (
                     console.log(installation),
                     (
@@ -230,21 +201,9 @@ export default class GitHubLink extends React.Component<Props, State> {
                         <div className="installation-owner">
                           <TextLink href={`https://github.com/${installation.owner}`}>{installation.owner}</TextLink>
                         </div>
-                        {installation.groupId && installation.groupId !== this.props.user.selectedGroup.id && (
-                          <div title="This installation is linked to another BuildBuddy organization.">
-                            <AlertCircle className="icon orange" />
-                          </div>
-                        )}
-                        {installation.groupId && (
-                          <OutlinedButton className="destructive" onClick={() => this.showUnlinkDialog(installation)}>
-                            Unlink
-                          </OutlinedButton>
-                        )}
-                        {/* When clicking "Link", for now we just show the same dialog that
-                        we show when completing the "install-from-GitHub" flow. */}
-                        {!installation.groupId && (
-                          <OutlinedButton onClick={() => this.showLinkDialog(installation)}>Link</OutlinedButton>
-                        )}
+                        <OutlinedButton className="destructive" onClick={() => this.showUnlinkDialog(installation)}>
+                          Unlink
+                        </OutlinedButton>
                       </div>
                     )
                   )
@@ -288,18 +247,6 @@ export default class GitHubLink extends React.Component<Props, State> {
             </Dialog>
           </Modal>
         )}
-
-        {/* Link installation dialog */}
-        <SimpleModalDialog
-          isOpen={this.state.installationToLink !== null}
-          onRequestClose={() => this.closeLinkDialog()}
-          title="Link GitHub app installation"
-          submitLabel="OK"
-          onSubmit={() => this.linkInstallation(this.state.installationToLink!)}
-          loading={this.state.linkInstallationLoading}>
-          Link <b>github.com/{this.state.installationToLink?.owner}</b> to the BuildBuddy organization{" "}
-          <b>{this.props.user.selectedGroup.name}</b>?
-        </SimpleModalDialog>
 
         {/* Unlink installation dialog */}
         <SimpleModalDialog
