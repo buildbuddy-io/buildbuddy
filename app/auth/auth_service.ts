@@ -183,19 +183,10 @@ export class AuthService {
       window.location.reload();
       return;
     }
-    const selectedGroup = this.user.groups.find((group) => group.id === groupId);
-    if (!selectedGroup) {
-      // If the group ID isn't found in the selected groups list, we probably
-      // just created the group. Set the new group ID in the request context so
-      // that the server recognizes it as the selected group when we call
-      // GetUser.
-      rpcService.requestContext.groupId = groupId;
-      await this.refreshUser();
-    } else {
-      const userCopy = new User(this.user);
-      userCopy.selectedGroup = selectedGroup;
-      this.emitUser(userCopy);
-    }
+    // Refresh the user to re-fetch the user properties associated with their
+    // selected group, such as the allowed RPCs list.
+    rpcService.requestContext.groupId = groupId;
+    await this.refreshUser();
   }
 
   async enterImpersonationMode(groupId: string) {

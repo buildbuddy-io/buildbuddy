@@ -19,6 +19,7 @@ import authService from "../../../app/auth/auth_service";
 import { TextLink } from "../../../app/components/link/link";
 import capabilities from "../../../app/capabilities/capabilities";
 import Banner from "../../../app/components/banner/banner";
+import LinkButton from "../../../app/components/button/link_button";
 
 export interface Props {
   user: User;
@@ -40,6 +41,14 @@ export default class GitHubLink extends React.Component<Props, State> {
       redirect_url: window.location.href,
     });
     return `/auth/github/link/?${params}`;
+  }
+  private getInstallURL() {
+    const params = new URLSearchParams({
+      group_id: this.props.user.selectedGroup.id,
+      user_id: this.props.user.displayUser.userId?.id || "",
+      redirect_url: window.location.href,
+    });
+    return `/auth/github/app/link/?${params}`;
   }
 
   private onRequestCloseDeleteModal() {
@@ -115,6 +124,19 @@ export default class GitHubLink extends React.Component<Props, State> {
             <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
           </FilledButton>
         )}
+        {capabilities.config.githubAppEnabled && (
+          <>
+            <div className="settings-option-title">GitHub app link</div>
+            <div className="settings-option-description">
+              After installing the BuildBuddy app on GitHub, you'll need to link the app installation to a BuildBuddy
+              organization. All installations that you have access to are shown below.
+            </div>
+            <LinkButton className="big-button" href={this.getInstallURL()}>
+              Setup
+            </LinkButton>
+          </>
+        )}
+
         {this.state.deleteModalVisible && (
           <Modal
             className="github-account-link-delete-modal"

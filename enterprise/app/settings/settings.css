@@ -32,10 +32,6 @@
   padding: 16px 32px;
 }
 
-.settings .settings-button {
-  margin-bottom: 32px;
-}
-
 .settings .settings-link-button {
   padding: 0;
 }
@@ -83,6 +79,12 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
+}
+
+.github-account-link .controls-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
 }
 
 /* Large screen */
@@ -221,4 +223,8 @@
 
 .settings .banner-content > p:last-child {
   margin-bottom: 0;
+}
+
+.settings .settings-option-title:not(:first-child) {
+  margin-top: 32px;
 }

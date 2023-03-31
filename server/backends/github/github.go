@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -170,6 +171,13 @@ type OAuthHandler struct {
 	// GroupLinkEnabled specifies whether the OAuth app should associate
 	// access tokens with the authenticated group.
 	GroupLinkEnabled bool
+
+	// InstallURL is the GitHub app install URL. Only set for GitHub Apps.
+	InstallURL string
+
+	// HandleInstall handles a request to install the GitHub App.
+	// setupAction is either "install" or "update".
+	HandleInstall func(ctx context.Context, groupID, setupAction string, installationID int64) (redirect string, err error)
 }
 
 func NewOAuthHandler(env environment.Env, clientID, clientSecret, path string) *OAuthHandler {
@@ -183,8 +191,25 @@ func NewOAuthHandler(env environment.Env, clientID, clientSecret, path string) *
 }
 
 func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// If we don't have a state yet parameter, start oauth flow.
-	if r.FormValue("state") == "" {
+	u, err := perms.AuthenticatedUser(r.Context(), c.env)
+	if err != nil {
+		// If not logged in to the app (e.g. when installing directly from
+		// GitHub), log in first, then come back here to complete the
+		// installation.
+		loginURL := fmt.Sprintf("/?redirect_url=%s", url.QueryEscape(r.URL.String()))
+		http.Redirect(w, r, loginURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	// GitHub redirected back to us with an error; handle that here.
+	if errDesc := r.FormValue("error_description"); errDesc != "" {
+		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub redirected back with error: %s", errDesc))
+		return
+	}
+
+	// If we are missing either the OAuth code or app installation ID, start the
+	// OAuth flow.
+	if r.FormValue("code") == "" && r.FormValue("installation_id") == "" {
 		state := fmt.Sprintf("%d", random.RandUint64())
 		userID := r.FormValue("user_id")
 		groupID := r.FormValue("group_id")
@@ -198,30 +223,32 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		setCookie(w, groupIDCookieName, groupID)
 		setCookie(w, redirectCookieName, redirectURL)
 
-		url := fmt.Sprintf(
-			"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
-			c.ClientID,
-			state,
-			url.QueryEscape(build_buddy_url.WithPath(c.Path).String()),
-			"repo")
-		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		var authURL string
+		if r.FormValue("install") == "true" && c.InstallURL != "" {
+			authURL = fmt.Sprintf("%s?state=%s", c.InstallURL, state)
+		} else {
+			authURL = fmt.Sprintf(
+				"https://github.com/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
+				c.ClientID,
+				state,
+				url.QueryEscape(build_buddy_url.WithPath(c.Path).String()),
+				"repo")
+		}
+
+		http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 		return
 	}
 
-	// GitHub redirected back to us with an error.
-	if errDesc := r.FormValue("error_description"); errDesc != "" {
-		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub redirected back with error: %s", errDesc))
-		return
-	}
-
-	// Verify "state" cookie matches
+	// Verify "state" cookie matches if present
+	// Note: It won't be set for GitHub-initiated app installations
 	state := r.FormValue("state")
-	if state != getCookie(r, stateCookieName) {
+	if state != "" && state != getCookie(r, stateCookieName) {
 		redirectWithError(w, r, status.PermissionDeniedErrorf("GitHub link state mismatch: %s != %s", r.FormValue("state"), getCookie(r, stateCookieName)))
 		return
 	}
-	redirectURL := r.FormValue("redirect_uri")
-	if err := burl.ValidateRedirect(c.env, redirectURL); err != nil {
+
+	redirectURIParam := r.FormValue("redirect_uri")
+	if err := burl.ValidateRedirect(c.env, redirectURIParam); err != nil {
 		redirectWithError(w, r, err)
 		return
 	}
@@ -234,7 +261,7 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.ClientSecret,
 		code,
 		state,
-		url.QueryEscape(redirectURL))
+		url.QueryEscape(redirectURIParam))
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -277,12 +304,6 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, err := perms.AuthenticatedUser(r.Context(), c.env)
-	if err != nil {
-		redirectWithError(w, r, status.WrapError(err, "Failed to link GitHub account: could not authenticate user"))
-		return
-	}
-
 	dbHandle := c.env.GetDBHandle()
 	if dbHandle == nil {
 		redirectWithError(w, r, status.PermissionDeniedError("No database configured"))
@@ -290,7 +311,7 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Restore group ID from cookie.
-	groupID := getCookie(r, groupIDCookieName)
+	groupID := getState(r, groupIDCookieName)
 	// Associate the token with the org (legacy OAuth app only).
 	if groupID != "" && c.GroupLinkEnabled {
 		if err := authutil.AuthorizeGroupRole(u, groupID, role.Admin); err != nil {
@@ -307,11 +328,16 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Restore user ID from cookie.
-	userID := getCookie(r, userIDCookieName)
+	// Restore user ID from state cookie.
+	userID := getState(r, userIDCookieName)
+	// If no user ID state (app install flow) then use the authenticated user
+	// ID.
+	if userID == "" && state == "" {
+		userID = u.GetUserID()
+	}
 	if userID != "" && c.UserLinkEnabled {
 		if userID != u.GetUserID() {
-			redirectWithError(w, r, status.PermissionDeniedErrorf("Invalid user: %v", userID))
+			redirectWithError(w, r, status.PermissionDeniedErrorf("user ID unexpectedly changed to %s while authenticating with GitHub", userID))
 			return
 		}
 		log.Infof("Linking GitHub account for user %s", userID)
@@ -324,12 +350,40 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	redirectUrl := getCookie(r, redirectCookieName)
-	if redirectUrl == "" {
-		redirectUrl = "/"
+	// Handle new app installation.
+	// Note, during the "install & authorize" flow, both the OAuth "code" param
+	// and "installation_id" param will be set.
+	var installationID int64
+	if r.FormValue("installation_id") != "" {
+		installationID, err = strconv.ParseInt(r.FormValue("installation_id"), 10, 64)
+		if err != nil {
+			redirectWithError(w, r, status.InvalidArgumentErrorf("invalid installation_id %q", r.FormValue("installation_id")))
+			return
+		}
 	}
 
-	http.Redirect(w, r, redirectUrl, http.StatusTemporaryRedirect)
+	if installationID != 0 {
+		if c.HandleInstall == nil {
+			redirectWithError(w, r, status.InternalError("app installation is not supported"))
+			return
+		}
+		redirect, err := c.HandleInstall(r.Context(), groupID, r.FormValue("setup_action"), installationID)
+		if err != nil {
+			redirectWithError(w, r, err)
+			return
+		}
+		if redirect != "" {
+			http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
+			return
+		}
+	}
+
+	appRedirectURL := getState(r, redirectCookieName)
+	if appRedirectURL == "" {
+		appRedirectURL = "/"
+	}
+
+	http.Redirect(w, r, appRedirectURL, http.StatusTemporaryRedirect)
 }
 
 func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {
@@ -429,14 +483,25 @@ func getCookie(r *http.Request, name string) string {
 	return ""
 }
 
+func getState(r *http.Request, key string) string {
+	if r.FormValue("state") == "" || r.FormValue("state") != getCookie(r, stateCookieName) {
+		return ""
+	}
+	c, err := r.Cookie(key)
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
 func redirectWithError(w http.ResponseWriter, r *http.Request, err error) {
 	log.Warning(err.Error())
 	errorParam := err.Error()
 	redirectURL := &url.URL{Path: "/"}
 	// Respect the original redirect_url parameter that was set when initiating
 	// the flow.
-	if r.FormValue("state") == getCookie(r, stateCookieName) {
-		if u, err := url.Parse(getCookie(r, redirectCookieName)); err == nil {
+	if s := getState(r, redirectCookieName); s != "" {
+		if u, err := url.Parse(s); err == nil {
 			redirectURL = u
 		}
 	}

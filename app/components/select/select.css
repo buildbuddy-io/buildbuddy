@@ -51,3 +51,8 @@
   z-index: 1;
   pointer-events: none;
 }
+
+.select:disabled {
+  color: black;
+  background: #bbb;
+}

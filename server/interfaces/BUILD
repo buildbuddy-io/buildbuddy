@@ -10,6 +10,7 @@ go_library(
         "//proto:api_key_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:execution_stats_go_proto",
+        "//proto:github_go_proto",
         "//proto:group_go_proto",
         "//proto:health_go_proto",
         "//proto:invocation_go_proto",

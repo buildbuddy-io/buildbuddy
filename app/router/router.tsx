@@ -100,6 +100,12 @@ class Router {
       return;
     }
 
+    // Initiate a full page load for server-side redirects.
+    if (newUrl.pathname.startsWith("/auth/")) {
+      window.location.href = newUrl.href;
+      return;
+    }
+
     window.history.pushState({}, "", newUrl.href);
   }
 

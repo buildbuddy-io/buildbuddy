@@ -90,6 +90,10 @@ var (
 		"UpdateGroupUsers",
 		// Org GitHub account link management
 		"UnlinkGitHubAccount",
+		// Org GitHub app link management
+		"LinkGitHubAppInstallation",
+		"GetGitHubAppInstallations",
+		"UnlinkGitHubAppInstallation",
 		// Org API key management
 		"CreateApiKey",
 		"UpdateApiKey",

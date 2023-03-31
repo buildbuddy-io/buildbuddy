@@ -124,6 +124,14 @@ service BuildBuddyService {
   rpc UnlinkGitHubAccount(github.UnlinkGitHubAccountRequest)
       returns (github.UnlinkGitHubAccountResponse);
 
+  // GitHub app link API
+  rpc LinkGitHubAppInstallation(github.LinkAppInstallationRequest)
+      returns (github.LinkAppInstallationResponse);
+  rpc GetGitHubAppInstallations(github.GetAppInstallationsRequest)
+      returns (github.GetAppInstallationsResponse);
+  rpc UnlinkGitHubAppInstallation(github.UnlinkAppInstallationRequest)
+      returns (github.UnlinkAppInstallationResponse);
+
   // Runner API
   rpc Run(runner.RunRequest) returns (runner.RunResponse);
 
