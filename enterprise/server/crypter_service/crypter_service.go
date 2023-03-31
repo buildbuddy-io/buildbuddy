@@ -315,7 +315,7 @@ func (c *Crypter) NewDecryptor(ctx context.Context, r io.ReadCloser, em *rfpb.En
 		SELECT * FROM EncryptionKeyVersions ekv
 		JOIN EncryptionKeys ek ON ekv.encryption_key_id = ek.encryption_key_id
 		WHERE ek.group_id = ? 
-        AND ekv.encryption_key_id = ? AND ekv.version= ?
+        AND ekv.encryption_key_id = ? AND ekv.version = ?
 	`
 	if err := c.dbh.DB(ctx).Raw(query, u.GetGroupID(), em.GetEncryptionKeyId(), em.GetVersion()).Take(ekv).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
