@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -19,6 +20,7 @@ import (
 	"gorm.io/gorm"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -30,7 +32,6 @@ const (
 )
 
 // TODO(vadim): pool buffers to reduce allocations
-// TODO(vadim): include file digest in authentication header
 type Crypter struct {
 	auth interfaces.Authenticator
 	dbh  interfaces.DBHandle
@@ -53,6 +54,7 @@ func New(env environment.Env) *Crypter {
 type Encryptor struct {
 	key          *tables.EncryptionKeyVersion
 	ciph         cipher.AEAD
+	digest       *repb.Digest
 	groupID      string
 	w            interfaces.CommittedWriteCloser
 	wroteHeader  bool
@@ -69,8 +71,8 @@ type Encryptor struct {
 	bufCap int
 }
 
-func makeChunkAuthHeader(chunkIndex uint32, groupID string) []byte {
-	return []byte(strings.Join([]string{fmt.Sprint(chunkIndex), groupID}, ","))
+func makeChunkAuthHeader(chunkIndex uint32, d *repb.Digest, groupID string) []byte {
+	return []byte(strings.Join([]string{fmt.Sprint(chunkIndex), digest.String(d), groupID}, ","))
 }
 
 func (e *Encryptor) flushBlock() error {
@@ -86,7 +88,7 @@ func (e *Encryptor) flushBlock() error {
 	}
 
 	e.chunkCounter++
-	chunkAuth := makeChunkAuthHeader(e.chunkCounter, e.groupID)
+	chunkAuth := makeChunkAuthHeader(e.chunkCounter, e.digest, e.groupID)
 	ct := e.ciph.Seal(e.buf[:0], e.nonceBuf, e.buf[:e.bufIdx], chunkAuth)
 	if _, err := e.w.Write(ct); err != nil {
 		return err
@@ -145,6 +147,7 @@ func (e *Encryptor) Close() error {
 
 type Decryptor struct {
 	ciph            cipher.AEAD
+	digest          *repb.Digest
 	groupID         string
 	r               io.ReadCloser
 	headerValidated bool
@@ -188,7 +191,7 @@ func (d *Decryptor) Read(p []byte) (n int, err error) {
 		}
 
 		d.chunkCounter++
-		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.groupID)
+		chunkAuth := makeChunkAuthHeader(d.chunkCounter, d.digest, d.groupID)
 		nonce := d.buf[:nonceSize]
 		ciphertext := d.buf[nonceSize:n]
 
@@ -254,7 +257,7 @@ func (c *Crypter) getCipher(key *tables.EncryptionKeyVersion) (cipher.AEAD, erro
 	return e, nil
 }
 
-func (c *Crypter) newEncryptorWithKey(w interfaces.CommittedWriteCloser, groupID string, key *tables.EncryptionKeyVersion, chunkSize int) (*Encryptor, error) {
+func (c *Crypter) newEncryptorWithKey(digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, key *tables.EncryptionKeyVersion, chunkSize int) (*Encryptor, error) {
 	ciph, err := c.getCipher(key)
 	if err != nil {
 		return nil, err
@@ -262,6 +265,7 @@ func (c *Crypter) newEncryptorWithKey(w interfaces.CommittedWriteCloser, groupID
 	return &Encryptor{
 		key:      key,
 		ciph:     ciph,
+		digest:   digest,
 		groupID:  groupID,
 		w:        w,
 		nonceBuf: make([]byte, nonceSize),
@@ -272,7 +276,7 @@ func (c *Crypter) newEncryptorWithKey(w interfaces.CommittedWriteCloser, groupID
 	}, nil
 }
 
-func (c *Crypter) NewEncryptor(ctx context.Context, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
+func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
 	u, err := c.auth.AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -289,23 +293,24 @@ func (c *Crypter) NewEncryptor(ctx context.Context, w interfaces.CommittedWriteC
 		}
 		return nil, err
 	}
-	return c.newEncryptorWithKey(w, u.GetGroupID(), ekv, plainTextChunkSize)
+	return c.newEncryptorWithKey(digest, w, u.GetGroupID(), ekv, plainTextChunkSize)
 }
 
-func (c *Crypter) newDecryptorWithKey(r io.ReadCloser, groupID string, key *tables.EncryptionKeyVersion, chunkSize int) (*Decryptor, error) {
+func (c *Crypter) newDecryptorWithKey(digest *repb.Digest, r io.ReadCloser, groupID string, key *tables.EncryptionKeyVersion, chunkSize int) (*Decryptor, error) {
 	ciph, err := c.getCipher(key)
 	if err != nil {
 		return nil, err
 	}
 	return &Decryptor{
 		ciph:    ciph,
+		digest:  digest,
 		groupID: groupID,
 		r:       r,
 		buf:     make([]byte, chunkSize+encryptedChunkOverhead),
 	}, nil
 }
 
-func (c *Crypter) NewDecryptor(ctx context.Context, r io.ReadCloser, em *rfpb.EncryptionMetadata) (interfaces.Decryptor, error) {
+func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (interfaces.Decryptor, error) {
 	u, err := c.auth.AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -323,5 +328,5 @@ func (c *Crypter) NewDecryptor(ctx context.Context, r io.ReadCloser, em *rfpb.En
 		}
 		return nil, err
 	}
-	return c.newDecryptorWithKey(r, u.GetGroupID(), ekv, plainTextChunkSize)
+	return c.newDecryptorWithKey(digest, r, u.GetGroupID(), ekv, plainTextChunkSize)
 }
