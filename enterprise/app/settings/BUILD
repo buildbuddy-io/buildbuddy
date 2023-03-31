@@ -22,6 +22,7 @@ ts_library(
         "//enterprise/app/org:org_members",
         "//enterprise/app/quota",
         "//enterprise/app/secrets",
+        "//enterprise/app/settings:github_complete_installation",
         "//enterprise/app/settings:github_link",
         "//enterprise/app/settings:user_github_link",
         "@npm//@types/react",
@@ -41,6 +42,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/banner",
         "//app/components/button",
+        "//app/components/button:link_button",
         "//app/components/dialog",
         "//app/components/link",
         "//app/components/modal",
@@ -75,5 +77,27 @@ ts_library(
         "@npm//lucide-react",
         "@npm//react",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "github_complete_installation",
+    srcs = ["github_complete_installation.tsx"],
+    deps = [
+        "//app/alert:alert_service",
+        "//app/auth:auth_service",
+        "//app/auth:user",
+        "//app/components/banner",
+        "//app/components/dialog:simple_modal_dialog",
+        "//app/components/select",
+        "//app/components/spinner",
+        "//app/errors:error_service",
+        "//app/router",
+        "//app/service:rpc_service",
+        "//proto:github_ts_proto",
+        "@npm//@types/long",
+        "@npm//@types/react",
+        "@npm//long",
+        "@npm//react",
     ],
 )

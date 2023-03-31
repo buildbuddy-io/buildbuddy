@@ -15,6 +15,7 @@ import QuotaComponent from "../quota/quota";
 import UserGitHubLink from "./user_github_link";
 import Banner from "../../../app/components/banner/banner";
 import Link from "../../../app/components/link/link";
+import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
 
 export interface SettingsProps {
   user: User;
@@ -216,7 +217,12 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       <OrgMembersComponent user={this.props.user} />
                     </>
                   )}
-                  {activeTabId === TabId.OrgGitHub && capabilities.github && <GitHubLink user={this.props.user} />}
+                  {activeTabId === TabId.OrgGitHub &&
+                    capabilities.github &&
+                    this.props.user.canCall("unlinkGitHubAccount") && <GitHubLink user={this.props.user} />}
+                  {this.props.path === "/settings/org/github/complete-installation" && (
+                    <CompleteGitHubAppInstallationDialog user={this.props.user} search={this.props.search} />
+                  )}
                   {activeTabId === TabId.PersonalGitHubLink && capabilities.config.githubAppEnabled && (
                     <UserGitHubLink user={this.props.user} />
                   )}
