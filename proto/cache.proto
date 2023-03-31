@@ -206,6 +206,13 @@ message ScoreCard {
 
     // The type of cache relevant to this result.
     resource.CacheType cache_type = 14;
+
+    // The details of the execution that originally produced this result.
+
+    // When the worker started executing the action command.
+    google.protobuf.Timestamp execution_start_timestamp = 15;
+    // When the worker completed executing the action command.
+    google.protobuf.Timestamp execution_completed_timestamp = 16;
   }
 
   // In the interest of saving space, we only show cache misses.
