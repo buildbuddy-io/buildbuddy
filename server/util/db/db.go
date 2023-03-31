@@ -622,6 +622,8 @@ func GetConfiguredDatabase(env environment.Env) (interfaces.DBHandle, error) {
 		return nil, fmt.Errorf("No database configured -- please specify one in the config")
 	}
 
+	tables.RegisterTables()
+
 	if env.GetFileResolver() != nil {
 		// Verify that the AWS RDS certs are properly packaged.
 		// They won't actually be used unless the AWS IAM feature is enabled.

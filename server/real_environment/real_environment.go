@@ -104,6 +104,7 @@ type RealEnv struct {
 	secretService                    interfaces.SecretService
 	executionCollector               interfaces.ExecutionCollector
 	suggestionService                interfaces.SuggestionService
+	crypterService                   interfaces.Crypter
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -594,4 +595,11 @@ func (r *RealEnv) GetSuggestionService() interfaces.SuggestionService {
 }
 func (r *RealEnv) SetSuggestionService(s interfaces.SuggestionService) {
 	r.suggestionService = s
+}
+
+func (r *RealEnv) GetCrypter() interfaces.Crypter {
+	return r.crypterService
+}
+func (r *RealEnv) SetCrypter(c interfaces.Crypter) {
+	r.crypterService = c
 }

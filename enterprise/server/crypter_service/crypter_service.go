@@ -1,9 +1,11 @@
 package crypter_service
 
 import (
+	"context"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +16,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
+	"gorm.io/gorm"
+
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 const (
@@ -30,6 +35,11 @@ type Crypter struct {
 	auth interfaces.Authenticator
 	dbh  interfaces.DBHandle
 	kms  interfaces.KMS
+}
+
+func Register(env environment.Env) error {
+	env.SetCrypter(New(env))
+	return nil
 }
 
 func New(env environment.Env) *Crypter {
@@ -83,6 +93,13 @@ func (e *Encryptor) flushBlock() error {
 	}
 	e.bufIdx = 0
 	return nil
+}
+
+func (e *Encryptor) Metadata() *rfpb.EncryptionMetadata {
+	return &rfpb.EncryptionMetadata{
+		EncryptionKeyId: e.key.EncryptionKeyID,
+		Version:         int64(e.key.Version),
+	}
 }
 
 func (e *Encryptor) Write(p []byte) (n int, err error) {
@@ -255,6 +272,26 @@ func (c *Crypter) newEncryptorWithKey(w interfaces.CommittedWriteCloser, groupID
 	}, nil
 }
 
+func (c *Crypter) NewEncryptor(ctx context.Context, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
+	u, err := c.auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ekv := &tables.EncryptionKeyVersion{}
+	query := `
+		SELECT * FROM EncryptionKeyVersions ekv
+		JOIN EncryptionKeys ek ON ekv.encryption_key_id = ek.encryption_key_id
+		WHERE ek.group_id = ?
+	`
+	if err := c.dbh.DB(ctx).Raw(query, u.GetGroupID()).Take(ekv).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, status.NotFoundError("no encryption key available")
+		}
+		return nil, err
+	}
+	return c.newEncryptorWithKey(w, u.GetGroupID(), ekv, plainTextChunkSize)
+}
+
 func (c *Crypter) newDecryptorWithKey(r io.ReadCloser, groupID string, key *tables.EncryptionKeyVersion, chunkSize int) (*Decryptor, error) {
 	ciph, err := c.getCipher(key)
 	if err != nil {
@@ -266,4 +303,25 @@ func (c *Crypter) newDecryptorWithKey(r io.ReadCloser, groupID string, key *tabl
 		r:       r,
 		buf:     make([]byte, chunkSize+encryptedChunkOverhead),
 	}, nil
+}
+
+func (c *Crypter) NewDecryptor(ctx context.Context, r io.ReadCloser, em *rfpb.EncryptionMetadata) (interfaces.Decryptor, error) {
+	u, err := c.auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ekv := &tables.EncryptionKeyVersion{}
+	query := `
+		SELECT * FROM EncryptionKeyVersions ekv
+		JOIN EncryptionKeys ek ON ekv.encryption_key_id = ek.encryption_key_id
+		WHERE ek.group_id = ? 
+        AND ekv.encryption_key_id = ? AND ekv.version = ?
+	`
+	if err := c.dbh.DB(ctx).Raw(query, u.GetGroupID(), em.GetEncryptionKeyId(), em.GetVersion()).Take(ekv).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, status.NotFoundError("no encryption key available")
+		}
+		return nil, err
+	}
+	return c.newDecryptorWithKey(r, u.GetGroupID(), ekv, plainTextChunkSize)
 }

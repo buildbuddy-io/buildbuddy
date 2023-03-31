@@ -18,6 +18,8 @@ import (
 
 var (
 	dropInvocationPKCol = flag.Bool("drop_invocation_pk_cols", false, "If true, attempt to drop invocation PK cols")
+	// Temporary flag while the feature is being developed.
+	enableEncryptionSchema = flag.Bool("database.enable_encryption_schema", false, "If true, encryption related tables will be created.")
 )
 
 const (
@@ -1085,12 +1087,17 @@ func isStrictModeEnabled(db *gorm.DB) (bool, error) {
 	return isStrictModeEnabled, nil
 }
 
-func init() {
+func RegisterTables() {
+	allTables = nil
 	// Keep these sorted by two-letter prefix (and when adding new tables,
 	// use a unique prefix if possible):
 	registerTable("AK", &APIKey{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
+	if *enableEncryptionSchema {
+		registerTable("EK", &EncryptionKey{})
+		registerTable("EV", &EncryptionKeyVersion{})
+	}
 	registerTable("EX", &Execution{})
 	registerTable("GH", &GitHubAppInstallation{})
 	registerTable("GR", &Group{})
