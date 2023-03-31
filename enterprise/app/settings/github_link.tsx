@@ -47,6 +47,7 @@ export default class GitHubLink extends React.Component<Props, State> {
       group_id: this.props.user.selectedGroup.id,
       user_id: this.props.user.displayUser.userId?.id || "",
       redirect_url: window.location.href,
+      install: "true",
     });
     return `/auth/github/app/link/?${params}`;
   }
