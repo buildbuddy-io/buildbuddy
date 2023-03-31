@@ -95,6 +95,32 @@
   }
 }
 
+.settings .github-app-installations {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  margin-top: 16px;
+}
+
+.settings .github-app-installation {
+  padding: 16px;
+  box-sizing: border-box;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.settings .github-app-installation:not(:last-child) {
+  border-bottom: 1px solid #eee;
+}
+
+.settings .github-app-installation .installation-owner {
+  margin-right: auto;
+}
+
 /* Medium to small screen */
 @media (max-width: 1280px) {
   .settings .settings-layout {

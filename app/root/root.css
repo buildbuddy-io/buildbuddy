@@ -1994,11 +1994,14 @@ code .comment {
 
 .loading {
   width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-grow: 1;
+}
+
+.loading:not(.loading-slim) {
+  height: 100%;
 }
 
 .loading:before {
