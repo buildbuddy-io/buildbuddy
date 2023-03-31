@@ -143,49 +143,58 @@ export default class GitHubLink extends React.Component<Props, State> {
 
     return (
       <div className="github-account-link">
-        <div className="settings-option-title">GitHub account link</div>
-        <div className="settings-option-description">
-          {!capabilities.config.githubAppEnabled && (
-            <p>
-              Linking a GitHub account allows BuildBuddy to report commit statuses that appear in the GitHub UI. It also
-              enables easier setup for <TextLink href="/workflows">BuildBuddy workflows.</TextLink>
-            </p>
-          )}
-          {capabilities.config.githubAppEnabled && (
-            <Banner type="warning" className="deprecation-notice">
-              <p>Organization-linked GitHub accounts are no longer recommended.</p>
-              <p>
-                Instead, <TextLink href="/settings/personal/github">link a personal GitHub account</TextLink>
-                {this.props.user.selectedGroup.githubLinked && (
-                  <>
-                    , then unlink your account below and <TextLink href="/workflows/new">re-link workflows</TextLink>{" "}
-                    using the new GitHub app integration
-                  </>
-                )}
-                .
-              </p>
-            </Banner>
-          )}
-        </div>
-        {this.props.user.selectedGroup.githubLinked ? (
-          <div className="linked-github-account-row">
-            <CheckCircle className="icon green" />
-            <div>GitHub account linked</div>
-            <OutlinedButton className="unlink-button destructive" onClick={this.onClickUnlinkButton.bind(this)}>
-              Unlink
-            </OutlinedButton>
-          </div>
-        ) : (
-          <FilledButton className="settings-button settings-link-button">
-            <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
-          </FilledButton>
+        {(!capabilities.config.githubAppEnabled || this.props.user.selectedGroup.githubLinked) && (
+          <>
+            <div className="settings-option-title">GitHub account link</div>
+            <div className="settings-option-description">
+              {!capabilities.config.githubAppEnabled && (
+                <p>
+                  Linking a GitHub account allows BuildBuddy to report commit statuses that appear in the GitHub UI. It
+                  also enables easier setup for <TextLink href="/workflows">BuildBuddy workflows.</TextLink>
+                </p>
+              )}
+              {capabilities.config.githubAppEnabled && (
+                <Banner type="warning" className="deprecation-notice">
+                  <p>Organization-linked GitHub accounts are no longer recommended.</p>
+                  <p>
+                    Instead, <TextLink href="/settings/personal/github">link a personal GitHub account</TextLink>
+                    {this.props.user.selectedGroup.githubLinked && (
+                      <>
+                        , then unlink your account below and{" "}
+                        <TextLink href="/workflows/new">re-link workflows</TextLink> using the new GitHub app
+                        integration
+                      </>
+                    )}
+                    .
+                  </p>
+                </Banner>
+              )}
+            </div>
+            {this.props.user.selectedGroup.githubLinked ? (
+              <div className="linked-github-account-row">
+                <CheckCircle className="icon green" />
+                <div>GitHub account linked</div>
+                <OutlinedButton className="unlink-button destructive" onClick={this.onClickUnlinkButton.bind(this)}>
+                  Unlink
+                </OutlinedButton>
+              </div>
+            ) : (
+              <FilledButton className="settings-button settings-link-button">
+                <a href={this.gitHubLinkUrl()}>Link GitHub account</a>
+              </FilledButton>
+            )}
+          </>
         )}
+
         {capabilities.config.githubAppEnabled && (
           <>
             <div className="settings-option-title">GitHub app link</div>
             <div className="settings-option-description">
-              The BuildBuddy GitHub app must be linked to a BuildBuddy organization before it can be used. All app
-              installations that you have access to are shown below.
+              <p>
+                The BuildBuddy GitHub app must be linked to a BuildBuddy organization before it can be used. All app
+                installations linked to your organization are shown below. You can also manage installations on GitHub
+                using the "Setup" button below.
+              </p>
             </div>
             <LinkButton className="big-button" href={this.getInstallURL()}>
               Setup

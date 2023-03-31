@@ -159,7 +159,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                 )}
                 {capabilities.config.githubAppEnabled && (
                   <SettingsTab id={TabId.PersonalGitHubLink} activeTabId={activeTabId}>
-                    GitHub link
+                    GitHub account link
                   </SettingsTab>
                 )}
               </div>
