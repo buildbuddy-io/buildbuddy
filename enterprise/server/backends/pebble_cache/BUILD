@@ -48,6 +48,8 @@ go_test(
     shard_count = 8,
     deps = [
         ":pebble_cache",
+        "//enterprise/server/backends/kms",
+        "//enterprise/server/crypter_service",
         "//enterprise/server/raft/keys",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
@@ -55,6 +57,7 @@ go_test(
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",

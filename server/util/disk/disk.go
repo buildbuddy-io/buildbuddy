@@ -31,8 +31,9 @@ var (
 )
 
 type Partition struct {
-	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
-	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	ID                  string `yaml:"id" json:"id" usage:"The ID of the partition."`
+	MaxSizeBytes        int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	EncryptionSupported bool   `yaml:"encryption_supported" json:"encryption_supported" usage:"Whether encrypted data can be stored on this partition."`
 }
 
 type PartitionMapping struct {

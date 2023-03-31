@@ -1,6 +1,7 @@
 package testdigest
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"io"
 	"sync"
 	"testing"
@@ -34,6 +35,16 @@ func NewRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
 		t.Fatal(err)
 	}
 	return d, buf
+}
+
+func RandomCASResourceBuf(t testing.TB, sizeBytes int64) (*resource.ResourceName, []byte) {
+	d, buf := NewRandomDigestBuf(t, sizeBytes)
+	return &resource.ResourceName{Digest: d, CacheType: resource.CacheType_CAS}, buf
+}
+
+func RandomACResourceBuf(t testing.TB, sizeBytes int64) (*resource.ResourceName, []byte) {
+	d, buf := NewRandomDigestBuf(t, sizeBytes)
+	return &resource.ResourceName{Digest: d, CacheType: resource.CacheType_AC}, buf
 }
 
 func ReadDigestAndClose(t *testing.T, r io.ReadCloser) *repb.Digest {
