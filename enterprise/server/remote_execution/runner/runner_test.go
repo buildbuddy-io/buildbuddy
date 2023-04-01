@@ -84,6 +84,8 @@ func newTask() *repb.ScheduledTask {
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
 					{Name: platform.RecycleRunnerPropertyName, Value: "true"},
+					{Name: platform.OperatingSystemPropertyName, Value: runtime.GOOS},
+					{Name: platform.CPUArchitecturePropertyName, Value: runtime.GOARCH},
 				},
 			},
 		},
