@@ -1,10 +1,14 @@
 package version
 
 import (
+	_ "embed"
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 )
+
+//go:embed version_flag.txt
+var cliVersionFlag string
 
 func HandleVersion(args []string) (exitCode int, err error) {
 	if arg.GetCommand(args) != "version" {
