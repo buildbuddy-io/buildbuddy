@@ -74,6 +74,7 @@ go_test(
         "//server/util/disk",
         "//server/util/status",
         "//server/util/testing/flags",
+        "//server/xcode",
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

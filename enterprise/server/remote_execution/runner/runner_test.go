@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -135,6 +136,8 @@ func newTestEnv(t *testing.T) *testenv.TestEnv {
 		userGroups = append(userGroups, fmt.Sprintf("US%d", i), fmt.Sprintf("GR%d", i))
 	}
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers(userGroups...)))
+	xl := xcode.NewXcodeLocator()
+	env.SetXcodeLocator(xl)
 	return env
 }
 
