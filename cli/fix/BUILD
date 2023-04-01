@@ -32,6 +32,7 @@ go_library(
         "//cli/fix/typescript",
         "@bazel_gazelle//config",
         "@bazel_gazelle//flag",
+        "@bazel_gazelle//internal/module",
         "@bazel_gazelle//internal/wspace",
         "@bazel_gazelle//label",
         "@bazel_gazelle//language",

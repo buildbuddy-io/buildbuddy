@@ -1,5 +1,4 @@
 diff --git a/cmd/gazelle/gazelle.go b/cmd/gazelle/gazelle.go
-index 2ff57db..7d0c6be 100644
 --- a/cmd/gazelle/gazelle.go
 +++ b/cmd/gazelle/gazelle.go
 @@ -56,6 +56,10 @@ func (cmd command) String() string {
@@ -14,7 +13,6 @@ index 2ff57db..7d0c6be 100644
  	log.SetFlags(0) // don't print timestamps
  
 diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
-index 1cbaea7..4f9a083 100644
 --- a/cmd/gazelle/BUILD.bazel
 +++ b/cmd/gazelle/BUILD.bazel
 @@ -1,6 +1,8 @@
@@ -26,3 +24,16 @@ index 1cbaea7..4f9a083 100644
  gazelle_binary(
      name = "gazelle",
      languages = DEFAULT_LANGUAGES,
+
+diff --git a/internal/module/BUILD.bazel b/internal/module/BUILD.bazel
+--- a/internal/module/BUILD.bazel
++++ b/internal/module/BUILD.bazel
+@@ -4,7 +4,7 @@ go_library(
+     name = "module",
+     srcs = ["module.go"],
+     importpath = "github.com/bazelbuild/bazel-gazelle/internal/module",
+-    visibility = ["//:__subpackages__"],
++    visibility = ["//visibility:public"],
+     deps = ["@com_github_bazelbuild_buildtools//build:go_default_library"],
+ )
+
