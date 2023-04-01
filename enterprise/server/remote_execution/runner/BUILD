@@ -58,6 +58,7 @@ go_test(
     srcs = ["runner_test.go"],
     data = ["//enterprise/server/remote_execution/runner/testworker"],
     embed = [":runner"],
+    race = "on",
     shard_count = 18,
     deps = [
         "//enterprise/server/remote_execution/container",

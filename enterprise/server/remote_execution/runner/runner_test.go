@@ -40,8 +40,6 @@ const (
 
 	sysMemoryBytes = tasksize.DefaultMemEstimate * 10
 	sysMilliCPU    = tasksize.DefaultCPUEstimate * 10
-
-	forceRecompile = true
 )
 
 var (
@@ -239,7 +237,7 @@ func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.
 	return r
 }
 
-func sleepRandMicros(max int64) {
+func sleepRandMicros(r *rand.Rand, max int64) {
 	time.Sleep(time.Duration(rand.Int63n(max) * int64(time.Microsecond)))
 }
 
@@ -347,7 +345,8 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 
 		seed += int64(runSeed)
 	}
-	rand.Seed(seed)
+	testRand := rand.New(rand.NewSource(seed))
+
 	t.Logf("Random seed: %d", seed)
 
 	env := newTestEnv(t)
@@ -367,13 +366,13 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 				return err
 			}
 			// Random delay to simulate downloading inputs
-			sleepRandMicros(10)
+			sleepRandMicros(testRand, 10)
 			tasksStarted <- struct{}{}
 			if result := r.Run(ctx); result.Error != nil {
 				return result.Error
 			}
 			// Random delay to simulate uploading outputs
-			sleepRandMicros(10)
+			sleepRandMicros(testRand, 10)
 			if err := pool.Add(ctx, r); err != nil {
 				return err
 			}
@@ -388,13 +387,13 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 				errs <- runTask()
 			}()
 			// Random, tiny delay to stagger the tasks a bit more.
-			sleepRandMicros(1)
+			sleepRandMicros(testRand, 1)
 		}
 
 		nStarted := 0
 		for range tasksStarted {
 			nStarted++
-			if nStarted == numTasks/2 {
+			if nStarted >= numTasks/2 {
 				err := pool.Shutdown(ctx)
 				require.NoError(t, err)
 				break
