@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -337,7 +338,15 @@ func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 
 func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	fmt.Println("TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError")
-	seed := time.Now().UnixNano()
+
+	seed := int64(0)
+	if bazelRandSeed := os.Getenv("TEST_RANDOM_SEED"); bazelRandSeed != "" {
+		// TEST_RANDOM_SEED is set by Bazel when --runs_per_test=n is used
+		runSeed, err := strconv.Atoi(bazelRandSeed)
+		require.NoError(t, err)
+
+		seed += int64(runSeed)
+	}
 	rand.Seed(seed)
 	t.Logf("Random seed: %d", seed)
 
