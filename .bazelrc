@@ -86,6 +86,7 @@ build:linux-workflows --config=buildbuddy_remote_executor
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
 build:mac-workflows --config=cache
 build:mac-workflows --config=workflows
+build:mac-workflows --runs_per_test=//enterprise/server/remote_execution/runner:runner_test@3
 
 # Configuration used for BuildBuddy release workflow
 build:release --config=remote
