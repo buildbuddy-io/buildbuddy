@@ -1191,10 +1191,20 @@ func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 		}
 
 		authErr := perms.AuthorizeWrite(&q.User, r.ACL)
-		if authErr != nil ||
-			r.state != paused ||
-			r.InstanceName != q.InstanceName ||
-			rPlatform != qPlatform {
+		if authErr != nil {
+			log.CtxInfof(ctx, "Skipping ineligible runner %s for query %s: authErr %v", r, q, authErr)
+			continue
+		}
+		if r.state != paused {
+			log.CtxInfof(ctx, "Skipping ineligible runner %s for query %s: state %s", r, q, r.state)
+			continue
+		}
+		if r.InstanceName != q.InstanceName {
+			log.CtxInfof(ctx, "Skipping ineligible runner %s for query %s: query instanceName %s, runner instanceName %s", r, q, q.InstanceName, r.InstanceName)
+			continue
+		}
+		if rPlatform != qPlatform {
+			log.CtxInfof(ctx, "Skipping ineligible runner %s for query %s: query platform %s, runner platform %s", r, q, qPlatform, rPlatform)
 			continue
 		}
 
