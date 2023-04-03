@@ -91,7 +91,8 @@ type Provider struct {
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if len(*streamableImages) > 0 {
 		log.Infof("Starting soci store")
-		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", "/var/lib/soci-store/store")
+		sociStoreDir := "/var/lib/soci-store/store"
+		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", sociStoreDir)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
@@ -116,7 +117,8 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		// before it's ready (which can take a few hundred ms), wait for up to
 		// one second for soci-store to start up. Note that this is happening
 		// during executor start up so it won't affect RBE times.
-		if err := waitForFile("/var/lib/soci-store/store", 100*time.Millisecond, time.Second); err != nil {
+		waitOpts := disk.WaitOpts{Timeout: time.Second}
+		if err := disk.WaitUntilExists(context.Background(), sociStoreDir, waitOpts); err != nil {
 			return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
 		}
 	}
@@ -127,22 +129,6 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		streamableImages: *streamableImages,
 		buildRoot:        buildRoot,
 	}, nil
-}
-
-// Wait (sleep) for path to exist for up to timeMax in timeInc increments.
-func waitForFile(path string, timeInc, timeMax time.Duration) error {
-	iterations := int(timeMax / timeInc)
-	for attempt := 0; attempt <= iterations; attempt++ {
-		_, err := os.Stat(path)
-		if err == nil {
-			return nil
-		} else if os.IsNotExist(err) {
-			time.Sleep(timeInc)
-		} else {
-			return err
-		}
-	}
-	return status.NotFoundErrorf("directory %s did not exist after waiting %s", path, timeMax)
 }
 
 func (p *Provider) NewContainer(image string, options *PodmanOptions) container.CommandContainer {
