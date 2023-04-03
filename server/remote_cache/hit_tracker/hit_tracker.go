@@ -142,6 +142,9 @@ type HitTracker struct {
 
 	// The request metadata, may be nil or incomplete.
 	requestMetadata *repb.RequestMetadata
+
+	// The metadata for an executed action, may be nil
+	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
 func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
@@ -184,6 +187,10 @@ func (h *HitTracker) cacheTypeLabel() string {
 
 func makeTargetField(actionMnemonic, targetID, actionID string) string {
 	return fmt.Sprintf("%s(%s)/%s", actionMnemonic, targetID, actionID)
+}
+
+func (h *HitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
+	h.executedActionMetadata = md
 }
 
 // Example Usage:
@@ -297,6 +304,11 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) e
 		Compressor:           stats.Compressor,
 		TransferredSizeBytes: stats.TransferredSizeBytes,
 		// TODO(bduffany): Committed
+	}
+
+	if md := h.executedActionMetadata; md != nil {
+		result.ExecutionStartTimestamp = md.GetExecutionStartTimestamp()
+		result.ExecutionCompletedTimestamp = md.GetExecutionCompletedTimestamp()
 	}
 	b, err := proto.Marshal(result)
 	if err != nil {

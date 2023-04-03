@@ -165,6 +165,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
+	ht.SetExecutedActionMetadata(rsp.GetExecutionMetadata())
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
@@ -213,6 +214,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
 	uploadTracker := ht.TrackUpload(d)
