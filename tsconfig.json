@@ -9,6 +9,7 @@
     "sourceMap": false,
     "isolatedModules": true,
     "downlevelIteration": true,
+    "skipLibCheck": true,
     "composite": true,
     "target": "ES2016",
     "baseUrl": ".",
@@ -23,5 +24,6 @@
       "bazel-out/darwin_arm64-opt/bin",
       "bazel-out/darwin_arm64-fastbuild/bin"
     ]
-  }
+  },
+  "exclude": ["bazel-buildbuddy", "website"]
 }
