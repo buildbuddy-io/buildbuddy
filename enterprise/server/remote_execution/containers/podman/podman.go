@@ -111,6 +111,14 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
 		}
+
+		// To prevent podman trying to read from the soci-store directory
+		// before it's ready (which can take a few hundred ms), wait for up to
+		// one second for soci-store to start up. Note that this is happening
+		// during executor start up so it won't affect RBE times.
+		if err := waitForFile("/var/lib/soci-store/store", 100*time.Millisecond, time.Second); err != nil {
+			return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
+		}
 	}
 
 	return &Provider{
@@ -119,6 +127,22 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		streamableImages: *streamableImages,
 		buildRoot:        buildRoot,
 	}, nil
+}
+
+// Wait (sleep) for path to exist for up to timeMax in timeInc increments.
+func waitForFile(path string, timeInc, timeMax time.Duration) error {
+	iterations := int(timeMax / timeInc)
+	for attempt := 0; attempt <= iterations; attempt++ {
+		_, err := os.Stat(path)
+		if err == nil {
+			return nil
+		} else if os.IsNotExist(err) {
+			time.Sleep(timeInc)
+		} else {
+			return err
+		}
+	}
+	return status.NotFoundErrorf("directory %s did not exist after waiting %s", path, timeMax)
 }
 
 func (p *Provider) NewContainer(image string, options *PodmanOptions) container.CommandContainer {
