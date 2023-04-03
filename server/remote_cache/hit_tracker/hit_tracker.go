@@ -142,6 +142,9 @@ type HitTracker struct {
 
 	// The request metadata, may be nil or incomplete.
 	requestMetadata *repb.RequestMetadata
+
+	// The metadata for an executed action, may be nil
+	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
 func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
@@ -186,6 +189,10 @@ func makeTargetField(actionMnemonic, targetID, actionID string) string {
 	return fmt.Sprintf("%s(%s)/%s", actionMnemonic, targetID, actionID)
 }
 
+func (h *HitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
+	h.executedActionMetadata = md
+}
+
 // Example Usage:
 //
 // ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
@@ -211,7 +218,7 @@ func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 			StartTime: start,
 			Duration:  time.Since(start),
 		}
-		if err := h.recordDetailedStats(d, stats, nil); err != nil {
+		if err := h.recordDetailedStats(d, stats); err != nil {
 			return err
 		}
 	} else if h.actionCache {
@@ -241,14 +248,14 @@ func (h *HitTracker) TrackEmptyHit() error {
 			StartTime: start,
 			Duration:  time.Since(start),
 		}
-		if err := h.recordDetailedStats(emptyDigest, stats, nil); err != nil {
+		if err := h.recordDetailedStats(emptyDigest, stats); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats, actionMetadata *repb.ExecutedActionMetadata) error {
+func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats) error {
 	if h.requestMetadata.GetExecutorDetails().GetExecutorHostId() != "" {
 		// Don't store executor requests in the scorecard for now.
 		return nil
@@ -299,9 +306,9 @@ func (h *HitTracker) recordDetailedStats(d *repb.Digest, stats *detailedStats, a
 		// TODO(bduffany): Committed
 	}
 
-	if actionMetadata != nil {
-		result.ExecutionStartTimestamp = actionMetadata.ExecutionStartTimestamp
-		result.ExecutionCompletedTimestamp = actionMetadata.ExecutionCompletedTimestamp
+	if md := h.executedActionMetadata; md != nil {
+		result.ExecutionStartTimestamp = md.GetExecutionStartTimestamp()
+		result.ExecutionCompletedTimestamp = md.GetExecutionCompletedTimestamp()
 	}
 	b, err := proto.Marshal(result)
 	if err != nil {
@@ -324,11 +331,6 @@ type detailedStats struct {
 	Duration             time.Duration
 	Compressor           repb.Compressor_Value
 	TransferredSizeBytes int64
-
-	// The time when the execution originally started
-	ExecutionStartTime time.Time
-	// The time when the execution originally finished
-	ExecutionCompletedTime time.Time
 }
 
 func cacheEventTypeLabel(c counterType) string {
@@ -397,12 +399,6 @@ type transferTimer struct {
 // They can be different if, for example, the client supports compression and uploads compressed bytes (bytesTransferredClient)
 // but the cache does not support compression and requires that uncompressed bytes are written (bytesTransferredCache)
 func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
-	return t.CloseWithBytesTransferredAndActionMetadata(bytesTransferredCache, bytesTransferredClient, compressor, serverLabel, nil)
-}
-
-// CloseWithBytesTransferredAndActionMetadata emits and saves metrics related to
-// data transfer, and also saves the start and end timestamp of the original execution.
-func (t *transferTimer) CloseWithBytesTransferredAndActionMetadata(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string, actionMetadata *repb.ExecutedActionMetadata) error {
 	dur := time.Since(t.start)
 
 	h := t.h
@@ -449,7 +445,7 @@ func (t *transferTimer) CloseWithBytesTransferredAndActionMetadata(bytesTransfer
 			Compressor:           compressor,
 			TransferredSizeBytes: bytesTransferredClient,
 		}
-		if err := h.recordDetailedStats(t.d, stats, actionMetadata); err != nil {
+		if err := h.recordDetailedStats(t.d, stats); err != nil {
 			return err
 		}
 	} else if h.actionCache && t.actionCounter == Miss {

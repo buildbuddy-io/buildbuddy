@@ -159,13 +159,13 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		ht.TrackMiss(d)
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
+	defer downloadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server")
 
 	rsp := &repb.ActionResult{}
 	if err := proto.Unmarshal(blob, rsp); err != nil {
-		downloadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server")
 		return nil, err
 	}
-	defer downloadTracker.CloseWithBytesTransferredAndActionMetadata(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server", rsp.GetExecutionMetadata())
+	ht.SetExecutedActionMetadata(rsp.GetExecutionMetadata())
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
@@ -214,6 +214,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	}
 
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
 	uploadTracker := ht.TrackUpload(d)
@@ -232,6 +233,6 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if err := s.cache.Set(ctx, acResource.ToProto(), blob); err != nil {
 		return nil, err
 	}
-	uploadTracker.CloseWithBytesTransferredAndActionMetadata(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server", req.GetActionResult().GetExecutionMetadata())
+	uploadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server")
 	return req.ActionResult, nil
 }
