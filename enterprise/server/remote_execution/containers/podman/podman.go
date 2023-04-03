@@ -117,8 +117,7 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 		// before it's ready (which can take a few hundred ms), wait for up to
 		// one second for soci-store to start up. Note that this is happening
 		// during executor start up so it won't affect RBE times.
-		waitOpts := disk.WaitOpts{Timeout: time.Second}
-		if err := disk.WaitUntilExists(context.Background(), sociStoreDir, waitOpts); err != nil {
+		if err := disk.WaitUntilExists(context.Background(), sociStoreDir, disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
 		}
 	}
