@@ -91,7 +91,8 @@ type Provider struct {
 func NewProvider(env environment.Env, imageCacheAuthenticator *container.ImageCacheAuthenticator, buildRoot string) (*Provider, error) {
 	if len(*streamableImages) > 0 {
 		log.Infof("Starting soci store")
-		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", "/var/lib/soci-store/store")
+		sociStoreDir := "/var/lib/soci-store/store"
+		cmd := exec.CommandContext(env.GetServerContext(), "soci-store", sociStoreDir)
 		logWriter := log.Writer("[socistore] ")
 		cmd.Stderr = logWriter
 		cmd.Stdout = logWriter
@@ -110,6 +111,14 @@ additionallayerstores=["/var/lib/soci-store/store:ref"]
 `
 		if err := os.WriteFile("/etc/containers/storage.conf", []byte(storageConf), 0644); err != nil {
 			return nil, status.UnavailableErrorf("could not write storage config: %s", err)
+		}
+
+		// To prevent podman trying to read from the soci-store directory
+		// before it's ready (which can take a few hundred ms), wait for up to
+		// one second for soci-store to start up. Note that this is happening
+		// during executor start up so it won't affect RBE times.
+		if err := disk.WaitUntilExists(context.Background(), sociStoreDir, disk.WaitOpts{}); err != nil {
+			return nil, status.UnavailableErrorf("soci-store failed to start: %s", err)
 		}
 	}
 
