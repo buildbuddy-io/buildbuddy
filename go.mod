@@ -36,7 +36,7 @@ require (
 	github.com/creack/pty v1.1.17
 	github.com/crewjam/saml v0.4.12
 	github.com/docker/distribution v2.8.1+incompatible
-	github.com/docker/docker v20.10.20+incompatible
+	github.com/docker/docker v20.10.24+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/elastic/gosigar v0.11.0
 	github.com/firecracker-microvm/firecracker-go-sdk v0.22.1-0.20220812215434-490e3369bc97
