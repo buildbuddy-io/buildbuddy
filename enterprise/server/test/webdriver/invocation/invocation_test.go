@@ -32,10 +32,23 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	webtester.Login(wt, target)
 
 	// Get the build flags needed for BuildBuddy, including API key, bes results url, bes backend, and remote cache
+	setupPageOpts := []webtester.SetupPageOption{
+		webtester.WithEnableCache,
+	}
+
+	// Don't use a personal API key if enabled, because they don't write AC results, and won't result in a cache hit
+	// with the second build
+	wt.Get(target.HTTPURL() + "/settings/org/details")
+	checkbox := wt.Find(`[name="userOwnedKeysEnabled"]`)
+	personalKeysEnabled := checkbox.IsSelected()
+	if personalKeysEnabled {
+		setupPageOpts = append(setupPageOpts, webtester.WithAPIKeySelection("Default"))
+	}
+
 	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(
 		wt, target.HTTPURL(),
-		webtester.WithEnableCache,
-		webtester.WithAPIKeySelection("Default"))
+		setupPageOpts...,
+	)
 	t.Log(buildbuddyBuildFlags)
 	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
 
