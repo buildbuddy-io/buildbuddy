@@ -10,7 +10,7 @@ image: /img/welcome_grace.png
 tags: [company, team]
 ---
 
-To fulfill our mission of bringing the world's best developer tools to every company, keeping our business running as smoothly is as important as keeping our customers builds running smoothly. That's why we're excited to share that [**Grace Chuang**](https://www.linkedin.com/in/grace2chuang/) is joining BuildBuddy!
+To fulfill our mission of bringing the world's best developer tools to every company, keeping our business running smoothly is as important as keeping our customers' builds running smoothly. That's why we're excited to share that [**Grace Chuang**](https://www.linkedin.com/in/grace2chuang/) is joining BuildBuddy!
 
 Grace joins us from Google, where she spent 5+ years working on Product Strategy and Operations in Google's Area 120 startup incubator.
 
