@@ -9,7 +9,6 @@ go_web_test_suite(
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//server/testutil/testbazel",
         "//server/testutil/webtester",
-        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )
