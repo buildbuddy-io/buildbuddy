@@ -12,7 +12,6 @@
     "skipLibCheck": true,
     "composite": true,
     "target": "ES2016",
-    "baseUrl": ".",
     "lib": ["es2017", "es2019", "dom", "dom.iterable"],
     "rootDirs": [
       ".",
@@ -24,6 +23,8 @@
       "bazel-out/darwin_arm64-opt/bin",
       "bazel-out/darwin_arm64-fastbuild/bin"
     ]
+    // Note: we intentionally don't set "baseUrl": "." in order to force import
+    // module specifiers to be relative.
   },
   "exclude": ["bazel-buildbuddy", "website"]
 }
