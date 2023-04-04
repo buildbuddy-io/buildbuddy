@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2023-03-22T09:00:00.000Z</updated>
+    <updated>2023-04-03T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Welcoming Grace Chuang]]></title>
+        <id>welcoming-grace-chuang</id>
+        <link href="https://www.buildbuddy.io/blog/welcoming-grace-chuang"/>
+        <updated>2023-04-03T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, keeping our business running smoothly is as important as ensuring our customers' builds run smoothly. That's why we're excited to share that Grace Chuang is joining BuildBuddy!]]></summary>
+        <content type="html"><![CDATA[<p>To fulfill our mission of bringing the world&#x27;s best developer tools to every company, keeping our business running smoothly is as important as ensuring our customers&#x27; builds run smoothly. That&#x27;s why we&#x27;re excited to share that <a href="https://www.linkedin.com/in/grace2chuang/"><strong>Grace Chuang</strong></a> is joining BuildBuddy!</p><p>Grace joins us from Google, where she spent 5+ years working on Product Strategy and Operations. Prior to Google, Grace spent 3 years at J.P. Morgan.</p><p><img src="../static/img/blog/welcome_grace.png"/></p><p>We look forward to working alongside Grace to build the future of developer tools.</p><p>Welcome to BuildBuddy, Grace!</p>]]></content>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/grace2chuang/</uri>
+        </author>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Donating rules_xcodeproj to the Mobile Native Foundation]]></title>
         <id>donating-rules_xcodeproj-to-the-mobile-native-foundation</id>
