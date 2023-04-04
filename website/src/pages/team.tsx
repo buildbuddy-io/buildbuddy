@@ -86,6 +86,13 @@ const teamMembers = [
     blurb: "Previously Senior DevOps Engineer & SRE at Qarik, Booking.com, Lazada & Alibaba.",
     image: "son.jpg",
   },
+  {
+    name: "Grace Chuang",
+    email: "grace@buildbuddy.io",
+    blurb:
+      "Previously Finance, Operations, and Product Strategy at Google & J.P. Morgan. Studied Commerce, Finance and Marketing at UVA.",
+    image: "grace.jpg",
+  },
 ];
 
 function Team() {
