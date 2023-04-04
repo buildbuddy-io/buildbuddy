@@ -1172,7 +1172,7 @@ func (p *PebbleCache) encryptionEnabled(ctx context.Context, partitionID string)
 		return false, nil
 	}
 	if p.env.GetCrypter() == nil {
-		return false, status.FailedPreconditionError("encryption requested by crypter not available")
+		return false, status.FailedPreconditionError("encryption requested, but crypter not available")
 	}
 
 	for _, p := range p.partitions {

@@ -1,12 +1,12 @@
 package testdigest
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"io"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
