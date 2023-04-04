@@ -64,6 +64,7 @@ message StorageMetadata {
 message FileMetadata {
   FileRecord file_record = 1;
   StorageMetadata storage_metadata = 2;
+  EncryptionMetadata encryption_metadata = 6;
 
   // If data is compressed, this will be the compressed size
   int64 stored_size_bytes = 3;

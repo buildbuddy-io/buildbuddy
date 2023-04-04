@@ -145,6 +145,7 @@ type Claims struct {
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
 	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
+	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 }
 
 func (c *Claims) GetUserID() string {
@@ -191,6 +192,10 @@ func (c *Claims) HasCapability(cap akpb.ApiKey_Capability) bool {
 
 func (c *Claims) GetUseGroupOwnedExecutors() bool {
 	return c.UseGroupOwnedExecutors
+}
+
+func (c *Claims) GetCacheEncryptionEnabled() bool {
+	return c.CacheEncryptionEnabled
 }
 
 func assembleJWT(ctx context.Context, claims *Claims) (string, error) {
@@ -735,6 +740,7 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 		},
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
+		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
 	}
 }
 

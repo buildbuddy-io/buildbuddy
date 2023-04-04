@@ -49,6 +49,7 @@ type TestUser struct {
 	GroupMemberships       []*interfaces.GroupMembership `json:"group_memberships"`
 	Capabilities           []akpb.ApiKey_Capability      `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
+	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 }
 
 func (c *TestUser) GetUserID() string                                  { return c.UserID }
@@ -68,8 +69,23 @@ func (c *TestUser) HasCapability(cap akpb.ApiKey_Capability) bool {
 func (c *TestUser) GetUseGroupOwnedExecutors() bool {
 	return c.UseGroupOwnedExecutors
 }
+func (c *TestUser) GetCacheEncryptionEnabled() bool {
+	return c.CacheEncryptionEnabled
+}
 func (c *TestUser) IsImpersonating() bool {
 	return false
+}
+
+func User(userID, groupID string) *TestUser {
+	return &TestUser{
+		UserID:        userID,
+		GroupID:       groupID,
+		AllowedGroups: []string{groupID},
+		GroupMemberships: []*interfaces.GroupMembership{
+			{GroupID: groupID, Role: role.Admin},
+		},
+		Capabilities: capabilities.DefaultAuthenticatedUserCapabilities,
+	}
 }
 
 // TestUsers creates a map of test users from arguments of the form:

@@ -27,6 +27,7 @@ type apiKeyGroup struct {
 	GroupID                string
 	Capabilities           int32
 	UseGroupOwnedExecutors bool
+	CacheEncryptionEnabled bool
 }
 
 func (g *apiKeyGroup) GetUserID() string {
@@ -43,6 +44,10 @@ func (g *apiKeyGroup) GetCapabilities() int32 {
 
 func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 	return g.UseGroupOwnedExecutors
+}
+
+func (g *apiKeyGroup) GetCacheEncryptionEnabled() bool {
+	return g.CacheEncryptionEnabled
 }
 
 func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string, session *tables.Session) error {
@@ -151,6 +156,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 				g.sharing_enabled,
 				g.user_owned_keys_enabled,
 				g.use_group_owned_executors,
+				g.cache_encryption_enabled,
 				g.saml_idp_metadata_url,
 				ug.role
 			FROM `+"`Groups`"+` AS g, UserGroups AS ug
@@ -175,6 +181,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 				&gr.Group.SharingEnabled,
 				&gr.Group.UserOwnedKeysEnabled,
 				&gr.Group.UseGroupOwnedExecutors,
+				&gr.Group.CacheEncryptionEnabled,
 				&gr.Group.SamlIdpMetadataUrl,
 				&gr.Role,
 			)
@@ -197,7 +204,8 @@ func (d *AuthDB) newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Que
 			ak.capabilities,
 			ak.user_id,
 			g.group_id,
-			g.use_group_owned_executors
+			g.use_group_owned_executors,
+			g.cache_encryption_enabled
 		FROM ` + "`Groups`" + ` AS g,
 		APIKeys AS ak
 	`)

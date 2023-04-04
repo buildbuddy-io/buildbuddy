@@ -33,9 +33,9 @@ const (
 
 // TODO(vadim): pool buffers to reduce allocations
 type Crypter struct {
-	auth interfaces.Authenticator
-	dbh  interfaces.DBHandle
-	kms  interfaces.KMS
+	env environment.Env
+	dbh interfaces.DBHandle
+	kms interfaces.KMS
 }
 
 func Register(env environment.Env) error {
@@ -45,9 +45,9 @@ func Register(env environment.Env) error {
 
 func New(env environment.Env) *Crypter {
 	return &Crypter{
-		kms:  env.GetKMS(),
-		auth: env.GetAuthenticator(),
-		dbh:  env.GetDBHandle(),
+		env: env,
+		kms: env.GetKMS(),
+		dbh: env.GetDBHandle(),
 	}
 }
 
@@ -277,7 +277,7 @@ func (c *Crypter) newEncryptorWithKey(digest *repb.Digest, w interfaces.Committe
 }
 
 func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
-	u, err := c.auth.AuthenticatedUser(ctx)
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +311,7 @@ func (c *Crypter) newDecryptorWithKey(digest *repb.Digest, r io.ReadCloser, grou
 }
 
 func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (interfaces.Decryptor, error) {
-	u, err := c.auth.AuthenticatedUser(ctx)
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}

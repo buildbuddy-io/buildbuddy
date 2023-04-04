@@ -633,6 +633,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 				sharing_enabled = ?,
 				user_owned_keys_enabled = ?,
 				use_group_owned_executors = ?,
+				cache_encryption_enabled = ?,
 				suggestion_preference = ?
 			WHERE group_id = ?`,
 			g.Name,
@@ -641,6 +642,7 @@ func (d *UserDB) InsertOrUpdateGroup(ctx context.Context, g *tables.Group) (stri
 			g.SharingEnabled,
 			g.UserOwnedKeysEnabled,
 			g.UseGroupOwnedExecutors,
+			g.CacheEncryptionEnabled,
 			g.SuggestionPreference,
 			g.GroupID)
 		if res.Error != nil {
@@ -1059,6 +1061,7 @@ func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
 			g.sharing_enabled,
 			g.user_owned_keys_enabled,
 			g.use_group_owned_executors,
+			g.cache_encryption_enabled,
 			g.saml_idp_metadata_url,
 			g.suggestion_preference,
 			ug.role
@@ -1085,6 +1088,7 @@ func (d *UserDB) getUser(tx *db.DB, userID string) (*tables.User, error) {
 			&gr.Group.SharingEnabled,
 			&gr.Group.UserOwnedKeysEnabled,
 			&gr.Group.UseGroupOwnedExecutors,
+			&gr.Group.CacheEncryptionEnabled,
 			&gr.Group.SamlIdpMetadataUrl,
 			&gr.Group.SuggestionPreference,
 			&gr.Role,
@@ -1126,6 +1130,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				sharing_enabled,
 				user_owned_keys_enabled,
 				use_group_owned_executors,
+				cache_encryption_enabled,
 				saml_idp_metadata_url,
 				suggestion_preference
 			FROM `+"`Groups`"+`
@@ -1147,6 +1152,7 @@ func (d *UserDB) GetImpersonatedUser(ctx context.Context) (*tables.User, error) 
 				&gr.Group.SharingEnabled,
 				&gr.Group.UserOwnedKeysEnabled,
 				&gr.Group.UseGroupOwnedExecutors,
+				&gr.Group.CacheEncryptionEnabled,
 				&gr.Group.SamlIdpMetadataUrl,
 				&gr.Group.SuggestionPreference,
 			)

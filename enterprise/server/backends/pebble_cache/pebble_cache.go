@@ -1159,6 +1159,34 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 	return groupID, DefaultPartitionID, nil
 }
 
+func (p *PebbleCache) encryptionEnabled(ctx context.Context, partitionID string) (bool, error) {
+	auth := p.env.GetAuthenticator()
+	if auth == nil {
+		return false, nil
+	}
+	u, err := auth.AuthenticatedUser(ctx)
+	if err != nil {
+		return false, nil
+	}
+	if !u.GetCacheEncryptionEnabled() {
+		return false, nil
+	}
+	if p.env.GetCrypter() == nil {
+		return false, status.FailedPreconditionError("encryption requested, but crypter not available")
+	}
+
+	for _, p := range p.partitions {
+		if p.ID == partitionID {
+			if !p.EncryptionSupported {
+				return false, status.FailedPreconditionError("encryption enabled, but writing to a partition that doesn't support encryption")
+			}
+			return true, nil
+		}
+	}
+
+	return false, status.InvalidArgumentError("partition not found")
+}
+
 func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {
 	rn := digest.ResourceNameFromProto(r)
 	if err := rn.Validate(); err != nil {
@@ -1397,7 +1425,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			continue
 		}
 
-		rc, err := p.readerForCompressionType(ctx, r, key, fileMetadata, 0, 0)
+		rc, err := p.reader(ctx, r, key, fileMetadata, 0, 0)
 		if err != nil {
 			if status.IsNotFoundError(err) || os.IsNotExist(err) {
 				unlockFn := p.locker.Lock(key.LockID())
@@ -1596,7 +1624,6 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Attempting pebble reader %s", key.String())
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
 	unlockFn := p.locker.RLock(key.LockID())
@@ -1606,7 +1633,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 		return nil, err
 	}
 
-	rc, err := p.readerForCompressionType(ctx, r, key, fileMetadata, uncompressedOffset, limit)
+	rc, err := p.reader(ctx, r, key, fileMetadata, uncompressedOffset, limit)
 	if err != nil {
 		if status.IsNotFoundError(err) || os.IsNotExist(err) {
 			unlockFn := p.locker.Lock(key.LockID())
@@ -1651,7 +1678,7 @@ func (dc *writeCloser) Write(p []byte) (int, error) {
 type zstdCompressor struct {
 	cacheName string
 
-	*ioutil.CustomCommitWriteCloser
+	interfaces.CommittedWriteCloser
 	compressBuf []byte
 	bufferPool  *bytebufferpool.Pool
 
@@ -1659,19 +1686,19 @@ type zstdCompressor struct {
 	numCompressedBytes   int
 }
 
-func NewZstdCompressor(cacheName string, wc *ioutil.CustomCommitWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
+func NewZstdCompressor(cacheName string, wc interfaces.CommittedWriteCloser, bp *bytebufferpool.Pool, digestSize int64) *zstdCompressor {
 	compressBuf := bp.Get(digestSize)
 	return &zstdCompressor{
-		cacheName:               cacheName,
-		CustomCommitWriteCloser: wc,
-		compressBuf:             compressBuf,
-		bufferPool:              bp,
+		cacheName:            cacheName,
+		CommittedWriteCloser: wc,
+		compressBuf:          compressBuf,
+		bufferPool:           bp,
 	}
 }
 
 func (z *zstdCompressor) Write(decompressedBytes []byte) (int, error) {
 	z.compressBuf = compression.CompressZstd(z.compressBuf, decompressedBytes)
-	compressedBytesWritten, err := z.CustomCommitWriteCloser.Write(z.compressBuf)
+	compressedBytesWritten, err := z.CommittedWriteCloser.Write(z.compressBuf)
 	if err != nil {
 		return 0, err
 	}
@@ -1690,7 +1717,7 @@ func (z *zstdCompressor) Close() error {
 		Observe(float64(z.numCompressedBytes) / float64(z.numDecompressedBytes))
 
 	z.bufferPool.Put(z.compressBuf)
-	return z.CustomCommitWriteCloser.Close()
+	return z.CommittedWriteCloser.Close()
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
@@ -1720,7 +1747,6 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Attempting pebble writer %s", key.String())
 
 	var wcm interfaces.MetadataWriteCloser
 	if r.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
@@ -1740,16 +1766,19 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	if err != nil {
 		return nil, err
 	}
-	wc := ioutil.NewCustomCommitWriteCloser(wcm)
-	wc.CloseFn = db.Close
-	wc.CommitFn = func(bytesWritten int64) error {
+
+	var encryptionMetadata *rfpb.EncryptionMetadata
+	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
+	cwc.CloseFn = db.Close
+	cwc.CommitFn = func(bytesWritten int64) error {
 		now := time.Now().UnixMicro()
 		md := &rfpb.FileMetadata{
-			FileRecord:      fileRecord,
-			StorageMetadata: wcm.Metadata(),
-			StoredSizeBytes: bytesWritten,
-			LastAccessUsec:  now,
-			LastModifyUsec:  now,
+			FileRecord:         fileRecord,
+			StorageMetadata:    wcm.Metadata(),
+			EncryptionMetadata: encryptionMetadata,
+			StoredSizeBytes:    bytesWritten,
+			LastAccessUsec:     now,
+			LastModifyUsec:     now,
 		}
 		protoBytes, err := proto.Marshal(md)
 		if err != nil {
@@ -1785,6 +1814,22 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		}
 
 		return err
+	}
+
+	wc := interfaces.CommittedWriteCloser(cwc)
+	shouldEncrypt, err := p.encryptionEnabled(ctx, fileRecord.GetIsolation().GetPartitionId())
+	if err != nil {
+		_ = wc.Close()
+		return nil, err
+	}
+	if shouldEncrypt {
+		ewc, err := p.env.GetCrypter().NewEncryptor(ctx, r.GetDigest(), wc)
+		if err != nil {
+			_ = wc.Close()
+			return nil, err
+		}
+		encryptionMetadata = ewc.Metadata()
+		wc = ewc
 	}
 
 	if shouldCompress {
@@ -2409,30 +2454,61 @@ type readCloser struct {
 	io.Closer
 }
 
-func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *rspb.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
 	blobDir := p.blobDir()
 	requestedCompression := resource.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
+	if requestedCompression == cachedCompression &&
+		requestedCompression != repb.Compressor_IDENTITY &&
+		(uncompressedOffset != 0 || uncompressedLimit != 0) {
+		return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
+	}
 
-	// If the data is stored uncompressed, we can use the offset/limit directly
-	// otherwise we need to decompress first.
+	shouldDecrypt, err := p.encryptionEnabled(ctx, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+	if err != nil {
+		return nil, err
+	}
+
+	// If the data is stored uncompressed/unencrypted, we can use the offset/limit directly
+	// otherwise we need to decompress/decrypt first.
 	offset := int64(0)
 	limit := int64(0)
-	if cachedCompression == repb.Compressor_IDENTITY {
+	rawStorage := cachedCompression == repb.Compressor_IDENTITY && !shouldDecrypt
+	if rawStorage {
 		offset = uncompressedOffset
 		limit = uncompressedLimit
 	}
+
 	reader, err := p.fileStorer.NewReader(ctx, blobDir, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
 		return nil, err
 	}
 	p.sendAtimeUpdate(key, fileMetadata)
 
-	if requestedCompression == cachedCompression {
-		if requestedCompression != repb.Compressor_IDENTITY && (uncompressedOffset != 0 || uncompressedLimit != 0) {
-			return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
+	if !rawStorage {
+		if shouldDecrypt {
+			d, err := p.env.GetCrypter().NewDecryptor(ctx, resource.GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
+			if err != nil {
+				return nil, err
+			}
+			reader = d
 		}
-		return reader, nil
+		if cachedCompression == repb.Compressor_ZSTD && requestedCompression == repb.Compressor_IDENTITY {
+			dr, err := compression.NewZstdDecompressingReader(reader)
+			if err != nil {
+				return nil, err
+			}
+			reader = dr
+		}
+		if uncompressedOffset != 0 {
+			if _, err := io.CopyN(io.Discard, reader, uncompressedOffset); err != nil {
+				_ = reader.Close()
+				return nil, err
+			}
+		}
+		if uncompressedLimit != 0 {
+			reader = &readCloser{io.LimitReader(reader, uncompressedLimit), reader}
+		}
 	}
 
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
@@ -2457,26 +2533,9 @@ func (p *PebbleCache) readerForCompressionType(ctx context.Context, resource *rs
 			compressBuf: compressBuf,
 			bufferPool:  p.bufferPool,
 		}, err
-	} else if requestedCompression == repb.Compressor_IDENTITY && cachedCompression == repb.Compressor_ZSTD {
-		dr, err := compression.NewZstdDecompressingReader(reader)
-		if err != nil {
-			return nil, err
-		}
-		// If offset is set, we need to discard all the bytes before that point.
-		if uncompressedOffset != 0 {
-			if _, err := io.CopyN(io.Discard, dr, uncompressedOffset); err != nil {
-				_ = dr.Close()
-				return nil, err
-			}
-		}
-		if uncompressedLimit != 0 {
-			dr = &readCloser{io.LimitReader(dr, uncompressedLimit), dr}
-		}
-		return dr, nil
-	} else {
-		return nil, fmt.Errorf("unsupported compressor %v requested for %v reader, cached compression is %v",
-			requestedCompression, resource, cachedCompression)
 	}
+
+	return reader, nil
 }
 
 func (p *PebbleCache) Start() error {

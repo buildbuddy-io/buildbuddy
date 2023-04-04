@@ -94,6 +94,7 @@ type UserInfo interface {
 	IsAdmin() bool
 	HasCapability(akpb.ApiKey_Capability) bool
 	GetUseGroupOwnedExecutors() bool
+	GetCacheEncryptionEnabled() bool
 }
 
 // Authenticator constants
@@ -306,6 +307,7 @@ type APIKeyGroup interface {
 	GetUserID() string
 	GetGroupID() string
 	GetUseGroupOwnedExecutors() bool
+	GetCacheEncryptionEnabled() bool
 }
 
 type AuthDB interface {

@@ -16,11 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -937,6 +940,28 @@ func TestSizeLimit(t *testing.T) {
 	require.LessOrEqual(t, dirSize, maxSizeBytes)
 }
 
+func writeResource(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCache, r *rspb.ResourceName, data []byte) {
+	// Write data to cache
+	wc, err := pc.Writer(ctx, r)
+	require.NoError(t, err)
+	n, err := wc.Write(data)
+	require.NoError(t, err)
+	require.Equal(t, len(data), n)
+	err = wc.Commit()
+	require.NoError(t, err)
+	err = wc.Close()
+	require.NoError(t, err)
+}
+
+func readResource(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCache, r *rspb.ResourceName, offset, limit int64) []byte {
+	reader, err := pc.Reader(ctx, r, offset, limit)
+	require.NoError(t, err)
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	require.NoError(t, err)
+	return data
+}
+
 func TestCompression(t *testing.T) {
 	// Make blob big enough to require multiple chunks to compress
 	blob := compressibleBlobOfSize(pebble_cache.CompressorBufSizeBytes + 1)
@@ -985,7 +1010,7 @@ func TestCompression(t *testing.T) {
 		expectedUncompressedReadData []byte
 	}{
 		{
-			name:                         "Write compressed data, read compressed data",
+			name:                         "write_compressed_read_compressed",
 			rnToWrite:                    compressedRN,
 			dataToWrite:                  compressedBuf,
 			rnToRead:                     compressedRN,
@@ -993,14 +1018,14 @@ func TestCompression(t *testing.T) {
 			expectedUncompressedReadData: blob,
 		},
 		{
-			name:                         "Write compressed data, read decompressed data",
+			name:                         "write_compressed_read_decompressed",
 			rnToWrite:                    compressedRN,
 			dataToWrite:                  compressedBuf,
 			rnToRead:                     decompressedRN,
 			expectedUncompressedReadData: blob,
 		},
 		{
-			name:                         "Write decompressed data, read compressed data",
+			name:                         "write_uncompressed_read_compressed",
 			rnToWrite:                    decompressedRN,
 			dataToWrite:                  blob,
 			rnToRead:                     compressedRN,
@@ -1008,14 +1033,14 @@ func TestCompression(t *testing.T) {
 			expectedUncompressedReadData: blob,
 		},
 		{
-			name:                         "Write decompressed data, read decompressed data",
+			name:                         "write_uncompressed_read_decompressed",
 			rnToWrite:                    decompressedRN,
 			dataToWrite:                  blob,
 			rnToRead:                     decompressedRN,
 			expectedUncompressedReadData: blob,
 		},
 		{
-			name:                         "Write compressed inline data, read compressed data",
+			name:                         "inline_write_compressed_read_compressed",
 			rnToWrite:                    compressedInlineRN,
 			dataToWrite:                  compressedInlineBuf,
 			rnToRead:                     compressedInlineRN,
@@ -1023,14 +1048,14 @@ func TestCompression(t *testing.T) {
 			expectedUncompressedReadData: inlineBlob,
 		},
 		{
-			name:                         "Write compressed inline data, read decompressed data",
+			name:                         "inline_write_compressed_read_decompressed",
 			rnToWrite:                    compressedInlineRN,
 			dataToWrite:                  compressedInlineBuf,
 			rnToRead:                     decompressedInlineRN,
 			expectedUncompressedReadData: inlineBlob,
 		},
 		{
-			name:                         "Write decompressed inline data, read compressed data",
+			name:                         "inline_write_uncompressed_read_compressed",
 			rnToWrite:                    decompressedInlineRN,
 			dataToWrite:                  inlineBlob,
 			rnToRead:                     compressedInlineRN,
@@ -1038,7 +1063,7 @@ func TestCompression(t *testing.T) {
 			expectedUncompressedReadData: inlineBlob,
 		},
 		{
-			name:                         "Write decompressed inline data, read decompressed data",
+			name:                         "inline_write_uncompressed_read_decompressed",
 			rnToWrite:                    decompressedInlineRN,
 			dataToWrite:                  inlineBlob,
 			rnToRead:                     decompressedInlineRN,
@@ -1047,7 +1072,7 @@ func TestCompression(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		{
+		t.Run(tc.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
 			ctx := getAnonContext(t, te)
@@ -1058,35 +1083,20 @@ func TestCompression(t *testing.T) {
 				MaxSizeBytes:  maxSizeBytes,
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			pc.Start()
 			defer pc.Stop()
 
-			// Write data to cache
-			wc, err := pc.Writer(ctx, tc.rnToWrite)
-			require.NoError(t, err, tc.name)
-			n, err := wc.Write(tc.dataToWrite)
-			require.NoError(t, err, tc.name)
-			require.Equal(t, len(tc.dataToWrite), n)
-			err = wc.Commit()
-			require.NoError(t, err, tc.name)
-			err = wc.Close()
-			require.NoError(t, err, tc.name)
+			writeResource(t, ctx, pc, tc.rnToWrite, tc.dataToWrite)
 
 			// Read data
-			reader, err := pc.Reader(ctx, tc.rnToRead, 0, 0)
-			require.NoError(t, err, tc.name)
-			defer reader.Close()
-			data, err := io.ReadAll(reader)
-			require.NoError(t, err, tc.name)
+			data := readResource(t, ctx, pc, tc.rnToRead, 0, 0)
 			if tc.isReadCompressed {
 				data, err = compression.DecompressZstd(nil, data)
-				require.NoError(t, err, tc.name)
+				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectedUncompressedReadData, data, tc.name)
-		}
+			require.Equal(t, tc.expectedUncompressedReadData, data)
+		})
 	}
 }
 
@@ -1861,6 +1871,283 @@ func TestMigrateVersions(t *testing.T) {
 			}
 		}
 	}
+}
+
+func generateKMSKey(t *testing.T, kmsDir string, id string) string {
+	key := make([]byte, 32)
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(kmsDir, id), key, 0644)
+	require.NoError(t, err)
+	return "local-insecure-kms://" + id
+}
+
+func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI string) (*tables.EncryptionKey, *tables.EncryptionKeyVersion) {
+	kmsClient := env.GetKMS()
+
+	masterKeyPart := make([]byte, 32)
+	_, err := rand.Read(masterKeyPart)
+	require.NoError(t, err)
+	groupKeyPart := make([]byte, 32)
+	_, err = rand.Read(groupKeyPart)
+	require.NoError(t, err)
+
+	masterAEAD, err := kmsClient.FetchMasterKey()
+	require.NoError(t, err)
+	encMasterKeyPart, err := masterAEAD.Encrypt(masterKeyPart, nil)
+	require.NoError(t, err)
+
+	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
+	require.NoError(t, err)
+	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, nil)
+
+	key := &tables.EncryptionKey{
+		EncryptionKeyID: keyID,
+		GroupID:         groupID,
+	}
+	keyVersion := &tables.EncryptionKeyVersion{
+		EncryptionKeyID:    keyID,
+		Version:            1,
+		MasterEncryptedKey: encMasterKeyPart,
+		GroupKeyURI:        groupKeyURI,
+		GroupEncryptedKey:  encGroupKeyPart,
+	}
+	return key, keyVersion
+}
+
+func getCrypterEnv(t *testing.T) (*testenv.TestEnv, string) {
+	rand.Seed(time.Now().UnixMicro())
+
+	kmsDir := testfs.MakeTempDir(t)
+	masterKeyURI := generateKMSKey(t, kmsDir, "masterKey")
+
+	flags.Set(t, "database.enable_encryption_schema", true)
+	flags.Set(t, "keystore.local_insecure_kms_directory", kmsDir)
+	flags.Set(t, "keystore.master_key_uri", masterKeyURI)
+	env := testenv.GetTestEnv(t)
+	err := kms.Register(env)
+	require.NoError(t, err)
+	err = crypter_service.Register(env)
+	require.NoError(t, err)
+	return env, kmsDir
+}
+
+func TestEncryption(t *testing.T) {
+	te, kmsDir := getCrypterEnv(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	groupKeyID := "EK123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{userID: user}
+	auther := testauth.NewTestAuthenticator(users)
+	te.SetAuthenticator(auther)
+
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+
+	// Customer has encryption enabled but partition does not support encryption.
+	{
+		opts := &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes}
+		pc, err := pebble_cache.NewPebbleCache(te, opts)
+		require.NoError(t, err)
+		err = pc.Start()
+		require.NoError(t, err)
+
+		ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		err = pc.Set(ctx, rn, buf)
+		require.ErrorContains(t, err, "partition that doesn't support encryption")
+
+		err = pc.Stop()
+		require.NoError(t, err)
+	}
+
+	// Customer has encryption enabled, but no keys are available.
+	{
+		opts := &pebble_cache.Options{
+			RootDirectory: rootDir,
+			Partitions: []disk.Partition{{
+				ID: pebble_cache.DefaultPartitionID, EncryptionSupported: true, MaxSizeBytes: maxSizeBytes,
+			}},
+		}
+		pc, err := pebble_cache.NewPebbleCache(te, opts)
+		require.NoError(t, err)
+		err = pc.Start()
+		require.NoError(t, err)
+
+		ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		err = pc.Set(ctx, rn, buf)
+		require.ErrorContains(t, err, "no encryption key available")
+
+		err = pc.Stop()
+		require.NoError(t, err)
+	}
+
+	// Happy case.
+	{
+		ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+
+		group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+		key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+		err = te.GetDBHandle().DB(ctx).Create(key).Error
+		require.NoError(t, err)
+		err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+		require.NoError(t, err)
+
+		opts := &pebble_cache.Options{
+			RootDirectory: rootDir,
+			Partitions: []disk.Partition{{
+				ID: pebble_cache.DefaultPartitionID, EncryptionSupported: true, MaxSizeBytes: maxSizeBytes,
+			}},
+		}
+		pc, err := pebble_cache.NewPebbleCache(te, opts)
+		require.NoError(t, err)
+		err = pc.Start()
+		require.NoError(t, err)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		err = pc.Set(ctx, rn, buf)
+		require.NoError(t, err)
+
+		readBuf, err := pc.Get(ctx, rn)
+		require.NoError(t, err)
+		if !bytes.Equal(buf, readBuf) {
+			require.FailNow(t, "original text and decrypted text didn't match")
+		}
+
+		err = pc.Stop()
+		require.NoError(t, err)
+	}
+}
+
+func TestEncryptionAndCompression(t *testing.T) {
+	te, kmsDir := getCrypterEnv(t)
+
+	userID := "US123"
+	groupID := "GR123"
+	groupKeyID := "EK123"
+	user := testauth.User(userID, groupID)
+	user.CacheEncryptionEnabled = true
+	users := map[string]interfaces.UserInfo{userID: user}
+	auther := testauth.NewTestAuthenticator(users)
+	te.SetAuthenticator(auther)
+
+	ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+
+	group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+	key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+	err = te.GetDBHandle().DB(ctx).Create(key).Error
+	require.NoError(t, err)
+	err = te.GetDBHandle().DB(ctx).Create(keyVersion).Error
+	require.NoError(t, err)
+
+	rootDir := testfs.MakeTempDir(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	opts := &pebble_cache.Options{
+		RootDirectory: rootDir,
+		Partitions: []disk.Partition{{
+			ID: pebble_cache.DefaultPartitionID, EncryptionSupported: true, MaxSizeBytes: maxSizeBytes,
+		}},
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+
+	// Make blob big enough to require multiple chunks to compress
+	blob := compressibleBlobOfSize(pebble_cache.CompressorBufSizeBytes + 1)
+	compressedBuf := compression.CompressZstd(nil, blob)
+
+	// Note: Digest is of uncompressed contents
+	d, err := digest.Compute(bytes.NewReader(blob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	compressedRN := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS, Compressor: repb.Compressor_ZSTD}
+	decompressedRN := &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS, Compressor: repb.Compressor_IDENTITY}
+
+	testCases := []struct {
+		name             string
+		rnToWrite        *rspb.ResourceName
+		dataToWrite      []byte
+		rnToRead         *rspb.ResourceName
+		isReadCompressed bool
+		readOffset       int64
+		readLimit        int64
+		expectedReadData []byte
+	}{
+		{
+			name:             "write_compressed_read_compressed",
+			rnToWrite:        compressedRN,
+			dataToWrite:      compressedBuf,
+			rnToRead:         compressedRN,
+			isReadCompressed: true,
+			expectedReadData: blob,
+		},
+		{
+			name:             "write_compressed_read_decompressed",
+			rnToWrite:        compressedRN,
+			dataToWrite:      compressedBuf,
+			rnToRead:         decompressedRN,
+			expectedReadData: blob,
+		},
+		{
+			name:             "write_compressed_read_decompressed_offset",
+			rnToWrite:        compressedRN,
+			dataToWrite:      compressedBuf,
+			rnToRead:         decompressedRN,
+			readOffset:       10,
+			readLimit:        20,
+			expectedReadData: blob[10:30],
+		},
+		{
+			name:             "write_uncompressed_read_compressed",
+			rnToWrite:        decompressedRN,
+			dataToWrite:      blob,
+			rnToRead:         compressedRN,
+			isReadCompressed: true,
+			expectedReadData: blob,
+		},
+		{
+			name:             "write_uncompressed_read_decompressed",
+			rnToWrite:        decompressedRN,
+			dataToWrite:      blob,
+			rnToRead:         decompressedRN,
+			expectedReadData: blob,
+		},
+		{
+			name:             "write_uncompressed_read_decompressed_offset",
+			rnToWrite:        decompressedRN,
+			dataToWrite:      blob,
+			rnToRead:         decompressedRN,
+			readOffset:       10,
+			readLimit:        20,
+			expectedReadData: blob[10:30],
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			writeResource(t, ctx, pc, tc.rnToWrite, tc.dataToWrite)
+
+			// Read data
+			data := readResource(t, ctx, pc, tc.rnToRead, tc.readOffset, tc.readLimit)
+			if tc.isReadCompressed {
+				data, err = compression.DecompressZstd(nil, data)
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.expectedReadData, data)
+		})
+	}
+
+	err = pc.Stop()
+	require.NoError(t, err)
 }
 
 func BenchmarkGetMulti(b *testing.B) {
