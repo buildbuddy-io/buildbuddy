@@ -26,7 +26,9 @@ import (
 	"golang.org/x/oauth2"
 
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
+	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	gh_oauth "github.com/buildbuddy-io/buildbuddy/server/backends/github"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 var (
@@ -41,6 +43,9 @@ var (
 
 const (
 	oauthAppPath = "/auth/github/app/link/"
+
+	// Max page size that GitHub allows for list requests.
+	githubMaxPageSize = 100
 )
 
 func Register(env environment.Env) error {
@@ -245,6 +250,228 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 	return &ghpb.UnlinkAppInstallationResponse{}, nil
 }
 
+func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error) {
+	u, err := perms.AuthenticatedUser(ctx, a.env)
+	if err != nil {
+		return nil, err
+	}
+	installation := &tables.GitHubAppInstallation{}
+	err = a.env.GetDBHandle().DB(ctx).Raw(`
+		SELECT * FROM GitHubAppInstallations
+		WHERE group_id = ?
+		AND owner = ?
+	`, u.GetGroupID(), owner).Take(installation).Error
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("no GitHub app installation for %q was found for the authenticated group", owner)
+		}
+		return nil, status.InternalErrorf("failed to look up GitHub app installation: %s", err)
+	}
+	return installation, nil
+}
+
+func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error) {
+	u, err := perms.AuthenticatedUser(ctx, a.env)
+	if err != nil {
+		return nil, err
+	}
+	d := a.env.GetDBHandle().DB(ctx)
+	rows, err := d.Raw(`
+		SELECT *
+		FROM GitRepositories
+		WHERE group_id = ?
+		ORDER BY repo_url ASC
+	`, u.GetGroupID()).Rows()
+	if err != nil {
+		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
+	}
+	res := &ghpb.GetLinkedReposResponse{}
+	for rows.Next() {
+		var row tables.GitRepository
+		if err := d.ScanRows(rows, &row); err != nil {
+			return nil, status.InternalErrorf("failed to scan repo row: %s", err)
+		}
+		res.RepoUrls = append(res.RepoUrls, row.RepoURL)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, status.InternalErrorf("failed to query all repo rows: %s", err)
+	}
+	return res, nil
+}
+func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
+	repoURL, err := gitutil.ParseGitHubRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+
+	// Make sure an installation exists and that the user has access to the
+	// repo.
+	installation, err := a.GetInstallationByOwner(ctx, repoURL.Owner)
+	if err != nil {
+		return nil, err
+	}
+	tu, err := a.env.GetUserDB().GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// findUserRepo checks user-repo-installation authentication.
+	if _, err := a.findUserRepo(ctx, tu.GithubToken, installation.InstallationID, repoURL.Repo); err != nil {
+		return nil, err
+	}
+
+	if _, err := perms.AuthenticatedUser(ctx, a.env); err != nil {
+		return nil, err
+	}
+	p, err := perms.ForAuthenticatedGroup(ctx, a.env)
+	if err != nil {
+		return nil, err
+	}
+	repo := &tables.GitRepository{
+		UserID:  p.UserID,
+		GroupID: p.GroupID,
+		Perms:   p.Perms,
+		RepoURL: repoURL.String(),
+	}
+	if err := a.env.GetDBHandle().DB(ctx).Create(repo).Error; err != nil {
+		return nil, status.InternalErrorf("failed to link repo: %s", err)
+	}
+
+	// Also clean up any associated workflows, since repo linking is meant to
+	// replace workflows.
+	deleteReq := &wfpb.DeleteWorkflowRequest{
+		RequestContext: req.GetRequestContext(),
+		RepoUrl:        req.GetRepoUrl(),
+	}
+	if _, err := a.env.GetWorkflowService().DeleteWorkflow(ctx, deleteReq); err != nil {
+		log.Infof("Failed to delete legacy workflow for linked repo: %s", err)
+	} else {
+		log.Infof("Deleted legacy workflow for linked repo")
+	}
+
+	return &ghpb.LinkRepoResponse{}, nil
+}
+func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
+	norm, err := gitutil.NormalizeRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("failed to parse repo URL: %s", err)
+	}
+	req.RepoUrl = norm.String()
+	u, err := perms.AuthenticatedUser(ctx, a.env)
+	if err != nil {
+		return nil, err
+	}
+	result := a.env.GetDBHandle().DB(ctx).Exec(`
+		DELETE FROM GitRepositories
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, u.GetGroupID(), req.GetRepoUrl())
+	if result.Error != nil {
+		return nil, status.InternalErrorf("failed to unlink repo: %s", err)
+	}
+	if result.RowsAffected == 0 {
+		return nil, status.NotFoundError("repo not found")
+	}
+	return &ghpb.UnlinkRepoResponse{}, nil
+}
+
+func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {
+	req.Query = strings.TrimSpace(req.Query)
+
+	tu, err := a.env.GetUserDB().GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userClient, err := a.newAuthenticatedClient(ctx, tu.GithubToken)
+	if err != nil {
+		return nil, err
+	}
+	// Note: the search API (filtering "user:{installationOwner}") does not show
+	// private repos and also doesn't filter only to the installations
+	// accessible to the installation. So instead we fetch the first page of
+	// repos accessible to the installation and search through them here.
+	opts := &github.ListOptions{PerPage: githubMaxPageSize}
+	result, response, err := userClient.Apps.ListUserRepos(ctx, req.GetInstallationId(), opts)
+	if err := checkResponse(response, err); err != nil {
+		return nil, err
+	}
+	urls := make([]string, 0, len(result.Repositories))
+	foundExactMatch := false
+	for _, r := range result.Repositories {
+		repo, err := gitutil.ParseGitHubRepoURL(r.GetCloneURL())
+		if err != nil {
+			return nil, err
+		}
+		if !strings.Contains(strings.ToLower(repo.Repo), strings.ToLower(req.Query)) {
+			continue
+		}
+		if strings.EqualFold(req.Query, repo.Repo) {
+			foundExactMatch = true
+		}
+		urls = append(urls, repo.String())
+	}
+	// We only fetch the first page of results (ordered alphabetically - GitHub
+	// doesn't let us order any other way). As a result, we're not searching
+	// across all repo URLs. So if we didn't find an exact match, make an extra
+	// request to retry the search query as an exact match.
+	if req.Query != "" && !foundExactMatch {
+		ir, err := a.findUserRepo(ctx, tu.GithubToken, req.GetInstallationId(), req.Query)
+		if err != nil {
+			log.Debugf("Could not find exact repo match: %s", err)
+		} else {
+			norm, err := gitutil.NormalizeRepoURL(ir.repository.GetCloneURL())
+			if err != nil {
+				return nil, err
+			}
+			urls = append([]string{norm.String()}, urls...)
+		}
+	}
+	return &ghpb.GetAccessibleReposResponse{RepoUrls: urls}, nil
+}
+
+type installationRepository struct {
+	installation *github.Installation
+	repository   *github.Repository
+}
+
+// findUserRepo finds a repo within an installation, checking the user's access
+// to the repo. It attempts to work around the fact that "apps.ListUserRepos"
+// doesn't have any filtering options.
+func (a *GitHubApp) findUserRepo(ctx context.Context, userToken string, installationID int64, repo string) (*installationRepository, error) {
+	if err := a.authorizeUserInstallationAccess(ctx, userToken, installationID); err != nil {
+		return nil, err
+	}
+	installation, err := a.getInstallation(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	owner := installation.GetAccount().GetLogin()
+	// Fetch repository so that we know the canonical repo name (the input
+	// `repo` parameter might be equal ignoring case, but not exactly equal).
+	installationClient, err := a.newInstallationClient(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	repository, response, err := installationClient.Repositories.Get(ctx, owner, repo)
+	if err := checkResponse(response, err); err != nil {
+		return nil, err
+	}
+	// Fetch the associated installation to confirm whether the repository
+	// is actually installed.
+	appClient, err := a.newAppClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+	_, _, err = appClient.Apps.FindRepositoryInstallation(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	return &installationRepository{
+		installation: installation,
+		repository:   repository,
+	}, nil
+
+}
+
 func (a *GitHubApp) getInstallation(ctx context.Context, id int64) (*github.Installation, error) {
 	client, err := a.newAppClient(ctx)
 	if err != nil {
@@ -257,16 +484,16 @@ func (a *GitHubApp) getInstallation(ctx context.Context, id int64) (*github.Inst
 	return inst, nil
 }
 
-func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID int64) (string, error) {
+func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID int64) (*github.InstallationToken, error) {
 	client, err := a.newAppClient(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	t, res, err := client.Apps.CreateInstallationToken(ctx, installationID, nil)
 	if err := checkResponse(res, err); err != nil {
-		return "", status.UnauthenticatedErrorf("failed to create installation token: %s", status.Message(err))
+		return nil, status.UnauthenticatedErrorf("failed to create installation token: %s", status.Message(err))
 	}
-	return t.GetToken(), nil
+	return t, nil
 }
 
 func (a *GitHubApp) authorizeUserInstallationAccess(ctx context.Context, userToken string, installationID int64) error {
@@ -355,7 +582,7 @@ func (a *GitHubApp) newInstallationClient(ctx context.Context, installationID in
 	if err != nil {
 		return nil, err
 	}
-	return a.newAuthenticatedClient(ctx, token)
+	return a.newAuthenticatedClient(ctx, token.GetToken())
 }
 
 // newAuthenticatedClient returns a GitHub client authenticated with the given

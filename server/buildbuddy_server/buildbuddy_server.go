@@ -968,6 +968,34 @@ func (s *BuildBuddyServer) UnlinkGitHubAppInstallation(ctx context.Context, req 
 	}
 	return a.UnlinkGitHubAppInstallation(ctx, req)
 }
+func (s *BuildBuddyServer) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.GetAccessibleGitHubRepos(ctx, req)
+}
+func (s *BuildBuddyServer) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.GetLinkedGitHubRepos(ctx, req)
+}
+func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.LinkGitHubRepo(ctx, req)
+}
+func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
+	a := s.env.GetGitHubApp()
+	if a == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	return a.UnlinkGitHubRepo(ctx, req)
+}
 
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
 	if rs := s.env.GetRunnerService(); rs != nil {

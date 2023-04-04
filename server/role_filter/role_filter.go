@@ -94,6 +94,11 @@ var (
 		"LinkGitHubAppInstallation",
 		"GetGitHubAppInstallations",
 		"UnlinkGitHubAppInstallation",
+		// Org GitHub repo management
+		"GetAccessibleGitHubRepos",
+		"GetLinkedGitHubRepos",
+		"LinkGitHubRepo",
+		"UnlinkGitHubRepo",
 		// Org API key management
 		"CreateApiKey",
 		"UpdateApiKey",

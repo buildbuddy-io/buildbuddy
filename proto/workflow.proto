@@ -71,9 +71,15 @@ message DeleteWorkflowRequest {
   // The request context.
   context.RequestContext request_context = 1;
 
+  // One of id or repo_url must be specified.
+
   // ID of the workflow to delete.
   // Ex. "WF4576963743584254779"
   string id = 2;
+
+  // Repo URL of the workflow to delete.
+  // Ex. "https://github.com/foo/bar"
+  string repo_url = 3;
 }
 
 message DeleteWorkflowResponse {

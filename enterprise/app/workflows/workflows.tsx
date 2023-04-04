@@ -1,28 +1,25 @@
 import React from "react";
-import { from, Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import { OutlinedLinkButton } from "../../../app/components/button/link_button";
-import Dialog, {
-  DialogBody,
-  DialogFooter,
-  DialogFooterButtons,
-  DialogHeader,
-  DialogTitle,
-} from "../../../app/components/dialog/dialog";
 import Menu, { MenuItem } from "../../../app/components/menu/menu";
-import Modal from "../../../app/components/modal/modal";
 import Popup from "../../../app/components/popup/popup";
-import Spinner from "../../../app/components/spinner/spinner";
 import router from "../../../app/router/router";
-import rpcService from "../../../app/service/rpc_service";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
-import { BuildBuddyError } from "../../../app/util/errors";
 import { workflow } from "../../../proto/workflow_ts_proto";
 import CreateWorkflowComponent from "./create_workflow";
 import GitHubImport from "./github_import";
+import GitHubAppImport from "./github_app_import";
 import WorkflowsZeroStateAnimation from "./zero_state";
-import { GitMerge, MoreVertical } from "lucide-react";
+import { AlertCircle, GitMerge, MoreVertical } from "lucide-react";
+import capabilities from "../../../app/capabilities/capabilities";
+import { github } from "../../../proto/github_ts_proto";
+import error_service from "../../../app/errors/error_service";
+import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialog";
+import { normalizeRepoURL } from "../../../app/util/git";
+import Link from "../../../app/components/link/link";
+import alert_service from "../../../app/alert/alert_service";
 
 type Workflow = workflow.GetWorkflowsResponse.Workflow;
 
@@ -34,6 +31,10 @@ export type WorkflowsProps = {
 export default class WorkflowsComponent extends React.Component<WorkflowsProps> {
   render() {
     const { path, user } = this.props;
+
+    if (capabilities.config.githubAppEnabled && (path === "/workflows/new" || path.startsWith("/workflows/new/"))) {
+      return <GitHubAppImport user={user} />;
+    }
 
     if (path === "/workflows/new") {
       if (user.selectedGroup.githubLinked) {
@@ -54,11 +55,19 @@ export default class WorkflowsComponent extends React.Component<WorkflowsProps> 
 }
 
 type State = {
-  error?: BuildBuddyError;
-  response?: workflow.GetWorkflowsResponse;
-  workflowToDelete?: Workflow;
-  isDeleting?: boolean;
-  deleteError?: BuildBuddyError;
+  workflowsLoading: boolean;
+  workflowsResponse: workflow.GetWorkflowsResponse | null;
+
+  reposLoading: boolean;
+  reposResponse: github.GetLinkedReposResponse | null;
+
+  repoToDelete: string | null;
+
+  workflowToDelete: Workflow | null;
+  isDeletingWorkflow: boolean;
+
+  repoToUnlink: string | null;
+  isUnlinkingRepo: boolean;
 };
 
 export type ListWorkflowsProps = {
@@ -66,75 +75,104 @@ export type ListWorkflowsProps = {
 };
 
 class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> {
-  private workflowsSubscription: Subscription = new Subscription();
-  state: State = {};
+  state: State = {
+    workflowsLoading: false,
+    workflowsResponse: null,
+
+    reposLoading: false,
+    reposResponse: null,
+
+    repoToDelete: null,
+
+    workflowToDelete: null,
+    isDeletingWorkflow: false,
+
+    repoToUnlink: null,
+    isUnlinkingRepo: false,
+  };
+
+  private fetchWorkflowsRPC?: CancelablePromise;
+  private fetchReposRPC?: CancelablePromise;
 
   componentDidMount() {
     document.title = "Workflows | BuildBuddy";
-    this.fetchWorkflows();
+    this.fetch();
   }
 
   componentDidUpdate(prevProps: WorkflowsProps) {
     if (this.props.user !== prevProps.user) {
-      this.workflowsSubscription.unsubscribe();
-      this.fetchWorkflows();
+      this.fetch();
     }
   }
 
-  componentWillUnmount() {
-    this.workflowsSubscription.unsubscribe();
+  private fetch() {
+    this.fetchWorkflows();
+    if (capabilities.config.githubAppEnabled) {
+      this.fetchRepos();
+    }
   }
 
   private fetchWorkflows() {
+    this.fetchWorkflowsRPC?.cancel();
     if (!this.props.user) return;
 
-    this.state = {};
-    this.workflowsSubscription = from<Promise<workflow.GetWorkflowsResponse>>(
-      rpcService.service.getWorkflows(new workflow.GetWorkflowsRequest())
-    ).subscribe(
-      (response) => this.setState({ response }),
-      (e) => this.setState({ error: BuildBuddyError.parse(e) })
-    );
+    this.setState({ workflowsLoading: true });
+    this.fetchWorkflowsRPC = rpcService.service
+      .getWorkflows(new workflow.GetWorkflowsRequest())
+      .then((response) => this.setState({ workflowsResponse: response }))
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ workflowsLoading: false }));
+  }
+
+  private fetchRepos() {
+    this.fetchReposRPC?.cancel();
+    if (!this.props.user) return;
+
+    this.setState({ reposLoading: true });
+    this.fetchReposRPC = rpcService.service
+      .getLinkedGitHubRepos(new github.GetLinkedReposRequest())
+      .then((response) => this.setState({ reposResponse: response }))
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ reposLoading: false }));
   }
 
   private onClickCreate() {
     router.navigateTo("/workflows/new");
   }
 
-  private onClickUnlinkItem(workflowToDelete: Workflow) {
-    this.setState({ workflowToDelete });
-  }
-
-  private async onClickUnlink() {
-    this.setState({ isDeleting: true });
+  private async onClickUnlinkWorkflow() {
+    this.setState({ isDeletingWorkflow: true });
     try {
       await rpcService.service.deleteWorkflow(
         new workflow.DeleteWorkflowRequest({ id: this.state.workflowToDelete?.id })
       );
-      this.setState({ workflowToDelete: undefined });
-
-      this.workflowsSubscription.unsubscribe();
-      this.fetchWorkflows();
+      this.setState({ workflowToDelete: null });
+      this.fetch();
     } catch (e) {
-      this.setState({ deleteError: BuildBuddyError.parse(e) });
+      error_service.handleError(e);
     } finally {
-      this.setState({ isDeleting: false });
+      this.setState({ isDeletingWorkflow: false });
     }
   }
 
-  private onCloseDeleteDialog() {
-    this.setState({ workflowToDelete: undefined, deleteError: undefined });
+  private onClickUnlinkRepo() {
+    this.setState({ isUnlinkingRepo: true });
+    const repoUrl = this.state.repoToUnlink!;
+    rpcService.service
+      .unlinkGitHubRepo(new github.UnlinkRepoRequest({ repoUrl }))
+      .then(() => {
+        alert_service.success(`Successfully unlinked ${repoUrl}`);
+        this.setState({ repoToUnlink: null });
+        this.fetch();
+      })
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ isUnlinkingRepo: false }));
   }
 
   render() {
-    const { error, response, workflowToDelete, isDeleting, deleteError } = this.state;
-    const loading = !(error || response);
-    if (loading) {
+    if (this.state.workflowsLoading || this.state.reposLoading) {
       return <div className="loading" />;
     }
-
-    const workflowToDeleteUrl = workflowToDelete ? new URL(workflowToDelete.repoUrl) : null;
-
     return (
       <div className="workflows-page">
         <div className="shelf">
@@ -146,7 +184,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
               </div>
               <div className="title">Workflows</div>
             </div>
-            {response && Boolean(response.workflow.length) && (
+            {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repoUrls?.length) && (
               <div className="buttons create-new-container">
                 <Button onClick={this.onClickCreate.bind(this)}>Link a repository</Button>
                 <OutlinedLinkButton href="https://docs.buildbuddy.io/docs/workflows-setup" target="_blank">
@@ -157,9 +195,7 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
           </div>
         </div>
         <div className="content">
-          {/* TODO: better styling of this error */}
-          {error && <div className="error">{error.message}</div>}
-          {response && !response.workflow.length && (
+          {!(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repoUrls?.length) && (
             <div className="no-workflows-container">
               <div className="no-workflows-card">
                 <WorkflowsZeroStateAnimation />
@@ -178,59 +214,66 @@ class ListWorkflowsComponent extends React.Component<ListWorkflowsProps, State> 
               </div>
             </div>
           )}
-          {Boolean(response?.workflow?.length) && (
-            <>
-              <div className="workflows-list">
-                {response!.workflow.map((workflow) => (
-                  <WorkflowItem workflow={workflow} onClickUnlinkItem={this.onClickUnlinkItem.bind(this)} />
-                ))}
-              </div>
-              <Modal isOpen={Boolean(workflowToDelete)} onRequestClose={this.onCloseDeleteDialog.bind(this)}>
-                <Dialog className="delete-workflow-dialog">
-                  <DialogHeader>
-                    <DialogTitle>Unlink repository</DialogTitle>
-                  </DialogHeader>
-                  <DialogBody className="dialog-body">
-                    <div>
-                      Are you sure you want to unlink{" "}
-                      <strong>
-                        {workflowToDeleteUrl?.host}
-                        {workflowToDeleteUrl?.pathname}
-                      </strong>
-                      ? This will prevent BuildBuddy workflows from being run.
-                    </div>
-                    {deleteError && <div className="error">{deleteError.message}</div>}
-                  </DialogBody>
-                  <DialogFooter>
-                    <DialogFooterButtons>
-                      {this.state.isDeleting && <Spinner />}
-                      <Button className="destructive" onClick={this.onClickUnlink.bind(this)} disabled={isDeleting}>
-                        Unlink
-                      </Button>
-                    </DialogFooterButtons>
-                  </DialogFooter>
-                </Dialog>
-              </Modal>
-            </>
+          {Boolean(this.state.workflowsResponse?.workflow?.length || this.state.reposResponse?.repoUrls?.length) && (
+            <div className="workflows-list">
+              {/* Render linked repositories */}
+              {this.state.reposResponse?.repoUrls.map((repoUrl) => (
+                <RepoItem repoUrl={repoUrl} onClickUnlinkItem={() => this.setState({ repoToUnlink: repoUrl })} />
+              ))}
+              {/* Render legacy workflows */}
+              {this.state.workflowsResponse?.workflow.map((workflow) => (
+                <RepoItem
+                  repoUrl={workflow.repoUrl}
+                  webhookUrl={workflow.webhookUrl}
+                  onClickUnlinkItem={() => this.setState({ workflowToDelete: workflow })}
+                />
+              ))}
+            </div>
           )}
+          <SimpleModalDialog
+            title="Unlink repository"
+            isOpen={Boolean(this.state.repoToUnlink)}
+            onRequestClose={() => this.setState({ repoToUnlink: null })}
+            submitLabel="Unlink"
+            destructive
+            onSubmit={() => this.onClickUnlinkRepo()}
+            loading={this.state.isUnlinkingRepo}>
+            <p>
+              Are you sure you want to unlink <strong>{formatURL(this.state.repoToUnlink || "")}</strong>? This will
+              prevent BuildBuddy workflows from being run.
+            </p>
+          </SimpleModalDialog>
+          <SimpleModalDialog
+            title="Unlink repository"
+            isOpen={Boolean(this.state.workflowToDelete)}
+            onRequestClose={() => this.setState({ workflowToDelete: null })}
+            submitLabel="Unlink"
+            destructive
+            onSubmit={() => this.onClickUnlinkWorkflow()}
+            loading={this.state.isDeletingWorkflow}>
+            <p>
+              Are you sure you want to unlink <strong>{formatURL(this.state.workflowToDelete?.repoUrl || "")}</strong>?
+              This will prevent BuildBuddy workflows from being run.
+            </p>
+          </SimpleModalDialog>
         </div>
       </div>
     );
   }
 }
 
-type WorkflowItemProps = {
-  workflow: Workflow;
-  onClickUnlinkItem: (workflow: Workflow) => void;
+type RepoItemProps = {
+  repoUrl: string;
+  webhookUrl?: string;
+  onClickUnlinkItem: (url: string) => void;
 };
 
-type WorkflowItemState = {
+type RepoItemState = {
   isMenuOpen: boolean;
-  copiedToClipboard: boolean;
 };
 
-class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState> {
-  state: WorkflowItemState = { isMenuOpen: false, copiedToClipboard: false };
+class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
+  state: RepoItemState = { isMenuOpen: false };
 
   private onClickMenuButton() {
     this.setState({ isMenuOpen: !this.state.isMenuOpen });
@@ -241,46 +284,32 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
   }
 
   private onClickCopyWebhookUrl() {
-    copyToClipboard(this.props.workflow.webhookUrl);
-    this.setState({ copiedToClipboard: true });
-    setTimeout(() => {
-      this.setState({ copiedToClipboard: false });
-    }, 1000);
+    copyToClipboard(this.props.webhookUrl || "");
+    alert_service.success("Copied webhook URL to clipboard!");
   }
 
   private onClickUnlinkMenuItem() {
     this.setState({ isMenuOpen: false });
-    this.props.onClickUnlinkItem(this.props.workflow);
-  }
-
-  private onClickRepoUrl(e: React.MouseEvent) {
-    e.preventDefault();
-    const path = (e.target as HTMLAnchorElement).getAttribute("href");
-    // Should always be defined by template below, just making typescript happy.
-    if (path) {
-      router.navigateTo(path);
-    }
+    this.props.onClickUnlinkItem(this.props.repoUrl);
   }
 
   render() {
-    const { repoUrl } = this.props.workflow;
-    const { isMenuOpen, copiedToClipboard } = this.state;
-
-    const url = new URL(repoUrl);
-    url.protocol = "https:";
-
     return (
       <div className="workflow-item container">
         <div className="workflow-item-column">
           <div className="workflow-item-row">
             <GitMerge />
-            <a
-              href={router.getWorkflowHistoryUrl(repoUrl)}
-              onClick={this.onClickRepoUrl.bind(this)}
-              className="repo-url">
-              {url.host}
-              {url.pathname}
-            </a>
+            <div>
+              <Link href={router.getWorkflowHistoryUrl(normalizeRepoURL(this.props.repoUrl))} className="repo-url">
+                {formatURL(this.props.repoUrl)}
+              </Link>
+              {capabilities.config.githubAppEnabled && this.props.webhookUrl && (
+                <div className="upgrade-notice">
+                  <AlertCircle className="icon orange" /> This repository uses the legacy GitHub OAuth integration.
+                  Unlink and re-link to use the new GitHub App integration.
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="workflow-item-column workflow-dropdown-container">
@@ -291,13 +320,11 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
               onClick={this.onClickMenuButton.bind(this)}>
               <MoreVertical />
             </OutlinedButton>
-            <Popup isOpen={isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
+            <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
               <Menu className="workflow-dropdown-menu">
-                <MenuItem
-                  onClick={this.onClickCopyWebhookUrl.bind(this)}
-                  className={copiedToClipboard ? "copied-to-clipboard" : ""}>
-                  {copiedToClipboard ? <>Copied!</> : <>Copy webhook URL</>}
-                </MenuItem>
+                {this.props.webhookUrl && (
+                  <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
+                )}
                 <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
               </Menu>
             </Popup>
@@ -306,4 +333,8 @@ class WorkflowItem extends React.Component<WorkflowItemProps, WorkflowItemState>
       </div>
     );
   }
+}
+
+function formatURL(url: string) {
+  return normalizeRepoURL(url).replace(/^https:\/\//, "");
 }

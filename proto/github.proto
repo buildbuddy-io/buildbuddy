@@ -109,45 +109,47 @@ message UnlinkAppInstallationResponse {
   context.ResponseContext response_context = 1;
 }
 
-// A request to list repos available to a particular installation.
-message GetReposRequest {
-  context.RequestContext request_context = 1;
-
-  // The GitHub username or organization name to search within. The
-  // authenticated user must have access to a GitHub App installation associated
-  // with the repo.
-  // Required.
-  string owner = 2;
-
-  // The plain text search query attempting to match all or part of the repo
-  // name. This is interpreted according to GitHub's repository search syntax:
-  // https://docs.github.com/en/rest/search?apiVersion=2022-11-28#search-repositories
-  //
-  // Note that an additional filter is applied to the query to restrict the
-  // search to repos owned by the specified owner.
-  string query = 3;
-}
-
-message GetReposResponse {
-  context.ResponseContext response_context = 1;
-
-  message Repo {
-    // The repo URL.
-    // Example: "https://github.com/buildbuddy-io/buildbuddy"
-    string repo_url = 1;
-
-    // Whether the repository is linked to the authenticated organization.
-    bool linked = 2;
-  }
-
-  // The repos matching the request criteria.
-  repeated Repo repos = 2;
-}
-
 // Git repositories API.
 //
 // For now, Git repositories have to be explicitly configured in order to enable
 // BuildBuddy workflows.
+
+// A request to list repos accessible to the given installation ID.
+//
+// Note: This cannot be done from the frontend using Octokit because it
+// authenticates using an installation token.
+message GetAccessibleReposRequest {
+  context.RequestContext request_context = 1;
+
+  // The app installation ID. The authenticated user must have a linked GitHub
+  // account which has access to the installation, or an error is returned.
+  //
+  // Required.
+  int64 installation_id = 2;
+
+  // The plain text search query attempting to match all or part of the repo
+  // name.
+  //
+  // Optional.
+  string query = 3;
+}
+
+message GetAccessibleReposResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated string repo_urls = 2;
+}
+
+// A request to list the repos linked to the BuildBuddy org.
+message GetLinkedReposRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetLinkedReposResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated string repo_urls = 2;
+}
 
 // A request to link a repo to the authenticated org.
 //
