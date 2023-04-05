@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"io"
 	"strings"
 	"time"
 
@@ -253,4 +254,24 @@ func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 	}
 
 	return true, nil
+}
+
+func (a *AwsS3BlobStore) Writer(ctx context.Context, blobName string) (io.WriteCloser, error) {
+	// Open a pipe.
+	pr, pw := io.Pipe()
+
+	errch := make(chan error)
+
+	// Upload from pr in a separate Go routine.
+	go func() {
+		_, err := a.uploader.Upload(&s3manager.UploadInput{
+			Bucket: a.bucket,
+			Key:    aws.String(blobName),
+			Body:   pr,
+		})
+		errch <- err
+		close(errch)
+	}()
+
+	return util.NewCompressedBlobStoreWriter(ctx, pw, &util.AsyncCloser{Closer: pw, ErrorChannel: errch}, awsS3Label), nil
 }

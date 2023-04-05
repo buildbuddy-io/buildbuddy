@@ -1,8 +1,10 @@
 package mockstore
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -73,9 +75,32 @@ func (m *Mockstore) WriteBlob(_ context.Context, blobName string, data []byte) (
 	m.BlobMap[blobName] = make([]byte, len(data))
 	return copy(m.BlobMap[blobName], data), nil
 }
+
 func (m *Mockstore) DeleteBlob(_ context.Context, blobName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.BlobMap, blobName)
+	return nil
+}
+
+func (m *Mockstore) Writer(_ context.Context, blobName string) (io.WriteCloser, error) {
+	return &WriteCloser{bytes.Buffer{}, m, blobName}, nil
+}
+
+type WriteCloser struct {
+	buf      bytes.Buffer
+	m        *Mockstore
+	blobName string
+}
+
+func (w *WriteCloser) Write(p []byte) (int, error) {
+	w.m.mu.Lock()
+	defer w.m.mu.Unlock()
+	n, err := w.buf.Write(p)
+	w.m.BlobMap[w.blobName] = w.buf.Bytes()
+	return n, err
+}
+
+func (w *WriteCloser) Close() error {
 	return nil
 }

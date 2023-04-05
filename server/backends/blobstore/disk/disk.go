@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
 
@@ -118,4 +120,27 @@ func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, 
 		return false, err
 	}
 	return disk.FileExists(ctx, fullPath)
+}
+
+func (d *DiskBlobStore) Writer(ctx context.Context, blobName string) (io.WriteCloser, error) {
+	fullPath, err := d.blobPath(blobName)
+	if err != nil {
+		return nil, err
+	}
+
+	fw, err := disk.FileWriter(ctx, fullPath)
+	if err != nil {
+		return nil, err
+	}
+	fwCloser := &util.CustomCloser{CloseOp: func() error {
+		commitErr := fw.Commit()
+		if closeErr := fw.Close(); closeErr != nil {
+			if commitErr != nil {
+				log.Errorf("Error when committing file: %s", commitErr)
+			}
+			return closeErr
+		}
+		return commitErr
+	}}
+	return util.NewCompressedBlobStoreWriter(ctx, fw, fwCloser, diskLabel), nil
 }

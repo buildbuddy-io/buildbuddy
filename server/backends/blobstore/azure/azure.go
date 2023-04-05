@@ -158,3 +158,24 @@ func (z *AzureBlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 	}
 	return true, nil
 }
+
+func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (io.WriteCloser, error) {
+	// Open a pipe.
+	pr, pw := io.Pipe()
+
+	errch := make(chan error)
+
+	// Upload from pr in a separate Go routine.
+	go func() {
+		_, err := azblob.UploadStreamToBlockBlob(
+			ctx,
+			pr,
+			z.containerURL.NewBlockBlobURL(blobName),
+			azblob.UploadStreamToBlockBlobOptions{},
+		)
+		errch <- err
+		close(errch)
+	}()
+
+	return util.NewCompressedBlobStoreWriter(ctx, pw, &util.AsyncCloser{Closer: pw, ErrorChannel: errch}, azureLabel), nil
+}

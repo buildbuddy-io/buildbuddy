@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/backends/blobstore/util",
         "//server/util/disk",
+        "//server/util/log",
         "//server/util/tracing",
     ],
 )

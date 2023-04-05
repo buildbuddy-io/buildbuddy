@@ -3,6 +3,7 @@ package util
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
 	gstatus "google.golang.org/grpc/status"
@@ -120,4 +122,55 @@ func RecordDeleteMetrics(typeLabel string, startTime time.Time, err error) {
 	metrics.BlobstoreDeleteDurationUsec.With(prometheus.Labels{
 		metrics.BlobstoreTypeLabel: typeLabel,
 	}).Observe(float64(duration.Microseconds()))
+}
+
+type compressedWriter struct {
+	ctx        context.Context
+	gzipWriter *gzip.Writer
+	closer     io.Closer
+	label      string
+	n          int
+}
+
+func NewCompressedBlobStoreWriter(ctx context.Context, w io.Writer, c io.Closer, label string) io.WriteCloser {
+	return &compressedWriter{ctx: ctx, gzipWriter: gzip.NewWriter(w), closer: c, label: label, n: 0}
+}
+
+func (d *compressedWriter) Write(p []byte) (int, error) {
+	start := time.Now()
+	_, spn := tracing.StartSpan(d.ctx)
+	n, err := d.gzipWriter.Write(p)
+	spn.End()
+	RecordWriteMetrics(d.label, start, d.n, err)
+	d.n += n
+	return n, err
+}
+
+func (d *compressedWriter) Close() error {
+	d.gzipWriter.Close()
+	err := d.closer.Close()
+	return err
+}
+
+type AsyncCloser struct {
+	Closer       io.Closer
+	ErrorChannel chan error
+}
+
+func (a *AsyncCloser) Close() error {
+	if err := a.Closer.Close(); err != nil {
+		if err := <-a.ErrorChannel; err != nil {
+			return err
+		}
+		return err
+	}
+	return <-a.ErrorChannel
+}
+
+type CustomCloser struct {
+	CloseOp func() error
+}
+
+func (c *CustomCloser) Close() error {
+	return c.CloseOp()
 }

@@ -134,3 +134,9 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 		return false, err
 	}
 }
+
+func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (io.WriteCloser, error) {
+	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
+
+	return util.NewCompressedBlobStoreWriter(ctx, writer, writer, gcsLabel), nil
+}
