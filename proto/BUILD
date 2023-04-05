@@ -179,6 +179,16 @@ proto_library(
 )
 
 proto_library(
+    name = "soci_proto",
+    srcs = [
+        "soci.proto",
+    ],
+    deps = [
+        ":remote_execution_proto",
+    ],
+)
+
+proto_library(
     name = "stat_filter_proto",
     srcs = ["stat_filter.proto"],
 )
@@ -659,6 +669,16 @@ go_proto_library(
     proto = ":secrets_proto",
     deps = [
         ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "soci_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/soci",
+    proto = ":soci_proto",
+    deps = [
+        ":remote_execution_go_proto",
     ],
 )
 
