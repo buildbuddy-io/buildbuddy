@@ -106,7 +106,6 @@ build:release-m1 --remote_download_toplevel
 
 # Configuration used for Buildbuddy auto-release
 build:auto-release --config=remote
-build:auto-release --build_metadata=ROLE=AUTORELEASE
 build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 build:auto-release -c opt
 
