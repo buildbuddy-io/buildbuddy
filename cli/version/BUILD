@@ -10,7 +10,6 @@ string_flag(
 write_flag_to_file(
     name = "version_flag.txt",
     flag = ":cli_version",
-    template = "%s",
 )
 
 go_library(
