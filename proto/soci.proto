@@ -5,42 +5,41 @@ import "proto/remote_execution.proto";
 package soci;
 
 enum Type {
-    UNKNOWN_TYPE = 0;
+  UNKNOWN_TYPE = 0;
 
-    // The SOCI Index is a JSON file containing indexing information for some
-    // layers of the images. It is basically a mapping from the digest of the
-    // layer to the digest of the ZTOC. Note that some layers may be absent as
-    // only layers above a certain size are indexed.
-    SOCI_INDEX = 1;
+  // The SOCI Index is a JSON file containing indexing information for some
+  // layers of the images. It is basically a mapping from the digest of the
+  // layer to the digest of the ZTOC. Note that some layers may be absent as
+  // only layers above a certain size are indexed.
+  SOCI_INDEX = 1;
 
-    // The ZTOC (Zip Table Of Contents) is a JSON file containing indexing
-    // information for a single layer. It is basically a mapping from file path
-    // to the byte offsets in the zipped layer where the file exists.
-    ZTOC = 2;
+  // The ZTOC (Zip Table Of Contents) is a JSON file containing indexing
+  // information for a single layer. It is basically a mapping from file path
+  // to the byte offsets in the zipped layer where the file exists.
+  ZTOC = 2;
 }
 
 // A single SOCI artifact.
 message Artifact {
-    build.bazel.remote.execution.v2.Digest digest = 1;
-    Type type = 2;
-    bytes data = 3;
+  build.bazel.remote.execution.v2.Digest digest = 1;
+  Type type = 2;
+  bytes data = 3;
 }
 
 message ReadRequest {
-    // The (OCI, sha256:foo) digest of the image manifest.
-    string image_manifest_digest = 1;
+  // The (OCI, sha256:foo) digest of the image manifest.
+  string image_manifest_digest = 1;
 }
 
 message WriteRequest {
-    // The (OCI, sha256:foo) digest of the image manifest.
-    string image_manifest_digest = 1;
-    Artifact artifact = 2;
+  // The (OCI, sha256:foo) digest of the image manifest.
+  string image_manifest_digest = 1;
+  Artifact artifact = 2;
 }
 
-message WriteResponse {
-}
+message WriteResponse {}
 
 service SociArtifactStore {
-   rpc Read(ReadRequest) returns (stream Artifact);
-   rpc Write(stream WriteRequest) returns (WriteResponse);
+  rpc Read(ReadRequest) returns (stream Artifact);
+  rpc Write(stream WriteRequest) returns (WriteResponse);
 }
