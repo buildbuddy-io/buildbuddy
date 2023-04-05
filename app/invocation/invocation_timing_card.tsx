@@ -77,6 +77,16 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return Boolean(this.getProfileFile()?.uri?.startsWith("bytestream://"));
   }
 
+  timingProfileFallbackParams(invocationId: string, attempt: number, name: string) {
+    const params: Record<string, string> = {
+      invocation_id: invocationId,
+      attempt: attempt.toString(),
+      artifact: "timing_profile",
+      name: name,
+    };
+    return params;
+  }
+
   fetchProfile() {
     if (!this.isTimingEnabled()) return;
 
@@ -89,7 +99,16 @@ export default class InvocationTimingCardComponent extends React.Component<Props
 
     this.setState({ loading: true });
     rpcService
-      .fetchBytestreamFile(profileFile?.uri, this.props.model.getId(), isGzipped ? "arraybuffer" : "json")
+      .fetchBytestreamFile(
+        profileFile?.uri,
+        this.props.model.getId(),
+        isGzipped ? "arraybuffer" : "json",
+        this.timingProfileFallbackParams(
+          this.props.model.getId(),
+          Number(this.props.model.getAttempt()),
+          profileFile?.name
+        )
+      )
       .then((contents: any) => {
         if (isGzipped) {
           contents = parseProfile(pako.inflate(contents, { to: "string" }));

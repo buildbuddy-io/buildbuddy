@@ -277,6 +277,10 @@ export default class InvocationModel {
     return this.invocations.find(() => true)?.invocationId;
   }
 
+  getAttempt() {
+    return this.invocations.find(() => true)?.attempt;
+  }
+
   getHost() {
     return this.invocations.find(() => true)?.host || this.workspaceStatusMap.get("BUILD_HOST") || "Unknown host";
   }

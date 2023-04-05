@@ -85,6 +85,9 @@ func StreamSingleFileFromBytestreamZip(ctx context.Context, env environment.Env,
 func streamSingleFileFromBytestreamZipInternal(ctx context.Context, env environment.Env, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
 	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, env, url, entry, streamer)
 	if err != nil {
+		if !status.IsNotFoundError(err) {
+			log.Warningf("Error streaming zip file contents: %s", err)
+		}
 		return err
 	}
 
@@ -152,7 +155,9 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 	// Sanitize the error so as to not expose internal services via the
 	// error message.
 	if err != nil {
-		log.Errorf("Error byte-streaming from %q: %s", stripUser(url), err)
+		if !status.IsNotFoundError(err) {
+			log.Errorf("Error byte-streaming from %q: %s", stripUser(url), err)
+		}
 		return status.UnavailableErrorf("failed to read byte stream resource %q", stripUser(url))
 	}
 	return nil
