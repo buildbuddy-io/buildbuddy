@@ -730,6 +730,19 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
+	if e.beValues.ProfileURI() != nil {
+		w, err := e.env.GetBlobstore().Writer(ctx, invocation.InvocationId+"/"+strconv.FormatUint(invocation.Attempt, 10)+"/"+e.beValues.ProfileName())
+		if err != nil {
+			return err
+		}
+		if err := bytestream.StreamBytestreamFile(ctx, e.env, e.beValues.ProfileURI(), w); err != nil {
+			return err
+		}
+		if err := w.Close(); err != nil {
+			return err
+		}
+	}
+
 	ti, err := e.tableInvocationFromProto(invocation, iid)
 	if err != nil {
 		return err
