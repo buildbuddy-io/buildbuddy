@@ -102,6 +102,11 @@ build:release-m1 --stamp
 build:release-m1 --define release=true
 build:release-m1 --remote_download_toplevel
 
+# Configuration used for Buildbuddy auto-release
+build:auto-release --config=remote
+build:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
+build:auto-release -c opt
+
 # By default, build logs get sent to the production server
 build --bes_results_url=https://app.buildbuddy.io/invocation/
 build --bes_backend=grpcs://remote.buildbuddy.io
