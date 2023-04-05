@@ -129,6 +129,7 @@ const matchers: SuggestionMatcher[] = [
   }),
   ({ model, buildLogs }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (!buildLogs.includes("DEADLINE_EXCEEDED")) return null;
@@ -156,6 +157,8 @@ const matchers: SuggestionMatcher[] = [
   // Suggest recommended flags for `bazel coverage` when using RBE
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
     if (model.getCommand() !== "coverage") return null;
     if (!model.optionsMap.get("remote_executor")) return null;
     if (
@@ -196,6 +199,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest remote.buildbuddy.io instead of cloud.buildbuddy.io
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     // remote.buildbuddy.io doesn't support cert-based auth
     if (model.optionsMap.get("tls_client_certificate")) return null;
@@ -233,6 +237,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest using cache compression
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (model.optionsMap.get("experimental_remote_cache_compression")) return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
@@ -260,6 +265,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest using --jobs
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("jobs")) return null;
@@ -279,6 +285,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest --experimental_remote_build_event_upload=minimal
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache")) return null;
     if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
@@ -311,6 +318,7 @@ const matchers: SuggestionMatcher[] = [
     return null;
 
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("remote_download_outputs")) return null;
@@ -335,6 +343,8 @@ const matchers: SuggestionMatcher[] = [
   // Suggest --nolegacy_important_outputs
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
     if (model.optionsMap.get("legacy_important_outputs")) return null;
 
     return {
@@ -356,6 +366,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest modify_execution_info for iOS builds
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("modify_execution_info")) return null;
@@ -402,6 +413,7 @@ const matchers: SuggestionMatcher[] = [
     return null;
 
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
     if (model.optionsMap.get("experimental_remote_cache_async")) return null;
@@ -428,6 +440,7 @@ const matchers: SuggestionMatcher[] = [
   // Suggest configuring metadata to enable test grid
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
 
     if (!capabilities.config.testDashboardEnabled) return null;
     if (model.invocations[0]?.role !== "CI") return null;
