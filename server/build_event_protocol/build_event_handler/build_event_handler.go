@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -695,6 +696,19 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 			return err
 		}
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
+	}
+
+	if e.beValues.ProfileURI() != nil {
+		w, err := e.env.GetBlobstore().Writer(ctx, invocation.InvocationId+"/"+strconv.FormatUint(invocation.Attempt, 10)+"/"+e.beValues.ProfileName())
+		if err != nil {
+			return err
+		}
+		if err := bytestream.StreamBytestreamFile(ctx, e.env, e.beValues.ProfileURI(), w); err != nil {
+			return err
+		}
+		if err := w.Close(); err != nil {
+			return err
+		}
 	}
 
 	ti, err := e.tableInvocationFromProto(invocation, iid)
