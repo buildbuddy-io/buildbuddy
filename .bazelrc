@@ -69,8 +69,6 @@ build:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 build:workflows --color=yes
 build:workflows --disk_cache=
 build:workflows --flaky_test_attempts=2
-# TODO(http://go/b/1575): De-flake and remove this
-build:workflows --flaky_test_attempts=//enterprise/server/test/webdriver/invocation:invocation_test_chromium-local@4
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.
 build:workflows --config=buildbuddy_bes_backend

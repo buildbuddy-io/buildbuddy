@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,7 +32,23 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	webtester.Login(wt, target)
 
 	// Get the build flags needed for BuildBuddy, including API key, bes results url, bes backend, and remote cache
-	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(wt, target.HTTPURL(), webtester.WithEnableCache)
+	setupPageOpts := []webtester.SetupPageOption{
+		webtester.WithEnableCache,
+	}
+
+	// Don't use a personal API key if enabled, because they don't write AC results, and won't result in a cache hit
+	// with the second build
+	wt.Get(target.HTTPURL() + "/settings/org/details")
+	checkbox := wt.Find(`[name="userOwnedKeysEnabled"]`)
+	personalKeysEnabled := checkbox.IsSelected()
+	if personalKeysEnabled {
+		setupPageOpts = append(setupPageOpts, webtester.WithAPIKeySelection("Default"))
+	}
+
+	buildbuddyBuildFlags := webtester.GetBazelBuildFlags(
+		wt, target.HTTPURL(),
+		setupPageOpts...,
+	)
 	t.Log(buildbuddyBuildFlags)
 	buildArgs = append(buildArgs, buildbuddyBuildFlags...)
 
@@ -47,18 +62,18 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
 
 	details := wt.FindByDebugID("invocation-details").Text()
-	assert.Contains(t, details, "Succeeded")
-	assert.NotContains(t, details, "Failed")
-	assert.Contains(t, details, "//:a")
-	assert.Contains(t, details, "Cache on")
-	assert.Contains(t, details, "Remote execution off")
+	require.Contains(t, details, "Succeeded")
+	require.NotContains(t, details, "Failed")
+	require.Contains(t, details, "//:a")
+	require.Contains(t, details, "Cache on")
+	require.Contains(t, details, "Remote execution off")
 
 	// Make sure we can view the cache section
 	wt.FindByDebugID("cache-sections")
 	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
 	cacheRequestsCard := wt.FindByDebugID("cache-results-table").Text()
-	assert.Contains(t, cacheRequestsCard, "Write")
-	assert.NotContains(t, cacheRequestsCard, "Hit")
+	require.Contains(t, cacheRequestsCard, "Write")
+	require.NotContains(t, cacheRequestsCard, "Hit")
 
 	// Second build of the same target
 	testbazel.Clean(context.Background(), t, workspacePath)
@@ -68,29 +83,29 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
 
 	details = wt.FindByDebugID("invocation-details").Text()
-	assert.Contains(t, details, "Succeeded")
-	assert.NotContains(t, details, "Failed")
-	assert.Contains(t, details, "//:a")
-	assert.Contains(t, details, "Cache on")
-	assert.Contains(t, details, "Remote execution off")
+	require.Contains(t, details, "Succeeded")
+	require.NotContains(t, details, "Failed")
+	require.Contains(t, details, "//:a")
+	require.Contains(t, details, "Cache on")
+	require.Contains(t, details, "Remote execution off")
 
 	// Cache section should contain a cache hit
 	wt.FindByDebugID("cache-sections")
 	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
 	cacheRequestsCard = wt.FindByDebugID("cache-results-table").Text()
-	assert.Contains(t, cacheRequestsCard, "Hit")
+	require.Contains(t, cacheRequestsCard, "Hit")
 
 	// Make sure it shows up in repo history
 	webtester.ClickSidebarItem(wt, "Repos")
 
 	historyCardTitle := wt.Find(".history .card .title").Text()
-	assert.Equal(t, "test-owner/test-repo", historyCardTitle)
+	require.Equal(t, "test-owner/test-repo", historyCardTitle)
 
 	// Make sure it shows up in commit history
 	webtester.ClickSidebarItem(wt, "Commits")
 
 	historyCardTitle = wt.Find(".history .card .title").Text()
-	assert.Equal(t, "Commit cc5011", historyCardTitle)
+	require.Equal(t, "Commit cc5011", historyCardTitle)
 
 	// Sanity check that the login button is not present while logged in,
 	// since we rely on this to check whether we're logged out
@@ -180,11 +195,11 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	wt.Get(target.HTTPURL() + "/invocation/" + result.InvocationID)
 
 	details := wt.FindByDebugID("invocation-details").Text()
-	assert.Contains(t, details, "Succeeded")
-	assert.NotContains(t, details, "Failed")
-	assert.Contains(t, details, "//:a")
-	assert.Contains(t, details, "Cache on")
-	assert.Contains(t, details, "Remote execution off")
+	require.Contains(t, details, "Succeeded")
+	require.NotContains(t, details, "Failed")
+	require.Contains(t, details, "//:a")
+	require.Contains(t, details, "Cache on")
+	require.Contains(t, details, "Remote execution off")
 
 	// Make sure we can view the cache section
 	wt.FindByDebugID("cache-sections")
