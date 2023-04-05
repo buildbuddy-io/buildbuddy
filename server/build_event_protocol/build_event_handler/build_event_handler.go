@@ -25,6 +25,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/olapdbconfig"
+
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -437,6 +439,17 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		}
 		if err := w.Close(); err != nil {
 			log.CtxErrorf(ctx, "Failed to close blobstore writer for path %s to persist cache artifact at %s: %s", path, uri.String(), err)
+			continue
+		}
+		urlStr := strings.TrimPrefix(uri.RequestURI(), "/")
+		parsedRN, err := digest.ParseDownloadResourceName(urlStr)
+		if err != nil {
+			log.CtxWarningf(ctx, "Could not delete artifact from cache at %s: %s", uri.String(), err)
+			continue
+		}
+		resourceName := digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_CAS, parsedRN.GetDigestFunction()).ToProto()
+		if err := r.env.GetCache().Delete(ctx, resourceName); err != nil {
+			log.CtxErrorf(ctx, "Could not delete artifact from cache at %s: %s", uri.String(), err)
 		}
 	}
 }
