@@ -2248,7 +2248,9 @@ func (e *partitionEvictor) refresh(ctx context.Context, key *evictionKey) (bool,
 
 	md, err := readFileMetadata(db, key.bytes)
 	if err != nil {
-		log.Warningf("could not refresh atime for %q: %s", key.String(), err)
+		if !status.IsNotFoundError(err) {
+			log.Warningf("could not refresh atime for %q: %s", key.String(), err)
+		}
 		return true, time.Time{}, nil
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
