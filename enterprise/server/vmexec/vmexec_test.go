@@ -154,6 +154,28 @@ func TestExecStreamed_Cancel(t *testing.T) {
 	assert.Equal(t, commandutil.NoExitCode, res.ExitCode)
 }
 
+func TestExecStreamed_Crash(t *testing.T) {
+	ctx := context.Background()
+	client := startExecService(t)
+	wd := testfs.MakeTempDir(t)
+	cmd := &repb.Command{
+		Arguments: []string{"bash", "-c", `
+			echo foo-stdout >&1
+			echo bar-stderr >&2
+			kill 0 -KILL
+		`},
+	}
+
+	res := vmexec_client.Execute(ctx, client, cmd, wd, "" /*=user*/, nil /*=statsListener*/, nil /*=stdio*/)
+
+	assert.Error(t, res.Error)
+
+	assert.True(t, status.IsResourceExhaustedError(res.Error), "expected ResourceExhausted but got %T: %s", res.Error, res.Error)
+	assert.Equal(t, "foo-stdout\n", string(res.Stdout), "should get partial stdout despite crash")
+	assert.Equal(t, "bar-stderr\n", string(res.Stderr), "should get partial stderr despite crash")
+	assert.Equal(t, commandutil.KilledExitCode, res.ExitCode)
+}
+
 func startExecService(t *testing.T) vmxpb.ExecClient {
 	lis, err := net.Listen("tcp", "0.0.0.0:0")
 	require.NoError(t, err)
