@@ -612,4 +612,4 @@ func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
 }
 func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
 	r.sociArtifactStoreServer = s
-}\
+}
