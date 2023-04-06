@@ -11,6 +11,7 @@ go_library(
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
+        "//proto:soci_go_proto",
         "//server/interfaces",
         "@com_github_go_redis_redis_v8//:redis",
         "@go_googleapis//google/bytestream:bytestream_go_proto",
