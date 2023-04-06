@@ -248,7 +248,10 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 		if req.GetId() != "" {
 			q = tx.Raw(`SELECT * FROM Workflows WHERE workflow_id = ?`, req.GetId())
 		} else {
-			q = tx.Raw(`SELECT * FROM Workflows WHERE repo_url = ?`, req.GetRepoUrl())
+			q = tx.Raw(`
+				SELECT * FROM Workflows
+				WHERE group_id = ? AND repo_url = ?
+			`, authenticatedUser.GetGroupID(), req.GetRepoUrl())
 		}
 		if err := q.Take(&wf).Error; err != nil {
 			return err
