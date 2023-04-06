@@ -272,10 +272,9 @@ func (r *commandRunner) String() string {
 		ph = "<ERR!>"
 	}
 	return fmt.Sprintf(
-		"%s:%s:%d:%s:%s:%s:%s",
+		"%s:%s:%d:%s:%s:%s",
 		r.debugID, r.state, r.taskNumber, r.ACL.GetGroupId(),
-		truncate(r.InstanceName, 8, "..."), r.PlatformProperties.WorkflowID,
-		truncate(ph, 8, ""))
+		truncate(r.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
 func (r *commandRunner) pullCredentials() (container.PullCredentials, error) {
@@ -1159,7 +1158,11 @@ func (q *query) String() string {
 	if err != nil {
 		ph = "<ERR!>"
 	}
-	return fmt.Sprintf("%s:%s:%s", q.User.GetGroupID(), q.InstanceName, ph)
+	return fmt.Sprintf(
+		"%s:%s:%s",
+		q.User.GetGroupID(),
+		truncate(q.InstanceName, 8, "..."),
+		truncate(ph, 8, ""))
 }
 
 func (p *pool) String() string {
@@ -1192,7 +1195,6 @@ func (p *pool) take(ctx context.Context, q *query) (*commandRunner, error) {
 			r.state != paused ||
 			r.InstanceName != q.InstanceName ||
 			rPlatform != qPlatform {
-			log.CtxInfof(ctx, "Skipping ineligible runner %s for query %s", r, q)
 			continue
 		}
 
