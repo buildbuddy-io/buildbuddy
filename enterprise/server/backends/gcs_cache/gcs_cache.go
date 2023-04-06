@@ -501,10 +501,10 @@ func (g *GCSCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces
 		return nil, err
 	}
 	obj := g.bucketHandle.Object(k)
+	ctx, cancel := context.WithCancel(ctx)
 	writer := obj.If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 	setChunkSize(r.GetDigest(), writer)
 	timer := cache_metrics.NewCacheTimer(cacheLabels)
-	ctx, cancel := context.WithCancel(ctx)
 	dwc := &gcsDedupingWriteCloser{
 		cancelFunc:  cancel,
 		WriteCloser: writer,
