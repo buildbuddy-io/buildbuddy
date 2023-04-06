@@ -19,7 +19,7 @@ type GitHubAppImportProps = {
 };
 
 type State = {
-  installationsResponse: { installations: github.AppInstallation[] } | null;
+  installationsResponse: github.GetAppInstallationsResponse | null;
   installationsLoading: boolean;
 
   accessibleReposResponse: github.GetAccessibleReposResponse | null;
