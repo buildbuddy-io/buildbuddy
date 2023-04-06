@@ -27,14 +27,14 @@ message Artifact {
   Type type = 2;
 }
 
-message ReadRequest {
+message GetArtifactsRequest {
   string image_name = 1;
 }
 
-message ReadResponse {
-  repeated Artifact = 1;
+message GetArtifactsResponse {
+  repeated Artifact artifact = 1;
 }
 
 service SociArtifactStore {
-  rpc Read(ReadRequest) returns (ReadResponse);
+  rpc GetArtifacts(GetArtifactsRequest) returns (GetArtifactsResponse);
 }
