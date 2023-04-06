@@ -27,13 +27,15 @@ message Artifact {
 }
 
 message ReadRequest {
-  // The (OCI, sha256:foo) digest of the image manifest.
-  string image_manifest_digest = 1;
+  // The image ID, which is the digest of the image's config, found with:
+  //     podman inspect <image>
+  string image_id = 1;
 }
 
 message WriteRequest {
-  // The (OCI, sha256:foo) digest of the image manifest.
-  string image_manifest_digest = 1;
+  // The image ID, which is the digest of the image's config, found with:
+  //     podman inspect <image>
+  string image_id = 1;
   Artifact artifact = 2;
 }
 
