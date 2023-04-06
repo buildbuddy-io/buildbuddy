@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"net"
 	"net/url"
 	"regexp"
@@ -65,6 +66,30 @@ func OwnerRepoFromRepoURL(repoURL string) (string, error) {
 		return "", status.WrapErrorf(err, "failed to parse repo URL %q", repoURL)
 	}
 	return strings.TrimPrefix(u.Path, "/"), nil
+}
+
+type RepoURL struct {
+	Host, Owner, Repo string
+}
+
+// String returns the normalized repo URL.
+func (r *RepoURL) String() string {
+	return fmt.Sprintf("https://%s/%s/%s", r.Host, r.Owner, r.Repo)
+}
+
+func ParseGitHubRepoURL(repoURL string) (*RepoURL, error) {
+	u, err := NormalizeRepoURL(repoURL)
+	if err != nil {
+		return nil, status.WrapError(err, "failed to parse GitHub repo URL")
+	}
+	if u.Host != "github.com" {
+		return nil, status.InvalidArgumentError("unexpected non-GitHub URL")
+	}
+	pathParts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	if len(pathParts) < 2 {
+		return nil, status.InvalidArgumentErrorf("invalid repo URL")
+	}
+	return &RepoURL{Host: u.Host, Owner: pathParts[0], Repo: pathParts[1]}, nil
 }
 
 func ParseRepoURL(repo string) (*url.URL, error) {

@@ -471,6 +471,12 @@ type GitHubApp interface {
 	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 
+	GetLinkedGitHubRepos(context.Context, *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error)
+	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
+	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
+
+	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
+
 	// OAuthHandler returns the OAuth flow HTTP handler.
 	OAuthHandler() http.Handler
 }

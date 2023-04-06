@@ -9,11 +9,13 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:github_go_proto",
+        "//proto:workflow_go_proto",
         "//server/backends/github",
         "//server/environment",
         "//server/tables",
         "//server/util/authutil",
         "//server/util/db",
+        "//server/util/git",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/retry",

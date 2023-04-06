@@ -235,9 +235,8 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	if err := ws.checkPreconditions(ctx); err != nil {
 		return nil, err
 	}
-	workflowID := req.GetId()
-	if workflowID == "" {
-		return nil, status.InvalidArgumentError("An ID is required to delete a workflow.")
+	if req.GetId() == "" && req.GetRepoUrl() == "" {
+		return nil, status.InvalidArgumentError("An ID or repo_url is required to delete a workflow.")
 	}
 	authenticatedUser, err := ws.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -245,14 +244,23 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	}
 	var wf tables.Workflow
 	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-		if err := tx.Raw(`SELECT user_id, group_id, perms, access_token, repo_url, git_provider_webhook_id FROM Workflows WHERE workflow_id = ?`, workflowID).Take(&wf).Error; err != nil {
+		var q *db.DB
+		if req.GetId() != "" {
+			q = tx.Raw(`SELECT * FROM Workflows WHERE workflow_id = ?`, req.GetId())
+		} else {
+			q = tx.Raw(`
+				SELECT * FROM Workflows
+				WHERE group_id = ? AND repo_url = ?
+			`, authenticatedUser.GetGroupID(), req.GetRepoUrl())
+		}
+		if err := q.Take(&wf).Error; err != nil {
 			return err
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: wf.UserID}, wf.GroupID, wf.Perms)
 		if err := perms.AuthorizeWrite(&authenticatedUser, acl); err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, req.GetId()).Error
+		return tx.Exec(`DELETE FROM Workflows WHERE workflow_id = ?`, wf.WorkflowID).Error
 	})
 	if err != nil {
 		return nil, err

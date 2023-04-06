@@ -132,6 +132,18 @@ service BuildBuddyService {
   rpc UnlinkGitHubAppInstallation(github.UnlinkAppInstallationRequest)
       returns (github.UnlinkAppInstallationResponse);
 
+  // Linked Git repositories API
+  rpc GetLinkedGitHubRepos(github.GetLinkedReposRequest)
+      returns (github.GetLinkedReposResponse);
+  rpc LinkGitHubRepo(github.LinkRepoRequest) returns (github.LinkRepoResponse);
+  rpc UnlinkGitHubRepo(github.UnlinkRepoRequest)
+      returns (github.UnlinkRepoResponse);
+
+  // Installation-repos API (authenticates w/ GitHub using
+  // installation access token)
+  rpc GetAccessibleGitHubRepos(github.GetAccessibleReposRequest)
+      returns (github.GetAccessibleReposResponse);
+
   // Runner API
   rpc Run(runner.RunRequest) returns (runner.RunResponse);
 
