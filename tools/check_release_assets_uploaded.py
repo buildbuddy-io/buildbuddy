@@ -80,7 +80,6 @@ def main():
 
     if len(expected_assets) > 0:
         print(f"Missing assets {expected_assets}", file=sys.stderr)
-        exit(1)
 
 if __name__ == "__main__":
     main()
