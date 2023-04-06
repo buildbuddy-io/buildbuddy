@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -92,6 +93,11 @@ const (
 
 	bazelBinaryName    = "bazel"
 	bazeliskBinaryName = "bazelisk"
+
+	// Bazel exit codes
+	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
+
+	bazelLocalEnvironmentalErrorExitCode = 36
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
@@ -440,6 +446,14 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 func main() {
 	if err := run(); err != nil {
 		if result, ok := err.(*actionResult); ok {
+
+			// If this is a workflow, kill-signal the current process on certain exit
+			// codes (rather than exiting) so that the workflow action is
+			// retried.
+			if *workflowID != "" && result.exitCode == bazelLocalEnvironmentalErrorExitCode {
+				syscall.Kill(0, syscall.SIGKILL)
+			}
+
 			os.Exit(result.exitCode)
 		}
 		log.Errorf("%s", err)
