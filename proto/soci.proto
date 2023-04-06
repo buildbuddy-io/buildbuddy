@@ -21,27 +21,20 @@ enum Type {
 
 // A single SOCI artifact.
 message Artifact {
+  // The digest of the artifact. The bytes of the artifact may be retrieved
+  // from the CAS using this digest.
   build.bazel.remote.execution.v2.Digest digest = 1;
   Type type = 2;
-  bytes data = 3;
 }
 
 message ReadRequest {
-  // The image ID, which is the digest of the image's config, found with:
-  //     podman inspect <image>
-  string image_id = 1;
+  string image_name = 1;
 }
 
-message WriteRequest {
-  // The image ID, which is the digest of the image's config, found with:
-  //     podman inspect <image>
-  string image_id = 1;
-  Artifact artifact = 2;
+message ReadResponse {
+  repeated Artifact = 1;
 }
-
-message WriteResponse {}
 
 service SociArtifactStore {
-  rpc Read(ReadRequest) returns (stream Artifact);
-  rpc Write(stream WriteRequest) returns (WriteResponse);
+  rpc Read(ReadRequest) returns (ReadResponse);
 }
