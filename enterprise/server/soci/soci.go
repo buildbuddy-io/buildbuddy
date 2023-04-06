@@ -46,7 +46,7 @@ func (s *SociArtifactStore) Read(req *socipb.ReadRequest, stream socipb.SociArti
 
 	// Search for the digest of the soci index in blobstore and fetch the
 	// contents from the cache if found.
-	bytes, err := s.blobstore.ReadBlob(ctx, blobKey(req.ImageManifestDigest))
+	bytes, err := s.blobstore.ReadBlob(ctx, blobKey(req.ImageId))
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func (s *SociArtifactStore) Write(stream socipb.SociArtifactStore_WriteServer) e
 			// When we receive a soci index, write an entry in the blobstore
 			// named with the image manifest's digest so we can look it up
 			// later.
-			s.blobstore.WriteBlob(ctx, blobKey(req.ImageManifestDigest), []byte(serializeDigest(req.Artifact.Digest)))
+			s.blobstore.WriteBlob(ctx, blobKey(req.ImageId), []byte(serializeDigest(req.Artifact.Digest)))
 		}
 		s.cache.Set(ctx, resourceName(req.Artifact.Digest), req.Artifact.Data)
 	}
