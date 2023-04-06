@@ -32,7 +32,8 @@ message GetArtifactsRequest {
 }
 
 message GetArtifactsResponse {
-  repeated Artifact artifact = 1;
+  string image_id = 1;
+  repeated Artifact artifacts = 2;
 }
 
 service SociArtifactStore {
