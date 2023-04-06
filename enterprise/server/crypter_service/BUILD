@@ -12,10 +12,15 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/tables",
+        "//server/util/log",
+        "//server/util/retry",
         "//server/util/status",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@io_gorm_gorm//:gorm",
         "@org_golang_x_crypto//chacha20poly1305",
         "@org_golang_x_crypto//hkdf",
+        "@org_golang_x_sync//singleflight",
+        "@org_uber_go_atomic//:atomic",
     ],
 )
 
@@ -24,7 +29,6 @@ go_test(
     srcs = ["crypter_service_test.go"],
     embed = [":crypter_service"],
     deps = [
-        "//enterprise/server/backends/kms",
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -32,10 +36,10 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
-        "//server/testutil/testfs",
         "//server/util/ioutil",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )
