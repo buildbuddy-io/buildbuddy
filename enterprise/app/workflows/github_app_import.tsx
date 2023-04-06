@@ -1,5 +1,3 @@
-import { Octokit } from "@octokit/rest";
-import Long from "long";
 import { Check, ChevronsDown, ExternalLink } from "lucide-react";
 import React from "react";
 import alertService from "../../../app/alert/alert_service";
@@ -77,10 +75,6 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
     if (this.props.user !== prevProps.user) this.fetch();
   }
 
-  private octokit() {
-    return new Octokit({ auth: this.props.user.githubToken });
-  }
-
   /** Fetches installations from GitHub as well as BB-linked repos. */
   private fetch() {
     this.fetchInstallationsRPC?.cancel();
@@ -93,23 +87,17 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
     if (!this.props.user.githubToken) return;
 
     this.setState({ installationsLoading: true });
-    this.fetchInstallationsRPC = new CancelablePromise(this.octokit().apps.listInstallationsForAuthenticatedUser())
+    this.fetchInstallationsRPC = rpcService.service
+      .getGitHubAppInstallations(new github.GetAppInstallationsRequest())
       .then((response) => {
-        const installations = response.data.installations.map((installation) =>
-          github.AppInstallation.create({
-            installationId: Long.fromNumber(installation.id),
-            owner: installation?.account?.login || "",
-          })
-        );
         this.setState({
-          installationsResponse: { installations },
+          installationsResponse: response,
           selectedInstallation:
-            installations.find((installation) => installation.owner === this.state.selectedInstallation?.owner) ||
-            installations[0],
+            response.installations.find(
+              (installation) => installation.owner === this.state.selectedInstallation?.owner
+            ) || response.installations[0],
         });
-        if (response.data?.installations?.length) {
-          this.search();
-        }
+        if (response.installations?.length) this.search();
       })
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ installationsLoading: false }));
@@ -125,7 +113,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
 
   private search() {
     this.searchRPC?.cancel();
-    this.setState({ accessibleReposLoading: false });
+    this.setState({ accessibleReposLoading: false, accessibleReposResponse: null });
     if (!this.props.user.githubToken) return;
 
     this.setState({ accessibleReposLoading: true });
@@ -192,7 +180,9 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
   }
 
   private renderRepos() {
-    if (!this.state.accessibleReposResponse?.repoUrls?.length) {
+    if (!this.state.accessibleReposResponse) return null;
+
+    if (!this.state.accessibleReposResponse.repoUrls?.length) {
       return <Banner type="info">No repos were found.</Banner>;
     }
 
