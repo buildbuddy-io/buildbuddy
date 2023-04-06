@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+import "proto/remote_execution.proto";
+
+package soci;
+
+enum Type {
+  UNKNOWN_TYPE = 0;
+
+  // The SOCI Index is a JSON file containing indexing information for some
+  // layers of the images. It is basically a mapping from the digest of the
+  // layer to the digest of the ZTOC. Note that some layers may be absent as
+  // only layers above a certain size are indexed.
+  SOCI_INDEX = 1;
+
+  // The ZTOC (Zip Table Of Contents) is a JSON file containing indexing
+  // information for a single layer. It is basically a mapping from file path
+  // to the byte offsets in the zipped layer where the file exists.
+  ZTOC = 2;
+}
+
+// A single SOCI artifact.
+message Artifact {
+  // The digest of the artifact. The bytes of the artifact may be retrieved
+  // from the CAS using this digest.
+  build.bazel.remote.execution.v2.Digest digest = 1;
+  Type type = 2;
+}
+
+message GetArtifactsRequest {
+  string image_name = 1;
+}
+
+message GetArtifactsResponse {
+  repeated Artifact artifact = 1;
+}
+
+service SociArtifactStore {
+  rpc GetArtifacts(GetArtifactsRequest) returns (GetArtifactsResponse);
+}
