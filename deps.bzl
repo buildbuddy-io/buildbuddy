@@ -1111,8 +1111,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_docker_docker",
         importpath = "github.com/docker/docker",
-        sum = "h1:kH9tx6XO+359d+iAkumyKDc5Q1kOwPuAUaeri48nD6E=",
-        version = "v20.10.20+incompatible",
+        sum = "h1:Ugvxm7a8+Gz6vqQYQQ2W7GYq5EUPaAiuPgIfVyI3dYE=",
+        version = "v20.10.24+incompatible",
     )
     go_repository(
         name = "com_github_docker_docker_credential_helpers",
