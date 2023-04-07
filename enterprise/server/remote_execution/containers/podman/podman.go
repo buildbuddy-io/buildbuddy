@@ -201,6 +201,27 @@ func NewPodmanCommandContainer(env environment.Env, imageCacheAuth *container.Im
 	}
 }
 
+func addUserArgs(args []string, options *PodmanOptions) []string {
+	if options.ForceRoot {
+		args = append(args, "--user=0:0")
+	} else if options.User != "" && userRegex.MatchString(options.User) {
+		args = append(args, "--user="+options.User)
+		parts := strings.Split(options.User, ":")
+		// If the user is set to UID:GUID, tell podman not to add entries
+		// to /etc/passwd and /etc/group which mimics the docker behavior.
+		if len(parts) == 2 {
+			_, err := strconv.Atoi(parts[0])
+			isUID := err == nil
+			_, err = strconv.Atoi(parts[1])
+			isGID := err == nil
+			if isUID && isGID {
+				args = append(args, "--passwd=false")
+			}
+		}
+	}
+	return args
+}
+
 func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	args := []string{
 		"--hostname",
@@ -219,11 +240,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 			workDir,
 		),
 	}
-	if c.options.ForceRoot {
-		args = append(args, "--user=0:0")
-	} else if c.options.User != "" && userRegex.MatchString(c.options.User) {
-		args = append(args, "--user="+c.options.User)
-	}
+	args = addUserArgs(args, c.options)
 	networkMode := c.options.DefaultNetworkMode
 	// Translate network platform prop to the equivalent Podman network mode, to
 	// allow overriding the default configured mode.
@@ -361,11 +378,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	if c.options.ForceRoot {
-		podmanRunArgs = append(podmanRunArgs, "--user=0:0")
-	} else if c.options.User != "" && userRegex.MatchString(c.options.User) {
-		podmanRunArgs = append(podmanRunArgs, "--user="+c.options.User)
-	}
+	podmanRunArgs = addUserArgs(podmanRunArgs, c.options)
 	if strings.ToLower(c.options.Network) == "off" {
 		podmanRunArgs = append(podmanRunArgs, "--network=none")
 	}
