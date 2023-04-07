@@ -7,8 +7,8 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-github/v43/github"
 	"golang.org/x/oauth2"
 
+	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	gh_oauth "github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -112,6 +113,125 @@ func New(env environment.Env) (*GitHubApp, error) {
 	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *publicLink)
 	app.oauth = oauth
 	return app, nil
+}
+
+func (a *GitHubApp) WebhookHandler() http.Handler {
+	return http.HandlerFunc(a.handleWebhookRequest)
+}
+
+func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Request) {
+	b, err := github.ValidatePayload(req, []byte(*webhookSecret))
+	if err != nil {
+		log.Debugf("Failed to validate webhook payload: %s", err)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	t := github.WebHookType(req)
+	event, err := github.ParseWebHook(t, b)
+	if err != nil {
+		log.Warningf("Failed to parse GitHub webhook payload for %q event: %s", t, err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := a.handleWebhookEvent(req.Context(), event); err != nil {
+		log.Errorf("Failed to handle webhook event %q: %s", t, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	io.WriteString(w, "OK")
+}
+
+func (a *GitHubApp) handleWebhookEvent(ctx context.Context, event any) error {
+	switch event := event.(type) {
+	case *github.InstallationEvent:
+		return a.handleInstallationEvent(ctx, event)
+	default:
+		return a.handleWorkflowEvent(ctx, event)
+	}
+}
+
+func (a *GitHubApp) handleInstallationEvent(ctx context.Context, event *github.InstallationEvent) error {
+	// Only handling uninstall events for now. We proactively handle this event
+	// by removing references to the installation ID in the DB. Note, however,
+	// that we still need to gracefully handle the case where the installation
+	// ID is suddenly no longer valid, since webhook deliveries aren't 100%
+	// reliable.
+	if event.GetAction() != "deleted" {
+		return nil
+	}
+	result := a.env.GetDBHandle().DB(ctx).Exec(`
+		DELETE FROM GitHubAppInstallations
+		WHERE installation_id = ?
+	`, event.GetInstallation().GetID())
+	if result.Error != nil {
+		return status.InternalErrorf("failed to delete installation: %s", result.Error)
+	}
+
+	log.Infof(
+		"Handling GitHub app uninstall event: removed %d installation row(s) for installation %d",
+		result.RowsAffected, event.GetInstallation().GetID())
+	return nil
+}
+
+func (a *GitHubApp) handleWorkflowEvent(ctx context.Context, event any) error {
+	wd, err := gh_webhooks.ParseWebhookData(event)
+	if err != nil {
+		return err
+	}
+	if wd == nil {
+		// Could not parse any webhook data relevant to workflows;
+		// nothing to do.
+		return nil
+	}
+	repoURL, err := gitutil.ParseGitHubRepoURL(wd.TargetRepoURL)
+	if err != nil {
+		return err
+	}
+	row := &struct {
+		InstallationID int64
+		*tables.GitRepository
+	}{}
+	err = a.env.GetDBHandle().DB(ctx).Raw(`
+		SELECT i.installation_id, r.*
+		FROM GitHubAppInstallations i, GitRepositories r
+		WHERE r.repo_url = ?
+		AND i.owner = ?
+		AND i.group_id = r.group_id
+	`, repoURL.String(), repoURL.Owner).Take(row).Error
+	if err != nil {
+		return status.NotFoundError("the repository as well as a BuildBuddy GitHub app installation must be linked to a BuildBuddy org in order to use workflows")
+	}
+	tok, err := a.createInstallationToken(ctx, row.InstallationID)
+	if err != nil {
+		return err
+	}
+	return a.env.GetWorkflowService().HandleRepositoryEvent(
+		ctx, row.GitRepository, wd, tok.GetToken())
+}
+
+func (a *GitHubApp) GetInstallationToken(ctx context.Context, owner string) (string, error) {
+	u, err := perms.AuthenticatedUser(ctx, a.env)
+	if err != nil {
+		return "", err
+	}
+	var installation tables.GitHubAppInstallation
+	err = a.env.GetDBHandle().DB(ctx).Raw(`
+		SELECT *
+		FROM GitHubAppInstallations
+		WHERE group_id = ?
+		AND owner = ?
+	`, u.GetGroupID(), owner).Take(&installation).Error
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return "", status.NotFoundErrorf("failed to look up GitHub app installation: %s", err)
+		}
+		return "", err
+	}
+	tok, err := a.createInstallationToken(ctx, installation.InstallationID)
+	if err != nil {
+		return "", err
+	}
+	return tok.GetToken(), nil
 }
 
 func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error) {
@@ -594,12 +714,6 @@ func (a *GitHubApp) newAuthenticatedClient(ctx context.Context, accessToken stri
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
 	tc := oauth2.NewClient(ctx, ts)
 	return github.NewClient(tc), nil
-}
-
-func setURLParam(u *url.URL, key, value string) {
-	q := u.Query()
-	q.Set(key, value)
-	u.RawQuery = q.Encode()
 }
 
 // decodePrivateKey decodes a PEM-format RSA private key.

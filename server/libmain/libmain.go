@@ -382,7 +382,7 @@ func StartAndRunServices(env environment.Env) {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
 	if gha := env.GetGitHubApp(); gha != nil {
-		// TODO: handle webhooks; handle new installation redirect endpoint
+		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.WebhookHandler()))
 		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.OAuthHandler()))
 	}
 

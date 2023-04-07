@@ -69,6 +69,12 @@ var (
 	ApprovalRequired = status.PermissionDeniedErrorf("approval required")
 )
 
+const (
+	// A workflow ID prefix that identifies a Workflow as being a
+	// "synthetic" workflow adapted from a GitRepository.
+	repoWorkflowIDPrefix = "WF#GitRepository"
+)
+
 // getWebhookID returns a string that can be used to uniquely identify a webhook.
 func generateWebhookID() (string, error) {
 	u, err := guuid.NewRandom()
@@ -393,17 +399,31 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	// Lookup workflow
-	wf := &tables.Workflow{}
-	err = ws.env.GetDBHandle().DB(ctx).Raw(
-		`SELECT * FROM Workflows WHERE workflow_id = ?`,
-		req.GetWorkflowId(),
-	).Take(wf).Error
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.NotFoundError("Workflow not found")
+	// Lookup workflow.
+	// If the workflow ID identifies a GitRepository (rather than a legacy
+	// workflow), look up the GitRepository and construct a synthetic Workflow
+	// from it.
+	var wf *tables.Workflow
+	var gitRepository *tables.GitRepository
+	if isRepositoryWorkflowID(req.GetWorkflowId()) {
+		rwf, err := ws.getRepositoryWorkflow(ctx, req.GetWorkflowId())
+		if err != nil {
+			return nil, err
 		}
-		return nil, status.InternalError(err.Error())
+		gitRepository = rwf.GitRepository
+		wf = rwf.Workflow
+	} else {
+		wf = &tables.Workflow{}
+		err = ws.env.GetDBHandle().DB(ctx).Raw(
+			`SELECT * FROM Workflows WHERE workflow_id = ?`,
+			req.GetWorkflowId(),
+		).Take(wf).Error
+		if err != nil {
+			if db.IsRecordNotFound(err) {
+				return nil, status.NotFoundError("Workflow not found")
+			}
+			return nil, status.InternalError(err.Error())
+		}
 	}
 
 	// Authorize workflow access
@@ -422,12 +442,21 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			return nil, err
 		}
 		wf.InstanceNameSuffix = suffix
-		err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
-			return tx.Exec(
-				`UPDATE Workflows SET instance_name_suffix = ? WHERE workflow_id = ?`,
+		if gitRepository != nil {
+			err = ws.env.GetDBHandle().DB(ctx).Exec(`
+				UPDATE GitRepositories
+				SET instance_name_suffix = ?
+				WHERE group_id = ? AND repo_url = ?`,
+				wf.InstanceNameSuffix, gitRepository.GroupID, gitRepository.RepoURL,
+			).Error
+		} else {
+			err = ws.env.GetDBHandle().DB(ctx).Exec(`
+				UPDATE Workflows
+				SET instance_name_suffix = ?
+				WHERE workflow_id = ?`,
 				wf.InstanceNameSuffix, wf.WorkflowID,
 			).Error
-		})
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -494,6 +523,38 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	return &wfpb.ExecuteWorkflowResponse{InvocationId: invocationID}, nil
+}
+
+func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string) (*repositoryWorkflow, error) {
+	app := ws.env.GetGitHubApp()
+	if app == nil {
+		return nil, status.UnimplementedError("GitHub App is not configured")
+	}
+	groupID, repoURL, err := parseRepositoryWorkflowID(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := perms.AuthorizeGroupAccess(ctx, ws.env, groupID); err != nil {
+		return nil, err
+	}
+	gitRepository := &tables.GitRepository{}
+	err = ws.env.GetDBHandle().DB(ctx).Raw(`
+		SELECT *
+		FROM GitRepositories
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, groupID, repoURL.String()).Take(gitRepository).Error
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("repo %q not found", repoURL)
+		}
+		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
+	}
+	token, err := app.GetInstallationToken(ctx, repoURL.Owner)
+	if err != nil {
+		return nil, err
+	}
+	return gitRepositoryWorkflow(gitRepository, token), nil
 }
 
 func (ws *workflowService) waitForWorkflowInvocationCreated(ctx context.Context, executionID, invocationID string) error {
@@ -854,7 +915,21 @@ func (ws *workflowService) isTrustedCommit(ctx context.Context, gitProvider inte
 	return gitProvider.IsTrusted(ctx, wf.AccessToken, wd.TargetRepoURL, wd.PullRequestAuthor)
 }
 
-func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) error {
+func (ws *workflowService) HandleRepositoryEvent(ctx context.Context, repo *tables.GitRepository, wd *interfaces.WebhookData, accessToken string) error {
+	u, err := url.Parse(repo.RepoURL)
+	if err != nil {
+		log.Errorf("Failed to parse repo URL %s", u.String())
+		return status.InvalidArgumentError("failed to parse repo URL")
+	}
+	provider, err := ws.providerForRepo(u)
+	if err != nil {
+		return err
+	}
+	wf := gitRepositoryWorkflow(repo, accessToken).Workflow
+	return ws.startWorkflow(ctx, provider, wd, wf)
+}
+
+func (ws *workflowService) startLegacyWorkflow(webhookID string, r *http.Request) error {
 	ctx := r.Context()
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
@@ -877,6 +952,10 @@ func (ws *workflowService) startWorkflow(webhookID string, r *http.Request) erro
 	if err != nil {
 		return status.WrapErrorf(err, "failed to lookup workflow for webhook ID %q", webhookID)
 	}
+	return ws.startWorkflow(ctx, gitProvider, wd, wf)
+}
+
+func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow) error {
 	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return err
@@ -1016,12 +1095,52 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	webhookID := workflowMatch[1]
-	if err := ws.startWorkflow(webhookID, r); err != nil {
+	if err := ws.startLegacyWorkflow(webhookID, r); err != nil {
 		log.Errorf("Failed to start workflow (webhook ID: %q): %s", webhookID, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.Write([]byte("OK"))
+}
+
+type repositoryWorkflow struct {
+	GitRepository *tables.GitRepository
+	Workflow      *tables.Workflow
+}
+
+// Adapts a GitRepository to a legacy Workflow struct.
+func gitRepositoryWorkflow(repo *tables.GitRepository, accessToken string) *repositoryWorkflow {
+	// Construct an artificial workflow ID which identifies this workflow with
+	// the original GitRepository row.
+	repositoryID := fmt.Sprintf("%s:%s:%s", repoWorkflowIDPrefix, repo.GroupID, repo.RepoURL)
+	wf := &tables.Workflow{
+		WorkflowID:         repositoryID,
+		UserID:             repo.UserID,
+		GroupID:            repo.GroupID,
+		Perms:              repo.Perms,
+		RepoURL:            repo.RepoURL,
+		InstanceNameSuffix: repo.InstanceNameSuffix,
+		AccessToken:        accessToken,
+	}
+	return &repositoryWorkflow{GitRepository: repo, Workflow: wf}
+}
+
+func isRepositoryWorkflowID(id string) bool {
+	_, _, err := parseRepositoryWorkflowID(id)
+	return err == nil
+}
+
+func parseRepositoryWorkflowID(id string) (groupID string, repoURL *gitutil.RepoURL, err error) {
+	parts := strings.SplitN(id, ":", 3)
+	if len(parts) != 3 || parts[0] != repoWorkflowIDPrefix || parts[1] == "" || parts[2] == "" {
+		return "", nil, status.InvalidArgumentErrorf("invalid repository ID: expected '%s:<group_id>:<repo_url>'", repoWorkflowIDPrefix)
+	}
+	groupID = parts[1]
+	repoURL, err = gitutil.ParseGitHubRepoURL(parts[2])
+	if err != nil {
+		return "", nil, status.InvalidArgumentErrorf("invalid repository ID: failed to parse repo URL: %s", err)
+	}
+	return groupID, repoURL, nil
 }
 
 func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {

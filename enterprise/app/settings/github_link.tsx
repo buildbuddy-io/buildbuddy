@@ -24,6 +24,7 @@ import SimpleModalDialog from "../../../app/components/dialog/simple_modal_dialo
 
 export interface Props {
   user: User;
+  path: string;
 }
 
 export interface State {
@@ -54,6 +55,14 @@ export default class GitHubLink extends React.Component<Props, State> {
   componentDidMount() {
     if (capabilities.config.githubAppEnabled) {
       this.fetchInstallations();
+    }
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.props.user !== prevProps.user || this.props.path !== prevProps.path) {
+      if (capabilities.config.githubAppEnabled) {
+        this.fetchInstallations();
+      }
     }
   }
 
