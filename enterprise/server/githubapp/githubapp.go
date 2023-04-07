@@ -129,11 +129,12 @@ func (a *GitHubApp) handleWebhookRequest(w http.ResponseWriter, req *http.Reques
 	t := github.WebHookType(req)
 	event, err := github.ParseWebHook(t, b)
 	if err != nil {
-		log.Debugf("Failed to parse webhook payload for %q event: %s", t, err)
+		log.Warningf("Failed to parse GitHub webhook payload for %q event: %s", t, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if err := a.handleWebhookEvent(req.Context(), event); err != nil {
+		log.Errorf("Failed to handle webhook event %q: %s", t, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -163,9 +164,9 @@ func (a *GitHubApp) handleInstallationEvent(ctx context.Context, event *github.I
 		WHERE installation_id = ?
 	`, event.GetInstallation().GetID())
 	if result.Error != nil {
-		log.Errorf("Handling GitHub app uninstall event: failed to delete installation %d from DB: %s", event.GetInstallation().GetID(), result.Error)
-		return nil
+		return status.InternalErrorf("failed to delete installation: %s", result.Error)
 	}
+
 	log.Infof(
 		"Handling GitHub app uninstall event: removed %d installation row(s) for installation %d",
 		result.RowsAffected, event.GetInstallation().GetID())

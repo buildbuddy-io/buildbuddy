@@ -1133,7 +1133,7 @@ func isRepositoryWorkflowID(id string) bool {
 func parseRepositoryWorkflowID(id string) (groupID string, repoURL *gitutil.RepoURL, err error) {
 	parts := strings.SplitN(id, ":", 3)
 	if len(parts) != 3 || parts[0] != repoWorkflowIDPrefix || parts[1] == "" || parts[2] == "" {
-		return "", nil, status.InvalidArgumentError("invalid repository ID: expected REPO:<group_id>:<repo_url>")
+		return "", nil, status.InvalidArgumentErrorf("invalid repository ID: expected '%s:<group_id>:<repo_url>'", repoWorkflowIDPrefix)
 	}
 	groupID = parts[1]
 	repoURL, err = gitutil.ParseGitHubRepoURL(parts[2])
