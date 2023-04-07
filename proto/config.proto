@@ -12,7 +12,7 @@ message FrontendConfig {
   // Whether to default to Dense UI mode.
   bool default_to_dense_mode = 3;
 
-  // Whether Github linking is enabled.
+  // Whether the GitHub legacy OAuth-only app is enabled.
   bool github_enabled = 4;
 
   // Whether anonymous usage is enabled.

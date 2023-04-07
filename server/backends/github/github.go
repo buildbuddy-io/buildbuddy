@@ -136,7 +136,7 @@ func legacyClientSecret() string {
 }
 
 func IsLegacyOAuthAppEnabled() bool {
-	if *clientID == "" && legacyClientSecret() == "" && *accessToken == "" {
+	if *clientID == "" || legacyClientSecret() == "" {
 		return false
 	}
 	return true
@@ -432,12 +432,16 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 }
 
 func (c *GithubClient) populateTokenIfNecessary(ctx context.Context) error {
-	if c.githubToken != "" || !IsLegacyOAuthAppEnabled() {
+	if c.githubToken != "" {
 		return nil
 	}
 
 	if *accessToken != "" {
 		c.githubToken = *accessToken
+		return nil
+	}
+
+	if !IsLegacyOAuthAppEnabled() {
 		return nil
 	}
 

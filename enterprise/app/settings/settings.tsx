@@ -125,16 +125,17 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     Members
                   </SettingsTab>
                 )}
-                {router.canAccessOrgGitHubLinkPage(this.props.user) && capabilities.github && (
-                  <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
-                    <span>GitHub link</span>
-                    {/* If the user has a group-level GitHub link and the new GitHub App is
+                {router.canAccessOrgGitHubLinkPage(this.props.user) &&
+                  (capabilities.github || capabilities.config.githubAppEnabled) && (
+                    <SettingsTab id={TabId.OrgGitHub} activeTabId={activeTabId}>
+                      <span>GitHub link</span>
+                      {/* If the user has a group-level GitHub link and the new GitHub App is
                         enabled, show a deprecation alert. */}
-                    {capabilities.config.githubAppEnabled && this.props.user.selectedGroup.githubLinked && (
-                      <AlertCircle className="icon orange" />
-                    )}
-                  </SettingsTab>
-                )}
+                      {capabilities.config.githubAppEnabled && this.props.user.selectedGroup.githubLinked && (
+                        <AlertCircle className="icon orange" />
+                      )}
+                    </SettingsTab>
+                  )}
                 <SettingsTab id={TabId.OrgApiKeys} activeTabId={activeTabId}>
                   Org API keys
                 </SettingsTab>
@@ -218,7 +219,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     </>
                   )}
                   {activeTabId === TabId.OrgGitHub &&
-                    capabilities.github &&
+                    (capabilities.github || capabilities.config.githubAppEnabled) &&
                     this.props.user.canCall("unlinkGitHubAccount") && <GitHubLink user={this.props.user} />}
                   {this.props.path === "/settings/org/github/complete-installation" && (
                     <CompleteGitHubAppInstallationDialog user={this.props.user} search={this.props.search} />
