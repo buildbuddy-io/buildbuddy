@@ -32,7 +32,11 @@ message GetArtifactsRequest {
 }
 
 message GetArtifactsResponse {
-  repeated Artifact artifact = 1;
+  // The image ID is the hash of the image's configuration object and refers to
+  // a single version of an image (i.e. it changes as tags change). The SOCI
+  // snapshotter uses image IDs internally, so the client will need this.
+  string image_id = 1;
+  repeated Artifact artifacts = 2;
 }
 
 service SociArtifactStore {
