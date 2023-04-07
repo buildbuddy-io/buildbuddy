@@ -220,7 +220,9 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   )}
                   {activeTabId === TabId.OrgGitHub &&
                     (capabilities.github || capabilities.config.githubAppEnabled) &&
-                    this.props.user.canCall("unlinkGitHubAccount") && <GitHubLink user={this.props.user} />}
+                    this.props.user.canCall("unlinkGitHubAccount") && (
+                      <GitHubLink user={this.props.user} path={this.props.path} />
+                    )}
                   {this.props.path === "/settings/org/github/complete-installation" && (
                     <CompleteGitHubAppInstallationDialog user={this.props.user} search={this.props.search} />
                   )}

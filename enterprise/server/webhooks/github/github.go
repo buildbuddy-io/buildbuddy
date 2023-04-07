@@ -108,6 +108,10 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("failed to parse webhook payload: %s", err)
 	}
+	return ParseWebhookData(event)
+}
+
+func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 	switch event := event.(type) {
 	case *gh.PushEvent:
 		// Ignore branch deletion events.

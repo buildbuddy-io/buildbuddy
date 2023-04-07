@@ -456,6 +456,10 @@ type WorkflowService interface {
 	GetRepos(ctx context.Context, req *wfpb.GetReposRequest) (*wfpb.GetReposResponse, error)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 
+	// HandleRepositoryEvent handles a webhook event corresponding to the given
+	// GitRepository by initiating any relevant workflow actions.
+	HandleRepositoryEvent(ctx context.Context, repo *tables.GitRepository, wd *WebhookData, accessToken string) error
+
 	// GetLinkedWorkflows returns any workflows linked with the given repo access
 	// token.
 	GetLinkedWorkflows(ctx context.Context, accessToken string) ([]string, error)
@@ -476,6 +480,14 @@ type GitHubApp interface {
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
+
+	// GetInstallationToken returns an installation token for the installation
+	// associated with the authenticated group ID and the given installation
+	// owner (GitHub username or org name).
+	GetInstallationToken(ctx context.Context, owner string) (string, error)
+
+	// WebhookHandler returns the GitHub webhook HTTP handler.
+	WebhookHandler() http.Handler
 
 	// OAuthHandler returns the OAuth flow HTTP handler.
 	OAuthHandler() http.Handler
