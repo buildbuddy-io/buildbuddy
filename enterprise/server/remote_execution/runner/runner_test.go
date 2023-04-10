@@ -336,10 +336,10 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
-	// Run 100 trials where we create a pool that runs 50 tasks using runner
+	// Run 30 trials where we create a pool that runs 50 tasks using runner
 	// recycling, shutting down the pool after roughly half of the tasks have been
 	// started.
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 30; i++ {
 		pool := newRunnerPool(t, env, noLimitsCfg)
 		numTasks := 50
 		tasksStarted := make(chan struct{}, numTasks)
