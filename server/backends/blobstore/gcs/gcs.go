@@ -82,7 +82,7 @@ func (g *GCSBlobStore) createBucketIfNotExists(ctx context.Context, bucketName s
 }
 
 func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, error) {
-	reader, err := g.bucketHandle.Object(util.BlobPath(blobName)).NewReader(ctx)
+	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			return nil, status.NotFoundError(err.Error())
@@ -98,7 +98,7 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	writer := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
+	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
 	defer writer.Close()
 	compressedData, err := util.Compress(data)
 	if err != nil {
@@ -115,7 +115,7 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx)
-	err := g.bucketHandle.Object(util.BlobPath(blobName)).Delete(ctx)
+	err := g.bucketHandle.Object(blobName).Delete(ctx)
 	spn.End()
 	util.RecordDeleteMetrics(gcsLabel, start, err)
 	if err == storage.ErrObjectNotExist {
@@ -126,7 +126,7 @@ func (g *GCSBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
 
 func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, error) {
 	ctx, spn := tracing.StartSpan(ctx)
-	_, err := g.bucketHandle.Object(util.BlobPath(blobName)).Attrs(ctx)
+	_, err := g.bucketHandle.Object(blobName).Attrs(ctx)
 	spn.End()
 	if err == storage.ErrObjectNotExist {
 		return false, nil
@@ -139,7 +139,7 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 
 func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	bw := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
+	bw := g.bucketHandle.Object(blobName).NewWriter(ctx)
 
 	zw := util.NewCompressWriter(bw)
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
