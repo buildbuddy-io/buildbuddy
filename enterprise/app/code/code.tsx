@@ -154,7 +154,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           ref: commit || this.state.commitSHA || "master",
         })
         .then((response) => {
-          this.navigateToContent(this.currentPath(), response.data.content);
+          this.navigateToContent(this.currentPath(), (response.data as any).content);
           rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result: any) => {
             let records = parseLcov(result);
             for (let record of records) {
