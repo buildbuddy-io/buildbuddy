@@ -72,6 +72,7 @@ ts_library(
     srcs = ["target_test_cases_card.tsx"],
     deps = [
         "//app/format",
+        "//app/terminal",
         "//app/util:proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",

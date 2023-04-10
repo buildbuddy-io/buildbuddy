@@ -114,17 +114,24 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
                   testResult={this.props.testResult}
                   testSuite={testSuite}
                   tagName="error"
+                  dark={this.props.dark}
                 />
                 <TargetTestCasesCardComponent
                   testResult={this.props.testResult}
                   testSuite={testSuite}
                   tagName="failure"
+                  dark={this.props.dark}
                 />
-                <TargetTestCasesCardComponent testResult={this.props.testResult} testSuite={testSuite} />
+                <TargetTestCasesCardComponent
+                  testResult={this.props.testResult}
+                  testSuite={testSuite}
+                  dark={this.props.dark}
+                />
                 <TargetTestCasesCardComponent
                   testResult={this.props.testResult}
                   testSuite={testSuite}
                   tagName="skipped"
+                  dark={this.props.dark}
                 />
 
                 {Array.from(testSuite.children)
