@@ -3,11 +3,13 @@ import format from "../format/format";
 import { AlertCircle, XCircle, PlayCircle, CheckCircle } from "lucide-react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { durationToMillisWithFallback } from "../util/proto";
+import TerminalComponent from "../terminal/terminal";
 
 interface Props {
   testResult: invocation.InvocationEvent;
   testSuite: Element;
   tagName?: string;
+  dark?: boolean;
 }
 
 export default class TargetTestCasesCardComponent extends React.Component<Props> {
@@ -90,7 +92,13 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
                           <div className="test-case-message">
                             {child.getAttribute("message")} {child.getAttribute("type")}
                           </div>
-                          <div className="test-case-contents">{child.textContent}</div>
+                          <TerminalComponent
+                            value={child.textContent
+                              .replaceAll(`�[`, `\u001b[`)
+                              .replaceAll(`#x1b[`, `\u001b[`)
+                              .replaceAll(`#x1B[`, `\u001b[`)}
+                            lightTheme={!this.props.dark}
+                          />
                         </div>
                       ))}
                     </div>
