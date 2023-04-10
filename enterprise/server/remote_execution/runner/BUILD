@@ -59,7 +59,7 @@ go_test(
     data = ["//enterprise/server/remote_execution/runner/testworker"],
     embed = [":runner"],
     shard_count = 18,
-    tags = ["cpu:4"],
+    tags = ["exclusive"],
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/bare",
