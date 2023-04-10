@@ -127,10 +127,16 @@ yarn_install(
 # Required by com_google_protobuf
 http_archive(
     name = "com_google_googletest",
-    sha256 = "ffa17fbc5953900994e2deec164bb8949879ea09b411e07f215bfbb1f87f4632",
-    strip_prefix = "googletest-1.13.0",
-    urls = ["https://github.com/google/googletest/archive/v1.13.0.zip"],
+    sha256 = "730215d76eace9dd49bf74ce044e8daa065d175f1ac891cc1d6bb184ef94e565",
+    strip_prefix = "googletest-f53219cdcb7b084ef57414efea92ee5b71989558",
+    urls = [
+        "https://github.com/google/googletest/archive/f53219cdcb7b084ef57414efea92ee5b71989558.tar.gz",
+    ],
 )
+
+load("@com_google_googletest//:googletest_deps.bzl", "googletest_deps")
+
+googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
