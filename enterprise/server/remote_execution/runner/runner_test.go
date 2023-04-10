@@ -41,7 +41,6 @@ const (
 
 	sysMemoryBytes = tasksize.DefaultMemEstimate * 10
 	sysMilliCPU    = tasksize.DefaultCPUEstimate * 10
-	forceReRun     = true
 )
 
 var (
@@ -361,7 +360,14 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	// Run 100 trials where we create a pool that runs 50 tasks using runner
 	// recycling, shutting down the pool after roughly half of the tasks have been
 	// started.
-	for i := 0; i < 100; i++ {
+	//
+	// On macOS, we run 30 trials because the Intel macOS CI is slow and we want to
+	// avoid timeouts.
+	trialCount := 100
+	if runtime.GOOS == "darwin" {
+		trialCount = 30
+	}
+	for i := 0; i < trialCount; i++ {
 		t.Run(fmt.Sprintf("trial%d", i), func(t *testing.T) {
 			fmt.Println(t.Name())
 			pool := newRunnerPool(t, env, noLimitsCfg)
