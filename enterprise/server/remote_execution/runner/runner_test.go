@@ -365,7 +365,7 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	// avoid timeouts.
 	trialCount := 100
 	if runtime.GOOS == "darwin" {
-		trialCount = 30
+		trialCount = 100
 	}
 	for i := 0; i < trialCount; i++ {
 		t.Run(fmt.Sprintf("trial%d", i), func(t *testing.T) {
