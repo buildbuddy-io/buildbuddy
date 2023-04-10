@@ -194,7 +194,7 @@ export default class CodeComponent extends React.Component<Props, State> {
             ref: this.state.commitSHA || "master",
           })
           .then((response) => {
-            this.navigateToContent(this.currentPath(), response.data.content);
+            this.navigateToContent(this.currentPath(), (response.data as any).content);
           });
       }
 
