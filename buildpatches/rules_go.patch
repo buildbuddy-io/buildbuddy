@@ -1,0 +1,53 @@
+From 603b10edc734550169336b91391c6a3785ac70bf Mon Sep 17 00:00:00 2001
+From: Son Luong Ngoc <sluongng@gmail.com>
+Date: Sat, 1 Apr 2023 15:53:07 +0700
+Subject: [PATCH 1/2] go_register_toolchains: update sdk_kinds
+
+After 89e3296c36b789e8623e1178a59506547a98419e, we have renamed
+_go_download_sdk to go_download_sdk_rule so that we could re-use the
+implementation inside the Bazel Module Extension setup.
+
+Update go_register_toolchains to pick up this change.
+
+This patch could be removed once we upgraded rules_go to a version
+containing https://github.com/bazelbuild/rules_go/pull/3511
+---
+ go/private/sdk.bzl | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/go/private/sdk.bzl b/go/private/sdk.bzl
+index c7aa5132e6..c323447aeb 100644
+--- a/go/private/sdk.bzl
++++ b/go/private/sdk.bzl
+@@ -639,7 +639,7 @@ def go_register_toolchains(version = None, nogo = None, go_version = None, exper
+     if not version:
+         version = go_version  # old name
+ 
+-    sdk_kinds = ("_go_download_sdk", "_go_host_sdk", "_go_local_sdk", "_go_wrap_sdk")
++    sdk_kinds = ("go_download_sdk_rule", "_go_host_sdk", "_go_local_sdk", "_go_wrap_sdk")
+     existing_rules = native.existing_rules()
+     sdk_rules = [r for r in existing_rules.values() if r["kind"] in sdk_kinds]
+     if len(sdk_rules) == 0 and "go_sdk" in existing_rules:
+
+From 2b239303512b87e729b24d7a1a160d4208bce884 Mon Sep 17 00:00:00 2001
+From: Son Luong Ngoc <sluongng@gmail.com>
+Date: Sat, 1 Apr 2023 16:32:01 +0700
+Subject: [PATCH 2/2] Update sdk.bzl
+
+---
+ go/private/sdk.bzl | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/go/private/sdk.bzl b/go/private/sdk.bzl
+index c323447aeb..7c6cd3d89b 100644
+--- a/go/private/sdk.bzl
++++ b/go/private/sdk.bzl
+@@ -639,7 +639,7 @@ def go_register_toolchains(version = None, nogo = None, go_version = None, exper
+     if not version:
+         version = go_version  # old name
+ 
+-    sdk_kinds = ("go_download_sdk_rule", "_go_host_sdk", "_go_local_sdk", "_go_wrap_sdk")
++    sdk_kinds = ("go_download_sdk_rule", "go_host_sdk_rule", "_go_local_sdk", "_go_wrap_sdk")
+     existing_rules = native.existing_rules()
+     sdk_rules = [r for r in existing_rules.values() if r["kind"] in sdk_kinds]
+     if len(sdk_rules) == 0 and "go_sdk" in existing_rules:

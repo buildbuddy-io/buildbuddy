@@ -20,6 +20,8 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_go",
+    patch_args = ["-p1"],
+    patches = ["//buildpatches:rules_go.patch"],
     sha256 = "6b65cb7917b4d1709f9410ffe00ecf3e160edf674b78c54a894471320862184f",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.39.0/rules_go-v0.39.0.zip",
@@ -50,9 +52,36 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchai
 
 go_rules_dependencies()
 
+go_download_sdk(
+    name = "go_sdk_linux",
+    goarch = "amd64",
+    goos = "linux",
+    version = "1.19.3",  # Keep in sync with .github/workflows/checkstyle.yaml
+)
+
+go_download_sdk(
+    name = "go_sdk_linux_arm64",
+    goarch = "arm64",
+    goos = "linux",
+    version = "1.19.3",
+)
+
+go_download_sdk(
+    name = "go_sdk_darwin",
+    goarch = "amd64",
+    goos = "darwin",
+    version = "1.19.3",
+)
+
+go_download_sdk(
+    name = "go_sdk_darwin_arm64",
+    goarch = "arm64",
+    goos = "darwin",
+    version = "1.19.3",
+)
+
 go_register_toolchains(
     nogo = "@//:vet",
-    version = "1.19.3",
 )
 
 gazelle_dependencies()
