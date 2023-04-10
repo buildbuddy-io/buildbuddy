@@ -41,6 +41,7 @@ const (
 
 	sysMemoryBytes = tasksize.DefaultMemEstimate * 10
 	sysMilliCPU    = tasksize.DefaultCPUEstimate * 10
+	forceReRun     = true
 )
 
 var (
