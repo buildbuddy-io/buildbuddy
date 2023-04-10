@@ -183,3 +183,14 @@ function hash(value: string) {
   }
   return hash;
 }
+
+/**
+ * Returns a color between red and green based on a percentage value between 0 and 1.
+ *
+ * @param value the percentage value between 0 and 1
+ * @returns a color between red and green
+ */
+export function percentageColor(value: number) {
+  var hue = (value * 120).toString(10);
+  return ["hsl(", hue, ",75%,50%)"].join("");
+}

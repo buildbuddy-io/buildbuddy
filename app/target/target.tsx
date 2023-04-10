@@ -2,6 +2,7 @@ import React from "react";
 
 import TargetTestLogCardComponent from "./target_test_log_card";
 import TargetTestDocumentCardComponent from "./target_test_document_card";
+import TargetTestCoverageCardComponent from "./target_test_coverage_card";
 import TargetArtifactsCardComponent from "./target_artifacts_card";
 import ActionCardComponent from "./action_card";
 import router from "../router/router";
@@ -14,6 +15,7 @@ import { copyToClipboard } from "../util/clipboard";
 import alert_service from "../alert/alert_service";
 import { timestampToDateWithFallback } from "../util/proto";
 import { OutlinedLinkButton } from "../components/button/link_button";
+import InvocationModel from "../invocation/invocation_model";
 
 interface Props {
   invocationId: string;
@@ -21,6 +23,7 @@ interface Props {
   repo?: string;
   targetLabel: string;
   hash: string;
+  model: InvocationModel;
 
   files: build_event_stream.IFile[];
   configuredEvent: invocation.InvocationEvent;
@@ -277,6 +280,7 @@ export default class TargetComponent extends React.Component<Props> {
                   invocationId={this.props.invocationId}
                   testResult={result}
                 />
+                <TargetTestCoverageCardComponent model={this.props.model} testResult={result} />
               </span>
             ))}
           {actionEvents.map((action) => (

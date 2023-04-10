@@ -2035,3 +2035,15 @@ code .comment {
   width: 0.8em;
   margin-left: 0.2em;
 }
+
+.coverage-source {
+  font-weight: 600;
+}
+
+.coverage-percent {
+  font-weight: 700;
+}
+
+.coverage-details {
+  color: #aaa;
+}

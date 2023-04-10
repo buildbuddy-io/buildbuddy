@@ -10,9 +10,11 @@ ts_library(
         "//app/auth:auth_service",
         "//app/components/button:link_button",
         "//app/format",
+        "//app/invocation:invocation_model",
         "//app/router",
         "//app/target:action_card",
         "//app/target:target_artifacts_card",
+        "//app/target:target_test_coverage_card",
         "//app/target:target_test_document_card",
         "//app/target:target_test_log_card",
         "//app/util:clipboard",
@@ -109,5 +111,21 @@ ts_library(
         "@npm//lucide-react",
         "@npm//react",
         "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "target_test_coverage_card",
+    srcs = ["target_test_coverage_card.tsx"],
+    deps = [
+        "//app/format",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//app/util:color",
+        "//app/util:lcov",
+        "//proto:invocation_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
     ],
 )
