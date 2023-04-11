@@ -699,7 +699,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 	}
 
 	if e.beValues.ProfileURI() != nil {
-		w, err := e.env.GetBlobstore().Writer(ctx, invocation.InvocationId+"/"+strconv.FormatUint(invocation.Attempt, 10)+"/"+e.beValues.ProfileName())
+		w, err := e.env.GetBlobstore().Writer(ctx, invocation.InvocationId+"/artifacts/"+e.beValues.ProfileName())
 		if err != nil {
 			return err
 		}
