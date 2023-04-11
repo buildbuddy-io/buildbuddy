@@ -224,7 +224,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
         )}
         <div className="create-other-container">
           <a className="create-other clickable" href={this.appInstallURL()}>
-            Configure BuildBuddy app on GitHub <ExternalLink className="icon" />
+            Don't see a repo in this list? Configure repo permissions <ExternalLink className="icon" />
           </a>
         </div>
       </>
