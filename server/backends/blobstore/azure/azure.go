@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -159,23 +160,35 @@ func (z *AzureBlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 	return true, nil
 }
 
-func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (io.WriteCloser, error) {
+func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
 	// Open a pipe.
 	pr, pw := io.Pipe()
 
-	errch := make(chan error)
+	errch := make(chan error, 1)
+
+	ctx, cancel := context.WithCancel(ctx)
 
 	// Upload from pr in a separate Go routine.
 	go func() {
+		defer pr.Close()
 		_, err := azblob.UploadStreamToBlockBlob(
 			ctx,
 			pr,
-			z.containerURL.NewBlockBlobURL(blobName),
+			z.containerURL.NewBlockBlobURL(util.BlobPath(blobName)),
 			azblob.UploadStreamToBlockBlobOptions{},
 		)
 		errch <- err
 		close(errch)
 	}()
 
-	return util.NewCompressedBlobStoreWriter(ctx, pw, &util.AsyncCloser{Closer: pw, ErrorChannel: errch}, azureLabel), nil
+	committer := &util.CustomCommitter{CommitOp: func() error {
+		return (&util.AsyncCloser{Closer: pw, ErrorChannel: errch}).Close()
+	}}
+
+	closer := &util.CustomCloser{CloseOp: func() error {
+		cancel()
+		return nil
+	}}
+
+	return util.NewCompressedBlobStoreWriter(ctx, committer, pw, closer, azureLabel), nil
 }

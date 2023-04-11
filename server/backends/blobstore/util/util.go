@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,6 +21,9 @@ import (
 var (
 	pathPrefix = flag.String("storage.path_prefix", "", "The prefix directory to store all blobs in")
 )
+
+var newCompressWriter = gzip.NewWriter
+var newCompressReader = gzip.NewReader
 
 func Decompress(in []byte, err error) ([]byte, error) {
 	if err != nil {
@@ -33,7 +37,7 @@ func Decompress(in []byte, err error) ([]byte, error) {
 	if _, err := buf.Write(in); err != nil {
 		return nil, err
 	}
-	zr, err := gzip.NewReader(&buf)
+	zr, err := newCompressReader(&buf)
 	if err == gzip.ErrHeader {
 		// Compatibility hack: if we got a header error it means this
 		// is probably an uncompressed record written before we were
@@ -55,7 +59,7 @@ func Decompress(in []byte, err error) ([]byte, error) {
 
 func Compress(in []byte) ([]byte, error) {
 	var buf bytes.Buffer
-	zr := gzip.NewWriter(&buf)
+	zr := newCompressWriter(&buf)
 	if _, err := zr.Write(in); err != nil {
 		return nil, err
 	}
@@ -125,31 +129,51 @@ func RecordDeleteMetrics(typeLabel string, startTime time.Time, err error) {
 }
 
 type compressedWriter struct {
-	ctx        context.Context
-	gzipWriter *gzip.Writer
-	closer     io.Closer
-	label      string
-	n          int
+	ctx       context.Context
+	committer interfaces.Committer
+	zw        io.WriteCloser
+	closer    io.Closer
+	label     string
+	n         int
 }
 
-func NewCompressedBlobStoreWriter(ctx context.Context, w io.Writer, c io.Closer, label string) io.WriteCloser {
-	return &compressedWriter{ctx: ctx, gzipWriter: gzip.NewWriter(w), closer: c, label: label, n: 0}
+func NewCompressedBlobStoreWriter(
+	ctx context.Context,
+	committer interfaces.Committer,
+	writer io.Writer,
+	closer io.Closer,
+	label string,
+) interfaces.CommittedWriteCloser {
+	return &compressedWriter{
+		ctx: ctx, committer: committer,
+		zw:     newCompressWriter(writer),
+		closer: closer,
+		label:  label,
+		n:      0,
+	}
 }
 
-func (d *compressedWriter) Write(p []byte) (int, error) {
-	start := time.Now()
-	_, spn := tracing.StartSpan(d.ctx)
-	n, err := d.gzipWriter.Write(p)
+func (c *compressedWriter) Commit() error {
+	c.zw.Close()
+	return c.committer.Commit()
+}
+
+func (c *compressedWriter) Write(p []byte) (int, error) {
+	//Unnecessary without the RecordWriteMetrics call
+	// start := time.Now()
+	_, spn := tracing.StartSpan(c.ctx)
+	n, err := c.zw.Write(p)
 	spn.End()
-	RecordWriteMetrics(d.label, start, d.n, err)
-	d.n += n
+	// Omit these metrics for now, since they differ fundamentally from the other
+	// write metrics, which both separate out the compression step and track the
+	// full blob upload operation as opposed to just the streaming of one chunk.
+	// RecordWriteMetrics(c.label, start, n, err)
+	c.n += n
 	return n, err
 }
 
-func (d *compressedWriter) Close() error {
-	d.gzipWriter.Close()
-	err := d.closer.Close()
-	return err
+func (c *compressedWriter) Close() error {
+	return c.closer.Close()
 }
 
 type AsyncCloser struct {
@@ -165,6 +189,14 @@ func (a *AsyncCloser) Close() error {
 		return err
 	}
 	return <-a.ErrorChannel
+}
+
+type CustomCommitter struct {
+	CommitOp func() error
+}
+
+func (c *CustomCommitter) Commit() error {
+	return c.CommitOp()
 }
 
 type CustomCloser struct {

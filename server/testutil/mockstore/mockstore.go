@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 type Context struct{}
@@ -83,24 +85,32 @@ func (m *Mockstore) DeleteBlob(_ context.Context, blobName string) error {
 	return nil
 }
 
-func (m *Mockstore) Writer(_ context.Context, blobName string) (io.WriteCloser, error) {
-	return &WriteCloser{bytes.Buffer{}, m, blobName}, nil
+func (m *Mockstore) Writer(_ context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	return &WriteCloser{&bytes.Buffer{}, m, blobName}, nil
 }
 
 type WriteCloser struct {
-	buf      bytes.Buffer
+	buf      *bytes.Buffer
 	m        *Mockstore
 	blobName string
 }
 
 func (w *WriteCloser) Write(p []byte) (int, error) {
-	w.m.mu.Lock()
-	defer w.m.mu.Unlock()
 	n, err := w.buf.Write(p)
-	w.m.BlobMap[w.blobName] = w.buf.Bytes()
 	return n, err
 }
 
+func (w *WriteCloser) Commit() error {
+	if w.buf == nil {
+		return status.FailedPreconditionError("Writer was already closed.")
+	}
+	w.m.mu.Lock()
+	defer w.m.mu.Unlock()
+	w.m.BlobMap[w.blobName] = w.buf.Bytes()
+	return nil
+}
+
 func (w *WriteCloser) Close() error {
+	w.buf = nil
 	return nil
 }

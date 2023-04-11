@@ -208,7 +208,7 @@ type Blobstore interface {
 	// and calling delete on a non-existent blob, so this is the only way to
 	// provide a consistent interface.
 	DeleteBlob(ctx context.Context, blobName string) error
-	Writer(ctx context.Context, blobName string) (io.WriteCloser, error)
+	Writer(ctx context.Context, blobName string) (CommittedWriteCloser, error)
 }
 
 type CacheMetadata struct {

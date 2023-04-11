@@ -8,6 +8,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -135,8 +136,18 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	}
 }
 
-func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (io.WriteCloser, error) {
-	writer := g.bucketHandle.Object(blobName).NewWriter(ctx)
+func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	writer := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
 
-	return util.NewCompressedBlobStoreWriter(ctx, writer, writer, gcsLabel), nil
+	committer := &util.CustomCommitter{CommitOp: func() error {
+		return writer.Close()
+	}}
+
+	closer := &util.CustomCloser{CloseOp: func() error {
+		cancel()
+		return nil
+	}}
+
+	return util.NewCompressedBlobStoreWriter(ctx, committer, writer, closer, gcsLabel), nil
 }

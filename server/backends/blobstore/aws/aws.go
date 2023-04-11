@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -256,22 +257,37 @@ func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 	return true, nil
 }
 
-func (a *AwsS3BlobStore) Writer(ctx context.Context, blobName string) (io.WriteCloser, error) {
+func (a *AwsS3BlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
 	// Open a pipe.
 	pr, pw := io.Pipe()
 
-	errch := make(chan error)
+	errch := make(chan error, 1)
+
+	ctx, cancel := context.WithCancel(ctx)
 
 	// Upload from pr in a separate Go routine.
 	go func() {
-		_, err := a.uploader.Upload(&s3manager.UploadInput{
-			Bucket: a.bucket,
-			Key:    aws.String(blobName),
-			Body:   pr,
-		})
+		defer pr.Close()
+		_, err := a.uploader.UploadWithContext(
+			ctx,
+			&s3manager.UploadInput{
+				Bucket: a.bucket,
+				Key:    aws.String(util.BlobPath(blobName)),
+				Body:   pr,
+			},
+		)
 		errch <- err
 		close(errch)
 	}()
 
-	return util.NewCompressedBlobStoreWriter(ctx, pw, &util.AsyncCloser{Closer: pw, ErrorChannel: errch}, awsS3Label), nil
+	committer := &util.CustomCommitter{CommitOp: func() error {
+		return (&util.AsyncCloser{Closer: pw, ErrorChannel: errch}).Close()
+	}}
+
+	closer := &util.CustomCloser{CloseOp: func() error {
+		cancel()
+		return nil
+	}}
+
+	return util.NewCompressedBlobStoreWriter(ctx, committer, pw, closer, awsS3Label), nil
 }
