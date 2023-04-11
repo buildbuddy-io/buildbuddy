@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testrand"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -236,8 +237,8 @@ func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.
 	return r
 }
 
-func sleepRandMicros(max int64) {
-	time.Sleep(time.Duration(rand.Int63n(max) * int64(time.Microsecond)))
+func sleepRandMicros(r *rand.Rand, max int64) {
+	time.Sleep(time.Duration(r.Int63n(max) * int64(time.Microsecond)))
 }
 
 func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
@@ -329,12 +330,9 @@ func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 }
 
 func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
-	seed := time.Now().UnixNano()
-	rand.Seed(seed)
-	t.Logf("Random seed: %d", seed)
-
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	random := testrand.NewRandom(t)
 
 	// Run 30 trials where we create a pool that runs 50 tasks using runner
 	// recycling, shutting down the pool after roughly half of the tasks have been
@@ -350,13 +348,13 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 				return err
 			}
 			// Random delay to simulate downloading inputs
-			sleepRandMicros(10)
+			sleepRandMicros(random, 10)
 			tasksStarted <- struct{}{}
 			if result := r.Run(ctx); result.Error != nil {
 				return result.Error
 			}
 			// Random delay to simulate uploading outputs
-			sleepRandMicros(10)
+			sleepRandMicros(random, 10)
 			if err := pool.Add(ctx, r); err != nil {
 				return err
 			}
@@ -371,7 +369,7 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 				errs <- runTask()
 			}()
 			// Random, tiny delay to stagger the tasks a bit more.
-			sleepRandMicros(1)
+			sleepRandMicros(random, 1)
 		}
 
 		nStarted := 0

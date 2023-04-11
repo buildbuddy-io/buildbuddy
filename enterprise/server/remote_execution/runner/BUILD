@@ -69,6 +69,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/testutil/testrand",
         "//server/util/disk",
         "//server/util/status",
         "//server/util/testing/flags",
