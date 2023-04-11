@@ -1187,12 +1187,13 @@ func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Reque
 			// Attempt to fall back gracefully if the specified file is not found and
 			// a fallback is specified.
 			if fallback, parseErr := url.Parse(params.Get("with_fallback")); parseErr == nil && fallback.RawQuery != "" {
+				fallback.Query().Del("with_fallback")  // Only fall back once.
 				s.serveUsingParams(w, r, fallback.Query())
 				return
 			} else if parseErr != nil {
 				log.Infof("Parse Error: %s", parseErr)
 			} else {
-				log.Infof("fallback: %v", fallback)
+				log.Warningf("Fallback without query is invalid: %v", fallback)
 			}
 		}
 		http.Error(w, err.Error(), code)
