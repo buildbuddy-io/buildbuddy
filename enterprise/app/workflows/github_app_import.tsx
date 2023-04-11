@@ -170,6 +170,13 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
     return new Set(this.state.linkedReposResponse?.repoUrls || []);
   }
 
+  private githubLinkURL(): string {
+    return `/auth/github/app/link/?${new URLSearchParams({
+      user_id: this.props.user?.displayUser?.userId?.id || "",
+      group_id: this.props.user?.selectedGroup?.id || "",
+      redirect_url: window.location.href,
+    })}`;
+  }
   private appInstallURL(): string {
     return `/auth/github/app/link/?${new URLSearchParams({
       user_id: this.props.user?.displayUser?.userId?.id || "",
@@ -251,9 +258,17 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
           </div>
         </div>
         <div className="container content-container">
-          {!this.state.installationsResponse?.installations?.length && (
+          {!this.props.user.githubToken && (
             <Banner type="info" className="install-app-banner">
-              <div>To get started, install the BuildBuddy app on GitHub.</div>
+              <div>To get started, link a GitHub account to your BuildBuddy account.</div>
+              <LinkButton className="big-button" href={this.githubLinkURL()}>
+                Link GitHub account
+              </LinkButton>
+            </Banner>
+          )}
+          {this.props.user.githubToken && !this.state.installationsResponse?.installations?.length && (
+            <Banner type="info" className="install-app-banner">
+              <div>To link a repository, install the BuildBuddy app on GitHub.</div>
               <LinkButton className="big-button" href={this.appInstallURL()}>
                 Install
               </LinkButton>
