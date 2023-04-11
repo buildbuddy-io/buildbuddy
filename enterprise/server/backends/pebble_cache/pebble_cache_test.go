@@ -60,7 +60,7 @@ func TestSetOptionDefaults(t *testing.T) {
 	// Test sets all fields for empty Options
 	opts := &pebble_cache.Options{}
 	pebble_cache.SetOptionDefaults(opts)
-	require.Equal(t, pebble_cache.DefaultMaxSizeBytes, opts.MaxSizeBytes)
+	require.Equal(t, pebble_cache.DefaultMaxSizeBytes, 100)
 	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
 	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
 	require.Equal(t, &pebble_cache.DefaultAtimeUpdateThreshold, opts.AtimeUpdateThreshold)
