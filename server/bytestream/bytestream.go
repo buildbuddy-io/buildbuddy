@@ -152,10 +152,16 @@ func StreamBytestreamFileChunk(ctx context.Context, env environment.Env, url *ur
 	// Sanitize the error so as to not expose internal services via the
 	// error message.
 	if err != nil {
-		log.Errorf("Error byte-streaming from URL %q: %s", url.String(), err)
-		return status.UnavailableErrorf("Error reading from URL: %q", url.String())
+		log.Errorf("Error byte-streaming from %q: %s", stripUser(url), err)
+		return status.UnavailableErrorf("failed to read byte stream resource %q", stripUser(url))
 	}
 	return nil
+}
+
+func stripUser(u *url.URL) *url.URL {
+	copy := *u // shallow copy
+	copy.User = nil
+	return &copy
 }
 
 func grpcTargetForFileURL(u *url.URL, grpcs bool) string {
