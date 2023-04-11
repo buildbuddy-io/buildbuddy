@@ -984,7 +984,19 @@ func PostAutoMigrate(db *gorm.DB) error {
 	prefixIndicesByDialect := map[string]map[string]string{
 		mysqlDialect: map[string]string{
 			"invocations_test_grid_query_command_index": "(`group_id` (25), `role` (10), `repo_url`, `command` (10), `created_at_usec` DESC)",
-			"invocations_tag_index":                     "(`group_id`, CAST(`json_tags` -> '$' AS VARCHAR(36) ARRAY), `updated_at_usec`, `success`, `invocation_status`)",
+			"invocations_tag_index":                     "CREATE INDEX invocations_tag_ref_index ON JhTagsTest (`group_id`, (CAST(json_tags->'$' AS CHAR(40) ARRAY)), `updated_at_usec`, `success`, `invocation_status`)",
+			// CREATE TABLE JhTagsTest LIKE Invocations;
+			// INSERT INTO JhTagsTest (SELECT * FROM Invocations where group_id='GR6255520997022275881';
+			//
+			// ALTER TABLE JhTagsTest ADD COLUMN json_tags JSON;
+			// UPDATE JhTagsTest SET json_tags=JSON_ARRAY('cats') WHERE updated_at_usec MOD 32 = 0;
+			// UPDATE JhTagsTest SET json_tags=JSON_ARRAY('cats','beer') WHERE updated_at_usec MOD 64 = 0;
+			// UPDATE JhTagsTest SET json_tags=JSON_ARRAY('cats','beer','television') WHERE updated_at_usec MOD 128 = 0;
+			// UPDATE JhTagsTest SET json_tags=JSON_ARRAY('cats','beer','limbo') WHERE updated_at_usec MOD 512 = 2;
+			//
+			// CREATE INDEX invocations_tag_ref_index ON JhTagsTest (`group_id`, (CAST(json_tags->'$' AS CHAR(40) ARRAY)), `updated_at_usec`, `success`, `invocation_status`);
+			// CREATE INDEX invocations_tag_refb_index ON JhTagsTest (`group_id`, (CAST(json_tags_two->'$' AS CHAR(40) ARRAY)), `updated_at_usec`, `success`, `invocation_status`);
+			// EXPLAIN SELECT invocation_id FROM JhTagsTest WHERE 'limbo' MEMBER OF (json_tags_two->'$') and group_id='GR6255520997022275881';
 		},
 		sqliteDialect: map[string]string{
 			"invocations_test_grid_query_command_index": "(`group_id`, `role`, `repo_url`, `command` , `created_at_usec` DESC)",
