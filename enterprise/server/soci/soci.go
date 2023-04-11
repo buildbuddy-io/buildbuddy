@@ -3,7 +3,6 @@ package soci
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -214,7 +213,6 @@ func parseSociOutput(output string) (*repb.Digest, []*repb.Digest, error) {
 	sociIndexHash := ""
 	ztocHashes := []string{}
 	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
-		fmt.Println(line)
 		if strings.HasPrefix(line, "layer") {
 			ztocHash := strings.Split(line, "-> ztoc ")[1]
 			if ztocHash != "skipped" {
@@ -277,14 +275,9 @@ func (s *SociArtifactStore) writeArtifactsToCache(ctx context.Context, imageId s
 func (s *SociArtifactStore) writeArtifactToCache(ctx context.Context, digest *repb.Digest) error {
 	bytes, err := os.ReadFile(blobPath(digest.Hash))
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
-	err = s.cache.Set(ctx, resourceName(digest), bytes)
-	if err != nil {
-		fmt.Println(err)
-	}
-	return err
+	return s.cache.Set(ctx, resourceName(digest), bytes)
 }
 
 type SociLayerIndexStruct struct {
