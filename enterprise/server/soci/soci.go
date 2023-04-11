@@ -16,12 +16,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 type SociArtifactStore struct {
 	cache     interfaces.Cache
 	blobstore interfaces.Blobstore
+	env       environment.Env
 }
 
 func Register(env environment.Env) error {
@@ -43,10 +45,15 @@ func NewSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 	return nil, &SociArtifactStore{
 		cache:     env.GetCache(),
 		blobstore: env.GetBlobstore(),
+		env:       env,
 	}
 }
 
 func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArtifactsRequest) (*socipb.GetArtifactsResponse, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
 	imageId, err := imageId(ctx, req.ImageName)
 	if err != nil {
 		return nil, err
