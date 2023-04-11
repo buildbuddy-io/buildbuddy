@@ -1200,12 +1200,12 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		}
 		return
 	}
-	attempt := uint64(0)
-	if n, err := strconv.ParseUint(params.Get("attempt"), 10, 64); err == nil {
-		attempt = n
-	}
 	switch params.Get("artifact") {
 	case "buildlog":
+		attempt := uint64(0)
+		if n, err := strconv.ParseUint(params.Get("attempt"), 10, 64); err == nil {
+			attempt = n
+		}
 		c := chunkstore.New(
 			s.env.GetBlobstore(),
 			&chunkstore.ChunkstoreOptions{},
@@ -1229,7 +1229,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		}
 	case "timing_profile":
 		name := params.Get("name")
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/"+strconv.FormatUint(attempt, 10)+"/"+name)
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/"+name)
 		if err != nil {
 			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", name, iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
