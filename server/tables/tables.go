@@ -504,6 +504,8 @@ func (ts *TargetStatus) TableName() string {
 // longer being enabled for a particular repo.
 type GitHubAppInstallation struct {
 	Model
+	Field1 string
+	Field2 string
 
 	// UserID is the user that registered this installation to BuildBuddy.
 	UserID string `gorm:"not null"`
