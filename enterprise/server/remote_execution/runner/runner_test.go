@@ -338,58 +338,62 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	// recycling, shutting down the pool after roughly half of the tasks have been
 	// started.
 	for i := 0; i < 30; i++ {
-		pool := newRunnerPool(t, env, noLimitsCfg)
-		numTasks := 50
-		tasksStarted := make(chan struct{}, numTasks)
-		errs := make(chan error, numTasks)
-		runTask := func() error {
-			r, err := get(ctx, pool, newTask())
-			if err != nil {
-				return err
+		trialName := fmt.Sprintf("Trial_%d", i)
+		t.Run(trialName, func(t *testing.T) {
+			t.Log("Starting", trialName)
+			pool := newRunnerPool(t, env, noLimitsCfg)
+			numTasks := 50
+			tasksStarted := make(chan struct{}, numTasks)
+			errs := make(chan error, numTasks)
+			runTask := func() error {
+				r, err := get(ctx, pool, newTask())
+				if err != nil {
+					return err
+				}
+				// Random delay to simulate downloading inputs
+				sleepRandMicros(random, 10)
+				tasksStarted <- struct{}{}
+				if result := r.Run(ctx); result.Error != nil {
+					return result.Error
+				}
+				// Random delay to simulate uploading outputs
+				sleepRandMicros(random, 10)
+				if err := pool.Add(ctx, r); err != nil {
+					return err
+				}
+				return nil
 			}
-			// Random delay to simulate downloading inputs
-			sleepRandMicros(random, 10)
-			tasksStarted <- struct{}{}
-			if result := r.Run(ctx); result.Error != nil {
-				return result.Error
-			}
-			// Random delay to simulate uploading outputs
-			sleepRandMicros(random, 10)
-			if err := pool.Add(ctx, r); err != nil {
-				return err
-			}
-			return nil
-		}
 
-		var wg sync.WaitGroup
-		for i := 0; i < numTasks; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				errs <- runTask()
-			}()
-			// Random, tiny delay to stagger the tasks a bit more.
-			sleepRandMicros(random, 1)
-		}
-
-		nStarted := 0
-		for range tasksStarted {
-			nStarted++
-			if nStarted == numTasks/2 {
-				err := pool.Shutdown(ctx)
-				require.NoError(t, err)
-				break
+			var wg sync.WaitGroup
+			for i := 0; i < numTasks; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					errs <- runTask()
+				}()
+				// Random, tiny delay to stagger the tasks a bit more.
+				sleepRandMicros(random, 1)
 			}
-		}
 
-		wg.Wait()
-		close(errs)
-		for err := range errs {
-			if err == nil || status.IsUnavailableError(err) {
-				continue
+			nStarted := 0
+			for range tasksStarted {
+				nStarted++
+				if nStarted == numTasks/2 {
+					err := pool.Shutdown(ctx)
+					require.NoError(t, err)
+					break
+				}
 			}
-			require.NoError(t, err, "runner pool shutdown caused non-retriable error")
-		}
+
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				if err == nil || status.IsUnavailableError(err) {
+					continue
+				}
+				require.NoError(t, err, "runner pool shutdown caused non-retriable error")
+			}
+		})
 	}
 }
 
