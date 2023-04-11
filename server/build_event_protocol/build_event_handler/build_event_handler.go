@@ -704,6 +704,11 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 			return err
 		}
 		if err := bytestream.StreamBytestreamFile(ctx, e.env, e.beValues.ProfileURI(), w); err != nil {
+			w.Close()
+			return err
+		}
+		if err := w.Commit(); err != nil {
+			w.Close()
 			return err
 		}
 		if err := w.Close(); err != nil {
