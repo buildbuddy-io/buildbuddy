@@ -92,13 +92,15 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
                           <div className="test-case-message">
                             {child.getAttribute("message")} {child.getAttribute("type")}
                           </div>
-                          <TerminalComponent
-                            value={child.textContent
-                              .replaceAll(`�[`, `\u001b[`)
-                              .replaceAll(`#x1b[`, `\u001b[`)
-                              .replaceAll(`#x1B[`, `\u001b[`)}
-                            lightTheme={!this.props.dark}
-                          />
+                          {Boolean(child.textContent?.trim()) && (
+                            <TerminalComponent
+                              value={child.textContent
+                                .replaceAll(`�[`, `\u001b[`)
+                                .replaceAll(`#x1b[`, `\u001b[`)
+                                .replaceAll(`#x1B[`, `\u001b[`)}
+                              lightTheme={!this.props.dark}
+                            />
+                          )}
                         </div>
                       ))}
                     </div>
