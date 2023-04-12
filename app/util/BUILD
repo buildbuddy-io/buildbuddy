@@ -108,3 +108,8 @@ ts_library(
         "@npm//long",
     ],
 )
+
+ts_library(
+    name = "lcov",
+    srcs = ["lcov.ts"],
+)

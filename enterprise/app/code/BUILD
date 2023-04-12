@@ -18,6 +18,7 @@ ts_library(
         "//app/components/modal",
         "//app/components/spinner",
         "//app/service:rpc_service",
+        "//app/util:lcov",
         "//enterprise/app/code:code_build_button",
         "//enterprise/app/code:code_empty",
         "//enterprise/app/code:code_pull_request",

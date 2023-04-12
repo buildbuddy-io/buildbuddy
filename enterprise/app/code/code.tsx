@@ -23,6 +23,7 @@ import Dialog, {
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
 import Modal from "../../../app/components/modal/modal";
+import { parseLcov } from "../../../app/util/lcov";
 
 interface Props {
   user: User;
@@ -116,7 +117,7 @@ export default class CodeComponent extends React.Component<Props, State> {
   }
 
   isSingleFile() {
-    return Boolean(this.props.search.get("bytestream_url"));
+    return Boolean(this.props.search.get("bytestream_url")) || Boolean(this.props.search.get("lcov"));
   }
 
   componentDidMount() {
@@ -135,14 +136,68 @@ export default class CodeComponent extends React.Component<Props, State> {
     let bytestreamURL = this.props.search.get("bytestream_url");
     let invocationID = this.props.search.get("invocation_id");
     let filename = this.props.search.get("filename");
-    if (this.isSingleFile()) {
+    if (this.isSingleFile() && bytestreamURL) {
       rpcService.fetchBytestreamFile(bytestreamURL, invocationID, "text").then((result: any) => {
         this.editor.setModel(monaco.editor.createModel(result, undefined, monaco.Uri.file(filename || "file")));
       });
       return;
     }
 
+    let lcovURL = this.props.search.get("lcov");
+    let commit = this.props.search.get("commit");
+    if (this.isSingleFile() && lcovURL) {
+      this.octokit.rest.repos
+        .getContent({
+          owner: this.currentOwner(),
+          repo: this.currentRepo(),
+          path: this.currentPath(),
+          ref: commit || this.state.commitSHA || "master",
+        })
+        .then((response) => {
+          this.navigateToContent(this.currentPath(), (response.data as any).content);
+          rpcService.fetchBytestreamFile(lcovURL, invocationID, "text").then((result: any) => {
+            let records = parseLcov(result);
+            for (let record of records) {
+              if (record.sourceFile == this.currentPath()) {
+                this.editor.deltaDecorations(
+                  this.editor.getModel().getAllDecorations(),
+                  record.data.map((r) => {
+                    const parts = r.split(",");
+                    const lineNum = parseInt(parts[0]);
+                    const hit = parts[1] == "1";
+                    return {
+                      range: new monaco.Range(lineNum, 0, lineNum, 0),
+                      options: {
+                        isWholeLine: true,
+                        className: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                        marginClassName: hit ? "codeCoverageHit" : "codeCoverageMiss",
+                        minimap: { color: hit ? "#c5e1a5" : "#ef9a9a", position: 1 },
+                      },
+                    };
+                  })
+                );
+              }
+            }
+            console.log(result);
+          });
+        });
+      return;
+    }
+
     if (this.currentPath()) {
+      if (!this.state.fullPathToModelMap.has(this.currentPath())) {
+        this.octokit.rest.repos
+          .getContent({
+            owner: this.currentOwner(),
+            repo: this.currentRepo(),
+            path: this.currentPath(),
+            ref: this.state.commitSHA || "master",
+          })
+          .then((response) => {
+            this.navigateToContent(this.currentPath(), (response.data as any).content);
+          });
+      }
+
       if (this.state.mergeConflicts.has(this.currentPath())) {
         this.handleViewConflictClicked(
           this.currentPath(),
@@ -268,21 +323,25 @@ export default class CodeComponent extends React.Component<Props, State> {
       })
       .then((response: any) => {
         console.log(response);
-        let fileContents = atob(response.data.content);
-        this.state.originalFileContents.set(fullPath, fileContents);
-        this.updateState({
-          originalFileContents: this.state.originalFileContents,
-          changes: this.state.changes,
-        });
-        let model = this.state.fullPathToModelMap.get(fullPath);
-        if (!model) {
-          model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fullPath));
-          this.state.fullPathToModelMap.set(fullPath, model);
-          this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
-        }
-        this.editor.setModel(model);
+        this.navigateToContent(fullPath, response.data.content);
         this.navigateToPath(fullPath);
       });
+  }
+
+  navigateToContent(fullPath: string, content: string) {
+    let fileContents = atob(content);
+    this.state.originalFileContents.set(fullPath, fileContents);
+    this.updateState({
+      originalFileContents: this.state.originalFileContents,
+      changes: this.state.changes,
+    });
+    let model = this.state.fullPathToModelMap.get(fullPath);
+    if (!model) {
+      model = monaco.editor.createModel(fileContents, undefined, monaco.Uri.file(fullPath));
+      this.state.fullPathToModelMap.set(fullPath, model);
+      this.updateState({ fullPathToModelMap: this.state.fullPathToModelMap });
+    }
+    this.editor.setModel(model);
   }
 
   navigateToPath(path: string) {

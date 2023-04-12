@@ -194,6 +194,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
       return (
         <TargetComponent
+          model={this.state.model}
           invocationId={this.props.invocationId}
           hash={this.props.hash}
           files={this.state.model.getFiles(completed?.buildEvent)}

@@ -309,3 +309,11 @@
   cursor: pointer;
   stroke: #2196f3;
 }
+
+.codeCoverageHit {
+  background-color: #c5e1a5;
+}
+
+.codeCoverageMiss {
+  background-color: #ef9a9a;
+}
