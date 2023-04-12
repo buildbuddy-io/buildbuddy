@@ -144,9 +144,16 @@ type Invocation struct {
 	// invocation.
 	TotalUploadTransferredSizeBytes int64
 
-	TotalDownloadUsec                int64
-	TotalUploadUsec                  int64
-	TotalCachedActionExecUsec        int64
+	TotalDownloadUsec int64
+	TotalUploadUsec   int64
+
+	// TotalCachedActionExecUsec is the sum of the original execution duration
+	// of the action that hits the action cache.
+	TotalCachedActionExecUsec int64
+	// TotalUncachedActionExecUsec is the sum of the execution duration the action
+	// that misses the action cache.
+	TotalUncachedActionExecUsec int64
+
 	DownloadThroughputBytesPerSecond int64
 	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
 	Success                          bool   `gorm:"type:tinyint(1)"`
