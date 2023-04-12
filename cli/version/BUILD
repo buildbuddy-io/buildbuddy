@@ -8,14 +8,15 @@ string_flag(
 )
 
 write_flag_to_file(
-    name = "version_flag.txt",
+    name = "version_flag",
+    out = "version_flag.txt",
     flag = ":cli_version",
 )
 
 go_library(
     name = "version",
     srcs = ["version.go"],
-    embedsrcs = ["version_flag.txt"],  # keep
+    embedsrcs = [":version_flag"],  # keep
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/version",
     visibility = ["//visibility:public"],
     deps = ["//cli/arg"],

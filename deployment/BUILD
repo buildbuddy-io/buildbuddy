@@ -37,6 +37,7 @@ string_flag(
 
 write_flag_to_file(
     name = "image_tag_file",
+    out = "image_tag_file",
     flag = ":image_tag",
     visibility = ["//visibility:public"],
 )
