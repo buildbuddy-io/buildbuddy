@@ -8,20 +8,20 @@ interface State {
   isVisible?: boolean;
 }
 
-const DISPLAY_DURATION_MS = 4000;
-
 export default class AlertComponent extends React.Component<{}, State> {
   state: State = {};
 
   private hideTimeout: any = null;
   private subscription: Subscription = alertService.alerts.subscribe(this.onAlert.bind(this));
+  private displayDuration = 0;
 
   private onAlert(alert: Alert) {
     if (this.hideTimeout) {
       clearTimeout(this.hideTimeout);
     }
     this.setState({ isVisible: true, alert });
-    this.hideTimeout = setTimeout(() => this.setState({ isVisible: false }), DISPLAY_DURATION_MS);
+    this.displayDuration = displayDurationMs(alert);
+    this.hideTimeout = setTimeout(() => this.setState({ isVisible: false }), this.displayDuration);
   }
 
   // If the user hovers over the banner then they are probably trying to copy & paste
@@ -31,7 +31,7 @@ export default class AlertComponent extends React.Component<{}, State> {
     clearTimeout(this.hideTimeout);
   }
   private onMouseLeave() {
-    this.hideTimeout = setTimeout(() => this.setState({ isVisible: false }), DISPLAY_DURATION_MS);
+    this.hideTimeout = setTimeout(() => this.setState({ isVisible: false }), this.displayDuration);
   }
 
   componentWillUnmount() {
@@ -49,4 +49,11 @@ export default class AlertComponent extends React.Component<{}, State> {
       </Banner>
     );
   }
+}
+
+function displayDurationMs(alert: Alert) {
+  if (alert.type === "error" || alert.type === "warning") {
+    return 8_000;
+  }
+  return 4_000;
 }
