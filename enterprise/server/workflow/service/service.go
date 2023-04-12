@@ -252,11 +252,15 @@ func (ws *workflowService) DeleteWorkflow(ctx context.Context, req *wfpb.DeleteW
 	err = ws.env.GetDBHandle().Transaction(ctx, func(tx *db.DB) error {
 		var q *db.DB
 		if req.GetId() != "" {
-			q = tx.Raw(`SELECT * FROM Workflows WHERE workflow_id = ?`, req.GetId())
+			q = tx.Raw(`
+				SELECT * FROM Workflows WHERE workflow_id = ?
+				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
+			`, req.GetId())
 		} else {
 			q = tx.Raw(`
 				SELECT * FROM Workflows
 				WHERE group_id = ? AND repo_url = ?
+				`+ws.env.GetDBHandle().SelectForUpdateModifier()+`
 			`, authenticatedUser.GetGroupID(), req.GetRepoUrl())
 		}
 		if err := q.Take(&wf).Error; err != nil {
