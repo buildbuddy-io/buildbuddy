@@ -644,6 +644,10 @@
   background-color: #2196f3;
 }
 
+.invocation-share-button-text {
+  width: 56px;
+}
+
 .invocation-share-dialog .row {
   display: flex;
   flex-direction: row;

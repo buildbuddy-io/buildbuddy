@@ -34,6 +34,8 @@ import { BuildBuddyError } from "../util/errors";
 import UserPreferences from "../preferences/preferences";
 import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "./cache_requests_card";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
+import router from "../router/router";
 import rpc_service from "../service/rpc_service";
 import { InvocationBotCard } from "./invocation_bot_card";
 
@@ -43,6 +45,8 @@ interface State {
   error: BuildBuddyError | null;
 
   model: InvocationModel;
+
+  keyboardShortcutHandle: string;
 }
 
 interface Props {
@@ -83,12 +87,21 @@ export default class InvocationComponent extends React.Component<Props, State> {
       next: () => this.forceUpdate(),
     });
     this.logsModel.startFetching();
+
+    this.state.keyboardShortcutHandle = shortcuts.register(KeyCombo.u, () => {
+      // Used to select the correct invocation on the history page so that
+      // selecting an invocation with 'enter' and then going back with 'u' ends
+      // up with the same invocation still selected.
+      localStorage["selected_invocation_id"] = this.props.invocationId;
+      router.navigateHome();
+    });
   }
 
   componentWillUnmount() {
     clearTimeout(this.timeoutRef);
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
+    shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
   fetchInvocation() {

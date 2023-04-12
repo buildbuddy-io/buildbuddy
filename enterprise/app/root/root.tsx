@@ -8,6 +8,7 @@ import faviconService from "../../../app/favicon/favicon";
 import FooterComponent from "../../../app/footer/footer";
 import WorkflowsComponent from "../workflows/workflows";
 import InvocationComponent from "../../../app/invocation/invocation";
+import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import MenuComponent from "../../../app/menu/menu";
 import router, { Path } from "../../../app/router/router";
 import errorService from "../../../app/errors/error_service";
@@ -23,11 +24,19 @@ import UsageComponent from "../usage/usage";
 import GroupSearchComponent from "../group_search/group_search";
 import { AlertCircle, LogOut } from "lucide-react";
 import { OutlinedButton } from "../../../app/components/button/button";
+import Dialog, {
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
+} from "../../../app/components/dialog/dialog";
 const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
 import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
+import Modal from "../../../app/components/modal/modal";
 
 interface State {
   // TODO: change user to optional instead of "| null".
@@ -37,6 +46,7 @@ interface State {
   search: URLSearchParams;
   preferences: UserPreferences;
   loading: boolean;
+  keyboardShortcutHelpShowing: boolean;
 }
 
 capabilities.register("BuildBuddy Enterprise", true, [
@@ -62,6 +72,7 @@ export default class EnterpriseRootComponent extends React.Component {
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
+    keyboardShortcutHelpShowing: false,
   };
 
   componentWillMount() {
@@ -75,6 +86,13 @@ export default class EnterpriseRootComponent extends React.Component {
     router.register(this.handlePathChange.bind(this));
     faviconService.setDefaultFavicon();
     (window as any)._preferences = this.state.preferences;
+
+    shortcuts.register(KeyCombo.question, () => {
+      this.setState({ ...this.state, keyboardShortcutHelpShowing: true });
+    });
+    shortcuts.register(KeyCombo.esc, () => {
+      this.setState({ ...this.state, keyboardShortcutHelpShowing: false });
+    });
   }
 
   componentDidMount() {
@@ -164,6 +182,96 @@ export default class EnterpriseRootComponent extends React.Component {
             </OutlinedButton>
           </div>
         )}
+        {this.state.keyboardShortcutHelpShowing && (
+          <Modal isOpen={this.state.keyboardShortcutHelpShowing}>
+            <Dialog>
+              <DialogHeader>
+                <DialogTitle class="keyboard-shortcut-title">BuildBuddy Keyboard Shortcuts</DialogTitle>
+              </DialogHeader>
+              <DialogBody>
+                <table class="keyboard-shortcut-help">
+                  <tr>
+                    <th class="keyboard-shortcut-th"></th>
+                    <th class="keyboard-shortcut-th">Navigation</th>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">j/k</td>
+                    <td>Select previous / next item (vertical)</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">Enter</td>
+                    <td>Open selected item</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">u</td>
+                    <td>Go back</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">g-a</td>
+                    <td>Go to All Builds page</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">g-r</td>
+                    <td>Go to Trends page</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">g-t</td>
+                    <td>Go to Tests page</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">g-x</td>
+                    <td>Go to Executors page</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">g-q</td>
+                    <td>Go to Quickstart page</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">g-g</td>
+                    <td>Go to Settings page</td>
+                  </tr>
+                  <tr>
+                    <th class="keyboard-shortcut-th">&nbsp;</th>
+                    <th class="keyboard-shortcut-th"></th>
+                  </tr>
+                  <tr>
+                    <th class="keyboard-shortcut-th"></th>
+                    <th class="keyboard-shortcut-th">Invocations</th>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">Shift + c</td>
+                    <td>Copy invocation link</td>
+                  </tr>
+                  <tr>
+                    <th class="keyboard-shortcut-th">&nbsp;</th>
+                    <th class="keyboard-shortcut-th"></th>
+                  </tr>
+                  <tr>
+                    <th class="keyboard-shortcut-th"></th>
+                    <th class="keyboard-shortcut-th">Help</th>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">?</td>
+                    <td>Open keyboard shortcuts help</td>
+                  </tr>
+                  <tr>
+                    <td class="keyboard-shortcut-key">Esc</td>
+                    <td>Close keyboard shortcuts help</td>
+                  </tr>
+                </table>
+              </DialogBody>
+              <DialogFooter>
+                <div
+                  class="keyboard-shortcut-close"
+                  onClick={() => {
+                    this.setState({ ...this.state, keyboardShortcutHelpShowing: false });
+                  }}>
+                  Close
+                </div>
+              </DialogFooter>
+            </Dialog>
+          </Modal>
+        )}
         <div
           className={`root ${this.state.preferences.denseModeEnabled ? "dense" : ""} ${sidebar || code ? "left" : ""} ${
             login ? "dark" : ""
@@ -182,12 +290,13 @@ export default class EnterpriseRootComponent extends React.Component {
                 path={this.state.path}
                 hash={this.state.hash}
                 user={this.state.user}
-                search={this.state.search}></SidebarComponent>
+                search={this.state.search}
+                coolMode={this.state.coolMode}></SidebarComponent>
             )}
             <div
               className={`root-main ${code ? "root-code" : ""} ${login ? "root-login" : ""} ${
                 tests ? "root-tests" : ""
-              }`}>
+              } ${this.state.konami ? "root-main-cool" : ""}`}>
               {!this.state.loading && (
                 <div className={`content ${login ? "content-flex" : ""}`}>
                   {invocationId && (

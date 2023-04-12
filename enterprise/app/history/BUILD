@@ -18,6 +18,7 @@ ts_library(
         "//app/format",
         "//app/router",
         "//app/service:rpc_service",
+        "//app/shortcuts",
         "//enterprise/app/filter",
         "//enterprise/app/filter:filter_util",
         "//enterprise/app/history:history_invocation_card",
