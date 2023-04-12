@@ -172,6 +172,15 @@ export default class TapComponent extends React.Component<Props, State> {
    * history.
    */
   fetchTargets(initial: boolean) {
+    this.targetsRPC?.cancel();
+    this.setState({ loading: false });
+
+    const repoUrl = this.selectedRepo();
+    if (!repoUrl) {
+      this.updateState(new target.GetTargetResponse(), initial);
+      return;
+    }
+
     let request = new target.GetTargetRequest();
 
     request.startTimeUsec = Long.fromNumber(moment().subtract(DAYS_OF_DATA_TO_FETCH, "day").utc().valueOf() * 1000);
@@ -179,15 +188,17 @@ export default class TapComponent extends React.Component<Props, State> {
     request.serverSidePagination = this.isV2;
     request.pageToken = initial ? "" : this.state.nextPageToken;
     if (this.isV2) {
-      request.query = target.TargetQuery.create({ repoUrl: this.selectedRepo() });
+      request.query = target.TargetQuery.create({ repoUrl });
     }
 
     this.setState({ loading: true });
-    this.targetsRPC?.cancel();
-    this.targetsRPC = rpcService.service.getTarget(request).then((response: target.GetTargetResponse) => {
-      console.log(response);
-      this.updateState(response, initial);
-    });
+    this.targetsRPC = rpcService.service
+      .getTarget(request)
+      .then((response: target.GetTargetResponse) => {
+        this.updateState(response, initial);
+      })
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ loading: false }));
   }
 
   updateState(response: target.GetTargetResponse, initial: boolean) {
