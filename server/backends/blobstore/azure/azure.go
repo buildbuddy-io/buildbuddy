@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -181,14 +182,24 @@ func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interface
 		close(errch)
 	}()
 
-	committer := &util.CustomCommitter{CommitOp: func() error {
-		return (&util.AsyncCloser{Closer: pw, ErrorChannel: errch}).Close()
-	}}
-
-	closer := &util.CustomCloser{CloseOp: func() error {
+	zw := util.NewCompressWriter(pw)
+	cwc := ioutil.NewCustomCommitWriteCloser(zw)
+	cwc.CommitFn = func(int64) error {
+		var err error
+		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
+			err = compresserCloseErr
+		}
+		if writerCloseErr := pw.Close(); writerCloseErr != nil {
+			err = writerCloseErr
+		}
+		if writeErr := <-errch; writeErr != nil {
+			err = writeErr
+		}
+		return err
+	}
+	cwc.CloseFn = func() error {
 		cancel()
 		return nil
-	}}
-
-	return util.NewCompressedBlobStoreWriter(ctx, committer, pw, closer, azureLabel), nil
+	}
+	return cwc, nil
 }

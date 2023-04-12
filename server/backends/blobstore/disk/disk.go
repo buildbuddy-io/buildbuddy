@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
 
@@ -131,5 +132,18 @@ func (d *DiskBlobStore) Writer(ctx context.Context, blobName string) (interfaces
 	if err != nil {
 		return nil, err
 	}
-	return util.NewCompressedBlobStoreWriter(ctx, fw, fw, fw, diskLabel), nil
+	zw := util.NewCompressWriter(fw)
+	cwc := ioutil.NewCustomCommitWriteCloser(zw)
+	cwc.CommitFn = func(int64) error {
+		var err error
+		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
+			err = compresserCloseErr
+		}
+		if commitErr := fw.Commit(); commitErr != nil {
+			err = commitErr
+		}
+		return err
+	}
+	cwc.CloseFn = fw.Close
+	return cwc, nil
 }

@@ -9,6 +9,7 @@ go_library(
         "//server/backends/blobstore/util",
         "//server/interfaces",
         "//server/util/disk",
+        "//server/util/ioutil",
         "//server/util/tracing",
     ],
 )
