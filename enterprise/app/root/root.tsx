@@ -114,8 +114,8 @@ export default class EnterpriseRootComponent extends React.Component {
     let historyBranch = this.state.user && router.getHistoryBranch(this.state.path);
     let historyCommit = this.state.user && router.getHistoryCommit(this.state.path);
     let settings = this.state.user && this.state.path.startsWith("/settings");
-    let org = this.state.path.startsWith("/org/");
-    let orgCreate = this.state.path === Path.createOrgPath;
+    let org = this.state.user && this.state.path.startsWith("/org/");
+    let orgCreate = this.state.user && this.state.path === Path.createOrgPath;
     let orgJoinAuthenticated = this.state.path.startsWith("/join") && this.state.user;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
