@@ -184,6 +184,7 @@ proto_library(
         "soci.proto",
     ],
     deps = [
+        ":registry_proto",
         ":remote_execution_proto",
     ],
 )
@@ -678,6 +679,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/soci",
     proto = ":soci_proto",
     deps = [
+        ":registry_go_proto",
         ":remote_execution_go_proto",
     ],
 )
