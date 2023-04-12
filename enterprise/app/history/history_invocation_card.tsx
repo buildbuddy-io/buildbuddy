@@ -27,7 +27,7 @@ interface Props {
   className?: string;
   hover?: boolean;
   isSelectedForCompare?: boolean;
-  isSelectedWithKeyboard: boolean;
+  isSelectedWithKeyboard?: boolean;
 }
 
 interface State {

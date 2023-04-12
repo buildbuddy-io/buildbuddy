@@ -57,14 +57,14 @@
 
 .outlined-button {
   background: transparent;
-  outline: 1px solid rgba(20, 20, 20, 0.1);
+  border: 1px solid rgba(20, 20, 20, 0.1);
   transition: 200ms ease;
   flex-shrink: 1;
   overflow: hidden;
 }
 
 .outlined-button:focus {
-  outline: 1px solid rgba(20, 20, 20, 0.5);
+  border: 1px solid rgba(20, 20, 20, 0.5);
 }
 
 .outlined-button.destructive {
@@ -72,7 +72,7 @@
 }
 
 .outlined-button:hover {
-  outline: 1px solid transparent;
+  border: 1px solid transparent;
   background: rgba(20, 20, 20, 0.1);
 }
 

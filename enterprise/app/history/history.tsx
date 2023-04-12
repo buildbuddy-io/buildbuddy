@@ -64,6 +64,7 @@ interface Props {
 
 export default class HistoryComponent extends React.Component<Props, State> {
   state: State = {
+    selectedInvocationId: "",
     selectedInvocationIndex: -1,
     invocationIdToCompare: localStorage["invocation_id_to_compare"],
     keyboardShortcutHandles: [],
@@ -232,21 +233,25 @@ export default class HistoryComponent extends React.Component<Props, State> {
 
     this.fetch();
 
-    this.state.keyboardShortcutHandles.push(
+    let handles = new Array<string>();
+    handles.push(
       shortcuts.register(KeyCombo.j, () => {
         this.selectNextInvocation();
       })
     );
-    this.state.keyboardShortcutHandles.push(
+    handles.push(
       shortcuts.register(KeyCombo.k, () => {
         this.selectPreviousInvocation();
       })
     );
-    this.state.keyboardShortcutHandles.push(
+    handles.push(
       shortcuts.register(KeyCombo.enter, () => {
         this.navigateToSelectedInvocation();
       })
     );
+    this.setState({
+      keyboardShortcutHandles: handles,
+    });
   }
 
   selectNextInvocation() {
@@ -293,7 +298,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
   }
 
   navigateToSelectedInvocation() {
-    if (this.state.selectedInvocationId) {
+    if (this.state.selectedInvocationId !== "") {
       router.navigateTo("/invocation/" + this.state.selectedInvocationId);
     }
   }

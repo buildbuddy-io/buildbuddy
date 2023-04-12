@@ -186,83 +186,83 @@ export default class EnterpriseRootComponent extends React.Component {
           <Modal isOpen={this.state.keyboardShortcutHelpShowing}>
             <Dialog>
               <DialogHeader>
-                <DialogTitle class="keyboard-shortcut-title">BuildBuddy Keyboard Shortcuts</DialogTitle>
+                <DialogTitle className="keyboard-shortcut-title">BuildBuddy Keyboard Shortcuts</DialogTitle>
               </DialogHeader>
               <DialogBody>
-                <table class="keyboard-shortcut-help">
+                <table className="keyboard-shortcut-help">
                   <tr>
-                    <th class="keyboard-shortcut-th"></th>
-                    <th class="keyboard-shortcut-th">Navigation</th>
+                    <th className="keyboard-shortcut-th"></th>
+                    <th className="keyboard-shortcut-th">Navigation</th>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">j/k</td>
+                    <td className="keyboard-shortcut-key">j/k</td>
                     <td>Select previous / next item (vertical)</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">Enter</td>
+                    <td className="keyboard-shortcut-key">Enter</td>
                     <td>Open selected item</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">u</td>
+                    <td className="keyboard-shortcut-key">u</td>
                     <td>Go back</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">g-a</td>
+                    <td className="keyboard-shortcut-key">g-a</td>
                     <td>Go to All Builds page</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">g-r</td>
+                    <td className="keyboard-shortcut-key">g-r</td>
                     <td>Go to Trends page</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">g-t</td>
+                    <td className="keyboard-shortcut-key">g-t</td>
                     <td>Go to Tests page</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">g-x</td>
+                    <td className="keyboard-shortcut-key">g-x</td>
                     <td>Go to Executors page</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">g-q</td>
+                    <td className="keyboard-shortcut-key">g-q</td>
                     <td>Go to Quickstart page</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">g-g</td>
+                    <td className="keyboard-shortcut-key">g-g</td>
                     <td>Go to Settings page</td>
                   </tr>
                   <tr>
-                    <th class="keyboard-shortcut-th">&nbsp;</th>
-                    <th class="keyboard-shortcut-th"></th>
+                    <th className="keyboard-shortcut-th">&nbsp;</th>
+                    <th className="keyboard-shortcut-th"></th>
                   </tr>
                   <tr>
-                    <th class="keyboard-shortcut-th"></th>
-                    <th class="keyboard-shortcut-th">Invocations</th>
+                    <th className="keyboard-shortcut-th"></th>
+                    <th className="keyboard-shortcut-th">Invocations</th>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">Shift + c</td>
+                    <td className="keyboard-shortcut-key">Shift + c</td>
                     <td>Copy invocation link</td>
                   </tr>
                   <tr>
-                    <th class="keyboard-shortcut-th">&nbsp;</th>
-                    <th class="keyboard-shortcut-th"></th>
+                    <th className="keyboard-shortcut-th">&nbsp;</th>
+                    <th className="keyboard-shortcut-th"></th>
                   </tr>
                   <tr>
-                    <th class="keyboard-shortcut-th"></th>
-                    <th class="keyboard-shortcut-th">Help</th>
+                    <th className="keyboard-shortcut-th"></th>
+                    <th className="keyboard-shortcut-th">Help</th>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">?</td>
+                    <td className="keyboard-shortcut-key">?</td>
                     <td>Open keyboard shortcuts help</td>
                   </tr>
                   <tr>
-                    <td class="keyboard-shortcut-key">Esc</td>
+                    <td className="keyboard-shortcut-key">Esc</td>
                     <td>Close keyboard shortcuts help</td>
                   </tr>
                 </table>
               </DialogBody>
               <DialogFooter>
                 <div
-                  class="keyboard-shortcut-close"
+                  className="keyboard-shortcut-close"
                   onClick={() => {
                     this.setState({ ...this.state, keyboardShortcutHelpShowing: false });
                   }}>
@@ -290,13 +290,12 @@ export default class EnterpriseRootComponent extends React.Component {
                 path={this.state.path}
                 hash={this.state.hash}
                 user={this.state.user}
-                search={this.state.search}
-                coolMode={this.state.coolMode}></SidebarComponent>
+                search={this.state.search}></SidebarComponent>
             )}
             <div
               className={`root-main ${code ? "root-code" : ""} ${login ? "root-login" : ""} ${
                 tests ? "root-tests" : ""
-              } ${this.state.konami ? "root-main-cool" : ""}`}>
+              }`}>
               {!this.state.loading && (
                 <div className={`content ${login ? "content-flex" : ""}`}>
                   {invocationId && (

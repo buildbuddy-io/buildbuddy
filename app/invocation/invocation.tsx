@@ -68,6 +68,8 @@ export default class InvocationComponent extends React.Component<Props, State> {
     error: null,
 
     model: new InvocationModel(),
+
+    keyboardShortcutHandle: "",
   };
 
   private timeoutRef: number;
@@ -88,13 +90,14 @@ export default class InvocationComponent extends React.Component<Props, State> {
     });
     this.logsModel.startFetching();
 
-    this.state.keyboardShortcutHandle = shortcuts.register(KeyCombo.u, () => {
+    let handle = shortcuts.register(KeyCombo.u, () => {
       // Used to select the correct invocation on the history page so that
       // selecting an invocation with 'enter' and then going back with 'u' ends
       // up with the same invocation still selected.
       localStorage["selected_invocation_id"] = this.props.invocationId;
       router.navigateHome();
     });
+    this.setState({ keyboardShortcutHandle: handle });
   }
 
   componentWillUnmount() {

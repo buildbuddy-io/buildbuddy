@@ -1,10 +1,11 @@
-import { ClipboardCheck, Share2 } from "lucide-react";
+import { Share2 } from "lucide-react";
 import React from "react";
 import { acl } from "../../proto/acl_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import { FilledButton, OutlinedButton } from "../components/button/button";
+import alert_service from "../alert/alert_service";
 import Dialog, {
   DialogBody,
   DialogFooter,
@@ -32,7 +33,6 @@ interface State {
   acl: acl.IACL;
   error?: string;
   keyboardShortcutHandle: string;
-  showingCopied: boolean;
 }
 
 type VisibilitySelection = "group" | "public";
@@ -49,7 +49,7 @@ export default class InvocationShareButtonComponent extends React.Component<
     let handle = shortcuts.register(KeyCombo.shift_c, () => {
       this.copyShareUrl();
     });
-    this.state.keyboardShortcutHandle = handle;
+    this.setState({ keyboardShortcutHandle: handle });
   }
 
   componentDidUpdate(prevProps: InvocationShareButtonComponentProps) {
@@ -64,16 +64,15 @@ export default class InvocationShareButtonComponent extends React.Component<
 
   copyShareUrl() {
     navigator.clipboard.writeText(window.location.href);
-    this.setState({ showingCopied: true });
-    setTimeout(
-      function () {
-        this.setState({ showingCopied: false });
-      }.bind(this),
-      3000
-    );
+    alert_service.success("Copied invocation link to clipboard");
   }
   private getInitialState(): State {
-    return { isOpen: false, acl: this.getInvocation().acl, isLoading: false };
+    return {
+      isOpen: false,
+      acl: this.getInvocation().acl,
+      isLoading: false,
+      keyboardShortcutHandle: "",
+    };
   }
 
   private getInvocation() {
@@ -130,19 +129,11 @@ export default class InvocationShareButtonComponent extends React.Component<
 
     return (
       <>
-        {this.state.showingCopied && (
-          <OutlinedButton className="invocation-share-button">
-            <ClipboardCheck className="icon grey" />
-            <div class="invocation-share-button-text">Copied</div>
-          </OutlinedButton>
-        )}
-        {!this.state.showingCopied && (
-          <FilledButton className="invocation-share-button" onClick={this.onShareButtonClick.bind(this)}>
-            {/* TODO: Use an icon that signifies the current permissions */}
-            <Share2 className="icon white" />
-            <div class="invocation-share-button-text">Share</div>
-          </FilledButton>
-        )}
+        <FilledButton className="invocation-share-button" onClick={this.onShareButtonClick.bind(this)}>
+          {/* TODO: Use an icon that signifies the current permissions */}
+          <Share2 className="icon white" />
+          Share
+        </FilledButton>
         <Modal isOpen={this.state.isOpen} onRequestClose={this.onRequestClose.bind(this)}>
           <Dialog>
             <DialogHeader>

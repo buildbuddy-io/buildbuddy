@@ -470,6 +470,7 @@ ts_library(
     name = "invocation_share_button",
     srcs = ["invocation_share_button.tsx"],
     deps = [
+        "//app/alert:alert_service",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/button",

@@ -198,7 +198,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </FilledButton>
                   <div className="settings-option-title">Keyboard Shortcuts</div>
                   <div className="settings-option-description">
-                    Enables keyboard shortcuts -- hit '?' for help when enabled.
+                    Enables keyboard shortcuts. Hit '?' for help when enabled.
                   </div>
                   <FilledButton
                     className="settings-button"
