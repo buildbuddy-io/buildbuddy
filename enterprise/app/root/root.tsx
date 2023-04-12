@@ -64,7 +64,7 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentWillMount() {
     if (!capabilities.auth) {
-      this.setState({ ...this.state, user: undefined, loading: false });
+      this.setState({ ...this.state, user: null, loading: false });
     }
     authService.userStream.subscribe({
       next: (user: User | null) => this.setState({ ...this.state, user, loading: false }),
