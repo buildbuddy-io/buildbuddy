@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "proto/registry.proto";
 import "proto/remote_execution.proto";
 
 package soci;
@@ -28,7 +29,14 @@ message Artifact {
 }
 
 message GetArtifactsRequest {
-  string image_name = 1;
+  string image = 1;
+
+  // If an image has multiple variants, this selector is used
+  // to select a single variant.
+  registry.Platform platform = 2;
+
+  // Optional credentials for accessing the target image.
+  registry.Credentials credentials = 3;
 }
 
 message GetArtifactsResponse {
