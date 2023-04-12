@@ -30,7 +30,6 @@ import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 
 interface State {
-  // TODO: change user to optional instead of "| null".
   user?: User;
   hash: string;
   path: string;
