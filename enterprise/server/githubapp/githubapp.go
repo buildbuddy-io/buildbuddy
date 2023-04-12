@@ -349,9 +349,10 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 	err = dbh.DB(ctx).Transaction(func(tx *db.DB) error {
 		var ti tables.GitHubAppInstallation
 		err := tx.Raw(`
-			SELECT `+dbh.SelectForUpdateModifier()+` *
+			SELECT *
 			FROM GitHubAppInstallations
 			WHERE installation_id = ?
+			`+dbh.SelectForUpdateModifier()+`
 		`, req.GetInstallationId()).Take(&ti).Error
 		if err != nil {
 			return err
