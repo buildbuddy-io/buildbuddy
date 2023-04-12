@@ -105,6 +105,7 @@ type Invocation struct {
 	TotalDownloadUsec                 int64
 	TotalUploadUsec                   int64
 	TotalCachedActionExecUsec         int64
+	TotalUncachedActionExecUsec       int64
 	DownloadThroughputBytesPerSecond  int64
 	UploadThroughputBytesPerSecond    int64
 }
@@ -407,6 +408,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		TotalDownloadTransferredSizeBytes: ti.TotalDownloadTransferredSizeBytes,
 		TotalUploadTransferredSizeBytes:   ti.TotalUploadTransferredSizeBytes,
 		TotalCachedActionExecUsec:         ti.TotalCachedActionExecUsec,
+		TotalUncachedActionExecUsec:       ti.TotalUncachedActionExecUsec,
 		DownloadThroughputBytesPerSecond:  ti.DownloadThroughputBytesPerSecond,
 		UploadThroughputBytesPerSecond:    ti.UploadThroughputBytesPerSecond,
 	}
