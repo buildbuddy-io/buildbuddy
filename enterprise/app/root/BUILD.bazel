@@ -7,6 +7,7 @@ exports_files(["root.css"])
 ts_library(
     name = "root",
     srcs = ["root.tsx"],
+    strict = True,
     deps = [
         "//app/alert",
         "//app/auth:auth_service",

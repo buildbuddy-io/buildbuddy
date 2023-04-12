@@ -30,7 +30,7 @@ import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 
 interface Props {
-  user: User;
+  user?: User;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -195,15 +195,15 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <div className="org-picker">
                 <div className="org-picker-header">Organization</div>
                 <div className="org-list" role="menu">
-                  {this.props.user.groups.map((group) => (
+                  {this.props.user?.groups.map((group) => (
                     <div
                       key={group.id}
                       role="menuitem"
                       className={`sidebar-item org-picker-item ${
-                        group.id === this.props.user.selectedGroup.id ? "selected" : ""
+                        group.id === this.props.user?.selectedGroup.id ? "selected" : ""
                       }`}
                       onClick={this.handleOrgClicked.bind(this, group.id)}>
-                      {group.id === this.props.user.selectedGroup.id ? (
+                      {group.id === this.props.user?.selectedGroup.id ? (
                         <CheckCircle className="icon" />
                       ) : (
                         <Circle className="icon" />
