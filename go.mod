@@ -105,7 +105,7 @@ require (
 	google.golang.org/protobuf v1.28.2-0.20230209092751-246af0d153ca
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	gorm.io/driver/clickhouse v0.4.2
+	gorm.io/driver/clickhouse v0.5.1
 	gorm.io/driver/mysql v1.4.7
 	gorm.io/driver/sqlite v1.3.6
 	gorm.io/gorm v1.23.10
