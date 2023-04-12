@@ -1,4 +1,4 @@
-import { keyboardShortcutsKey } from "../preferences/preferences";
+import { keyboardShortcutsKey, keyboardShortcutsValue } from "../preferences/preferences";
 import { v4 as uuid } from "uuid";
 
 export class KeyCombo {
@@ -43,11 +43,11 @@ export class KeyCombo {
   }
 
   matches(event: KeyboardEvent): boolean {
-    return event.shiftKey == this.shiftKey && event.code == this.code;
+    return event.shiftKey == this.shiftKey && event.code === this.code;
   }
 
   isEqual(other: KeyCombo): boolean {
-    return this.shiftKey == other.shiftKey && this.code == other.code;
+    return this.shiftKey == other.shiftKey && this.code === other.code;
   }
 
   toString(): string {
@@ -85,6 +85,8 @@ class Shortcut {
   // keyboard shortcut. Collides means that one of the shortcut keystroke
   // combinations is a prefix of the other, so it will always be activated
   // when the longer one is entered.
+  // TODO(iain): this check is not comprehensive, we should check for
+  // collisions within another prefix, e.g. 'a' should collide with 'g-a'.
   collidesWith(other: Shortcut): boolean {
     let len = Math.min(this.keyCombo.length, other.keyCombo.length);
     for (let i = 0; i < len; i++) {
@@ -120,7 +122,7 @@ export class Shortcuts {
       document.addEventListener(
         "keydown",
         function (event: KeyboardEvent) {
-          if (window.localStorage.getItem(keyboardShortcutsKey) === "") {
+          if (window.localStorage.getItem(keyboardShortcutsKey) !== keyboardShortcutsValue) {
             return;
           }
           for (let shortcut of this.shortcuts.values()) {

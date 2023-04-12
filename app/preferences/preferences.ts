@@ -8,7 +8,7 @@ const terminalThemeKey = "TERMINAL_THEME";
 const terminalThemeLightValue = "LIGHT";
 
 export const keyboardShortcutsKey = "KEYBOARD_SHORTCUTS";
-const keyboardShortcutsValue = "ENABLED";
+export const keyboardShortcutsValue = "ENABLED";
 
 declare var window: any;
 
