@@ -79,7 +79,7 @@ export default class RootComponent extends React.Component {
                 hash={this.state.hash}
                 search={this.state.search}
                 preferences={this.state.preferences}
-                user={null}
+                user={undefined}
               />
             )}
             {compareInvocationIds && (
