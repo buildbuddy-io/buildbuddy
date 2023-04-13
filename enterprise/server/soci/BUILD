@@ -7,10 +7,9 @@ go_library(
     srcs = ["soci.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/soci",
     deps = [
+        "//enterprise/server/registry:registry_lib",
         "//enterprise/server/remote_execution/commandutil",
         "//proto:remote_execution_go_proto",
-        "//enterprise/server/registry:registry_lib",
-        "//proto:registry_go_proto",
         "//proto:resource_go_proto",
         "//proto:soci_go_proto",
         "//server/environment",
