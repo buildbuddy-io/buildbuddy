@@ -499,7 +499,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                   <div className="option-group-title">Repo</div>
                   <div className="option-group-input">
                     <TextInput
-                      placeholder={"e.g. https://github.com/buildbuddy-io/buildbuddy"}
+                      placeholder={"e.g. github.com/buildbuddy-io/buildbuddy"}
                       value={this.state.repo}
                       onChange={(e) => this.setState({ repo: e.target.value })}
                     />
