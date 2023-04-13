@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -100,6 +101,13 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 }
 
 func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inpb.SearchInvocationRequest) (*inpb.SearchInvocationResponse, error) {
+	if req.GetQuery().GetRepoUrl() != "" {
+		norm, err := git.NormalizeRepoURL(req.GetQuery().GetRepoUrl())
+		if err == nil { // if we normalized successfully
+			req.Query.RepoUrl = norm.String()
+		}
+	}
+
 	if err := s.checkPreconditions(req); err != nil {
 		return nil, err
 	}
