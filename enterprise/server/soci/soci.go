@@ -1,4 +1,4 @@
-package soci
+package sociartifactstore
 
 import (
 	"context"
@@ -8,15 +8,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 )
 
 type SociArtifactStore struct {
@@ -36,10 +38,10 @@ func Register(env environment.Env) error {
 
 func NewSociArtifactStore(env environment.Env) (error, *SociArtifactStore) {
 	if env.GetCache() == nil {
-		return status.InternalError("soci artifact server requires a cache"), nil
+		return status.FailedPreconditionError("soci artifact server requires a cache"), nil
 	}
 	if env.GetBlobstore() == nil {
-		return status.InternalError("soci artifact server requires a blobstore"), nil
+		return status.FailedPreconditionError("soci artifact server requires a blobstore"), nil
 	}
 	return nil, &SociArtifactStore{
 		cache:     env.GetCache(),
@@ -53,50 +55,27 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	if err != nil {
 		return nil, err
 	}
-	imageId, err := imageId(ctx, req.ImageName)
+	imageRef, err := registry.GetTargetImageRef(ctx, req.Image, req.Platform, req.Credentials)
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.blobstore.BlobExists(ctx, blobKey(imageId))
+	imageRefDigest := imageRef.DigestStr()
+	exists, err := s.blobstore.BlobExists(ctx, blobKey(imageRefDigest))
 	if err != nil {
 		return nil, err
 	}
 	if exists {
-		return s.getArtifactsFromCache(ctx, imageId)
+		return s.getArtifactsFromCache(ctx, imageRefDigest)
 	}
 	// TODO(iain): add a mutex to prevent multiple parallel calls
-	sociIndexDigest, ztocDigests, err := pullAndIndexImage(ctx, req.ImageName, imageId)
+	sociIndexDigest, ztocDigests, err := pullAndIndexImage(ctx, req.Image, imageRef.DigestStr())
 	if err != nil {
 		return nil, err
 	}
-	if err = s.writeArtifactsToCache(ctx, imageId, sociIndexDigest, ztocDigests); err != nil {
+	if err = s.writeArtifactsToCache(ctx, imageRefDigest, sociIndexDigest, ztocDigests); err != nil {
 		return nil, err
 	}
-	return getArtifactsResponse(imageId, sociIndexDigest, ztocDigests), nil
-}
-
-type ImageInfo struct {
-	Digest string `json:"Digest"`
-}
-
-// The image id is the digest of the actual image and changes as image tags are
-// altered. Grab it by running `skopeo inspect`.
-func imageId(ctx context.Context, imageName string) (string, error) {
-	cmd := []string{"skopeo", "inspect", "docker://" + imageName}
-	res := commandutil.Run(ctx, &repb.Command{Arguments: cmd}, "" /*=workDir*/, nil /*=statsListener*/, nil /*=stdio*/)
-	if res.Error != nil {
-		return "", res.Error
-	}
-	var info ImageInfo
-	err := json.Unmarshal(res.Stdout, &info)
-	if err != nil {
-		log.Debugf("Error parsing json output of `skopeo inspect`: %v", err)
-		return "", err
-	} else if info.Digest == "" {
-		log.Debugf("`skopeo inspect` returned no image info")
-		return "", err
-	}
-	return strings.ReplaceAll(info.Digest, "sha256:", ""), nil
+	return getArtifactsResponse(imageRefDigest, sociIndexDigest, ztocDigests), nil
 }
 
 func blobKey(hash string) string {

@@ -9,6 +9,8 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//proto:remote_execution_go_proto",
+        "//enterprise/server/registry:registry_lib",
+        "//proto:registry_go_proto",
         "//proto:resource_go_proto",
         "//proto:soci_go_proto",
         "//server/environment",
