@@ -139,19 +139,17 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 
 func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	writer := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
+	bw := g.bucketHandle.Object(util.BlobPath(blobName)).NewWriter(ctx)
 
-	zw := util.NewCompressWriter(writer)
+	zw := util.NewCompressWriter(bw)
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
 	cwc.CommitFn = func(int64) error {
-		var err error
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
-			err = compresserCloseErr
+			cancel()       // Don't try to finish the commit op if Close() failed.
+			_ = bw.Close() // Canceling the context makes any error here meaningless.
+			return compresserCloseErr
 		}
-		if writerCloseErr := writer.Close(); writerCloseErr != nil {
-			err = writerCloseErr
-		}
-		return err
+		return bw.Close()
 	}
 	cwc.CloseFn = func() error {
 		cancel()

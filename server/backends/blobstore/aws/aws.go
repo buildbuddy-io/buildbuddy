@@ -284,10 +284,15 @@ func (a *AwsS3BlobStore) Writer(ctx context.Context, blobName string) (interface
 	zw := util.NewCompressWriter(pw)
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
 	cwc.CommitFn = func(int64) error {
-		var err error
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
-			err = compresserCloseErr
+			cancel() // Don't try to finish the commit op if Close() failed.
+			if pipeCloseErr := pw.Close(); pipeCloseErr != nil {
+				log.Errorf("Error closing the pipe for %s: %s", blobName, pipeCloseErr)
+			}
+			<-errch // Canceling the context makes any error here meaningless.
+			return compresserCloseErr
 		}
+		var err error
 		if writerCloseErr := pw.Close(); writerCloseErr != nil {
 			err = writerCloseErr
 		}

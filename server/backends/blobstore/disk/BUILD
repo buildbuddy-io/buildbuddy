@@ -10,6 +10,7 @@ go_library(
         "//server/interfaces",
         "//server/util/disk",
         "//server/util/ioutil",
+        "//server/util/log",
         "//server/util/tracing",
     ],
 )
