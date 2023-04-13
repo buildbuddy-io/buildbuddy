@@ -201,7 +201,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       if (this.state.mergeConflicts.has(this.currentPath())) {
         this.handleViewConflictClicked(
           this.currentPath(),
-          this.state.mergeConflicts.get(this.currentPath()),
+          this.state.mergeConflicts.get(this.currentPath())!,
           undefined
         );
       } else {
@@ -513,8 +513,8 @@ export default class CodeComponent extends React.Component<Props, State> {
 
   handleGitHubClicked() {
     const params = new URLSearchParams({
-      user_id: this.props.user?.displayUser?.userId.id,
       redirect_url: window.location.href,
+      ...(this.props.user.displayUser.userId && { user_id: this.props.user.displayUser.userId.id }),
     });
     window.location.href = `/auth/github/link/?${params}`;
   }
@@ -572,7 +572,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       });
   }
 
-  handleRevertClicked(path: string, event: MouseEvent) {
+  handleRevertClicked(path: string, event: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
     this.state.changes.delete(path);
     this.state.fullPathToModelMap.get(path).setValue(this.state.originalFileContents.get(path));
     this.updateState({ changes: this.state.changes, fullPathToModelMap: this.state.fullPathToModelMap });
@@ -625,7 +625,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 if (this.state.mergeConflicts.has(this.currentPath())) {
                   this.handleViewConflictClicked(
                     this.currentPath(),
-                    this.state.mergeConflicts.get(this.currentPath()),
+                    this.state.mergeConflicts.get(this.currentPath())!,
                     undefined
                   );
                 }
@@ -640,12 +640,12 @@ export default class CodeComponent extends React.Component<Props, State> {
     this.updateState({ prTitle: input.value });
   }
 
-  onBodyChange(e: React.ChangeEvent<HTMLInputElement>) {
+  onBodyChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const input = e.target;
     this.updateState({ prBody: input.value });
   }
 
-  handleResolveClicked(fullPath: string, sha: string, event: MouseEvent) {
+  handleResolveClicked(fullPath: string, event: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
     event.stopPropagation();
     this.state.changes.set(fullPath, this.state.fullPathToDiffModelMap.get(fullPath).modified.getValue());
     this.state.fullPathToDiffModelMap.delete(fullPath);
@@ -657,7 +657,7 @@ export default class CodeComponent extends React.Component<Props, State> {
     });
   }
 
-  handleViewConflictClicked(fullPath: string, sha: string, event: MouseEvent) {
+  handleViewConflictClicked(fullPath: string, sha: string, event?: React.MouseEvent<HTMLSpanElement, MouseEvent>) {
     event?.stopPropagation();
     this.octokit.rest.git
       .getBlob({
@@ -668,7 +668,7 @@ export default class CodeComponent extends React.Component<Props, State> {
       .then((response: any) => {
         console.log(response);
         if (!this.diffEditor) {
-          this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current);
+          this.diffEditor = monaco.editor.createDiffEditor(this.diffViewer.current!);
         }
         let fileContents = atob(response.data.content);
         let editedModel = this.state.fullPathToModelMap.get(fullPath);
@@ -772,13 +772,14 @@ export default class CodeComponent extends React.Component<Props, State> {
             <div className="code-menu-actions">
               <OutlinedButton
                 className="code-menu-download-button"
-                onClick={() =>
-                  rpcService.downloadBytestreamFile(
-                    this.props.search.get("filename"),
-                    this.props.search.get("bytestream_url"),
-                    this.props.search.get("invocation_id")
-                  )
-                }>
+                onClick={() => {
+                  const bsUrl = this.props.search.get("bytestream_url");
+                  const invocationId = this.props.search.get("invocation_id");
+                  if (!bsUrl || !invocationId) {
+                    return;
+                  }
+                  rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
+                }}>
                 <Download /> Download File
               </OutlinedButton>
             </div>
@@ -851,7 +852,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 <button onClick={this.handleNewFileClicked.bind(this)}>
                   <PlusCircle className="icon green" /> New
                 </button>
-                <button onClick={this.handleDeleteClicked.bind(this)}>
+                <button onClick={() => this.handleDeleteClicked("")}>
                   <XCircle className="icon red" /> Delete
                 </button>
               </div>
@@ -898,19 +899,13 @@ export default class CodeComponent extends React.Component<Props, State> {
                         onClick={this.handleViewConflictClicked.bind(
                           this,
                           fullPath,
-                          this.state.mergeConflicts.get(fullPath)
+                          this.state.mergeConflicts.get(fullPath)!
                         )}>
                         View Conflict
                       </span>
                     )}
                     {this.state.mergeConflicts.has(fullPath) && fullPath == this.currentPath() && (
-                      <span
-                        className="code-revert-button"
-                        onClick={this.handleResolveClicked.bind(
-                          this,
-                          fullPath,
-                          this.state.mergeConflicts.get(fullPath)
-                        )}>
+                      <span className="code-revert-button" onClick={this.handleResolveClicked.bind(this, fullPath)}>
                         Resolve Conflict
                       </span>
                     )}

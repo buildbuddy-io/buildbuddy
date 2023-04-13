@@ -10,6 +10,7 @@ exports_files([
 ts_library(
     name = "code",
     srcs = ["code.tsx"],
+    strict = True,
     deps = [
         "//app/alert:alert_service",
         "//app/auth:auth_service",
@@ -39,6 +40,7 @@ ts_library(
 ts_library(
     name = "code_build_button",
     srcs = ["code_build_button.tsx"],
+    strict = True,
     deps = [
         "//app/components/button",
         "//app/components/button:button_group",
@@ -55,6 +57,7 @@ ts_library(
 ts_library(
     name = "code_empty",
     srcs = ["code_empty.tsx"],
+    strict = True,
     deps = [
         "//app/format",
         "//app/service:rpc_service",
@@ -68,6 +71,7 @@ ts_library(
 ts_library(
     name = "code_pull_request",
     srcs = ["code_pull_request.ts"],
+    strict = True,
     deps = [
         "@npm//@octokit/rest",
         "@npm//tslib",
@@ -77,6 +81,7 @@ ts_library(
 ts_library(
     name = "code_sidebar_node",
     srcs = ["code_sidebar_node.tsx"],
+    strict = True,
     deps = [
         "@npm//@types/react",
         "@npm//lucide-react",

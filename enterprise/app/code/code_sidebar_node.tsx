@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, File } from "lucide-react";
 import React from "react";
 
-class SidebarNodeProps {
+interface SidebarNodeProps {
   fullPath: string;
   node: any;
   treeShaToExpanded: Map<string, boolean>;
@@ -10,9 +10,7 @@ class SidebarNodeProps {
   depth?: number;
 }
 
-export default class SidebarNodeComponent extends React.Component {
-  props: SidebarNodeProps;
-
+export default class SidebarNodeComponent extends React.Component<SidebarNodeProps> {
   render() {
     const depth = this.props.depth || 0;
     const expanded = this.props.treeShaToExpanded.get(this.props.node.sha);
@@ -31,19 +29,16 @@ export default class SidebarNodeComponent extends React.Component {
         </div>
         {expanded && (
           <div className="code-sidebar-node-children">
-            {this.props.treeShaToChildrenMap
-              .get(this.props.node.sha)
-              .sort(compareNodes)
-              .map((child: any) => (
-                <SidebarNodeComponent
-                  node={child}
-                  depth={depth + 1}
-                  treeShaToExpanded={this.props.treeShaToExpanded}
-                  treeShaToChildrenMap={this.props.treeShaToChildrenMap}
-                  handleFileClicked={this.props.handleFileClicked}
-                  fullPath={this.props.fullPath + "/" + child.path}
-                />
-              ))}
+            {(this.props.treeShaToChildrenMap.get(this.props.node.sha) ?? []).sort(compareNodes).map((child: any) => (
+              <SidebarNodeComponent
+                node={child}
+                depth={depth + 1}
+                treeShaToExpanded={this.props.treeShaToExpanded}
+                treeShaToChildrenMap={this.props.treeShaToChildrenMap}
+                handleFileClicked={this.props.handleFileClicked}
+                fullPath={this.props.fullPath + "/" + child.path}
+              />
+            ))}
           </div>
         )}
       </div>
