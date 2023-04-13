@@ -30,8 +30,7 @@ import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 
 interface State {
-  // TODO: change user to optional instead of "| null".
-  user: User | null;
+  user?: User;
   hash: string;
   path: string;
   search: URLSearchParams;
@@ -57,7 +56,6 @@ capabilities.register("BuildBuddy Enterprise", true, [
 export default class EnterpriseRootComponent extends React.Component {
   state: State = {
     loading: true,
-    user: null,
     hash: window.location.hash,
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
@@ -66,10 +64,10 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentWillMount() {
     if (!capabilities.auth) {
-      this.setState({ ...this.state, user: null, loading: false });
+      this.setState({ ...this.state, user: undefined, loading: false });
     }
     authService.userStream.subscribe({
-      next: (user: User) => this.setState({ ...this.state, user, loading: false }),
+      next: (user?: User) => this.setState({ ...this.state, user, loading: false }),
     });
     authService.register();
     router.register(this.handlePathChange.bind(this));
@@ -252,7 +250,7 @@ export default class EnterpriseRootComponent extends React.Component {
                       search={this.state.search}
                     />
                   )}
-                  {settings && (
+                  {settings && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <SettingsComponent
                         user={this.state.user}
@@ -262,25 +260,25 @@ export default class EnterpriseRootComponent extends React.Component {
                       />
                     </Suspense>
                   )}
-                  {orgCreate && <CreateOrgComponent user={this.state.user} />}
-                  {orgJoinAuthenticated && <JoinOrgComponent user={this.state.user} />}
-                  {tests && (
+                  {orgCreate && this.state.user && <CreateOrgComponent user={this.state.user} />}
+                  {orgJoinAuthenticated && this.state.user && <JoinOrgComponent user={this.state.user} />}
+                  {tests && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <TapComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                     </Suspense>
                   )}
-                  {trends && (
+                  {trends && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <TrendsComponent user={this.state.user} search={this.state.search} hash={this.state.hash} />
                     </Suspense>
                   )}
-                  {usage && <UsageComponent user={this.state.user} />}
-                  {executors && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
+                  {usage && this.state.user && <UsageComponent user={this.state.user} />}
+                  {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {home && (
                     <HistoryComponent user={this.state.user} hash={this.state.hash} search={this.state.search} />
                   )}
-                  {workflows && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
-                  {code && (
+                  {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
+                  {code && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent
                         path={this.state.path}

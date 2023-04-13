@@ -293,37 +293,37 @@ class Router {
     this.replaceParams(Object.fromEntries(url.searchParams.entries()));
   }
 
-  canAccessExecutorsPage(user: User | null) {
+  canAccessExecutorsPage(user?: User) {
     return capabilities.executors && Boolean(user?.canCall("getExecutionNodes"));
   }
 
-  canAccessUsagePage(user: User | null) {
+  canAccessUsagePage(user?: User) {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
   }
 
-  canAccessWorkflowsPage(user: User | null) {
+  canAccessWorkflowsPage(user?: User) {
     return capabilities.workflows && Boolean(user?.canCall("getWorkflows"));
   }
 
-  canAccessOrgDetailsPage(user: User | null) {
+  canAccessOrgDetailsPage(user?: User) {
     return Boolean(user?.canCall("updateGroup"));
   }
 
-  canAccessOrgMembersPage(user: User | null) {
+  canAccessOrgMembersPage(user?: User) {
     return Boolean(user?.canCall("updateGroupUsers"));
   }
 
-  canCreateOrg(user: User | null) {
+  canCreateOrg(user?: User) {
     return Boolean(user?.canCall("createGroup"));
   }
 
-  canAccessOrgGitHubLinkPage(user: User | null) {
+  canAccessOrgGitHubLinkPage(user?: User) {
     // GitHub linking does not call updateGroup, but the required permissions
     // are equivalent.
     return Boolean(user?.canCall("updateGroup"));
   }
 
-  canAccessOrgSecretsPage(user: User | null) {
+  canAccessOrgSecretsPage(user?: User) {
     return Boolean(user?.canCall("listSecrets"));
   }
 
@@ -331,7 +331,7 @@ class Router {
    * Routes the user to a new page if they don't have the ability to access the
    * current page.
    */
-  rerouteIfNecessary(user: User | null) {
+  rerouteIfNecessary(user?: User) {
     const fallbackPath = this.getFallbackPath(user);
     if (fallbackPath === null) return;
 
@@ -339,10 +339,10 @@ class Router {
     window.history.replaceState({}, "", newUrl);
   }
 
-  private getFallbackPath(user: User | null): string | null {
+  private getFallbackPath(user?: User): string | null {
     // Require the user to create an org if they are logged in but not part of
     // an org.
-    if (user !== null && !user.groups?.length) {
+    if (user && !user.groups?.length) {
       return Path.createOrgPath;
     }
 

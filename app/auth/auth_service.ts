@@ -17,8 +17,8 @@ const AUTO_LOGIN_ATTEMPTED_STORAGE_KEY = "auto_login_attempted";
 const TOKEN_REFRESH_INTERVAL_SECONDS = 30 * 60; // 30 minutes
 
 export class AuthService {
-  user: User | null = null;
-  userStream = new Subject<User | null>();
+  user?: User;
+  userStream = new Subject<User | undefined>();
 
   static userEventName = "user";
 
@@ -38,7 +38,7 @@ export class AuthService {
       })
       .catch((error: any) => {
         if (BuildBuddyError.parse(error).code == "PermissionDenied" && String(error).includes("logged out")) {
-          this.emitUser(null);
+          this.emitUser(undefined);
         } else if (
           BuildBuddyError.parse(error).code == "PermissionDenied" &&
           String(error).includes("session expired")
@@ -89,7 +89,7 @@ export class AuthService {
   handleTokenRefreshError() {
     // If we've already tried to auto-relogin and it didn't work, just log the user out.
     if (localStorage.getItem(AUTO_LOGIN_ATTEMPTED_STORAGE_KEY)) {
-      this.emitUser(null);
+      this.emitUser(undefined);
       return;
     }
     // If we haven't tried to auto-relogin already, try it.
@@ -127,7 +127,7 @@ export class AuthService {
         // TODO(siggisim): Remove "No user token" string matching after the next release.
         if (BuildBuddyError.parse(error).code == "Unauthenticated" || String(error).includes("No user token")) {
           console.log("User was not created because no auth cookie was set, this is normal.");
-          this.emitUser(null);
+          this.emitUser(undefined);
         } else {
           this.onUserRpcError(error);
         }
@@ -136,7 +136,7 @@ export class AuthService {
 
   onUserRpcError(error: any) {
     errorService.handleError(error);
-    this.emitUser(null);
+    this.emitUser(undefined);
   }
 
   userFromResponse(response: user.GetUserResponse) {
@@ -156,7 +156,7 @@ export class AuthService {
     });
   }
 
-  emitUser(user: User | null) {
+  emitUser(user?: User) {
     console.log("User", user);
     this.user = user;
     this.updateRequestContext();
