@@ -30,6 +30,8 @@ import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
 
 interface State {
+  // TODO: change user to be purely optional instead of "| null".
+  // Currently, undefined means "loading" and "null" means logged out.
   user?: User;
   hash: string;
   path: string;
@@ -64,10 +66,10 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentWillMount() {
     if (!capabilities.auth) {
-      this.setState({ ...this.state, user: null, loading: false });
+      this.setState({ ...this.state, user: undefined, loading: false });
     }
     authService.userStream.subscribe({
-      next: (user: User | null) => this.setState({ ...this.state, user, loading: false }),
+      next: (user?: User) => this.setState({ ...this.state, user: user || undefined, loading: false }),
     });
     authService.register();
     router.register(this.handlePathChange.bind(this));

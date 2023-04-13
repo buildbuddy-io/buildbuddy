@@ -46,7 +46,7 @@ interface State {
 }
 
 interface Props {
-  user?: User | null;
+  user?: User;
   invocationId: string;
   hash: string;
   search: URLSearchParams;
@@ -158,7 +158,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   render() {
-    if (this.state.loading || this.props.user === undefined) {
+    if (this.state.loading) {
       return <div className="loading"></div>;
     }
 
