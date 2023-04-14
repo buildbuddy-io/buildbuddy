@@ -161,9 +161,10 @@ message GetTrendResponse {
   bool has_invocation_stat_percentiles = 4;
 
   // A summary of metrics from the period specified in the query.
-  Summary summary_current = 5;
-  // A summary of metrics from the previous period.
-  Summary summary_previous = 6;
+  Summary current_summary = 5;
+  // A summary of metrics from the previous period equal in length of the one the
+  // user requested.
+  Summary previous_summary = 6;
 }
 
 // Fetches a heatmap for the requested metric--a heatmap is basically a set of
