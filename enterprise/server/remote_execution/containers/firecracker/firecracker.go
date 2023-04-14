@@ -566,8 +566,12 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	vmStateSnapshotPath := filepath.Join(c.getChroot(), vmStateSnapshotName)
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
-	disk.DeleteLocalFileIfExists(memSnapshotPath)
-	disk.DeleteLocalFileIfExists(vmStateSnapshotPath)
+	if err := disk.RemoveIfExists(memSnapshotPath); err != nil {
+		return status.WrapError(err, "failed to remove existing memory snapshot")
+	}
+	if err := disk.RemoveIfExists(vmStateSnapshotPath); err != nil {
+		return status.WrapError(err, "failed to remove existing VM state snapshot")
+	}
 
 	machineStart := time.Now()
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
