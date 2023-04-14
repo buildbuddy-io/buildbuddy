@@ -83,7 +83,7 @@ go_register_toolchains(
     version = "1.18",
 )
 
-gazelle_dependencies(go_sdk = "go_sdk_linux")
+gazelle_dependencies(go_sdk = "go_sdk")
 
 # Node
 
