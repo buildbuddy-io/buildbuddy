@@ -44,15 +44,16 @@ http_archive(
 
 load(":deps.bzl", "install_buildbuddy_dependencies")
 
+load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
+
+go_rules_dependencies()
+
 # Install gazelle and go_rules dependencies after ours so that our go module versions take precedence.
 
 # gazelle:repository_macro deps.bzl%install_buildbuddy_dependencies
 install_buildbuddy_dependencies()
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
-load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
-
-go_rules_dependencies()
 
 go_download_sdk(
     name = "go_sdk_linux",
@@ -83,10 +84,11 @@ go_download_sdk(
 )
 
 go_register_toolchains(
+    version = "1.18",
     nogo = "@//:vet",
 )
 
-gazelle_dependencies()
+gazelle_dependencies(go_sdk = "go_sdk_linux")
 
 # Node
 
