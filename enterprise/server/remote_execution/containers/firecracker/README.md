@@ -1,0 +1,132 @@
+# Firecracker disk layout
+
+There are a lot of different files involved with Firecracker containers,
+and it can be hard to keep track of which files live where. The following
+shows the directories relevant to a firecracker container instance:
+
+```yaml
+# --executor.build_root; c.jailerRoot; JailerConfig.ChrootBaseDir
+# This is the "root" directory that everything lives underneath
+# except for filecache. This is currently expected to live on the same
+# device as the filecache, so that we can hardlink files from the
+# filecache to here.
+- /tmp/remote_build/:
+    # /executor/ contains a CAS-like dir structure that is persisted
+    # across executor restarts, and does not (currently) have an
+    # associated eviction mechanism. Note, this is *not* the same as the
+    # filecache (--executor.local_cache_dir), which does have eviction.
+    #
+    # It stores the following types of files:
+    # - ext4 disk images that were converted from docker images.
+    #   We convert docker images to ext4 so that they can be mounted
+    #   directly to microVMs. Note that container images are mounted
+    #   read-only.
+    # - Other static resources that are needed for firecracker VMs, e.g.
+    #   linux kernel image.
+    - /executor/:
+        # For ext4 images, the top-level directory is the sha256 of the
+        # image name string.
+        #
+        # See enterprise/server/util/container.go
+        #
+        # Ex: sha256("gcr.io/flame-public/executor-docker-default:latest")
+        - /1f89a08e2136061a0bf54aaea89e47b533504b4241a5ff98d96c3dcbe04a67f3/:
+            # Underneath this dir is another dir named as the SHA256 hash
+            # of the image contents.
+            #
+            # Ex: sha256(fileContents("containerfs.ext4"))
+            - /70ec2d788bcf1c7219b33554af3283c16e388bed4d7dab4e9097b8f9cd712f59/:
+                - containerfs.ext4
+            # There may be more than image subdir if we have multiple
+            # images for the same tag. The image cache will choose
+            # whichever image has the highest modified-time. In practice,
+            # we don't have multiple subdirs since we don't pull images if
+            # one is already cached, but this may change in the future.
+            - ...
+        # For other VM resources, the dir name is the sha256 of the file
+        # contents and the dir contains a single file matching that sha256.
+        #
+        # See putFileIntoDir() in enterprise/server/util/container.go
+        #
+        # Ex: sha256(fileContents("vmlinux"))
+        - /fc81fa0933db7977b5e1d4b9ff3a757914b579c7812b63f9cdcabc035c7057e0/:
+            - vmlinux # kernel image
+        - /923f71d9f8388cc9aea62cc0f52ad39d81638610914fb4c0b2b053092b02a668/:
+            - initrd.cpio # initial RAM disk
+
+    # The build root (c.jailerRoot) also contains two directories for each
+    # firecracker container: a temp dir (for creating the initial
+    # workspace image and scratch disk image), and a "chroot" which is the
+    # chroot for jailer.
+    #
+    # Example temp dir:
+    - /fc-container-*/: # c.tempDir; only used in Create()
+        - scratchfs.ext4 # scratch disk; mounted to /. Initially empty
+        - workspacefs.ext4 # workspace disk; mounted to /workspace. Initially empty
+
+    # chroot is the path containing all files needed to start or resume
+    # the VM. The jailer runs from a chroot at this directory for
+    # enhanced security.
+    - /firecracker/ac848787-8f81-415e-aff0-87c047f4dcde/root/: # c.getChroot()
+        # /base/ is a temporary directory that exists only while we're
+        # merging a diff snapshot on top of a base snapshot.
+        # See SaveSnapshot() in firecracker.go
+        #
+        # TODO: should we put this in c.tempDir instead of the chroot?
+        - /base/:
+            - full-mem.snap
+            # Other snapshot artifacts from the base snapshot are also
+            # extracted here. Technically we don't need these, but we
+            # extract them here just for simplicity.
+            - ...
+
+        # Various artifacts associated with the VM, which are
+        # needed for pausing/resuming snapshots.
+        #
+        # When starting a VM for the first time (in Create()), we do not
+        # write these files. Instead we tell the firecracker SDK where
+        # these files are located, and when calling machine.Start() the
+        # SDK copies the files here for us.
+        #
+        # When resuming a VM from snapshot, these files are expected to
+        # already be here. Since we delete the chroot across runs of the
+        # VM, we write these files using loader.UnpackSnapshot().
+        - vmlinux # Linux kernel image
+        - initrd.cpio # initial RAM disk, mounted when booting the VM
+        - full-mem.snap # full memory snapshot
+        - vmstate.snap # VM state snapshot (e.g. CPU registers?)
+        - containerfs.ext4 # read-only container image
+        - scratchfs.ext4 # scratch disk image
+        - workspacefs.ext4 # workspace disk image (first run of the VM)
+
+        # VM memory diff snapshot. This is only created when calling
+        # CreateSnapshot().
+        - diff-mem.snap
+
+        - firecracker # firecracker binary
+        - /run/:
+            - fc.sock
+            - v.sock_XXXXX
+            - v.sock
+        - /dev/:
+            - kvm
+            - urandom
+            - /net/:
+                - tun
+# --executor.local_cache_dir: filecache root
+#
+# Snapshot artifacts are stored here, particularly when a firecracker
+# container is not in use. The filecache may expire these artifacts,
+# in which case calling Unpause() on a firecracker container will fail
+# due to the artifacts being not found.
+- /tmp/cache/:
+    # The filecache contains a snapshot manifest file, which contains the
+    # filecache keys for the VM snapshot artifacts, as well as the
+    # serialized VM `Constants`
+    #
+    # See manifestData in snaploader.go
+    #
+    # Ex: manifestDigest(snaploader.Key(configurationHash, runnerID))
+    - b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c
+    - ...
+```
