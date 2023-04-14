@@ -3,6 +3,9 @@ package api
 import (
 	"context"
 	"flag"
+	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -477,4 +480,45 @@ func actionMatchesActionSelector(action *apipb.Action, selector *apipb.ActionSel
 		(selector.TargetLabel == "" || selector.TargetLabel == action.GetTargetLabel()) &&
 		(selector.ConfigurationId == "" || selector.ConfigurationId == action.GetId().ConfigurationId) &&
 		(selector.ActionId == "" || selector.ActionId == action.GetId().ActionId)
+}
+
+func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkflowRequest) (*apipb.ExecuteWorkflowResponse, error) {
+	user, err := s.checkPreconditions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	wfs := s.env.GetWorkflowService()
+	requestCtx := requestcontext.ProtoRequestContextFromContext(ctx)
+
+	wf, err := wfs.GetWorkflowByGroupAndRepo(ctx, user.GetGroupID(), req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+
+	githubClient := github.NewGithubClient(s.env, wf.AccessToken)
+	sha, err := githubClient.GetCommitSha(ctx, req.GetRepoUrl(), req.GetBranch())
+	if err != nil {
+		return nil, err
+	}
+
+	r := &workflow.ExecuteWorkflowRequest{
+		RequestContext: requestCtx,
+		WorkflowId:     wf.WorkflowID,
+		ActionName:     req.GetActionName(),
+		CommitSha:      sha,
+		PushedRepoUrl:  req.GetRepoUrl(),
+		PushedBranch:   req.GetBranch(),
+		TargetRepoUrl:  req.GetRepoUrl(),
+		TargetBranch:   req.GetBranch(),
+		Clean:          req.GetClean(),
+		Visibility:     req.GetVisibility(),
+	}
+	rsp, err := wfs.ExecuteWorkflow(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return &apipb.ExecuteWorkflowResponse{
+		ActionNameToInvocationId: rsp.GetActionNameToInvocationId(),
+	}, nil
 }

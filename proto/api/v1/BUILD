@@ -42,6 +42,7 @@ proto_library(
         "log.proto",
         "service.proto",
         "target.proto",
+        "workflow.proto",
     ],
     visibility = ["//visibility:public"],
     deps = [

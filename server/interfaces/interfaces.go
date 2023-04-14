@@ -469,6 +469,8 @@ type WorkflowService interface {
 
 	// WorkflowsPoolName returns the name of the executor pool to use for workflow actions.
 	WorkflowsPoolName() string
+
+	GetWorkflowByGroupAndRepo(ctx context.Context, groupID string, repoURL string) (*tables.Workflow, error)
 }
 
 type GitHubApp interface {
