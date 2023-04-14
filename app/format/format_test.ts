@@ -39,7 +39,7 @@ describe("sentenceCase", () => {
 
 describe("durationSec", () => {
   it("should format 0 as 0s", () => {
-    expect(format.durationSec(null)).toEqual("0s");
+    expect(format.durationSec(new Long(0, 0))).toEqual("0s");
     expect(format.durationSec(0)).toEqual("0s");
   });
   it("should format < 1 ms as microseconds", () => {
