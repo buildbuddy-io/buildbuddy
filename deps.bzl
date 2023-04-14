@@ -323,8 +323,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_rules_go",
         importpath = "github.com/bazelbuild/rules_go",
-        sum = "h1:YWJ+hbwEOB/PtIFCRMDnvWVSpwPFFGEpdIB6E3bt8X4=",
-        version = "v0.39.0",
+        sum = "h1:ZEr61H97IXcyUOp3hqbT9C7Rym+DynKNSYBRrNjdiow=",
+        version = "v0.39.1-0.20230402170438-d756ad91feb9",
     )
     go_repository(
         name = "com_github_bazelbuild_rules_webtesting",
