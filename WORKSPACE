@@ -22,6 +22,10 @@ http_archive(
     name = "io_bazel_rules_go",
     sha256 = "b18e85b0d6686f5072752cb5adc98f9a44efeb9f02181a59e040e092017e58c2",
     strip_prefix = "rules_go-d756ad91feb9ca43800e781ab29c117623abed90",
+    # Version 0.39.0 has a bug in its go_sdk detection that was fixed in
+    # https://github.com/bazelbuild/rules_go/commit/d756ad91feb9ca43800e781ab29c117623abed90
+    #
+    # TODO: update to 0.39.1 or 0.40.0 with that fix.
     urls = [
         "https://github.com/bazelbuild/rules_go/archive/d756ad91feb9ca43800e781ab29c117623abed90.tar.gz",
     ],
