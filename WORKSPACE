@@ -20,10 +20,10 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "6b65cb7917b4d1709f9410ffe00ecf3e160edf674b78c54a894471320862184f",
+    sha256 = "b18e85b0d6686f5072752cb5adc98f9a44efeb9f02181a59e040e092017e58c2",
+    strip_prefix = "rules_go-d756ad91feb9ca43800e781ab29c117623abed90",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.39.0/rules_go-v0.39.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.39.0/rules_go-v0.39.0.zip",
+        "https://github.com/bazelbuild/rules_go/archive/d756ad91feb9ca43800e781ab29c117623abed90.tar.gz",
     ],
 )
 
@@ -39,9 +39,6 @@ http_archive(
 )
 
 load(":deps.bzl", "install_buildbuddy_dependencies")
-load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
-
-go_rules_dependencies()
 
 # Install gazelle and go_rules dependencies after ours so that our go module versions take precedence.
 
@@ -49,6 +46,9 @@ go_rules_dependencies()
 install_buildbuddy_dependencies()
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
+load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
+
+go_rules_dependencies()
 
 go_download_sdk(
     name = "go_sdk_linux",
@@ -80,10 +80,9 @@ go_download_sdk(
 
 go_register_toolchains(
     nogo = "@//:vet",
-    version = "1.18",
 )
 
-gazelle_dependencies(go_sdk = "go_sdk")
+gazelle_dependencies()
 
 # Node
 
