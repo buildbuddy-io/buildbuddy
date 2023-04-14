@@ -29,6 +29,8 @@ http_archive(
 
 http_archive(
     name = "bazel_gazelle",
+    patch_args = ["-p1"],
+    patches = ["//buildpatches:gazelle.patch"],
     sha256 = "727f3e4edd96ea20c29e8c2ca9e8d2af724d8c7778e7923a854b2c80952bc405",
     urls = [
         "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.30.0/bazel-gazelle-v0.30.0.tar.gz",
@@ -37,7 +39,6 @@ http_archive(
 )
 
 load(":deps.bzl", "install_buildbuddy_dependencies")
-
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains", "go_rules_dependencies")
 
 go_rules_dependencies()
@@ -78,8 +79,8 @@ go_download_sdk(
 )
 
 go_register_toolchains(
-    version = "1.18",
     nogo = "@//:vet",
+    version = "1.18",
 )
 
 gazelle_dependencies(go_sdk = "go_sdk_linux")
