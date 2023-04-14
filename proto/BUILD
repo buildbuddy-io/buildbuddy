@@ -392,6 +392,7 @@ proto_library(
         ":api_key_proto",
         ":bazel_config_proto",
         ":cache_proto",
+        ":encryption_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
         ":github_proto",
@@ -530,6 +531,14 @@ proto_library(
     deps = [
         ":context_proto",
         ":remote_execution_proto",
+    ],
+)
+
+proto_library(
+    name = "encryption_proto",
+    srcs = ["encryption.proto"],
+    deps = [
+        ":context_proto",
     ],
 )
 
@@ -861,6 +870,7 @@ go_proto_library(
         ":api_key_go_proto",
         ":bazel_config_go_proto",
         ":cache_go_proto",
+        ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
         ":github_go_proto",
@@ -1071,6 +1081,15 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":remote_execution_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "encryption_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/encryption",
+    proto = ":encryption_proto",
+    deps = [
+        ":context_go_proto",
     ],
 )
 

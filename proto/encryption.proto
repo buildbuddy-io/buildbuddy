@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package encryption;
+
+import "proto/context.proto";
+
+message SetEncryptionConfigRequest {
+  context.RequestContext request_context = 1;
+
+  bool enabled = 2;
+
+  string key_uri = 3;
+}
+
+message SetEncryptionConfigResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message GetEncryptionConfigRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetEncryptionConfigResponse {
+  context.ResponseContext response_context = 1;
+
+  bool supported = 2;
+  bool enabled = 3;
+}

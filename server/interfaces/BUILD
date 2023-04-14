@@ -9,6 +9,7 @@ go_library(
         "//proto:acl_go_proto",
         "//proto:api_key_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:encryption_go_proto",
         "//proto:execution_stats_go_proto",
         "//proto:github_go_proto",
         "//proto:group_go_proto",

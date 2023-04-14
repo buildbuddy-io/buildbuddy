@@ -117,6 +117,9 @@ var (
 		"GetExecutionNodes",
 		// BuildBuddy usage data
 		"GetUsage",
+		// Encryption.
+		"GetEncryptionConfig",
+		"SetEncryptionConfig",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different

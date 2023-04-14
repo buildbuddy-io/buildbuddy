@@ -2473,9 +2473,15 @@ func (p *PebbleCache) reader(ctx context.Context, resource *rspb.ResourceName, k
 		return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
 	}
 
-	shouldDecrypt, err := p.encryptionEnabled(ctx, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
-	if err != nil {
-		return nil, err
+	shouldDecrypt := fileMetadata.EncryptionMetadata != nil
+	if shouldDecrypt {
+		encryptionEnabled, err := p.encryptionEnabled(ctx, fileMetadata.GetFileRecord().GetIsolation().GetPartitionId())
+		if err != nil {
+			return nil, err
+		}
+		if !encryptionEnabled {
+			return nil, status.NotFoundErrorf("decryption key not available")
+		}
 	}
 
 	// If the data is stored uncompressed/unencrypted, we can use the offset/limit directly
