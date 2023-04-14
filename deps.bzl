@@ -6000,8 +6000,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         importpath = "golang.org/x/tools",
         patch_args = ["-p1"],
         patches = ["@io_bazel_rules_go//third_party:org_golang_x_tools-gazelle.patch"],
-        sum = "h1:+bSpV5HIeWkuvgaMfI3UmKRThoTA5ODJTUd8T17NO+4=",
-        version = "v0.5.0",
+        sum = "h1:W4OVu8VVOaIO0yzWMNdepAulS7YfoS3Zabrm8DOXXU4=",
+        version = "v0.7.0",
     )
 
     go_repository(
