@@ -900,3 +900,7 @@ func (mc *MigrationCache) Stop() error {
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return mc.src.SupportsCompressor(compressor) && mc.dest.SupportsCompressor(compressor)
 }
+
+func (mc *MigrationCache) SupportsEncryption(ctx context.Context) bool {
+	return mc.src.SupportsEncryption(ctx) && mc.dest.SupportsEncryption(ctx)
+}

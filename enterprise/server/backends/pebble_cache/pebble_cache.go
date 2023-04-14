@@ -1159,14 +1159,14 @@ func (p *PebbleCache) userGroupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
-func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string, error) {
+func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstanceName string) (string, string) {
 	groupID := p.userGroupID(ctx)
 	for _, pm := range p.partitionMappings {
 		if pm.GroupID == groupID && strings.HasPrefix(remoteInstanceName, pm.Prefix) {
-			return groupID, pm.PartitionID, nil
+			return groupID, pm.PartitionID
 		}
 	}
-	return groupID, DefaultPartitionID, nil
+	return groupID, DefaultPartitionID
 }
 
 func (p *PebbleCache) encryptionEnabled(ctx context.Context, partitionID string) (bool, error) {
@@ -1203,10 +1203,7 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		return nil, err
 	}
 
-	groupID, partID, err := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
-	if err != nil {
-		return nil, err
-	}
+	groupID, partID := p.lookupGroupAndPartitionID(ctx, r.GetInstanceName())
 
 	return &rfpb.FileRecord{
 		Isolation: &rfpb.Isolation{
@@ -2621,4 +2618,14 @@ func (p *PebbleCache) Stop() error {
 	log.Infof("Pebble Cache: db flushed")
 
 	return p.db.Close()
+}
+
+func (p *PebbleCache) SupportsEncryption(ctx context.Context) bool {
+	_, partID := p.lookupGroupAndPartitionID(ctx, "")
+	for _, part := range p.partitions {
+		if part.ID == partID {
+			return part.EncryptionSupported
+		}
+	}
+	return false
 }
