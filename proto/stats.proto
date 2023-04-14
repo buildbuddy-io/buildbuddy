@@ -121,6 +121,22 @@ message TrendStat {
   int64 branch_count = 20;
 }
 
+message Summary {
+  // The total number of builds from a specific period.
+  int64 num_builds = 1;
+
+  // The total number of builds.
+  int64 num_builds_with_remote_cache = 2;
+
+  // The total cpu time saved.
+  int64 cpu_micros_saved = 3;
+
+  // The total number of Action Cache hits.
+  int64 ac_cache_hits = 4;
+  // The total number of Action Cache misses.
+  int64 ac_cache_misses = 5;
+}
+
 message GetTrendRequest {
   context.RequestContext request_context = 1;
 
@@ -143,6 +159,13 @@ message GetTrendResponse {
   repeated ExecutionStat execution_stat = 3;
 
   bool has_invocation_stat_percentiles = 4;
+
+  // A summary of metrics from the period specified in the query. It is unset
+  // if the data is partially available.
+  Summary current_summary = 5;
+  // A summary of metrics from the previous period equal in length of the one
+  // the user requested. It is unset if the data is partially available.
+  Summary previous_summary = 6;
 }
 
 // Fetches a heatmap for the requested metric--a heatmap is basically a set of
