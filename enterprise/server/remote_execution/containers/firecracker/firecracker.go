@@ -297,13 +297,12 @@ type FirecrackerContainer struct {
 	vmIdx       int    // the index of this vm on the host machine
 	snapshotKey *repb.Digest
 
-	constants           Constants
-	containerImage      string // the OCI container image. ex "alpine:latest"
-	actionWorkingDir    string // the action directory with inputs / outputs
-	workspaceGeneration int    // the number of times the workspace has been re-mounted into the guest VM
-	containerFSPath     string // the path to the container ext4 image
-	tempDir             string // path for writing disk images before the chroot is created
-	user                string // user to execute all commands as
+	constants        Constants
+	containerImage   string // the OCI container image. ex "alpine:latest"
+	actionWorkingDir string // the action directory with inputs / outputs
+	containerFSPath  string // the path to the container ext4 image
+	tempDir          string // path for writing disk images before the chroot is created
+	user             string // user to execute all commands as
 
 	rmOnce *sync.Once
 	rmErr  error
@@ -781,12 +780,17 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	c.workspaceGeneration++
 	workspaceSizeBytes, err := disk.DirSize(workspacePath)
 	if err != nil {
 		return err
 	}
 	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + workspaceDiskSlackSpaceMB*1e6
+	// The existing workspace disk may still be mounted in the VM, so we unlink
+	// it then create a new file rather than overwriting the existing file
+	// to avoid corruption.
+	if err := disk.RemoveIfExists(c.workspaceFSPath()); err != nil {
+		return status.WrapError(err, "failed to delete existing workspace disk image")
+	}
 	if err := ext4.DirectoryToImage(ctx, workspacePath, c.workspaceFSPath(), workspaceDiskSizeBytes); err != nil {
 		return err
 	}
@@ -850,10 +854,7 @@ func (c *FirecrackerContainer) newID(ctx context.Context) error {
 
 // workspaceFSPath returns the path to the workspace image in the chroot.
 func (c *FirecrackerContainer) workspaceFSPath() string {
-	if c.workspaceGeneration == 0 {
-		return filepath.Join(c.getChroot(), workspaceFSName)
-	}
-	return filepath.Join(c.getChroot(), fmt.Sprintf("%s.gen_%d.ext4", workspaceFSName, c.workspaceGeneration))
+	return filepath.Join(c.getChroot(), workspaceFSName)
 }
 
 func (c *FirecrackerContainer) getChroot() string {
