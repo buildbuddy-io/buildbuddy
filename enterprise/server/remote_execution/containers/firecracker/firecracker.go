@@ -6,7 +6,6 @@ package firecracker
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -33,10 +32,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -49,6 +48,7 @@ import (
 	"google.golang.org/grpc"
 
 	containerutil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/container"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
@@ -276,28 +276,13 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 	return true
 }
 
-// Container invariants which cannot be changed across snapshot/resume cycles.
-// Things like the container used to create the image, the numCPUs / RAM, etc.
-// Importantly, the files attached in the actionWorkingDir, which are attached
-// to the VM, can change. This string will be hashed into the snapshot ID, so
-// changing this algorithm will invalidate all existing cached snapshots. Be
-// careful!
-type Constants struct {
-	NumCPUs           int64
-	MemSizeMB         int64
-	ScratchDiskSizeMB int64
-	EnableNetworking  bool
-	InitDockerd       bool
-	DebugMode         bool
-}
-
 // FirecrackerContainer executes commands inside of a firecracker VM.
 type FirecrackerContainer struct {
 	id          string // a random GUID, unique per-run of firecracker
 	vmIdx       int    // the index of this vm on the host machine
 	snapshotKey *repb.Digest
 
-	constants        Constants
+	vmConfig         *fcpb.VMConfiguration
 	containerImage   string // the OCI container image. ex "alpine:latest"
 	actionWorkingDir string // the action directory with inputs / outputs
 	containerFSPath  string // the path to the container ext4 image
@@ -339,24 +324,6 @@ type FirecrackerContainer struct {
 	cancelVmCtx context.CancelFunc
 }
 
-// ConfigurationHash returns a digest that can be used to look up or save a
-// cached snapshot for this container configuration.
-func (c *FirecrackerContainer) ConfigurationHash() *repb.Digest {
-	params := []string{
-		fmt.Sprintf("cpus=%d", c.constants.NumCPUs),
-		fmt.Sprintf("mb=%d", c.constants.MemSizeMB),
-		fmt.Sprintf("scratch=%d", c.constants.ScratchDiskSizeMB),
-		fmt.Sprintf("net=%t", c.constants.EnableNetworking),
-		fmt.Sprintf("dockerd=%t", c.constants.InitDockerd),
-		fmt.Sprintf("debug=%t", c.constants.DebugMode),
-		fmt.Sprintf("container=%s", c.containerImage),
-	}
-	return &repb.Digest{
-		Hash:      hash.String(strings.Join(params, "&")),
-		SizeBytes: int64(102),
-	}
-}
-
 func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *container.ImageCacheAuthenticator, opts ContainerOpts) (*FirecrackerContainer, error) {
 	vmLog, err := NewVMLog(vmLogTailBufSize)
 	if err != nil {
@@ -387,10 +354,10 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	}
 
 	c := &FirecrackerContainer{
-		constants: Constants{
-			NumCPUs:           opts.NumCPUs,
-			MemSizeMB:         opts.MemSizeMB,
-			ScratchDiskSizeMB: opts.ScratchDiskSizeMB,
+		vmConfig: &fcpb.VMConfiguration{
+			NumCpus:           opts.NumCPUs,
+			MemSizeMb:         opts.MemSizeMB,
+			ScratchDiskSizeMb: opts.ScratchDiskSizeMB,
 			EnableNetworking:  opts.EnableNetworking,
 			InitDockerd:       opts.InitDockerd,
 			DebugMode:         opts.DebugMode,
@@ -414,7 +381,12 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	if opts.ForceVMIdx != 0 {
 		c.vmIdx = opts.ForceVMIdx
 	}
-	c.snapshotKey = snaploader.NewKey(c.ConfigurationHash().GetHash(), c.id)
+
+	cd, err := digest.ComputeForMessage(c.vmConfig, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to marshal VMConfiguration: %s", err)
+	}
+	c.snapshotKey = snaploader.NewKey(cd.GetHash(), c.id)
 
 	return c, nil
 }
@@ -593,12 +565,8 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		memSnapshotPath = baseMemSnapshotPath
 	}
 
-	configJson, err := json.Marshal(c.constants)
-	if err != nil {
-		return err
-	}
 	opts := &snaploader.LoadSnapshotOptions{
-		ConfigurationData:   configJson,
+		VMConfiguration:     c.vmConfig,
 		MemSnapshotPath:     memSnapshotPath,
 		VMStateSnapshotPath: vmStateSnapshotPath,
 		KernelImagePath:     kernelImagePath,
@@ -647,13 +615,13 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	}
 
 	var netNS string
-	if c.constants.EnableNetworking {
+	if c.vmConfig.EnableNetworking {
 		netNS = networking.NetNamespacePath(c.id)
 	}
 
 	var stdout io.Writer = c.vmLog
 	var stderr io.Writer = c.vmLog
-	if c.constants.DebugMode {
+	if c.vmConfig.DebugMode {
 		stdout = io.MultiWriter(stdout, os.Stdout)
 		stderr = io.MultiWriter(stderr, os.Stderr)
 	}
@@ -697,13 +665,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 		return err
 	}
 
-	configurationData, err := loader.GetConfigurationData(ctx, c.snapshotKey)
+	vmCfg, err := loader.GetConfiguration(ctx, c.snapshotKey)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(configurationData, &c.constants); err != nil {
-		return err
-	}
+	c.vmConfig = vmCfg
 
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
@@ -716,7 +682,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context, workspaceDirOve
 	vmCtx, cancel := context.WithCancel(context.Background())
 	c.cancelVmCtx = cancel
 	machineOpts := []fcclient.Opt{
-		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
+		fcclient.WithLogger(getLogrusLogger(c.vmConfig.DebugMode)),
 		fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName),
 	}
 	log.CtxDebugf(ctx, "fullMemSnapshotName: %s, vmStateSnapshotName %s", fullMemSnapshotName, vmStateSnapshotName)
@@ -875,26 +841,26 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 	var stdout io.Writer = c.vmLog
 	var stderr io.Writer = c.vmLog
 
-	if c.constants.EnableNetworking {
+	if c.vmConfig.EnableNetworking {
 		bootArgs += " " + machineIPBootArgs
 		netNS = networking.NetNamespacePath(c.id)
 	}
 
 	// End the kernel args, before passing some more args to init.
-	if !c.constants.DebugMode {
+	if !c.vmConfig.DebugMode {
 		bootArgs += " quiet"
 	}
 
 	// Pass some flags to the init script.
-	if c.constants.DebugMode {
+	if c.vmConfig.DebugMode {
 		bootArgs = "-debug_mode " + bootArgs
 		stdout = io.MultiWriter(stdout, os.Stdout)
 		stderr = io.MultiWriter(stderr, os.Stderr)
 	}
-	if c.constants.EnableNetworking {
+	if c.vmConfig.EnableNetworking {
 		bootArgs = "-set_default_route " + bootArgs
 	}
-	if c.constants.InitDockerd {
+	if c.vmConfig.InitDockerd {
 		bootArgs = "-init_dockerd " + bootArgs
 	}
 	cgroupVersion, err := getCgroupVersion()
@@ -949,14 +915,14 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 			CgroupVersion:  cgroupVersion,
 		},
 		MachineCfg: fcmodels.MachineConfiguration{
-			VcpuCount:       fcclient.Int64(c.constants.NumCPUs),
-			MemSizeMib:      fcclient.Int64(c.constants.MemSizeMB),
+			VcpuCount:       fcclient.Int64(c.vmConfig.NumCpus),
+			MemSizeMib:      fcclient.Int64(c.vmConfig.MemSizeMb),
 			Smt:             fcclient.Bool(false),
 			TrackDirtyPages: true,
 		},
 	}
 
-	if c.constants.EnableNetworking {
+	if c.vmConfig.EnableNetworking {
 		cfg.NetworkInterfaces = []fcclient.NetworkInterface{
 			{
 				StaticConfiguration: &fcclient.StaticNetworkConfiguration{
@@ -968,7 +934,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, containerFS, scrat
 	}
 	cfg.JailerCfg.Stdout = c.vmLog
 	cfg.JailerCfg.Stderr = c.vmLog
-	if c.constants.DebugMode {
+	if c.vmConfig.DebugMode {
 		cfg.JailerCfg.Stdout = io.MultiWriter(cfg.JailerCfg.Stdout, os.Stdout)
 		cfg.JailerCfg.Stderr = io.MultiWriter(cfg.JailerCfg.Stderr, os.Stderr)
 		cfg.JailerCfg.Stdin = os.Stdin
@@ -1140,7 +1106,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 }
 
 func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
-	if !c.constants.EnableNetworking {
+	if !c.vmConfig.EnableNetworking {
 		return nil
 	}
 	c.isNetworkSetup = true
@@ -1324,7 +1290,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 		return err
 	}
 	scratchFSPath := filepath.Join(c.tempDir, scratchFSName)
-	scratchDiskSizeBytes := ext4.MinDiskImageSizeBytes + minScratchDiskSizeBytes + c.constants.ScratchDiskSizeMB*1e6
+	scratchDiskSizeBytes := ext4.MinDiskImageSizeBytes + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
 	if err := ext4.MakeEmptyImage(ctx, scratchFSPath, scratchDiskSizeBytes); err != nil {
 		return err
 	}
@@ -1355,7 +1321,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	c.cancelVmCtx = cancel
 
 	machineOpts := []fcclient.Opt{
-		fcclient.WithLogger(getLogrusLogger(c.constants.DebugMode)),
+		fcclient.WithLogger(getLogrusLogger(c.vmConfig.DebugMode)),
 	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)

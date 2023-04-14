@@ -126,6 +126,14 @@ proto_library(
 )
 
 proto_library(
+    name = "firecracker_proto",
+    srcs = ["firecracker.proto"],
+    deps = [
+        ":remote_execution_proto",
+    ],
+)
+
+proto_library(
     name = "github_proto",
     srcs = ["github.proto"],
     deps = [":context_proto"],
@@ -607,6 +615,15 @@ go_proto_library(
     name = "failure_details_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/failure_details",
     proto = ":failure_details_proto",
+)
+
+go_proto_library(
+    name = "firecracker_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/firecracker",
+    proto = ":firecracker_proto",
+    deps = [
+        ":remote_execution_go_proto",
+    ],
 )
 
 go_proto_library(

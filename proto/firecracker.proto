@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package firecracker;
+
+import "proto/remote_execution.proto";
+
+// VM properties which cannot be changed across snapshot/resume cycles.
+//
+// Things like the container used to create the image, the numCPUs / RAM, etc.
+// Importantly, the files attached in the actionWorkingDir, which are attached
+// to the VM, can change. This string will be hashed into the snapshot ID, so
+// changing this structure will invalidate all existing cached snapshots. Be
+// careful!
+message VMConfiguration {
+  int64 num_cpus = 1;
+  int64 mem_size_mb = 2;
+  int64 scratch_disk_size_mb = 3;
+  bool enable_networking = 4;
+  bool init_dockerd = 5;
+  bool debug_mode = 6;
+
+  // TODO: add container_image here?
+}
+
+// Manifest represents a snapshot's VM configuration along with
+// file pointers to the snapshot artifacts.
+message SnapshotManifest {
+  // The VM configuration that should be used when restoring the snapshot.
+  VMConfiguration vm_configuration = 1;
+
+  // Cached files in the snapshot. The files follow a standard naming
+  // convention. For example, the vm state snapshot is expected to be named
+  // "vmstate.snap".
+  //
+  // NOTE: currently, the digests of these files are not proper content digests,
+  // and are just used as generic keys for the filecache.
+  repeated build.bazel.remote.execution.v2.FileNode files = 2;
+}
