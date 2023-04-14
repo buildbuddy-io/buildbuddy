@@ -162,8 +162,8 @@ message GetTrendResponse {
 
   // A summary of metrics from the period specified in the query.
   Summary current_summary = 5;
-  // A summary of metrics from the previous period equal in length of the one the
-  // user requested.
+  // A summary of metrics from the previous period equal in length of the one
+  // the user requested.
   Summary previous_summary = 6;
 }
 
