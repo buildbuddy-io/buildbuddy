@@ -3,13 +3,12 @@ package api
 import (
 	"context"
 	"flag"
-	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
-	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/bytestream"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -27,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"

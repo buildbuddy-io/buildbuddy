@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/longrunning"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
@@ -568,9 +569,8 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 
 func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID string) (*tables.Workflow, error) {
 	isLegacyWorkflow := !isRepositoryWorkflowID(workflowID)
-	var wf *tables.Workflow
 	if isLegacyWorkflow {
-		wf = &tables.Workflow{}
+		wf := &tables.Workflow{}
 		err := ws.env.GetDBHandle().DB(ctx).Raw(
 			`SELECT * FROM Workflows WHERE workflow_id = ?`,
 			workflowID,
@@ -581,23 +581,21 @@ func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID strin
 			}
 			return nil, status.InternalError(err.Error())
 		}
-	} else {
-		// If the workflow ID identifies a GitRepository, look up the GitRepository and construct a synthetic Workflow
-		// from it.
-		groupID, repoURL, err := parseRepositoryWorkflowID(workflowID)
-		rwf, err := ws.getRepositoryWorkflow(ctx, groupID, repoURL)
-		if err != nil {
-			return nil, err
-		}
-		wf = rwf.Workflow
+		return wf, nil
 	}
 
-	return wf, nil
+	// If the workflow ID identifies a GitRepository, look up the GitRepository and construct a synthetic Workflow
+	// from it.
+	groupID, repoURL, err := parseRepositoryWorkflowID(workflowID)
+	rwf, err := ws.getRepositoryWorkflow(ctx, groupID, repoURL)
+	if err != nil {
+		return nil, err
+	}
+
+	return rwf.Workflow, nil
 }
 
 func (ws *workflowService) GetWorkflowByGroupAndRepo(ctx context.Context, groupID string, repoURL string) (*tables.Workflow, error) {
-	var wf *tables.Workflow
-
 	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
 	if err != nil {
 		return nil, err
@@ -605,22 +603,22 @@ func (ws *workflowService) GetWorkflowByGroupAndRepo(ctx context.Context, groupI
 
 	rwf, err := ws.getRepositoryWorkflow(ctx, groupID, parsedRepoURL)
 	if err == nil {
-		wf = rwf.Workflow
-	} else {
-		// If groupID + repoURL isn't found in the GitRepositories table, look in the legacy Workflows table
-		wf = &tables.Workflow{}
-		err = ws.env.GetDBHandle().DB(ctx).Raw(`
+		return rwf.Workflow, nil
+	}
+
+	// If the workflow isn't found in the GitRepositories table, look in the legacy Workflows table
+	wf := &tables.Workflow{}
+	err = ws.env.GetDBHandle().DB(ctx).Raw(`
 		SELECT *
 		FROM Workflows
 		WHERE group_id = ?
 		AND repo_url = ?
 	`, groupID, repoURL).Take(wf).Error
-		if err != nil {
-			if db.IsRecordNotFound(err) {
-				return nil, status.NotFoundErrorf("repo %q not found", repoURL)
-			}
-			return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("repo %q not found", repoURL)
 		}
+		return nil, status.InternalErrorf("failed to look up repo %q: %s", repoURL, err)
 	}
 
 	return wf, nil

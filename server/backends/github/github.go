@@ -445,16 +445,16 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 }
 
 type githubBranch struct {
-	Commit commit `json:"commit"`
+	Commit githubCommit `json:"commit"`
 }
 
-type commit struct {
+type githubCommit struct {
 	Sha string `json:"sha"`
 }
 
 func (c *GithubClient) GetCommitSha(ctx context.Context, ownerRepo string, branch string) (string, error) {
 	if ownerRepo == "" || branch == "" {
-		return "", status.InvalidArgumentError("Need")
+		return "", status.InvalidArgumentError("missing required input fields")
 	}
 
 	var err error
@@ -466,7 +466,7 @@ func (c *GithubClient) GetCommitSha(ctx context.Context, ownerRepo string, branc
 	}
 
 	if c.githubToken == "" {
-		return "", status.PermissionDeniedError("No token")
+		return "", status.PermissionDeniedError("Missing Github token")
 	}
 
 	body := new(bytes.Buffer)
@@ -474,30 +474,28 @@ func (c *GithubClient) GetCommitSha(ctx context.Context, ownerRepo string, branc
 	if err != nil {
 		return "", err
 	}
-
 	req.Header.Set("Authorization", "token "+c.githubToken)
+
 	res, err := c.client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer res.Body.Close()
 
-	b, err := io.ReadAll(res.Body)
+	bytes, err := io.ReadAll(res.Body)
 	if err != nil {
 		return "", status.UnknownErrorf("HTTP %s: <failed to read response body>", res.Status)
 	}
-	var githubBranch githubBranch
-	if err := json.Unmarshal(b, &githubBranch); err != nil {
+	if res.StatusCode >= 400 {
+		return "", status.UnknownErrorf("HTTP %s: %q", res.Status, string(bytes))
+	}
+
+	var b githubBranch
+	if err = json.Unmarshal(bytes, &b); err != nil {
 		return "", err
 	}
 
-	log.Warningf("Bytes are %s", string(b))
-
-	if res.StatusCode >= 400 {
-		return "", status.UnknownErrorf("HTTP %s: %q", res.Status, string(b))
-	}
-
-	return githubBranch.Commit.Sha, nil
+	return b.Commit.Sha, nil
 }
 
 func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo string) (string, error) {
