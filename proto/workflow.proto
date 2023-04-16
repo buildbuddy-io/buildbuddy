@@ -127,8 +127,8 @@ message ExecuteWorkflowRequest {
   // Ex. "WF4576963743584254779"
   string workflow_id = 2;
 
-  // Optional: Name of the workflow action to execute. Corresponds to an action in
-  // buildbuddy.yaml, or an action name in the default workflow config if
+  // Optional: Name of the workflow action to execute. Corresponds to an action
+  // in buildbuddy.yaml, or an action name in the default workflow config if
   // buildbuddy.yaml is missing from the repo.
   //
   // If this is not set, will execute all actions in the workflow config.
