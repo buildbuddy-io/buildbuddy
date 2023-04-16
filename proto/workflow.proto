@@ -127,9 +127,12 @@ message ExecuteWorkflowRequest {
   // Ex. "WF4576963743584254779"
   string workflow_id = 2;
 
-  // Name of the workflow action to execute. Corresponds to an action in
+  // Optional: Name of the workflow action to execute. Corresponds to an action in
   // buildbuddy.yaml, or an action name in the default workflow config if
   // buildbuddy.yaml is missing from the repo.
+  //
+  // If this is not set, will execute all actions in the workflow config.
+  //
   // Ex. "Test all targets"
   string action_name = 3;
 
@@ -169,8 +172,11 @@ message ExecuteWorkflowResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
+  // TODO(Maggie): Deprecate this field and clean up references
   // The invocation ID of the workflow execution.
   string invocation_id = 2;
+
+  map<string, string> action_name_to_invocation_id = 3;
 }
 
 enum GitProvider {
