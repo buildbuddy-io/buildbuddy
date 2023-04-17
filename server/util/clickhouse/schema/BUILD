@@ -21,6 +21,7 @@ go_test(
     deps = [
         "//server/tables",
         "@com_github_go_faker_faker_v4//:faker",
+        "@com_github_lib_pq//:pq",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
