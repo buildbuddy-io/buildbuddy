@@ -1,5 +1,6 @@
 import { User } from "../auth/user";
 import capabilities from "../capabilities/capabilities";
+import shortcuts, { KeyCombo } from "../shortcuts/shortcuts";
 import format from "../format/format";
 import rpc_service from "../service/rpc_service";
 
@@ -67,6 +68,27 @@ class Router {
 
     window.addEventListener("popstate", () => {
       pathChangeHandler();
+    });
+
+    // The router is only created once, so no need to keep the handles and
+    // deregister these shortcuts.
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.a], () => {
+      this.navigateHome();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.r], () => {
+      this.navigateToTrends();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.t], () => {
+      this.navigateToTap();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.x], () => {
+      this.navigateToExecutors();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.q], () => {
+      this.navigateToSetup();
+    });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
+      this.navigateToSettings();
     });
   }
 

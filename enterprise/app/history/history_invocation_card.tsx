@@ -27,6 +27,7 @@ interface Props {
   className?: string;
   hover?: boolean;
   isSelectedForCompare?: boolean;
+  isSelectedWithKeyboard?: boolean;
 }
 
 interface State {
@@ -187,9 +188,10 @@ export default class HistoryInvocationCardComponent extends React.Component<Prop
         onClick={this.handleInvocationClicked.bind(this, this.props.invocation)}
         onMouseOver={this.props.onMouseOver}
         onMouseOut={this.props.onMouseOut}
-        className={`clickable card history-invocation-card ${this.props.className} ${
-          this.props.hover ? "card-hover" : ""
-        } ${this.getStatusClass()}`}>
+        className={`clickable card history-invocation-card
+          ${this.props.className}
+          ${this.props.hover ? "card-hover" : ""}
+          ${this.props.isSelectedWithKeyboard ? "selected-keyboard-shortcuts" : this.getStatusClass()}`}>
         <div className="content">
           {this.props.isSelectedForCompare && (
             <div className="comparison-buffer-illustration buffered" title="Selected for compare">

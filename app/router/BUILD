@@ -10,6 +10,7 @@ ts_library(
         "//app/capabilities",
         "//app/format",
         "//app/service:rpc_service",
+        "//app/shortcuts",
         "@npm//tslib",
     ],
 )

@@ -17,17 +17,27 @@ import CreateOrgComponent from "../org/create_org";
 import JoinOrgComponent from "../org/join_org";
 import SettingsComponent from "../settings/settings";
 import SidebarComponent from "../sidebar/sidebar";
+import ShortcutsComponent from "../shortcuts/shortcuts";
 import TapComponent from "../tap/tap";
 import TrendsComponent from "../trends/trends";
+import Shortcuts from "../../../app/shortcuts/shortcuts";
 import UsageComponent from "../usage/usage";
 import GroupSearchComponent from "../group_search/group_search";
 import { AlertCircle, LogOut } from "lucide-react";
 import { OutlinedButton } from "../../../app/components/button/button";
+import Dialog, {
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
+} from "../../../app/components/dialog/dialog";
 const CodeComponent = React.lazy(() => import("../code/code"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 
 import ExecutorsComponent from "../executors/executors";
 import UserPreferences from "../../../app/preferences/preferences";
+import Modal from "../../../app/components/modal/modal";
 
 interface State {
   user?: User;
@@ -36,6 +46,7 @@ interface State {
   search: URLSearchParams;
   preferences: UserPreferences;
   loading: boolean;
+  keyboardShortcutHelpShowing: boolean;
 }
 
 capabilities.register("BuildBuddy Enterprise", true, [
@@ -60,6 +71,7 @@ export default class EnterpriseRootComponent extends React.Component {
     path: window.location.pathname,
     search: new URLSearchParams(window.location.search),
     preferences: new UserPreferences(this.handlePreferencesChanged.bind(this)),
+    keyboardShortcutHelpShowing: false,
   };
 
   componentWillMount() {
@@ -73,6 +85,7 @@ export default class EnterpriseRootComponent extends React.Component {
     router.register(this.handlePathChange.bind(this));
     faviconService.setDefaultFavicon();
     (window as any)._preferences = this.state.preferences;
+    Shortcuts.setPreferences(this.state.preferences);
   }
 
   componentDidMount() {
@@ -312,6 +325,7 @@ export default class EnterpriseRootComponent extends React.Component {
           </div>
           <GroupSearchComponent />
           <AlertComponent />
+          <ShortcutsComponent preferences={this.state.preferences} />
         </div>
       </>
     );

@@ -437,6 +437,11 @@ svg.icon.orange {
   box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.1), 0px 1px 10px rgba(0, 0, 0, 0.05);
 }
 
+.card.selected-keyboard-shortcuts {
+  box-shadow: 4px 4px 4px #ccc;
+  border-left: 6px solid #039be5;
+}
+
 .card.card-success {
   border-left: 6px solid #8bc34a;
 }

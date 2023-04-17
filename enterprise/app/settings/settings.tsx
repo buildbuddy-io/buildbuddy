@@ -196,6 +196,15 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     onClick={() => this.props.preferences.toggleLightTerminal()}>
                     Switch to {this.props.preferences.lightTerminalEnabled ? "dark" : "light"} log viewer theme
                   </FilledButton>
+                  <div className="settings-option-title">Keyboard Shortcuts</div>
+                  <div className="settings-option-description">
+                    Enables keyboard shortcuts. Hit '?' for help when enabled.
+                  </div>
+                  <FilledButton
+                    className="settings-button"
+                    onClick={() => this.props.preferences.toggleKeyboardShortcuts()}>
+                    {this.props.preferences.keyboardShortcutsEnabled ? "Disable" : "Enable"} keyboard shortcuts
+                  </FilledButton>
                 </>
               )}
               {capabilities.auth && this.props.user && (
