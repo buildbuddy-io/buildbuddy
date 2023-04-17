@@ -111,8 +111,6 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 			return nil, err
 		}
 
-		log.Warningf("%v", ti.JsonTags)
-
 		apiInvocation := &apipb.Invocation{
 			Id: &apipb.Invocation_Id{
 				InvocationId: ti.InvocationID,

@@ -3,7 +3,6 @@ package schema
 import (
 	"bufio"
 	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"strings"
@@ -381,9 +380,7 @@ func RunMigrations(gdb *gorm.DB) error {
 }
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
-	tags := make([]string, 0)
-	json.Unmarshal(ti.JsonTags, &tags)
-	log.Warningf("Tags to flush: %v", tags)
+	log.Warningf("Tags to flush: %v", strings.Split(ti.Tags, ","))
 	return &Invocation{
 		GroupID:                           ti.GroupID,
 		UpdatedAtUsec:                     ti.UpdatedAtUsec,
@@ -423,6 +420,6 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		DownloadOutputsOption:             ti.DownloadOutputsOption,
 		UploadLocalResultsEnabled:         ti.UploadLocalResultsEnabled,
 		RemoteExecutionEnabled:            ti.RemoteExecutionEnabled,
-		Tags:                              tags,
+		Tags:                              strings.Split(ti.Tags, ","),
 	}
 }
