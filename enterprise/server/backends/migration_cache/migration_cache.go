@@ -31,6 +31,7 @@ var (
 )
 
 type MigrationCache struct {
+	env                  environment.Env
 	src                  interfaces.Cache
 	dest                 interfaces.Cache
 	doubleReadPercentage float64
@@ -60,7 +61,7 @@ func Register(env environment.Env) error {
 		return err
 	}
 	cacheMigrationConfig.SetConfigDefaults()
-	mc := NewMigrationCache(cacheMigrationConfig, srcCache, destCache)
+	mc := NewMigrationCache(env, cacheMigrationConfig, srcCache, destCache)
 
 	if env.GetCache() != nil {
 		log.Warningf("Overriding configured cache with migration_cache. If running a migration, all cache configs" +
@@ -76,9 +77,10 @@ func Register(env environment.Env) error {
 	return nil
 }
 
-func NewMigrationCache(migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
+func NewMigrationCache(env environment.Env, migrationConfig *MigrationConfig, srcCache interfaces.Cache, destCache interfaces.Cache) *MigrationCache {
 	zero := int64(0)
 	return &MigrationCache{
+		env:                         env,
 		src:                         srcCache,
 		dest:                        destCache,
 		doubleReadPercentage:        migrationConfig.DoubleReadPercentage,
@@ -157,6 +159,21 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 	return c, nil
 }
 
+func (mc *MigrationCache) checkSafeToMigrate(ctx context.Context) error {
+	u, err := mc.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		// This is an anon user which is ok.
+		return nil
+	}
+	if !u.GetCacheEncryptionEnabled() {
+		return nil
+	}
+	if mc.src.SupportsEncryption(ctx) && !mc.dest.SupportsEncryption(ctx) {
+		return status.FailedPreconditionError("not safe to copy from encrypted cache to unencrypted cache")
+	}
+	return nil
+}
+
 func (mc *MigrationCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
@@ -232,6 +249,10 @@ func (mc *MigrationCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*
 }
 
 func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	if err := mc.checkSafeToMigrate(ctx); err != nil {
+		return nil, err
+	}
+
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcMissing, dstMissing []*repb.Digest
@@ -292,6 +313,10 @@ func (mc *MigrationCache) FindMissing(ctx context.Context, resources []*rspb.Res
 }
 
 func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	if err := mc.checkSafeToMigrate(ctx); err != nil {
+		return nil, err
+	}
+
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcData map[*repb.Digest][]byte
@@ -335,6 +360,10 @@ func (mc *MigrationCache) GetMulti(ctx context.Context, resources []*rspb.Resour
 }
 
 func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][]byte) error {
+	if err := mc.checkSafeToMigrate(ctx); err != nil {
+		return err
+	}
+
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -468,6 +497,10 @@ func (d *doubleReader) Close() error {
 }
 
 func (mc *MigrationCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	if err := mc.checkSafeToMigrate(ctx); err != nil {
+		return nil, err
+	}
+
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destReader io.ReadCloser
@@ -583,6 +616,10 @@ func (d *doubleWriter) Close() error {
 }
 
 func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	if err := mc.checkSafeToMigrate(ctx); err != nil {
+		return nil, err
+	}
+
 	eg := &errgroup.Group{}
 	var dstErr error
 	var destWriter interfaces.CommittedWriteCloser
@@ -622,6 +659,10 @@ func (mc *MigrationCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 }
 
 func (mc *MigrationCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	if err := mc.checkSafeToMigrate(ctx); err != nil {
+		return nil, err
+	}
+
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 	var srcBuf []byte
@@ -693,6 +734,10 @@ func (mc *MigrationCache) sendNonBlockingCopy(ctx context.Context, r *rspb.Resou
 }
 
 func (mc *MigrationCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	if err := mc.checkSafeToMigrate(ctx); err != nil {
+		return err
+	}
+
 	eg, gctx := errgroup.WithContext(ctx)
 	var srcErr, dstErr error
 
@@ -899,4 +944,8 @@ func (mc *MigrationCache) Stop() error {
 // decompressed bytes to another
 func (mc *MigrationCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return mc.src.SupportsCompressor(compressor) && mc.dest.SupportsCompressor(compressor)
+}
+
+func (mc *MigrationCache) SupportsEncryption(ctx context.Context) bool {
+	return mc.src.SupportsEncryption(ctx) && mc.dest.SupportsEncryption(ctx)
 }

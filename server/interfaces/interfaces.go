@@ -241,6 +241,7 @@ type Cache interface {
 
 	// SupportsCompressor returns whether the cache supports storing data compressed with the given compressor
 	SupportsCompressor(compressor repb.Compressor_Value) bool
+	SupportsEncryption(ctx context.Context) bool
 }
 
 type StoppableCache interface {

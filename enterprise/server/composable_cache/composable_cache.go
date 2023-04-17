@@ -277,3 +277,7 @@ func (c *ComposableCache) Writer(ctx context.Context, r *rspb.ResourceName) (int
 func (c *ComposableCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY
 }
+
+func (c *ComposableCache) SupportsEncryption(ctx context.Context) bool {
+	return false
+}
