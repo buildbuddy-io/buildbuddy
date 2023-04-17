@@ -251,6 +251,7 @@ proto_library(
     ],
     deps = [
         ":context_proto",
+        "@go_googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -760,6 +761,7 @@ go_proto_library(
     proto = ":workflow_proto",
     deps = [
         ":context_go_proto",
+        "@go_googleapis//google/rpc:status_go_proto",
     ],
 )
 

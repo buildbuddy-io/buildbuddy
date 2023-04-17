@@ -41,7 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
-	grpcstatus "google.golang.org/grpc/status"
+	gstatus "google.golang.org/grpc/status"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
@@ -492,22 +492,23 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}
 
 	wg := sync.WaitGroup{}
-	actionsStarted := make([]*wfpb.WorkflowAction, 0, len(actions))
+	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
 	for _, action := range actions {
 		action := action
 		wg.Add(1)
 
 		go func() {
+			defer wg.Done()
+
 			var invocationID string
 			var err error
-			a := &wfpb.WorkflowAction{
+			actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
 				ActionName: action.Name,
 			}
-			actionsStarted = append(actionsStarted, a)
+			actionStatuses = append(actionStatuses, actionStatus)
 			defer func() {
-				a.InvocationId = invocationID
-				a.GrpcStatusCode = grpcstatus.Code(err).String()
-				wg.Done()
+				actionStatus.InvocationId = invocationID
+				actionStatus.Status = gstatus.Convert(err).Proto()
 			}()
 
 			invocationUUID, err := guuid.NewRandom()
@@ -536,15 +537,15 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	// TODO(Maggie): Deprecate the InvocationID field and clean up
 	var invocationID string
 	if req.GetActionName() != "" {
-		if len(actionsStarted) != 1 || actionsStarted[0].ActionName != req.GetActionName() {
+		if len(actionStatuses) != 1 || actionStatuses[0].ActionName != req.GetActionName() {
 			return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
 		}
-		invocationID = actionsStarted[0].InvocationId
+		invocationID = actionStatuses[0].InvocationId
 	}
 
 	return &wfpb.ExecuteWorkflowResponse{
 		InvocationId:   invocationID,
-		ActionsStarted: actionsStarted,
+		ActionStatuses: actionStatuses,
 	}, nil
 }
 
