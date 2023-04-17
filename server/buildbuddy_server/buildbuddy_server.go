@@ -1229,7 +1229,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		}
 	case "timing_profile":
 		name := params.Get("name")
-		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/"+name)
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/timing_profile/"+name)
 		if err != nil {
 			log.Warningf("Error serving timing profile '%s' for invocation %s: %s", name, iid, err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
