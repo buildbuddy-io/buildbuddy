@@ -1,5 +1,7 @@
 import React from "react";
 import moment from "moment";
+import { List, Cloud, Clock } from "lucide-react";
+
 import * as format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
@@ -31,6 +33,16 @@ interface State {
   dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
   dates: string[];
+  summary: {
+    recentBuilds: number;
+    previousBuilds: number;
+    recentCpuSaved: number;
+    recentCpuPotentiallyUsed: number;
+    recentCacheHitRate: number;
+    previousCacheHitRate: number;
+    recentWallTimeSaved: number;
+    recentWallTimePotentiallyUsed: number;
+  };
 }
 
 const SECONDS_PER_MICROSECOND = 1e-6;
@@ -43,6 +55,16 @@ export default class TrendsComponent extends React.Component<Props, State> {
     dateToExecutionStatMap: new Map<string, stats.IExecutionStat>(),
     enableInvocationPercentileCharts: false,
     dates: [],
+    summary: {
+      recentBuilds: 55445,
+      previousBuilds: 44555,
+      recentCpuSaved: 987239,
+      recentCpuPotentiallyUsed: 2394234,
+      recentCacheHitRate: 0.33,
+      previousCacheHitRate: 0.4,
+      recentWallTimeSaved: 94239,
+      recentWallTimePotentiallyUsed: 23423424,
+    },
   };
 
   subscription?: Subscription;
@@ -61,7 +83,13 @@ export default class TrendsComponent extends React.Component<Props, State> {
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.hash !== prevProps.hash || this.props.search != prevProps.search) {
+    if (
+      this.showingDrilldown(this.props.hash) !== this.showingDrilldown(prevProps.hash) ||
+      this.props.search.toString() != prevProps.search.toString()
+    ) {
+      console.log("yup" + (this.showingDrilldown(this.props.hash) !== this.showingDrilldown(prevProps.hash)));
+      console.log(this.props.search);
+      console.log(prevProps.search);
       this.fetchStats();
     }
   }
@@ -187,8 +215,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
     router.navigateTo("/?start=" + date + "&end=" + date + "&sort-by=" + sortBy + hash);
   }
 
-  showingDrilldown(): boolean {
-    return (capabilities.config.trendsHeatmapEnabled || false) && this.props.hash === "#drilldown";
+  showingDrilldown(hash: string): boolean {
+    return (capabilities.config.trendsHeatmapEnabled || false) && hash === "#drilldown";
   }
 
   render() {
@@ -213,14 +241,64 @@ export default class TrendsComponent extends React.Component<Props, State> {
               </div>
             </div>
           )}
-          {this.showingDrilldown() && (
+          {this.showingDrilldown(this.props.hash) && (
             <DrilldownPageComponent user={this.props.user} search={this.props.search}></DrilldownPageComponent>
           )}
-          {!this.showingDrilldown() && this.state.loading && <div className="loading"></div>}
-          {!this.showingDrilldown() && !this.state.loading && (
+          {!this.showingDrilldown(this.props.hash) && this.state.loading && <div className="loading"></div>}
+          {!this.showingDrilldown(this.props.hash) && !this.state.loading && (
             <>
+              <div className="trend-chart">
+                <div className="trend-chart-title">Summary ({"Last 30 days"})</div>
+                <div className="trend-summary-block">
+                  <a className="card trend-summary-group" href="#builds">
+                    <div>
+                      <div className="trend-headline-stat">
+                        <List size="27" className="icon"></List>
+                        <span className="trend-highlight">{format.count(this.state.summary.recentBuilds)} builds</span>
+                      </div>
+                      <div className="trend-sub-item">
+                        That's <span className="trend-change up">+30%</span> from the previous period.
+                      </div>
+                      <div className="trend-sub-item">
+                        <span className="trend-change up">99%</span> of builds have remote caching enabled.
+                      </div>
+                    </div>
+                  </a>
+                  <a href="#cache" className="card trend-summary-group">
+                    <div className="trend-headline-stat">
+                      <Cloud size="27" className="icon"></Cloud>
+                      <span className="trend-highlight">
+                        {format.durationSec(this.state.summary.recentCpuSaved)} CPU saved
+                      </span>
+                    </div>
+                    <div className="trend-sub-item">
+                      That's <span className="trend-savings-eco">3.6kg of CO2 (haha this is kinda low)</span>
+                    </div>
+                    <div className="trend-sub-item">
+                      Your cache hit rate is <span className="trend-highlight">95%</span> (a{" "}
+                      <span className="trend-change up">30% increase</span> from the previous period).
+                    </div>
+                  </a>
+                  <a href="#duration" className="card trend-summary-group">
+                    <div className="trend-headline-stat">
+                      <Clock size="27" className="icon"></Clock>
+                      <span className="trend-highlight">
+                        {format.durationSec(this.state.summary.recentWallTimeSaved)} not waiting
+                      </span>
+                    </div>
+                    <div className="trend-sub-item">
+                      That's <span className="trend-change up">{"40%"}</span> of total build time saved.
+                    </div>
+                    <div className="trend-sub-item">
+                      Your builds are <span className="trend-highlight">73% faster</span> when they have a high cache
+                      hit rate.
+                    </div>
+                  </a>
+                </div>
+              </div>
               <TrendsChartComponent
                 title="Builds"
+                id="builds"
                 data={this.state.dates}
                 extractValue={(date) => +(this.getStat(date).totalNumBuilds ?? 0)}
                 extractSecondaryValue={(date) => {
@@ -245,6 +323,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               {this.state.enableInvocationPercentileCharts && (
                 <PercentilesChartComponent
                   title="Build duration"
+                  id="duration"
                   data={this.state.dates}
                   extractLabel={this.formatShortDate}
                   formatHoverLabel={this.formatLongDate}
@@ -259,6 +338,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               {!this.state.enableInvocationPercentileCharts && (
                 <TrendsChartComponent
                   title="Build duration"
+                  id="duration"
                   data={this.state.dates}
                   extractValue={(date) => {
                     let stat = this.getStat(date);
@@ -279,6 +359,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
 
               <CacheChartComponent
                 title="Action Cache"
+                id="cache"
                 data={this.state.dates}
                 extractLabel={this.formatShortDate}
                 formatHoverLabel={this.formatLongDate}

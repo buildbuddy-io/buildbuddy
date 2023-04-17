@@ -15,6 +15,7 @@ import * as format from "../../../app/format/format";
 
 interface Props {
   title: string;
+  id?: string;
   data: any[];
   secondaryBarName: string;
   extractLabel: (datum: any) => string;
@@ -61,7 +62,7 @@ const CacheChartTooltip = ({
 export default class CacheChartComponent extends React.Component<Props> {
   render() {
     return (
-      <div className="trend-chart">
+      <div id={this.props.id} className="trend-chart">
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={this.props.data}>
