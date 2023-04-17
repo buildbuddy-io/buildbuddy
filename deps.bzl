@@ -1042,12 +1042,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:tEaZKAlqql6SKCY++utLmkPLd6K8IBM20Ha7UVm+mtU=",
         version = "v0.4.3",
     )
-    go_repository(
-        name = "com_github_denisenkom_go_mssqldb",
-        importpath = "github.com/denisenkom/go-mssqldb",
-        sum = "h1:VtrkII767ttSPNRfFekePK3sctr+joXgO58stqQbtUA=",
-        version = "v0.12.0",
-    )
 
     go_repository(
         name = "com_github_denverdino_aliyungo",
@@ -1936,8 +1930,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_sql_civil",
         importpath = "github.com/golang-sql/civil",
-        sum = "h1:au07oEsX2xN0ktxqI+Sida1w446QrXBRJ0nee3SNZlA=",
-        version = "v0.0.0-20220223132316-b832511892a9",
+        sum = "h1:lXe2qZdvpiX5WZkZR4hgp4KJVfY3nMkvmwbVkpv1rVY=",
+        version = "v0.0.0-20190719163853-cb61b32ac6fe",
     )
     go_repository(
         name = "com_github_golang_sql_sqlexp",
@@ -5595,12 +5589,6 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:1JFLBqwIgdyHN1ZtgjTBwO+blA6gVOmZurpiMEsETKo=",
         version = "v0.5.0-alpha.5.0.20200910180754-dd1b699fc489",
     )
-    go_repository(
-        name = "io_gorm_datatypes",
-        importpath = "gorm.io/datatypes",
-        sum = "h1:8NhJN4+annFjwV1WufDhFiPjdUvV1lSGUdg1UCjQIWY=",
-        version = "v1.0.7",
-    )
 
     go_repository(
         name = "io_gorm_driver_clickhouse",
@@ -5619,25 +5607,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.4.7",
     )
     go_repository(
-        name = "io_gorm_driver_postgres",
-        importpath = "gorm.io/driver/postgres",
-        sum = "h1:evZ7plF+Bp+Lr1mO5NdPvd6M/N98XtwHixGB+y7fdEQ=",
-        version = "v1.3.4",
-    )
-
-    go_repository(
         name = "io_gorm_driver_sqlite",
         importpath = "gorm.io/driver/sqlite",
         sum = "h1:Fi8xNYCUplOqWiPa3/GuCeowRNBRGTf62DEmhMDHeQQ=",
         version = "v1.3.6",
     )
-    go_repository(
-        name = "io_gorm_driver_sqlserver",
-        importpath = "gorm.io/driver/sqlserver",
-        sum = "h1:F5t6ScMzOgy1zukRTIZgLZwKahgt3q1woAILVolKpOI=",
-        version = "v1.3.1",
-    )
-
     go_repository(
         name = "io_gorm_gorm",
         importpath = "gorm.io/gorm",

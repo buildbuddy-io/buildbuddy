@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/binary"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -1301,13 +1300,8 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
-
-	tags := make([]string, 0)
-	for _, x := range p.Tag {
-		tags = append(tags, fmt.Sprintf("\"%s\"", x.Name))
-	}
-	i.JsonTags = []byte(fmt.Sprintf("[%s]", strings.Join(tags, ",")))
-	log.Warningf(fmt.Sprintf("[%s]", strings.Join(tags, ",")))
+	i.Tags = strings.Join(p.Tags, ",")
+	log.Warningf("Tags proto -> db: %s\n", i.Tags)
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
@@ -1372,17 +1366,11 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	out.Attempt = i.Attempt
 	out.BazelExitCode = i.BazelExitCode
 
-	var m []string
-	err := json.Unmarshal(i.JsonTags, &m)
-	if err != nil {
-		log.Warningf("It me")
-		// XXX handle missing.
-		log.Warningf(err.Error())
-	} else {
-		for _, name := range m {
-			out.Tag = append(out.Tag, &invocation.Invocation_Tag{Name: name})
-		}
+	tags := strings.Split(i.Tags, ",")
+	for _, name := range tags {
+		out.Tag = append(out.Tag, &invocation.Invocation_Tag{Name: name})
 	}
+	log.Warningf("Tags db -> proto: %v\n", out.Tag)
 	return out
 }
 

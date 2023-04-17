@@ -104,7 +104,7 @@ message Invocation {
   message Tag {
     string name = 1;
   }
-  repeated Tag tag = 28;
+  repeated Tag tags = 28;
 }
 
 message InvocationEvent {
