@@ -730,24 +730,6 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		invocation.LastChunkId = e.logWriter.GetLastChunkId(ctx)
 	}
 
-	if e.beValues.ProfileURI() != nil {
-		w, err := e.env.GetBlobstore().Writer(ctx, invocation.InvocationId+"/artifacts/timing_profile/"+e.beValues.ProfileName())
-		if err != nil {
-			return err
-		}
-		if err := bytestream.StreamBytestreamFile(ctx, e.env, e.beValues.ProfileURI(), w); err != nil {
-			w.Close()
-			return err
-		}
-		if err := w.Commit(); err != nil {
-			w.Close()
-			return err
-		}
-		if err := w.Close(); err != nil {
-			return err
-		}
-	}
-
 	ti, err := e.tableInvocationFromProto(invocation, iid)
 	if err != nil {
 		return err
