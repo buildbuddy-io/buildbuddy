@@ -1417,6 +1417,9 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 
 	tags := strings.Split(i.Tags, ",")
 	for _, name := range tags {
+		if name == "" {
+			continue
+		}
 		out.Tags = append(out.Tags, &invocation.Invocation_Tag{Name: name})
 	}
 	log.Warningf("Tags db -> proto: %v\n", out.Tags)
