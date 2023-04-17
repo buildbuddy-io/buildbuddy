@@ -7,8 +7,8 @@ const comfyModeValue = "COMFY";
 const terminalThemeKey = "TERMINAL_THEME";
 const terminalThemeLightValue = "LIGHT";
 
-export const keyboardShortcutsKey = "KEYBOARD_SHORTCUTS";
-export const keyboardShortcutsValue = "ENABLED";
+const keyboardShortcutsKey = "KEYBOARD_SHORTCUTS";
+const keyboardShortcutsValue = "ENABLED";
 
 declare var window: any;
 

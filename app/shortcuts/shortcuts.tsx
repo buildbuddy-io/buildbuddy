@@ -1,4 +1,4 @@
-import { keyboardShortcutsKey, keyboardShortcutsValue } from "../preferences/preferences";
+import UserPreferences from "../preferences/preferences";
 import { v4 as uuid } from "uuid";
 
 export class KeyCombo {
@@ -100,6 +100,11 @@ class Shortcut {
 
 export class Shortcuts {
   shortcuts: Map<string, Shortcut> = null;
+  preferences: UserPreferences = null;
+
+  public setPreferences(preferences: UserPreferences) {
+    this.preferences = preferences;
+  }
 
   // Registers the provided keyboard combination + action as a shortcut.
   // Returns a handle that may be used to deregister this shortcut when it is
@@ -122,7 +127,7 @@ export class Shortcuts {
       document.addEventListener(
         "keydown",
         function (event: KeyboardEvent) {
-          if (window.localStorage.getItem(keyboardShortcutsKey) !== keyboardShortcutsValue) {
+          if (!this.preferences.keyboardShortcutsEnabled) {
             return;
           }
           for (let shortcut of this.shortcuts.values()) {
