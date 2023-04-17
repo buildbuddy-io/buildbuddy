@@ -54,8 +54,8 @@ export default class MenuComponent extends React.Component<Props, State> {
 
   private gitHubLinkUrl(): string {
     const params = new URLSearchParams({
-      group_id: this.props.user?.selectedGroup?.id,
-      user_id: this.props.user?.displayUser.userId.id,
+      group_id: this.props.user?.selectedGroup.id || "",
+      user_id: this.props.user?.displayUser.userId?.id || "",
       redirect_url: window.location.href,
     });
     return `/auth/github/link/?${params}`;

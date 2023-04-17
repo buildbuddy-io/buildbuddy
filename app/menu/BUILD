@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "menu",
     srcs = ["menu.tsx"],
+    strict = True,
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
