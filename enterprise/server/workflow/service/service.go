@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -39,8 +40,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/longrunning"
+	grpcstatus "google.golang.org/grpc/status"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
@@ -490,49 +491,60 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	eg, egCtx := errgroup.WithContext(ctx)
-	actionToInvocationID := make(map[string]string, len(actions))
+	wg := sync.WaitGroup{}
+	actionsStarted := make([]*wfpb.WorkflowAction, 0, len(actions))
 	for _, action := range actions {
 		action := action
-		eg.Go(func() error {
+		wg.Add(1)
+
+		go func() {
+			var invocationID string
+			var err error
+			a := &wfpb.WorkflowAction{
+				ActionName: action.Name,
+			}
+			actionsStarted = append(actionsStarted, a)
+			defer func() {
+				a.InvocationId = invocationID
+				a.GrpcStatusCode = grpcstatus.Code(err).String()
+				wg.Done()
+			}()
+
 			invocationUUID, err := guuid.NewRandom()
 			if err != nil {
-				return err
+				log.Warningf("Could not generate invocation ID for workflow action %s", req.GetActionName())
+				return
 			}
-			invocationID := invocationUUID.String()
+			invocationID = invocationUUID.String()
 
 			// The workflow execution is trusted since we're authenticated as a member of
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
-			executionID, err := ws.executeWorkflow(egCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
+			executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
 			if err != nil {
-				return err
+				log.Warningf("Could not execute workflow action %s: %s", req.GetActionName(), err)
+				return
 			}
-			if err := ws.waitForWorkflowInvocationCreated(egCtx, executionID, invocationID); err != nil {
-				return err
+			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
+				log.Warningf("Could not create invocation for workflow action %s: %s", req.GetActionName(), err)
+				return
 			}
-			actionToInvocationID[action.Name] = invocationID
-			return nil
-		})
+		}()
 	}
-
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
+	wg.Wait()
 
 	// TODO(Maggie): Deprecate the InvocationID field and clean up
 	var invocationID string
-	var found bool
 	if req.GetActionName() != "" {
-		invocationID, found = actionToInvocationID[req.GetActionName()]
-		if !found {
+		if len(actionsStarted) != 1 || actionsStarted[0].ActionName != req.GetActionName() {
 			return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
 		}
+		invocationID = actionsStarted[0].InvocationId
 	}
 
 	return &wfpb.ExecuteWorkflowResponse{
-		InvocationId:             invocationID,
-		ActionNameToInvocationId: actionToInvocationID,
+		InvocationId:   invocationID,
+		ActionsStarted: actionsStarted,
 	}, nil
 }
 
@@ -551,23 +563,23 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 		return nil, err
 	}
 
-	executeAllActions := actionFilter == ""
-
-	foundAction := executeAllActions
-	actions := make([]*config.Action, 0)
-	for _, a := range cfg.Actions {
-		if executeAllActions {
-			actions = append(actions, a)
-		} else {
+	actions := cfg.Actions
+	if actionFilter != "" {
+		actions = make([]*config.Action, 0, 1)
+		for _, a := range cfg.Actions {
 			if a.Name == actionFilter {
 				actions = append(actions, a)
-				foundAction = true
 				break
 			}
 		}
 	}
-	if !foundAction {
-		return nil, status.NotFoundErrorf("Workflow action %q not found", actionFilter)
+
+	if len(actions) == 0 {
+		if actionFilter == "" {
+			return nil, status.NotFoundError("no workflow actions found")
+		} else {
+			return nil, status.NotFoundErrorf("workflow action %q not found", actionFilter)
+		}
 	}
 
 	return actions, nil

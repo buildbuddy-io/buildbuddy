@@ -176,7 +176,21 @@ message ExecuteWorkflowResponse {
   // The invocation ID of the workflow execution.
   string invocation_id = 2;
 
-  map<string, string> action_name_to_invocation_id = 3;
+  // A list of the actions executed by the API.
+  repeated WorkflowAction actions_started = 3;
+}
+
+message WorkflowAction {
+  // Corresponds to an action in buildbuddy.yaml, or an action name in the default workflow config if
+  // buildbuddy.yaml is missing from the repo.
+  // Ex. "Test all targets"
+  string action_name = 1;
+
+  // The invocation ID of the execution of the action.
+  string invocation_id = 2;
+
+  // The status code for executing the action.
+  string grpc_status_code = 3;
 }
 
 enum GitProvider {
