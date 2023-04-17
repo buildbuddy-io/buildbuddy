@@ -71,7 +71,20 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
         })
       )
-      .then((response) => router.navigateTo(`/invocation/${response.invocationId}`))
+      .then((response) => {
+        let invocationId = "";
+        response.actionStatuses.forEach(function (actionStatus, _) {
+          if (actionStatus.actionName == configuredEvent.actionName) {
+            invocationId = actionStatus.invocationId;
+            return
+          }
+        });
+        if (invocationId != "") {
+          router.navigateTo(`/invocation/${invocationId}`);
+        } else {
+          errorService.handleError(`Failed to execute action ${configuredEvent.actionName}.`);
+        }
+      })
       .catch((e) => errorService.handleError(e))
       .finally(() => this.setState({ isLoading: false }));
   }
