@@ -466,7 +466,7 @@ func (c *GithubClient) GetCommitSha(ctx context.Context, ownerRepo string, branc
 	}
 
 	if c.githubToken == "" {
-		return "", status.PermissionDeniedError("Missing Github token")
+		return "", status.PermissionDeniedError("missing Github token")
 	}
 
 	body := new(bytes.Buffer)

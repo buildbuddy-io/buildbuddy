@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
@@ -497,7 +498,11 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	}
 
 	githubClient := github.NewGithubClient(s.env, wf.AccessToken)
-	sha, err := githubClient.GetCommitSha(ctx, req.GetRepoUrl(), req.GetBranch())
+	ownerRepo, err := gitutil.OwnerRepoFromRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	sha, err := githubClient.GetCommitSha(ctx, ownerRepo, req.GetBranch())
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +523,16 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	if err != nil {
 		return nil, err
 	}
+
+	actionStatuses := make([]*apipb.ExecuteWorkflowResponse_ActionStatus, len(rsp.GetActionStatuses()))
+	for i, as := range rsp.GetActionStatuses() {
+		actionStatuses[i] = &apipb.ExecuteWorkflowResponse_ActionStatus{
+			ActionName:   as.ActionName,
+			InvocationId: as.InvocationId,
+			Status:       as.Status,
+		}
+	}
 	return &apipb.ExecuteWorkflowResponse{
-		ActionNameToInvocationId: rsp.GetActionNameToInvocationId(),
+		ActionStatuses: actionStatuses,
 	}, nil
 }

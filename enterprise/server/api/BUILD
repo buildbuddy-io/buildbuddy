@@ -24,6 +24,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/capabilities",
+        "//server/util/git",
         "//server/util/log",
         "//server/util/perms",
         "//server/util/prefix",
