@@ -122,7 +122,7 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 
 	for _, primaryField := range primaryInvFields {
 		if isInList(primaryField.Name, excludedFields) || primaryField.Anonymous || isInList(primaryField.Name, NonStandardInvocationCopyFields) {
-			// check NonStandardInvocationCopyFields field seperately
+			// already checked fields that don't do direct copies seperately above.
 			continue
 		}
 		srcFieldValue := srcValue.FieldByName(primaryField.Name)
