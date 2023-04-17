@@ -179,10 +179,6 @@ message ExecuteWorkflowResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
-  // TODO(Maggie): Deprecate this field and clean up references
-  // The invocation ID of the workflow execution.
-  string invocation_id = 2;
-
   message ActionStatus {
     // Corresponds to an action in buildbuddy.yaml, or an action name in the
     // default workflow config if buildbuddy.yaml is missing from the repo. Ex.
@@ -198,6 +194,9 @@ message ExecuteWorkflowResponse {
 
   // A list of the actions executed by the API.
   repeated ActionStatus action_statuses = 3;
+
+  // DEPRECATED: Use the action_statuses field.
+  string invocation_id = 2 [deprecated = true];
 }
 
 enum GitProvider {
