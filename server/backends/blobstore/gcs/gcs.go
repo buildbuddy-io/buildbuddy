@@ -145,8 +145,8 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
 	cwc.CommitFn = func(int64) error {
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
-			cancel()       // Don't try to finish the commit op if Close() failed.
-			_ = bw.Close() // Canceling the context makes any error here meaningless.
+			cancel() // Don't try to finish the commit op if Close() failed.
+			// Canceling the context closes the Writer, so don't call bw.Close().
 			return compresserCloseErr
 		}
 		return bw.Close()

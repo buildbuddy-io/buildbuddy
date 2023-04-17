@@ -190,17 +190,14 @@ func (z *AzureBlobStore) Writer(ctx context.Context, blobName string) (interface
 			if pipeCloseErr := pw.Close(); pipeCloseErr != nil {
 				log.Errorf("Error closing the pipe for %s: %s", blobName, pipeCloseErr)
 			}
-			<-errch // Canceling the context makes any error here meaningless.
+			// Canceling the context makes any error in errch meaningless; don't
+			// bother to read it.
 			return compresserCloseErr
 		}
-		var err error
 		if writerCloseErr := pw.Close(); writerCloseErr != nil {
-			err = writerCloseErr
+			return writerCloseErr
 		}
-		if writeErr := <-errch; writeErr != nil {
-			err = writeErr
-		}
-		return err
+		return <-errch
 	}
 	cwc.CloseFn = func() error {
 		cancel()
