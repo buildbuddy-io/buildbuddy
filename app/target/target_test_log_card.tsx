@@ -37,6 +37,15 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
     }
   }
 
+  testLogFallbackParams(invocationId: string, name: string) {
+    const params: Record<string, string> = {
+      invocation_id: invocationId,
+      artifact: "test_log",
+      name: name,
+    };
+    return params;
+  }
+
   fetchTestLog() {
     let testLogUrl = this.props.testResult.buildEvent?.testResult?.testActionOutput.find(
       (log: any) => log.name == "test.log"
@@ -53,7 +62,12 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
 
     this.setState({ loading: true });
     rpcService
-      .fetchBytestreamFile(testLogUrl, this.props.invocationId)
+      .fetchBytestreamFile(
+        testLogUrl,
+        this.props.invocationId,
+        undefined,
+        this.testLogFallbackParams(this.props.invocationId, "test.log")
+      )
       .then((contents: string) => {
         this.setState({ testLog: contents, loading: false });
       })

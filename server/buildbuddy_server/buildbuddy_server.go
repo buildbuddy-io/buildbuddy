@@ -1269,6 +1269,16 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			w.Header().Set("Content-Encoding", "gzip")
 		}
 		w.Write(b)
+	case "test_log":
+		name := params.Get("name")
+		b, err := s.env.GetBlobstore().ReadBlob(ctx, iid+"/artifacts/test_log/"+name)
+		if err != nil {
+			log.Warningf("Error serving test log '%s' for invocation %s: %s", name, iid, err)
+			return http.StatusInternalServerError, status.InternalErrorf("Internal sever error")
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", name))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(b)
 	default:
 		return http.StatusBadRequest, status.FailedPreconditionErrorf("Unrecognized artifact \"%s\" requested.", params.Get("artifact"))
 	}
