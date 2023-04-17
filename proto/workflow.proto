@@ -181,9 +181,9 @@ message ExecuteWorkflowResponse {
 }
 
 message WorkflowAction {
-  // Corresponds to an action in buildbuddy.yaml, or an action name in the default workflow config if
-  // buildbuddy.yaml is missing from the repo.
-  // Ex. "Test all targets"
+  // Corresponds to an action in buildbuddy.yaml, or an action name in the
+  // default workflow config if buildbuddy.yaml is missing from the repo. Ex.
+  // "Test all targets"
   string action_name = 1;
 
   // The invocation ID of the execution of the action.
