@@ -64,6 +64,7 @@ require (
 	github.com/jsimonetti/rtnetlink v0.0.0-20210714135244-af39de65d6ad
 	github.com/klauspost/compress v1.15.12
 	github.com/lestrrat-go/jwx v1.2.11
+	github.com/lib/pq v1.10.7
 	github.com/lni/dragonboat/v3 v3.3.4
 	github.com/lni/goutils v1.3.1-0.20220404072553-ddb2075d2587
 	github.com/logrusorgru/aurora v2.0.3+incompatible
