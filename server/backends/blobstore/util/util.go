@@ -19,6 +19,14 @@ var (
 	pathPrefix = flag.String("storage.path_prefix", "", "The prefix directory to store all blobs in")
 )
 
+func NewCompressWriter(w io.Writer) io.WriteCloser {
+	return gzip.NewWriter(w)
+}
+
+func NewCompressReader(r io.Reader) (io.ReadCloser, error) {
+	return gzip.NewReader(r)
+}
+
 func Decompress(in []byte, err error) ([]byte, error) {
 	if err != nil {
 		return in, err
@@ -31,7 +39,7 @@ func Decompress(in []byte, err error) ([]byte, error) {
 	if _, err := buf.Write(in); err != nil {
 		return nil, err
 	}
-	zr, err := gzip.NewReader(&buf)
+	zr, err := NewCompressReader(&buf)
 	if err == gzip.ErrHeader {
 		// Compatibility hack: if we got a header error it means this
 		// is probably an uncompressed record written before we were
@@ -53,7 +61,7 @@ func Decompress(in []byte, err error) ([]byte, error) {
 
 func Compress(in []byte) ([]byte, error) {
 	var buf bytes.Buffer
-	zr := gzip.NewWriter(&buf)
+	zr := NewCompressWriter(&buf)
 	if _, err := zr.Write(in); err != nil {
 		return nil, err
 	}

@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
 
@@ -118,4 +121,29 @@ func (d *DiskBlobStore) BlobExists(ctx context.Context, blobName string) (bool, 
 		return false, err
 	}
 	return disk.FileExists(ctx, fullPath)
+}
+
+func (d *DiskBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	fullPath, err := d.blobPath(blobName)
+	if err != nil {
+		return nil, err
+	}
+
+	fw, err := disk.FileWriter(ctx, fullPath)
+	if err != nil {
+		return nil, err
+	}
+	zw := util.NewCompressWriter(fw)
+	cwc := ioutil.NewCustomCommitWriteCloser(zw)
+	cwc.CommitFn = func(int64) error {
+		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
+			if writerCloseErr := fw.Close(); writerCloseErr != nil {
+				log.Errorf("Error encountered when closing FileWriter for %s: %s", blobName, err)
+			}
+			return compresserCloseErr
+		}
+		return fw.Commit()
+	}
+	cwc.CloseFn = fw.Close
+	return cwc, nil
 }

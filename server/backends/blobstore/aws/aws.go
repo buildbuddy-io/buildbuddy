@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"io"
 	"strings"
 	"time"
 
@@ -16,7 +17,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -253,4 +256,51 @@ func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 	}
 
 	return true, nil
+}
+
+func (a *AwsS3BlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	// Open a pipe.
+	pr, pw := io.Pipe()
+
+	errch := make(chan error, 1)
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	// Upload from pr in a separate Go routine.
+	go func() {
+		defer pr.Close()
+		_, err := a.uploader.UploadWithContext(
+			ctx,
+			&s3manager.UploadInput{
+				Bucket: a.bucket,
+				Key:    aws.String(util.BlobPath(blobName)),
+				Body:   pr,
+			},
+		)
+		errch <- err
+		close(errch)
+	}()
+
+	zw := util.NewCompressWriter(pw)
+	cwc := ioutil.NewCustomCommitWriteCloser(zw)
+	cwc.CommitFn = func(int64) error {
+		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
+			cancel() // Don't try to finish the commit op if Close() failed.
+			if pipeCloseErr := pw.Close(); pipeCloseErr != nil {
+				log.Errorf("Error closing the pipe for %s: %s", blobName, pipeCloseErr)
+			}
+			// Canceling the context makes any error in errch meaningless; don't
+			// bother to read it.
+			return compresserCloseErr
+		}
+		if writerCloseErr := pw.Close(); writerCloseErr != nil {
+			return writerCloseErr
+		}
+		return <-errch
+	}
+	cwc.CloseFn = func() error {
+		cancel()
+		return nil
+	}
+	return cwc, nil
 }
