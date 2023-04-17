@@ -340,7 +340,7 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 		sep.setReadPermission(inpb.InvocationPermission_PUBLIC, priority)
 	}
 	if tags, ok := metadata["TAGS"]; ok && tags != "" {
-		sep.setTags(strings.Split(tags, ","), priority)
+		sep.setTags(tags, priority)
 	}
 }
 
@@ -410,12 +410,17 @@ func (sep *StreamingEventParser) setPattern(value []string, priority int) {
 		sep.invocation.Pattern = value
 	}
 }
-func (sep *StreamingEventParser) setTags(values []string, priority int) {
+func (sep *StreamingEventParser) setTags(value string, priority int) {
+	values := strings.Split(value, ",")
 	if sep.priority.Tags <= priority {
 		sep.priority.Tags = priority
-		var tags = make([]*inpb.Invocation_Tag, len(values))
-		for i, value := range values {
-			tags[i] = &inpb.Invocation_Tag{Name: value}
+		var tags = make([]*inpb.Invocation_Tag, 0)
+		for _, tag := range values {
+			trimmed := strings.TrimSpace(tag)
+			if trimmed == "" {
+				continue
+			}
+			tags = append(tags, &inpb.Invocation_Tag{Name: trimmed})
 		}
 		sep.invocation.Tags = tags
 	}
