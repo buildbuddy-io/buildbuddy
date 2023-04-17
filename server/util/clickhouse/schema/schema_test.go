@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -97,6 +98,11 @@ func TestSchemaInSync(t *testing.T) {
 	}
 }
 
+var NonStandardInvocationCopyFields = []string{
+	"InvocationUUID",
+	"Tags",
+}
+
 func TestToInvocationFromPrimaryDB(t *testing.T) {
 	src := &tables.Invocation{}
 	err := faker.FakeData(src)
@@ -111,10 +117,12 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 
 	expectedUUID := hex.EncodeToString(src.InvocationUUID)
 	assert.Equal(t, dest.InvocationUUID, expectedUUID, "src and dest have different values for field 'InvocationUUID'. src = %v, dest = %v", src.InvocationUUID, expectedUUID)
+	// TODO(jdhollen): Replace with real value once actually copying (test should fail).
+	assert.Equal(t, dest.Tags, pq.StringArray(nil))
 
 	for _, primaryField := range primaryInvFields {
-		if isInList(primaryField.Name, excludedFields) || primaryField.Anonymous || primaryField.Name == "InvocationUUID" {
-			// check InvocationUUID field seperately
+		if isInList(primaryField.Name, excludedFields) || primaryField.Anonymous || isInList(primaryField.Name, NonStandardInvocationCopyFields) {
+			// check NonStandardInvocationCopyFields field seperately
 			continue
 		}
 		srcFieldValue := srcValue.FieldByName(primaryField.Name)

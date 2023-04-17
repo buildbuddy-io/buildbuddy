@@ -120,7 +120,6 @@ func (i *Invocation) ExcludedFields() []string {
 		"RedactionFlags",
 		"CreatedWithCapabilities",
 		"Perms",
-		"Tags", // TODO(jdhollen): Remove when adding write support.
 	}
 }
 
