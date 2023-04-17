@@ -14,7 +14,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
-	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
@@ -1300,12 +1299,6 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
-	tags := make([]string, len(p.Tags))
-	for i, tag := range p.Tags {
-		tags[i] = tag.Name
-	}
-	i.Tags = strings.Join(tags, ",")
-	log.Warningf("Tags proto -> db: %s\n", i.Tags)
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
@@ -1369,15 +1362,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	}
 	out.Attempt = i.Attempt
 	out.BazelExitCode = i.BazelExitCode
-
-	tags := strings.Split(i.Tags, ",")
-	for _, name := range tags {
-		if name == "" {
-			continue
-		}
-		out.Tags = append(out.Tags, &invocation.Invocation_Tag{Name: name})
-	}
-	log.Warningf("Tags db -> proto: %v\n", out.Tags)
 	return out
 }
 
