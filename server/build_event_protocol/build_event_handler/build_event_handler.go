@@ -1339,7 +1339,11 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
 	i.Attempt = p.Attempt
 	i.BazelExitCode = p.BazelExitCode
-	i.Tags = strings.Join(p.Tags, ",")
+	tags := make([]string, len(p.Tags))
+	for i, tag := range p.Tags {
+		tags[i] = tag.Name
+	}
+	i.Tags = strings.Join(tags, ",")
 	log.Warningf("Tags proto -> db: %s\n", i.Tags)
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
@@ -1413,9 +1417,9 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 
 	tags := strings.Split(i.Tags, ",")
 	for _, name := range tags {
-		out.Tag = append(out.Tag, &invocation.Invocation_Tag{Name: name})
+		out.Tags = append(out.Tags, &invocation.Invocation_Tag{Name: name})
 	}
-	log.Warningf("Tags db -> proto: %v\n", out.Tag)
+	log.Warningf("Tags db -> proto: %v\n", out.Tags)
 	return out
 }
 

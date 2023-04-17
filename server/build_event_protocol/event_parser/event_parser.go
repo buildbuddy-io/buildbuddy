@@ -461,6 +461,6 @@ func (sep *StreamingEventParser) setTags(values []string, priority int) {
 		for i, value := range values {
 			tags[i] = &inpb.Invocation_Tag{Name: value}
 		}
-		sep.invocation.Tag = tags
+		sep.invocation.Tags = tags
 	}
 }

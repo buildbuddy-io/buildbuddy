@@ -13,7 +13,6 @@ go_library(
         "//server/util/role",
         "//server/util/status",
         "//server/util/uuid",
-        "@io_gorm_datatypes//:datatypes",
         "@io_gorm_gorm//:gorm",
     ],
 )
