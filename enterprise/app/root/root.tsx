@@ -327,7 +327,7 @@ export default class EnterpriseRootComponent extends React.Component {
           </div>
           <GroupSearchComponent />
           <AlertComponent />
-          <ShortcutsComponent preferences={this.props.preferences} />
+          <ShortcutsComponent preferences={this.state.preferences} />
         </div>
       </>
     );
