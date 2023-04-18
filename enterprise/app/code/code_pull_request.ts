@@ -219,9 +219,9 @@ export async function createTree(state: Required<State>, changes: Required<Chang
             });
 
             result = await value(Object.assign(file, { exists: true }) as UpdateFunctionFile);
-          } catch (error) {
+          } catch (error: any) {
             // istanbul ignore if
-            if (error.status !== 404) throw error;
+            if (error?.status !== 404) throw error;
 
             // @ts-ignore
             result = await value({ exists: false });
