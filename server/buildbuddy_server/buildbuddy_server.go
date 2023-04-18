@@ -1183,21 +1183,21 @@ func (s *BuildBuddyServer) serveUsingParams(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err != nil {
-		if code == http.StatusNotFound {
-			// Attempt to fall back gracefully if the specified file is not found and
-			// a fallback is specified.
-			if fallback, parseErr := url.Parse(params.Get("with_fallback")); parseErr == nil && fallback.RawQuery != "" {
-				q := fallback.Query()
-				q.Del("with_fallback") // Only fall back once.
-				s.serveUsingParams(w, r, q)
-				return
-			} else if parseErr != nil {
-				log.Infof("Parse Error: %s", parseErr)
-			} else {
-				log.Warningf("Fallback without query is invalid: %v", fallback)
-			}
+		if code != http.StatusNotFound {
+			http.Error(w, err.Error(), code)
+			return
 		}
-		http.Error(w, err.Error(), code)
+		// Attempt to fall back gracefully if the specified file is not found and
+		// a fallback is specified.
+		if fallback, parseErr := url.Parse(params.Get("with_fallback")); parseErr != nil {
+			http.Error(w, parseErr.Error(), http.StatusBadRequest)
+		} else if fallback.RawQuery == "" {
+			http.Error(w, fmt.Sprintf("Fallback without query is invalid: %v", fallback), http.StatusBadRequest)
+		} else {
+			q := fallback.Query()
+			q.Del("with_fallback") // Only fall back once.
+			s.serveUsingParams(w, r, q)
+		}
 	}
 }
 
