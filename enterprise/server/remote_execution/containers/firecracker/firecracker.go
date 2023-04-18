@@ -370,7 +370,6 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 		env:                env,
 		vmLog:              vmLog,
 		imageCacheAuth:     imageCacheAuth,
-		allowSnapshotStart: opts.AllowSnapshotStart,
 		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
 		cancelVmCtx:        func() {},
 	}
@@ -1211,18 +1210,6 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		log.CtxInfof(ctx, "Run took %s", time.Since(start))
 	}()
 
-	// See if we can lookup a cached snapshot to run from; if not, it's not
-	// a huge deal, we can start a new VM and create one.
-	if c.allowSnapshotStart {
-		// TODO: When loading the snapshot here, need to copy from filecache, not
-		// hard link. Otherwise, this is not safe for concurrent use.
-		if err := c.LoadSnapshot(ctx, actionWorkingDir); err != nil {
-			log.CtxDebugf(ctx, "LoadSnapshot failed; will start a VM from scratch: %s", err)
-		} else {
-			log.CtxDebugf(ctx, "Started from snapshot %s/%d!", c.snapshotKey.GetHash(), c.snapshotKey.GetSizeBytes())
-		}
-	}
-
 	// If a snapshot was already loaded, then c.machine will be set, so
 	// there's no need to Create the machine.
 	if c.machine == nil {
@@ -1234,19 +1221,6 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		log.CtxInfof(ctx, "Creating VM.")
 		if err := c.Create(ctx, actionWorkingDir); err != nil {
 			return nonCmdExit(ctx, err)
-		}
-
-		if c.allowSnapshotStart && !c.startedFromSnapshot() {
-			// TODO: When saving the initial snapshot, store a *copy* of the disk
-			// images into filecache, not a hard link. Otherwise the action we're
-			// about to run will mutate the disk image that has already been stored in
-			// cache.
-			// TODO: Wait until the VM exec server is ready before saving the initial
-			// snapshot, so the init binary can skip the startup sequence
-			if err := c.SaveSnapshot(ctx); err != nil {
-				return nonCmdExit(ctx, err)
-			}
-			log.CtxDebugf(ctx, "Saved snapshot %s/%d for next run", c.snapshotKey.GetHash(), c.snapshotKey.GetSizeBytes())
 		}
 	}
 
