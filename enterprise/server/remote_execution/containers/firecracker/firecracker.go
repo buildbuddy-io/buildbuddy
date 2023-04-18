@@ -1610,10 +1610,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	// point either (a) the VM should be paused and we should have already taken
 	// a snapshot, or (b) we are just calling Remove() to force a cleanup
 	// regardless of VM state (e.g. executor shutdown).
-	//
-	// Also note that firecracker doesn't have a clean shutdown mechanism
-	// currently; machine.Shutdown() in the Go SDK doesn't actually shutdown;
-	// instead it sends Ctrl+Alt+Del which just logs out.
 
 	if err := c.machine.StopVMM(); err != nil {
 		log.CtxErrorf(ctx, "Error stopping VMM: %s", err)
