@@ -6,6 +6,9 @@ go_library(
     name = "soci",
     srcs = ["soci.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/soci",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         "//enterprise/server/registry:registry_lib",
         "//enterprise/server/remote_execution/commandutil",
