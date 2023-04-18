@@ -522,6 +522,16 @@ func (c *FirecrackerContainer) unpackBaseSnapshot(ctx context.Context) (string, 
 	return baseDir, nil
 }
 
+// SaveSnapshot pauses the VM and takes a snapshot, saving the snapshot to
+// cache.
+//
+// If the VM is resumed after this point, the VM state and memory snapshots
+// immediately become invalid and another call to SaveSnapshot is required. This
+// is because we don't save a copy of the disk when taking a snapshot, and
+// instead reuse the same disk image across snapshots (for performance reasons).
+// Resuming the VM may change the disk state, causing the original VM state to
+// become invalid (e.g., the kernel's page cache may no longer be in sync with
+// the disk, which can cause all sorts of issues).
 func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -617,13 +627,6 @@ func (c *FirecrackerContainer) SaveSnapshot(ctx context.Context) error {
 		return err
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
-
-	resumeStart := time.Now()
-	if err := c.machine.ResumeVM(ctx); err != nil {
-		return err
-	}
-	log.CtxDebugf(ctx, "VMM ResumeVM took %s", time.Since(resumeStart))
-
 	return nil
 }
 
@@ -1603,12 +1606,17 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 
 	var lastErr error
 
-	if err := c.machine.Shutdown(ctx); err != nil {
-		log.CtxErrorf(ctx, "Error shutting down machine: %s", err)
-		lastErr = err
-	}
+	// Note: we don't attempt any kind of clean shutdown here, because at this
+	// point either (a) the VM should be paused and we should have already taken
+	// a snapshot, or (b) we are just calling Remove() to force a cleanup
+	// regardless of VM state (e.g. executor shutdown).
+	//
+	// Also note that firecracker doesn't have a clean shutdown mechanism
+	// currently; machine.Shutdown() in the Go SDK doesn't actually shutdown;
+	// instead it sends Ctrl+Alt+Del which just logs out.
+
 	if err := c.machine.StopVMM(); err != nil {
-		log.CtxErrorf(ctx, "Error stopping VM: %s", err)
+		log.CtxErrorf(ctx, "Error stopping VMM: %s", err)
 		lastErr = err
 	}
 	if err := c.cleanupNetworking(ctx); err != nil {
