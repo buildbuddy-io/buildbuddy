@@ -13,7 +13,22 @@ import "google/protobuf/duration.proto";
 
 package invocation;
 
-// Next tag: 26
+enum RemoteCacheOption {
+  UNKNOWN_REMOTE_CACHE_OPTION = 0;
+
+  // Neither --remote_cache nor --remote_executor is set.
+  CACHE_OFF = 1;
+  // --remote_upload_local_results is unset.
+  LOG_UPLOAD_ON = 2;
+  // --remote_download_outputs is set to "toplevel".
+  TOP_LEVEL_CACHE = 3;
+  // --remote_download_outputs is set to "minimal".
+  MINIMAL_CACHE = 4;
+  // All other cases.
+  CACHE_ON = 5;
+}
+
+// Next tag: 29
 message Invocation {
   // The invocation identifier itself.
   string invocation_id = 1;
@@ -100,6 +115,9 @@ message Invocation {
 
   // The capabilities of the user who created the invocation
   repeated api_key.ApiKey.Capability created_with_capabilities = 27;
+
+  // The user's setting of the remote cache.
+  RemoteCacheOption remote_cache_option = 28;
 }
 
 message InvocationEvent {
