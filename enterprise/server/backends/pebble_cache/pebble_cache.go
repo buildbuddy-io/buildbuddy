@@ -670,7 +670,6 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 			return nil
 		default:
 		}
-		_ = limiter.Wait(p.env.GetServerContext())
 
 		if time.Since(lastStatusUpdate) > 10*time.Second {
 			log.Infof("Pebble Cache: data migration progress: saw %d keys, migrated %d to version: %d in %s. Current key: %q", keysSeen, keysMigrated, maxVersion, time.Since(migrationStart), string(iter.Key()))
@@ -712,6 +711,8 @@ func (p *PebbleCache) migrateData(quitChan chan struct{}) error {
 		if version < minVersion {
 			minVersion = version
 		}
+
+		_ = limiter.Wait(p.env.GetServerContext())
 
 		moveKey := func() error {
 			keyBytes, err := key.Bytes(version)
