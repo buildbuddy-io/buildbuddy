@@ -3,6 +3,9 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.18
 
 replace (
+	// There's a bug building longrunning v0.3.0 with bazel:
+	// https://github.com/bazelbuild/rules_go/issues/3423
+	cloud.google.com/go/longrunning v0.3.0 => cloud.google.com/go/longrunning v0.2.1
 	github.com/awslabs/soci-snapshotter => github.com/iain-macdonald/soci-snapshotter v0.2.3
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.7.0-patched-1
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
@@ -119,7 +122,7 @@ require (
 	cloud.google.com/go v0.107.0 // indirect
 	cloud.google.com/go/compute v1.15.1 // indirect
 	cloud.google.com/go/iam v0.8.0 // indirect
-	cloud.google.com/go/longrunning v0.2.1 // indirect
+	cloud.google.com/go/longrunning v0.3.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/BurntSushi/toml v1.2.1 // indirect
 	github.com/DataDog/zstd v1.4.5 // indirect
