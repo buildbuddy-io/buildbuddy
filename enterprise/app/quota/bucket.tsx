@@ -49,7 +49,7 @@ export default class BucketComponent extends React.Component<BucketProps> {
     const serializedBucket = this.props.search.get("initialValues");
     return {
       namespace: this.props.search.get("namespace") || undefined,
-      bucket: serializedBucket ? (JSON.parse(serializedBucket) as quota.IBucket) : undefined,
+      bucket: serializedBucket ? new quota.Bucket(JSON.parse(serializedBucket) as quota.IBucket) : undefined,
     };
   }
 
