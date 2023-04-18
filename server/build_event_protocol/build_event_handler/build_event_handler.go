@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -446,6 +447,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		if err != nil {
 			log.CtxWarningf(ctx, "Could not delete artifact from cache at %s: %s", uri.String(), err)
 			continue
+		}
+		ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
+		if err != nil {
+			log.CtxErrorf(ctx, "Could not delete artifact from cache at %s: %s", uri.String(), err)
 		}
 		resourceName := digest.NewResourceName(parsedRN.GetDigest(), parsedRN.GetInstanceName(), rspb.CacheType_CAS, parsedRN.GetDigestFunction()).ToProto()
 		if err := r.env.GetCache().Delete(ctx, resourceName); err != nil {

@@ -40,6 +40,7 @@ go_library(
         "//server/util/log",
         "//server/util/paging",
         "//server/util/perms",
+        "//server/util/prefix",
         "//server/util/protofile",
         "//server/util/redact",
         "//server/util/status",
