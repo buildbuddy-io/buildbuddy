@@ -24,6 +24,10 @@ const (
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
 func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64) error {
+	if err := checkImageOutputPath(outputFile); err != nil {
+		return err
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -50,6 +54,10 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 // MakeEmptyImage creates a new empty ext4 disk image of the specified size
 // and writes it to outputFile.
 func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) error {
+	if err := checkImageOutputPath(outputFile); err != nil {
+		return err
+	}
+
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -68,6 +76,19 @@ func MakeEmptyImage(ctx context.Context, outputFile string, sizeBytes int64) err
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
+	}
+	return nil
+}
+
+// Checks an image output path to make sure a non-empty file doesn't already
+// exist at that path. Overwriting an existing image can cause corruption.
+func checkImageOutputPath(path string) error {
+	stat, err := os.Stat(path)
+	if err != nil && !os.IsNotExist(err) {
+		return status.InternalErrorf("failed to create disk image %s: failed to stat output path: %s", path, err)
+	}
+	if stat != nil && stat.Size() > 0 {
+		return status.InternalErrorf("failed to create disk image %s: file already exists and is not empty", path)
 	}
 	return nil
 }
