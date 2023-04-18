@@ -1115,7 +1115,6 @@ func (p *pool) newContainerImpl(ctx context.Context, props *platform.Properties,
 			EnableNetworking:       true,
 			InitDockerd:            props.InitDockerd,
 			JailerRoot:             p.buildRoot,
-			AllowSnapshotStart:     false,
 			DebugMode:              *firecrackerDebugMode,
 		}
 		c, err := firecracker.NewContainer(ctx, p.env, p.imageCacheAuth, opts)

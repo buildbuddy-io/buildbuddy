@@ -54,8 +54,4 @@ type ContainerOpts struct {
 	// The root directory to store all files in. This needs to be
 	// short, less than 38 characters. If unset, /tmp will be used.
 	JailerRoot string
-
-	// Allow starting from snapshot, if one is available. This also
-	// means that snapshots can be saved on Create.
-	AllowSnapshotStart bool
 }
