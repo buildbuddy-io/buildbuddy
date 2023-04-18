@@ -31,6 +31,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
@@ -422,7 +423,7 @@ func TestRunnerPool_DiskOnlyContainer_CanAddMultiple(t *testing.T) {
 	env := newTestEnv(t)
 	// Swap out the `newContainer` implementation so that it always returns
 	// a container that consumes only disk resources (like Firecracker).
-	newDiskOnlyContainer := func(context.Context, *platform.Properties, *repb.ScheduledTask) (*container.TracedCommandContainer, error) {
+	newDiskOnlyContainer := func(context.Context, *platform.Properties, *repb.ScheduledTask, *rnpb.RunnerState, string) (*container.TracedCommandContainer, error) {
 		fc := newFakeFirecrackerContainer()
 		return container.NewTracedCommandContainer(fc), nil
 	}

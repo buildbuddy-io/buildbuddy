@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -32,11 +33,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	bundle "github.com/buildbuddy-io/buildbuddy/enterprise"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -148,11 +152,13 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       false,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -193,11 +199,13 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       false,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -245,11 +253,13 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              minMemSizeMB, // small to make snapshotting faster.
-		EnableNetworking:       false,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	c, err := firecracker.NewContainer(ctx, env, cacheAuth, opts)
 	if err != nil {
@@ -344,11 +354,13 @@ func TestFirecrackerFileMapping(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: rootDir,
-		NumCPUs:                1,
-		MemSizeMB:              minMemSizeMB,
-		EnableNetworking:       false,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -402,7 +414,7 @@ func TestFirecrackerFileMapping(t *testing.T) {
 			20_000_000,
 			"used scratch disk size")
 		assert.InDelta(
-			t, 1_000_000*opts.ScratchDiskSizeMB+ext4.MinDiskImageSizeBytes+approxInitialScratchDiskSizeBytes,
+			t, 1_000_000*opts.VMConfiguration.ScratchDiskSizeMb+ext4.MinDiskImageSizeBytes+approxInitialScratchDiskSizeBytes,
 			scratchFSU.GetTotalBytes(),
 			20_000_000,
 			"total scratch disk size")
@@ -436,11 +448,13 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       true,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  true,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -505,10 +519,12 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		// we need in the procinfo helper script.
 		ContainerImage:         ubuntuImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -574,11 +590,13 @@ func TestFirecrackerNonRoot(t *testing.T) {
 		ContainerImage:         busyboxImage,
 		User:                   "nobody",
 		ActionWorkingDirectory: ws.Path(),
-		NumCPUs:                1,
-		MemSizeMB:              1000,
-		EnableNetworking:       false,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         1000,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -604,14 +622,16 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       false,
-		JailerRoot:             tempJailerRoot(t),
-		// Request 0 disk; implementation should ensure the disk is at least as big
-		// as is required to run a NOP command. Otherwise, users might have to
-		// keep on top of our min disk requirements which is not really feasible.
-		ScratchDiskSizeMB: 0,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:          1,
+			MemSizeMb:        2500,
+			EnableNetworking: false,
+			// Request 0 disk; implementation should ensure the disk is at least as big
+			// as is required to run a NOP command. Otherwise, users might have to
+			// keep on top of our min disk requirements which is not really feasible.
+			ScratchDiskSizeMb: 0,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -654,12 +674,14 @@ func TestFirecrackerRunWithDocker(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         imageWithDockerInstalled,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       true,
-		InitDockerd:            true,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  true,
+			InitDockerd:       true,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -694,10 +716,12 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		ScratchDiskSizeMB:      2000,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			ScratchDiskSizeMb: 2000,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	c, err := firecracker.NewContainer(ctx, env, cacheAuth, opts)
 	require.NoError(t, err)
@@ -778,12 +802,14 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         imageWithDockerInstalled,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		ScratchDiskSizeMB:      4000, // 4 GB
-		JailerRoot:             tempJailerRoot(t),
-		EnableNetworking:       true,
-		InitDockerd:            true,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			ScratchDiskSizeMb: 4000, // 4 GB
+			EnableNetworking:  true,
+			InitDockerd:       true,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	c, err := firecracker.NewContainer(ctx, env, cacheAuth, opts)
 	require.NoError(t, err)
@@ -872,12 +898,14 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         imageWithDockerInstalled,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		InitDockerd:            true,
-		EnableNetworking:       true,
-		ScratchDiskSizeMB:      1000,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			InitDockerd:       true,
+			EnableNetworking:  true,
+			ScratchDiskSizeMb: 1000,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	c, err := firecracker.NewContainer(ctx, env, cacheAuth, opts)
 	if err != nil {
@@ -949,11 +977,13 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       false,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -992,11 +1022,13 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       false,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -1043,11 +1075,13 @@ func TestFirecrackerLargeResult(t *testing.T) {
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDir,
-		NumCPUs:                1,
-		MemSizeMB:              2500,
-		EnableNetworking:       false,
-		ScratchDiskSizeMB:      100,
-		JailerRoot:             tempJailerRoot(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+		},
+		JailerRoot: tempJailerRoot(t),
 	}
 	auth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	c, err := firecracker.NewContainer(ctx, env, auth, opts)
@@ -1059,6 +1093,118 @@ func TestFirecrackerLargeResult(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Equal(t, string(res.Stderr), "")
 	assert.Len(t, res.Stdout, stdoutSize)
+}
+
+func TestFirecrackerWithExecutorRestart(t *testing.T) {
+	ctx := context.Background()
+
+	testRoot := tempJailerRoot(t)
+	err := os.RemoveAll(filepath.Join(testRoot, "_runner_pool_state.bin"))
+	require.NoError(t, err)
+	filecacheRoot := testfs.MakeDirAll(t, testRoot, "filecache")
+
+	var (
+		env    *testenv.TestEnv
+		ta     *testauth.TestAuthenticator
+		fc     interfaces.FileCache
+		pool   interfaces.RunnerPool
+		ctxUS1 context.Context
+	)
+	setup := func() {
+		var err error
+		env = testenv.GetTestEnv(t)
+		flags.Set(t, "executor.enable_firecracker", true)
+		// Jailer root dir needs to be < 38 chars
+		flags.Set(t, "executor.root_directory", testRoot)
+		b, err := bundle.Get()
+		require.NoError(t, err)
+		env.SetFileResolver(fileresolver.New(b, "enterprise"))
+		ta = testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1"))
+		env.SetAuthenticator(ta)
+		fc, err = filecache.NewFileCache(filecacheRoot, fileCacheSize)
+		require.NoError(t, err)
+		fc.WaitForDirectoryScanToComplete()
+		env.SetFileCache(fc)
+		pool, err = runner.NewPool(env, &runner.PoolOptions{})
+		require.NoError(t, err)
+		ctxUS1, err = ta.WithAuthenticatedUser(ctx, "US1")
+		require.NoError(t, err)
+	}
+
+	setup()
+
+	smd := &scpb.SchedulingMetadata{
+		TaskSize: &scpb.TaskSize{
+			EstimatedMemoryBytes: 1_000_000_000,
+			EstimatedMilliCpu:    1_000,
+		},
+	}
+	commonProps := []*repb.Platform_Property{
+		{Name: "recycle-runner", Value: "true"},
+		{Name: "workload-isolation-type", Value: "firecracker"},
+		{Name: "container-image", Value: "docker://" + busyboxImage},
+		// TODO: Test setting preserve-workspace=true when resuming from
+		// persisted state. This doesn't matter a whole lot for workflows in
+		// particular, because we don't use the workspace and instead override
+		// the working dir to /root/workspace
+	}
+
+	task1 := &repb.ScheduledTask{
+		ExecutionTask: &repb.ExecutionTask{
+			Command: &repb.Command{
+				Arguments: []string{"sh", "-c", "printf foo > /root/KEEP"},
+				Platform:  &repb.Platform{Properties: commonProps},
+			},
+		},
+		SchedulingMetadata: smd,
+	}
+
+	r, err := pool.Get(ctxUS1, task1)
+	require.NoError(t, err)
+
+	res := r.Run(ctxUS1)
+	require.NoError(t, res.Error)
+
+	finishedCleanly := true
+	pool.TryRecycle(ctxUS1, r, finishedCleanly)
+
+	// Simulate executor shutdown.
+	err = pool.Shutdown(ctx)
+	require.NoError(t, err)
+
+	// Now re-initialize everything, simulating an executor restart. The pool
+	// should restore the saved snapshot state. Do this a couple of times for
+	// good measure.
+	for i := 0; i < 3; i++ {
+		setup()
+
+		task2 := &repb.ScheduledTask{
+			ExecutionTask: &repb.ExecutionTask{
+				Command: &repb.Command{
+					Arguments: []string{"sh", "-c", "cat /root/KEEP 2>&1"},
+					Platform:  &repb.Platform{Properties: commonProps},
+				},
+			},
+			SchedulingMetadata: smd,
+		}
+
+		r, err = pool.Get(ctxUS1, task2)
+		require.NoError(t, err)
+
+		log.Infof("Running task...")
+
+		res = r.Run(ctxUS1)
+		require.NoError(t, res.Error)
+
+		// Should be able to read /root/KEEP from the previous run.
+		require.Equal(t, "foo", string(res.Stdout))
+
+		finishedCleanly := true
+		pool.TryRecycle(ctxUS1, r, finishedCleanly)
+
+		err = pool.Shutdown(ctx)
+		require.NoError(t, err)
+	}
 }
 
 func tree(label string) {

@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 const (
@@ -199,6 +200,14 @@ type CommandContainer interface {
 	// container is paused, for the purposes of computing resources used for
 	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
+}
+
+// Stater can optionally be implemented by a CommandContainer to have
+// its state persisted across executor reboots.
+type Stater interface {
+	// State returns the ContainerState to be persisted. This should be a
+	// relatively fast operation since it is called on executor shutdown.
+	State() (*rnpb.ContainerState, error)
 }
 
 // Stdio specifies standard input / output readers for a command.
