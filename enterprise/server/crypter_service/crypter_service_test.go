@@ -14,17 +14,25 @@ import (
 
 	mrand "math/rand"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
+	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -58,6 +66,12 @@ func (f *fakeKMS) SetKey(uri string, key []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.keys[uri] = &fakeKmsKey{key: key}
+}
+
+func (f *fakeKMS) RemoveKey(uri string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.keys, uri)
 }
 
 func (f *fakeKMS) ReturnError(uri string, err error) {
@@ -173,7 +187,7 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 
 	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
 	require.NoError(t, err)
-	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, nil)
+	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, []byte(groupID))
 
 	key := &tables.EncryptionKey{
 		EncryptionKeyID: keyID,
@@ -202,7 +216,7 @@ func getEnv(t *testing.T) (*testenv.TestEnv, *fakeKMS) {
 
 	generateKMSKey(t, kms, "master")
 
-	env := testenv.GetTestEnv(t)
+	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{})
 	env.SetKMS(kms)
 	return env, kms
 }
@@ -614,4 +628,112 @@ func TestKeyCaching(t *testing.T) {
 		err = testKeyError(ctx, t, auther, crypter, userID1, clock)
 		require.True(t, status.IsUnavailableError(err))
 	}
+}
+
+func TestConfigAPI(t *testing.T) {
+	env, kms := getEnv(t)
+
+	//groupKeyID := "EK123"
+
+	auther := enterprise_testauth.Configure(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var userID, groupID string
+	for _, u := range users {
+		if len(u.Groups) != 1 || u.Groups[0].Role != uint32(role.Admin) {
+			continue
+		}
+		userID = u.UserID
+		groupID = u.Groups[0].Group.GroupID
+		break
+	}
+
+	groupKMSKeyID := "groupKey"
+	groupKMSKey := make([]byte, 32)
+	_, err := rand.Read(groupKMSKey)
+	require.NoError(t, err)
+	kms.SetKey(groupKMSKeyID, groupKMSKey)
+
+	userCtx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+
+	apiKeys, err := env.GetUserDB().GetAPIKeys(userCtx, groupID)
+	require.NoError(t, err)
+	apiKeyCtx := auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
+
+	rootDir := testfs.MakeTempDir(t)
+	cacheSizeBytes := int64(1000000)
+	customPartID := "CPART"
+	opts := &pebble_cache.Options{
+		RootDirectory: rootDir,
+		Partitions: []disk.Partition{
+			{ID: "default", MaxSizeBytes: cacheSizeBytes},
+			{ID: customPartID, MaxSizeBytes: cacheSizeBytes, EncryptionSupported: true},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{GroupID: groupID, PartitionID: customPartID},
+		},
+	}
+	pc, err := pebble_cache.NewPebbleCache(env, opts)
+	env.SetCache(pc)
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	defer pc.Stop()
+
+	clock := clockwork.NewFakeClock()
+	crypter, err := New(env, clock)
+	require.NoError(t, err)
+	env.SetCrypter(crypter)
+
+	// Write unencrypted data, this should remain readable even after keys
+	// are deleted.
+	plaintextResource, plaintextBuf := testdigest.RandomCASResourceBuf(t, 10)
+	err = pc.Set(apiKeyCtx, plaintextResource, plaintextBuf)
+	require.NoError(t, err)
+
+	// Enable encryption.
+	_, err = crypter.SetEncryptionConfig(userCtx, &enpb.SetEncryptionConfigRequest{
+		Enabled: true,
+		KeyUri:  groupKMSKeyID,
+	})
+	require.NoError(t, err)
+	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
+
+	// Write an encrypted resource. This resource should become unreadable
+	// after encryption keys become unavailable.
+	encryptedResource, encryptedBuf := testdigest.RandomACResourceBuf(t, 10)
+	err = pc.Set(apiKeyCtx, encryptedResource, encryptedBuf)
+
+	// Remove the key from the KMS and let the cached key expire. Previously
+	// encrypted data should become unreadable.
+	kms.RemoveKey(groupKMSKeyID)
+	advanceTimeAndWaitForRefresh(clock, crypter, 11*time.Minute)
+
+	// Should succeed since this digest was written before encryption was
+	// enabled.
+	plaintextReadBuf, err := pc.Get(apiKeyCtx, plaintextResource)
+	require.NoError(t, err)
+	require.Equal(t, plaintextBuf, plaintextReadBuf)
+
+	// Shouldn't be able to read the encrypted resource anymore.
+	_, err = pc.Get(apiKeyCtx, encryptedResource)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+
+	// Restore the key so we can test disabling encryption via the API.
+	kms.SetKey(groupKMSKeyID, groupKMSKey)
+	_, err = pc.Get(apiKeyCtx, encryptedResource)
+	require.NoError(t, err)
+
+	// Disable encryption, this deletes the encryption keys making previously
+	// written encrypted data unreadable.
+	_, err = crypter.SetEncryptionConfig(userCtx, &enpb.SetEncryptionConfigRequest{
+		Enabled: false,
+	})
+	require.NoError(t, err)
+	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
+	advanceTimeAndWaitForRefresh(clock, crypter, 11*time.Minute)
+	_, err = pc.Get(apiKeyCtx, encryptedResource)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
 }

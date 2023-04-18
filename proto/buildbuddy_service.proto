@@ -5,6 +5,7 @@ import "proto/bazel_config.proto";
 import "proto/cache.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
+import "proto/encryption.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/runner.proto";
@@ -179,4 +180,10 @@ service BuildBuddyService {
   // Suggestion API
   rpc GetSuggestion(suggestion.GetSuggestionRequest)
       returns (suggestion.GetSuggestionResponse);
+
+  // Encryption API
+  rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)
+      returns (encryption.SetEncryptionConfigResponse);
+  rpc GetEncryptionConfig(encryption.GetEncryptionConfigRequest)
+      returns (encryption.GetEncryptionConfigResponse);
 }

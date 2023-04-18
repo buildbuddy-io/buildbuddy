@@ -1899,7 +1899,7 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 
 	groupAEAD, err := kmsClient.FetchKey(groupKeyURI)
 	require.NoError(t, err)
-	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, nil)
+	encGroupKeyPart, err := groupAEAD.Encrypt(groupKeyPart, []byte(groupID))
 
 	key := &tables.EncryptionKey{
 		EncryptionKeyID: keyID,

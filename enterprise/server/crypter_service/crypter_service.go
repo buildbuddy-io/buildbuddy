@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
+	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -179,7 +180,7 @@ func (c *keyCache) testGetActiveRefreshOps() int32 {
 	return c.activeRefreshOps.Load()
 }
 
-func (c *keyCache) derivedKey(key *tables.EncryptionKeyVersion) ([]byte, error) {
+func (c *keyCache) derivedKey(groupID string, key *tables.EncryptionKeyVersion) ([]byte, error) {
 	bbmk, err := c.kms.FetchMasterKey()
 	if err != nil {
 		return nil, err
@@ -194,7 +195,7 @@ func (c *keyCache) derivedKey(key *tables.EncryptionKeyVersion) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	groupKeyPortion, err := gmk.Decrypt(key.GroupEncryptedKey, nil)
+	groupKeyPortion, err := gmk.Decrypt(key.GroupEncryptedKey, []byte(groupID))
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +260,7 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 		}
 		return nil, nil, err
 	}
-	key, err := c.derivedKey(ekv)
+	key, err := c.derivedKey(ck.groupID, ekv)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -621,4 +622,160 @@ func (c *Crypter) testGetLastCacheRefreshRun() time.Time {
 
 func (c *Crypter) testGetCacheActiveRefreshOps() int32 {
 	return c.cache.testGetActiveRefreshOps()
+}
+
+func (c *Crypter) enableEncryption(ctx context.Context, groupKeyURI string) error {
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+
+	if !c.env.GetCache().SupportsEncryption(ctx) {
+		return status.UnavailableError("enabling encryption requires an account with dedicated storage")
+	}
+
+	// Get the KMS clients for the customer and our own keys. This doesn't
+	// actually talk to the KMS systems yet.
+	groupKeyClient, err := c.env.GetKMS().FetchKey(groupKeyURI)
+	if err != nil {
+		return status.UnavailableErrorf("invalid key URI: %s", err)
+	}
+	masterKeyClient, err := c.env.GetKMS().FetchMasterKey()
+	if err != nil {
+		return err
+	}
+
+	// Generate the master & group (customer) portions of the composite key.
+	masterKeyPart := make([]byte, 32)
+	_, err = rand.Read(masterKeyPart)
+	if err != nil {
+		return status.InternalErrorf("could not generate key: %s", err)
+	}
+	groupKeyPart := make([]byte, 32)
+	_, err = rand.Read(groupKeyPart)
+	if err != nil {
+		return status.InternalErrorf("could not generate key: %s", err)
+	}
+	keyID, err := tables.PrimaryKeyForTable("EncryptionKeys")
+	if err != nil {
+		return status.InternalErrorf("could not generate key id: %s", err)
+	}
+
+	encMasterKeyPart, err := masterKeyClient.Encrypt(masterKeyPart, nil)
+	if err != nil {
+		return status.InternalErrorf("could not encrypt master portion of composite key: %s", err)
+	}
+	// This is where we'd fail if the customer supplied an invalid key, so we
+	// intentionally use a different error code here.
+	encGroupKeyPart, err := groupKeyClient.Encrypt(groupKeyPart, []byte(u.GetGroupID()))
+	if err != nil {
+		return status.UnavailableErrorf("could not use customer key for encryption: %s", err)
+	}
+
+	// We're good to go. Now just need to update the database.
+
+	key := &tables.EncryptionKey{
+		EncryptionKeyID: keyID,
+		GroupID:         u.GetGroupID(),
+	}
+	keyVersion := &tables.EncryptionKeyVersion{
+		EncryptionKeyID:    keyID,
+		Version:            1,
+		MasterEncryptedKey: encMasterKeyPart,
+		GroupKeyURI:        groupKeyURI,
+		GroupEncryptedKey:  encGroupKeyPart,
+	}
+	err = c.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
+		if err := tx.Create(key).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(keyVersion).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("UPDATE `Groups` SET cache_encryption_enabled = true WHERE group_id = ?", u.GetGroupID()).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return status.InternalErrorf("could not update key information: %s", err)
+	}
+	return nil
+}
+
+func (c *Crypter) disableEncryption(ctx context.Context) error {
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	err = c.env.GetDBHandle().Transaction(ctx, func(tx *gorm.DB) error {
+		q := `
+			DELETE FROM EncryptionKeyVersions 
+			WHERE encryption_key_id IN (
+				SELECT encryption_key_id
+				FROM EncryptionKeys
+				WHERE group_id = ?
+			)
+		`
+		if err := tx.Exec(q, u.GetGroupID()).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM EncryptionKeys where group_id = ?", u.GetGroupID()).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("UPDATE `Groups` SET cache_encryption_enabled = false WHERE group_id = ?", u.GetGroupID()).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
+func (c *Crypter) SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error) {
+	if c.env.GetCrypter() == nil {
+		return nil, status.FailedPreconditionErrorf("crypter service not enabled")
+	}
+	if c.env.GetKMS() == nil {
+		return nil, status.FailedPreconditionErrorf("KMS service not enabled")
+	}
+
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	g, err := c.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return nil, err
+	}
+	if g.CacheEncryptionEnabled == req.Enabled {
+		return &enpb.SetEncryptionConfigResponse{}, nil
+	}
+
+	if req.Enabled {
+		if err := c.enableEncryption(ctx, req.KeyUri); err != nil {
+			return nil, err
+		}
+		return &enpb.SetEncryptionConfigResponse{}, nil
+	} else {
+		if err := c.disableEncryption(ctx); err != nil {
+			return nil, err
+		}
+		return &enpb.SetEncryptionConfigResponse{}, nil
+	}
+}
+
+func (c *Crypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error) {
+	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	g, err := c.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
+	if err != nil {
+		return nil, err
+	}
+
+	return &enpb.GetEncryptionConfigResponse{
+		Supported: c.env.GetCache().SupportsEncryption(ctx),
+		Enabled:   g.CacheEncryptionEnabled,
+	}, nil
 }
