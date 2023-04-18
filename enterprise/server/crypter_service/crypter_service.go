@@ -663,7 +663,7 @@ func (c *Crypter) enableEncryption(ctx context.Context, groupKeyURI string) erro
 
 	encMasterKeyPart, err := masterKeyClient.Encrypt(masterKeyPart, nil)
 	if err != nil {
-		return status.InternalErrorf("could not encrypt master portion of composite ley: %s", err)
+		return status.InternalErrorf("could not encrypt master portion of composite key: %s", err)
 	}
 	// This is where we'd fail if the customer supplied an invalid key, so we
 	// intentionally use a different error code here.
