@@ -239,7 +239,6 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
 
 	dataAvailableTime := time.UnixMicro(*invocationSummaryAvailableUsec)
 	if dataAvailableTime.After(startTime) {
-		log.Info("available time after start time")
 		return nil, nil
 	}
 
