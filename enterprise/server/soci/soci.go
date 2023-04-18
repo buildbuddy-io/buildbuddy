@@ -3,7 +3,6 @@ package sociartifactstore
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +20,17 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+)
+
+var (
+	// Prefix for soci artifacts store in blobstore
+	blobKeyPrefix = "soci-index-"
+
+	// The directory where soci artifact blobs are stored
+	blobDirectory = "/var/lib/soci-snapshotter-grpc/content/blobs/sha256/"
+
+	// The name of the soci artifact database file
+	sociDbPath = "/var/lib/soci-snapshotter-grpc/artifacts.db"
 )
 
 type SociArtifactStore struct {
@@ -81,11 +91,11 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 }
 
 func blobKey(hash string) string {
-	return "soci-index-" + hash
+	return blobKeyPrefix + hash
 }
 
 func blobPath(hash string) string {
-	return "/var/lib/soci-snapshotter-grpc/content/blobs/sha256/" + hash
+	return blobDirectory + hash
 }
 
 func resourceName(digest *repb.Digest) *rspb.ResourceName {
@@ -148,7 +158,18 @@ func pullAndIndexImage(ctx context.Context, imageName, imageRef string) (*repb.D
 	if err := runSoci(ctx, imageName); err != nil {
 		return nil, nil, err
 	}
-	return findSociArtifacts(ctx, imageRef)
+	sociIndex, err := findSociIndex(ctx, imageRef)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The ztocs are associated with layers, not the image in the artifact
+	// database, so read them from the index instead.
+	sociIndexBytes, err := os.ReadFile(blobPath(sociIndex.Hash))
+	if err != nil {
+		return nil, nil, err
+	}
+	ztocDigests, err := getZtocDigests(sociIndexBytes)
+	return sociIndex, ztocDigests, nil
 }
 
 // Pulls the requested image using containerd.
@@ -179,37 +200,28 @@ func runSoci(ctx context.Context, imageName string) error {
 
 }
 
-func findSociArtifacts(ctx context.Context, imageRef string) (*repb.Digest, []*repb.Digest, error) {
+func findSociIndex(ctx context.Context, imageRef string) (*repb.Digest, error) {
 	// TODO(iain): make the path a variable or something
-	db, err := soci.NewDB("/var/lib/soci-snapshotter-grpc/artifacts.db")
+	db, err := soci.NewDB(sociDbPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var sociIndex *repb.Digest = nil
-	ztocIndexes := []*repb.Digest{}
 	err = db.Walk(func(entry *soci.ArtifactEntry) error {
 		if entry.Type == soci.ArtifactEntryTypeIndex && entry.ImageDigest == imageRef {
 			sociIndex = &repb.Digest{
-				Hash:      entry.Digest,
+				Hash:      strings.ReplaceAll(entry.Digest, "sha256:", ""),
 				SizeBytes: entry.Size,
 			}
-			fmt.Println("===== Found SOCI index =====")
-			fmt.Println(sociIndex)
-		} else if entry.Type == soci.ArtifactEntryTypeLayer && entry.ImageDigest == imageRef {
-			ztocIndexes = append(ztocIndexes, &repb.Digest{
-				Hash:      entry.Digest,
-				SizeBytes: entry.Size,
-			})
-			fmt.Println("===== Found ZTOC =====")
-			fmt.Println(sociIndex)
+			return nil
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return sociIndex, ztocIndexes, nil
+	return sociIndex, nil
 }
 
 func toDigest(hash string) (*repb.Digest, error) {
