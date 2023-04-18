@@ -1982,7 +1982,7 @@ func TestEncryption(t *testing.T) {
 		require.NoError(t, err)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		err = pc.Set(ctx, rn, buf)
-		require.ErrorContains(t, err, "no encryption key available")
+		require.ErrorContains(t, err, "no key available")
 
 		err = pc.Stop()
 		require.NoError(t, err)
