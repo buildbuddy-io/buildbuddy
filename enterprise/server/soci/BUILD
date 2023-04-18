@@ -5,7 +5,6 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "soci",
     srcs = ["soci.go"],
-    cgo = True,
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/soci",
     deps = [
         "//enterprise/server/registry:registry_lib",

@@ -3,25 +3,24 @@ module github.com/buildbuddy-io/buildbuddy
 go 1.18
 
 replace (
+	github.com/awslabs/soci-snapshotter => github.com/iain-macdonald/soci-snapshotter v0.2.3
 	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.7.0-patched-1
 	github.com/go-redsync/redsync/v4 v4.4.1 => github.com/bduffany/redsync/v4 v4.4.1-minimal
 	github.com/lni/dragonboat/v3 => github.com/tylerwilliams/dragonboat/v3 v3.3.4-rc5
 	github.com/throttled/throttled/v2 => github.com/buildbuddy-io/throttled/v2 v2.9.1-rc2
-	github.com/awslabs/soci-snapshotter => github.com/iain-macdonald/soci-snapshotter v0.2.3
 )
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
 	cloud.google.com/go/logging v1.6.1
-	cloud.google.com/go/longrunning v0.2.1
 	cloud.google.com/go/storage v1.27.0
 	github.com/AlecAivazis/survey/v2 v2.3.4
-	github.com/awslabs/soci-snapshotter v0.1.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.2.0
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.33.0
 	github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e
 	github.com/aws/aws-sdk-go v1.43.9
+	github.com/awslabs/soci-snapshotter v0.1.0
 	github.com/bazelbuild/bazel-gazelle v0.29.0
 	github.com/bazelbuild/bazelisk v1.11.0
 	github.com/bazelbuild/rules_go v0.39.1-0.20230402170438-d756ad91feb9
@@ -120,6 +119,7 @@ require (
 	cloud.google.com/go v0.107.0 // indirect
 	cloud.google.com/go/compute v1.15.1 // indirect
 	cloud.google.com/go/iam v0.8.0 // indirect
+	cloud.google.com/go/longrunning v0.3.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/BurntSushi/toml v1.2.1 // indirect
 	github.com/DataDog/zstd v1.4.5 // indirect
@@ -144,6 +144,7 @@ require (
 	github.com/cockroachdb/errors v1.9.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect
+	github.com/containerd/containerd v1.6.19 // indirect
 	github.com/containerd/fifo v1.0.0 // indirect
 	github.com/containernetworking/cni v1.1.2 // indirect
 	github.com/containernetworking/plugins v1.1.1 // indirect
@@ -180,11 +181,11 @@ require (
 	github.com/goccy/go-json v0.9.11 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.3 // indirect
-	github.com/golang/glog v1.0.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.1.2 // indirect
+	github.com/google/flatbuffers v23.3.3+incompatible // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.2.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.7.0 // indirect
@@ -244,6 +245,7 @@ require (
 	github.com/pquerna/cachecontrol v0.1.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
+	github.com/rs/xid v1.4.0 // indirect
 	github.com/russellhaering/goxmldsig v1.2.0 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/sergi/go-diff v1.2.0 // indirect
@@ -257,6 +259,7 @@ require (
 	github.com/vishvananda/netns v0.0.0-20221028002847-e414ad8e04b4 // indirect
 	github.com/xanzy/ssh-agent v0.3.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
+	go.etcd.io/bbolt v1.3.7 // indirect
 	go.mongodb.org/mongo-driver v1.10.4 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel/metric v0.33.0 // indirect
@@ -272,4 +275,5 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	oras.land/oras-go/v2 v2.0.0 // indirect
 )
