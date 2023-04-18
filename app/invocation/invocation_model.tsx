@@ -417,7 +417,7 @@ export default class InvocationModel {
 
   getAllPatterns(patternLimit?: number) {
     let patterns =
-      this.invocations.find(() => true).pattern ||
+      this.invocations.find(() => true)?.pattern ||
       this.expanded?.id?.pattern?.pattern ||
       this.aborted?.id?.pattern?.pattern ||
       [];
