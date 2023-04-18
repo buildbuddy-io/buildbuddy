@@ -3,11 +3,13 @@ package sociartifactstore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/awslabs/soci-snapshotter/soci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -138,10 +140,15 @@ func deserializeDigest(s string) (*repb.Digest, error) {
 
 }
 
-func pullAndIndexImage(ctx context.Context, imageName, imageId string) (*repb.Digest, []*repb.Digest, error) {
+func pullAndIndexImage(ctx context.Context, imageName, imageRef string) (*repb.Digest, []*repb.Digest, error) {
 	log.Infof("soci artifacts not found, generating them for image %s", imageName)
-	pullImage(ctx, imageName)
-	return runSoci(ctx, imageName)
+	if err := pullImage(ctx, imageName); err != nil {
+		return nil, nil, err
+	}
+	if err := runSoci(ctx, imageName); err != nil {
+		return nil, nil, err
+	}
+	return findSociArtifacts(ctx, imageRef)
 }
 
 // Pulls the requested image using containerd.
@@ -149,9 +156,8 @@ func pullAndIndexImage(ctx context.Context, imageName, imageId string) (*repb.Di
 func pullImage(ctx context.Context, imageName string) error {
 	cmd := []string{"ctr", "i", "pull", imageName}
 	start := time.Now()
-	res := commandutil.Run(ctx, &repb.Command{Arguments: cmd}, "" /*=workDir*/, nil /*=statsListener*/, nil /*=stdio*/)
-	log.Infof("Pulling image %s took %s", imageName, time.Since(start))
-	return res.Error
+	defer log.Infof("Pulling image %s took %s", imageName, time.Since(start))
+	return commandutil.Run(ctx, &repb.Command{Arguments: cmd}, "" /*=workDir*/, nil /*=statsListener*/, nil /*=stdio*/).Error
 }
 
 // "soci create" generates two types of artifacts that we'll want to store:
@@ -163,66 +169,47 @@ func pullImage(ctx context.Context, imageName string) error {
 //     layer. Note: only layers above a certain size are indexed, so there
 //     may be fewer ztocs than layers.
 //
-// This command writes output like this:
-// layer sha256:9c72ff7b0a48cd9e951aea7375a148e0e57f05e56efbed1c39c6bc4758492b7b -> ztoc skipped
-// layer sha256:48bc001ee0552d9afa5b9ca0dda2135a50d28604accfa9a43c7f664283c58351 -> ztoc skipped
-// layer sha256:bda554bae2c8319953b95eeeccd1a5d960e0fed35217b22001d1576c053fc20f -> ztoc sha256:0a1c0c1f64b37bbd2f344820e1afdf7fa36d36da0caad2332b5492321246709b
-// layer sha256:ed1a99fd3d74b1a636391a4f9e6dd4afcac9aa32f61d2325371192206e86d6fa -> ztoc sha256:58ef1c215e60a09aa9f347b813291b81fd0ab43884aa5884429b7f14318cd54f
-// layer sha256:647d29b55f8f9e3af8adf57e17456ecc8874f42fe74764b0cae49f90de0091e7 -> ztoc sha256:19d4ed82863392b725b953fa219f96fd01049ec47db13ecd57b0005902ead8fd
-// layer sha256:dd7a3bff4215db2b8ffd2f74ebb970596910cefdd98714fb8913e29b364dc75a -> ztoc sha256:d15d4f6b47331f124fb60c73a8209fd5e458044d597382faf6de5043f0fd14d3
-// platform {amd64 linux  [] } -> soci index sha256:b8956274ef0fda6832bc3b2dfdafd14696534c27277e7a3294dcfb8a271131be
-//
-// Get the digests of all ztocs and the soci index (there should only be
-// one index).
-func runSoci(ctx context.Context, imageName string) (*repb.Digest, []*repb.Digest, error) {
+// TODO(iain): create soci artifacts directly here instead of calling out.
+func runSoci(ctx context.Context, imageName string) error {
 	log.Debugf("indexing image %s", imageName)
 	cmd := []string{"soci", "create", imageName}
 	start := time.Now()
-	res := commandutil.Run(ctx, &repb.Command{Arguments: cmd}, "" /*=workDir*/, nil /*=statsListener*/, nil /*=stdio*/)
-	log.Infof("Indexing image %s took %s", imageName, time.Since(start))
-	if res.Error != nil {
-		return nil, nil, res.Error
-	}
-	return parseSociOutput(string(res.Stdout))
+	defer log.Infof("Indexing image %s took %s", imageName, time.Since(start))
+	return commandutil.Run(ctx, &repb.Command{Arguments: cmd}, "" /*=workDir*/, nil /*=statsListener*/, nil /*=stdio*/).Error
+
 }
 
-// Parses the command output described above into a digest of the soci index
-// and a list of digests of the ztocs and returns those.
-func parseSociOutput(output string) (*repb.Digest, []*repb.Digest, error) {
-	sociIndexHash := ""
-	ztocHashes := []string{}
-	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
-		if strings.HasPrefix(line, "layer") {
-			ztocHash := strings.Split(line, "-> ztoc ")[1]
-			if ztocHash != "skipped" {
-				ztocHashes = append(ztocHashes, strings.ReplaceAll(ztocHash, "sha256:", ""))
-			}
-		} else if strings.HasPrefix(line, "platform") {
-			if sociIndexHash != "" {
-				return nil, nil, status.InternalError("soci created indexes for multiple platforms -- expected exactly 1")
-			}
-			sociIndexHash = strings.ReplaceAll(strings.Split(line, "-> soci index ")[1], "sha256:", "")
-		} else {
-			log.Warningf("Unrecognized line in soci output: %s", line)
-		}
-	}
-	if sociIndexHash == "" {
-		return nil, nil, status.InternalError("no soci index found in output of `soci create`")
-	}
-
-	sociIndexDigest, err := toDigest(sociIndexHash)
+func findSociArtifacts(ctx context.Context, imageRef string) (*repb.Digest, []*repb.Digest, error) {
+	// TODO(iain): make the path a variable or something
+	db, err := soci.NewDB("/var/lib/soci-snapshotter-grpc/artifacts.db")
 	if err != nil {
 		return nil, nil, err
 	}
-	ztocDigests := []*repb.Digest{}
-	for _, ztocHash := range ztocHashes {
-		ztocDigest, err := toDigest(ztocHash)
-		if err != nil {
-			return nil, nil, err
+
+	var sociIndex *repb.Digest = nil
+	ztocIndexes := []*repb.Digest{}
+	err = db.Walk(func(entry *soci.ArtifactEntry) error {
+		if entry.Type == soci.ArtifactEntryTypeIndex && entry.ImageDigest == imageRef {
+			sociIndex = &repb.Digest{
+				Hash:      entry.Digest,
+				SizeBytes: entry.Size,
+			}
+			fmt.Println("===== Found SOCI index =====")
+			fmt.Println(sociIndex)
+		} else if entry.Type == soci.ArtifactEntryTypeLayer && entry.ImageDigest == imageRef {
+			ztocIndexes = append(ztocIndexes, &repb.Digest{
+				Hash:      entry.Digest,
+				SizeBytes: entry.Size,
+			})
+			fmt.Println("===== Found ZTOC =====")
+			fmt.Println(sociIndex)
 		}
-		ztocDigests = append(ztocDigests, ztocDigest)
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	return sociIndexDigest, ztocDigests, nil
+	return sociIndex, ztocIndexes, nil
 }
 
 func toDigest(hash string) (*repb.Digest, error) {

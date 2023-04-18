@@ -5,6 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "soci",
     srcs = ["soci.go"],
+    cgo = True,
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/soci",
     deps = [
         "//enterprise/server/registry:registry_lib",
@@ -17,5 +18,6 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
+        "@com_github_awslabs_soci_snapshotter//soci",
     ],
 )

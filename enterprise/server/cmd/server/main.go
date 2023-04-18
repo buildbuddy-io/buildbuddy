@@ -274,7 +274,7 @@ func main() {
 	if err := crypter_service.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := soci.Register(realEnv); err != nil {
+	if err := sociartifactstore.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

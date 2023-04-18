@@ -16,6 +16,7 @@ require (
 	cloud.google.com/go/longrunning v0.2.1
 	cloud.google.com/go/storage v1.27.0
 	github.com/AlecAivazis/survey/v2 v2.3.4
+	github.com/awslabs/soci-snapshotter v0.1.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.2.0
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.33.0
@@ -131,7 +132,6 @@ require (
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
-	github.com/awslabs/soci-snapshotter v0.1.0 // indirect
 	github.com/bazelbuild/buildtools v0.0.0-20230111132423-06e8e2436a75 // indirect
 	github.com/beevik/etree v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
