@@ -625,15 +625,13 @@ func (ws *workflowService) GetWorkflowByGroupAndRepo(ctx context.Context, groupI
 
 // To run workflow in a clean container, update the instance name suffix
 func (ws *workflowService) useCleanWorkflow(ctx context.Context, wf *tables.Workflow) error {
-	isLegacyWorkflow := !isRepositoryWorkflowID(wf.WorkflowID)
-
 	suffix, err := random.RandomString(10)
 	if err != nil {
 		return err
 	}
 	wf.InstanceNameSuffix = suffix
 
-	if isLegacyWorkflow {
+	if isRepositoryWorkflowID(wf.WorkflowID) {
 		err = ws.env.GetDBHandle().DB(ctx).Exec(`
 				UPDATE GitRepositories
 				SET instance_name_suffix = ?

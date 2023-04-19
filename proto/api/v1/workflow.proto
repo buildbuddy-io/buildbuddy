@@ -27,6 +27,8 @@ message ExecuteWorkflowRequest {
   // encouraged.
   bool clean = 4;
   // VISIBILITY build metadata used for the workflow invocation.
+  // Workflow invocations are private by default, but this can be
+  // set to "PUBLIC" to make the workflow invocation public.
   string visibility = 5;
 }
 
