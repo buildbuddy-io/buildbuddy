@@ -38,7 +38,7 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
 
   componentWillMount() {
     authService.userStream.subscribe({
-      next: (user: User) => this.setState({ ...this.state, user }),
+      next: (user: User) => this.setState({ user }),
     });
 
     if (this.props.bazelConfigResponse) {

@@ -140,7 +140,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
       request.query.pattern = pattern;
     }
 
-    this.setState({ ...this.state, loading: true });
+    this.setState({ loading: true });
     rpcService.service.getTrend(request).then((response) => {
       console.log(response);
       const dateToStatMap = new Map<string, stats.ITrendStat>();
@@ -152,7 +152,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
         dateToExecutionStatMap.set(stat.name ?? "", stat);
       }
       this.setState({
-        ...this.state,
         stats: response.trendStat,
         dates: getDatesBetween(
           // Start date should always be defined.

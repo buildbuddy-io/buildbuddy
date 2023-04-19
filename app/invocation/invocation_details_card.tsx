@@ -24,7 +24,6 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
 
   handleMoreInvocationClicked() {
     this.setState({
-      ...this.state,
       limit: this.state.limit ? undefined : defaultPageSize,
     });
   }

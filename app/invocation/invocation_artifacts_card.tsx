@@ -31,7 +31,7 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
   }
 
   handleMoreArtifactsClicked() {
-    this.setState({ ...this.state, numPages: this.state.numPages + 1 });
+    this.setState({ numPages: this.state.numPages + 1 });
   }
 
   render() {
