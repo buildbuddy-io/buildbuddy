@@ -126,7 +126,7 @@ message RunnerState {
   string debug_id = 3;
 
   // Counter that is incremented each time the runner is assigned a new task.
-  int64 task_number = 4;
+  int64 assigned_task_count = 4;
 }
 
 // The container-specific runner state.
