@@ -105,6 +105,14 @@ export function getStartDate(search: URLSearchParams): Date {
   return getDefaultStartDate();
 }
 
+export function getDisplayDateRange(search: URLSearchParams): { startDate: Date; endDate: Date } {
+  // Not using `getEndDate` here because it's set to "start of day after the one specified
+  // in the URL" which causes an off-by-one error if we were to render that directly in
+  // the calendar.
+  const endDate = search.get(END_DATE_PARAM_NAME) ? moment(search.get(END_DATE_PARAM_NAME)).toDate() : new Date();
+  return { startDate: getStartDate(search), endDate };
+}
+
 export function getEndDate(search: URLSearchParams): Date | undefined {
   if (!search.get(END_DATE_PARAM_NAME)) {
     return undefined;

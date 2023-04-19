@@ -48,7 +48,7 @@ import {
   parseStatusParam,
   toStatusParam,
   statusToString,
-  getStartDate,
+  getDisplayDateRange,
   DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
   SortBy,
@@ -323,14 +323,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
-    const now = new Date();
-    const startDate = getStartDate(this.props.search);
-    // Not using `getEndDate` here because it's set to "start of day after the one specified
-    // in the URL" which causes an off-by-one error if we were to render that directly in
-    // the calendar.
-    const endDate = this.props.search.get(END_DATE_PARAM_NAME)
-      ? moment(this.props.search.get(END_DATE_PARAM_NAME)).toDate()
-      : now;
+    const { startDate, endDate } = getDisplayDateRange(this.props.search);
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
@@ -365,6 +358,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       this.props.search.get(END_DATE_PARAM_NAME);
 
     const presetDateRanges: PresetRange[] = LAST_N_DAYS_OPTIONS.map((n) => {
+      const now = new Date();
       const start = moment(now)
         .add(-n + 1, "days")
         .toDate();

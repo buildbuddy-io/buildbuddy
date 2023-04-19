@@ -1,6 +1,7 @@
 import Long from "long";
 import moment from "moment";
 import { isSameDay } from "date-fns";
+import { getDisplayDateRange } from "../../enterprise/app/filter/filter_util";
 
 export function percent(percent: number | Long) {
   if (!percent) return "0";
@@ -195,6 +196,33 @@ export function formatDate(date: Date): string {
 }
 
 const DATE_RANGE_SEPARATOR = "\u2013";
+
+export function formatPreviousDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}): string {
+  if (isSameDay(now, endDate)) {
+    if (isSameDay(startDate, LOCAL_EPOCH)) {
+      return "";
+    }
+  }
+
+  if (isSameDay(startDate, endDate)) {
+    if (isSameDay(startDate, now)) {
+      return "yesterday";
+    }
+    return "the day before";
+  }
+
+  return `the previous ${differenceInCalendarDays(startDate, endDate) + 1} days`;
+}
+
+export function formatPreviousDateRangeFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  return formatPreviousDateRange(startDate, endDate);
+}
+
+export function formatDateRangeFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  return formatDateRange(startDate, endDate);
+}
 
 export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {
   let startFormat, endFormat;

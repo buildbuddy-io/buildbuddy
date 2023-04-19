@@ -231,6 +231,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
             <>
               {this.state.currentSummary && (
                 <TrendsSummaryCard
+                  search={this.props.search}
                   currentPeriod={this.state.currentSummary}
                   previousPeriod={this.state.previousSummary}></TrendsSummaryCard>
               )}
