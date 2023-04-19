@@ -19,7 +19,7 @@ enum DownloadOutputsOption {
 
   // --remote_cache is not set
   NONE = 1;
-  // --remote_cahce is set and --remote_download_outputs is not set to
+  // --remote_cache is set and --remote_download_outputs is not set to
   // "toplevel" or "minimal"
   ALL = 2;
   // --remote_download_outputs is set to "toplevel".
