@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
 package(default_visibility = [
@@ -92,9 +92,21 @@ go_binary(
     embed = [":server_lib"],
 )
 
+container_layer(
+    name = "app_tools",
+    directory = "/usr/bin",
+    files = [
+        "@com_github_iain_macdonald_soci_snapshotter-soci-v0.2.3-linux-amd64//file:soci-v0.2.3-linux-amd64",
+    ],
+    symlinks = {
+        "/usr/bin/soci": "/usr/bin/soci-v0.2.3-linux-amd64",
+    },
+)
+
 container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
+    layers = [":app_tools"],
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml",
         "buildbuddy": "tmp",
