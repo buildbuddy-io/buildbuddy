@@ -555,18 +555,6 @@ func (r *commandRunner) cleanupCIRunner(ctx context.Context) error {
 	return res.Error
 }
 
-// ACLForUser returns an ACL that grants anyone in the given user's group to
-// Read/Write permissions for a runner.
-func ACLForUser(user interfaces.UserInfo) *aclpb.ACL {
-	if user == nil {
-		return nil
-	}
-	userID := &uidpb.UserId{Id: user.GetUserID()}
-	groupID := user.GetGroupID()
-	permBits := perms.OWNER_READ | perms.OWNER_WRITE | perms.GROUP_READ | perms.GROUP_WRITE
-	return perms.ToACLProto(userID, groupID, permBits)
-}
-
 type ContainerProvider func(context.Context, *platform.Properties, *repb.ScheduledTask) (*container.TracedCommandContainer, error)
 
 type PoolOptions struct {
