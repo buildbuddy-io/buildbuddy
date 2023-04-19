@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "google/rpc/status.proto";
 import "proto/context.proto";
 
 package workflow;
@@ -127,9 +128,12 @@ message ExecuteWorkflowRequest {
   // Ex. "WF4576963743584254779"
   string workflow_id = 2;
 
-  // Name of the workflow action to execute. Corresponds to an action in
-  // buildbuddy.yaml, or an action name in the default workflow config if
+  // Optional: Name of the workflow action to execute. Corresponds to an action
+  // in buildbuddy.yaml, or an action name in the default workflow config if
   // buildbuddy.yaml is missing from the repo.
+  //
+  // If this is not set, will execute all actions in the workflow config.
+  //
   // Ex. "Test all targets"
   string action_name = 3;
 
@@ -169,8 +173,25 @@ message ExecuteWorkflowResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
+  // TODO(Maggie): Deprecate this field and clean up references
   // The invocation ID of the workflow execution.
   string invocation_id = 2;
+
+  message ActionStatus {
+    // Corresponds to an action in buildbuddy.yaml, or an action name in the
+    // default workflow config if buildbuddy.yaml is missing from the repo. Ex.
+    // "Test all targets"
+    string action_name = 1;
+
+    // The BuildBuddy invocation ID from executing the action.
+    string invocation_id = 2;
+
+    // The GRPC status from executing the action.
+    google.rpc.Status status = 3;
+  }
+
+  // A list of the actions executed by the API.
+  repeated ActionStatus action_statuses = 3;
 }
 
 enum GitProvider {

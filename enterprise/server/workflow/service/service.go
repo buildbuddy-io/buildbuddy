@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -40,6 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
+	gstatus "google.golang.org/grpc/status"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
@@ -393,9 +395,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if req.GetTargetBranch() == "" {
 		return nil, status.InvalidArgumentError("Missing target_branch")
 	}
-	if req.GetActionName() == "" {
-		return nil, status.InvalidArgumentError("Missing action_name")
-	}
 
 	// Authenticate
 	user, err := perms.AuthenticatedUser(ctx, ws.env)
@@ -479,11 +478,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		// Don't set IsTargetRepoPublic here; instead set visibility directly
 		// from build metadata.
 	}
-	invocationUUID, err := guuid.NewRandom()
-	if err != nil {
-		return nil, err
-	}
-	invocationID := invocationUUID.String()
 	extraCIRunnerArgs := []string{
 		fmt.Sprintf("--visibility=%s", req.GetVisibility()),
 	}
@@ -492,7 +486,71 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	// Fetch the workflow config for the action we're about to execute
+	actions, err := ws.getActions(ctx, wf, wd, req.GetActionName())
+	if err != nil {
+		return nil, err
+	}
+
+	wg := sync.WaitGroup{}
+	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
+	for _, action := range actions {
+		action := action
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			var invocationID string
+			var err error
+			actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
+				ActionName: action.Name,
+			}
+			actionStatuses = append(actionStatuses, actionStatus)
+			defer func() {
+				actionStatus.InvocationId = invocationID
+				actionStatus.Status = gstatus.Convert(err).Proto()
+			}()
+
+			invocationUUID, err := guuid.NewRandom()
+			if err != nil {
+				log.Warningf("Could not generate invocation ID for workflow action %s", req.GetActionName())
+				return
+			}
+			invocationID = invocationUUID.String()
+
+			// The workflow execution is trusted since we're authenticated as a member of
+			// the BuildBuddy org that owns the workflow.
+			isTrusted := true
+			executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
+			if err != nil {
+				log.Warningf("Could not execute workflow action %s: %s", req.GetActionName(), err)
+				return
+			}
+			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
+				log.Warningf("Could not create invocation for workflow action %s: %s", req.GetActionName(), err)
+				return
+			}
+		}()
+	}
+	wg.Wait()
+
+	// TODO(Maggie): Deprecate the InvocationID field and clean up
+	var invocationID string
+	if req.GetActionName() != "" {
+		if len(actionStatuses) != 1 || actionStatuses[0].ActionName != req.GetActionName() {
+			return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
+		}
+		invocationID = actionStatuses[0].InvocationId
+	}
+
+	return &wfpb.ExecuteWorkflowResponse{
+		InvocationId:   invocationID,
+		ActionStatuses: actionStatuses,
+	}, nil
+}
+
+func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter string) ([]*config.Action, error) {
+	// Fetch the workflow config
 	repoURL, err := gitutil.ParseRepoURL(wd.PushedRepoURL)
 	if err != nil {
 		return nil, err
@@ -505,28 +563,27 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if err != nil {
 		return nil, err
 	}
-	var action *config.Action
-	for _, a := range cfg.Actions {
-		if a.Name == req.GetActionName() {
-			action = a
-			break
+
+	actions := cfg.Actions
+	if actionFilter != "" {
+		actions = make([]*config.Action, 0, 1)
+		for _, a := range cfg.Actions {
+			if a.Name == actionFilter {
+				actions = append(actions, a)
+				break
+			}
 		}
 	}
-	if action == nil {
-		return nil, status.NotFoundErrorf("Workflow action %q not found", req.GetActionName())
-	}
-	// The workflow execution is trusted since we're authenticated as a member of
-	// the BuildBuddy org that owns the workflow.
-	isTrusted := true
-	executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
-	if err != nil {
-		return nil, err
-	}
-	if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
-		return nil, err
+
+	if len(actions) == 0 {
+		if actionFilter == "" {
+			return nil, status.NotFoundError("no workflow actions found")
+		} else {
+			return nil, status.NotFoundErrorf("workflow action %q not found", actionFilter)
+		}
 	}
 
-	return &wfpb.ExecuteWorkflowResponse{InvocationId: invocationID}, nil
+	return actions, nil
 }
 
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string) (*repositoryWorkflow, error) {
