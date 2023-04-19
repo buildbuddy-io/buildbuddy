@@ -6085,11 +6085,11 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         build_file_content = 'exports_files(["firecracker-v1.1.1-x86_64", "jailer-v1.1.1-x86_64"])',
     )
     http_file(
-        name = "com_github_iain_macdonald_soci_snapshotter-soci-store-v0.1-linux-amd64",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.1-linux-amd64"],
-        sha256 = "6eff9a2095258d123cf5292d30a4e71445677b0affdafc3ec69d8b5a8821dcde",
+        name = "com_github_iain_macdonald_soci_snapshotter-soci-store-v0.2.3-linux-amd64",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.2.3-linux-amd64"],
+        sha256 = "e34ac9d5538b9f054ed44776e1f0a9bcedb6ec14acd3d6e433a712597338f147",
         executable = True,
-        downloaded_file_path = "soci-store-v0.1-linux-amd64",
+        downloaded_file_path = "soci-store-v0.2.3-linux-amd64",
     )
 
     http_file(
