@@ -4,7 +4,7 @@ index 2ff57db..7d0c6be 100644
 +++ b/cmd/gazelle/gazelle.go
 @@ -56,6 +56,10 @@ func (cmd command) String() string {
  }
-
+ 
  func main() {
 +        Run()
 +}
