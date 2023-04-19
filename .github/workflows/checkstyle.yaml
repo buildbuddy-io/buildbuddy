@@ -66,6 +66,7 @@ jobs:
         run: |
           # Invoke gazelle via bb fix for TypeScript support
           cli/install.sh
+          bb version
           bb fix -mode diff > gazelle-diff.txt || true
           echo "gazelle diff:"
           cat gazelle-diff.txt
