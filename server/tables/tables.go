@@ -21,8 +21,9 @@ var (
 )
 
 const (
-	sqliteDialect = "sqlite"
-	mysqlDialect  = "mysql"
+	sqliteDialect   = "sqlite"
+	mysqlDialect    = "mysql"
+	postgresDialect = "postgres"
 )
 
 type tableDescriptor struct {
@@ -815,7 +816,8 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 		return nil, err
 	}
 	if m.HasTable("TargetStatuses") && !hasUUIDAsPK {
-		if db.Dialector.Name() == sqliteDialect {
+		switch db.Dialector.Name() {
+		case sqliteDialect:
 			// Rename the TargetStatuses table with invocation_pk as the primary key,
 			// so that during auto migration, SQLite can create TargetStatuses table with new
 			// primary keys.
@@ -823,16 +825,25 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 			postMigrate = append(postMigrate, func() error {
 				return postMigrateInvocationUUIDForSQLite(db)
 			})
-		} else if db.Dialector.Name() == mysqlDialect {
+		case mysqlDialect:
 			versionStr := ""
 			if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
 				return nil, err
 			}
 			log.Debugf("MySQL Version: %q", versionStr)
 			postMigrate = append(postMigrate, func() error {
-				return postMigrateInvocationUUIDForMySQL(db)
+				return postMigrateInvocationUUIDForPostgresOrMySQL(db)
 			})
-		} else {
+		case postgresDialect:
+			versionStr := ""
+			if err := db.Raw("select version()").Scan(&versionStr).Error; err != nil {
+				return nil, err
+			}
+			log.Debugf("Postgres Version: %q", versionStr)
+			postMigrate = append(postMigrate, func() error {
+				return postMigrateInvocationUUIDForPostgresOrMySQL(db)
+			})
+		default:
 			log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
 		}
 	}
@@ -866,8 +877,32 @@ func updateInBatches(db *gorm.DB, baseQuery string, batchSize int64) error {
 	}
 }
 
-func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
-	updateInvocationStmt := `UPDATE "Invocations" SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
+func postMigrateInvocationUUIDForPostgresOrMySQL(db *gorm.DB) error {
+	var updateInvocationStmt, countPrimaryKeyStmt string
+	switch db.Dialector.Name() {
+	case mysqlDialect:
+		updateInvocationStmt = `UPDATE "Invocations" SET invocation_uuid = UNHEX(REPLACE(invocation_id, "-","")) WHERE invocation_uuid IS NULL`
+		countPrimaryKeyStmt = `
+			SELECT 
+				COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+			WHERE 
+				table_schema = schema() AND 
+				column_key = 'PRI' AND 
+				table_name='TargetStatuses'`
+
+	case postgresDialect:
+		updateInvocationStmt = `UPDATE "Invocations" SET invocation_uuid = (REPLACE(invocation_id, '-',''))::uuid WHERE invocation_uuid IS NULL`
+		countPrimaryKeyStmt = `
+			SELECT
+			  COUNT(*) from information_schema.table_constraints
+			WHERE
+				constraint_schema = current_schema() AND
+				constraint_type = 'PRIMARY KEY' AND
+				table_name = 'TargetStatuses'`
+
+	default:
+		log.Warningf("Unsupported sql dialect: %q", db.Dialector.Name())
+	}
 	if err := updateInBatches(db, updateInvocationStmt, 10000); err != nil {
 		return err
 	}
@@ -892,14 +927,6 @@ func postMigrateInvocationUUIDForMySQL(db *gorm.DB) error {
 	// Check whether primary keys exist for TargetStatuses before dropping the primary key;
 	// Otherwise dropping primary keys will fail.
 	var primaryKeyCount int32
-	countPrimaryKeyStmt := `
-		SELECT 
-			COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
-		WHERE 
-			table_schema = schema() AND 
-			column_key = 'PRI' AND 
-			table_name='TargetStatuses'`
-
 	if err := db.Raw(countPrimaryKeyStmt).Scan(&primaryKeyCount).Error; err != nil {
 		return err
 	}
@@ -1092,6 +1119,8 @@ func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
 		checkPrimaryKeyStmt = `SELECT COUNT(*) FROM PRAGMA_TABLE_INFO(?) WHERE pk > 0 AND name = ?`
 	case mysqlDialect:
 		checkPrimaryKeyStmt = `SELECT COUNT(*) from INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = SCHEMA() AND column_key = 'PRI' and table_name=? and column_name=?`
+	case postgresDialect:
+		checkPrimaryKeyStmt = `SELECT COUNT(*) from information_schema.table_constraints NATURAL JOIN information_schema.key_column_usage WHERE constraint_schema = current_schema() and constraint_type = 'PRIMARY KEY' AND table_name=? AND column_name=?`
 	default:
 		return false, status.InternalErrorf("unsupported db dialect %q", dialect)
 	}

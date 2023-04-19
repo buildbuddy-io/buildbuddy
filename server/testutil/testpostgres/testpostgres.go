@@ -1,9 +1,11 @@
-package testmysql
+package testpostgres
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -12,8 +14,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 var (
@@ -35,7 +38,7 @@ func GetOrStart(t testing.TB, reuseServer bool) string {
 	return target
 }
 
-// Start starts a test-scoped MySQL DB and returns the DB target.
+// Start starts a test-scoped Postgres DB and returns the DB target.
 //
 // Currently requires Docker to be available in the test execution environment.
 func Start(t testing.TB, reuseServer bool) string {
@@ -44,9 +47,9 @@ func Start(t testing.TB, reuseServer bool) string {
 	var port int
 	if reuseServer {
 		// List running server processes by name, and if we find one that looks
-		// like `buildbuddy-test-mysql-$PORT`, then return a connection directly
+		// like `buildbuddy-test-postgres-$PORT`, then return a connection directly
 		// to that port
-		cmd := exec.Command("docker", "ps", "--filter=name=buildbuddy-test-mysql-", "--format={{.Names}}")
+		cmd := exec.Command("docker", "ps", "--filter=name=buildbuddy-test-postgres-", "--format={{.Names}}")
 		b, err := cmd.CombinedOutput()
 		require.NoError(t, err)
 		lines := strings.Split(string(b), "\n")
@@ -55,35 +58,35 @@ func Start(t testing.TB, reuseServer bool) string {
 				continue
 			}
 			var err error
-			port, err = strconv.Atoi(strings.TrimPrefix(containerName, "buildbuddy-test-mysql-"))
+			port, err = strconv.Atoi(strings.TrimPrefix(containerName, "buildbuddy-test-postgres-"))
 			require.NoError(t, err, "failed to parse container port from %q", containerName)
-			log.Debugf("Reusing existing mysql DB container %s", containerName)
+			log.Debugf("Reusing existing postgres DB container %s", containerName)
 			break
 		}
 	}
 
 	if port == 0 {
 		port = testport.FindFree(t)
-		containerName := fmt.Sprintf("buildbuddy-test-mysql-%d", port)
+		containerName := fmt.Sprintf("buildbuddy-test-postgres-%d", port)
 
-		log.Debug("Starting mysql DB...")
+		log.Debug("Starting postgres DB...")
 
 		cmd := exec.Command(
 			"docker", "run", "--rm", "--detach",
-			"--env", "MYSQL_ROOT_PASSWORD=root",
-			"--env", "MYSQL_DATABASE="+dbName,
+			"--env", "POSTGRES_ROOT_PASSWORD=root",
+			"--env", "POSTGRES_DB="+dbName,
 			"--publish", fmt.Sprintf("%d:3306", port),
 			"--name", containerName,
-			"mysql:8.0",
+			"postgres:15.3",
 		)
-		cmd.Stderr = &logWriter{"docker run mysql"}
+		cmd.Stderr = &logWriter{"docker run postgres"}
 		err := cmd.Run()
 		require.NoError(t, err)
 	}
 
 	if !reuseServer {
 		t.Cleanup(func() {
-			containerName := fmt.Sprintf("buildbuddy-test-mysql-%d", port)
+			containerName := fmt.Sprintf("buildbuddy-test-postgres-%d", port)
 			cmd := exec.Command("docker", "kill", containerName)
 			cmd.Stderr = &logWriter{"docker kill " + containerName}
 			err := cmd.Run()
@@ -92,10 +95,15 @@ func Start(t testing.TB, reuseServer bool) string {
 	}
 
 	// Wait for the DB to start up.
-	dsn := fmt.Sprintf("root:root@tcp(127.0.0.1:%d)/%s", port, dbName)
-	// Ignore errors logged by mysql driver when attempting to ping the DB before it is ready.
-	mysql.SetLogger(&discardLogger{})
-	db, err := sql.Open("mysql", dsn)
+	dsn := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword("root", "root"),
+		Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
+		Path:   dbName,
+	}
+	// // Ignore errors logged by postgres driver when attempting to ping the DB before it is ready.
+	// gopostgres.SetLogger(&discardLogger{})
+	db, err := sql.Open("pgx", dsn.String())
 	require.NoError(t, err)
 	defer db.Close()
 	for {
@@ -117,7 +125,7 @@ func Start(t testing.TB, reuseServer bool) string {
 			require.NoError(t, err)
 		}
 
-		return "mysql://" + dsn
+		return dsn.String()
 	}
 }
 

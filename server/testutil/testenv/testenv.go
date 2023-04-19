@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpostgres"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -25,7 +26,8 @@ import (
 )
 
 var (
-	useMySQL = flag.Bool("testenv.use_mysql", false, "Whether to use MySQL instead of sqlite for tests.")
+	databaseType = flag.String("testenv.database_type", "sqlite", "What database to use for tests.")
+	reuseServer = flag.Bool("testenv.reuse_server", false, "If true, reuse database server between tests.")
 )
 
 func init() {
@@ -130,8 +132,13 @@ func GetTestEnv(t testing.TB) *TestEnv {
 	}
 	te.SetCache(c)
 
-	if *useMySQL {
-		flags.Set(t, "database.data_source", testmysql.GetOrStart(t))
+	switch *databaseType {
+	case "sqlite":
+		// do nothing, this is the default
+	case "mysql":
+		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
+	case "postgres":
+		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
 	}
 	dbHandle, err := db.GetConfiguredDatabase(te)
 	if err != nil {
