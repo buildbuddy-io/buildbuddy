@@ -1,5 +1,5 @@
 import React from "react";
-import { List, Cloud, Clock } from "lucide-react";
+import { List, Cloud } from "lucide-react";
 
 import * as format from "../../../app/format/format";
 import { stats } from "../../../proto/stats_ts_proto";
@@ -21,9 +21,18 @@ export default class TrendsSummaryCard extends React.Component<Props> {
                 <List size="27" className="icon"></List>
                 <span className="trend-highlight">{format.count(this.props.currentPeriod.numBuilds)} builds</span>
               </div>
-              <div className="trend-sub-item">
-                That's <span className="trend-change up">+30%</span> from the previous period.
-              </div>
+              {this.props.previousPeriod && +this.props.previousPeriod.numBuilds > 0 && (
+                <div className="trend-sub-item">
+                  That's{" "}
+                  <span className="trend-change up">
+                    {format.percent(
+                      (+this.props.currentPeriod.numBuilds - +this.props.previousPeriod.numBuilds) /
+                        +(this.props.previousPeriod.numBuilds || 1)
+                    )}
+                  </span>{" "}
+                  from the previous period.
+                </div>
+              )}
               <div className="trend-sub-item">
                 <span className="trend-change up">99%</span> of builds have remote caching enabled.
               </div>
@@ -47,19 +56,5 @@ export default class TrendsSummaryCard extends React.Component<Props> {
         </div>
       </div>
     );
-    /*           <a href="#duration" className="card trend-summary-group">
-            <div className="trend-headline-stat">
-              <Clock size="27" className="icon"></Clock>
-              <span className="trend-highlight">
-                {format.durationSec(this.state.summary.recentWallTimeSaved)} not waiting
-              </span>
-            </div>
-            <div className="trend-sub-item">
-              That's <span className="trend-change up">{"40%"}</span> of total build time saved.
-            </div>
-            <div className="trend-sub-item">
-              Your builds are <span className="trend-highlight">73% faster</span> when they have a high cache hit rate.
-            </div>
-          </a> */
   }
 }
