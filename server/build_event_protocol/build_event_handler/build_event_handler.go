@@ -1309,6 +1309,9 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
 		i.Perms |= perms.OTHERS_READ
 	}
+	i.DownloadOutputsOption = int64(p.DownloadOutputsOption)
+	i.RemoteExecutionEnabled = p.RemoteExecutionEnabled
+	i.UploadLocalResultsEnabled = p.UploadLocalResultsEnabled
 	return i, nil
 }
 
@@ -1362,6 +1365,9 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	}
 	out.Attempt = i.Attempt
 	out.BazelExitCode = i.BazelExitCode
+	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
+	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
+	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
 	return out
 }
 
