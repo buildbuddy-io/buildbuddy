@@ -21,6 +21,7 @@ ts_library(
         "//enterprise/app/trends:cache_chart",
         "//enterprise/app/trends:drilldown_page",
         "//enterprise/app/trends:percentile_chart",
+        "//enterprise/app/trends:summary_card",
         "//enterprise/app/trends:trends_chart",
         "//proto:stats_ts_proto",
         "@npm//@types/moment",
@@ -110,6 +111,20 @@ ts_library(
         "@npm//@types/react",
         "@npm//react",
         "@npm//recharts",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "summary_card",
+    srcs = ["summary_card.tsx"],
+    strict = True,
+    deps = [
+        "//app/format",
+        "//proto:stats_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
         "@npm//tslib",
     ],
 )

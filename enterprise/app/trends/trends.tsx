@@ -1,7 +1,5 @@
 import React from "react";
 import moment from "moment";
-import { List, Cloud, Clock } from "lucide-react";
-
 import * as format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
@@ -9,8 +7,8 @@ import { stats } from "../../../proto/stats_ts_proto";
 import TrendsChartComponent from "./trends_chart";
 import CacheChartComponent from "./cache_chart";
 import PercentilesChartComponent from "./percentile_chart";
+import TrendsSummaryCard from "./summary_card";
 import { Subscription } from "rxjs";
-import CheckboxButton from "../../../app/components/button/checkbox_button";
 import FilterComponent from "../filter/filter";
 import capabilities from "../../../app/capabilities/capabilities";
 import { getProtoFilterParams } from "../filter/filter_util";
@@ -32,6 +30,8 @@ interface State {
   dateToStatMap: Map<string, stats.ITrendStat>;
   dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
+  currentSummary?: stats.Summary;
+  previousSummary?: stats.Summary;
   dates: string[];
 }
 
@@ -167,6 +167,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
           // End date may not be defined -- default to today.
           request.query!.updatedBefore ? proto.timestampToDate(request.query!.updatedBefore) : new Date()
         ),
+        currentSummary: response.currentSummary || undefined,
+        previousSummary: response.previousSummary || undefined,
         dateToStatMap,
         dateToExecutionStatMap,
         enableInvocationPercentileCharts: response.hasInvocationStatPercentiles,
@@ -227,6 +229,11 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {!this.showingDrilldown(this.props.hash) && this.state.loading && <div className="loading"></div>}
           {!this.showingDrilldown(this.props.hash) && !this.state.loading && (
             <>
+              {this.state.currentSummary && (
+                <TrendsSummaryCard
+                  currentPeriod={this.state.currentSummary}
+                  previousPeriod={this.state.previousSummary}></TrendsSummaryCard>
+              )}
               <TrendsChartComponent
                 title="Builds"
                 id="builds"

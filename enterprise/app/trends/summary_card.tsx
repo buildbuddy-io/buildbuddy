@@ -1,8 +1,13 @@
 import React from "react";
-import moment from "moment";
 import { List, Cloud, Clock } from "lucide-react";
 
-interface Props {}
+import * as format from "../../../app/format/format";
+import { stats } from "../../../proto/stats_ts_proto";
+
+interface Props {
+  currentPeriod: stats.Summary;
+  previousPeriod?: stats.Summary;
+}
 
 export default class TrendsSummaryCard extends React.Component<Props> {
   render() {
@@ -14,7 +19,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
             <div>
               <div className="trend-headline-stat">
                 <List size="27" className="icon"></List>
-                <span className="trend-highlight">{format.count(this.state.summary.recentBuilds)} builds</span>
+                <span className="trend-highlight">{format.count(this.props.currentPeriod.numBuilds)} builds</span>
               </div>
               <div className="trend-sub-item">
                 That's <span className="trend-change up">+30%</span> from the previous period.
@@ -27,7 +32,9 @@ export default class TrendsSummaryCard extends React.Component<Props> {
           <a href="#cache" className="card trend-summary-group">
             <div className="trend-headline-stat">
               <Cloud size="27" className="icon"></Cloud>
-              <span className="trend-highlight">{format.durationSec(this.state.summary.recentCpuSaved)} CPU saved</span>
+              <span className="trend-highlight">
+                {format.durationMillis(+this.props.currentPeriod.cpuMicrosSaved / 1000)} CPU saved
+              </span>
             </div>
             <div className="trend-sub-item">
               That's <span className="trend-savings-eco">3.6kg of CO2 (haha this is kinda low)</span>
@@ -37,7 +44,10 @@ export default class TrendsSummaryCard extends React.Component<Props> {
               <span className="trend-change up">30% increase</span> from the previous period).
             </div>
           </a>
-          <a href="#duration" className="card trend-summary-group">
+        </div>
+      </div>
+    );
+    /*           <a href="#duration" className="card trend-summary-group">
             <div className="trend-headline-stat">
               <Clock size="27" className="icon"></Clock>
               <span className="trend-highlight">
@@ -50,9 +60,6 @@ export default class TrendsSummaryCard extends React.Component<Props> {
             <div className="trend-sub-item">
               Your builds are <span className="trend-highlight">73% faster</span> when they have a high cache hit rate.
             </div>
-          </a>
-        </div>
-      </div>
-    );
+          </a> */
   }
 }
