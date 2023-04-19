@@ -60,6 +60,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -214,6 +215,9 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 func registerInternalGRPCServices(grpcServer *grpc.Server, env environment.Env) {
 	if registryServer := env.GetRegistryServer(); registryServer != nil {
 		rgpb.RegisterRegistryServer(grpcServer, registryServer)
+	}
+	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
+		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
 	}
 }
 

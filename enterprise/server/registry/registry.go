@@ -296,7 +296,7 @@ type registry struct {
 
 // checkAccess whether the supplied credentials are sufficient to retrieve
 // the provided img.
-func (r *registry) checkAccess(ctx context.Context, imgRepo ctrname.Repository, img v1.Image, authenticator authn.Authenticator) error {
+func checkAccess(ctx context.Context, imgRepo ctrname.Repository, img v1.Image, authenticator authn.Authenticator) error {
 	// Check if we have access to all the layers.
 	layers, err := img.Layers()
 	if err != nil {
@@ -338,7 +338,7 @@ func (r *registry) checkAccess(ctx context.Context, imgRepo ctrname.Repository, 
 // descriptor. If the remote descriptor is a manifest, then the manifest is
 // returned directly. If the remote descriptor is an image index, a single
 // manifest is selected from the index using the provided platform options.
-func (r *registry) targetImageFromDescriptor(remoteDesc *remote.Descriptor, platform *rgpb.Platform) (v1.Image, error) {
+func targetImageFromDescriptor(remoteDesc *remote.Descriptor, platform *rgpb.Platform) (v1.Image, error) {
 	switch remoteDesc.MediaType {
 	// This is an "image index", a meta-manifest that contains a list of
 	// {platform props, manifest hash} properties to allow client to decide
@@ -374,19 +374,18 @@ func (r *registry) targetImageFromDescriptor(remoteDesc *remote.Descriptor, plat
 	}
 }
 
-func (r *registry) GetOptimizedImage(ctx context.Context, req *rgpb.GetOptimizedImageRequest) (*rgpb.GetOptimizedImageResponse, error) {
-	log.CtxInfof(ctx, "GetOptimizedImage %q", req.GetImage())
-	imageRef, err := ctrname.ParseReference(req.GetImage())
+func GetTargetImageRef(ctx context.Context, image string, platform *rgpb.Platform, creds *rgpb.Credentials) (ctrname.Digest, error) {
+	imageRef, err := ctrname.ParseReference(image)
 	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid image %q", req.GetImage())
+		return ctrname.Digest{}, status.InvalidArgumentErrorf("invalid image %q", image)
 	}
 
 	var authenticator authn.Authenticator
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	if req.GetImageCredentials().GetUsername() != "" || req.GetImageCredentials().GetPassword() != "" {
+	if creds.GetUsername() != "" || creds.GetPassword() != "" {
 		authenticator = &authn.Basic{
-			Username: req.GetImageCredentials().GetUsername(),
-			Password: req.GetImageCredentials().GetPassword(),
+			Username: creds.GetUsername(),
+			Password: creds.GetPassword(),
 		}
 		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
 	}
@@ -394,32 +393,41 @@ func (r *registry) GetOptimizedImage(ctx context.Context, req *rgpb.GetOptimized
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
+			return ctrname.Digest{}, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
 		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		return ctrname.Digest{}, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
-	targetImg, err := r.targetImageFromDescriptor(remoteDesc, req.GetPlatform())
+	targetImg, err := targetImageFromDescriptor(remoteDesc, platform)
 	if err != nil {
-		return nil, err
+		return ctrname.Digest{}, err
 	}
 
 	// Check whether the supplied credentials are sufficient to access the
 	// remote image.
-	if err := r.checkAccess(ctx, imageRef.Context(), targetImg, authenticator); err != nil {
-		return nil, err
+	if err := checkAccess(ctx, imageRef.Context(), targetImg, authenticator); err != nil {
+		return ctrname.Digest{}, err
 	}
 
 	targetImgDigest, err := targetImg.Digest()
 	if err != nil {
+		return ctrname.Digest{}, err
+	}
+	return imageRef.Context().Digest(targetImgDigest.String()), nil
+}
+
+func (r *registry) GetOptimizedImage(ctx context.Context, req *rgpb.GetOptimizedImageRequest) (*rgpb.GetOptimizedImageResponse, error) {
+	log.CtxInfof(ctx, "GetOptimizedImage %q", req.GetImage())
+	imageRef, err := ctrname.ParseReference(req.GetImage())
+	targetImgRef, err := GetTargetImageRef(ctx, req.GetImage(), req.GetPlatform(), req.GetImageCredentials())
+	if err != nil {
 		return nil, err
 	}
-	targetImgRef := imageRef.Context().Digest(targetImgDigest.String())
 
 	// If we got here then it means the credentials are valid for the remote
 	// repo. Now we can return the optimized image ref to the client.
 
-	manifest, err := r.getCachedManifest(ctx, targetImgDigest.String())
+	manifest, err := r.getCachedManifest(ctx, targetImgRef.DigestStr())
 	if err != nil {
 		return nil, status.UnavailableErrorf("could not check for cached manifest %s: %s", imageRef, err)
 	}

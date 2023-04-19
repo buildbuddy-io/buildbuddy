@@ -14,6 +14,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -105,6 +106,8 @@ type RealEnv struct {
 	executionCollector               interfaces.ExecutionCollector
 	suggestionService                interfaces.SuggestionService
 	crypterService                   interfaces.Crypter
+	sociArtifactStoreServer          socipb.SociArtifactStoreServer
+	sociArtifactStoreClient          socipb.SociArtifactStoreClient
 }
 
 func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
@@ -602,4 +605,11 @@ func (r *RealEnv) GetCrypter() interfaces.Crypter {
 }
 func (r *RealEnv) SetCrypter(c interfaces.Crypter) {
 	r.crypterService = c
+}
+
+func (r *RealEnv) GetSociArtifactStoreServer() socipb.SociArtifactStoreServer {
+	return r.sociArtifactStoreServer
+}
+func (r *RealEnv) SetSociArtifactStoreServer(s socipb.SociArtifactStoreServer) {
+	r.sociArtifactStoreServer = s
 }
