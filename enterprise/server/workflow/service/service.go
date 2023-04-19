@@ -486,7 +486,15 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
-	actions, err := ws.getActions(ctx, wf, wd, req.GetActionName())
+	// TODO(Maggie): Clean this up after ActionName field is cleaned up
+	var actionNames []string
+	if len(req.GetActionNames()) > 0 {
+		actionNames = req.GetActionNames()
+	} else if req.GetActionName() != "" {
+		actionNames = []string{req.GetActionName()}
+	}
+
+	actions, err := ws.getActions(ctx, wf, wd, actionNames)
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +557,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}, nil
 }
 
-func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter string) ([]*config.Action, error) {
+func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) ([]*config.Action, error) {
 	// Fetch the workflow config
 	repoURL, err := gitutil.ParseRepoURL(wd.PushedRepoURL)
 	if err != nil {
@@ -565,21 +573,28 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 	}
 
 	actions := cfg.Actions
-	if actionFilter != "" {
-		actions = make([]*config.Action, 0, 1)
+	if len(actionFilter) > 0 {
+		actionMap := make(map[string]*config.Action, len(cfg.Actions))
 		for _, a := range cfg.Actions {
-			if a.Name == actionFilter {
-				actions = append(actions, a)
-				break
+			actionMap[a.Name] = a
+		}
+
+		actions = make([]*config.Action, 0, len(actionFilter))
+		for _, actionName := range actionFilter {
+			a, ok := actionMap[actionName]
+			if !ok {
+				log.Warningf("workflow action %s not found", actionName)
 			}
+
+			actions = append(actions, a)
 		}
 	}
 
 	if len(actions) == 0 {
-		if actionFilter == "" {
+		if len(actionFilter) == 0 {
 			return nil, status.NotFoundError("no workflow actions found")
 		} else {
-			return nil, status.NotFoundErrorf("workflow action %q not found", actionFilter)
+			return nil, status.NotFoundErrorf("requested workflow actions %v not found", actionFilter)
 		}
 	}
 
