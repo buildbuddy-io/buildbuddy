@@ -400,7 +400,15 @@ func (i *InvocationStatService) GetTrend(ctx context.Context, req *stpb.GetTrend
 	})
 	eg.Go(func() error {
 		var err error
-		endTime := req.GetQuery().GetUpdatedBefore().AsTime()
+		// TODO(jdhollen): This is a little funky: updated_after is set to midnight
+		// local time, so the subtraction we do below ends up being "last 29 days
+		// plus a few extra hours depending on what time of day it is".  There isn't
+		// really a "correct" solution, because we don't have a full day of data,
+		// but maybe we will decide we like showing the full previous 30 days.
+		endTime := time.Now()
+		if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
+			endTime = end.AsTime()
+		}
 		startTime := req.GetQuery().GetUpdatedAfter().AsTime()
 		duration := endTime.Sub(startTime)
 		endTime = startTime
