@@ -86,6 +86,7 @@ var (
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", tasksize.WorkflowMemEstimate, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled. Defaults to 1/10 of total RAM allocated to the executor. (Only supported for Docker-based executors).")
 	contextBasedShutdown      = flag.Bool("executor.context_based_shutdown_enabled", true, "Whether to remove runners using context cancelation. This is a transitional flag that will be removed in a future executor version.")
 	podmanEnableStats         = flag.Bool("executor.podman.enable_stats", false, "Whether to enable cgroup-based podman stats.")
+	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
 	bareEnableStats           = flag.Bool("executor.bare.enable_stats", false, "Whether to enable stats for bare command execution.")
 	firecrackerDebugMode      = flag.Bool("executor.firecracker_debug_mode", false, "Run firecracker in debug mode, printing VM logs to the terminal.")
 )
@@ -914,6 +915,10 @@ func (p *pool) Warmup(ctx context.Context) {
 func (p *pool) warmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
 	for _, isolation := range platform.GetExecutorProperties().SupportedIsolationTypes {
+		if isolation == platform.PodmanContainerType && !*podmanWarmupDefaultImages {
+			continue
+		}
+
 		// Warm up the default execution image for all isolation types, as well
 		// as the new Ubuntu 20.04 image.
 		out = append(out, WarmupConfig{
