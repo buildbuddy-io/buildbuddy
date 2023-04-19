@@ -8,20 +8,20 @@ message ExecuteWorkflowRequest {
   // URL of the repo the workflow is running for
   // Ex. "https://github.com/some-user/acme"
   string repo_url = 1;
-  // Branch the workflow should run on
+  // Reference for where the workflow should be run (currently only branch names are supported)
   // Ex. "cool-feature"
-  string branch = 2;
+  string ref = 2;
 
   // OPTIONAL FIELDS
 
-  // Name of the workflow action to execute. Corresponds to an action in
-  // buildbuddy.yaml, or an action name in the default workflow config if
+  // Names of the workflow actions to execute. Correspond to actions
+  // in buildbuddy.yaml, or actions in the default workflow config if
   // buildbuddy.yaml is missing from the repo.
   //
-  // If this is not set, the API will execute all actions in the workflow
+  // If this is not set, will execute all actions in the workflow config.
   //
-  // Ex. "Test all targets"
-  string action_name = 3;
+  // Ex. ["Browser Tests", "Docker tests"]
+  repeated string action_names = 3;
   // Whether to run the workflow in a clean container. This prevents all
   // existing workflow containers from being reused, so using this flag is not
   // encouraged.

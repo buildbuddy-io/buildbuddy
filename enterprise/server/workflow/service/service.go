@@ -541,11 +541,11 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 
 	var filteredActions map[string]*config.Action
 	if len(actionFilter) > 0 {
-		filteredActions = make(map[string]*config.Action, 0)
+		filteredActions = make(map[string]*config.Action, len(actionFilter))
 		for _, actionName := range actionFilter {
 			a, ok := actionMap[actionName]
 			if ok {
-				filteredActions[a.Name] = a
+				filteredActions[actionName] = a
 			} else {
 				log.Debugf("workflow action %s not found", actionName)
 				filteredActions[actionName] = nil

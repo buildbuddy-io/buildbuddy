@@ -502,7 +502,7 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	if err != nil {
 		return nil, err
 	}
-	sha, err := githubClient.GetCommitSha(ctx, ownerRepo, req.GetBranch())
+	sha, err := githubClient.GetCommitSha(ctx, ownerRepo, req.GetRef())
 	if err != nil {
 		return nil, err
 	}
@@ -510,12 +510,12 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	r := &workflow.ExecuteWorkflowRequest{
 		RequestContext: requestCtx,
 		WorkflowId:     wf.WorkflowID,
-		ActionName:     req.GetActionName(),
+		ActionNames:    req.GetActionNames(),
 		CommitSha:      sha,
 		PushedRepoUrl:  req.GetRepoUrl(),
-		PushedBranch:   req.GetBranch(),
+		PushedBranch:   req.GetRef(),
 		TargetRepoUrl:  req.GetRepoUrl(),
-		TargetBranch:   req.GetBranch(),
+		TargetBranch:   req.GetRef(),
 		Clean:          req.GetClean(),
 		Visibility:     req.GetVisibility(),
 	}
