@@ -13,19 +13,19 @@ import "google/protobuf/duration.proto";
 
 package invocation;
 
-enum RemoteCacheOption {
-  UNKNOWN_REMOTE_CACHE_OPTION = 0;
+// User specified option for download outputs from remote cache
+enum DownloadOutputsOption {
+  UNKNOWN_DOWNLOAD_OUTPUTS_OPTION = 0;
 
-  // Neither --remote_cache nor --remote_executor is set.
-  CACHE_OFF = 1;
-  // --remote_upload_local_results is unset.
-  LOG_UPLOAD_ON = 2;
+  // --remote_cache is not set
+  NONE = 1;
+  // --remote_cahce is set and --remote_download_outputs is not set to "toplevel"
+  // or "minimal"
+  ALL = 2;
   // --remote_download_outputs is set to "toplevel".
-  TOP_LEVEL_CACHE = 3;
+  TOP_LEVEL = 3;
   // --remote_download_outputs is set to "minimal".
-  MINIMAL_CACHE = 4;
-  // All other cases.
-  CACHE_ON = 5;
+  MINIMAL = 4;
 }
 
 // Next tag: 29
@@ -116,8 +116,14 @@ message Invocation {
   // The capabilities of the user who created the invocation
   repeated api_key.ApiKey.Capability created_with_capabilities = 27;
 
-  // The user's setting of the remote cache.
-  RemoteCacheOption remote_cache_option = 28;
+  // The user's setting of how to download outputs from remote cache.
+  DownloadOutputsOption download_outputs_option = 28;
+
+  // The user's setting of whether to upload local results to remote cache.
+  bool upload_local_results_enabled = 29;
+
+  // The user's setting of whether remote execution is enabled
+  bool remote_execution_enabled = 30;
 }
 
 message InvocationEvent {
