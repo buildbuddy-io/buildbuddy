@@ -141,7 +141,9 @@ export class Shortcuts {
     let shortcut = new Shortcut(keyCombo, action);
     for (let otherShortcut of this.shortcuts.values()) {
       if (shortcut.collidesWith(otherShortcut)) {
-        throw new Error("Duplicate keyboard shortcut registered: " + shortcut.keyCombo);
+        console.warn("Duplicate keyboard shortcut registered: " + shortcut.keyCombo);
+        // TODO(iain): throw an error here once bugs are bashed.
+        // throw new Error("Duplicate keyboard shortcut registered: " + shortcut.keyCombo);
       }
     }
     this.shortcuts.set(handle, shortcut);
