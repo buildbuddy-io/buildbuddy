@@ -33,16 +33,6 @@ interface State {
   dateToExecutionStatMap: Map<string, stats.IExecutionStat>;
   enableInvocationPercentileCharts: boolean;
   dates: string[];
-  summary: {
-    recentBuilds: number;
-    previousBuilds: number;
-    recentCpuSaved: number;
-    recentCpuPotentiallyUsed: number;
-    recentCacheHitRate: number;
-    previousCacheHitRate: number;
-    recentWallTimeSaved: number;
-    recentWallTimePotentiallyUsed: number;
-  };
 }
 
 const SECONDS_PER_MICROSECOND = 1e-6;
@@ -55,16 +45,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
     dateToExecutionStatMap: new Map<string, stats.IExecutionStat>(),
     enableInvocationPercentileCharts: false,
     dates: [],
-    summary: {
-      recentBuilds: 55445,
-      previousBuilds: 44555,
-      recentCpuSaved: 987239,
-      recentCpuPotentiallyUsed: 2394234,
-      recentCacheHitRate: 0.33,
-      previousCacheHitRate: 0.4,
-      recentWallTimeSaved: 94239,
-      recentWallTimePotentiallyUsed: 23423424,
-    },
   };
 
   subscription?: Subscription;
@@ -247,55 +227,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {!this.showingDrilldown(this.props.hash) && this.state.loading && <div className="loading"></div>}
           {!this.showingDrilldown(this.props.hash) && !this.state.loading && (
             <>
-              <div className="trend-chart">
-                <div className="trend-chart-title">Summary ({"Last 30 days"})</div>
-                <div className="trend-summary-block">
-                  <a className="card trend-summary-group" href="#builds">
-                    <div>
-                      <div className="trend-headline-stat">
-                        <List size="27" className="icon"></List>
-                        <span className="trend-highlight">{format.count(this.state.summary.recentBuilds)} builds</span>
-                      </div>
-                      <div className="trend-sub-item">
-                        That's <span className="trend-change up">+30%</span> from the previous period.
-                      </div>
-                      <div className="trend-sub-item">
-                        <span className="trend-change up">99%</span> of builds have remote caching enabled.
-                      </div>
-                    </div>
-                  </a>
-                  <a href="#cache" className="card trend-summary-group">
-                    <div className="trend-headline-stat">
-                      <Cloud size="27" className="icon"></Cloud>
-                      <span className="trend-highlight">
-                        {format.durationSec(this.state.summary.recentCpuSaved)} CPU saved
-                      </span>
-                    </div>
-                    <div className="trend-sub-item">
-                      That's <span className="trend-savings-eco">3.6kg of CO2 (haha this is kinda low)</span>
-                    </div>
-                    <div className="trend-sub-item">
-                      Your cache hit rate is <span className="trend-highlight">95%</span> (a{" "}
-                      <span className="trend-change up">30% increase</span> from the previous period).
-                    </div>
-                  </a>
-                  <a href="#duration" className="card trend-summary-group">
-                    <div className="trend-headline-stat">
-                      <Clock size="27" className="icon"></Clock>
-                      <span className="trend-highlight">
-                        {format.durationSec(this.state.summary.recentWallTimeSaved)} not waiting
-                      </span>
-                    </div>
-                    <div className="trend-sub-item">
-                      That's <span className="trend-change up">{"40%"}</span> of total build time saved.
-                    </div>
-                    <div className="trend-sub-item">
-                      Your builds are <span className="trend-highlight">73% faster</span> when they have a high cache
-                      hit rate.
-                    </div>
-                  </a>
-                </div>
-              </div>
               <TrendsChartComponent
                 title="Builds"
                 id="builds"
