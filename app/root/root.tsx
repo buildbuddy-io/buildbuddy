@@ -37,7 +37,7 @@ export default class RootComponent extends React.Component {
     authService.register();
     router.register(this.handlePathChange.bind(this));
     authService.userStream.subscribe({
-      next: (user?: User) => this.setState({ ...this.state, user }),
+      next: (user?: User) => this.setState({ user }),
     });
     faviconService.setDefaultFavicon();
     window._preferences = this.state.preferences;
@@ -60,7 +60,7 @@ export default class RootComponent extends React.Component {
   }
 
   handlePreferencesChanged() {
-    this.setState({ ...this.state, preferences: this.state.preferences });
+    this.forceUpdate();
   }
 
   render() {

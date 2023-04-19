@@ -29,7 +29,7 @@ export default class SetupComponent extends React.Component<Props> {
       .getBazelConfig(request)
       .then((response: bazel_config.GetBazelConfigResponse) => {
         console.log(response);
-        this.setState({ ...this.state, bazelConfigResponse: response });
+        this.setState({ bazelConfigResponse: response });
       })
       .catch((e) => error_service.handleError(e));
   }

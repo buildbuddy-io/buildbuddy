@@ -76,10 +76,10 @@ export default class EnterpriseRootComponent extends React.Component {
 
   componentWillMount() {
     if (!capabilities.auth) {
-      this.setState({ ...this.state, user: undefined, loading: false });
+      this.setState({ user: undefined, loading: false });
     }
     authService.userStream.subscribe({
-      next: (user?: User) => this.setState({ ...this.state, user, loading: false }),
+      next: (user?: User) => this.setState({ user, loading: false }),
     });
     authService.register();
     router.register(this.handlePathChange.bind(this));
@@ -105,7 +105,7 @@ export default class EnterpriseRootComponent extends React.Component {
   }
 
   handlePreferencesChanged() {
-    this.setState({ ...this.state, preferences: this.state.preferences });
+    this.forceUpdate();
   }
 
   handleOrganizationClicked() {

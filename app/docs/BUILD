@@ -30,6 +30,5 @@ ts_library(
         "//proto:bazel_config_ts_proto",
         "@npm//@types/react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )

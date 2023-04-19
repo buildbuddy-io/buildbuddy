@@ -47,19 +47,18 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
     }
 
     if (!testLogUrl.startsWith("bytestream://")) {
-      this.setState({ ...this.state, cacheEnabled: false });
+      this.setState({ cacheEnabled: false });
       return;
     }
 
-    this.setState({ ...this.state, loading: true });
+    this.setState({ loading: true });
     rpcService
       .fetchBytestreamFile(testLogUrl, this.props.invocationId)
       .then((contents: string) => {
-        this.setState({ ...this.state, testLog: contents, loading: false });
+        this.setState({ testLog: contents, loading: false });
       })
       .catch(() => {
         this.setState({
-          ...this.state,
           loading: false,
           testLog: "Error loading bytestream test.log!",
         });
