@@ -159,6 +159,17 @@ type Invocation struct {
 	Success                          bool   `gorm:"type:tinyint(1)"`
 	Attempt                          uint64 `gorm:"not null;default:0"`
 	BazelExitCode                    string
+
+	// The user-specified setting of how to download outputs from remote cache.
+	// The value maps to invocation.DownloadOutputsOption
+	DownloadOutputsOption int64
+
+	// The user-sepcified setting of whether to upload local results to remote
+	// cache.
+	UploadLocalResultsEnabled bool `gorm:"type:tinyint(1)"`
+
+	// The user's setting of whether remote execution is enabled.
+	RemoteExecutionEnabled bool `gorm:"type:tinyint(1)"`
 }
 
 func (i *Invocation) TableName() string {
