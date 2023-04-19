@@ -21,9 +21,18 @@ message GetEncryptionConfigRequest {
   context.RequestContext request_context = 1;
 }
 
+enum KMS {
+  UNKNOWN_KMS = 0;
+
+  LOCAL_INSECURE = 1;
+  GCP = 2;
+}
+
 message GetEncryptionConfigResponse {
   context.ResponseContext response_context = 1;
 
   bool supported = 2;
   bool enabled = 3;
+
+  repeated KMS supported_kms = 4;
 }

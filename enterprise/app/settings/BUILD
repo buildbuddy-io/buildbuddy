@@ -21,6 +21,7 @@ ts_library(
         "//enterprise/app/org:edit_org",
         "//enterprise/app/org:org_members",
         "//enterprise/app/quota",
+        "//enterprise/app/encryption",
         "//enterprise/app/secrets",
         "//enterprise/app/settings:github_complete_installation",
         "//enterprise/app/settings:github_link",

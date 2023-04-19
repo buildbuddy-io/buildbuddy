@@ -774,8 +774,21 @@ func (c *Crypter) GetEncryptionConfig(ctx context.Context, req *enpb.GetEncrypti
 		return nil, err
 	}
 
-	return &enpb.GetEncryptionConfigResponse{
+	rsp := &enpb.GetEncryptionConfigResponse{
 		Supported: c.env.GetCache().SupportsEncryption(ctx),
 		Enabled:   g.CacheEncryptionEnabled,
-	}, nil
+	}
+
+	for _, t := range c.env.GetKMS().SupportedTypes() {
+		switch t {
+		case interfaces.KMSTypeLocalInsecure:
+			rsp.SupportedKms = append(rsp.SupportedKms, enpb.KMS_LOCAL_INSECURE)
+		case interfaces.KMSTypeGCP:
+			rsp.SupportedKms = append(rsp.SupportedKms, enpb.KMS_GCP)
+		default:
+			log.Warningf("unknown KMS type %q", t)
+		}
+	}
+
+	return rsp, err
 }

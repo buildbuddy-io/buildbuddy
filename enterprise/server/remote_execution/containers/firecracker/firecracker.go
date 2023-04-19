@@ -387,6 +387,8 @@ func NewContainer(ctx context.Context, env environment.Env, imageCacheAuth *cont
 	}
 	c.snapshotKey = snaploader.NewKey(cd.GetHash(), c.id)
 
+	status.Unim
+
 	return c, nil
 }
 

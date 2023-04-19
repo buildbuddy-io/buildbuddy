@@ -1525,3 +1525,8 @@ ts_proto_library(
     proto = ":zip_proto",
     deps = [":context_ts_proto"],
 )
+
+ts_proto_library(
+    name = "encryption_ts_proto",
+    proto = ":encryption_proto",
+)
