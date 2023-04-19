@@ -56,7 +56,6 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -213,9 +212,6 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 }
 
 func registerInternalGRPCServices(grpcServer *grpc.Server, env environment.Env) {
-	if registryServer := env.GetRegistryServer(); registryServer != nil {
-		rgpb.RegisterRegistryServer(grpcServer, registryServer)
-	}
 	if sociArtifactStoreServer := env.GetSociArtifactStoreServer(); sociArtifactStoreServer != nil {
 		socipb.RegisterSociArtifactStoreServer(grpcServer, sociArtifactStoreServer)
 	}

@@ -416,38 +416,6 @@ func GetTargetImageRef(ctx context.Context, image string, platform *rgpb.Platfor
 	return imageRef.Context().Digest(targetImgDigest.String()), nil
 }
 
-func (r *registry) GetOptimizedImage(ctx context.Context, req *rgpb.GetOptimizedImageRequest) (*rgpb.GetOptimizedImageResponse, error) {
-	log.CtxInfof(ctx, "GetOptimizedImage %q", req.GetImage())
-	imageRef, err := ctrname.ParseReference(req.GetImage())
-	targetImgRef, err := GetTargetImageRef(ctx, req.GetImage(), req.GetPlatform(), req.GetImageCredentials())
-	if err != nil {
-		return nil, err
-	}
-
-	// If we got here then it means the credentials are valid for the remote
-	// repo. Now we can return the optimized image ref to the client.
-
-	manifest, err := r.getCachedManifest(ctx, targetImgRef.DigestStr())
-	if err != nil {
-		return nil, status.UnavailableErrorf("could not check for cached manifest %s: %s", imageRef, err)
-	}
-	if manifest != nil {
-		log.CtxInfof(ctx, "Using cached manifest information")
-	} else {
-		convertedManifest, err := r.convertImage(ctx, targetImgRef, req.GetImageCredentials())
-		if err != nil {
-			return nil, status.UnknownErrorf("could not convert image: %s", err)
-		}
-		manifest = convertedManifest
-	}
-
-	encodedImageName := strings.ToLower(imageNameEncoding.EncodeToString([]byte(imageRef.Context().Name())))
-
-	return &rgpb.GetOptimizedImageResponse{
-		OptimizedImage: fmt.Sprintf("%s@%s", encodedImageName, manifest.Digest),
-	}, nil
-}
-
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
@@ -510,7 +478,5 @@ func Register(env environment.Env) error {
 		r.handleRegistryRequest(w, req)
 	})
 	mux.Handle("/v2/", handler)
-
-	env.SetRegistryServer(r)
 	return nil
 }
