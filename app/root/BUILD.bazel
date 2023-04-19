@@ -23,6 +23,5 @@ ts_library(
         "//app/router",
         "@npm//@types/react",
         "@npm//react",
-        "@npm//tslib",
     ],
 )
