@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -99,7 +98,6 @@ type RealEnv struct {
 	internalGRPCSServer              *grpc.Server
 	grpcServer                       *grpc.Server
 	grpcsServer                      *grpc.Server
-	registryServer                   rgpb.RegistryServer
 	olapDBHandle                     interfaces.OLAPDBHandle
 	kms                              interfaces.KMS
 	secretService                    interfaces.SecretService
@@ -552,14 +550,6 @@ func (r *RealEnv) GetGRPCSServer() *grpc.Server {
 
 func (r *RealEnv) SetGRPCSServer(grpcsServer *grpc.Server) {
 	r.grpcsServer = grpcsServer
-}
-
-func (r *RealEnv) GetRegistryServer() rgpb.RegistryServer {
-	return r.registryServer
-}
-
-func (r *RealEnv) SetRegistryServer(server rgpb.RegistryServer) {
-	r.registryServer = server
 }
 
 func (r *RealEnv) GetOLAPDBHandle() interfaces.OLAPDBHandle {

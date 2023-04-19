@@ -4,7 +4,6 @@ import (
 	"context"
 	"io/fs"
 
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
@@ -143,8 +142,6 @@ type Env interface {
 	GetInternalGRPCSServer() *grpc.Server
 	SetInternalGRPCSServer(*grpc.Server)
 	SetGRPCSServer(*grpc.Server)
-	GetRegistryServer() rgpb.RegistryServer
-	SetRegistryServer(r rgpb.RegistryServer)
 	GetOLAPDBHandle() interfaces.OLAPDBHandle
 	SetOLAPDBHandle(dbh interfaces.OLAPDBHandle)
 	GetKMS() interfaces.KMS
