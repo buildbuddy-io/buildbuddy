@@ -116,7 +116,7 @@ type Invocation struct {
 	ActionCount                    int64
 	Perms                          int32 `gorm:"index:perms;default:NULL"`
 	CreatedWithCapabilities        int32
-	RedactionFlags                 int32 `gorm:"default:NULL;default:NULL"`
+	RedactionFlags                 int32 `gorm:"default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                int64
 	ActionCacheMisses              int64
@@ -997,10 +997,10 @@ func PostAutoMigrate(db *gorm.DB) error {
 		"invocations_stats_role_index":        `("group_id", "role", "action_count", "duration_usec", "updated_at_usec", "success", "invocation_status")`,
 	}
 	prefixIndicesByDialect := map[string]map[string]string{
-		mysqlDialect: map[string]string{
+		mysqlDialect: {
 			"invocations_test_grid_query_command_index": `("group_id" (25), "role" (10), "repo_url", "command" (10), "created_at_usec" DESC)`,
 		},
-		sqliteDialect: map[string]string{
+		sqliteDialect: {
 			"invocations_test_grid_query_command_index": `("group_id", "role", "repo_url", "command" , "created_at_usec" DESC)`,
 		},
 	}
