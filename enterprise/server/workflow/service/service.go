@@ -501,8 +501,9 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 	wg := sync.WaitGroup{}
 	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
-	for _, action := range actions {
+	for actionName, action := range actions {
 		action := action
+		actionName := actionName
 		wg.Add(1)
 
 		go func() {
@@ -511,13 +512,18 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			var invocationID string
 			var err error
 			actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
-				ActionName: action.Name,
+				ActionName: actionName,
 			}
 			actionStatuses = append(actionStatuses, actionStatus)
 			defer func() {
 				actionStatus.InvocationId = invocationID
 				actionStatus.Status = gstatus.Convert(err).Proto()
 			}()
+
+			if action == nil {
+				err = status.NotFoundErrorf("action %s not found", actionName)
+				return
+			}
 
 			invocationUUID, err := guuid.NewRandom()
 			if err != nil {
@@ -557,7 +563,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	}, nil
 }
 
-func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) ([]*config.Action, error) {
+func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actionFilter []string) (map[string]*config.Action, error) {
 	// Fetch the workflow config
 	repoURL, err := gitutil.ParseRepoURL(wd.PushedRepoURL)
 	if err != nil {
@@ -572,25 +578,28 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 		return nil, err
 	}
 
-	actions := cfg.Actions
-	if len(actionFilter) > 0 {
-		actionMap := make(map[string]*config.Action, len(cfg.Actions))
-		for _, a := range cfg.Actions {
-			actionMap[a.Name] = a
-		}
-
-		actions = make([]*config.Action, 0, len(actionFilter))
-		for _, actionName := range actionFilter {
-			a, ok := actionMap[actionName]
-			if !ok {
-				log.Warningf("workflow action %s not found", actionName)
-			}
-
-			actions = append(actions, a)
-		}
+	actionMap := make(map[string]*config.Action, len(cfg.Actions))
+	for _, a := range cfg.Actions {
+		actionMap[a.Name] = a
 	}
 
-	if len(actions) == 0 {
+	var filteredActions map[string]*config.Action
+	if len(actionFilter) > 0 {
+		filteredActions = make(map[string]*config.Action, 0)
+		for _, actionName := range actionFilter {
+			a, ok := actionMap[actionName]
+			if ok {
+				filteredActions[a.Name] = a
+			} else {
+				log.Debugf("workflow action %s not found", actionName)
+				filteredActions[actionName] = nil
+			}
+		}
+	} else {
+		filteredActions = actionMap
+	}
+
+	if len(filteredActions) == 0 {
 		if len(actionFilter) == 0 {
 			return nil, status.NotFoundError("no workflow actions found")
 		} else {
@@ -598,7 +607,7 @@ func (ws *workflowService) getActions(ctx context.Context, wf *tables.Workflow, 
 		}
 	}
 
-	return actions, nil
+	return filteredActions, nil
 }
 
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, id string) (*repositoryWorkflow, error) {
