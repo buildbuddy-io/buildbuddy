@@ -73,16 +73,23 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       )
       .then((response) => {
         let invocationId = "";
+        let errorMsg = `Failed to execute action ${configuredEvent.actionName}.`;
+
         response.actionStatuses.forEach(function (actionStatus, _) {
           if (actionStatus.actionName == configuredEvent.actionName) {
-            invocationId = actionStatus.invocationId;
+            if ((actionStatus.status?.code || 0) !== 0 /*OK*/) {
+              errorMsg = actionStatus.status?.message || errorMsg;
+            } else {
+              invocationId = actionStatus.invocationId;
+            }
             return
           }
         });
-        if (invocationId != "") {
+
+        if (invocationId !== "") {
           router.navigateTo(`/invocation/${invocationId}`);
         } else {
-          errorService.handleError(`Failed to execute action ${configuredEvent.actionName}.`);
+          errorService.handleError(errorMsg);
         }
       })
       .catch((e) => errorService.handleError(e))
