@@ -105,7 +105,7 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 	ctx := env.GetServerContext()
 	config := make(map[string]*namespaceConfig)
 	err := env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("fetch_quota_config"), func(tx *db.DB) error {
-		q := query_builder.NewQuery(`SELECT * FROM QuotaBuckets`)
+		q := query_builder.NewQuery(`SELECT * FROM "QuotaBuckets"`)
 		if namespace != "" {
 			q = q.AddWhereClause(`namespace = ?`, namespace)
 		}
@@ -137,7 +137,7 @@ func fetchConfigFromDB(env environment.Env, namespace string) (map[string]*names
 			}
 		}
 
-		groupQuery := query_builder.NewQuery(`SELECT * FROM QuotaGroups`)
+		groupQuery := query_builder.NewQuery(`SELECT * FROM "QuotaGroups"`)
 		if namespace != "" {
 			groupQuery = groupQuery.AddWhereClause(`namespace = ?`, namespace)
 		}
@@ -376,10 +376,10 @@ func (qm *QuotaManager) RemoveNamespace(ctx context.Context, req *qpb.RemoveName
 	}
 	err := qm.env.GetDBHandle().TransactionWithOptions(ctx, db.Opts().WithQueryName("query_manager_insert_buckets"), func(tx *db.DB) error {
 		ns := req.GetNamespace()
-		if err := tx.Exec(`DELETE FROM QuotaGroups WHERE namespace = ?`, ns).Error; err != nil {
+		if err := tx.Exec(`DELETE FROM "QuotaGroups" WHERE namespace = ?`, ns).Error; err != nil {
 			return err
 		}
-		if err := tx.Exec(`DELETE FROM QuotaBuckets WHERE namespace = ?`, ns).Error; err != nil {
+		if err := tx.Exec(`DELETE FROM "QuotaBuckets" WHERE namespace = ?`, ns).Error; err != nil {
 			return err
 		}
 		return nil
@@ -422,7 +422,7 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 	err := dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("apply_bucket"), func(tx *db.DB) error {
 		row := &struct{ Count int64 }{}
 		err := tx.Raw(
-			`SELECT COUNT(*) AS count FROM QuotaBuckets WHERE namespace = ? AND name = ?`, req.GetNamespace(), req.GetBucketName(),
+			`SELECT COUNT(*) AS count FROM "QuotaBuckets" WHERE namespace = ? AND name = ?`, req.GetNamespace(), req.GetBucketName(),
 		).Take(row).Error
 		if err != nil {
 			return err
@@ -447,7 +447,7 @@ func (qm *QuotaManager) ApplyBucket(ctx context.Context, req *qpb.ApplyBucketReq
 			return err
 		}
 		if req.GetBucketName() == defaultBucketName {
-			return tx.Exec(`DELETE FROM QuotaGroups WHERE namespace = ? AND quota_key = ?`, req.GetNamespace(), quotaKey).Error
+			return tx.Exec(`DELETE FROM "QuotaGroups" WHERE namespace = ? AND quota_key = ?`, req.GetNamespace(), quotaKey).Error
 		} else {
 			return tx.Model(&existing).Where("namespace = ? AND quota_key = ?", req.GetNamespace(), quotaKey).Updates(quotaGroup).Error
 		}
@@ -523,10 +523,10 @@ func (qm *QuotaManager) updateBucket(ctx context.Context, namespace string, buck
 func (qm *QuotaManager) removeBucket(ctx context.Context, namespace string, bucketName string) error {
 	dbh := qm.env.GetDBHandle()
 	return dbh.TransactionWithOptions(ctx, db.Opts().WithQueryName("remove_bucket"), func(tx *db.DB) error {
-		if err := tx.Exec(`DELETE FROM QuotaGroups WHERE namespace = ? AND bucket_name = ?`, namespace, bucketName).Error; err != nil {
+		if err := tx.Exec(`DELETE FROM "QuotaGroups" WHERE namespace = ? AND bucket_name = ?`, namespace, bucketName).Error; err != nil {
 			return err
 		}
-		return tx.Exec(`DELETE FROM QuotaBuckets WHERE namespace = ? AND name = ?`, namespace, bucketName).Error
+		return tx.Exec(`DELETE FROM "QuotaBuckets" WHERE namespace = ? AND name = ?`, namespace, bucketName).Error
 	})
 }
 

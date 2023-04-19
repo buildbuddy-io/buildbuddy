@@ -51,7 +51,7 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	require.NoError(t, err)
 	ctx := context.Background()
 	db := dbh.DB(ctx)
-	err = db.Exec("UPDATE `Groups` SET invocation_webhook_url = ?", ws.URL.String()).Error
+	err = db.Exec(`UPDATE "Groups" SET invocation_webhook_url = ?`, ws.URL.String()).Error
 	require.NoError(t, err)
 	apiKey := tables.APIKey{}
 	dbResult := db.Where("group_id = ?", userdb.DefaultGroupID).First(&apiKey)

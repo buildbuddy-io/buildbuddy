@@ -332,11 +332,11 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	}
 
 	//  Build the query:
-	//  SELECT [a list of fields] FROM TestTargetStatuses
+	//  SELECT [a list of fields] FROM "TestTargetStatuses"
 	//  WHERE commit_sha IN (
 	//    SELECT commit_sha FROM (
 	//      SELECT commit_sha, max(invocation_start_time_usec)
-	//      as latest_created_at_usec FROM TestTargetStatuses
+	//      as latest_created_at_usec FROM "TestTargetStatuses"
 	//      WHERE group_id = '[group_id]'
 	//      AND repo_url = '[repo_url]
 	//      AND commit_sha != ''
@@ -353,7 +353,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 	// Build the query to select the most recent distinct commits.
 	innerCommitQuery := query_builder.NewQuery(`
 		SELECT commit_sha, max(invocation_start_time_usec) as latest_created_at_usec 
-		FROM TestTargetStatuses`)
+		FROM "TestTargetStatuses"`)
 	innerCommitQuery.AddWhereClause("group_id = ?", groupID)
 	innerCommitQuery.AddWhereClause("repo_url = ?", repo)
 	innerCommitQuery.SetGroupBy("commit_sha")
@@ -374,7 +374,7 @@ func readPaginatedTargetsFromOLAPDB(ctx context.Context, env environment.Env, re
 		SELECT label, rule_type, target_type, test_size, status,
 		start_time_usec, duration_usec, invocation_uuid, commit_sha, branch_name,
 		repo_url, invocation_start_time_usec
-		FROM TestTargetStatuses`)
+		FROM "TestTargetStatuses"`)
 
 	q.AddWhereInClause("commit_sha", outerCommitQuery)
 	q.AddWhereClause("group_id = ?", groupID)
@@ -395,7 +395,7 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 	// Build the query to select the distinct commits.
 	commitQuery := query_builder.NewQuery(`
 		SELECT commit_sha, max(created_at_usec) as latest_created_at_usec 
-		FROM Invocations `)
+		FROM "Invocations" `)
 	commitQuery.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
 	if repo != "" {
 		commitQuery.AddWhereClause("repo_url = ?", repo)
@@ -419,7 +419,7 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 	joinQuery := query_builder.NewQuery(`
 		SELECT invocation_uuid, invocation_id, inv.commit_sha, branch_name, repo_url, 
 		created_at_usec 
-		FROM Invocations as inv`)
+		FROM "Invocations" as inv`)
 	joinQuery.AddJoinClause(commitQuery, "commits", "inv.commit_sha=commits.commit_sha")
 	joinQuery.AddWhereClause("inv.group_id = ?", req.GetRequestContext().GetGroupId())
 	joinQuery.AddWhereClause("inv.role = ?", ciRole)
@@ -436,8 +436,8 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 		SELECT t.target_id, t.label, t.rule_type, ts.target_type, ts.test_size, ts.status,
 		ts.start_time_usec, ts.duration_usec, i.invocation_id, i.commit_sha, i.branch_name,
 		i.repo_url, i.created_at_usec
-		FROM Targets as t
-		JOIN TargetStatuses as ts ON ts.target_id = t.target_id`)
+		FROM "Targets" as t
+		JOIN "TargetStatuses" as ts ON ts.target_id = t.target_id`)
 	q.AddJoinClause(joinQuery, "i", "ts.invocation_uuid = i.invocation_uuid")
 	return fetchTargetsFromPrimaryDB(ctx, env, q, repo)
 }

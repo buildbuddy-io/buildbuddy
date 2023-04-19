@@ -66,7 +66,7 @@ func (d *AuthDB) InsertOrUpdateUserSession(ctx context.Context, sessionID string
 
 func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Session, error) {
 	s := &tables.Session{}
-	existingRow := d.h.DB(ctx).Raw(`SELECT * FROM Sessions WHERE session_id = ?`, sessionID)
+	existingRow := d.h.DB(ctx).Raw(`SELECT * FROM "Sessions" WHERE session_id = ?`, sessionID)
 	if err := existingRow.Take(s).Error; err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (d *AuthDB) ReadSession(ctx context.Context, sessionID string) (*tables.Ses
 
 func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 	err := d.h.Transaction(ctx, func(tx *db.DB) error {
-		res := tx.Exec(`DELETE FROM Sessions WHERE session_id = ?`, sessionID)
+		res := tx.Exec(`DELETE FROM "Sessions" WHERE session_id = ?`, sessionID)
 		return res.Error
 	})
 	return err
@@ -141,7 +141,7 @@ func (d *AuthDB) GetAPIKeyGroupFromBasicAuth(ctx context.Context, login, pass st
 func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables.User, error) {
 	user := &tables.User{}
 	err := d.h.TransactionWithOptions(ctx, db.Opts().WithStaleReads(), func(tx *db.DB) error {
-		userRow := tx.Raw(`SELECT * FROM Users WHERE sub_id = ? ORDER BY user_id ASC`, subID)
+		userRow := tx.Raw(`SELECT * FROM "Users" WHERE sub_id = ? ORDER BY user_id ASC`, subID)
 		if err := userRow.Take(user).Error; err != nil {
 			return err
 		}
@@ -159,7 +159,7 @@ func (d *AuthDB) LookupUserFromSubID(ctx context.Context, subID string) (*tables
 				g.cache_encryption_enabled,
 				g.saml_idp_metadata_url,
 				ug.role
-			FROM `+"`Groups`"+` AS g, UserGroups AS ug
+			FROM "Groups" AS g, "UserGroups" AS ug
 			WHERE g.group_id = ug.group_group_id
 			AND ug.membership_status = ?
 			AND ug.user_user_id = ?
@@ -206,8 +206,8 @@ func (d *AuthDB) newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Que
 			g.group_id,
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled
-		FROM ` + "`Groups`" + ` AS g,
-		APIKeys AS ak
+		FROM "Groups" AS g,
+		"APIKeys" AS ak
 	`)
 	qb.AddWhereClause(`ak.group_id = g.group_id`)
 
@@ -218,12 +218,12 @@ func (d *AuthDB) newAPIKeyGroupQuery(allowUserOwnedKeys bool) *query_builder.Que
 		// (but not deleted).
 		qb.AddWhereClause(`(
 			g.user_owned_keys_enabled
-			OR ak.user_id = ""
+			OR ak.user_id = ''
 			OR ak.user_id IS NULL
 		)`)
 	} else {
 		qb.AddWhereClause(`(
-			ak.user_id = ""
+			ak.user_id = ''
 			OR ak.user_id IS NULL
 		)`)
 	}
