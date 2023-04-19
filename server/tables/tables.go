@@ -114,9 +114,9 @@ type Invocation struct {
 	DurationUsec                   int64
 	UploadThroughputBytesPerSecond int64
 	ActionCount                    int64
-	Perms                          int `gorm:"index:perms;type:int(11);default:NULL"`
+	Perms                          int `gorm:"index:perms;type:int;default:NULL"`
 	CreatedWithCapabilities        int32
-	RedactionFlags                 int   `gorm:"default:NULL;type:int(11);default:NULL"`
+	RedactionFlags                 int   `gorm:"default:NULL;type:int;default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`
 	ActionCacheHits                int64
 	ActionCacheMisses              int64
@@ -154,7 +154,7 @@ type Invocation struct {
 
 	DownloadThroughputBytesPerSecond int64
 	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
-	Success                          bool   `gorm:"type:tinyint(1)"`
+	Success                          bool
 	Attempt                          uint64 `gorm:"not null;default:0"`
 	BazelExitCode                    string
 
@@ -164,10 +164,10 @@ type Invocation struct {
 
 	// The user-sepcified setting of whether to upload local results to remote
 	// cache.
-	UploadLocalResultsEnabled bool `gorm:"type:tinyint(1)"`
+	UploadLocalResultsEnabled bool
 
 	// The user's setting of whether remote execution is enabled.
-	RemoteExecutionEnabled bool `gorm:"type:tinyint(1)"`
+	RemoteExecutionEnabled bool
 
 	Tags string
 }
@@ -219,14 +219,14 @@ type Group struct {
 	GithubToken *string
 	Model
 
-	SharingEnabled       bool `gorm:"default:1;type:tinyint(1)"`
-	UserOwnedKeysEnabled bool `gorm:"not null;default:0;type:tinyint(1)"`
+	SharingEnabled       bool `gorm:"default:true"`
+	UserOwnedKeysEnabled bool `gorm:"not null;default:false"`
 
 	// If enabled, builds for this group will always use their own executors instead of the installation-wide shared
 	// executors.
-	UseGroupOwnedExecutors *bool `gorm:"type:tinyint(1)"`
+	UseGroupOwnedExecutors *bool
 
-	CacheEncryptionEnabled bool `gorm:"not null;default:0;type:tinyint(1)"`
+	CacheEncryptionEnabled bool `gorm:"not null;default:false"`
 
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl *string
@@ -347,13 +347,13 @@ type APIKey struct {
 	// The API key token used for authentication.
 	Value string `gorm:"default:NULL;unique;uniqueIndex:api_key_value_index;"`
 	Model
-	Perms int `gorm:"type:int(11);default:NULL"`
+	Perms int `gorm:"type:int;default:NULL"`
 	// Capabilities that are enabled for this key. Defaults to CACHE_WRITE.
 	//
 	// NOTE: If the default is changed, a DB migration may be required to
 	// migrate old DB rows to reflect the new default.
 	Capabilities        int32 `gorm:"default:1"`
-	VisibleToDevelopers bool  `gorm:"not null;default:0;type:tinyint(1)"`
+	VisibleToDevelopers bool  `gorm:"not null;default:false"`
 }
 
 func (k *APIKey) TableName() string {
@@ -365,7 +365,7 @@ type Secret struct {
 	GroupID string `gorm:"primaryKey"`
 	Name    string `gorm:"primaryKey"`
 	Value   string `gorm:"type:text"`
-	Perms   int    `gorm:"type:int(11);default:NULL"`
+	Perms   int    `gorm:"type:int;default:NULL"`
 }
 
 func (s *Secret) TableName() string {
@@ -407,7 +407,7 @@ type Execution struct {
 	EstimatedMilliCPU    int64
 
 	// ExecutedActionMetadata (in addition to Worker above)
-	Perms                              int `gorm:"index:executions_perms;type:int(11);default:NULL"`
+	Perms                              int `gorm:"index:executions_perms;type:int;default:NULL"`
 	QueuedTimestampUsec                int64
 	WorkerStartTimestampUsec           int64
 	WorkerCompletedTimestampUsec       int64
@@ -421,8 +421,8 @@ type Execution struct {
 	StatusCode int32
 	ExitCode   int32
 
-	CachedResult bool `gorm:"type:tinyint(1)"`
-	DoNotCache   bool `gorm:"type:tinyint(1)"`
+	CachedResult bool
+	DoNotCache   bool
 }
 
 func (t *Execution) TableName() string {
@@ -455,10 +455,10 @@ type TelemetryLog struct {
 	BazelUserCount      int64
 	BazelHostCount      int64
 
-	FeatureCacheEnabled bool `gorm:"type:tinyint(1)"`
-	FeatureRBEEnabled   bool `gorm:"type:tinyint(1)"`
-	FeatureAPIEnabled   bool `gorm:"type:tinyint(1)"`
-	FeatureAuthEnabled  bool `gorm:"type:tinyint(1)"`
+	FeatureCacheEnabled bool
+	FeatureRBEEnabled   bool
+	FeatureAPIEnabled   bool
+	FeatureAuthEnabled  bool
 }
 
 func (t *TelemetryLog) TableName() string {
@@ -485,7 +485,7 @@ type Target struct {
 	RepoURL  string
 	Label    string
 	Model
-	Perms int `gorm:"index:target_perms;type:int(11);default:NULL"`
+	Perms int `gorm:"index:target_perms;type:int;default:NULL"`
 	// TargetID is made up of repoURL + label.
 	TargetID int64 `gorm:"not null;uniqueIndex:target_target_id_group_id_idx,priority:1"`
 }
@@ -580,7 +580,7 @@ type Workflow struct {
 	AccessToken string `gorm:"size:4096"`
 	WebhookID   string `gorm:"default:NULL;unique;uniqueIndex:workflow_webhook_id_index;"`
 	Model
-	Perms int `gorm:"index:workflow_perms;type:int(11);default:NULL"`
+	Perms int `gorm:"index:workflow_perms;type:int;default:NULL"`
 	// InstanceNameSuffix is appended to the remote instance name for CI runner
 	// actions associated with this workflow. It can be updated in order to
 	// prevent reusing a bad workspace.
