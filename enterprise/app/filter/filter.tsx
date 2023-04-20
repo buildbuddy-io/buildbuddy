@@ -49,6 +49,7 @@ import {
   toStatusParam,
   statusToString,
   getDisplayDateRange,
+  isAnyFilterSet,
   DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
   SortBy,
@@ -336,19 +337,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const patternValue = (capabilities.config.patternFilterEnabled && this.props.search.get(PATTERN_PARAM_NAME)) || "";
     const minimumDurationValue = this.props.search.get(MINIMUM_DURATION_PARAM_NAME) || "";
     const maximumDurationValue = this.props.search.get(MAXIMUM_DURATION_PARAM_NAME) || "";
-    const isFiltering = Boolean(
-      roleValue ||
-        statusValue ||
-        userValue ||
-        repoValue ||
-        branchValue ||
-        commitValue ||
-        hostValue ||
-        commandValue ||
-        patternValue ||
-        minimumDurationValue ||
-        maximumDurationValue
-    );
+    const isFiltering = isAnyFilterSet(this.props.search);
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 

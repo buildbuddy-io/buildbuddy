@@ -3,6 +3,7 @@ import { List, Cloud } from "lucide-react";
 
 import * as format from "../../../app/format/format";
 import { stats } from "../../../proto/stats_ts_proto";
+import { isAnyFilterSet } from "../filter/filter_util";
 
 interface Props {
   search: URLSearchParams;
@@ -42,7 +43,10 @@ export default class TrendsSummaryCard extends React.Component<Props> {
     const cacheRequestTotal = this.props.currentPeriod.acCacheHits + this.props.currentPeriod.acCacheMisses;
     return (
       <div className="trend-chart">
-        <div className="trend-chart-title">Summary ({"Last 30 days"})</div>
+        <div className="trend-chart-title">
+          Summary ({format.formatDateRangeFromSearchParams(this.props.search)}
+          {isAnyFilterSet(this.props.search) ? ", including filters" : ""})
+        </div>
         <div className="trend-summary-block">
           <a className="card trend-summary-group" href="#builds">
             <div>

@@ -162,6 +162,22 @@ export function isExecutionMetric(m: stat_filter.Metric): boolean {
   return m.execution !== null && m.execution !== undefined;
 }
 
+export function isAnyFilterSet(search: URLSearchParams): boolean {
+  return Boolean(
+    search.get(ROLE_PARAM_NAME) ||
+      search.get(STATUS_PARAM_NAME) ||
+      search.get(USER_PARAM_NAME) ||
+      search.get(REPO_PARAM_NAME) ||
+      search.get(BRANCH_PARAM_NAME) ||
+      search.get(COMMIT_PARAM_NAME) ||
+      search.get(HOST_PARAM_NAME) ||
+      search.get(COMMAND_PARAM_NAME) ||
+      search.get(PATTERN_PARAM_NAME) ||
+      search.get(MINIMUM_DURATION_PARAM_NAME) ||
+      search.get(MAXIMUM_DURATION_PARAM_NAME)
+  );
+}
+
 function parseDuration(value: string | null): google_duration.protobuf.Duration | undefined {
   if (!value) {
     return undefined;

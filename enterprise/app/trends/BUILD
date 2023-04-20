@@ -121,6 +121,7 @@ ts_library(
     strict = True,
     deps = [
         "//app/format",
+        "//enterprise/app/filter:filter_util",
         "//proto:stats_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
