@@ -34,6 +34,7 @@ interface State {
 
   // GCP KMS form.
   gcpProject: string;
+  gcpLocation: string;
   gcpKeyRing: string;
   gcpKey: string;
 }
@@ -51,6 +52,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     enablingError: null,
     localKeyID: "",
     gcpProject: "",
+    gcpLocation: "",
     gcpKeyRing: "",
     gcpKey: "",
   };
@@ -114,6 +116,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
         req.kmsConfig = encryption.KMSConfig.create({
           gcpKmsConfig: encryption.GCPKMSConfig.create({
             project: this.state.gcpProject,
+            location: this.state.gcpLocation,
             keyRing: this.state.gcpKeyRing,
             key: this.state.gcpKey,
           }),
@@ -162,6 +165,10 @@ export default class EncryptionComponent extends React.Component<{}, State> {
     this.setState({ gcpKey: event.target.value });
   }
 
+  private onGCPLocationChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ gcpLocation: event.target.value });
+  }
+
   private renderKMSFields(kms: encryption.KMS) {
     switch (kms) {
       case encryption.KMS.LOCAL_INSECURE:
@@ -207,6 +214,18 @@ export default class EncryptionComponent extends React.Component<{}, State> {
                 name="gcpKeyRing"
                 onChange={this.onGCPKeyRingChange.bind(this)}
                 value={this.state.gcpKeyRing}
+              />
+            </div>
+            <div className="field-row">
+              <label htmlFor="gcpLocation" className="field-label">
+                Key Ring Location
+              </label>
+              <input
+                  autoComplete="off"
+                  type="text"
+                  name="gcpLocation"
+                  onChange={this.onGCPLocationChange.bind(this)}
+                  value={this.state.gcpLocation}
               />
             </div>
             <div className="field-row">

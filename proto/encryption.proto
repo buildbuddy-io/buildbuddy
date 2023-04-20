@@ -10,8 +10,9 @@ message LocalInsecureKMSConfig {
 
 message GCPKMSConfig {
   string project = 1;
-  string key_ring = 2;
-  string key = 3;
+  string location = 2;
+  string key_ring = 3;
+  string key = 4;
 }
 
 message KMSConfig {

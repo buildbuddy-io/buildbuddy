@@ -635,13 +635,16 @@ func buildKeyURI(kmsConfig *enpb.KMSConfig) (string, error) {
 		if strings.TrimSpace(gc.GetProject()) == "" {
 			return "", status.InvalidArgumentError("Project is required")
 		}
+		if strings.TrimSpace(gc.GetLocation()) == "" {
+			return "", status.InvalidArgumentError("Location is required")
+		}
 		if strings.TrimSpace(gc.GetKeyRing()) == "" {
 			return "", status.InvalidArgumentError("Key Ring is required")
 		}
 		if strings.TrimSpace(gc.GetKey()) == "" {
 			return "", status.InvalidArgumentError("Key is required")
 		}
-		return fmt.Sprintf("gcp-kms://projects/%s/locations/global/keyRings/%s/cryptoKeys/%s", gc.GetProject(), gc.GetKeyRing(), gc.GetKey()), nil
+		return fmt.Sprintf("gcp-kms://projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s", gc.GetProject(), gc.GetLocation(), gc.GetKeyRing(), gc.GetKey()), nil
 	}
 	return "", status.FailedPreconditionError("KMS config is empty")
 }
