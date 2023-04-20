@@ -89,7 +89,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
       next: () => this.forceUpdate(),
     });
     this.logsModel.startFetching();
+  }
 
+  componentDidMount() {
     let handle = shortcuts.register(KeyCombo.u, () => {
       // Used to select the correct invocation on the history page so that
       // selecting an invocation with 'enter' and then going back with 'u' ends
