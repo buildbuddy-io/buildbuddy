@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -41,7 +43,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 	"google.golang.org/genproto/googleapis/longrunning"
-	gstatus "google.golang.org/grpc/status"
 
 	bazelgo "github.com/bazelbuild/rules_go/go/tools/bazel"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/config"
@@ -52,6 +53,7 @@ import (
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	githubapi "github.com/google/go-github/v43/github"
 	guuid "github.com/google/uuid"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -513,7 +515,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 
 			invocationUUID, err := guuid.NewRandom()
 			if err != nil {
-				log.Warningf("Could not generate invocation ID for workflow action %s", req.GetActionName())
+				log.CtxWarningf(ctx, "Could not generate invocation ID for workflow action %s", req.GetActionName())
 				return
 			}
 			invocationID = invocationUUID.String()
@@ -523,11 +525,11 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			isTrusted := true
 			executionID, err := ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs)
 			if err != nil {
-				log.Warningf("Could not execute workflow action %s: %s", req.GetActionName(), err)
+				log.CtxWarningf(ctx, "Could not execute workflow action %s: %s", req.GetActionName(), err)
 				return
 			}
 			if err := ws.waitForWorkflowInvocationCreated(ctx, executionID, invocationID); err != nil {
-				log.Warningf("Could not create invocation for workflow action %s: %s", req.GetActionName(), err)
+				log.CtxWarningf(ctx, "Could not create invocation for workflow action %s: %s", req.GetActionName(), err)
 				return
 			}
 		}()
@@ -979,7 +981,7 @@ func (ws *workflowService) isTrustedCommit(ctx context.Context, gitProvider inte
 func (ws *workflowService) HandleRepositoryEvent(ctx context.Context, repo *tables.GitRepository, wd *interfaces.WebhookData, accessToken string) error {
 	u, err := url.Parse(repo.RepoURL)
 	if err != nil {
-		log.Errorf("Failed to parse repo URL %s", u.String())
+		log.CtxErrorf(ctx, "Failed to parse repo URL %s", u.String())
 		return status.InvalidArgumentError("failed to parse repo URL")
 	}
 	provider, err := ws.providerForRepo(u)
@@ -990,8 +992,7 @@ func (ws *workflowService) HandleRepositoryEvent(ctx context.Context, repo *tabl
 	return ws.startWorkflow(ctx, provider, wd, wf)
 }
 
-func (ws *workflowService) startLegacyWorkflow(webhookID string, r *http.Request) error {
-	ctx := r.Context()
+func (ws *workflowService) startLegacyWorkflow(ctx context.Context, webhookID string, r *http.Request) error {
 	if err := ws.checkStartWorkflowPreconditions(ctx); err != nil {
 		return err
 	}
@@ -1006,9 +1007,7 @@ func (ws *workflowService) startLegacyWorkflow(webhookID string, r *http.Request
 	if wd == nil {
 		return nil
 	}
-	log.Debugf(
-		"Parsed webhook data: event=%q, target=%q, pushed=%q pr_author=%q, pr_approver=%q",
-		wd.EventName, wd.TargetRepoURL, wd.PushedRepoURL, wd.PullRequestAuthor, wd.PullRequestApprover)
+	log.CtxDebugf(ctx, "Parsed webhook data: %s", webhook_data.DebugString(wd))
 	wf, err := ws.readWorkflowForWebhook(ctx, webhookID)
 	if err != nil {
 		return status.WrapErrorf(err, "failed to lookup workflow for webhook ID %q", webhookID)
@@ -1026,7 +1025,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	// only if the PR is not already trusted (to avoid unnecessary re-runs).
 	if wd.PullRequestApprover != "" {
 		if isTrusted {
-			log.Debugf("Ignoring approving pull request review for %s (pull request is already trusted)", wf.WorkflowID)
+			log.CtxInfof(ctx, "Ignoring approving pull request review for %s (pull request is already trusted)", wf.WorkflowID)
 			return nil
 		}
 		isApproverTrusted, err := gitProvider.IsTrusted(ctx, wf.AccessToken, wd.TargetRepoURL, wd.PullRequestApprover)
@@ -1034,7 +1033,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 			return err
 		}
 		if !isApproverTrusted {
-			log.Debugf("Ignoring approving pull request review for %s (approver is untrusted)", wf.WorkflowID)
+			log.CtxInfof(ctx, "Ignoring approving pull request review for %s (approver is untrusted)", wf.WorkflowID)
 			return nil
 		}
 		isTrusted = true
@@ -1049,8 +1048,11 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	if err != nil {
 		return err
 	}
+	var actionsStarted []*config.Action
 	for _, action := range cfg.Actions {
 		if !config.MatchesAnyTrigger(action, wd.EventName, wd.TargetBranch) {
+			jt, _ := json.Marshal(action.Triggers)
+			log.CtxDebugf(ctx, "Action %s not matched, triggers=%+v", action.Name, string(jt))
 			continue
 		}
 		invocationUUID, err := guuid.NewRandom()
@@ -1061,17 +1063,19 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		_, err = ws.executeWorkflow(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/)
 		if err != nil {
 			if err == ApprovalRequired {
-				log.Infof("Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
+				log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
 				if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
-					log.Warningf("Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
+					log.CtxWarningf(ctx, "Failed to create workflow %s (%s) action status: %s", wf.WorkflowID, wf.RepoURL, err)
 				}
 				continue
 			}
 			// TODO: Create a UI for these errors instead of just logging on the
 			// server.
-			log.Warningf("Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
+			log.CtxWarningf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
 		}
+		actionsStarted = append(actionsStarted, action)
 	}
+	log.CtxInfof(ctx, "Started %d workflow action(s)", len(actionsStarted))
 	return nil
 }
 
@@ -1116,7 +1120,7 @@ func (ws *workflowService) executeWorkflow(ctx context.Context, key *tables.APIK
 	if err != nil {
 		return "", err
 	}
-	log.Infof("Started workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
+	log.CtxInfof(ctx, "Started workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
 	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
 		metrics.WebhookEventName: wd.EventName,
 	}).Inc()
@@ -1156,7 +1160,9 @@ func (ws *workflowService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	webhookID := workflowMatch[1]
-	if err := ws.startLegacyWorkflow(webhookID, r); err != nil {
+	ctx := r.Context()
+	ctx = log.EnrichContext(ctx, "github_delivery", r.Header.Get("X-GitHub-Delivery"))
+	if err := ws.startLegacyWorkflow(ctx, webhookID, r); err != nil {
 		log.Errorf("Failed to start workflow (webhook ID: %q): %s", webhookID, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

@@ -6,4 +6,5 @@ go_library(
     name = "webhook_data",
     srcs = ["webhook_data.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data",
+    deps = ["//server/interfaces"],
 )
