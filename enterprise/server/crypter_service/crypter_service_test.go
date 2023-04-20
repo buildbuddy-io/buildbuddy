@@ -55,6 +55,10 @@ type fakeKMS struct {
 	keys map[string]*fakeKmsKey
 }
 
+func (f *fakeKMS) SupportedTypes() []interfaces.KMSType {
+	return nil
+}
+
 func newFakeKMS(t *testing.T) *fakeKMS {
 	return &fakeKMS{
 		t:    t,
