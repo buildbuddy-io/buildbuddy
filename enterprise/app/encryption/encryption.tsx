@@ -221,11 +221,11 @@ export default class EncryptionComponent extends React.Component<{}, State> {
                 Key Ring Location
               </label>
               <input
-                  autoComplete="off"
-                  type="text"
-                  name="gcpLocation"
-                  onChange={this.onGCPLocationChange.bind(this)}
-                  value={this.state.gcpLocation}
+                autoComplete="off"
+                type="text"
+                name="gcpLocation"
+                onChange={this.onGCPLocationChange.bind(this)}
+                value={this.state.gcpLocation}
               />
             </div>
             <div className="field-row">
