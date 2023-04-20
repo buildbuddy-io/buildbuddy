@@ -150,6 +150,7 @@ export class Shortcuts {
     for (let otherShortcut of this.shortcuts.values()) {
       if (shortcut.collidesWith(otherShortcut)) {
         // TODO(iain): figure out a way to be notified of these errors.
+        // --> https://github.com/buildbuddy-io/buildbuddy-internal/issues/2242
         console.warn("Duplicate keyboard shortcut registered: " + shortcut.keyCombo);
       }
     }
