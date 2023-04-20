@@ -1402,9 +1402,12 @@ func (ws *workspace) sync(ctx context.Context) error {
 		checkoutLocalBranchName = "local"
 	}
 
-	checkoutCommit := *commitSHA
+	// TODO(Maggie): If commit sha is not set, pull the actual sha so that it can be used in reporting
+	checkoutCommit := "HEAD"
 	if *targetCommitSHA != "" {
 		checkoutCommit = *targetCommitSHA
+	} else if *commitSHA != "" {
+		checkoutCommit = *commitSHA
 	}
 
 	// Clean up in case a previous workflow made a mess.
