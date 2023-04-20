@@ -1,6 +1,6 @@
 module github.com/buildbuddy-io/buildbuddy
 
-go 1.18
+go 1.20
 
 replace (
 	// There's a bug building longrunning v0.3.0 with bazel:
