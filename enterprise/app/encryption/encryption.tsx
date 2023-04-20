@@ -191,7 +191,21 @@ export default class EncryptionComponent extends React.Component<{}, State> {
       case encryption.KMS.GCP:
         return (
           <>
-            {/*TODO: add instructions for configuring IAM permissions*/}
+            <div className="kms-instructions">
+              You must grant BuildBuddy permission to use the specified key for encryption and decryption via the
+              following service account:
+              <code>kms-prod@flame-build.iam.gserviceaccount.com</code>
+              <div>
+                The service account must be granted the following two permissions:
+                <code>
+                  cloudkms.cryptoKeyVersions.useToEncrypt
+                  <br />
+                  cloudkms.cryptoKeyVersions.useToDecrypt
+                </code>
+                These permissions are included in the following predefined role:
+                <code>Cloud KMS CryptoKey Encrypter/Decrypter</code>
+              </div>
+            </div>
             <div className="field-row">
               <label htmlFor="gcpProject" className="field-label">
                 Project ID
