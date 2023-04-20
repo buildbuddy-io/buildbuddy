@@ -11,7 +11,6 @@ ts_library(
     deps = [
         "//app/auth:auth_service",
         "//app/capabilities",
-        "//app/components/button:checkbox_button",
         "//app/format",
         "//app/router",
         "//app/service:rpc_service",
