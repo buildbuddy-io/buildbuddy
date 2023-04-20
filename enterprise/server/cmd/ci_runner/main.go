@@ -119,15 +119,16 @@ var (
 	commitSHA          = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	targetRepoURL      = flag.String("target_repo_url", "", "URL of the target repo.")
 	targetBranch       = flag.String("target_branch", "", "Branch to check action triggers against.")
-	targetCommitSHA    = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
-	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
-	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
-	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
-	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
-	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	patchURIs          = flagutil.New("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
-	gitCleanExclude    = flagutil.New("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
+	// TODO(Maggie): Clean up this field - consolidate with --commit_sha
+	targetCommitSHA   = flag.String("target_commit_sha", "", "If set, target repo URL is checked out at the given commit instead of the tip of the branch.")
+	workflowID        = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
+	actionName        = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
+	invocationID      = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
+	visibility        = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
+	bazelSubCommand   = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	patchURIs         = flagutil.New("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
+	recordRunMetadata = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
+	gitCleanExclude   = flagutil.New("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
@@ -1392,14 +1393,18 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if *pushedRepoURL != "" {
 		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*pushedRepoURL), *pushedBranch)
 		checkoutLocalBranchName = *pushedBranch
+	} else if *targetBranch != "" {
+		checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
+		checkoutLocalBranchName = *targetBranch
 	} else {
-		if *targetBranch != "" {
-			checkoutRef = fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-			checkoutLocalBranchName = *targetBranch
-		} else {
-			checkoutRef = *targetCommitSHA
-			checkoutLocalBranchName = "local"
-		}
+		// If no branch is passed in, stay on the default branch
+		checkoutRef = ""
+		checkoutLocalBranchName = "local"
+	}
+
+	checkoutCommit := *commitSHA
+	if *targetCommitSHA != "" {
+		checkoutCommit = *targetCommitSHA
 	}
 
 	// Clean up in case a previous workflow made a mess.
@@ -1415,11 +1420,17 @@ func (ws *workspace) sync(ctx context.Context) error {
 	if err := git(ctx, ws.log, cleanArgs...); err != nil {
 		return err
 	}
-	// Create the branch if it doesn't already exist, then update it to point to
-	// the pushed branch tip.
-	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
+
+	// Checkout the git branch
+	if err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
 		return err
 	}
+
+	// Checkout a specific commit on the branch and create the local branch if it doesn't already exist
+	if err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutCommit); err != nil {
+		return err
+	}
+
 	// Merge the target branch (if different from the pushed branch) so that the
 	// workflow can pick up any changes not yet incorporated into the pushed branch.
 	if *pushedRepoURL != "" && (*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch) {

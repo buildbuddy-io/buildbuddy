@@ -153,7 +153,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		args = append(args, "--record_run_metadata")
 	}
 	if req.GetRepoState().GetCommitSha() != "" {
+		// TODO(Maggie): Delete --target_commit_sha
 		args = append(args, "--target_commit_sha="+req.GetRepoState().GetCommitSha())
+		args = append(args, "--commit_sha="+req.GetRepoState().GetCommitSha())
 	} else {
 		args = append(args, "--target_branch="+req.GetRepoState().GetBranch())
 	}
