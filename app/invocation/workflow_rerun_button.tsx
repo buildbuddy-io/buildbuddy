@@ -82,7 +82,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
             } else {
               invocationId = actionStatus.invocationId;
             }
-            return
+            return;
           }
         });
 
