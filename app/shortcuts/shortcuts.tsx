@@ -111,6 +111,10 @@ export class Shortcuts {
   // no longer invokable. This function will throw an error if the same
   // shortcut is registered multiple times, so if the calling component will
   // unmount and remount, shortcuts should be deregistered and reregistered.
+  //
+  // IMPORTANT: usually you'll want to register shortcuts in componentDidMount
+  // not componentWillMount because componentWillMount can be called when
+  // another component is still mounted, causing shortcut conflicts.
   public register(keyCombo: KeyCombo, action: () => void): string {
     return this.registerSequence([keyCombo], action);
   }
@@ -121,6 +125,10 @@ export class Shortcuts {
   // same shortcut is registered multiple times, so if the calling component
   // will unmount and remount, shortcuts should be deregistered and
   // reregistered.
+  //
+  // IMPORTANT: usually you'll want to register shortcuts in componentDidMount
+  // not componentWillMount because componentWillMount can be called when
+  // another component is still mounted, causing shortcut conflicts.
   public registerSequence(keyCombo: KeyCombo[], action: () => void): string {
     if (this.shortcuts == null) {
       this.shortcuts = new Map<string, Shortcut>();
