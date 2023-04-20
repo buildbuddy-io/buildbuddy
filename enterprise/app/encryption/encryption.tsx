@@ -174,6 +174,7 @@ export default class EncryptionComponent extends React.Component<{}, State> {
       case encryption.KMS.GCP:
         return (
           <>
+            {/*TODO: add instructions for configuring IAM permissions*/}
             <div className="field-row">
               <label htmlFor="gcpProject" className="field-label">
                 Project ID
