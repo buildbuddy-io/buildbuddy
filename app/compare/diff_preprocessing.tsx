@@ -11,16 +11,19 @@ export type PreProcessingOptions = {
 };
 
 export function prepareForDiff(
-  invocation: invocation_proto.IInvocation,
+  input?: invocation_proto.Invocation,
   { sortEvents, hideTimingData, hideInvocationIds, hideUuids, hideProgress }: PreProcessingOptions = {}
-): invocation_proto.IInvocation {
+): invocation_proto.Invocation {
+  if (!input) {
+    return new invocation_proto.Invocation({});
+  }
   // Clone the invocation to avoid mutating the original object.
-  invocation = invocation_proto.Invocation.fromObject((invocation as invocation_proto.Invocation).toJSON());
+  const invocation: invocation_proto.IInvocation = invocation_proto.Invocation.fromObject(input.toJSON());
 
   if (hideInvocationIds) {
     delete invocation.invocationId;
   }
-  if (sortEvents) {
+  if (sortEvents && invocation.event) {
     sortByProperty(invocation.event, (event: any) => JSON.stringify(event?.buildEvent?.id));
   }
   // Inlined console buffer is deprecated but some older invocations may still
@@ -34,76 +37,81 @@ export function prepareForDiff(
   }
 
   // Some CommandLine objects are empty for some reason; remove these.
-  invocation.structuredCommandLine = invocation.structuredCommandLine.filter(
-    (commandLine: any) => commandLine.commandLineLabel
-  );
-  // Sort structured command lines so canonical always comes before original.
-  sortByProperty(invocation.structuredCommandLine, (commandLine) => commandLine.commandLineLabel);
-
-  if (hideTimingData) {
-    for (const commandLine of invocation.structuredCommandLine) {
-      removeTimingData(commandLine);
-    }
-  }
-
-  const events: invocation_proto.InvocationEvent[] = [];
-  for (const event of invocation.event) {
-    if (sortEvents) {
-      delete event.sequenceNumber;
-    }
-
-    const buildEvent = event?.buildEvent;
-    const id = buildEvent?.id;
-    if (!id) continue;
-
-    if (id?.configuration) {
-      // The "makeVariable" map sometimes shows the same data but rendered in a different order;
-      // sorting the maps solves this problem.
-      sortEntriesByKey(buildEvent.configuration.makeVariable);
-    }
-
-    if (hideProgress) {
-      if (id?.progress) {
-        continue;
-      }
-    }
+  if (invocation.structuredCommandLine) {
+    invocation.structuredCommandLine = invocation.structuredCommandLine.filter(
+      (commandLine: any) => commandLine.commandLineLabel
+    );
+    // Sort structured command lines so canonical always comes before original.
+    sortByProperty(invocation.structuredCommandLine, (commandLine) => commandLine.commandLineLabel);
 
     if (hideTimingData) {
-      delete event.eventTime;
-
-      if (id?.workspaceStatus) {
-        const timestampItem = buildEvent.workspaceStatus.item.find((item: any) => item.key === "BUILD_TIMESTAMP");
-        if (timestampItem) {
-          delete timestampItem.value;
-        }
-      } else if (id?.buildToolLogs) {
-        buildEvent.buildToolLogs.log = event.buildEvent.buildToolLogs.log.filter(
-          (log) => !["elapsed time", "critical path", "process stats"].includes(log.name)
-        );
-      } else if (id?.structuredCommandLine) {
-        removeTimingData(buildEvent.structuredCommandLine);
-      } else if (id?.buildMetrics) {
-        delete buildEvent.buildMetrics.timingMetrics;
-        removeTimingDataInActionSummary(buildEvent.buildMetrics.actionSummary);
-      } else if (id?.started) {
-        delete buildEvent.started.startTimeMillis;
-        delete buildEvent.started.startTime;
-      } else if (id?.buildFinished) {
-        delete buildEvent.finished.finishTimeMillis;
-        delete buildEvent.finished.finishTime;
+      for (const commandLine of invocation.structuredCommandLine) {
+        removeTimingData(commandLine);
       }
     }
-
-    if (hideUuids) {
-      if (id?.started) {
-        delete buildEvent.started.uuid;
-      }
-    }
-
-    events.push(invocation_proto.InvocationEvent.create(event));
   }
-  invocation.event = events;
-  return invocation;
+
+  if (invocation.event) {
+    const events: invocation_proto.IInvocationEvent[] = [];
+    for (const e of invocation.event) {
+      const event: invocation_proto.IInvocationEvent = e;
+      if (sortEvents) {
+        delete event.sequenceNumber;
+      }
+
+      const buildEvent = event.buildEvent;
+      const id = buildEvent?.id;
+      if (!id) continue;
+
+      if (id?.configuration) {
+        // The "makeVariable" map sometimes shows the same data but rendered in a different order;
+        // sorting the maps solves this problem.
+        sortEntriesByKey(buildEvent.configuration?.makeVariable ?? {});
+      }
+
+      if (hideProgress) {
+        if (id?.progress) {
+          continue;
+        }
+      }
+
+      if (hideTimingData) {
+        delete event.eventTime;
+
+        if (id?.workspaceStatus) {
+          const timestampItem = buildEvent.workspaceStatus?.item?.find((item: any) => item.key === "BUILD_TIMESTAMP");
+          if (timestampItem) {
+            delete timestampItem.value;
+          }
+        } else if (id?.buildToolLogs) {
+          buildEvent.buildToolLogs.log = event.buildEvent.buildToolLogs.log.filter(
+            (log) => !["elapsed time", "critical path", "process stats"].includes(log.name)
+          );
+        } else if (id?.structuredCommandLine) {
+          removeTimingData(buildEvent.structuredCommandLine);
+        } else if (id?.buildMetrics) {
+          delete buildEvent.buildMetrics.timingMetrics;
+          removeTimingDataInActionSummary(buildEvent.buildMetrics.actionSummary);
+        } else if (id?.started) {
+          delete buildEvent.started.startTimeMillis;
+          delete buildEvent.started.startTime;
+        } else if (id?.buildFinished) {
+          delete buildEvent.finished.finishTimeMillis;
+          delete buildEvent.finished.finishTime;
+        }
+      }
+
+      if (hideUuids) {
+        if (id?.started) {
+          delete buildEvent.started.uuid;
+        }
+      }
+
+      events.push(invocation_proto.InvocationEvent.create(event));
+    }
+    invocation.event = events;
+  }
+  return new invocation_proto.Invocation(invocation);
 }
 
 function removeTimingData(commandLine: command_line.ICommandLine) {
