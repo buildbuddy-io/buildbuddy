@@ -45,7 +45,7 @@ export default class InvocationShareButtonComponent extends React.Component<
 
   private inputRef = React.createRef<HTMLInputElement>();
 
-  componentWillMount() {
+  componentDidMount() {
     let handle = shortcuts.register(KeyCombo.shift_c, () => {
       this.copyShareUrl();
     });

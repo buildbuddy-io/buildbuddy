@@ -128,14 +128,8 @@ message ExecuteWorkflowRequest {
   // Ex. "WF4576963743584254779"
   string workflow_id = 2;
 
-  // Optional: Name of the workflow action to execute. Corresponds to an action
-  // in buildbuddy.yaml, or an action name in the default workflow config if
-  // buildbuddy.yaml is missing from the repo.
-  //
-  // If this is not set, will execute all actions in the workflow config.
-  //
-  // Ex. "Test all targets"
-  string action_name = 3;
+  // DEPRECATED: Use action_names field
+  string action_name = 3 [deprecated = true];
 
   // SHA of the commit to be checked out in order to execute the workflow.
   // Ex. "e782592faf56da05cc0a243220689135e807958f"
@@ -167,6 +161,15 @@ message ExecuteWorkflowRequest {
 
   // VISIBILITY build metadata used for the workflow invocation.
   string visibility = 11;
+
+  // Optional: Names of the workflow actions to execute. Correspond to actions
+  // in buildbuddy.yaml, or actions in the default workflow config if
+  // buildbuddy.yaml is missing from the repo.
+  //
+  // If this is not set, will execute all actions in the workflow config.
+  //
+  // Ex. ["Browser Tests", "Docker tests"]
+  repeated string action_names = 12;
 }
 
 message ExecuteWorkflowResponse {
