@@ -2639,8 +2639,8 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_jackc_pgservicefile",
         importpath = "github.com/jackc/pgservicefile",
-        sum = "h1:C8S2+VttkHFdOOCXJe+YGfa4vHYwlt4Zx+IVXQ97jYg=",
-        version = "v0.0.0-20200714003250-2b9c44734f2b",
+        sum = "h1:bbPeKD0xmW/Y25WS6cokEszi5g+S0QxI/d45PkRi7Nk=",
+        version = "v0.0.0-20221227161230-091c0ba34f0a",
     )
     go_repository(
         name = "com_github_jackc_pgtype",
@@ -2654,12 +2654,32 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:0Ut0rpeKwvIVbMQ1KbMBU4h6wxehBI535LK6Flheh8E=",
         version = "v4.17.2",
     )
+
+    go_repository(
+        name = "com_github_jackc_pgx_v5",
+        # TODO: Wait for bazel-gazelle-v0.31.0, which will include a fix for the
+        # unix build tag in gazelle.
+        build_directives = [
+            "gazelle:build_tags unix",
+        ],
+        importpath = "github.com/jackc/pgx/v5",
+        sum = "h1:/NQi8KHMpKWHInxXesC8yD4DhkXPrVhmnwYkjp9AmBA=",
+        version = "v5.3.0",
+    )
+
     go_repository(
         name = "com_github_jackc_puddle",
         importpath = "github.com/jackc/puddle",
         sum = "h1:eHK/5clGOatcjX3oWGBO/MpxpbHzSwud5EWTSCI+MX0=",
         version = "v1.3.0",
     )
+    go_repository(
+        name = "com_github_jackc_puddle_v2",
+        importpath = "github.com/jackc/puddle/v2",
+        sum = "h1:RdcDk92EJBuBS55nQMMYFXTxwstHug4jkhT5pq8VxPk=",
+        version = "v2.2.0",
+    )
+
     go_repository(
         name = "com_github_jbenet_go_context",
         importpath = "github.com/jbenet/go-context",
@@ -5745,16 +5765,23 @@ def install_buildbuddy_dependencies(workspace_name = "buildbuddy"):
         version = "v1.4.7",
     )
     go_repository(
+        name = "io_gorm_driver_postgres",
+        importpath = "gorm.io/driver/postgres",
+        sum = "h1:NDWizaclb7Q2aupT0jkwK8jx1HVCNzt+PQ8v/VnxviA=",
+        version = "v1.4.8",
+    )
+
+    go_repository(
         name = "io_gorm_driver_sqlite",
         importpath = "gorm.io/driver/sqlite",
-        sum = "h1:Fi8xNYCUplOqWiPa3/GuCeowRNBRGTf62DEmhMDHeQQ=",
-        version = "v1.3.6",
+        sum = "h1:gIufGoR0dQzjkyqDyYSCvsYR6fba1Gw5YKDqKeChxFc=",
+        version = "v1.4.4",
     )
     go_repository(
         name = "io_gorm_gorm",
         importpath = "gorm.io/gorm",
-        sum = "h1:4Ne9ZbzID9GUxRkllxN4WjJKpsHx8YbKvekVdgyWh24=",
-        version = "v1.23.10",
+        sum = "h1:g6OPREKqqlWq4kh/3MCQbZKImeB9e6Xgc4zD+JgNZGE=",
+        version = "v1.24.5",
     )
     go_repository(
         name = "io_k8s_api",
