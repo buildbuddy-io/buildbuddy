@@ -107,18 +107,18 @@ export default class EncryptionComponent extends React.Component<{}, State> {
         req.kmsConfig = encryption.KMSConfig.create({
           localInsecureKmsConfig: encryption.LocalInsecureKMSConfig.create({
             keyId: this.state.localKeyID,
-          })
-        })
-        break
+          }),
+        });
+        break;
       case encryption.KMS.GCP:
         req.kmsConfig = encryption.KMSConfig.create({
           gcpKmsConfig: encryption.GCPKMSConfig.create({
             project: this.state.gcpProject,
             keyRing: this.state.gcpKeyRing,
             key: this.state.gcpKey,
-          })
-        })
-        break
+          }),
+        });
+        break;
     }
     try {
       await rpc_service.service.setEncryptionConfig(req);
