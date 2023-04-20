@@ -52,7 +52,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
             <div>
               <div className="trend-headline-stat">
                 <List size="27" className="icon"></List>
-                <span className="trend-highlight">{format.count(this.props.currentPeriod.numBuilds)} builds</span>
+                <span className="trend-headline-text">{format.count(this.props.currentPeriod.numBuilds)} builds</span>
               </div>
               {this.props.previousPeriod &&
                 this.renderChangeText(this.props.currentPeriod.numBuilds, this.props.previousPeriod.numBuilds)}
@@ -61,7 +61,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
           <a href="#cache" className="card trend-summary-group">
             <div className="trend-headline-stat">
               <Cloud size="27" className="icon"></Cloud>
-              <span className="trend-highlight">
+              <span className="trend-headline-text">
                 {format.durationMillis(+this.props.currentPeriod.cpuMicrosSaved / 1000)} CPU saved
               </span>
             </div>
@@ -71,9 +71,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
               {cacheRequestTotal > 0 && (
                 <span>
                   Your action cache hit rate is{" "}
-                  <span className="trend-highlight">
-                    {format.percent(this.props.currentPeriod.acCacheHits / cacheRequestTotal)}%
-                  </span>
+                  <strong>{format.percent(this.props.currentPeriod.acCacheHits / cacheRequestTotal)}%</strong>
                 </span>
               )}
               {"."}

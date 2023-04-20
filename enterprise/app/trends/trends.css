@@ -171,7 +171,7 @@
   margin-bottom: 4px;
 }
 
-.trend-highlight {
+.trend-headline-text {
   font-weight: bold;
   vertical-align: top;
   margin-left: 8px;
@@ -180,9 +180,6 @@
 .trend-sub-item {
   font-size: 12px;
   max-width: 240px;
-}
-.trend-sub-item .trend-highlight {
-  margin-left: 0;
 }
 
 .trend-change {
