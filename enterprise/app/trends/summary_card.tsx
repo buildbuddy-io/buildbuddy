@@ -3,7 +3,11 @@ import { List, Cloud } from "lucide-react";
 
 import * as format from "../../../app/format/format";
 import { stats } from "../../../proto/stats_ts_proto";
-import { isAnyFilterSet } from "../filter/filter_util";
+import {
+  isAnyNonDateFilterSet,
+  formatDateRangeFromSearchParams,
+  formatPreviousDateRangeFromSearchParams,
+} from "../filter/filter_util";
 
 interface Props {
   search: URLSearchParams;
@@ -34,18 +38,18 @@ export default class TrendsSummaryCard extends React.Component<Props> {
     return (
       <div className="trend-sub-item">
         That's {renderDelta(currentValue, previousValue)} from{" "}
-        {format.formatPreviousDateRangeFromSearchParams(this.props.search)}.
+        {formatPreviousDateRangeFromSearchParams(this.props.search)}.
       </div>
     );
   }
 
   render() {
-    const cacheRequestTotal = this.props.currentPeriod.acCacheHits + this.props.currentPeriod.acCacheMisses;
+    const cacheRequestTotal = +this.props.currentPeriod.acCacheHits + +this.props.currentPeriod.acCacheMisses;
     return (
       <div className="trend-chart">
         <div className="trend-chart-title">
-          Summary ({format.formatDateRangeFromSearchParams(this.props.search)}
-          {isAnyFilterSet(this.props.search) ? ", including filters" : ""})
+          Summary ({formatDateRangeFromSearchParams(this.props.search)}
+          {isAnyNonDateFilterSet(this.props.search) ? ", including filters" : ""})
         </div>
         <div className="trend-summary-block">
           <a className="card trend-summary-group" href="#builds">
@@ -55,7 +59,7 @@ export default class TrendsSummaryCard extends React.Component<Props> {
                 <span className="trend-headline-text">{format.count(this.props.currentPeriod.numBuilds)} builds</span>
               </div>
               {this.props.previousPeriod &&
-                this.renderChangeText(this.props.currentPeriod.numBuilds, this.props.previousPeriod.numBuilds)}
+                this.renderChangeText(+this.props.currentPeriod.numBuilds, +this.props.previousPeriod.numBuilds)}
             </div>
           </a>
           <a href="#cache" className="card trend-summary-group">
@@ -66,12 +70,15 @@ export default class TrendsSummaryCard extends React.Component<Props> {
               </span>
             </div>
             {this.props.previousPeriod &&
-              this.renderChangeText(this.props.currentPeriod.cpuMicrosSaved, this.props.previousPeriod.cpuMicrosSaved)}
+              this.renderChangeText(
+                +this.props.currentPeriod.cpuMicrosSaved,
+                +this.props.previousPeriod.cpuMicrosSaved
+              )}
             <div className="trend-sub-item">
               {cacheRequestTotal > 0 && (
                 <span>
                   Your action cache hit rate is{" "}
-                  <strong>{format.percent(this.props.currentPeriod.acCacheHits / cacheRequestTotal)}%</strong>
+                  <strong>{format.percent(+this.props.currentPeriod.acCacheHits / cacheRequestTotal)}%</strong>
                 </span>
               )}
               {"."}

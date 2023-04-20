@@ -1,7 +1,6 @@
 import Long from "long";
 import moment from "moment";
 import { isSameDay } from "date-fns";
-import { getDisplayDateRange } from "../../enterprise/app/filter/filter_util";
 
 export function percent(percent: number | Long) {
   if (!percent) return "0";
@@ -212,16 +211,6 @@ export function formatPreviousDateRange(startDate: Date, endDate: Date, { now = 
   }
 
   return `the previous ${differenceInCalendarDays(startDate, endDate) + 1} days`;
-}
-
-export function formatPreviousDateRangeFromSearchParams(search: URLSearchParams): string {
-  const { startDate, endDate } = getDisplayDateRange(search);
-  return formatPreviousDateRange(startDate, endDate);
-}
-
-export function formatDateRangeFromSearchParams(search: URLSearchParams): string {
-  const { startDate, endDate } = getDisplayDateRange(search);
-  return formatDateRange(startDate, endDate);
 }
 
 export function formatDateRange(startDate: Date, endDate: Date, { now = new Date() } = {}) {

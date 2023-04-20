@@ -23,7 +23,8 @@ import {
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import Radio from "../../../app/components/radio/radio";
 import { compactDurationSec, formatDateRange } from "../../../app/format/format";
-import router, {
+import router from "../../../app/router/router";
+import {
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
   ROLE_PARAM_NAME,
@@ -40,7 +41,7 @@ import router, {
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
-} from "../../../app/router/router";
+} from "../../../app/router/router_params";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
 import {
   parseRoleParam,
@@ -49,7 +50,7 @@ import {
   toStatusParam,
   statusToString,
   getDisplayDateRange,
-  isAnyFilterSet,
+  isAnyNonDateFilterSet,
   DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
   SortBy,
@@ -337,7 +338,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const patternValue = (capabilities.config.patternFilterEnabled && this.props.search.get(PATTERN_PARAM_NAME)) || "";
     const minimumDurationValue = this.props.search.get(MINIMUM_DURATION_PARAM_NAME) || "";
     const maximumDurationValue = this.props.search.get(MAXIMUM_DURATION_PARAM_NAME) || "";
-    const isFiltering = isAnyFilterSet(this.props.search);
+    const isFiltering = isAnyNonDateFilterSet(this.props.search);
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 

@@ -1,4 +1,5 @@
 import capabilities from "../../../app/capabilities/capabilities";
+import { formatPreviousDateRange, formatDateRange } from "../../../app/format/format";
 import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -22,7 +23,7 @@ import {
   MAXIMUM_DURATION_PARAM_NAME,
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
-} from "../../../app/router/router";
+} from "../../../app/router/router_params";
 
 // URL param value representing the empty role (""), which is the default.
 const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
@@ -162,7 +163,17 @@ export function isExecutionMetric(m: stat_filter.Metric): boolean {
   return m.execution !== null && m.execution !== undefined;
 }
 
-export function isAnyFilterSet(search: URLSearchParams): boolean {
+export function formatPreviousDateRangeFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  return formatPreviousDateRange(startDate, endDate);
+}
+
+export function formatDateRangeFromSearchParams(search: URLSearchParams): string {
+  const { startDate, endDate } = getDisplayDateRange(search);
+  return formatDateRange(startDate, endDate);
+}
+
+export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
   return Boolean(
     search.get(ROLE_PARAM_NAME) ||
       search.get(STATUS_PARAM_NAME) ||

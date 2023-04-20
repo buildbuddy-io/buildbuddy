@@ -226,7 +226,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
           {!this.showingDrilldown(this.props.hash) && this.state.loading && <div className="loading"></div>}
           {!this.showingDrilldown(this.props.hash) && !this.state.loading && (
             <>
-              {this.state.currentSummary && (
+              {capabilities.config.trendsSummaryEnabled && this.state.currentSummary && (
                 <TrendsSummaryCard
                   search={this.props.search}
                   currentPeriod={this.state.currentSummary}
