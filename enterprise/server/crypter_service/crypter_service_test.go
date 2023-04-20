@@ -651,7 +651,7 @@ func TestConfigAPI(t *testing.T) {
 		break
 	}
 
-	groupKMSKeyID := "groupKey"
+	groupKMSKeyID := "local-insecure-kms://groupKey"
 	groupKMSKey := make([]byte, 32)
 	_, err := rand.Read(groupKMSKey)
 	require.NoError(t, err)
@@ -698,7 +698,7 @@ func TestConfigAPI(t *testing.T) {
 	// Enable encryption.
 	_, err = crypter.SetEncryptionConfig(userCtx, &enpb.SetEncryptionConfigRequest{
 		Enabled:   true,
-		KmsConfig: &enpb.KMSConfig{LocalInsecureKmsConfig: &enpb.LocalInsecureKMSConfig{KeyId: groupKMSKeyID}},
+		KmsConfig: &enpb.KMSConfig{LocalInsecureKmsConfig: &enpb.LocalInsecureKMSConfig{KeyId: "groupKey"}},
 	})
 	require.NoError(t, err)
 	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
