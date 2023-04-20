@@ -162,7 +162,7 @@
   flex-direction: column;
   display: inline-block;
   flex-grow: 1;
-  margin: 0 16px 0 0;
+  margin: 0;
   max-width: 300px;
 }
 
@@ -200,4 +200,6 @@
 .trend-summary-block {
   display: flex;
   flex-wrap: wrap;
+  row-gap: 16px;
+  column-gap: 16px;
 }
