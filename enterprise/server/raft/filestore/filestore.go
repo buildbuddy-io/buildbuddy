@@ -4,6 +4,7 @@ package filestore
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"os"
@@ -23,6 +24,7 @@ import (
 
 const (
 	PartitionDirectoryPrefix = "PT"
+	groupIDPrefix            = "GR"
 )
 
 // returns partitionID, groupID, isolation, remote_instance_name, hash
@@ -116,6 +118,27 @@ func (pmk PebbleKey) CacheType() rspb.CacheType {
 	}
 }
 
+// Returns a group ID that is zero padded to 20 digits in order to make all
+// key group IDs uniform. This is necessary to be able to sample uniformly
+// across group IDs.
+func fixedWidthGroupID(groupID string) string {
+	// This is only for true the special "ANON" group.
+	if !strings.HasPrefix(groupID, groupIDPrefix) {
+		return groupID
+	}
+	return fmt.Sprintf("%s%020s", groupIDPrefix, groupID[2:])
+}
+
+// Undoes the padding added by fixedWidthGroupID to produce the "real" group
+// ID.
+func trimFixedWidthGroupID(groupID string) string {
+	// This is only for true the special "ANON" group.
+	if !strings.HasPrefix(groupID, groupIDPrefix) {
+		return groupID
+	}
+	return groupIDPrefix + strings.TrimLeft(groupID[2:], "0")
+}
+
 func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 	switch version {
 	case UndefinedKeyVersion:
@@ -138,7 +161,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 	case Version2:
 		filePath := filepath.Join(pmk.hash, pmk.isolation, pmk.remoteInstanceHash)
 		if pmk.isolation == "ac" {
-			filePath = filepath.Join(pmk.groupID, filePath)
+			filePath = filepath.Join(fixedWidthGroupID(pmk.groupID), filePath)
 		}
 		partDir := PartitionDirectoryPrefix + pmk.partID
 		filePath = filepath.Join(partDir, filePath, "v2")
@@ -194,6 +217,7 @@ func (pmk *PebbleKey) parseVersion2(parts [][]byte) error {
 		return parseError(parts)
 	}
 	pmk.partID = strings.TrimPrefix(pmk.partID, PartitionDirectoryPrefix)
+	pmk.groupID = trimFixedWidthGroupID(pmk.groupID)
 	return nil
 }
 

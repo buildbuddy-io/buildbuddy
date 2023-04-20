@@ -1,6 +1,7 @@
 package filestore_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -68,8 +69,8 @@ func TestKnownVersions(t *testing.T) {
 		},
 		filestore.Version2: []string{
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/cas/v2",
-			"PTFOO/GR7890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/2364854541/v2",
-			"PTFOO/GR7890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/v2",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/2364854541/v2",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/ac/v2",
 		},
 	}
 
@@ -83,6 +84,52 @@ func TestKnownVersions(t *testing.T) {
 			parsedVersion, err := key.FromBytes([]byte(exemplar))
 			assert.NoError(t, err)
 			assert.Equal(t, version, parsedVersion)
+		}
+	}
+}
+
+// Tests that keys have the expected format when being represented at different versions.
+func TestMigration(t *testing.T) {
+	cases := []map[filestore.PebbleKeyVersion]string{
+		{
+			filestore.UndefinedKeyVersion: "PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2",
+			filestore.Version1:            "PTFOO/cas/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/v1",
+			filestore.Version2:            "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/cas/v2",
+		},
+		{
+			filestore.UndefinedKeyVersion: "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309",
+			filestore.Version1:            "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/v1",
+			filestore.Version2:            "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v2",
+		},
+		{
+			filestore.UndefinedKeyVersion: "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f",
+			filestore.Version1:            "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/v1",
+			filestore.Version2:            "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/ac/v2",
+		},
+	}
+
+	for _, tc := range cases {
+		for startingVersion := filestore.UndefinedKeyVersion; startingVersion < filestore.TestingMaxKeyVersion; startingVersion++ {
+			key, ok := tc[startingVersion]
+			if !ok {
+				t.Fatalf("Please add test exemplars for pebble key version: %d", startingVersion)
+			}
+			var parsedKey filestore.PebbleKey
+			_, err := parsedKey.FromBytes([]byte(key))
+			require.NoError(t, err)
+
+			for version := filestore.UndefinedKeyVersion; version < filestore.TestingMaxKeyVersion; version++ {
+				t.Run(fmt.Sprintf("from_v%d_to_v%d", startingVersion, version), func(t *testing.T) {
+					versionedKey, err := parsedKey.Bytes(version)
+					require.NoError(t, err)
+
+					expectedKey, ok := tc[version]
+					if !ok {
+						t.Fatalf("Please add test exemplars for pebble key version: %d", version)
+					}
+					require.Equal(t, expectedKey, string(versionedKey))
+				})
+			}
 		}
 	}
 }
