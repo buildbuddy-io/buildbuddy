@@ -67,9 +67,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
       this.showingDrilldown(this.props.hash) !== this.showingDrilldown(prevProps.hash) ||
       this.props.search.toString() != prevProps.search.toString()
     ) {
-      console.log("yup" + (this.showingDrilldown(this.props.hash) !== this.showingDrilldown(prevProps.hash)));
-      console.log(this.props.search);
-      console.log(prevProps.search);
       this.fetchStats();
     }
   }
