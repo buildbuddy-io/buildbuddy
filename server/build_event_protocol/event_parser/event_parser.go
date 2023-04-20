@@ -33,11 +33,11 @@ const (
 )
 
 var (
-	optionsToParse = []string{
-		"remote_cache",
-		"remote_upload_local_results",
-		"remote_download_outputs",
-		"remote_executor",
+	optionsToParse = map[string]struct{}{
+		"remote_cache":                {},
+		"remote_upload_local_results": {},
+		"remote_download_outputs":     {},
+		"remote_executor":             {},
 	}
 )
 
@@ -45,17 +45,8 @@ type cmdOptions struct {
 	// environment variables in structured command line.
 	envVarMap map[string]string
 	// The option name and value pairs whose option name is included in
-	// the optionsToParse list.
+	// the optionsToParse.
 	optionsMap map[string]string
-}
-
-func shouldParseOption(optionName string) bool {
-	for _, o := range optionsToParse {
-		if optionName == o {
-			return true
-		}
-	}
-	return false
 }
 
 func parseCommandLine(commandLine *command_line.CommandLine) cmdOptions {
@@ -77,7 +68,7 @@ func parseCommandLine(commandLine *command_line.CommandLine) cmdOptions {
 				if len(parts) == 2 {
 					res.envVarMap[parts[0]] = parts[1]
 				}
-			} else if shouldParseOption(option.OptionName) {
+			} else if _, ok := optionsToParse[option.OptionName]; ok {
 				res.optionsMap[option.OptionName] = option.OptionValue
 			}
 		}
