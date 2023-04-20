@@ -697,8 +697,8 @@ func TestConfigAPI(t *testing.T) {
 
 	// Enable encryption.
 	_, err = crypter.SetEncryptionConfig(userCtx, &enpb.SetEncryptionConfigRequest{
-		Enabled: true,
-		KeyUri:  groupKMSKeyID,
+		Enabled:   true,
+		KmsConfig: &enpb.KMSConfig{LocalInsecureKmsConfig: &enpb.LocalInsecureKMSConfig{KeyId: groupKMSKeyID}},
 	})
 	require.NoError(t, err)
 	apiKeyCtx = auther.AuthContextFromAPIKey(context.Background(), apiKeys[0].Value)
