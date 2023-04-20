@@ -147,10 +147,10 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   </SettingsTab>
                 )}
                 {router.canAccessEncryptionPage(this.props.user) && (
-                    <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
-                      Cache Encryption
-                    </SettingsTab>
-                  )}
+                  <SettingsTab id={TabId.OrgCacheEncryption} activeTabId={activeTabId}>
+                    Cache Encryption
+                  </SettingsTab>
+                )}
               </div>
               <div className="settings-tab-group-header">
                 <div className="settings-tab-group-title">Personal settings</div>
@@ -309,13 +309,13 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                     <QuotaComponent path={this.props.path} search={this.props.search} />
                   )}
                   {activeTabId == TabId.OrgCacheEncryption && (
-                      <>
-                        <div className="settings-option-title">Cache Encryption</div>
-                        <div className="settings-option-description">
-                          Encryption allows cache artifacts to be encrypted at rest using a customer-managed key.
-                        </div>
-                        <EncryptionComponent />
-                      </>
+                    <>
+                      <div className="settings-option-title">Cache Encryption</div>
+                      <div className="settings-option-description">
+                        Encryption allows cache artifacts to be encrypted at rest using a customer-managed key.
+                      </div>
+                      <EncryptionComponent />
+                    </>
                   )}
                 </>
               )}

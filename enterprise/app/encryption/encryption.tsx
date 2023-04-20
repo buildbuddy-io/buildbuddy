@@ -1,309 +1,303 @@
 import React from "react";
 import rpc_service from "../../../app/service/rpc_service";
-import {encryption} from "../../../proto/buildbuddy_service_ts_proto";
+import { encryption } from "../../../proto/buildbuddy_service_ts_proto";
 import Modal from "../../../app/components/modal/modal";
 import Dialog, {
-    DialogBody,
-    DialogFooter,
-    DialogFooterButtons,
-    DialogHeader,
-    DialogTitle
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
 } from "../../../app/components/dialog/dialog";
 import Spinner from "../../../app/components/spinner/spinner";
-import FilledButton, {OutlinedButton} from "../../../app/components/button/button";
-import {BuildBuddyError} from "../../../app/util/errors";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
+import { BuildBuddyError } from "../../../app/util/errors";
 import error_service from "../../../app/errors/error_service";
 
 interface State {
-    encryptionSupported: boolean
-    encryptionEnabled: boolean
-    supportedKMS: encryption.KMS[]
+  encryptionSupported: boolean;
+  encryptionEnabled: boolean;
+  supportedKMS: encryption.KMS[];
 
-    // Disable encryption dialog.
-    isDisableModalOpen: boolean
-    isDisablingInProgress: boolean
-    disablingError: BuildBuddyError | null
+  // Disable encryption dialog.
+  isDisableModalOpen: boolean;
+  isDisablingInProgress: boolean;
+  disablingError: BuildBuddyError | null;
 
-    // Enable encryption form.
-    selectedKMS: encryption.KMS
-    isEnablingInProgress: boolean
-    enablingError: BuildBuddyError | null
+  // Enable encryption form.
+  selectedKMS: encryption.KMS;
+  isEnablingInProgress: boolean;
+  enablingError: BuildBuddyError | null;
 
-    // Local KMS form.
-    localKeyID: string
+  // Local KMS form.
+  localKeyID: string;
 
-    // GCP KMS form.
-    gcpProject: string
-    gcpKeyRing: string
-    gcpKey: string
+  // GCP KMS form.
+  gcpProject: string;
+  gcpKeyRing: string;
+  gcpKey: string;
 }
 
 export default class EncryptionComponent extends React.Component<{}, State> {
-    state: State = {
-        encryptionSupported: false,
-        encryptionEnabled: false,
-        supportedKMS: [],
-        isDisableModalOpen: false,
-        isDisablingInProgress: false,
-        disablingError: null,
-        selectedKMS: encryption.KMS.UNKNOWN_KMS,
-        isEnablingInProgress: false,
-        enablingError: null,
-        localKeyID: "",
-        gcpProject: "",
-        gcpKeyRing: "",
-        gcpKey: ""
+  state: State = {
+    encryptionSupported: false,
+    encryptionEnabled: false,
+    supportedKMS: [],
+    isDisableModalOpen: false,
+    isDisablingInProgress: false,
+    disablingError: null,
+    selectedKMS: encryption.KMS.UNKNOWN_KMS,
+    isEnablingInProgress: false,
+    enablingError: null,
+    localKeyID: "",
+    gcpProject: "",
+    gcpKeyRing: "",
+    gcpKey: "",
+  };
+
+  componentDidMount() {
+    this.fetchConfig();
+  }
+
+  private async fetchConfig() {
+    try {
+      const response = await rpc_service.service.getEncryptionConfig(encryption.GetEncryptionConfigRequest.create());
+      this.setState({
+        encryptionSupported: response.supported,
+        encryptionEnabled: response.enabled,
+        supportedKMS: response.supportedKms,
+      });
+    } catch (e) {
+      error_service.handleError(BuildBuddyError.parse(e));
     }
+  }
 
+  private onCloseDisableModal() {
+    this.setState({ isDisableModalOpen: false });
+  }
 
-    componentDidMount() {
-        this.fetchConfig()
-    }
+  private onClickDisable() {
+    this.setState({ isDisableModalOpen: true });
+  }
 
-    private async fetchConfig() {
-        try {
-            const response = await rpc_service.service.getEncryptionConfig(encryption.GetEncryptionConfigRequest.create())
-            this.setState({
-                encryptionSupported: response.supported,
-                encryptionEnabled: response.enabled,
-                supportedKMS: response.supportedKms,
-            })
-        } catch (e) {
-            error_service.handleError(BuildBuddyError.parse(e))
-        }
-    }
-
-    private onCloseDisableModal() {
-        this.setState({ isDisableModalOpen: false });
-    }
-
-    private onClickDisable() {
-        this.setState({isDisableModalOpen: true})
-    }
-
-    private async onClickConfirmedDisable() {
-        this.setState({isDisablingInProgress: true, disablingError: null})
-        try {
-            await rpc_service.service.setEncryptionConfig(
-                encryption.SetEncryptionConfigRequest.create({
-                    enabled: false,
-                })
-            )
-            this.setState({isDisableModalOpen: false})
-            this.fetchConfig()
-        } catch (e) {
-            this.setState({disablingError: BuildBuddyError.parse(e)})
-        } finally {
-            this.setState({isDisablingInProgress: false})
-        }
-    }
-
-    private async onClickEnable() {
-        this.setState({isEnablingInProgress: true, enablingError: null})
-        let req = encryption.SetEncryptionConfigRequest.create({
-            enabled: true,
+  private async onClickConfirmedDisable() {
+    this.setState({ isDisablingInProgress: true, disablingError: null });
+    try {
+      await rpc_service.service.setEncryptionConfig(
+        encryption.SetEncryptionConfigRequest.create({
+          enabled: false,
         })
-        switch (this.state.selectedKMS) {
-            case encryption.KMS.LOCAL_INSECURE:
-                req.keyUri = `local-insecure-kms://${this.state.localKeyID}`
-                break
-            case encryption.KMS.GCP:
-                req.keyUri = `gcp-kms://projects/${this.state.gcpProject}/locations/global/keyRings/${this.state.gcpKeyRing}/prod/cryptoKeys/${this.state.gcpKey}`
-                break
-        }
-        try {
-            await rpc_service.service.setEncryptionConfig(req)
-            this.setState({isEnablingInProgress: false})
-            this.fetchConfig()
-        } catch (e) {
-            this.setState({enablingError: BuildBuddyError.parse(e)})
-        } finally {
-            this.setState({isEnablingInProgress: false})
-        }
+      );
+      this.setState({ isDisableModalOpen: false });
+      this.fetchConfig();
+    } catch (e) {
+      this.setState({ disablingError: BuildBuddyError.parse(e) });
+    } finally {
+      this.setState({ isDisablingInProgress: false });
     }
+  }
 
-    private onSelectKMS(kms: encryption.KMS) {
-        this.setState({selectedKMS: kms})
+  private async onClickEnable() {
+    this.setState({ isEnablingInProgress: true, enablingError: null });
+    let req = encryption.SetEncryptionConfigRequest.create({
+      enabled: true,
+    });
+    switch (this.state.selectedKMS) {
+      case encryption.KMS.LOCAL_INSECURE:
+        req.keyUri = `local-insecure-kms://${this.state.localKeyID}`;
+        break;
+      case encryption.KMS.GCP:
+        req.keyUri = `gcp-kms://projects/${this.state.gcpProject}/locations/global/keyRings/${this.state.gcpKeyRing}/prod/cryptoKeys/${this.state.gcpKey}`;
+        break;
     }
-
-    private kmsName(kms: encryption.KMS) {
-        switch (kms) {
-            case encryption.KMS.LOCAL_INSECURE:
-                return "Local Insecure KMS (non-production use)"
-            case encryption.KMS.GCP:
-                return "Google Cloud Platform KMS"
-            default:
-                return "Unknown KMS"
-        }
+    try {
+      await rpc_service.service.setEncryptionConfig(req);
+      this.setState({ isEnablingInProgress: false });
+      this.fetchConfig();
+    } catch (e) {
+      this.setState({ enablingError: BuildBuddyError.parse(e) });
+    } finally {
+      this.setState({ isEnablingInProgress: false });
     }
+  }
 
-    private onLocalIDChange(event: React.ChangeEvent<HTMLInputElement>) {
-        this.setState({localKeyID: event.target.value})
+  private onSelectKMS(kms: encryption.KMS) {
+    this.setState({ selectedKMS: kms });
+  }
+
+  private kmsName(kms: encryption.KMS) {
+    switch (kms) {
+      case encryption.KMS.LOCAL_INSECURE:
+        return "Local Insecure KMS (non-production use)";
+      case encryption.KMS.GCP:
+        return "Google Cloud Platform KMS";
+      default:
+        return "Unknown KMS";
     }
+  }
 
-    private onGCPProjectChange(event: React.ChangeEvent<HTMLInputElement>) {
-        this.setState({gcpProject: event.target.value})
-    }
+  private onLocalIDChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ localKeyID: event.target.value });
+  }
 
-    private onGCPKeyRingChange(event: React.ChangeEvent<HTMLInputElement>) {
-        this.setState({gcpKeyRing: event.target.value})
-    }
+  private onGCPProjectChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ gcpProject: event.target.value });
+  }
 
-    private onGCPKeyChange(event: React.ChangeEvent<HTMLInputElement>) {
-        this.setState({gcpKey: event.target.value})
-    }
+  private onGCPKeyRingChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ gcpKeyRing: event.target.value });
+  }
 
-    private renderKMSFields(kms: encryption.KMS) {
-        switch (kms) {
-            case encryption.KMS.LOCAL_INSECURE:
-                return (
-                    <>
-                        <div className="field-row">
-                        <label htmlFor="localID" className="field-label">
-                            Key ID
-                        </label>
-                        <input
-                            autoComplete="off"
-                            type="text"
-                            name="localID"
-                            onChange={this.onLocalIDChange.bind(this)}
-                            value={this.state.localKeyID}
-                        />
-                        </div>
-                    </>
-                )
-            case encryption.KMS.GCP:
-                return (
-                    <>
-                        <div className="field-row">
-                            <label htmlFor="gcpProject" className="field-label">
-                                Project ID
-                            </label>
-                            <input
-                                autoComplete="off"
-                                type="text"
-                                name="gcpProject"
-                                onChange={this.onGCPProjectChange.bind(this)}
-                                value={this.state.gcpProject}
-                            />
-                        </div>
-                        <div className="field-row">
-                            <label htmlFor="gcpKeyRing" className="field-label">
-                                Key Ring
-                            </label>
-                            <input
-                                autoComplete="off"
-                                type="text"
-                                name="gcpKeyRing"
-                                onChange={this.onGCPKeyRingChange.bind(this)}
-                                value={this.state.gcpKeyRing}
-                            />
-                        </div>
-                        <div className="field-row">
-                            <label htmlFor="gcpKey" className="field-label">
-                                Key
-                            </label>
-                            <input
-                                autoComplete="off"
-                                type="text"
-                                name="gcpKey"
-                                onChange={this.onGCPKeyChange.bind(this)}
-                                value={this.state.gcpKey}
-                            />
-                        </div>
-                    </>
-                )
-        }
-    }
+  private onGCPKeyChange(event: React.ChangeEvent<HTMLInputElement>) {
+    this.setState({ gcpKey: event.target.value });
+  }
 
-    private renderKMSOptions(kms: encryption.KMS) {
+  private renderKMSFields(kms: encryption.KMS) {
+    switch (kms) {
+      case encryption.KMS.LOCAL_INSECURE:
         return (
-            <div className="kms-config-row">
-                <div>
-                    <input
-                        type="radio"
-                        checked={this.state.selectedKMS == kms}
-                        onChange={this.onSelectKMS.bind(this, kms)}
-                    />
-                </div>
-                <div>
-                    <div className="kms-title">{this.kmsName(kms)}</div>
-                    {this.state.selectedKMS == kms && (
-                        <div className="kms-fields">{this.renderKMSFields(kms)}</div>
-                    )}
-                </div>
+          <>
+            <div className="field-row">
+              <label htmlFor="localID" className="field-label">
+                Key ID
+              </label>
+              <input
+                autoComplete="off"
+                type="text"
+                name="localID"
+                onChange={this.onLocalIDChange.bind(this)}
+                value={this.state.localKeyID}
+              />
             </div>
-        )
-    }
-
-    render() {
+          </>
+        );
+      case encryption.KMS.GCP:
         return (
-            <>
-                {!this.state.encryptionSupported && (
-                    <div>
-                        <p>Encryption requires dedicated storage.</p>
-                        {/*DO NOT SUBMIT: siggi to fill in wording here*/}
-                        <p>Please reach out to XXX.</p>
-                    </div>
-                )}
-                {this.state.encryptionSupported && this.state.encryptionEnabled && (
-                    <div>
-                        <p>Encryption is enabled.</p>
-
-                        <FilledButton
-                            className="destructive"
-                            onClick={this.onClickDisable.bind(this)}>
-                            Disable
-                        </FilledButton>
-                        <Modal isOpen={this.state.isDisableModalOpen} onRequestClose={this.onCloseDisableModal.bind(this)}>
-                            <Dialog className="invocation-delete-dialog">
-                                <DialogHeader>
-                                    <DialogTitle>Confirm disabling encryption</DialogTitle>
-                                </DialogHeader>
-                                <DialogBody>
-                                    <p>Are you sure you want to disable encryption?</p>
-                                    <p>Encrypted artifacts stored in the cache will no longer be accessible. </p>
-                                    <p>This action is irreversible. </p>
-                                    {this.state.disablingError && (
-                                        <div className="error-description">{this.state.disablingError.description}</div>
-                                    )}
-                                </DialogBody>
-                                <DialogFooter>
-                                    <DialogFooterButtons>
-                                        {this.state.isDisablingInProgress && <Spinner />}
-                                        <OutlinedButton disabled={this.state.isDisablingInProgress} onClick={this.onCloseDisableModal.bind(this)}>
-                                            Cancel
-                                        </OutlinedButton>
-                                        <FilledButton
-                                            className="destructive"
-                                            disabled={this.state.isDisablingInProgress}
-                                            onClick={this.onClickConfirmedDisable.bind(this)}>
-                                            Disable
-                                        </FilledButton>
-                                    </DialogFooterButtons>
-                                </DialogFooter>
-                            </Dialog>
-                        </Modal>
-                    </div>
-                )}
-                {this.state.encryptionSupported && !this.state.encryptionEnabled && (
-                    <div>
-                        <p>Encryption is not currently enabled.</p>
-                        <p>To enable encryption, you will need to provide a reference to an encryption key managed by a supported Key Management System.</p>
-                        <form className="kms-form">
-                            {this.state.supportedKMS.map((kms: encryption.KMS) => this.renderKMSOptions(kms))}
-                            <FilledButton
-                                disabled={this.state.selectedKMS == encryption.KMS.UNKNOWN_KMS || this.state.isEnablingInProgress}
-                                onClick={this.onClickEnable.bind(this)}>
-                                Enable
-                            </FilledButton>
-                            {this.state.enablingError && (
-                                <div className="form-error">{this.state.enablingError.description}</div>
-                            )}
-                        </form>
-                    </div>
-                )}
-            </>
-        )
+          <>
+            <div className="field-row">
+              <label htmlFor="gcpProject" className="field-label">
+                Project ID
+              </label>
+              <input
+                autoComplete="off"
+                type="text"
+                name="gcpProject"
+                onChange={this.onGCPProjectChange.bind(this)}
+                value={this.state.gcpProject}
+              />
+            </div>
+            <div className="field-row">
+              <label htmlFor="gcpKeyRing" className="field-label">
+                Key Ring
+              </label>
+              <input
+                autoComplete="off"
+                type="text"
+                name="gcpKeyRing"
+                onChange={this.onGCPKeyRingChange.bind(this)}
+                value={this.state.gcpKeyRing}
+              />
+            </div>
+            <div className="field-row">
+              <label htmlFor="gcpKey" className="field-label">
+                Key
+              </label>
+              <input
+                autoComplete="off"
+                type="text"
+                name="gcpKey"
+                onChange={this.onGCPKeyChange.bind(this)}
+                value={this.state.gcpKey}
+              />
+            </div>
+          </>
+        );
     }
+  }
+
+  private renderKMSOptions(kms: encryption.KMS) {
+    return (
+      <div className="kms-config-row">
+        <div>
+          <input type="radio" checked={this.state.selectedKMS == kms} onChange={this.onSelectKMS.bind(this, kms)} />
+        </div>
+        <div>
+          <div className="kms-title">{this.kmsName(kms)}</div>
+          {this.state.selectedKMS == kms && <div className="kms-fields">{this.renderKMSFields(kms)}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  render() {
+    return (
+      <>
+        {!this.state.encryptionSupported && (
+          <div>
+            <p>Encryption requires dedicated storage.</p>
+            {/*DO NOT SUBMIT: siggi to fill in wording here*/}
+            <p>Please reach out to XXX.</p>
+          </div>
+        )}
+        {this.state.encryptionSupported && this.state.encryptionEnabled && (
+          <div>
+            <p>Encryption is enabled.</p>
+
+            <FilledButton className="destructive" onClick={this.onClickDisable.bind(this)}>
+              Disable
+            </FilledButton>
+            <Modal isOpen={this.state.isDisableModalOpen} onRequestClose={this.onCloseDisableModal.bind(this)}>
+              <Dialog className="invocation-delete-dialog">
+                <DialogHeader>
+                  <DialogTitle>Confirm disabling encryption</DialogTitle>
+                </DialogHeader>
+                <DialogBody>
+                  <p>Are you sure you want to disable encryption?</p>
+                  <p>Encrypted artifacts stored in the cache will no longer be accessible. </p>
+                  <p>This action is irreversible. </p>
+                  {this.state.disablingError && (
+                    <div className="error-description">{this.state.disablingError.description}</div>
+                  )}
+                </DialogBody>
+                <DialogFooter>
+                  <DialogFooterButtons>
+                    {this.state.isDisablingInProgress && <Spinner />}
+                    <OutlinedButton
+                      disabled={this.state.isDisablingInProgress}
+                      onClick={this.onCloseDisableModal.bind(this)}>
+                      Cancel
+                    </OutlinedButton>
+                    <FilledButton
+                      className="destructive"
+                      disabled={this.state.isDisablingInProgress}
+                      onClick={this.onClickConfirmedDisable.bind(this)}>
+                      Disable
+                    </FilledButton>
+                  </DialogFooterButtons>
+                </DialogFooter>
+              </Dialog>
+            </Modal>
+          </div>
+        )}
+        {this.state.encryptionSupported && !this.state.encryptionEnabled && (
+          <div>
+            <p>Encryption is not currently enabled.</p>
+            <p>
+              To enable encryption, you will need to provide a reference to an encryption key managed by a supported Key
+              Management System.
+            </p>
+            <form className="kms-form">
+              {this.state.supportedKMS.map((kms: encryption.KMS) => this.renderKMSOptions(kms))}
+              <FilledButton
+                disabled={this.state.selectedKMS == encryption.KMS.UNKNOWN_KMS || this.state.isEnablingInProgress}
+                onClick={this.onClickEnable.bind(this)}>
+                Enable
+              </FilledButton>
+              {this.state.enablingError && <div className="form-error">{this.state.enablingError.description}</div>}
+            </form>
+          </div>
+        )}
+      </>
+    );
+  }
 }
