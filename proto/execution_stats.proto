@@ -1,6 +1,5 @@
 syntax = "proto3";
 
-import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/rpc/status.proto";
 import "proto/acl.proto";

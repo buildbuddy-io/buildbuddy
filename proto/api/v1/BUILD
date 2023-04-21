@@ -1,5 +1,6 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("//proto:defs.bzl", "ts_proto_library")
 
 proto_library(
     name = "common_proto",
@@ -19,6 +20,17 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common",
     proto = ":common_proto",
     visibility = ["//visibility:public"],
+)
+
+ts_proto_library(
+    name = "common_ts_proto",
+    proto = ":common_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:duration_ts_proto",
+        "//proto:grpc_status_ts_proto",
+        "//proto:timestamp_ts_proto",
+    ],
 )
 
 proto_library(
