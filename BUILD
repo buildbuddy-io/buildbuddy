@@ -5,6 +5,13 @@ load("//rules/go:index.bzl", "go_sdk_tool")
 
 package(default_visibility = ["//visibility:public"])
 
+# This is the "go" binary from the Go SDK. It is aliased to the correct
+# binary for the current platform.
+go_sdk_tool(
+    name = "go",
+    goroot_relative_path = "bin/go",
+)
+
 nogo(
     name = "vet",
     config = "nogo_config.json",
