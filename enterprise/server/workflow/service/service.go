@@ -1052,7 +1052,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	for _, action := range cfg.Actions {
 		if !config.MatchesAnyTrigger(action, wd.EventName, wd.TargetBranch) {
 			jt, _ := json.Marshal(action.Triggers)
-			log.CtxDebugf(ctx, "Action %s not matched, triggers=%+v", action.Name, string(jt))
+			log.CtxDebugf(ctx, "Action %s not matched, triggers=%s", action.Name, string(jt))
 			continue
 		}
 		invocationUUID, err := guuid.NewRandom()
