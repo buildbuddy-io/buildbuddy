@@ -22,7 +22,6 @@ ts_library(
         "//app/util:math",
         "//proto:invocation_ts_proto",
         "//proto:target_ts_proto",
-        "//proto/api/v1:common_ts_proto",
         "@npm//@types/long",
         "@npm//@types/moment",
         "@npm//@types/react",
