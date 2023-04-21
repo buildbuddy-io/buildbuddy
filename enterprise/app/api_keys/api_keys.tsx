@@ -57,7 +57,7 @@ const INITIAL_STATE: State = {
   isDeleteModalSubmitting: false,
 };
 
-type ApiKeyFields = api_key.CreateApiKeyRequest | api_key.UpdateApiKeyRequest;
+type ApiKeyFields = api_key.ICreateApiKeyRequest | api_key.IUpdateApiKeyRequest;
 
 type FormState<T extends ApiKeyFields> = {
   isOpen: boolean;
