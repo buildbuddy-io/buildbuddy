@@ -245,7 +245,7 @@ func (i *InvocationStatService) getInvocationSummary(ctx context.Context, req *s
 	q := query_builder.NewQuery(`
     SELECT
 	    count(1) AS num_builds,
-		countIf(action_cache_hits + action_cache_misses > 0) as num_builds_with_remote_cache,
+		countIf(download_outputs_option IN (2, 3, 4)) as num_builds_with_remote_cache,
 		sum(total_cached_action_exec_usec) as cpu_micros_saved,
 		sum(action_cache_hits) as ac_cache_hits,
 		sum(action_cache_misses) as ac_cache_misses
